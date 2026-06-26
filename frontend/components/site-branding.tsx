@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
+import { getBrandingVisibility } from '@/lib/theme-config'
 
 interface SiteBrandingProps {
   size?: 'sm' | 'md' | 'lg'
@@ -46,12 +47,11 @@ export function SiteBranding({ size = 'md', showDescription = false, className =
     )
   }
 
-  if (settings.theme_branding_display === 'hidden') {
+  const { showIcon, showName } = getBrandingVisibility(settings.theme_branding_display)
+
+  if (!showIcon && !showName) {
     return null
   }
-
-  const showIcon = settings.theme_branding_display !== 'name_only'
-  const showName = settings.theme_branding_display !== 'icon_only'
 
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>

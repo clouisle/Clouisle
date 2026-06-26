@@ -33,6 +33,7 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
+import { getBrandingVisibility } from '@/lib/theme-config'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -247,6 +248,9 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   )
 
   const isActive = (url: string) => (url === '/dashboard' ? pathname === url : pathname.startsWith(url))
+  const { showIcon: showBrandIcon, showName: showBrandName } = getBrandingVisibility(
+    siteSettings.theme_branding_display
+  )
 
   return (
     <Sidebar variant={variant} collapsible={collapsible} side={side}>
@@ -255,24 +259,33 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           <SidebarMenuItem>
             <Link href="/dashboard">
               <SidebarMenuButton size="lg" tooltip={siteSettings.site_name || 'Clouisle'}>
-                <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
-                  {siteSettings.site_icon ? (
-                    <Image
-                      src={siteSettings.site_icon}
-                      alt={siteSettings.site_name}
-                      width={32}
-                      height={32}
-                      className="size-full object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <DefaultSiteIcon width={32} height={32} className="size-full" />
-                  )}
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
-                  <span className="font-semibold">{siteSettings.site_name || 'Clouisle'}</span>
-                  <span className="text-xs text-muted-foreground">{tPlatform('admin')}</span>
-                </div>
+                {showBrandIcon && (
+                  <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
+                    {siteSettings.site_icon ? (
+                      <Image
+                        src={siteSettings.site_icon}
+                        alt={siteSettings.site_name}
+                        width={32}
+                        height={32}
+                        className="size-full object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <DefaultSiteIcon width={32} height={32} className="size-full" />
+                    )}
+                  </div>
+                )}
+                {showBrandName && (
+                  <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
+                    <span className="font-semibold">{siteSettings.site_name || 'Clouisle'}</span>
+                    <span className="text-xs text-muted-foreground">{tPlatform('admin')}</span>
+                  </div>
+                )}
+                {!showBrandIcon && !showBrandName && (
+                  <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
+                    <span className="text-xs text-muted-foreground">{tPlatform('admin')}</span>
+                  </div>
+                )}
               </SidebarMenuButton>
             </Link>
           </SidebarMenuItem>

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import {
   Dialog,
@@ -9,6 +10,8 @@ import {
 import { useTranslations } from 'next-intl'
 import type { AuthPageLayout, PublicSiteSettings } from '@/lib/api/site-settings'
 import { LegalMarkdownDialogContent, preloadLegalMarkdown } from './legal-markdown'
+import { DefaultSiteIcon } from '@/components/default-site-icon'
+import { getBrandingVisibility } from '@/lib/theme-config'
 
 type LegalSettings = Pick<
   PublicSiteSettings,
@@ -22,10 +25,16 @@ type LegalSettings = Pick<
   | 'privacy_text'
 >
 
+type BrandingSettings = Pick<
+  PublicSiteSettings,
+  'site_name' | 'site_description' | 'site_icon' | 'theme_branding_display'
+>
+
 interface AuthLayoutShellProps {
   children: React.ReactNode
   layout: AuthPageLayout
   previewImageAlt: string
+  brandingSettings: BrandingSettings
   legalSettings: LegalSettings
 }
 
@@ -84,6 +93,43 @@ function LegalFooter({ legalSettings, fixed = false }: { legalSettings: LegalSet
   )
 }
 
+function AuthBranding({ brandingSettings }: { brandingSettings: BrandingSettings }) {
+  const { showIcon, showName } = getBrandingVisibility(brandingSettings.theme_branding_display)
+
+  if (!showIcon && !showName) {
+    return null
+  }
+
+  return (
+    <div className="mb-6 flex flex-col items-center gap-2 text-center">
+      {showIcon && (
+        <div className={`flex size-14 items-center justify-center overflow-hidden rounded-xl ${brandingSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
+          {brandingSettings.site_icon ? (
+            <Image
+              src={brandingSettings.site_icon}
+              alt={brandingSettings.site_name}
+              width={56}
+              height={56}
+              className="size-full object-cover"
+              unoptimized
+            />
+          ) : (
+            <DefaultSiteIcon width={56} height={56} className="size-full" />
+          )}
+        </div>
+      )}
+      {showName && (
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">{brandingSettings.site_name || 'Clouisle'}</h1>
+          {brandingSettings.site_description && (
+            <p className="text-sm text-muted-foreground">{brandingSettings.site_description}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AuthPreviewPanel({ previewImageAlt }: Pick<AuthLayoutShellProps, 'previewImageAlt'>) {
   return (
     <aside className="relative hidden min-h-screen flex-1 overflow-hidden bg-muted/45 dark:bg-muted/25 lg:block">
@@ -101,6 +147,7 @@ export function AuthLayoutShell({
   children,
   layout,
   previewImageAlt,
+  brandingSettings,
   legalSettings,
 }: AuthLayoutShellProps) {
   const isSplit = layout === 'split'
@@ -122,6 +169,7 @@ export function AuthLayoutShell({
         </div>
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-md p-4">
+            <AuthBranding brandingSettings={brandingSettings} />
             {children}
           </div>
         </div>
@@ -137,6 +185,7 @@ export function AuthLayoutShell({
       </div>
       <main className="relative flex min-h-screen w-full items-center justify-center bg-background px-4 py-12 lg:w-[48%] lg:px-10 lg:pr-16 xl:pr-20">
         <div className="auth-layout-split w-full max-w-md">
+          <AuthBranding brandingSettings={brandingSettings} />
           {children}
         </div>
         <div className="absolute inset-x-0 bottom-4 flex justify-center">

@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes'
 import { useTranslations } from 'next-intl'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB } from '@/lib/constants'
+import { BRAND_CSS_VARIABLES, getBrandCssVariables, shouldApplySiteThemeMode } from '@/lib/theme-config'
 
 interface SiteSettingsContextType {
   settings: PublicSiteSettings
@@ -52,22 +53,26 @@ function PublicThemeApplicator({ settings }: { settings: PublicSiteSettings }) {
   const { theme_mode, theme_primary_color, theme_primary_foreground_color } = settings
 
   React.useEffect(() => {
-    setTheme(theme_mode)
+    if (shouldApplySiteThemeMode(theme_mode)) {
+      setTheme(theme_mode)
+    }
   }, [theme_mode, setTheme])
 
   React.useEffect(() => {
     const root = document.documentElement
-    if (theme_primary_color) {
-      root.style.setProperty('--primary', theme_primary_color)
-    } else {
-      root.style.removeProperty('--primary')
-    }
+    const variables = getBrandCssVariables({
+      theme_primary_color,
+      theme_primary_foreground_color,
+    })
 
-    if (theme_primary_foreground_color) {
-      root.style.setProperty('--primary-foreground', theme_primary_foreground_color)
-    } else {
-      root.style.removeProperty('--primary-foreground')
-    }
+    BRAND_CSS_VARIABLES.forEach((cssVariable) => {
+      const value = variables[cssVariable]
+      if (value) {
+        root.style.setProperty(cssVariable, value)
+      } else {
+        root.style.removeProperty(cssVariable)
+      }
+    })
   }, [theme_primary_color, theme_primary_foreground_color])
 
   return null

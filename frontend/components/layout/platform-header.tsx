@@ -60,6 +60,7 @@ import { useSettings } from '@/hooks/use-settings'
 import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
+import { getBrandingVisibility } from '@/lib/theme-config'
 
 interface PlatformNavItem {
   key: string
@@ -128,6 +129,9 @@ export function PlatformHeader() {
 
   // 使用默认值直到 mounted，避免水合不匹配
   const effectiveHeaderVariant = mounted ? platformHeaderVariant : 'centered'
+  const { showIcon: showBrandIcon, showName: showBrandName } = getBrandingVisibility(
+    siteSettings.theme_branding_display
+  )
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -239,27 +243,38 @@ export function PlatformHeader() {
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
-          <Link href="/app" className="flex items-center space-x-2 shrink-0" data-testid="platform-logo">
-            <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
-              {siteSettings.site_icon ? (
-                <Image
-                  src={siteSettings.site_icon}
-                  alt={siteSettings.site_name}
-                  width={32}
-                  height={32}
-                  className="size-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <DefaultSiteIcon width={32} height={32} className="size-full" />
+          {(showBrandIcon || showBrandName) && (
+            <Link href="/app" className="flex items-center space-x-2 shrink-0" data-testid="platform-logo">
+              {showBrandIcon && (
+                <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
+                  {siteSettings.site_icon ? (
+                    <Image
+                      src={siteSettings.site_icon}
+                      alt={siteSettings.site_name}
+                      width={32}
+                      height={32}
+                      className="size-full object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <DefaultSiteIcon width={32} height={32} className="size-full" />
+                  )}
+                </div>
               )}
-            </div>
-          </Link>
+              {showBrandName && (
+                <span className="hidden font-semibold sm:inline">
+                  {siteSettings.site_name || 'Clouisle'}
+                </span>
+              )}
+            </Link>
+          )}
 
           {/* Separator and Team Switcher - 没有团队时隐藏 */}
           {!hideNav && (
             <>
-              <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
+              {(showBrandIcon || showBrandName) && (
+                <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
+              )}
               <div className="min-w-0 flex-1 sm:flex-initial" data-testid="platform-team-switcher">
                 <TeamSwitcher />
               </div>
