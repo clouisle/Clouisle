@@ -538,7 +538,7 @@ export function SlowQueriesPanel({ slowQueries }: { slowQueries: SlowQueriesResp
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
         <ConsoleMetric label={t('health.slowQueries')} value={slowQueries?.available ? formatNumber(slowQueries.total) : t('status.unknown')} tone={slowQueries?.available ? 'neutral' : 'warning'} />
-        <ConsoleMetric label={t('slowQueries.threshold')} value="100ms" description={t('slowQueries.thresholdDesc')} />
+        <ConsoleMetric label={t('slowQueries.threshold')} value="1000ms" description={t('slowQueries.thresholdDesc')} />
         <ConsoleMetric label={t('slowQueries.topMeanTime')} value={formatDuration(topQuery ? readNumber(topQuery, ['avg_ms', 'mean_exec_time', 'mean_time', 'duration_ms']) : null)} />
       </div>
       <Card>
