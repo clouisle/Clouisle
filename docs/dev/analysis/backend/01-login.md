@@ -45,10 +45,12 @@
 {
   "captcha_id": "string",
   "challenge": "public challenge descriptor",
-  "click_nonce": "string",
+  "clicked_option": "string (clicked public option)",
   "elapsed_ms": 250
 }
 ```
+
+`elapsed_ms` 仅作为交互观测数据；是否过期以服务端 Redis TTL/创建状态为准，公开 challenge 不包含服务端保存的正确选项。
 
 **响应**:
 ```json

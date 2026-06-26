@@ -77,7 +77,7 @@ async def complete_captcha_click(payload: CaptchaClickRequest) -> Any:
     proof = await create_captcha_proof(
         payload.captcha_id,
         payload.challenge,
-        payload.click_nonce,
+        payload.clicked_option,
         payload.elapsed_ms,
     )
     if not proof:

@@ -107,7 +107,7 @@ export const authApi = {
   completeCaptchaClick: async (data: {
     captcha_id: string
     challenge: string
-    click_nonce: string
+    clicked_option: string
     elapsed_ms: number
   }): Promise<CaptchaProofResponse> => {
     return api.post<CaptchaProofResponse>('/captcha/click', data)

@@ -3,7 +3,9 @@
 """
 
 import json
+import random
 import secrets
+import time
 from typing import Any, Optional, Tuple
 
 from app.core.redis import get_redis
@@ -12,7 +14,7 @@ from app.core.redis import get_redis
 CAPTCHA_PREFIX = "captcha:"
 CAPTCHA_PROOF_PREFIX = "captcha-proof:"
 CAPTCHA_TTL = 300  # 5 分钟过期
-MIN_CLICK_ELAPSED_MS = 250
+CLICK_OPTIONS = ["circle", "square", "triangle"]
 
 
 async def generate_captcha() -> Tuple[str, str]:
@@ -23,26 +25,32 @@ async def generate_captcha() -> Tuple[str, str]:
         Tuple[captcha_id, challenge]: 验证码ID、公开挑战描述符
     """
     captcha_id = secrets.token_urlsafe(16)
-    nonce = secrets.token_urlsafe(16)
+    target_index = random.randrange(len(CLICK_OPTIONS))
     challenge = json.dumps(
-        {"type": "click", "nonce": nonce, "min_elapsed_ms": MIN_CLICK_ELAPSED_MS},
+        {
+            "type": "click-choice",
+            "options": CLICK_OPTIONS,
+            "prompt": "select_target",
+            "created_at": int(time.time() * 1000),
+        },
         separators=(",", ":"),
     )
 
     r = await get_redis()
     key = f"{CAPTCHA_PREFIX}{captcha_id}"
-    await r.setex(key, CAPTCHA_TTL, nonce)
+    await r.setex(key, CAPTCHA_TTL, str(target_index))
 
     return captcha_id, challenge
 
 
 async def create_captcha_proof(
-    captcha_id: str, challenge: str, click_nonce: str, elapsed_ms: int
+    captcha_id: str,
+    challenge: str,
+    clicked_option: str,
+    elapsed_ms: int,
 ) -> Optional[str]:
     """Issue a private one-time proof after a valid click interaction."""
-    if not captcha_id or not challenge or not click_nonce:
-        return None
-    if elapsed_ms < MIN_CLICK_ELAPSED_MS:
+    if not captcha_id or not challenge or not clicked_option:
         return None
 
     try:
@@ -50,21 +58,24 @@ async def create_captcha_proof(
     except json.JSONDecodeError:
         return None
 
-    if public_challenge.get("type") != "click":
+    if public_challenge.get("type") != "click-choice":
         return None
+    options = public_challenge.get("options")
+    if not isinstance(options, list) or clicked_option not in options:
+        return None
+
+    # Client-reported elapsed_ms is advisory only. Redis TTL/server state is authoritative.
+    _ = elapsed_ms
 
     r = await get_redis()
     key = f"{CAPTCHA_PREFIX}{captcha_id}"
-    stored_nonce = await r.get(key)
+    stored_target_index = await r.get(key)
     await r.delete(key)
 
-    if stored_nonce is None:
+    if stored_target_index is None:
         return None
-
-    challenge_nonce = str(public_challenge.get("nonce", ""))
-    if not challenge_nonce or not secrets.compare_digest(challenge_nonce, stored_nonce):
-        return None
-    if not secrets.compare_digest(click_nonce, stored_nonce):
+    clicked_index = options.index(clicked_option)
+    if not secrets.compare_digest(str(clicked_index), stored_target_index):
         return None
 
     proof = secrets.token_urlsafe(24)

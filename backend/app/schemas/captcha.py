@@ -15,7 +15,7 @@ class CaptchaClickRequest(BaseModel):
 
     captcha_id: str
     challenge: str
-    click_nonce: str
+    clicked_option: str
     elapsed_ms: int
 
 

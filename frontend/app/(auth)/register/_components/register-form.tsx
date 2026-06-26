@@ -28,15 +28,15 @@ import { LegalMarkdownDialogContent } from '../../_components/legal-markdown'
 type Step = 'form' | 'verification' | 'success'
 
 type ClickChallenge = {
-  type: 'click'
-  nonce: string
-  min_elapsed_ms: number
+  type: 'click-choice'
+  options: string[]
+  created_at: number
 }
 
 function parseClickChallenge(challenge: string): ClickChallenge | null {
   try {
     const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
-    if (parsed.type !== 'click' || !parsed.nonce || typeof parsed.min_elapsed_ms !== 'number') {
+    if (parsed.type !== 'click-choice' || !Array.isArray(parsed.options) || typeof parsed.created_at !== 'number') {
       return null
     }
     return parsed as ClickChallenge
@@ -133,8 +133,8 @@ export function RegisterForm() {
       const proof = await authApi.completeCaptchaClick({
         captcha_id: captcha.captcha_id,
         challenge: captcha.challenge,
-        click_nonce: challenge.nonce,
-        elapsed_ms: challenge.min_elapsed_ms,
+        clicked_option: challenge.options[0],
+        elapsed_ms: Math.max(0, Date.now() - challenge.created_at),
       })
       setCaptchaToken(proof.captcha_token)
       setFieldErrors((prev) => clearValidationError(prev, 'captcha'))

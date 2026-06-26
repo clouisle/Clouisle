@@ -39,11 +39,31 @@ async def test_captcha_endpoint_does_not_leak_private_proof(
 
     captcha_id = response["data"].captcha_id
     challenge = response["data"].challenge
-    stored_nonce = fake_redis.values[f"captcha:{captcha_id}"]
+    stored_target_index = fake_redis.values[f"captcha:{captcha_id}"]
 
-    assert stored_nonce in challenge
+    assert f'"target_index":{stored_target_index}' not in challenge
     assert f"captcha-proof:{captcha_id}" not in fake_redis.values
-    assert challenge != stored_nonce
+
+
+@pytest.mark.asyncio
+async def test_public_challenge_data_alone_cannot_mint_token(
+    fake_redis: FakeRedis,
+) -> None:
+    response = await login_endpoints.get_captcha()
+    captcha_id = response["data"].captcha_id
+    fake_redis.values[f"captcha:{captcha_id}"] = "1"
+
+    with pytest.raises(BusinessError) as exc_info:
+        await login_endpoints.complete_captcha_click(
+            CaptchaClickRequest(
+                captcha_id=captcha_id,
+                challenge=response["data"].challenge,
+                clicked_option="circle",
+                elapsed_ms=0,
+            )
+        )
+
+    assert exc_info.value.code == ResponseCode.CAPTCHA_INVALID
 
 
 @pytest.mark.asyncio
@@ -51,14 +71,16 @@ async def test_click_captcha_valid_proof_succeeds_once(fake_redis: FakeRedis) ->
     response = await login_endpoints.get_captcha()
     captcha_id = response["data"].captcha_id
     challenge = response["data"].challenge
-    click_nonce = fake_redis.values[f"captcha:{captcha_id}"]
+    clicked_option = captcha_core.CLICK_OPTIONS[
+        int(fake_redis.values[f"captcha:{captcha_id}"])
+    ]
 
     proof_response = await login_endpoints.complete_captcha_click(
         CaptchaClickRequest(
             captcha_id=captcha_id,
             challenge=challenge,
-            click_nonce=click_nonce,
-            elapsed_ms=captcha_core.MIN_CLICK_ELAPSED_MS,
+            clicked_option=clicked_option,
+            elapsed_ms=0,
         )
     )
 
@@ -102,8 +124,8 @@ async def test_click_captcha_invalid_click_data_fails(fake_redis: FakeRedis) -> 
             CaptchaClickRequest(
                 captcha_id=response["data"].captcha_id,
                 challenge=response["data"].challenge,
-                click_nonce="wrong-nonce",
-                elapsed_ms=captcha_core.MIN_CLICK_ELAPSED_MS,
+                clicked_option="wrong-option",
+                elapsed_ms=0,
             )
         )
 
@@ -115,7 +137,9 @@ async def test_click_captcha_expired_challenge_fails(fake_redis: FakeRedis) -> N
     response = await login_endpoints.get_captcha()
     captcha_id = response["data"].captcha_id
     challenge = response["data"].challenge
-    click_nonce = fake_redis.values[f"captcha:{captcha_id}"]
+    clicked_option = captcha_core.CLICK_OPTIONS[
+        int(fake_redis.values[f"captcha:{captcha_id}"])
+    ]
     await fake_redis.delete(f"captcha:{captcha_id}")
 
     with pytest.raises(BusinessError) as exc_info:
@@ -123,8 +147,8 @@ async def test_click_captcha_expired_challenge_fails(fake_redis: FakeRedis) -> N
             CaptchaClickRequest(
                 captcha_id=captcha_id,
                 challenge=challenge,
-                click_nonce=click_nonce,
-                elapsed_ms=captcha_core.MIN_CLICK_ELAPSED_MS,
+                clicked_option=clicked_option,
+                elapsed_ms=0,
             )
         )
 

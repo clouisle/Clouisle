@@ -13,9 +13,9 @@ Success criteria:
 - Non-browser tests cover success and failure paths.
 
 ## High-Level Design
-- Backend `app.core.captcha` generates a public click challenge descriptor and stores only the private expected nonce in Redis with the existing captcha TTL.
-- Backend `/captcha` returns click-oriented public metadata: `captcha_id`, `challenge`, `prompt`, `expires_in`; it must not return a reusable login/register proof token.
-- Backend `/captcha/click` validates click interaction data against the server-side nonce and issues a separate private one-time proof token.
+- Backend `app.core.captcha` generates a public click-choice challenge descriptor and stores only the private expected clicked option in Redis with the existing captcha TTL.
+- Backend `/captcha` returns click-oriented public metadata: `captcha_id`, `challenge`, `prompt`, `expires_in`; it must not return the correct option or a reusable login/register proof token.
+- Backend `/captcha/click` validates the clicked public option against the server-side target and issues a separate private one-time proof token; client `elapsed_ms` is advisory and Redis TTL/server state is authoritative.
 - Login and register submit `captcha_id` plus the proof `captcha_token`; the backend verifies the proof and deletes it on use.
 - Frontend login/register replace the text answer input with a click button that exchanges the public challenge for a private proof; submit is blocked until the proof exists.
 - Scope: password reset, resend verification, and email-code verification remain out of scope for YUN-105 because they already require email delivery/cooldown checks and are separate sensitive-operation controls from the existing login/register captcha setting.
