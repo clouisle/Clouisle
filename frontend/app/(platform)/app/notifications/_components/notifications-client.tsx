@@ -77,9 +77,31 @@ function getRowClassName(item: NotificationItem) {
     'cursor-pointer border-l-4 border-l-transparent',
     !item.is_read && 'bg-primary/5',
     meta.isAnnouncement && 'border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/15',
+    meta.isAnnouncement && !item.is_read && 'bg-amber-500/15 hover:bg-amber-500/20 dark:bg-amber-500/20',
     meta.kind === 'security' && !meta.isAnnouncement && 'border-l-destructive bg-destructive/5',
+    meta.kind === 'security' && !meta.isAnnouncement && !item.is_read && 'bg-destructive/10',
     meta.isProminent && 'shadow-sm',
   )
+}
+
+function mergeProminentAnnouncements(items: NotificationItem[], announcements: NotificationItem[]) {
+  const seenIds = new Set<string>()
+  const merged = [...announcements, ...items].filter((item) => {
+    if (seenIds.has(item.id)) {
+      return false
+    }
+    seenIds.add(item.id)
+    return true
+  })
+
+  return merged.sort((left, right) => {
+    const leftMeta = getNotificationDisplayMeta(left)
+    const rightMeta = getNotificationDisplayMeta(right)
+    if (leftMeta.isAnnouncement !== rightMeta.isAnnouncement) {
+      return leftMeta.isAnnouncement ? -1 : 1
+    }
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  })
 }
 
 function NotificationKindBadge({ item, label }: { item: NotificationItem; label: string }) {
@@ -137,15 +159,27 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       setIsLoading(true)
       const scope = Array.from(scopeFilter)[0] as NotificationScope | undefined
       const level = Array.from(levelFilter)[0] as NotificationLevel | undefined
-      const result = await notificationsApi.list({
+      const listParams = {
         page,
         page_size: pageSize,
         scope: scope || undefined,
         level: level || undefined,
         search: debouncedSearchQuery || undefined,
         unread_only: readFilter.has('unread'),
-      })
-      setItems(result.items)
+      }
+      const result = await notificationsApi.list(listParams)
+      const shouldPromoteAnnouncements = page === 1 && !scope && !level && !debouncedSearchQuery && !readFilter.has('unread')
+
+      if (shouldPromoteAnnouncements) {
+        const announcements = await notificationsApi.list({
+          page: 1,
+          page_size: 5,
+          type: 'system_announcement',
+        })
+        setItems(mergeProminentAnnouncements(result.items, announcements.items).slice(0, pageSize))
+      } else {
+        setItems(result.items)
+      }
       setTotal(result.total)
     } catch (error) {
       console.error('Failed to fetch notifications:', error)
@@ -289,10 +323,10 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                     className={getRowClassName(item)}
                     onClick={() => openDetail(item)}
                   >
-                    <TableCell className="max-w-[320px]">
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className={cn('truncate font-medium', meta.isAnnouncement && 'font-semibold')}>{item.title}</span>
+                    <TableCell className="max-w-[320px] min-w-0">
+                      <div className="flex min-w-0 flex-col gap-1.5">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={cn('min-w-0 truncate font-medium', meta.isAnnouncement && 'font-semibold')}>{item.title}</span>
                           {!item.is_read && <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" />}
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">

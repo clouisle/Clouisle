@@ -26,11 +26,16 @@ const ACTION_TYPES = new Set([
 const DELIVERY_PREFIXES = ['kb_doc_', 'workflow_run_', 'agent_', 'apikey_', 'model_', 'quota_']
 const SECURITY_PREFIXES = ['security_', 'password_']
 
-export function getNotificationDisplayMeta(notification: Pick<NotificationItem, 'type' | 'source' | 'scope' | 'level'>): NotificationDisplayMeta {
-  const isAnnouncement = notification.type === 'system_announcement'
-    || (notification.source === 'system' && notification.type.endsWith('_announcement'))
+export function normalizeNotificationType(type: string) {
+  return type.replaceAll('.', '_')
+}
 
-  const kind = getNotificationDisplayKind(notification.type, isAnnouncement)
+export function getNotificationDisplayMeta(notification: Pick<NotificationItem, 'type' | 'source' | 'scope' | 'level'>): NotificationDisplayMeta {
+  const normalizedType = normalizeNotificationType(notification.type)
+  const isAnnouncement = normalizedType === 'system_announcement'
+    || (notification.source === 'system' && normalizedType.endsWith('_announcement'))
+
+  const kind = getNotificationDisplayKind(normalizedType, isAnnouncement)
   const priorityScore = LEVEL_PRIORITY[notification.level] + (isAnnouncement ? 2 : 0) + (kind === 'security' ? 1 : 0)
 
   return {
@@ -46,12 +51,12 @@ function getNotificationDisplayKind(type: string, isAnnouncement: boolean): Noti
     return 'announcement'
   }
 
-  if (SECURITY_PREFIXES.some((prefix) => type.startsWith(prefix))) {
-    return 'security'
-  }
-
   if (ACTION_TYPES.has(type)) {
     return 'action'
+  }
+
+  if (SECURITY_PREFIXES.some((prefix) => type.startsWith(prefix))) {
+    return 'security'
   }
 
   if (DELIVERY_PREFIXES.some((prefix) => type.startsWith(prefix))) {
