@@ -84,26 +84,6 @@ function getRowClassName(item: NotificationItem) {
   )
 }
 
-function mergeProminentAnnouncements(items: NotificationItem[], announcements: NotificationItem[]) {
-  const seenIds = new Set<string>()
-  const merged = [...announcements, ...items].filter((item) => {
-    if (seenIds.has(item.id)) {
-      return false
-    }
-    seenIds.add(item.id)
-    return true
-  })
-
-  return merged.sort((left, right) => {
-    const leftMeta = getNotificationDisplayMeta(left)
-    const rightMeta = getNotificationDisplayMeta(right)
-    if (leftMeta.isAnnouncement !== rightMeta.isAnnouncement) {
-      return leftMeta.isAnnouncement ? -1 : 1
-    }
-    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
-  })
-}
-
 function NotificationKindBadge({ item, label }: { item: NotificationItem; label: string }) {
   const meta = getNotificationDisplayMeta(item)
   const Icon = KIND_ICON[meta.kind]
@@ -125,6 +105,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   const { resolvedTheme } = useTheme()
 
   const [items, setItems] = React.useState<NotificationItem[]>([])
+  const [pinnedAnnouncements, setPinnedAnnouncements] = React.useState<NotificationItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
   const [pageSize] = React.useState(20)
@@ -170,15 +151,17 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       const result = await notificationsApi.list(listParams)
       const shouldPromoteAnnouncements = page === 1 && !scope && !level && !debouncedSearchQuery && !readFilter.has('unread')
 
+      setItems(result.items)
       if (shouldPromoteAnnouncements) {
         const announcements = await notificationsApi.list({
           page: 1,
           page_size: 5,
           type: 'system_announcement',
         })
-        setItems(mergeProminentAnnouncements(result.items, announcements.items).slice(0, pageSize))
+        const currentPageIds = new Set(result.items.map((item) => item.id))
+        setPinnedAnnouncements(announcements.items.filter((item) => !currentPageIds.has(item.id)))
       } else {
-        setItems(result.items)
+        setPinnedAnnouncements([])
       }
       setTotal(result.total)
     } catch (error) {
@@ -286,6 +269,47 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
           onSelectionChange={(values) => applySingleSelect(values, setReadFilter)}
         />
       </div>
+
+      {pinnedAnnouncements.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+          {pinnedAnnouncements.map((item) => {
+            const meta = getNotificationDisplayMeta(item)
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={cn(
+                  'flex w-full cursor-pointer items-start justify-between gap-3 rounded-md px-3 py-2 text-left hover:bg-amber-500/10',
+                  !item.is_read && 'bg-amber-500/15',
+                )}
+                onClick={() => openDetail(item)}
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <NotificationKindBadge item={item} label={t(`kindOptions.${meta.kind}`)} />
+                    {!item.is_read && <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" />}
+                    <span className="min-w-0 truncate text-sm font-semibold">{item.title}</span>
+                  </div>
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-300">{t('announcementHint')}</p>
+                </div>
+                {!item.is_read && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="shrink-0 cursor-pointer"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleMarkRead(item.id)
+                    }}
+                  >
+                    {t('markRead')}
+                  </Button>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="rounded-md border">
         <Table>
