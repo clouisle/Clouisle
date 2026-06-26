@@ -398,3 +398,96 @@ class TestWorkflowOrchestratorIteration:
         iteration_node = plan.get_node("iteration")
         assert iteration_node is not None
         assert iteration_node.node_type == "iteration"
+
+
+class TestWorkflowOrchestratorNodeExecution:
+    @pytest.mark.asyncio
+    async def test_failed_media_outputs_are_persisted_and_streamed(self):
+        from app.models.workflow import NodeStatus
+        from app.services.workflow.errors import NodeExecutionError
+        from app.services.workflow.executor import ExecutionResult
+
+        orchestrator = WorkflowOrchestrator(enable_retry=False)
+        outputs = {
+            "result": {
+                "display_result": {
+                    "kind": "media.image",
+                    "success": False,
+                    "images": [],
+                    "error": "Safety filter blocked the request",
+                },
+                "llm_result": "Image generation failed",
+            },
+            "status": "error",
+            "mediaKind": "image",
+            "artifact": None,
+            "artifacts": [],
+            "error": "Safety filter blocked the request",
+        }
+
+        node_info = MagicMock()
+        node_info.node_type = "tool"
+        node_info.node_data = {
+            "id": "tool_image_fail",
+            "type": "tool",
+            "data": {"label": "Generate image"},
+        }
+        plan = MagicMock()
+        plan.get_node.return_value = node_info
+
+        context = MagicMock()
+        context.set_node_outputs = AsyncMock()
+        run = MagicMock()
+        run.id = uuid4()
+        stream_manager = MagicMock()
+        stream_manager.publish_node_start = AsyncMock()
+        stream_manager.publish_node_error = AsyncMock()
+
+        node_execution = MagicMock()
+        node_execution.save = AsyncMock()
+
+        executor = MagicMock()
+        executor.execute = AsyncMock(
+            return_value=ExecutionResult(
+                outputs=outputs,
+                error="Safety filter blocked the request",
+            )
+        )
+
+        with (
+            patch(
+                "app.services.workflow.orchestrator.NodeExecution.filter"
+            ) as mock_execution_filter,
+            patch(
+                "app.services.workflow.orchestrator.NodeExecution.create",
+                new=AsyncMock(return_value=node_execution),
+            ),
+            patch(
+                "app.services.workflow.orchestrator.NodeExecutorRegistry.get",
+                return_value=executor,
+            ),
+            patch(
+                "app.services.workflow.orchestrator.get_node_type_label",
+                new=AsyncMock(return_value="Tool"),
+            ),
+        ):
+            mock_execution_filter.return_value.all = AsyncMock(return_value=[])
+
+            with pytest.raises(NodeExecutionError):
+                await orchestrator._execute_node(
+                    node_id="tool_image_fail",
+                    plan=plan,
+                    context=context,
+                    run=run,
+                    stream_manager=stream_manager,
+                )
+
+        context.set_node_outputs.assert_awaited_once_with("tool_image_fail", outputs)
+        assert node_execution.status == NodeStatus.FAILED
+        assert node_execution.outputs == outputs
+        assert node_execution.error_message == "Safety filter blocked the request"
+        stream_manager.publish_node_error.assert_awaited_once_with(
+            node_id="tool_image_fail",
+            error="Safety filter blocked the request",
+            outputs=outputs,
+        )

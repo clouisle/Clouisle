@@ -288,7 +288,11 @@ class TestToolNodeExecutorCompatibility:
 
         assert result.success is True
         assert result.outputs["generatedVideo"] == media_result
+        assert result.outputs["status"] == "success"
         assert result.outputs["mediaKind"] == "video"
+        assert result.outputs["mediaStatus"] == "processing"
+        assert result.outputs["taskStatus"] == "processing"
+        assert result.outputs["taskId"] == "task-1"
         assert result.outputs["artifact"] is None
         assert result.outputs["artifacts"] == []
         assert result.outputs["result"]["display_result"]["requires_polling"] is True

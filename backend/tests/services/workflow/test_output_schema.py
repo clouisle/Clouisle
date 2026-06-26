@@ -134,12 +134,21 @@ class TestToolOverride:
             "status",
             "executionTime",
             "mediaKind",
+            "mediaStatus",
+            "taskStatus",
+            "taskId",
             "artifact",
             "artifacts",
             "error",
         }
         assert by_name["generatedMedia"].type.kind == "any"
         assert by_name["mediaKind"].type.kind == "string"
+        assert by_name["mediaStatus"].type.kind == "string"
+        assert by_name["mediaStatus"].type.nullable is True
+        assert by_name["taskStatus"].type.kind == "string"
+        assert by_name["taskStatus"].type.nullable is True
+        assert by_name["taskId"].type.kind == "string"
+        assert by_name["taskId"].type.nullable is True
         assert by_name["artifact"].type.kind == "object"
         assert by_name["artifact"].type.nullable is True
         assert by_name["artifacts"].type.kind == "array"

@@ -237,13 +237,17 @@ class StreamManager:
         self,
         node_id: str,
         error: str,
+        outputs: dict[str, WorkflowValue] | None = None,
     ) -> None:
         """Publish node error event."""
+        data: dict[str, WorkflowValue] = {"error": error}
+        if outputs is not None:
+            data["outputs"] = outputs
         await self.publish(
             StreamEvent(
                 event_type=StreamEventType.NODE_ERROR,
                 node_id=node_id,
-                data={"error": error},
+                data=data,
             )
         )
 

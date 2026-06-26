@@ -185,12 +185,20 @@ class ToolNodeExecutor(NodeExecutor):
 
         success = bool(display_result.get("success"))
         error = display_result.get("error")
+        media_status = display_result.get("status")
         outputs: dict[str, WorkflowValue] = {
             "status": "success" if success else "error",
             "mediaKind": media_kind,
             "artifact": artifacts[0] if artifacts else None,
             "artifacts": artifacts,
         }
+        if media_status:
+            outputs["mediaStatus"] = str(media_status)
+            if media_kind == "video":
+                outputs["taskStatus"] = str(media_status)
+        task_id = display_result.get("task_id")
+        if task_id:
+            outputs["taskId"] = str(task_id)
         if error:
             outputs["error"] = str(error)
         return outputs
@@ -205,6 +213,13 @@ class ToolNodeExecutor(NodeExecutor):
         artifact_spec = TypeSpec(kind="object")
         return [
             NodeOutputDecl(name="mediaKind", type=TypeSpec(kind="string")),
+            NodeOutputDecl(
+                name="mediaStatus", type=TypeSpec(kind="string", nullable=True)
+            ),
+            NodeOutputDecl(
+                name="taskStatus", type=TypeSpec(kind="string", nullable=True)
+            ),
+            NodeOutputDecl(name="taskId", type=TypeSpec(kind="string", nullable=True)),
             NodeOutputDecl(
                 name="artifact",
                 type=artifact_spec.model_copy(update={"nullable": True}),
@@ -230,6 +245,9 @@ class ToolNodeExecutor(NodeExecutor):
             variables.extend(
                 [
                     {"name": "mediaKind", "type": "string"},
+                    {"name": "mediaStatus", "type": "string"},
+                    {"name": "taskStatus", "type": "string"},
+                    {"name": "taskId", "type": "string"},
                     {"name": "artifact", "type": "object"},
                     {"name": "artifacts", "type": "array"},
                     {"name": "error", "type": "string"},

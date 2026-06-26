@@ -986,6 +986,33 @@ class WorkflowOrchestrator:
 
             logger.info(f"Iteration body node {node_id} result: {result.outputs}")
 
+    def _serialize_node_outputs(
+        self,
+        outputs: dict[str, WorkflowValue],
+    ) -> dict[str, WorkflowValue]:
+        """Return JSON-safe node outputs for DB and stream payloads."""
+        from .lazy_stream import LazyStreamResult
+
+        serializable_outputs: dict[str, WorkflowValue] = {}
+        for key, value in outputs.items():
+            if isinstance(value, LazyStreamResult):
+                serializable_outputs[key] = "__LAZY_STREAM__"
+            elif isinstance(ExecutionContext, type) and isinstance(
+                value, ExecutionContext
+            ):
+                serializable_outputs[key] = "__EXECUTION_CONTEXT__"
+            else:
+                try:
+                    import json
+
+                    json.dumps(value)
+                    serializable_outputs[key] = value
+                except (TypeError, ValueError):
+                    serializable_outputs[key] = (
+                        f"__NON_SERIALIZABLE_{type(value).__name__}__"
+                    )
+        return serializable_outputs
+
     async def _execute_node(
         self,
         node_id: str,
@@ -1078,39 +1105,22 @@ class WorkflowOrchestrator:
                     run=run,
                 )
 
+            # Store outputs in context before checking success so failed nodes with
+            # useful payloads (for example media generation failures) remain
+            # available to the run detail UI and downstream diagnostics.
+            await context.set_node_outputs(node_id, result.outputs)
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            serializable_outputs = self._serialize_node_outputs(result.outputs)
+
             if not result.success:
-                raise NodeExecutionError(
+                error = NodeExecutionError(
                     node_id=node_id,
                     node_type=node_type,
                     message=result.error or "Unknown error",
                 )
-
-            # Store outputs in context
-            await context.set_node_outputs(node_id, result.outputs)
-
-            # Publish node complete (filter out lazy results for serialization)
-            duration_ms = int((time.time() - start_time) * 1000)
-
-            # Filter outputs for database storage - remove non-serializable objects
-            from .lazy_stream import LazyStreamResult
-
-            serializable_outputs = {}
-            for k, v in result.outputs.items():
-                if isinstance(v, LazyStreamResult):
-                    serializable_outputs[k] = "__LAZY_STREAM__"
-                elif isinstance(v, ExecutionContext):
-                    serializable_outputs[k] = "__EXECUTION_CONTEXT__"
-                else:
-                    # Try to serialize, skip if fails
-                    try:
-                        import json
-
-                        json.dumps(v)
-                        serializable_outputs[k] = v
-                    except (TypeError, ValueError):
-                        serializable_outputs[k] = (
-                            f"__NON_SERIALIZABLE_{type(v).__name__}__"
-                        )
+                error.outputs = serializable_outputs
+                raise error
 
             # Update NodeExecution record - success
             node_execution.status = NodeStatus.SUCCESS
@@ -1146,11 +1156,17 @@ class WorkflowOrchestrator:
             node_execution.execution_duration_ms = duration_ms
             node_execution.error_message = public_error
             node_execution.error_type = type(e).__name__
+            failed_outputs = getattr(e, "outputs", None)
+            if isinstance(failed_outputs, dict):
+                node_execution.outputs = failed_outputs
             await node_execution.save()
             if stream_manager:
                 await stream_manager.publish_node_error(
                     node_id=node_id,
                     error=public_error,
+                    outputs=failed_outputs
+                    if isinstance(failed_outputs, dict)
+                    else None,
                 )
             raise NodeExecutionError(
                 node_id=node_id,
