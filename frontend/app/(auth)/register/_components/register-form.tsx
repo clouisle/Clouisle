@@ -27,6 +27,24 @@ import { LegalMarkdownDialogContent } from '../../_components/legal-markdown'
 
 type Step = 'form' | 'verification' | 'success'
 
+type ClickChallenge = {
+  type: 'click'
+  nonce: string
+  min_elapsed_ms: number
+}
+
+function parseClickChallenge(challenge: string): ClickChallenge | null {
+  try {
+    const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
+    if (parsed.type !== 'click' || !parsed.nonce || typeof parsed.min_elapsed_ms !== 'number') {
+      return null
+    }
+    return parsed as ClickChallenge
+  } catch {
+    return null
+  }
+}
+
 /**
  * 解析带参数的错误 key，如 "password_min_length:8" -> { key: "password_min_length", params: { length: "8" } }
  */
@@ -102,6 +120,32 @@ export function RegisterForm() {
       setCaptchaLoading(false)
     }
   }, [t])
+
+  const handleCaptchaClick = async () => {
+    const challenge = captcha ? parseClickChallenge(captcha.challenge) : null
+    if (!captcha || !challenge) {
+      setFieldErrors({ captcha: t('captchaLoadFailed') })
+      return
+    }
+
+    setCaptchaLoading(true)
+    try {
+      const proof = await authApi.completeCaptchaClick({
+        captcha_id: captcha.captcha_id,
+        challenge: captcha.challenge,
+        click_nonce: challenge.nonce,
+        elapsed_ms: challenge.min_elapsed_ms,
+      })
+      setCaptchaToken(proof.captcha_token)
+      setFieldErrors((prev) => clearValidationError(prev, 'captcha'))
+    } catch {
+      setCaptchaToken('')
+      setFieldErrors({ captcha: t('captchaInvalid') })
+      loadCaptcha()
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
 
   // 倒计时
   React.useEffect(() => {
@@ -416,14 +460,7 @@ export function RegisterForm() {
               <Button
                 type="button"
                 variant={captchaToken ? 'secondary' : 'outline'}
-                onClick={() => {
-                  if (!captcha?.challenge) {
-                    setFieldErrors({ captcha: t('captchaLoadFailed') })
-                    return
-                  }
-                  setCaptchaToken(captcha.challenge)
-                  setFieldErrors((prev) => clearValidationError(prev, 'captcha'))
-                }}
+                onClick={handleCaptchaClick}
                 disabled={loading || captchaLoading || !captcha}
                 className="flex-1 justify-center"
                 aria-invalid={!!fieldErrors.captcha}

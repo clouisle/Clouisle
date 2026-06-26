@@ -81,6 +81,11 @@ export interface CaptchaResponse {
   expires_in: number
 }
 
+export interface CaptchaProofResponse {
+  captcha_id: string
+  captcha_token: string
+}
+
 export interface LoginData {
   username: string
   password: string
@@ -94,6 +99,18 @@ export const authApi = {
    */
   getCaptcha: async (): Promise<CaptchaResponse> => {
     return api.get<CaptchaResponse>('/captcha')
+  },
+
+  /**
+   * 完成点击式人机验证
+   */
+  completeCaptchaClick: async (data: {
+    captcha_id: string
+    challenge: string
+    click_nonce: string
+    elapsed_ms: number
+  }): Promise<CaptchaProofResponse> => {
+    return api.post<CaptchaProofResponse>('/captcha/click', data)
   },
 
   /**

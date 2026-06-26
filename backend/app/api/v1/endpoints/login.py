@@ -30,7 +30,7 @@ from app.core.email import (
     set_email_cooldown,
     send_verification_email,
 )
-from app.core.captcha import generate_captcha, verify_captcha
+from app.core.captcha import create_captcha_proof, generate_captcha, verify_captcha
 from app.core.timezone import now_utc
 from app.core.i18n import t, get_default_language
 from app.models.user import User
@@ -38,7 +38,11 @@ from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, User as UserSchema
 from app.api.v1.endpoints.users import serialize_user_with_sso
-from app.schemas.captcha import CaptchaResponse
+from app.schemas.captcha import (
+    CaptchaClickRequest,
+    CaptchaProofResponse,
+    CaptchaResponse,
+)
 from app.schemas.verification import (
     SendVerificationRequest,
     VerifyCodeRequest,
@@ -63,8 +67,30 @@ async def get_captcha() -> Any:
     """
     Get a new click captcha for human verification
     """
-    captcha_id, challenge, _ = await generate_captcha()
+    captcha_id, challenge = await generate_captcha()
     return success(data=CaptchaResponse(captcha_id=captcha_id, challenge=challenge))
+
+
+@router.post("/captcha/click", response_model=Response[CaptchaProofResponse])
+async def complete_captcha_click(payload: CaptchaClickRequest) -> Any:
+    """Exchange a valid click interaction for a private one-time proof."""
+    proof = await create_captcha_proof(
+        payload.captcha_id,
+        payload.challenge,
+        payload.click_nonce,
+        payload.elapsed_ms,
+    )
+    if not proof:
+        raise BusinessError(
+            code=ResponseCode.CAPTCHA_INVALID,
+            msg_key="captcha_invalid",
+        )
+    return success(
+        data=CaptchaProofResponse(
+            captcha_id=payload.captcha_id,
+            captcha_token=proof,
+        )
+    )
 
 
 async def validate_human_verification(

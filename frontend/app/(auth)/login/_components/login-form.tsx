@@ -17,6 +17,24 @@ import { Separator } from '@/components/ui/separator'
 
 type LoginStep = 'login' | 'verification' | 'totp'
 
+type ClickChallenge = {
+  type: 'click'
+  nonce: string
+  min_elapsed_ms: number
+}
+
+function parseClickChallenge(challenge: string): ClickChallenge | null {
+  try {
+    const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
+    if (parsed.type !== 'click' || !parsed.nonce || typeof parsed.min_elapsed_ms !== 'number') {
+      return null
+    }
+    return parsed as ClickChallenge
+  } catch {
+    return null
+  }
+}
+
 export function LoginForm() {
   const t = useTranslations('auth')
   const locale = useLocale()
@@ -131,6 +149,32 @@ export function LoginForm() {
     }),
     [t]
   )
+
+  const handleCaptchaClick = async () => {
+    const challenge = captcha ? parseClickChallenge(captcha.challenge) : null
+    if (!captcha || !challenge) {
+      setFieldErrors({ captcha: t('captchaLoadFailed') })
+      return
+    }
+
+    setCaptchaLoading(true)
+    try {
+      const proof = await authApi.completeCaptchaClick({
+        captcha_id: captcha.captcha_id,
+        challenge: captcha.challenge,
+        click_nonce: challenge.nonce,
+        elapsed_ms: challenge.min_elapsed_ms,
+      })
+      setCaptchaToken(proof.captcha_token)
+      clearFieldError('captcha')
+    } catch {
+      setCaptchaToken('')
+      setFieldErrors({ captcha: t('captchaInvalid') })
+      loadCaptcha()
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -603,14 +647,7 @@ export function LoginForm() {
             <Button
               type="button"
               variant={captchaToken ? 'secondary' : 'outline'}
-              onClick={() => {
-                if (!captcha?.challenge) {
-                  setFieldErrors({ captcha: t('captchaLoadFailed') })
-                  return
-                }
-                setCaptchaToken(captcha.challenge)
-                clearFieldError('captcha')
-              }}
+              onClick={handleCaptchaClick}
               disabled={loading || captchaLoading || !captcha}
               className="flex-1 justify-center"
               aria-invalid={!!fieldErrors.captcha}

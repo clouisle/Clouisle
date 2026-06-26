@@ -20,10 +20,43 @@
 {
   "code": 0,
   "data": {
-    "captcha_id": "token id",
-    "challenge": "one-time click token",
+    "captcha_id": "challenge id",
+    "challenge": "public click challenge descriptor (not a login/register proof)",
     "prompt": "captcha_click_prompt",
     "expires_in": 300
+  }
+}
+```
+
+---
+
+### POST /captcha/click
+
+提交点击交互并换取一次性私有证明
+
+| 属性 | 值 |
+|------|-----|
+| 认证 | 无 |
+| 权限 | 公开 |
+| 说明 | 前端点击人机验证控件后调用；服务端校验交互数据后签发 `captcha_token`，登录/注册只接受该证明 |
+
+**请求体**:
+```json
+{
+  "captcha_id": "string",
+  "challenge": "public challenge descriptor",
+  "click_nonce": "string",
+  "elapsed_ms": 250
+}
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "captcha_id": "string",
+    "captcha_token": "private one-time proof"
   }
 }
 ```
@@ -71,8 +104,9 @@
 **安全特性**:
 - 登录失败次数限制
 - 账户锁定机制
-- 验证码支持：启用 `enable_captcha` 后，登录和非首个用户注册必须提交一次性点击令牌
+- 验证码支持：启用 `enable_captcha` 后，登录和非首个用户注册必须先通过 `/captcha/click` 获取一次性私有证明再提交
 - 验证失败、超时、重复使用或 Redis 异常导致令牌缺失时返回 `5302/5303`，前端应刷新验证码并提供重试入口
+- 范围说明：密码重置、重发验证邮件和邮箱验证码校验沿用邮件验证码/冷却时间控制，不属于 YUN-105 点击式验证码覆盖范围
 - 单会话模式支持（可选）
 - 审计日志记录
 
