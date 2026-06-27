@@ -323,6 +323,7 @@ async def update_setting(
     if key == "sso_allow_password_login" and data.value is False:
         await _ensure_superadmin_sso_bound()
     await _validate_setting_value(key, data.value)
+    await _validate_storage_settings_update({key: data.value})
 
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
