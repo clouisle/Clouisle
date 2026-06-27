@@ -18,7 +18,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from app.models import SiteSetting
+from app.models import DEFAULT_SETTINGS, SiteSetting
 from app.schemas.response import BusinessError, ResponseCode
 
 
@@ -45,7 +45,16 @@ class UploadStorageBackend(ABC):
         """Return whether key exists."""
 
     @abstractmethod
-    async def response(self, key: str) -> FastAPIResponse:
+    async def read(self, key: str) -> bytes:
+        """Read key content."""
+
+    @abstractmethod
+    async def response(
+        self,
+        key: str,
+        content_type: str | None = None,
+        filename: str | None = None,
+    ) -> FastAPIResponse:
         """Return a FastAPI response for key content."""
 
     @abstractmethod
@@ -82,8 +91,17 @@ class LocalUploadStorage(UploadStorageBackend):
     async def exists(self, key: str) -> bool:
         return self._path(key).exists()
 
-    async def response(self, key: str) -> FastAPIResponse:
-        return FileResponse(self._path(key))
+    async def read(self, key: str) -> bytes:
+        async with aiofiles.open(self._path(key), "rb") as f:
+            return await f.read()
+
+    async def response(
+        self,
+        key: str,
+        content_type: str | None = None,
+        filename: str | None = None,
+    ) -> FastAPIResponse:
+        return FileResponse(self._path(key), media_type=content_type, filename=filename)
 
     async def delete(self, key: str) -> None:
         self._path(key).unlink()
@@ -180,20 +198,42 @@ class ObjectUploadStorage(UploadStorageBackend):
                 raise
         return True
 
-    async def response(self, key: str) -> FastAPIResponse:
+    async def read(self, key: str) -> bytes:
+        async with self._client() as client:
+            result = await client.get_object(Bucket=self.config.bucket, Key=key)
+            return await result["Body"].read()
+
+    async def response(
+        self,
+        key: str,
+        content_type: str | None = None,
+        filename: str | None = None,
+    ) -> FastAPIResponse:
         async with self._client() as client:
             result = await client.get_object(Bucket=self.config.bucket, Key=key)
             body = await result["Body"].read()
-            content_type = result.get("ContentType") or "application/octet-stream"
-        return StreamingResponse(iter([body]), media_type=content_type)
+            media_type = content_type or result.get("ContentType") or "application/octet-stream"
+        headers = {}
+        if filename:
+            headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return StreamingResponse(iter([body]), media_type=media_type, headers=headers)
 
     async def delete(self, key: str) -> None:
         async with self._client() as client:
             await client.delete_object(Bucket=self.config.bucket, Key=key)
 
 
+def _storage_defaults() -> dict[str, Any]:
+    return {
+        key: config["value"]
+        for key, config in DEFAULT_SETTINGS.items()
+        if config["category"] == "storage"
+    }
+
+
 async def get_upload_storage_backend(root: Path) -> UploadStorageBackend:
-    storage_settings = await SiteSetting.get_all_by_category(category="storage")
+    storage_settings = _storage_defaults()
+    storage_settings.update(await SiteSetting.get_all_by_category(category="storage"))
     backend = str(storage_settings.get("upload_storage_backend", "local")).lower()
     if backend == "local":
         return LocalUploadStorage(root)

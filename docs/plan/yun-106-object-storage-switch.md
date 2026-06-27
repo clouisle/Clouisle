@@ -1,11 +1,11 @@
 # YUN-106 Object Storage Switch Design Document
 
 ## Background & Goals
-- Problem to solve: uploads currently assume local filesystem storage only, which prevents deployments from using S3-compatible object storage.
+- Problem to solve: uploads and knowledge-base document files currently assume local filesystem storage only, which prevents deployments from using S3-compatible object storage.
 - Success criteria:
   - Default local storage behavior remains compatible.
   - Admins configure upload storage backend and object storage values through system/site settings, not environment variables.
-  - Upload/read/delete flows work through the selected backend.
+  - Upload/read/delete flows, including knowledge-base document upload/download/processing, work through the selected backend.
   - Object storage mode fails clearly when selected with missing or invalid settings.
 
 ## High-Level Design
@@ -42,9 +42,14 @@
 - **Specific logic**: Persist imported Skill package snapshots through the shared upload storage backend under opaque `skills/...` keys while keeping `skill_spec.package_files` as the execution-compatible staging source. Delete endpoints remove stored package objects through the same abstraction when the stored path can be mapped to a storage key, while leaving legacy external local paths untouched.
 - **Validation**: Unit tests cover local zip persistence/deletion and mocked object-storage save/delete calls without network access.
 
-### Stage 6: Tests and checks
-- **Files modified**: `backend/tests/services/test_upload_storage.py`, existing upload endpoint tests if needed, `backend/tests/services/test_skill_import_storage.py`
-- **Specific logic**: Cover local write/read/delete, settings-driven backend selection, missing object settings, mocked object storage upload/read/delete, missing object existence checks, and Skill package persistence through local/object backends.
+### Stage 6: Knowledge-base document storage integration
+- **Files modified**: `backend/app/services/document_processor.py`, `backend/app/api/v1/endpoints/knowledge_bases.py`, `backend/tests/services/test_document_processor_storage.py`, `backend/tests/services/test_document_processor_media_assets.py`
+- **Specific logic**: Store new knowledge-base document files under `documents/...` keys through the shared upload storage backend; read documents back through the same backend for processing; serve downloads through the storage adapter instead of checking local paths. Legacy absolute local paths are mapped back to storage keys for compatibility.
+- **Validation**: Unit tests cover mocked object-storage save/read/extract paths and existing media extraction tests continue passing without browser/service startup.
+
+### Stage 7: Tests and checks
+- **Files modified**: `backend/tests/services/test_upload_storage.py`, existing upload endpoint tests if needed, `backend/tests/services/test_skill_import_storage.py`, `backend/tests/services/test_document_processor_storage.py`
+- **Specific logic**: Cover local write/read/delete, settings-driven backend selection, missing object settings, mocked object storage upload/read/delete, missing object existence checks, Skill package persistence through local/object backends, and knowledge-base document persistence through object storage.
 - **Validation**: Run targeted pytest, ruff, and mypy for touched backend code; run frontend lint/build if feasible without installing dependencies.
 
 ## Testing Strategy
@@ -52,6 +57,7 @@
   - Local storage remains the default when no storage settings exist.
   - Object storage saves bytes with the expected object key and returns the existing public URL shape.
   - Object storage read/delete call the underlying client.
+  - Knowledge-base document uploads save to the selected backend and processing reads back from that backend.
 - Error path tests:
   - Invalid storage backend is rejected.
   - Missing object storage endpoint, bucket, access key, or secret key fails validation when object storage is selected.
@@ -60,6 +66,7 @@
   - Existing `/api/v1/upload/sandbox-artifact` metadata behavior.
   - Local filesystem upload path compatibility.
   - Admin storage settings save/load behavior.
+  - Existing knowledge-base document processing and embedded media extraction behavior.
 
 ## Risks & Mitigation
 - Possible side effect: runtime storage backend resolution reads settings for each upload operation. Mitigation: keeps changes simple and ensures settings changes take effect immediately; caching can be added later only if needed.
