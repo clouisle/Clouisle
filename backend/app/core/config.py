@@ -92,15 +92,6 @@ class Settings(BaseSettings):
     STREAM_TOOL_TIMEOUT_MCP: int = 60
     STREAM_TOOL_TIMEOUT_DOWNLOAD: int = 60
 
-    # Upload storage
-    UPLOAD_STORAGE_BACKEND: str = "local"
-    OBJECT_STORAGE_ENDPOINT: str | None = None
-    OBJECT_STORAGE_BUCKET: str | None = None
-    OBJECT_STORAGE_REGION: str | None = None
-    OBJECT_STORAGE_ACCESS_KEY: str | None = None
-    OBJECT_STORAGE_SECRET_KEY: str | None = None
-    OBJECT_STORAGE_FORCE_PATH_STYLE: bool = True
-    OBJECT_STORAGE_SECURE: bool = True
 
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True

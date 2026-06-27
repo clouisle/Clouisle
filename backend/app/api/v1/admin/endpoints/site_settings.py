@@ -102,6 +102,36 @@ async def _validate_setting_value(key: str, value: object) -> None:
             )
         return
 
+    if key == "upload_storage_backend":
+        if not isinstance(value, str) or value.lower() not in {"local", "object", "s3"}:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
+    if key in {
+        "object_storage_endpoint",
+        "object_storage_bucket",
+        "object_storage_region",
+        "object_storage_access_key",
+        "object_storage_secret_key",
+    }:
+        if not isinstance(value, str):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
+    if key in {"object_storage_force_path_style", "object_storage_secure"}:
+        if not isinstance(value, bool):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
     if key != "kb_document_max_upload_size_mb":
         return
     if not isinstance(value, int) or isinstance(value, bool):

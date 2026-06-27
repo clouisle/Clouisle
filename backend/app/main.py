@@ -64,10 +64,6 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for database initialization and cleanup"""
     from tortoise import Tortoise
 
-    # Validate upload storage before accepting requests.
-    from app.api.v1.endpoints.upload import validate_upload_storage_config
-
-    await validate_upload_storage_config()
 
     # Initialize Tortoise connection with global fallback enabled
     await Tortoise.init(
@@ -251,6 +247,11 @@ async def lifespan(app: FastAPI):
         await init_db()
     except Exception as e:
         logger.error(f"Error seeding data: {e}")
+
+    # Validate upload storage after site settings are initialized.
+    from app.api.v1.endpoints.upload import validate_upload_storage_config
+
+    await validate_upload_storage_config()
 
     cleanup_task = asyncio.create_task(cleanup_expired_clouisle_import_sessions_loop())
 

@@ -30,36 +30,51 @@ async def test_local_upload_storage_save_read_delete(tmp_path: Path):
     assert await storage.exists("general/2026/06/file.txt") is False
 
 
-def test_get_upload_storage_backend_defaults_to_local(tmp_path: Path):
-    with patch.object(upload_storage.settings, "UPLOAD_STORAGE_BACKEND", "local"):
-        storage = get_upload_storage_backend(tmp_path)
+@pytest.mark.anyio
+async def test_get_upload_storage_backend_defaults_to_local(tmp_path: Path):
+    with patch.object(
+        upload_storage.SiteSetting,
+        "get_all_by_category",
+        return_value={},
+    ):
+        storage = await get_upload_storage_backend(tmp_path)
 
     assert isinstance(storage, LocalUploadStorage)
 
 
-def test_get_upload_storage_backend_rejects_unknown_backend(tmp_path: Path):
+@pytest.mark.anyio
+async def test_get_upload_storage_backend_rejects_unknown_backend(tmp_path: Path):
     with (
-        patch.object(upload_storage.settings, "UPLOAD_STORAGE_BACKEND", "ftp"),
-        pytest.raises(RuntimeError, match="UPLOAD_STORAGE_BACKEND"),
+        patch.object(
+            upload_storage.SiteSetting,
+            "get_all_by_category",
+            return_value={"upload_storage_backend": "ftp"},
+        ),
+        pytest.raises(RuntimeError, match="upload_storage_backend"),
     ):
-        get_upload_storage_backend(tmp_path)
-
-
-def test_object_storage_validate_requires_config():
-    with (
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_ENDPOINT", None),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_BUCKET", "bucket"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_ACCESS_KEY", "access"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_SECRET_KEY", "secret"),
-    ):
-        storage = ObjectUploadStorage()
-
-    with pytest.raises(RuntimeError, match="OBJECT_STORAGE_ENDPOINT"):
-        storage._validate_config_values()
+        await get_upload_storage_backend(tmp_path)
 
 
 @pytest.mark.anyio
-async def test_object_storage_save_read_delete(monkeypatch):
+async def test_object_storage_requires_settings(tmp_path: Path):
+    with (
+        patch.object(
+            upload_storage.SiteSetting,
+            "get_all_by_category",
+            return_value={
+                "upload_storage_backend": "object",
+                "object_storage_bucket": "bucket",
+                "object_storage_access_key": "access",
+                "object_storage_secret_key": "secret",
+            },
+        ),
+        pytest.raises(RuntimeError, match="object_storage_endpoint"),
+    ):
+        await get_upload_storage_backend(tmp_path)
+
+
+@pytest.mark.anyio
+async def test_object_storage_save_read_delete(monkeypatch, tmp_path: Path):
     calls: list[tuple[str, dict]] = []
 
     class FakeBody:
@@ -94,17 +109,23 @@ async def test_object_storage_save_read_delete(monkeypatch):
 
     monkeypatch.setattr(upload_storage, "get_session", lambda: FakeSession())
 
-    with (
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_ENDPOINT", "minio:9000"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_BUCKET", "uploads"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_REGION", "us-east-1"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_ACCESS_KEY", "access"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_SECRET_KEY", "secret"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_SECURE", False),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_FORCE_PATH_STYLE", True),
+    with patch.object(
+        upload_storage.SiteSetting,
+        "get_all_by_category",
+        return_value={
+            "upload_storage_backend": "object",
+            "object_storage_endpoint": "minio:9000",
+            "object_storage_bucket": "uploads",
+            "object_storage_region": "us-east-1",
+            "object_storage_access_key": "access",
+            "object_storage_secret_key": "secret",
+            "object_storage_secure": False,
+            "object_storage_force_path_style": True,
+        },
     ):
-        storage = ObjectUploadStorage()
+        storage = await get_upload_storage_backend(tmp_path)
 
+    assert isinstance(storage, ObjectUploadStorage)
     path = await storage.save("general/2026/06/file.txt", b"ok", "text/plain")
     exists = await storage.exists("general/2026/06/file.txt")
     response = await storage.response("general/2026/06/file.txt")
@@ -113,16 +134,22 @@ async def test_object_storage_save_read_delete(monkeypatch):
     assert path == "s3://uploads/general/2026/06/file.txt"
     assert exists is True
     assert response.media_type == "text/plain"
-    assert ("put_object", {
-        "Bucket": "uploads",
-        "Key": "general/2026/06/file.txt",
-        "Body": b"ok",
-        "ContentType": "text/plain",
-    }) in calls
-    assert ("delete_object", {
-        "Bucket": "uploads",
-        "Key": "general/2026/06/file.txt",
-    }) in calls
+    assert (
+        "put_object",
+        {
+            "Bucket": "uploads",
+            "Key": "general/2026/06/file.txt",
+            "Body": b"ok",
+            "ContentType": "text/plain",
+        },
+    ) in calls
+    assert (
+        "delete_object",
+        {
+            "Bucket": "uploads",
+            "Key": "general/2026/06/file.txt",
+        },
+    ) in calls
 
 
 @pytest.mark.anyio
@@ -130,7 +157,10 @@ async def test_object_storage_exists_returns_false_for_missing(monkeypatch):
     class FakeClient:
         async def head_object(self, **kwargs):
             raise ClientError(
-                {"Error": {"Code": "NoSuchKey"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
+                {
+                    "Error": {"Code": "NoSuchKey"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
                 "HeadObject",
             )
 
@@ -147,12 +177,15 @@ async def test_object_storage_exists_returns_false_for_missing(monkeypatch):
 
     monkeypatch.setattr(upload_storage, "get_session", lambda: FakeSession())
 
-    with (
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_ENDPOINT", "minio:9000"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_BUCKET", "uploads"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_ACCESS_KEY", "access"),
-        patch.object(upload_storage.settings, "OBJECT_STORAGE_SECRET_KEY", "secret"),
-    ):
-        storage = ObjectUploadStorage()
+    storage = ObjectUploadStorage.from_settings(
+        {
+            "object_storage_endpoint": "minio:9000",
+            "object_storage_bucket": "uploads",
+            "object_storage_access_key": "access",
+            "object_storage_secret_key": "secret",
+            "object_storage_secure": True,
+            "object_storage_force_path_style": True,
+        }
+    )
 
     assert await storage.exists("missing.txt") is False

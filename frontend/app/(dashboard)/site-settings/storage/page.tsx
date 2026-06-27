@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -40,6 +42,14 @@ interface StorageSettings {
   audit_log_retention_days: number
   audit_log_archive_path: string
   kb_document_max_upload_size_mb: number
+  upload_storage_backend: 'local' | 'object'
+  object_storage_endpoint: string
+  object_storage_bucket: string
+  object_storage_region: string
+  object_storage_access_key: string
+  object_storage_secret_key: string
+  object_storage_force_path_style: boolean
+  object_storage_secure: boolean
 }
 
 export default function SiteSettingsStoragePage() {
@@ -58,6 +68,14 @@ export default function SiteSettingsStoragePage() {
     audit_log_retention_days: 365,
     audit_log_archive_path: '/var/log/clouisle/audit_archives',
     kb_document_max_upload_size_mb: KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+    upload_storage_backend: 'local',
+    object_storage_endpoint: '',
+    object_storage_bucket: '',
+    object_storage_region: '',
+    object_storage_access_key: '',
+    object_storage_secret_key: '',
+    object_storage_force_path_style: true,
+    object_storage_secure: true,
   })
 
   const summaryEntries = React.useMemo(
@@ -65,6 +83,11 @@ export default function SiteSettingsStoragePage() {
       'audit_log_retention_days',
       'audit_log_archive_path',
       'kb_document_max_upload_size_mb',
+      'upload_storage_backend',
+      'object_storage_endpoint',
+      'object_storage_bucket',
+      'object_storage_access_key',
+      'object_storage_secret_key',
     ]),
     [fieldErrors]
   )
@@ -78,6 +101,14 @@ export default function SiteSettingsStoragePage() {
         audit_log_archive_path: (data.audit_log_archive_path as string) ?? '/var/log/clouisle/audit_archives',
         kb_document_max_upload_size_mb: (data.kb_document_max_upload_size_mb as number)
           ?? KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+        upload_storage_backend: data.upload_storage_backend === 'object' || data.upload_storage_backend === 's3' ? 'object' : 'local',
+        object_storage_endpoint: (data.object_storage_endpoint as string) ?? '',
+        object_storage_bucket: (data.object_storage_bucket as string) ?? '',
+        object_storage_region: (data.object_storage_region as string) ?? '',
+        object_storage_access_key: (data.object_storage_access_key as string) ?? '',
+        object_storage_secret_key: (data.object_storage_secret_key as string) ?? '',
+        object_storage_force_path_style: (data.object_storage_force_path_style as boolean) ?? true,
+        object_storage_secure: (data.object_storage_secure as boolean) ?? true,
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -105,6 +136,12 @@ export default function SiteSettingsStoragePage() {
     ) {
       nextErrors.kb_document_max_upload_size_mb = t('invalidKbDocumentMaxUploadSize')
     }
+    if (settings.upload_storage_backend === 'object') {
+      if (!settings.object_storage_endpoint.trim()) nextErrors.object_storage_endpoint = t('required')
+      if (!settings.object_storage_bucket.trim()) nextErrors.object_storage_bucket = t('required')
+      if (!settings.object_storage_access_key.trim()) nextErrors.object_storage_access_key = t('required')
+      if (!settings.object_storage_secret_key.trim()) nextErrors.object_storage_secret_key = t('required')
+    }
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors)
@@ -118,6 +155,14 @@ export default function SiteSettingsStoragePage() {
         audit_log_retention_days: settings.audit_log_retention_days,
         audit_log_archive_path: settings.audit_log_archive_path,
         kb_document_max_upload_size_mb: settings.kb_document_max_upload_size_mb,
+        upload_storage_backend: settings.upload_storage_backend,
+        object_storage_endpoint: settings.object_storage_endpoint,
+        object_storage_bucket: settings.object_storage_bucket,
+        object_storage_region: settings.object_storage_region,
+        object_storage_access_key: settings.object_storage_access_key,
+        object_storage_secret_key: settings.object_storage_secret_key,
+        object_storage_force_path_style: settings.object_storage_force_path_style,
+        object_storage_secure: settings.object_storage_secure,
       })
       toast.success(t('saveSuccess'))
     } catch (error) {
@@ -128,6 +173,11 @@ export default function SiteSettingsStoragePage() {
         'settings.audit_log_retention_days': 'audit_log_retention_days',
         'settings.audit_log_archive_path': 'audit_log_archive_path',
         'settings.kb_document_max_upload_size_mb': 'kb_document_max_upload_size_mb',
+        'settings.upload_storage_backend': 'upload_storage_backend',
+        'settings.object_storage_endpoint': 'object_storage_endpoint',
+        'settings.object_storage_bucket': 'object_storage_bucket',
+        'settings.object_storage_access_key': 'object_storage_access_key',
+        'settings.object_storage_secret_key': 'object_storage_secret_key',
       })
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
@@ -246,6 +296,75 @@ export default function SiteSettingsStoragePage() {
             <FieldError>{fieldErrors.kb_document_max_upload_size_mb}</FieldError>
             <p className="text-xs text-muted-foreground">{t('kbDocumentMaxUploadSizeHint')}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            <CardTitle>{t('uploadStorage')}</CardTitle>
+          </div>
+          <CardDescription>{t('uploadStorageDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="uploadStorageBackend">{t('uploadStorageBackend')}</Label>
+            <Select
+              value={settings.upload_storage_backend}
+              onValueChange={(value: 'local' | 'object') => updateSetting('upload_storage_backend', value)}
+              disabled={!canUpdateSettings}
+            >
+              <SelectTrigger id="uploadStorageBackend" className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">{t('uploadStorageBackendLocal')}</SelectItem>
+                <SelectItem value="object">{t('uploadStorageBackendObject')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <FieldError>{fieldErrors.upload_storage_backend}</FieldError>
+            <p className="text-xs text-muted-foreground">{t('uploadStorageBackendHint')}</p>
+          </div>
+
+          {settings.upload_storage_backend === 'object' && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="objectStorageEndpoint">{t('objectStorageEndpoint')}</Label>
+                <Input id="objectStorageEndpoint" value={settings.object_storage_endpoint} onChange={(e) => updateSetting('object_storage_endpoint', e.target.value)} disabled={!canUpdateSettings} aria-invalid={!!fieldErrors.object_storage_endpoint} />
+                <FieldError>{fieldErrors.object_storage_endpoint}</FieldError>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="objectStorageBucket">{t('objectStorageBucket')}</Label>
+                <Input id="objectStorageBucket" value={settings.object_storage_bucket} onChange={(e) => updateSetting('object_storage_bucket', e.target.value)} disabled={!canUpdateSettings} aria-invalid={!!fieldErrors.object_storage_bucket} />
+                <FieldError>{fieldErrors.object_storage_bucket}</FieldError>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="objectStorageRegion">{t('objectStorageRegion')}</Label>
+                <Input id="objectStorageRegion" value={settings.object_storage_region} onChange={(e) => updateSetting('object_storage_region', e.target.value)} disabled={!canUpdateSettings} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="objectStorageAccessKey">{t('objectStorageAccessKey')}</Label>
+                <Input id="objectStorageAccessKey" value={settings.object_storage_access_key} onChange={(e) => updateSetting('object_storage_access_key', e.target.value)} disabled={!canUpdateSettings} aria-invalid={!!fieldErrors.object_storage_access_key} />
+                <FieldError>{fieldErrors.object_storage_access_key}</FieldError>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="objectStorageSecretKey">{t('objectStorageSecretKey')}</Label>
+                <Input id="objectStorageSecretKey" type="password" value={settings.object_storage_secret_key} onChange={(e) => updateSetting('object_storage_secret_key', e.target.value)} disabled={!canUpdateSettings} aria-invalid={!!fieldErrors.object_storage_secret_key} />
+                <FieldError>{fieldErrors.object_storage_secret_key}</FieldError>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+                  <Label htmlFor="objectStorageSecure">{t('objectStorageSecure')}</Label>
+                  <Switch id="objectStorageSecure" checked={settings.object_storage_secure} onCheckedChange={(checked) => updateSetting('object_storage_secure', checked)} disabled={!canUpdateSettings} />
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+                  <Label htmlFor="objectStorageForcePathStyle">{t('objectStorageForcePathStyle')}</Label>
+                  <Switch id="objectStorageForcePathStyle" checked={settings.object_storage_force_path_style} onCheckedChange={(checked) => updateSetting('object_storage_force_path_style', checked)} disabled={!canUpdateSettings} />
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

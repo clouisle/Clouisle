@@ -92,12 +92,13 @@ DEFAULT_BINARY_EXT = ".bin"
 SANDBOX_ARTIFACT_SIGNATURE_TTL_SECONDS = 300
 
 
-def _upload_storage():
-    return get_upload_storage_backend(UPLOAD_ROOT)
+async def _upload_storage():
+    return await get_upload_storage_backend(UPLOAD_ROOT)
 
 
 async def validate_upload_storage_config() -> None:
-    await _upload_storage().validate()
+    storage = await _upload_storage()
+    await storage.validate()
 
 
 def _validate_path_segment(value: str, field_name: str) -> str:
@@ -211,7 +212,7 @@ async def save_generated_upload(
     )
     _, date_path = get_dated_upload_dir(safe_category)
     storage_key = f"{safe_category}/{date_path}/{unique_filename}"
-    storage_path = await _upload_storage().save(
+    storage_path = await (await _upload_storage()).save(
         storage_key,
         content,
         content_type=content_type,
@@ -523,7 +524,7 @@ async def get_file(
     month = _validate_path_segment(month, "month")
     filename = _validate_path_segment(filename, "filename")
     storage_key = f"{category}/{year}/{month}/{filename}"
-    storage = _upload_storage()
+    storage = await _upload_storage()
 
     if not await storage.exists(storage_key):
         raise BusinessError(
@@ -554,7 +555,7 @@ async def delete_file(
     month = _validate_path_segment(month, "month")
     filename = _validate_path_segment(filename, "filename")
     storage_key = f"{category}/{year}/{month}/{filename}"
-    storage = _upload_storage()
+    storage = await _upload_storage()
 
     if not await storage.exists(storage_key):
         raise BusinessError(

@@ -10,6 +10,7 @@ import type {
   FeishuSettings,
   WebhookSettings,
   SlackSettings,
+  StorageSettings,
   AutoNotificationConfig,
 } from '../site-settings'
 
@@ -24,6 +25,7 @@ export type {
   FeishuSettings,
   WebhookSettings,
   SlackSettings,
+  StorageSettings,
   AutoNotificationConfig,
 }
 
