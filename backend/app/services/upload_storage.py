@@ -212,7 +212,9 @@ class ObjectUploadStorage(UploadStorageBackend):
         async with self._client() as client:
             result = await client.get_object(Bucket=self.config.bucket, Key=key)
             body = await result["Body"].read()
-            media_type = content_type or result.get("ContentType") or "application/octet-stream"
+            media_type = (
+                content_type or result.get("ContentType") or "application/octet-stream"
+            )
         headers = {}
         if filename:
             headers["Content-Disposition"] = f'attachment; filename="{filename}"'

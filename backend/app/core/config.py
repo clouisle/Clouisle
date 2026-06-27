@@ -92,7 +92,6 @@ class Settings(BaseSettings):
     STREAM_TOOL_TIMEOUT_MCP: int = 60
     STREAM_TOOL_TIMEOUT_DOWNLOAD: int = 60
 
-
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True
     SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True

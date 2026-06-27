@@ -120,6 +120,7 @@ async def test_extract_text_resourceizes_docx_embedded_image(tmp_path):
         archive.writestr("word/document.xml", document_xml)
         archive.writestr("word/_rels/document.xml.rels", document_rels)
         archive.writestr("word/media/image1.png", image_content)
+
     async def local_storage(root):
         return upload_storage.LocalUploadStorage(root)
 

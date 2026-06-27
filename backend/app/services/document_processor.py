@@ -358,7 +358,9 @@ class DocumentProcessor:
                 ) as temp_file:
                     temp_file.write(content)
                     temp_file.flush()
-                    text, doc_meta = self._extract_with_markitdown(temp_file.name, doc_type)
+                    text, doc_meta = self._extract_with_markitdown(
+                        temp_file.name, doc_type
+                    )
                 metadata.update(doc_meta)
             else:
                 # Try to decode as text

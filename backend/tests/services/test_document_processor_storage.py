@@ -10,7 +10,9 @@ from app.services.document_processor import DocumentProcessor
 
 
 @pytest.mark.anyio
-async def test_document_processor_uses_object_upload_backend(monkeypatch, tmp_path: Path):
+async def test_document_processor_uses_object_upload_backend(
+    monkeypatch, tmp_path: Path
+):
     calls: list[tuple[str, dict]] = []
 
     class FakeBody:
@@ -56,7 +58,9 @@ async def test_document_processor_uses_object_upload_backend(monkeypatch, tmp_pa
     ):
         size = await processor.save_file(b"# Title", storage_key)
         content = await processor.read_file(storage_key)
-        text, metadata = await processor.extract_text(storage_key, DocumentType.MD.value)
+        text, metadata = await processor.extract_text(
+            storage_key, DocumentType.MD.value
+        )
 
     assert size == len(b"# Title")
     assert content == b"# Title"

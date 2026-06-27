@@ -64,7 +64,6 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for database initialization and cleanup"""
     from tortoise import Tortoise
 
-
     # Initialize Tortoise connection with global fallback enabled
     await Tortoise.init(
         db_url=settings.DATABASE_URL
