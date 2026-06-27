@@ -37,9 +37,14 @@
 - **Specific logic**: Expose upload backend and object storage fields in the existing storage settings page.
 - **Validation**: Frontend lint/type checks verify the page compiles without browser testing.
 
-### Stage 5: Tests and checks
-- **Files modified**: `backend/tests/services/test_upload_storage.py`, existing upload endpoint tests if needed
-- **Specific logic**: Cover local write/read/delete, settings-driven backend selection, missing object settings, mocked object storage upload/read/delete, and missing object existence checks.
+### Stage 5: Skills package storage integration
+- **Files modified**: `backend/app/services/skill_import.py`, `backend/app/api/v1/endpoints/skills.py`, `backend/app/api/v1/admin/endpoints/skills.py`, `backend/tests/services/test_skill_import_storage.py`
+- **Specific logic**: Persist imported Skill package snapshots through the shared upload storage backend under opaque `skills/...` keys while keeping `skill_spec.package_files` as the execution-compatible staging source. Delete endpoints remove stored package objects through the same abstraction when the stored path can be mapped to a storage key, while leaving legacy external local paths untouched.
+- **Validation**: Unit tests cover local zip persistence/deletion and mocked object-storage save/delete calls without network access.
+
+### Stage 6: Tests and checks
+- **Files modified**: `backend/tests/services/test_upload_storage.py`, existing upload endpoint tests if needed, `backend/tests/services/test_skill_import_storage.py`
+- **Specific logic**: Cover local write/read/delete, settings-driven backend selection, missing object settings, mocked object storage upload/read/delete, missing object existence checks, and Skill package persistence through local/object backends.
 - **Validation**: Run targeted pytest, ruff, and mypy for touched backend code; run frontend lint/build if feasible without installing dependencies.
 
 ## Testing Strategy

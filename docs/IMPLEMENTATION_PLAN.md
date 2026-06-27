@@ -6,7 +6,8 @@
   - [x] 1. Planning docs
   - [x] 2. Backend config and storage adapter
   - [x] 3. Upload endpoint integration
-  - [x] 4. Tests and validation
+  - [x] 4. Skills package storage integration
+  - [x] 5. Tests and validation
 
 - **yun-95-log-server-side-search-pagination** — Complete. Move Agent and workflow log search/date filtering to backend queries before pagination. See `docs/plan/yun-95-log-server-side-search-pagination.md`
   - [x] 1. Design docs and implementation index
