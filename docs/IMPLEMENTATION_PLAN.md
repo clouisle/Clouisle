@@ -2,6 +2,12 @@
 
 ## Active
 
+- **yun-97-observability-upgrade** — In progress. Upgrade admin observability IA, alerts, drilldowns, token/cost, workers, and slow-query guidance using existing APIs. See `docs/plan/yun-97-observability-upgrade.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Observability navigation, overview, and alert cards
+  - [x] 3. Token/cost, worker, slow-query, Agent, and Workflow display upgrades
+  - [x] 4. i18n, generated types, and validation
+
 - **yun-106-object-storage-switch** — Complete. Add configurable switching between local upload storage and S3-compatible object storage. See `docs/plan/yun-106-object-storage-switch.md`
   - [x] 1. Planning docs
   - [x] 2. Backend settings and storage adapter

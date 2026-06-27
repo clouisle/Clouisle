@@ -164,7 +164,10 @@
         "agents": "Agent Performance",
         "workflows": "Workflow Performance",
         "timeouts": "Timeout Analysis",
-        "throughput": "System Throughput"
+        "throughput": "System Throughput",
+        "tokens": "Token & Cost",
+        "workers": "Workers",
+        "slow-queries": "Slow Queries"
       },
       "actions": {
         "refresh": "Refresh",
@@ -223,6 +226,15 @@
         "totalTokens": "Total Tokens",
         "selectedRange": "Selected range"
       },
+      "alerts": {
+        "reliability": "Reliability",
+        "latency": "Latency",
+        "ttft": "TTFT",
+        "load": "Load",
+        "latencyHint": "P99 {p99}; review slow Agent and Workflow rows.",
+        "ttftHint": "First-token delay reflects model and provider responsiveness.",
+        "loadHint": "Peak hourly requests {peak}."
+      },
       "overview": {
         "operationalStatus": "Operational Status",
         "operationalStatusDesc": "A compact readout for request reliability, latency, and load.",
@@ -265,13 +277,24 @@
         "workerError": "Worker inspection failed",
         "noSlowQueries": "No slow queries were reported for the current threshold.",
         "slowQueriesUnavailable": "Slow query data unavailable",
-        "slowQueriesSetupHint": "Enable pg_stat_statements in PostgreSQL shared_preload_libraries, restart PostgreSQL, then refresh this page."
+        "slowQueriesSetupHint": "Enable pg_stat_statements in PostgreSQL shared_preload_libraries, restart PostgreSQL, then refresh this page.",
+        "reason": "Reason: {reason}",
+        "actions": {
+          "cpuAction": "Check host CPU saturation and noisy background jobs.",
+          "memoryAction": "Review memory pressure, container limits, and worker concurrency.",
+          "diskAction": "Free disk space or expand the volume before writes fail.",
+          "databaseAction": "Check database connectivity, connection pool pressure, and slow queries.",
+          "redisAction": "Check Redis connectivity, memory, eviction policy, and queue backlog.",
+          "workerAction": "Restart unavailable workers and inspect Celery logs/queues."
+        }
       },
       "tables": {
         "name": "Name",
         "team": "Team",
         "requests": "Requests",
         "runs": "Runs",
+        "errors": "Errors",
+        "timeouts": "Timeouts",
         "successRate": "Success Rate",
         "timeoutRate": "Timeout Rate",
         "ttftP95": "TTFT P95",
@@ -334,6 +357,26 @@
         "tokens": "Tokens",
         "share": "Share of total tokens",
         "noTokenData": "No token data is available for this range."
+      },
+      "tokens": {
+        "costDriver": "Token volume is the primary cost driver.",
+        "topModel": "Top model",
+        "modelCount": "Models used",
+        "sourceDesc": "Token consumption split by Agent and Workflow sources.",
+        "modelDesc": "Top token-consuming models in the selected range."
+      },
+      "workers": {
+        "count": "Worker count",
+        "inFlight": "In-flight tasks",
+        "pendingQueues": "Pending queue tasks",
+        "queueDesc": "Queue backlog by Celery queue. Non-zero backlog may indicate worker capacity or stuck tasks."
+      },
+      "slowQueries": {
+        "threshold": "Threshold",
+        "thresholdDesc": "Backend default slow-query threshold",
+        "topMeanTime": "Top mean time",
+        "setupDesc": "Slow queries require pg_stat_statements to be enabled in PostgreSQL.",
+        "setupSteps": "Setup: add pg_stat_statements to shared_preload_libraries, restart PostgreSQL, run CREATE EXTENSION if needed, then refresh."
       }
     }
   }
