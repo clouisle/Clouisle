@@ -316,7 +316,11 @@ export default function SiteSettingsStoragePage() {
               disabled={!canUpdateSettings}
             >
               <SelectTrigger id="uploadStorageBackend" className="w-48">
-                <SelectValue />
+                <SelectValue>
+                  {settings.upload_storage_backend === 'object'
+                    ? t('uploadStorageBackendObject')
+                    : t('uploadStorageBackendLocal')}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="local">{t('uploadStorageBackendLocal')}</SelectItem>
