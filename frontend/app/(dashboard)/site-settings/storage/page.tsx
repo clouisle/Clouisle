@@ -312,7 +312,11 @@ export default function SiteSettingsStoragePage() {
             <Label htmlFor="uploadStorageBackend">{t('uploadStorageBackend')}</Label>
             <Select
               value={settings.upload_storage_backend}
-              onValueChange={(value: 'local' | 'object') => updateSetting('upload_storage_backend', value)}
+              onValueChange={(value) => {
+                if (value === 'local' || value === 'object') {
+                  updateSetting('upload_storage_backend', value)
+                }
+              }}
               disabled={!canUpdateSettings}
             >
               <SelectTrigger id="uploadStorageBackend" className="w-48">
