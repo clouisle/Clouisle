@@ -26,6 +26,7 @@ async def test_local_upload_storage_save_read_delete(tmp_path: Path):
     assert str(response.path) == path
 
     await storage.delete("general/2026/06/file.txt")
+    await storage.delete("general/2026/06/file.txt")
 
     assert await storage.exists("general/2026/06/file.txt") is False
 
@@ -78,8 +79,11 @@ async def test_object_storage_save_read_delete(monkeypatch, tmp_path: Path):
     calls: list[tuple[str, dict]] = []
 
     class FakeBody:
-        async def read(self):
-            return b"ok"
+        def __init__(self):
+            self.chunks = [b"ok", b""]
+
+        async def read(self, size=-1):
+            return self.chunks.pop(0)
 
     class FakeClient:
         async def put_object(self, **kwargs):

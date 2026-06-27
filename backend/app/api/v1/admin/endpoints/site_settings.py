@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -143,6 +143,46 @@ async def _validate_setting_value(key: str, value: object) -> None:
         value < KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
         or value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
     ):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="validation_error",
+        )
+
+
+def _storage_defaults() -> dict[str, Any]:
+    return {
+        key: config["value"]
+        for key, config in DEFAULT_SETTINGS.items()
+        if config["category"] == "storage"
+    }
+
+
+async def _validate_storage_settings_update(settings: dict[str, Any]) -> None:
+    if not any(
+        key == "upload_storage_backend" or key.startswith("object_storage_")
+        for key in settings
+    ):
+        return
+
+    storage_settings = _storage_defaults()
+    storage_settings.update(await SiteSetting.get_all_by_category(category="storage"))
+    storage_settings.update(settings)
+
+    backend = str(storage_settings.get("upload_storage_backend", "local")).lower()
+    if backend not in {"object", "s3"}:
+        return
+
+    missing = [
+        key
+        for key in (
+            "object_storage_endpoint",
+            "object_storage_bucket",
+            "object_storage_access_key",
+            "object_storage_secret_key",
+        )
+        if not storage_settings.get(key)
+    ]
+    if missing:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="validation_error",
@@ -350,6 +390,7 @@ async def bulk_update_settings(
         await _ensure_superadmin_sso_bound()
     for key, value in data.settings.items():
         await _validate_setting_value(key, value)
+    await _validate_storage_settings_update(data.settings)
 
     updated_keys = []
     for key, value in data.settings.items():

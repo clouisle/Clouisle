@@ -71,4 +71,4 @@
 ## Risks & Mitigation
 - Possible side effect: runtime storage backend resolution reads settings for each upload operation. Mitigation: keeps changes simple and ensures settings changes take effect immediately; caching can be added later only if needed.
 - Possible side effect: public object-storage files still proxy through backend instead of direct bucket URLs. Mitigation: preserves existing URL compatibility and avoids unrelated frontend consumers changing.
-- Rollback plan: set `upload_storage_backend` back to `local` or revert adapter wiring to return to direct filesystem storage.
+- Rollback plan: only switch `upload_storage_backend` back to `local` before any object-backed uploads exist; otherwise restore or remigrate those objects first so files remain reachable.

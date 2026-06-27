@@ -9,6 +9,14 @@ from app.services import upload_storage
 from app.services.document_processor import DocumentProcessor
 
 
+def test_storage_key_rejects_malformed_s3_paths(tmp_path: Path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "uploads" / "documents"))
+
+    for path in ("s3://bucket", "s3://bucket/", "s3:///key"):
+        with pytest.raises(ValueError, match="validation_error"):
+            processor._storage_key(path)
+
+
 @pytest.mark.anyio
 async def test_document_processor_uses_object_upload_backend(
     monkeypatch, tmp_path: Path
@@ -16,7 +24,7 @@ async def test_document_processor_uses_object_upload_backend(
     calls: list[tuple[str, dict]] = []
 
     class FakeBody:
-        async def read(self):
+        async def read(self, size=-1):
             return b"# Title"
 
     class FakeClient:

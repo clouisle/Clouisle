@@ -13,8 +13,9 @@ import os
 import re
 import shutil
 import tempfile
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 from uuid import UUID
 
@@ -110,7 +111,11 @@ class DocumentProcessor:
 
     def _storage_key(self, path: str) -> str:
         if path.startswith("s3://"):
-            return path.split("/", 3)[3]
+            parsed = urlparse(path)
+            key = parsed.path.lstrip("/")
+            if not parsed.netloc or not key:
+                raise ValueError("validation_error")
+            return key
         if path.startswith("documents/"):
             return path
         root = self._storage_root()

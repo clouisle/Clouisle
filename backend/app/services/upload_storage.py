@@ -104,7 +104,10 @@ class LocalUploadStorage(UploadStorageBackend):
         return FileResponse(self._path(key), media_type=content_type, filename=filename)
 
     async def delete(self, key: str) -> None:
-        self._path(key).unlink()
+        try:
+            self._path(key).unlink()
+        except FileNotFoundError:
+            return
 
 
 class ObjectUploadStorage(UploadStorageBackend):
@@ -209,16 +212,26 @@ class ObjectUploadStorage(UploadStorageBackend):
         content_type: str | None = None,
         filename: str | None = None,
     ) -> FastAPIResponse:
-        async with self._client() as client:
+        client_context = self._client()
+        client = await client_context.__aenter__()
+        try:
             result = await client.get_object(Bucket=self.config.bucket, Key=key)
-            body = await result["Body"].read()
-            media_type = (
-                content_type or result.get("ContentType") or "application/octet-stream"
-            )
+        except Exception:
+            await client_context.__aexit__(None, None, None)
+            raise
+        media_type = content_type or result.get("ContentType") or "application/octet-stream"
+
+        async def stream_body() -> AsyncIterator[bytes]:
+            try:
+                while chunk := await result["Body"].read(1024 * 1024):
+                    yield chunk
+            finally:
+                await client_context.__aexit__(None, None, None)
+
         headers = {}
         if filename:
             headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return StreamingResponse(iter([body]), media_type=media_type, headers=headers)
+        return StreamingResponse(stream_body(), media_type=media_type, headers=headers)
 
     async def delete(self, key: str) -> None:
         async with self._client() as client:

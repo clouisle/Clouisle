@@ -416,10 +416,10 @@
     "uploadStorageBackendObject": "对象存储",
     "uploadStorageBackendHint": "默认使用本地存储。对象存储会在运行时读取这些系统设置。",
     "objectStorageEndpoint": "端点",
-    "objectStorageBucket": "Bucket",
-    "objectStorageRegion": "Region",
-    "objectStorageAccessKey": "Access Key",
-    "objectStorageSecretKey": "Secret Key",
+    "objectStorageBucket": "存储桶",
+    "objectStorageRegion": "区域",
+    "objectStorageAccessKey": "访问密钥",
+    "objectStorageSecretKey": "密钥",
     "objectStorageSecure": "端点未包含协议时使用 HTTPS",
     "objectStorageForcePathStyle": "使用路径风格地址"
   }
