@@ -6,7 +6,6 @@ Provides CRUD operations for knowledge bases and documents.
 import asyncio
 import logging
 import mimetypes
-import os
 from contextvars import ContextVar
 from typing import Any, Optional
 from uuid import UUID, uuid4
@@ -64,6 +63,7 @@ from app.schemas.response import (
     success,
 )
 from app.services.document_processor import document_processor
+from app.services.upload_storage import get_upload_storage_backend
 from app.services.error_messages import is_safe_user_visible_error
 from app.services.audit_log import AuditLogService
 from app.services.vector_store import VectorStore, DimensionMismatchError
@@ -963,7 +963,7 @@ async def delete_document(
 
     # Delete file if exists
     if doc.file_path:
-        document_processor.delete_file(doc.file_path)
+        await document_processor.delete_file(doc.file_path)
 
     # Update KB statistics
     kb.document_count = max(0, kb.document_count - 1)
@@ -1015,7 +1015,16 @@ async def download_document(
             status_code=404,
         )
 
-    if not os.path.exists(doc.file_path):
+    try:
+        storage_key = document_processor._storage_key(doc.file_path)
+    except ValueError:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_not_found",
+            status_code=404,
+        ) from None
+    storage = await get_upload_storage_backend(document_processor._storage_root())
+    if not await storage.exists(storage_key):
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="file_not_found",
@@ -1037,10 +1046,10 @@ async def download_document(
     }
     media_type = media_types.get(doc.doc_type, "application/octet-stream")
 
-    return FileResponse(
-        path=doc.file_path,
+    return await storage.response(
+        storage_key,
+        content_type=media_type,
         filename=doc.name,
-        media_type=media_type,
     )
 
 

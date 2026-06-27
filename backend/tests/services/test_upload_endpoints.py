@@ -38,10 +38,14 @@ def upload_test_client():
     app.dependency_overrides[deps.get_current_user_or_api_key] = fake_auth
     app.dependency_overrides[deps.get_current_user_or_api_key_optional] = fake_auth
     client = TestClient(app)
-    try:
-        yield client
-    finally:
-        app.dependency_overrides.clear()
+    with patch(
+        "app.api.v1.endpoints.upload.AuditLogService.log",
+        new=AsyncMock(),
+    ):
+        try:
+            yield client
+        finally:
+            app.dependency_overrides.clear()
 
 
 def test_upload_sandbox_artifact_returns_backend_metadata(upload_test_client):
