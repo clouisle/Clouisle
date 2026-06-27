@@ -219,7 +219,9 @@ class ObjectUploadStorage(UploadStorageBackend):
         except Exception:
             await client_context.__aexit__(None, None, None)
             raise
-        media_type = content_type or result.get("ContentType") or "application/octet-stream"
+        media_type = (
+            content_type or result.get("ContentType") or "application/octet-stream"
+        )
 
         async def stream_body() -> AsyncIterator[bytes]:
             try:
