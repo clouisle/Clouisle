@@ -8,13 +8,11 @@ import uuid
 import hashlib
 import hmac
 import mimetypes
-import aiofiles
 from pathlib import Path
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile, File, Query, Header, Request
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api import deps
@@ -28,6 +26,7 @@ from app.services.file_parser import (
     FileParseConfig,
 )
 from app.services.audit_log import AuditLogService
+from app.services.upload_storage import get_upload_storage_backend
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +90,15 @@ MIME_TO_EXT = {
 UPLOAD_ROOT = Path(UPLOAD_DIR).resolve()
 DEFAULT_BINARY_EXT = ".bin"
 SANDBOX_ARTIFACT_SIGNATURE_TTL_SECONDS = 300
+
+
+async def _upload_storage():
+    return await get_upload_storage_backend(UPLOAD_ROOT)
+
+
+async def validate_upload_storage_config() -> None:
+    storage = await _upload_storage()
+    await storage.validate()
 
 
 def _validate_path_segment(value: str, field_name: str) -> str:
@@ -202,15 +210,16 @@ async def save_generated_upload(
         filename=filename,
         extension=extension,
     )
-    save_dir, date_path = get_dated_upload_dir(safe_category)
-    save_path = save_dir / unique_filename
-    os.makedirs(save_dir, exist_ok=True)
-
-    async with aiofiles.open(save_path, "wb") as f:
-        await f.write(content)
+    _, date_path = get_dated_upload_dir(safe_category)
+    storage_key = f"{safe_category}/{date_path}/{unique_filename}"
+    storage_path = await (await _upload_storage()).save(
+        storage_key,
+        content,
+        content_type=content_type,
+    )
 
     return {
-        "path": str(save_path),
+        "path": storage_path,
         "url": get_file_url(safe_category, date_path, unique_filename),
         "filename": unique_filename,
         "size": len(content),
@@ -510,21 +519,21 @@ async def get_file(
     """
     获取上传的文件（公开访问）
     """
-    file_path = _resolve_upload_path(
-        _validate_path_segment(category, "category"),
-        _validate_path_segment(year, "year"),
-        _validate_path_segment(month, "month"),
-        _validate_path_segment(filename, "filename"),
-    )
+    category = _validate_path_segment(category, "category")
+    year = _validate_path_segment(year, "year")
+    month = _validate_path_segment(month, "month")
+    filename = _validate_path_segment(filename, "filename")
+    storage_key = f"{category}/{year}/{month}/{filename}"
+    storage = await _upload_storage()
 
-    if not os.path.exists(file_path):
+    if not await storage.exists(storage_key):
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="file_not_found",
             status_code=404,
         )
 
-    return FileResponse(file_path)
+    return await storage.response(storage_key)
 
 
 @router.delete(
@@ -541,20 +550,20 @@ async def delete_file(
     """
     删除上传的文件（仅管理员）
     """
-    file_path = _resolve_upload_path(
-        _validate_path_segment(category, "category"),
-        _validate_path_segment(year, "year"),
-        _validate_path_segment(month, "month"),
-        _validate_path_segment(filename, "filename"),
-    )
+    category = _validate_path_segment(category, "category")
+    year = _validate_path_segment(year, "year")
+    month = _validate_path_segment(month, "month")
+    filename = _validate_path_segment(filename, "filename")
+    storage_key = f"{category}/{year}/{month}/{filename}"
+    storage = await _upload_storage()
 
-    if not os.path.exists(file_path):
+    if not await storage.exists(storage_key):
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="file_not_found",
         )
 
-    os.remove(file_path)
+    await storage.delete(storage_key)
 
     await AuditLogService.log(
         user=current_user,

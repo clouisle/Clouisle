@@ -12,6 +12,7 @@ import stat
 import tempfile
 import zipfile
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 from uuid import UUID
@@ -41,6 +42,7 @@ from app.services.skill_package import (
     resolve_child_path,
     safe_package_segment,
 )
+from app.services.upload_storage import get_upload_storage_backend
 
 _MAX_ZIP_UPLOAD_BYTES = 50 * 1024 * 1024
 _MAX_ZIP_FILE_COUNT = 500
@@ -49,6 +51,8 @@ _MAX_ZIP_SINGLE_FILE_BYTES = 10 * 1024 * 1024
 _MAX_PACKAGE_PAYLOAD_BYTES = 50 * 1024 * 1024
 _IMPORT_SESSION_TTL = timedelta(hours=1)
 _GIT_TIMEOUT_SECONDS = 180
+_UPLOAD_ROOT = (Path(__file__).resolve().parents[3] / "uploads").resolve()
+_SKILL_PACKAGE_CONTENT_TYPE = "application/zip"
 logger = logging.getLogger(__name__)
 
 
@@ -233,7 +237,7 @@ class SkillImportService:
                     session.team_id, parsed.name, item.skill_id
                 )
 
-            storage_path = SkillImportService._copy_to_private_storage(
+            storage_path = await SkillImportService._save_to_private_storage(
                 skill_root=skill_root,
                 team_id=session.team_id,
                 skill_name=parsed.name,
@@ -566,33 +570,90 @@ class SkillImportService:
         return skill
 
     @staticmethod
-    def _copy_to_private_storage(
+    async def _save_to_private_storage(
         *, skill_root: Path, team_id: UUID | None, skill_name: str, package_hash: str
     ) -> str:
-        base_dir = (
-            Path(__file__).resolve().parents[3] / "uploads" / "skills"
-        ).resolve()
+        storage_key = SkillImportService._package_storage_key(
+            team_id=team_id,
+            skill_name=skill_name,
+            package_hash=package_hash,
+        )
+        content = SkillImportService._build_package_archive(skill_root)
+        storage = await get_upload_storage_backend(_UPLOAD_ROOT)
+        return await storage.save(
+            storage_key,
+            content,
+            content_type=_SKILL_PACKAGE_CONTENT_TYPE,
+        )
+
+    @staticmethod
+    def _package_storage_key(
+        *, team_id: UUID | None, skill_name: str, package_hash: str
+    ) -> str:
         scope = str(team_id) if team_id else "system"
-        relative_destination = PurePosixPath(
+        return PurePosixPath(
+            "skills",
             scope,
             safe_package_segment(skill_name),
-            safe_package_segment(package_hash[:16]),
-        )
-        destination = resolve_child_path(base_dir, relative_destination)
-        if destination is None:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_package_path_invalid",
-            )
-        if destination.exists():
-            shutil.rmtree(destination)
-        shutil.copytree(
-            skill_root,
-            destination,
-            ignore=shutil.ignore_patterns(*IGNORED_DIR_NAMES),
-            symlinks=False,
-        )
-        return str(destination)
+            f"{safe_package_segment(package_hash[:16])}.zip",
+        ).as_posix()
+
+    @staticmethod
+    def _build_package_archive(skill_root: Path) -> bytes:
+        archive_buffer = BytesIO()
+        skill_root = skill_root.resolve()
+        with zipfile.ZipFile(
+            archive_buffer,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            for current, dirnames, filenames in os.walk(skill_root):
+                dirnames[:] = sorted(
+                    name for name in dirnames if name not in IGNORED_DIR_NAMES
+                )
+                current_path = Path(current)
+                for filename in sorted(filenames):
+                    raw_path = current_path / filename
+                    if raw_path.is_symlink():
+                        raise BusinessError(
+                            code=ResponseCode.BAD_REQUEST,
+                            msg_key="skill_package_symlink_not_allowed",
+                        )
+                    path = raw_path.resolve()
+                    try:
+                        relative_path = path.relative_to(skill_root)
+                    except ValueError as exc:
+                        raise BusinessError(
+                            code=ResponseCode.BAD_REQUEST,
+                            msg_key="skill_package_path_invalid",
+                        ) from exc
+                    if path.is_file():
+                        archive.write(path, relative_path.as_posix())
+        return archive_buffer.getvalue()
+
+    @staticmethod
+    async def delete_private_storage(package_storage_path: str | None) -> None:
+        storage_key = SkillImportService._storage_key_from_path(package_storage_path)
+        if storage_key is None:
+            return
+        storage = await get_upload_storage_backend(_UPLOAD_ROOT)
+        if await storage.exists(storage_key):
+            await storage.delete(storage_key)
+
+    @staticmethod
+    def _storage_key_from_path(package_storage_path: str | None) -> str | None:
+        if not package_storage_path:
+            return None
+        if package_storage_path.startswith("s3://"):
+            parsed = urlparse(package_storage_path)
+            return parsed.path.lstrip("/") or None
+        path = Path(package_storage_path)
+        try:
+            return path.resolve().relative_to(_UPLOAD_ROOT).as_posix()
+        except ValueError:
+            if package_storage_path.startswith("skills/"):
+                return package_storage_path
+            return None
 
     @staticmethod
     def _build_private_skill_spec(skill_root: Path) -> dict:
