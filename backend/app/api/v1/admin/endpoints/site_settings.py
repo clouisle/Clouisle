@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -116,6 +116,36 @@ async def _validate_setting_value(key: str, value: object) -> None:
             )
         return
 
+    if key == "upload_storage_backend":
+        if not isinstance(value, str) or value.lower() not in {"local", "object", "s3"}:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
+    if key in {
+        "object_storage_endpoint",
+        "object_storage_bucket",
+        "object_storage_region",
+        "object_storage_access_key",
+        "object_storage_secret_key",
+    }:
+        if not isinstance(value, str):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
+    if key in {"object_storage_force_path_style", "object_storage_secure"}:
+        if not isinstance(value, bool):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
     if key != "kb_document_max_upload_size_mb":
         return
     if not isinstance(value, int) or isinstance(value, bool):
@@ -125,6 +155,46 @@ async def _validate_setting_value(key: str, value: object) -> None:
         or value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
     ):
         raise_validation_error()
+
+
+def _storage_defaults() -> dict[str, Any]:
+    return {
+        key: config["value"]
+        for key, config in DEFAULT_SETTINGS.items()
+        if config["category"] == "storage"
+    }
+
+
+async def _validate_storage_settings_update(settings: dict[str, Any]) -> None:
+    if not any(
+        key == "upload_storage_backend" or key.startswith("object_storage_")
+        for key in settings
+    ):
+        return
+
+    storage_settings = _storage_defaults()
+    storage_settings.update(await SiteSetting.get_all_by_category(category="storage"))
+    storage_settings.update(settings)
+
+    backend = str(storage_settings.get("upload_storage_backend", "local")).lower()
+    if backend not in {"object", "s3"}:
+        return
+
+    missing = [
+        key
+        for key in (
+            "object_storage_endpoint",
+            "object_storage_bucket",
+            "object_storage_access_key",
+            "object_storage_secret_key",
+        )
+        if not storage_settings.get(key)
+    ]
+    if missing:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="validation_error",
+        )
 
 
 async def _ensure_superadmin_sso_bound() -> None:
@@ -261,6 +331,7 @@ async def update_setting(
     if key == "sso_allow_password_login" and data.value is False:
         await _ensure_superadmin_sso_bound()
     await _validate_setting_value(key, data.value)
+    await _validate_storage_settings_update({key: data.value})
 
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
@@ -328,6 +399,7 @@ async def bulk_update_settings(
         await _ensure_superadmin_sso_bound()
     for key, value in data.settings.items():
         await _validate_setting_value(key, value)
+    await _validate_storage_settings_update(data.settings)
 
     updated_keys = []
     for key, value in data.settings.items():

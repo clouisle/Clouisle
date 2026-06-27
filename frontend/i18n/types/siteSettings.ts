@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-25T19:52:27.189Z
+// GENERATED — 2026-06-27T15:16:37.262Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -426,5 +426,18 @@ export type SiteSettingsMessages = {
     ssoRequireApprovalDescription: string
     matchByEmail: string
     matchByEmailDescription: string
+    uploadStorage: string
+    uploadStorageDescription: string
+    uploadStorageBackend: string
+    uploadStorageBackendLocal: string
+    uploadStorageBackendObject: string
+    uploadStorageBackendHint: string
+    objectStorageEndpoint: string
+    objectStorageBucket: string
+    objectStorageRegion: string
+    objectStorageAccessKey: string
+    objectStorageSecretKey: string
+    objectStorageSecure: string
+    objectStorageForcePathStyle: string
   }
 }

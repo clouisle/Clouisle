@@ -156,6 +156,20 @@ export interface SlackSettings {
   slack_webhook_url: string
 }
 
+export interface StorageSettings {
+  audit_log_retention_days: number
+  audit_log_archive_path: string
+  kb_document_max_upload_size_mb: number
+  upload_storage_backend: 'local' | 'object'
+  object_storage_endpoint: string
+  object_storage_bucket: string
+  object_storage_region: string
+  object_storage_access_key: string
+  object_storage_secret_key: string
+  object_storage_force_path_style: boolean
+  object_storage_secure: boolean
+}
+
 export interface AutoNotificationConfig {
   channels: string[]  // Global channels for all enabled notifications
   enabled_types: string[]  // Enabled notification types

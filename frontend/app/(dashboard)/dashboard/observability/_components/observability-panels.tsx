@@ -34,7 +34,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
+import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
 import { cn } from '@/lib/utils'
 import {
   observabilityApi,
@@ -55,7 +55,7 @@ import {
 } from '@/lib/api/admin/observability'
 import type { TimeRange } from '@/components/dashboard/time-range-selector'
 
-type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput'
+type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput' | 'tokens' | 'workers' | 'slow-queries'
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info'
 type ObservabilityTranslator = ReturnType<typeof useTranslations>
 
@@ -66,6 +66,12 @@ const TONE_STYLES: Record<Tone, string> = {
   danger: 'bg-destructive/10 text-destructive border-destructive/20',
   info: 'bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300',
 }
+const CHART_AXIS_PROPS = {
+  tick: { fill: CHART_AXIS_COLOR },
+  axisLine: false,
+  tickLine: false,
+}
+const CHART_MARGIN = { top: 12, right: 12, left: 0, bottom: 0 }
 
 interface OverviewPanelProps {
   overview: ObservabilityOverview | null
@@ -80,7 +86,7 @@ interface HealthPanelProps {
 }
 
 export function ObservabilitySkeleton({ tab }: { tab: ObservabilityTab }) {
-  const tableRows = tab === 'agents' || tab === 'workflows' || tab === 'timeouts'
+  const tableRows = tab === 'agents' || tab === 'workflows' || tab === 'timeouts' || tab === 'workers' || tab === 'slow-queries'
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -162,18 +168,35 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
         <ObservabilityChartCard className="lg:col-span-7" title={t('charts.requestTrend')} description={t('charts.requestTrendDesc')} empty={!throughput?.buckets.length}>
           <div className="min-h-[310px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={throughput?.buckets ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-              <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
-              <YAxis />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+            <AreaChart data={throughput?.buckets ?? []} margin={CHART_MARGIN}>
+              <defs>
+                <linearGradient id="observabilityAgentRequests" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={CHART_COLOR_ORDER[0]} stopOpacity={0.32} />
+                  <stop offset="95%" stopColor={CHART_COLOR_ORDER[0]} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="observabilityWorkflowRuns" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={CHART_COLOR_ORDER[1]} stopOpacity={0.28} />
+                  <stop offset="95%" stopColor={CHART_COLOR_ORDER[1]} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+              <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+              <YAxis hide />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
               <Legend />
-              <Area name={t('overview.agentRequests')} type="monotone" dataKey="agent_requests" stackId="requests" stroke={CHART_COLOR_ORDER[0]} fill={CHART_COLOR_ORDER[0]} fillOpacity={0.35} />
-              <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} fill={CHART_COLOR_ORDER[1]} fillOpacity={0.35} />
+              <Area name={t('overview.agentRequests')} type="monotone" dataKey="agent_requests" stackId="requests" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} fill="url(#observabilityAgentRequests)" fillOpacity={1} />
+              <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} fill="url(#observabilityWorkflowRuns)" fillOpacity={1} />
             </AreaChart>
           </ResponsiveContainer>
           </div>
         </ObservabilityChartCard>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AlertMetricCard title={t('alerts.reliability')} status={t(`risk.${risk.key}`)} description={t(`overview.${risk.summaryKey}`)} tone={risk.tone} />
+        <AlertMetricCard title={t('alerts.latency')} status={formatDuration(overview.latency.p95_ms)} description={t('alerts.latencyHint', { p99: formatDuration(overview.latency.p99_ms ?? null) })} tone={overview.latency.p95_ms != null && overview.latency.p95_ms >= 10000 ? 'warning' : 'success'} />
+        <AlertMetricCard title={t('alerts.ttft')} status={formatDuration(overview.ttft?.p95_ms)} description={t('alerts.ttftHint')} tone={overview.ttft?.p95_ms != null && overview.ttft.p95_ms >= 3000 ? 'warning' : 'success'} />
+        <AlertMetricCard title={t('alerts.load')} status={`${overview.throughput.current_qps} QPS`} description={t('alerts.loadHint', { peak: overview.throughput.peak_hourly_requests })} tone={overview.throughput.current_qps > 0 ? 'info' : 'neutral'} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -202,12 +225,12 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
 
   const worker = workers ?? health.workers
   const dependencies = [
-    { label: 'CPU', icon: Cpu, data: health.cpu, valueKey: 'usage_percent', suffix: '%' },
-    { label: t('health.memory'), icon: Server, data: health.memory, valueKey: 'usage_percent', suffix: '%' },
-    { label: t('health.disk'), icon: HardDrive, data: health.disk, valueKey: 'usage_percent', suffix: '%' },
-    { label: t('health.database'), icon: Database, data: health.database, valueKey: 'active_connections', suffix: '' },
-    { label: 'Redis', icon: Database, data: health.redis, valueKey: 'ops_per_sec', suffix: ' ops/s' },
-    { label: 'Worker', icon: Workflow, data: workerHealthData(worker), valueKey: 'worker_count', suffix: '' },
+    { label: 'CPU', icon: Cpu, data: health.cpu, valueKey: 'usage_percent', suffix: '%', actionKey: 'cpuAction' },
+    { label: t('health.memory'), icon: Server, data: health.memory, valueKey: 'usage_percent', suffix: '%', actionKey: 'memoryAction' },
+    { label: t('health.disk'), icon: HardDrive, data: health.disk, valueKey: 'usage_percent', suffix: '%', actionKey: 'diskAction' },
+    { label: t('health.database'), icon: Database, data: health.database, valueKey: 'active_connections', suffix: '', actionKey: 'databaseAction' },
+    { label: 'Redis', icon: Database, data: health.redis, valueKey: 'ops_per_sec', suffix: ' ops/s', actionKey: 'redisAction' },
+    { label: 'Worker', icon: Workflow, data: workerHealthData(worker), valueKey: 'worker_count', suffix: '', actionKey: 'workerAction' },
   ]
 
   return (
@@ -216,14 +239,14 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
         <ObservabilityChartCard className="lg:col-span-8" title={t('health.resourceUsage')} description={t('charts.systemTrendDesc')} empty={!trend?.items.length}>
           <div className="min-h-[320px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trend?.items ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-              <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} />
-              <YAxis />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+            <LineChart data={trend?.items ?? []} margin={CHART_MARGIN}>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+              <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+              <YAxis hide />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
               <Legend />
-              <Line name="CPU" type="monotone" dataKey="cpu_percent" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} dot={false} />
-              <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} dot={false} />
+              <Line name="CPU" type="monotone" dataKey="cpu_percent" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+              <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
           </div>
@@ -299,7 +322,7 @@ export function AgentsPanel({ rows, timeRange }: { rows: AgentPerformanceRow[]; 
     <>
       <EntityTable
         empty={rows.length === 0}
-        headers={[t('tables.name'), t('tables.team'), t('tables.requests'), t('tables.successRate'), t('tables.timeoutRate'), t('tables.ttftP95'), 'P95', 'P99', t('tables.tokens'), t('tables.avgTokens')]}
+        headers={[t('tables.name'), t('tables.team'), t('tables.requests'), t('tables.errors'), t('tables.timeouts'), t('tables.successRate'), t('tables.timeoutRate'), t('tables.ttftP95'), 'P50', 'P90', 'P95', 'P99', t('tables.tokens')]}
         rows={rows.map((row) => ({
           key: row.agent_id,
           onClick: () => openDetail(row),
@@ -307,13 +330,16 @@ export function AgentsPanel({ rows, timeRange }: { rows: AgentPerformanceRow[]; 
             <EntityName key="name" name={row.agent_name || row.agent_id} id={row.agent_id} />,
             row.team_name || '-',
             formatNumber(row.request_count),
+            <StatusValue key="errors" value={formatNumber(row.error_count)} tone={row.error_count > 0 ? 'warning' : 'success'} />,
+            <StatusValue key="timeouts" value={formatNumber(row.timeout_count)} tone={row.timeout_count > 0 ? 'warning' : 'success'} />,
             <StatusValue key="success" value={formatPercent(row.success_rate)} tone={row.success_rate < 95 ? 'danger' : row.success_rate < 99 ? 'warning' : 'success'} />,
             <StatusValue key="timeout" value={formatPercent(row.timeout_rate)} tone={row.timeout_rate >= 5 ? 'danger' : row.timeout_rate >= 1 ? 'warning' : 'neutral'} />,
             formatDuration(row.ttft_p95_ms),
+            formatDuration(row.p50_ms),
+            formatDuration(row.p90_ms),
             formatDuration(row.p95_ms),
             formatDuration(row.p99_ms ?? null),
             formatCompactNumber(row.total_tokens),
-            formatNumber(row.avg_tokens),
           ],
         }))}
       />
@@ -342,7 +368,7 @@ export function WorkflowsPanel({ rows, timeRange }: { rows: WorkflowPerformanceR
     <>
       <EntityTable
         empty={rows.length === 0}
-        headers={[t('tables.name'), t('tables.team'), t('tables.runs'), t('tables.successRate'), t('tables.timeoutRate'), t('tables.failedNodes'), t('details.avgNodes'), 'P95', t('tables.tokens')]}
+        headers={[t('tables.name'), t('tables.team'), t('tables.runs'), t('tables.errors'), t('tables.timeouts'), t('tables.successRate'), t('tables.timeoutRate'), t('tables.failedNodes'), 'P50', 'P90', 'P95', 'P99', t('tables.tokens')]}
         rows={rows.map((row) => ({
           key: row.workflow_id,
           onClick: () => openDetail(row),
@@ -350,11 +376,15 @@ export function WorkflowsPanel({ rows, timeRange }: { rows: WorkflowPerformanceR
             <EntityName key="name" name={row.workflow_name || row.workflow_id} id={row.workflow_id} />,
             row.team_name || '-',
             formatNumber(row.run_count),
+            <StatusValue key="errors" value={formatNumber(row.error_count)} tone={row.error_count > 0 ? 'warning' : 'success'} />,
+            <StatusValue key="timeouts" value={formatNumber(row.timeout_count)} tone={row.timeout_count > 0 ? 'warning' : 'success'} />,
             <StatusValue key="success" value={formatPercent(row.success_rate)} tone={row.success_rate < 95 ? 'danger' : row.success_rate < 99 ? 'warning' : 'success'} />,
             <StatusValue key="timeout" value={formatPercent(row.timeout_rate)} tone={row.timeout_rate >= 5 ? 'danger' : row.timeout_rate >= 1 ? 'warning' : 'neutral'} />,
             formatNumber(row.failed_nodes),
-            row.avg_nodes == null ? '-' : formatNumber(row.avg_nodes),
+            formatDuration(row.p50_ms),
+            formatDuration(row.p90_ms),
             formatDuration(row.p95_ms),
+            formatDuration(row.p99_ms ?? null),
             formatCompactNumber(row.total_tokens),
           ],
         }))}
@@ -413,55 +443,127 @@ export function TimeoutsPanel({ data }: { data: TimeoutResponse | null }) {
   )
 }
 
-export function ThroughputPanel({ throughput, tokens }: { throughput: ThroughputResponse | null; tokens: TokenResponse | null }) {
+export function ThroughputPanel({ throughput }: { throughput: ThroughputResponse | null }) {
   const t = useTranslations('dashboard.observability')
   if (!throughput) return <ObservabilityEmpty />
 
-  const totalTokens = tokens?.total_tokens ?? 0
-  const sourceItems = (tokens?.by_source ?? []).map((item) => ({ label: sourceLabel(item.source, t), value: item.tokens, tone: item.source === 'workflow' ? 'success' as Tone : 'info' as Tone }))
-  const modelItems = (tokens?.by_model ?? []).slice(0, 8).map((item) => ({ label: item.model, value: item.tokens, tone: 'neutral' as Tone }))
-
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <ConsoleMetric label={t('metrics.currentQps')} value={String(throughput.current.qps)} description="QPS" />
         <ConsoleMetric label={t('metrics.currentTps')} value={String(throughput.current.tps)} description="TPS" />
         <ConsoleMetric label={t('throughput.runningWorkflows')} value={formatNumber(throughput.current.running_workflows)} tone={throughput.current.running_workflows > 0 ? 'info' : 'neutral'} />
-        <ConsoleMetric label={t('metrics.totalTokens')} value={formatCompactNumber(totalTokens)} description={t('metrics.selectedRange')} />
+      </div>
+      <ObservabilityChartCard title={t('throughput.requestVolume')} description={t('charts.throughputTrendDesc')} empty={!throughput.buckets.length}>
+        <div className="min-h-[360px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={throughput.buckets} margin={CHART_MARGIN} barCategoryGap="28%">
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+            <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+            <YAxis hide />
+            <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+            <Legend />
+            <Bar name={t('overview.agentRequests')} dataKey="agent_requests" stackId="requests" fill={CHART_COLOR_ORDER[0]} radius={[6, 6, 0, 0]} />
+            <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[6, 6, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+        </div>
+      </ObservabilityChartCard>
+    </div>
+  )
+}
+
+export function TokensPanel({ tokens }: { tokens: TokenResponse | null }) {
+  const t = useTranslations('dashboard.observability')
+  if (!tokens) return <ObservabilityEmpty />
+
+  const totalTokens = tokens.total_tokens
+  const sourceItems = tokens.by_source.map((item) => ({ label: sourceLabel(item.source, t), value: item.tokens, tone: item.source === 'workflow' ? 'success' as Tone : 'info' as Tone }))
+  const modelItems = tokens.by_model.slice(0, 10).map((item) => ({ label: item.model, value: item.tokens, tone: 'neutral' as Tone }))
+  const topModel = tokens.by_model[0]
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <ConsoleMetric label={t('metrics.totalTokens')} value={formatCompactNumber(totalTokens)} description={t('tokens.costDriver')} />
+        <ConsoleMetric label={t('tokens.topModel')} value={topModel?.model ?? '-'} description={topModel ? formatCompactNumber(topModel.tokens) : t('throughput.noTokenData')} />
+        <ConsoleMetric label={t('tokens.modelCount')} value={formatNumber(tokens.by_model.length)} description={t('metrics.selectedRange')} />
       </div>
       <div className="grid gap-6 lg:grid-cols-12">
-        <ObservabilityChartCard className="lg:col-span-8" title={t('throughput.requestVolume')} description={t('charts.throughputTrendDesc')} empty={!throughput.buckets.length}>
-          <div className="min-h-[320px] flex-1">
-            <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={throughput.buckets}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-              <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
-              <YAxis />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
-              <Legend />
-              <Bar name={t('overview.agentRequests')} dataKey="agent_requests" stackId="requests" fill={CHART_COLOR_ORDER[0]} radius={[4, 4, 0, 0]} />
-              <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          </div>
-        </ObservabilityChartCard>
-        <Card className="lg:col-span-4">
+        <Card className="lg:col-span-5">
           <CardHeader>
             <CardTitle>{t('throughput.tokenBySource')}</CardTitle>
-            <CardDescription>{t('throughput.tokens')}</CardDescription>
+            <CardDescription>{t('tokens.sourceDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
-            {sourceItems.length ? <DistributionBarList items={sourceItems} total={totalTokens || 1} /> : <ObservabilityEmpty description={t('throughput.noTokenData')} />}
+            {sourceItems.length ? <DistributionBarList items={sourceItems} total={totalTokens || 1} showPercent /> : <ObservabilityEmpty description={t('throughput.noTokenData')} />}
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-7">
+          <CardHeader>
+            <CardTitle>{t('throughput.tokenByModel')}</CardTitle>
+            <CardDescription>{t('tokens.modelDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {modelItems.length ? <DistributionBarList items={modelItems} total={totalTokens || 1} showPercent /> : <ObservabilityEmpty description={t('throughput.noTokenData')} />}
           </CardContent>
         </Card>
       </div>
+    </div>
+  )
+}
+
+export function WorkersPanel({ workers }: { workers: WorkerResponse | null }) {
+  const t = useTranslations('dashboard.observability')
+  if (!workers) return <ObservabilityEmpty />
+  const pendingTotal = (workers.queues ?? []).reduce((sum, queue) => sum + queue.pending, 0)
+  const statusTone = toneForStatus(workers.status)
+
+  return (
+    <div className="space-y-6">
+      {workers.error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{t('health.workerError')}</AlertTitle>
+          <AlertDescription>{workers.error} {t('health.actions.workerAction')}</AlertDescription>
+        </Alert>
+      )}
+      <div className="grid gap-4 md:grid-cols-4">
+        <ConsoleMetric label={t('tables.status')} value={statusLabel(workers.status, t)} tone={statusTone} />
+        <ConsoleMetric label={t('workers.count')} value={formatNumber(workers.worker_count)} />
+        <ConsoleMetric label={t('workers.inFlight')} value={formatNumber(workers.active_tasks + workers.reserved_tasks + workers.scheduled_tasks)} />
+        <ConsoleMetric label={t('workers.pendingQueues')} value={formatNumber(pendingTotal)} tone={pendingTotal > 0 ? 'warning' : 'success'} />
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>{t('throughput.tokenByModel')}</CardTitle>
-          <CardDescription>{t('throughput.share')}</CardDescription>
+          <CardTitle>{t('health.workerQueues')}</CardTitle>
+          <CardDescription>{t('workers.queueDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
-          {modelItems.length ? <DistributionBarList items={modelItems} total={totalTokens || 1} showPercent /> : <ObservabilityEmpty description={t('throughput.noTokenData')} />}
+          <DistributionBarList items={(workers.queues ?? []).map((queue) => ({ label: queue.queue, value: queue.pending, tone: queue.pending > 0 ? 'warning' as Tone : 'neutral' as Tone }))} total={Math.max(pendingTotal, 1)} valueLabel={t('health.pending')} />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function SlowQueriesPanel({ slowQueries }: { slowQueries: SlowQueriesResponse | null }) {
+  const t = useTranslations('dashboard.observability')
+  const topQuery = slowQueries?.items[0]
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <ConsoleMetric label={t('health.slowQueries')} value={slowQueries?.available ? formatNumber(slowQueries.total) : t('status.unknown')} tone={slowQueries?.available ? 'neutral' : 'warning'} />
+        <ConsoleMetric label={t('slowQueries.threshold')} value="1000ms" description={t('slowQueries.thresholdDesc')} />
+        <ConsoleMetric label={t('slowQueries.topMeanTime')} value={formatDuration(topQuery ? readNumber(topQuery, ['avg_ms', 'mean_exec_time', 'mean_time', 'duration_ms']) : null)} />
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('health.slowQueries')}</CardTitle>
+          <CardDescription>{t('slowQueries.setupDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SlowQueriesContent slowQueries={slowQueries} />
         </CardContent>
       </Card>
     </div>
@@ -533,14 +635,14 @@ function DetailTrendChart({ data, countKey }: { data: ObservabilityTrendPoint[];
     <ObservabilityChartCard title={t('details.performanceTrend')} description={t('details.percentiles')} empty={!data.length}>
       <div className="min-h-[260px] flex-1">
         <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-          <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
-          <YAxis />
-          <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+        <LineChart data={data} margin={CHART_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+          <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+          <YAxis hide />
+          <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
           <Legend />
-          <Line name="P95" type="monotone" dataKey="p95_ms" stroke={CHART_COLOR_ORDER[0]} dot={false} />
-          <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} dot={false} />
+          <Line name="P95" type="monotone" dataKey="p95_ms" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+          <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
         </LineChart>
       </ResponsiveContainer>
       </div>
@@ -590,7 +692,10 @@ function SlowQueriesContent({ slowQueries }: { slowQueries: SlowQueriesResponse 
       <Alert variant="warning">
         <AlertTriangle className="h-4 w-4" />
         <AlertTitle>{t('health.slowQueriesUnavailable')}</AlertTitle>
-        <AlertDescription>{t('health.slowQueriesSetupHint')}</AlertDescription>
+        <AlertDescription>
+          <div>{slowQueries.reason || t('health.slowQueriesSetupHint')}</div>
+          <div className="mt-2 font-medium">{t('slowQueries.setupSteps')}</div>
+        </AlertDescription>
       </Alert>
     )
   }
@@ -696,6 +801,16 @@ function EntityName({ name, id }: { name: string; id: string }) {
   )
 }
 
+function AlertMetricCard({ title, status, description, tone }: { title: string; status: string; description: string; tone: Tone }) {
+  return (
+    <div className={cn('rounded-xl border p-4', TONE_STYLES[tone])}>
+      <div className="text-xs font-medium uppercase tracking-wide opacity-80">{title}</div>
+      <div className="mt-2 text-xl font-semibold tracking-tight">{status}</div>
+      <div className="mt-1 text-xs opacity-80">{description}</div>
+    </div>
+  )
+}
+
 function ConsoleMetric({ label, value, description, tone = 'neutral' }: { label: string; value: string; description?: string; tone?: Tone }) {
   return (
     <div className="rounded-lg border bg-card/60 p-4">
@@ -711,12 +826,12 @@ function ConsoleMetric({ label, value, description, tone = 'neutral' }: { label:
 
 function ObservabilityChartCard({ title, description, empty, className, children }: { title: string; description?: string; empty?: boolean; className?: string; children: React.ReactNode }) {
   return (
-    <Card className={cn('h-full', className)}>
-      <CardHeader>
+    <Card className={cn('flex h-full flex-col', className)}>
+      <CardHeader className="pb-2">
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
+      <CardContent className="flex flex-1 flex-col pt-2">
         {empty ? <div className="flex flex-1 items-center justify-center"><ObservabilityEmpty /></div> : children}
       </CardContent>
     </Card>
@@ -742,11 +857,13 @@ function PercentileStrip({ values }: { values: { p50_ms: number | null; p90_ms: 
   )
 }
 
-function ResourceRow({ label, icon: Icon, data, valueKey, suffix }: { label: string; icon: React.ElementType; data: Record<string, unknown>; valueKey: string; suffix: string }) {
+function ResourceRow({ label, icon: Icon, data, valueKey, suffix, actionKey }: { label: string; icon: React.ElementType; data: Record<string, unknown>; valueKey: string; suffix: string; actionKey: string }) {
   const t = useTranslations('dashboard.observability')
   const status = String(data.status ?? 'unknown')
   const value = readNumber(data, [valueKey])
   const progress = suffix === '%' && value !== null ? Math.min(Math.max(value, 0), 100) : null
+  const tone = toneForStatus(status)
+  const reason = abnormalReason(data)
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-center justify-between gap-3">
@@ -757,9 +874,15 @@ function ResourceRow({ label, icon: Icon, data, valueKey, suffix }: { label: str
             <div className="text-xs text-muted-foreground">{value !== null ? `${value}${suffix}` : '-'}</div>
           </div>
         </div>
-        <StatusPill tone={toneForStatus(status)} label={statusLabel(status, t)} />
+        <StatusPill tone={tone} label={statusLabel(status, t)} />
       </div>
-      {progress !== null && <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full ${toneBarClass(toneForStatus(status))}`} style={{ width: `${progress}%` }} /></div>}
+      {progress !== null && <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full ${toneBarClass(tone)}`} style={{ width: `${progress}%` }} /></div>}
+      {tone !== 'success' && tone !== 'neutral' && (
+        <div className="mt-3 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+          <div>{t('health.reason', { reason: reason || statusLabel(status, t) })}</div>
+          <div className="mt-1 font-medium text-foreground">{t(`health.actions.${actionKey}`)}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -860,6 +983,10 @@ function timeoutTypeLabel(type: string | null | undefined, t: ObservabilityTrans
   const normalized = type || 'unknown'
   const keys = new Set(['unknown', 'idle', 'global', 'workflow', 'agent'])
   return keys.has(normalized) ? t(`timeoutTypes.${normalized}`) : normalized
+}
+
+function abnormalReason(row: Record<string, unknown>) {
+  return readString(row, ['reason', 'message', 'detail', 'error'])
 }
 
 function readNumber(row: Record<string, unknown>, keys: string[]): number | null {

@@ -1,11 +1,17 @@
 import base64
+import importlib
+import io
 import zipfile
 from uuid import uuid4
 
 import pytest
 
-from app.services.document_processor import DocumentProcessor
 from app.models.knowledge_base import DocumentType
+from app.services import upload_storage
+from app.services.document_processor import DocumentProcessor
+
+
+document_processor_module = importlib.import_module("app.services.document_processor")
 
 
 def test_replace_embedded_media_data_uris_saves_assets(tmp_path):
@@ -49,15 +55,24 @@ async def test_extract_text_resourceizes_markdown_data_uri_when_context_is_provi
     )
     markdown_path = processor.get_storage_path(kb_id, "sample.md")
 
-    with open(markdown_path, "w", encoding="utf-8") as file:
-        file.write(f"# Title\n\n![sample]({data_uri})")
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
 
-    text, metadata = await processor.extract_text(
-        markdown_path,
-        DocumentType.MD.value,
-        kb_id=kb_id,
-        document_id=document_id,
-    )
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(
+            f"# Title\n\n![sample]({data_uri})".encode(), markdown_path
+        )
+        text, metadata = await processor.extract_text(
+            markdown_path,
+            DocumentType.MD.value,
+            kb_id=kb_id,
+            document_id=document_id,
+        )
 
     assert data_uri not in text
     assert metadata["media_assets"][0]["content_type"] == "image/png"
@@ -98,19 +113,30 @@ async def test_extract_text_resourceizes_docx_embedded_image(tmp_path):
   </w:body>
 </w:document>"""
 
-    with zipfile.ZipFile(docx_path, "w") as archive:
+    docx_bytes = io.BytesIO()
+    with zipfile.ZipFile(docx_bytes, "w") as archive:
         archive.writestr("[Content_Types].xml", content_types)
         archive.writestr("_rels/.rels", root_rels)
         archive.writestr("word/document.xml", document_xml)
         archive.writestr("word/_rels/document.xml.rels", document_rels)
         archive.writestr("word/media/image1.png", image_content)
 
-    text, metadata = await processor.extract_text(
-        docx_path,
-        DocumentType.DOCX.value,
-        kb_id=kb_id,
-        document_id=document_id,
-    )
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(docx_bytes.getvalue(), docx_path)
+        text, metadata = await processor.extract_text(
+            docx_path,
+            DocumentType.DOCX.value,
+            kb_id=kb_id,
+            document_id=document_id,
+        )
 
     assert "data:image/png;base64" not in text
     assert f"/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/media/" in text

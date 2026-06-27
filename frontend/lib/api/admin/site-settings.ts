@@ -10,6 +10,7 @@ import type {
   FeishuSettings,
   WebhookSettings,
   SlackSettings,
+  StorageSettings,
   AutoNotificationConfig,
   ThemeBrandingDisplay,
   ThemeMode,
@@ -26,6 +27,7 @@ export type {
   FeishuSettings,
   WebhookSettings,
   SlackSettings,
+  StorageSettings,
   AutoNotificationConfig,
 }
 
