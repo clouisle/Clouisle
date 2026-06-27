@@ -34,7 +34,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
+import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
 import { cn } from '@/lib/utils'
 import {
   observabilityApi,
@@ -66,6 +66,12 @@ const TONE_STYLES: Record<Tone, string> = {
   danger: 'bg-destructive/10 text-destructive border-destructive/20',
   info: 'bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300',
 }
+const CHART_AXIS_PROPS = {
+  tick: { fill: CHART_AXIS_COLOR },
+  axisLine: false,
+  tickLine: false,
+}
+const CHART_MARGIN = { top: 12, right: 12, left: 0, bottom: 0 }
 
 interface OverviewPanelProps {
   overview: ObservabilityOverview | null
@@ -162,14 +168,24 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
         <ObservabilityChartCard className="lg:col-span-7" title={t('charts.requestTrend')} description={t('charts.requestTrendDesc')} empty={!throughput?.buckets.length}>
           <div className="min-h-[310px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={throughput?.buckets ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-              <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
-              <YAxis />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+            <AreaChart data={throughput?.buckets ?? []} margin={CHART_MARGIN}>
+              <defs>
+                <linearGradient id="observabilityAgentRequests" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={CHART_COLOR_ORDER[0]} stopOpacity={0.32} />
+                  <stop offset="95%" stopColor={CHART_COLOR_ORDER[0]} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="observabilityWorkflowRuns" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={CHART_COLOR_ORDER[1]} stopOpacity={0.28} />
+                  <stop offset="95%" stopColor={CHART_COLOR_ORDER[1]} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+              <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+              <YAxis hide />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
               <Legend />
-              <Area name={t('overview.agentRequests')} type="monotone" dataKey="agent_requests" stackId="requests" stroke={CHART_COLOR_ORDER[0]} fill={CHART_COLOR_ORDER[0]} fillOpacity={0.35} />
-              <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} fill={CHART_COLOR_ORDER[1]} fillOpacity={0.35} />
+              <Area name={t('overview.agentRequests')} type="monotone" dataKey="agent_requests" stackId="requests" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} fill="url(#observabilityAgentRequests)" fillOpacity={1} />
+              <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} fill="url(#observabilityWorkflowRuns)" fillOpacity={1} />
             </AreaChart>
           </ResponsiveContainer>
           </div>
@@ -223,14 +239,14 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
         <ObservabilityChartCard className="lg:col-span-8" title={t('health.resourceUsage')} description={t('charts.systemTrendDesc')} empty={!trend?.items.length}>
           <div className="min-h-[320px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trend?.items ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-              <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} />
-              <YAxis />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+            <LineChart data={trend?.items ?? []} margin={CHART_MARGIN}>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+              <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+              <YAxis hide />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
               <Legend />
-              <Line name="CPU" type="monotone" dataKey="cpu_percent" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} dot={false} />
-              <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} dot={false} />
+              <Line name="CPU" type="monotone" dataKey="cpu_percent" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+              <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
           </div>
@@ -441,14 +457,14 @@ export function ThroughputPanel({ throughput }: { throughput: ThroughputResponse
       <ObservabilityChartCard title={t('throughput.requestVolume')} description={t('charts.throughputTrendDesc')} empty={!throughput.buckets.length}>
         <div className="min-h-[360px] flex-1">
           <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={throughput.buckets}>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-            <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
-            <YAxis />
-            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+          <BarChart data={throughput.buckets} margin={CHART_MARGIN} barCategoryGap="28%">
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+            <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+            <YAxis hide />
+            <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
             <Legend />
-            <Bar name={t('overview.agentRequests')} dataKey="agent_requests" stackId="requests" fill={CHART_COLOR_ORDER[0]} radius={[4, 4, 0, 0]} />
-            <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[4, 4, 0, 0]} />
+            <Bar name={t('overview.agentRequests')} dataKey="agent_requests" stackId="requests" fill={CHART_COLOR_ORDER[0]} radius={[6, 6, 0, 0]} />
+            <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
         </div>
@@ -619,14 +635,14 @@ function DetailTrendChart({ data, countKey }: { data: ObservabilityTrendPoint[];
     <ObservabilityChartCard title={t('details.performanceTrend')} description={t('details.percentiles')} empty={!data.length}>
       <div className="min-h-[260px] flex-1">
         <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
-          <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
-          <YAxis />
-          <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+        <LineChart data={data} margin={CHART_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
+          <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+          <YAxis hide />
+          <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
           <Legend />
-          <Line name="P95" type="monotone" dataKey="p95_ms" stroke={CHART_COLOR_ORDER[0]} dot={false} />
-          <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} dot={false} />
+          <Line name="P95" type="monotone" dataKey="p95_ms" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+          <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
         </LineChart>
       </ResponsiveContainer>
       </div>
@@ -810,12 +826,12 @@ function ConsoleMetric({ label, value, description, tone = 'neutral' }: { label:
 
 function ObservabilityChartCard({ title, description, empty, className, children }: { title: string; description?: string; empty?: boolean; className?: string; children: React.ReactNode }) {
   return (
-    <Card className={cn('h-full', className)}>
-      <CardHeader>
+    <Card className={cn('flex h-full flex-col', className)}>
+      <CardHeader className="pb-2">
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
+      <CardContent className="flex flex-1 flex-col pt-2">
         {empty ? <div className="flex flex-1 items-center justify-center"><ObservabilityEmpty /></div> : children}
       </CardContent>
     </Card>
