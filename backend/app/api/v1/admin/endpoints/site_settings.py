@@ -32,6 +32,12 @@ from app.tasks.audit_log import archive_old_audit_logs
 
 router = APIRouter()
 
+THEME_COLOR_SETTING_KEYS = {
+    key
+    for key in DEFAULT_SETTINGS
+    if key.startswith("theme_") and key.endswith("_color")
+}
+
 
 async def _validate_setting_value(key: str, value: object) -> None:
     """Validate site setting values.
@@ -80,13 +86,13 @@ async def _validate_setting_value(key: str, value: object) -> None:
             raise_validation_error()
         return
 
-    if key in {"theme_primary_color", "theme_primary_foreground_color"}:
+    if key in THEME_COLOR_SETTING_KEYS:
         if value == "":
             return
         if not isinstance(value, str):
             raise_validation_error()
         color = value.strip()
-        if len(color) not in {4, 7} or not color.startswith("#"):
+        if len(color) not in {4, 5, 7, 9} or not color.startswith("#"):
             raise_validation_error()
         if not all(char in "0123456789abcdefABCDEF" for char in color[1:]):
             raise_validation_error()

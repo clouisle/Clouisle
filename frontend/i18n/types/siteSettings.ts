@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-27T15:16:37.262Z
+// GENERATED — 2026-06-27T17:03:39.981Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -291,7 +291,54 @@ export type SiteSettingsMessages = {
     brandingDisplayHidden: string
     themePrimaryColor: string
     themePrimaryForegroundColor: string
+    themeBrandColors: string
+    themePreview: string
+    themePreviewDescription: string
+    themePreviewNavActive: string
+    themePreviewNavItem: string
+    themePreviewNavbar: string
+    themePreviewHover: string
+    themePreviewTitle: string
+    themePreviewSubtitle: string
+    themePreviewAction: string
+    themePreviewCard: string
+    themePreviewMuted: string
+    themePreviewAccent: string
+    themePreviewChart: string
+    themePageAndCards: string
+    themeNavigationColors: string
+    themeSupportingColors: string
+    themeChartColors: string
+    themeBackgroundColor: string
+    themeForegroundColor: string
+    themeCardColor: string
+    themeCardForegroundColor: string
+    themeBorderColor: string
+    themeRingColor: string
+    themeSidebarColor: string
+    themeSidebarForegroundColor: string
+    themeSidebarPrimaryColor: string
+    themeSidebarPrimaryForegroundColor: string
+    themeSidebarAccentColor: string
+    themeSidebarAccentForegroundColor: string
+    themeSidebarBorderColor: string
+    themeNavbarColor: string
+    themeNavbarForegroundColor: string
+    themeNavbarHoverColor: string
+    themeNavbarHoverForegroundColor: string
+    themeAccentColor: string
+    themeAccentForegroundColor: string
+    themeMutedColor: string
+    themeMutedForegroundColor: string
+    themeChart1Color: string
+    themeChart2Color: string
+    themeChart3Color: string
+    themeChart4Color: string
+    themeChart5Color: string
     themeColorHint: string
+    themeColorAlpha: string
+    resetThemeColor: string
+    resetAllThemeColors: string
     invalidThemeColor: string
     legalCompliance: string
     legalComplianceDescription: string

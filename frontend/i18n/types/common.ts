@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-27T15:16:37.256Z
+// GENERATED — 2026-06-27T17:03:39.973Z
 // Source: i18n/en/common.json
 export type CommonMessages = {
   common: {

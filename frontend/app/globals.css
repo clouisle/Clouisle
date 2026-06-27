@@ -20,6 +20,10 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-navbar-hover-foreground: var(--navbar-hover-foreground);
+  --color-navbar-hover: var(--navbar-hover);
+  --color-navbar-foreground: var(--navbar-foreground);
+  --color-navbar: var(--navbar);
   --color-chart-10: var(--chart-10);
   --color-chart-9: var(--chart-9);
   --color-chart-8: var(--chart-8);
@@ -117,6 +121,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --navbar: var(--card);
+  --navbar-foreground: var(--foreground);
+  --navbar-hover: var(--muted);
+  --navbar-hover-foreground: var(--foreground);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
 }
@@ -172,6 +180,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --navbar: var(--card);
+  --navbar-foreground: var(--foreground);
+  --navbar-hover: var(--muted);
+  --navbar-hover-foreground: var(--foreground);
 }
 
 @layer base {

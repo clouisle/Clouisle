@@ -12,6 +12,42 @@ router = APIRouter()
 
 THEME_MODE_VALUES = {"system", "light", "dark"}
 THEME_BRANDING_DISPLAY_VALUES = {"full", "name_only", "icon_only", "hidden"}
+PUBLIC_THEME_COLOR_KEYS = (
+    "theme_primary_color",
+    "theme_primary_foreground_color",
+    "theme_background_color",
+    "theme_foreground_color",
+    "theme_card_color",
+    "theme_card_foreground_color",
+    "theme_border_color",
+    "theme_ring_color",
+    "theme_sidebar_color",
+    "theme_sidebar_foreground_color",
+    "theme_sidebar_primary_color",
+    "theme_sidebar_primary_foreground_color",
+    "theme_sidebar_accent_color",
+    "theme_sidebar_accent_foreground_color",
+    "theme_sidebar_border_color",
+    "theme_navbar_color",
+    "theme_navbar_foreground_color",
+    "theme_navbar_hover_color",
+    "theme_navbar_hover_foreground_color",
+    "theme_accent_color",
+    "theme_accent_foreground_color",
+    "theme_muted_color",
+    "theme_muted_foreground_color",
+    "theme_chart_1_color",
+    "theme_chart_2_color",
+    "theme_chart_3_color",
+    "theme_chart_4_color",
+    "theme_chart_5_color",
+)
+
+
+def _normalize_theme_colors(settings: dict[str, object]) -> dict[str, str]:
+    return {
+        key: _normalize_hex_color(settings.get(key)) for key in PUBLIC_THEME_COLOR_KEYS
+    }
 
 
 def _normalize_enum(value: object, allowed_values: set[str], default: str) -> str:
@@ -24,7 +60,7 @@ def _normalize_hex_color(value: object) -> str:
     if not isinstance(value, str):
         return ""
     stripped = value.strip()
-    if len(stripped) not in {4, 7} or not stripped.startswith("#"):
+    if len(stripped) not in {4, 5, 7, 9} or not stripped.startswith("#"):
         return ""
     hex_digits = stripped[1:]
     if all(char in "0123456789abcdefABCDEF" for char in hex_digits):
@@ -56,12 +92,7 @@ async def get_public_settings():
             theme_mode=_normalize_enum(
                 settings.get("theme_mode"), THEME_MODE_VALUES, "system"
             ),
-            theme_primary_color=_normalize_hex_color(
-                settings.get("theme_primary_color")
-            ),
-            theme_primary_foreground_color=_normalize_hex_color(
-                settings.get("theme_primary_foreground_color")
-            ),
+            **_normalize_theme_colors(settings),
             theme_branding_display=_normalize_enum(
                 settings.get("theme_branding_display"),
                 THEME_BRANDING_DISPLAY_VALUES,
