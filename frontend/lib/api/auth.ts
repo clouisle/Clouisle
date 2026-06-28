@@ -86,6 +86,13 @@ export interface CaptchaProofResponse {
   captcha_token: string
 }
 
+export interface CaptchaPointerPoint {
+  x: number
+  y: number
+  t: number
+  event?: 'enter' | 'move' | 'down' | 'up' | 'click'
+}
+
 export interface LoginData {
   username: string
   password: string
@@ -109,6 +116,7 @@ export const authApi = {
     challenge: string
     clicked_option: string
     elapsed_ms: number
+    pointer?: CaptchaPointerPoint[]
   }): Promise<CaptchaProofResponse> => {
     return api.post<CaptchaProofResponse>('/captcha/click', data)
   },

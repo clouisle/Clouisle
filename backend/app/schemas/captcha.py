@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CaptchaResponse(BaseModel):
@@ -10,6 +10,15 @@ class CaptchaResponse(BaseModel):
     expires_in: int = 300
 
 
+class CaptchaPointerPoint(BaseModel):
+    """点击式验证码指针轨迹点"""
+
+    x: float
+    y: float
+    t: int
+    event: str = "move"
+
+
 class CaptchaClickRequest(BaseModel):
     """点击式验证码证明请求"""
 
@@ -17,6 +26,7 @@ class CaptchaClickRequest(BaseModel):
     challenge: str
     clicked_option: str
     elapsed_ms: int
+    pointer: list[CaptchaPointerPoint] = Field(default_factory=list)
 
 
 class CaptchaProofResponse(BaseModel):

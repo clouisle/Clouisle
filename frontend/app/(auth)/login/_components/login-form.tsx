@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
+import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaPointerPoint, type CaptchaResponse, type SSOProvider } from '@/lib/api'
 import { clearValidationError, formatValidationSummaryMessage, getValidationSummaryEntries } from '@/lib/validation'
-import { Loader2, RefreshCw, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
+import { Loader2, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
 type LoginStep = 'login' | 'verification' | 'totp'
@@ -20,13 +20,19 @@ type LoginStep = 'login' | 'verification' | 'totp'
 type ClickChallenge = {
   type: 'click-choice'
   options: string[]
+  target: string
   created_at: number
 }
 
 function parseClickChallenge(challenge: string): ClickChallenge | null {
   try {
     const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
-    if (parsed.type !== 'click-choice' || !Array.isArray(parsed.options) || typeof parsed.created_at !== 'number') {
+    if (
+      parsed.type !== 'click-choice' ||
+      !Array.isArray(parsed.options) ||
+      typeof parsed.target !== 'string' ||
+      typeof parsed.created_at !== 'number'
+    ) {
       return null
     }
     return parsed as ClickChallenge
@@ -57,6 +63,27 @@ export function LoginForm() {
   const [verificationCode, setVerificationCode] = React.useState('')
   const [showCodeInput, setShowCodeInput] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
+  const pointerTraceRef = React.useRef<CaptchaPointerPoint[]>([])
+  const captchaStartedAtRef = React.useRef(0)
+
+  const resetCaptchaTrace = React.useCallback(() => {
+    pointerTraceRef.current = []
+    captchaStartedAtRef.current = performance.now()
+  }, [])
+
+  const recordCaptchaPointer = (
+    event: React.PointerEvent<HTMLElement>,
+    eventName: CaptchaPointerPoint['event']
+  ) => {
+    if (pointerTraceRef.current.length >= 80) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    pointerTraceRef.current.push({
+      x: Math.round(event.clientX - rect.left),
+      y: Math.round(event.clientY - rect.top),
+      t: Math.round(performance.now() - captchaStartedAtRef.current),
+      event: eventName,
+    })
+  }
 
   // TOTP
   const [tempToken, setTempToken] = React.useState('')
@@ -79,14 +106,15 @@ export function LoginForm() {
       const data = await authApi.getCaptcha()
       setCaptcha(data)
       setCaptchaToken('')
+      resetCaptchaTrace()
       clearFieldError('captcha')
     } catch {
       // 获取验证码失败
     } finally {
       setCaptchaLoading(false)
     }
-  }, [])
-  
+  }, [resetCaptchaTrace])
+
   // 获取站点设置和 SSO 提供商
   React.useEffect(() => {
     const loadSettings = async () => {
@@ -137,6 +165,10 @@ export function LoginForm() {
     }),
     [t]
   )
+  const captchaChallenge = React.useMemo(
+    () => parseClickChallenge(captcha?.challenge || ''),
+    [captcha]
+  )
   const verificationSummaryFieldLabels = React.useMemo(
     () => ({
       code: t('verificationCode'),
@@ -150,20 +182,22 @@ export function LoginForm() {
     [t]
   )
 
-  const handleCaptchaClick = async () => {
+  const handleCaptchaClick = async (option: string) => {
     const challenge = captcha ? parseClickChallenge(captcha.challenge) : null
     if (!captcha || !challenge) {
       setFieldErrors({ captcha: t('captchaLoadFailed') })
       return
     }
 
+    const pointer = pointerTraceRef.current
     setCaptchaLoading(true)
     try {
       const proof = await authApi.completeCaptchaClick({
         captcha_id: captcha.captcha_id,
         challenge: captcha.challenge,
-        clicked_option: challenge.options[0],
-        elapsed_ms: Math.max(0, Date.now() - challenge.created_at),
+        clicked_option: option,
+        elapsed_ms: Math.max(0, Math.round(performance.now() - captchaStartedAtRef.current)),
+        pointer,
       })
       setCaptchaToken(proof.captcha_token)
       clearFieldError('captcha')
@@ -643,28 +677,23 @@ export function LoginForm() {
       {captchaEnabled && (
         <div className="space-y-2">
           <Label>{t('captcha')}</Label>
-          <div className="flex items-center gap-2">
+          <div
+            className="flex items-center gap-2 rounded-md border border-dashed p-3"
+            onPointerEnter={(event) => recordCaptchaPointer(event, 'enter')}
+            onPointerMove={(event) => recordCaptchaPointer(event, 'move')}
+            onPointerDown={(event) => recordCaptchaPointer(event, 'down')}
+            onPointerUp={(event) => recordCaptchaPointer(event, 'up')}
+          >
             <Button
               type="button"
               variant={captchaToken ? 'secondary' : 'outline'}
-              onClick={handleCaptchaClick}
-              disabled={loading || captchaLoading || !captcha}
+              onClick={() => handleCaptchaClick(captchaChallenge?.target || '')}
+              disabled={loading || captchaLoading || !captcha || !!captchaToken}
               className="flex-1 justify-center"
               aria-invalid={!!fieldErrors.captcha}
             >
               {captchaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {captchaToken ? t('captchaVerified') : t('captchaClickPrompt')}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={loadCaptcha}
-              disabled={captchaLoading}
-              className="flex-shrink-0"
-              aria-label={t('captchaRetry')}
-            >
-              <RefreshCw className={`h-4 w-4 ${captchaLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>

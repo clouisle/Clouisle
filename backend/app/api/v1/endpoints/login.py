@@ -79,6 +79,7 @@ async def complete_captcha_click(payload: CaptchaClickRequest) -> Any:
         payload.challenge,
         payload.clicked_option,
         payload.elapsed_ms,
+        [point.model_dump() for point in payload.pointer],
     )
     if not proof:
         raise BusinessError(
