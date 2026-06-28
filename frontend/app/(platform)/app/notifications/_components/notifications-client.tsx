@@ -71,7 +71,7 @@ const KIND_ICON: Record<NotificationDisplayKind, React.ComponentType<{ className
 }
 
 function getRowClassName(item: NotificationItem) {
-  return cn('cursor-pointer', !item.is_read && 'bg-primary/5')
+  return cn(!item.is_read && 'bg-primary/5')
 }
 
 function NotificationKindBadge({ item, label }: { item: NotificationItem; label: string }) {
@@ -278,21 +278,21 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                 const meta = getNotificationDisplayMeta(item)
 
                 return (
-                  <TableRow
-                    key={item.id}
-                    className={getRowClassName(item)}
-                    onClick={() => openDetail(item)}
-                  >
+                  <TableRow key={item.id} className={getRowClassName(item)}>
                     <TableCell className="max-w-[320px] min-w-0">
-                      <div className="flex min-w-0 flex-col gap-1.5">
-                        <div className="flex min-w-0 items-center gap-2">
+                      <button
+                        type="button"
+                        className="flex min-w-0 cursor-pointer flex-col gap-1.5 text-left"
+                        onClick={() => openDetail(item)}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
                           <span className={cn('min-w-0 truncate font-medium', meta.isAnnouncement && 'font-semibold')}>{item.title}</span>
                           {!item.is_read && <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" />}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        </span>
+                        <span className="flex flex-wrap items-center gap-1.5">
                           <NotificationKindBadge item={item} label={t(`kindOptions.${meta.kind}`)} />
-                        </div>
-                      </div>
+                        </span>
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{t(`scopeOptions.${item.scope}`)}</Badge>

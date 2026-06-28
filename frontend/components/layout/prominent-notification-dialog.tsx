@@ -1,8 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Megaphone, ShieldAlert, Sparkles } from 'lucide-react'
 import { notificationsApi, type NotificationItem } from '@/lib/api'
@@ -29,6 +28,7 @@ const KIND_ICON: Record<NotificationDisplayKind, React.ComponentType<{ className
 export function ProminentNotificationDialog() {
   const t = useTranslations('notifications')
   const pathname = usePathname()
+  const router = useRouter()
   const dismissedIds = React.useRef(new Set<string>())
   const [items, setItems] = React.useState<NotificationItem[]>([])
   const [selectedItem, setSelectedItem] = React.useState<NotificationItem | null>(null)
@@ -39,10 +39,21 @@ export function ProminentNotificationDialog() {
 
   const fetchProminentNotifications = React.useCallback(async () => {
     try {
-      const response = await notificationsApi.list({ page: 1, page_size: 10, unread_only: true })
-      const prominentItems = response.items.filter((item) => getNotificationDisplayMeta(item).isProminent).slice(0, 3)
-      setItems(prominentItems)
-      selectNext(prominentItems)
+      const pageSize = 50
+      const prominentItems: NotificationItem[] = []
+      let page = 1
+      let total = pageSize
+
+      while (prominentItems.length < 3 && (page - 1) * pageSize < total) {
+        const response = await notificationsApi.list({ page, page_size: pageSize, unread_only: true })
+        prominentItems.push(...response.items.filter((item) => getNotificationDisplayMeta(item).isProminent))
+        total = response.total
+        page += 1
+      }
+
+      const nextItems = prominentItems.slice(0, 3)
+      setItems(nextItems)
+      selectNext(nextItems)
     } catch (error) {
       console.error('Failed to fetch prominent notifications:', error)
       setItems([])
@@ -81,6 +92,10 @@ export function ProminentNotificationDialog() {
   const meta = getNotificationDisplayMeta(selectedItem)
   const Icon = KIND_ICON[meta.kind]
   const href = selectedItem.link_url || '/app/notifications'
+  const handleViewNotification = () => {
+    closeDialog()
+    router.push(href)
+  }
 
   return (
     <Dialog open={Boolean(selectedItem)} onOpenChange={(open) => !open && closeDialog()}>
@@ -105,9 +120,7 @@ export function ProminentNotificationDialog() {
           <Button variant="outline" onClick={handleMarkRead}>
             {t('markRead')}
           </Button>
-          <Link href={href} onClick={closeDialog}>
-            <Button>{t('viewNotification')}</Button>
-          </Link>
+          <Button onClick={handleViewNotification}>{t('viewNotification')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
