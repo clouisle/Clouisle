@@ -7,21 +7,58 @@
 
 ### GET /captcha
 
-获取登录验证码
+获取点击式人机验证码
 
 | 属性 | 值 |
 |------|-----|
 | 认证 | 无 |
 | 权限 | 公开 |
-| 说明 | 当站点设置启用验证码时，登录前需要获取验证码 |
+| 说明 | 当站点设置启用验证码时，登录和非首个用户注册前需要获取一次性点击验证 |
 
 **响应**:
 ```json
 {
   "code": 0,
   "data": {
-    "captcha_id": "uuid",
-    "captcha_image": "base64_image_data"
+    "captcha_id": "challenge id",
+    "challenge": "public click challenge descriptor (not a login/register proof)",
+    "prompt": "captcha_click_prompt",
+    "expires_in": 300
+  }
+}
+```
+
+---
+
+### POST /captcha/click
+
+提交点击交互并换取一次性私有证明
+
+| 属性 | 值 |
+|------|-----|
+| 认证 | 无 |
+| 权限 | 公开 |
+| 说明 | 前端点击人机验证控件后调用；服务端校验交互数据后签发 `captcha_token`，登录/注册只接受该证明 |
+
+**请求体**:
+```json
+{
+  "captcha_id": "string",
+  "challenge": "public challenge descriptor",
+  "clicked_option": "string (clicked public option)",
+  "elapsed_ms": 250
+}
+```
+
+`elapsed_ms` 仅作为交互观测数据；是否过期以服务端 Redis TTL/创建状态为准，公开 challenge 不包含服务端保存的正确选项。
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "captcha_id": "string",
+    "captcha_token": "private one-time proof"
   }
 }
 ```
@@ -43,8 +80,8 @@
 {
   "username": "string",
   "password": "string",
-  "captcha_id": "string (可选)",
-  "captcha_code": "string (可选)"
+  "captcha_id": "string (启用验证码时必填)",
+  "captcha_token": "string (点击验证后返回)"
 }
 ```
 
@@ -69,7 +106,9 @@
 **安全特性**:
 - 登录失败次数限制
 - 账户锁定机制
-- 验证码支持
+- 验证码支持：启用 `enable_captcha` 后，登录和非首个用户注册必须先通过 `/captcha/click` 获取一次性私有证明再提交
+- 验证失败、超时、重复使用或 Redis 异常导致令牌缺失时返回 `5302/5303`，前端应刷新验证码并提供重试入口
+- 范围说明：密码重置、重发验证邮件和邮箱验证码校验沿用邮件验证码/冷却时间控制，不属于 YUN-105 点击式验证码覆盖范围
 - 单会话模式支持（可选）
 - 审计日志记录
 
@@ -112,7 +151,9 @@
   "username": "string",
   "email": "string",
   "password": "string",
-  "full_name": "string (可选)"
+  "terms_accepted": "boolean (启用注册协议确认时才发送)",
+  "captcha_id": "string (启用验证码且非首个用户时必填)",
+  "captcha_token": "string (点击验证后返回)"
 }
 ```
 

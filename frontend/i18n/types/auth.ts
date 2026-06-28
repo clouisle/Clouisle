@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-18T05:58:50.223Z
+// GENERATED — 2026-06-28T03:49:57.031Z
 // Source: i18n/en/auth.json
 export type AuthMessages = {
   auth: {
@@ -48,6 +48,11 @@ export type AuthMessages = {
     captchaPlaceholder: string
     captchaRequired: string
     captchaInvalid: string
+    captchaClickPrompt: string
+    captchaVerified: string
+    captchaRetry: string
+    captchaRetryHint: string
+    captchaLoadFailed: string
     verifyYourEmail: string
     verificationEmailSent: string
     verificationEmailSentTo: string

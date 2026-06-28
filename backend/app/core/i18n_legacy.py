@@ -480,6 +480,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Can only regenerate assistant messages",
         "zh": "只能重新生成助手消息",
     },
+    "can_only_edit_user_message": {
+        "en": "Can only edit user messages",
+        "zh": "只能编辑用户消息",
+    },
+    "message_content_required": {
+        "en": "Message content is required",
+        "zh": "消息内容不能为空",
+    },
+    "message_content_unchanged": {
+        "en": "Message content is unchanged",
+        "zh": "消息内容未改变",
+    },
     "cannot_add_as_owner": {
         "en": "Cannot add member as owner",
         "zh": "不能将成员添加为所有者",
@@ -540,8 +552,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "System permissions cannot be updated",
         "zh": "系统权限不能被修改",
     },
-    "captcha_invalid": {"en": "Invalid captcha answer", "zh": "验证码错误"},
-    "captcha_required": {"en": "Captcha is required", "zh": "请输入验证码"},
+    "captcha_invalid": {
+        "en": "Human verification failed or expired. Please try again.",
+        "zh": "人机验证失败或已过期，请重试",
+    },
+    "captcha_required": {
+        "en": "Human verification is required",
+        "zh": "请完成人机验证",
+    },
     "chat_file_upload_instruction": {
         "en": "[The user uploaded the following files, please use the markitdown tool to parse the file content:]",
         "zh": "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]",

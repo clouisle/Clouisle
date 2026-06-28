@@ -10,7 +10,10 @@ import type {
   FeishuSettings,
   WebhookSettings,
   SlackSettings,
+  StorageSettings,
   AutoNotificationConfig,
+  ThemeBrandingDisplay,
+  ThemeMode,
 } from '../site-settings'
 
 export type {
@@ -24,7 +27,55 @@ export type {
   FeishuSettings,
   WebhookSettings,
   SlackSettings,
+  StorageSettings,
   AutoNotificationConfig,
+}
+
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+const THEME_COLOR_KEYS = [
+  'theme_primary_color',
+  'theme_primary_foreground_color',
+  'theme_background_color',
+  'theme_foreground_color',
+  'theme_card_color',
+  'theme_card_foreground_color',
+  'theme_border_color',
+  'theme_ring_color',
+  'theme_sidebar_color',
+  'theme_sidebar_foreground_color',
+  'theme_sidebar_primary_color',
+  'theme_sidebar_primary_foreground_color',
+  'theme_sidebar_accent_color',
+  'theme_sidebar_accent_foreground_color',
+  'theme_sidebar_border_color',
+  'theme_navbar_color',
+  'theme_navbar_foreground_color',
+  'theme_navbar_hover_color',
+  'theme_navbar_hover_foreground_color',
+  'theme_accent_color',
+  'theme_accent_foreground_color',
+  'theme_muted_color',
+  'theme_muted_foreground_color',
+  'theme_chart_1_color',
+  'theme_chart_2_color',
+  'theme_chart_3_color',
+  'theme_chart_4_color',
+  'theme_chart_5_color',
+] as const satisfies readonly (keyof GeneralSettings)[]
+
+function normalizeThemeMode(value: unknown): ThemeMode {
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
+}
+
+function normalizeBrandingDisplay(value: unknown): ThemeBrandingDisplay {
+  if (value === 'name_only' || value === 'icon_only' || value === 'hidden') {
+    return value
+  }
+  return 'full'
+}
+
+function normalizeThemeColor(value: unknown): string {
+  return typeof value === 'string' && HEX_COLOR_PATTERN.test(value.trim()) ? value.trim() : ''
 }
 
 export const siteSettingsApi = {
@@ -55,6 +106,9 @@ export const siteSettingsApi = {
 
   async getGeneral(): Promise<GeneralSettings> {
     const settings = await this.getAll('general')
+    const themeColors = Object.fromEntries(
+      THEME_COLOR_KEYS.map((key) => [key, normalizeThemeColor(settings[key])])
+    ) as Pick<GeneralSettings, (typeof THEME_COLOR_KEYS)[number]>
     return {
       site_name: (settings.site_name as string) ?? 'Clouisle',
       site_description: (settings.site_description as string) ?? '',
@@ -62,6 +116,9 @@ export const siteSettingsApi = {
       site_icon: (settings.site_icon as string) ?? '',
       default_language: (settings.default_language as string) ?? 'en',
       auth_page_layout: settings.auth_page_layout === 'split' ? 'split' : 'centered',
+      theme_mode: normalizeThemeMode(settings.theme_mode),
+      ...themeColors,
+      theme_branding_display: normalizeBrandingDisplay(settings.theme_branding_display),
       icp_record_number: (settings.icp_record_number as string) ?? '',
       icp_record_url: (settings.icp_record_url as string) ?? '',
       terms_enabled: (settings.terms_enabled as boolean) ?? false,

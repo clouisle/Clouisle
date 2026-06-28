@@ -173,7 +173,8 @@ while (true) {
   for (const line of lines) {
     if (line.startsWith("data: ")) {
       const data = JSON.parse(line.slice(6));
-      console.log(data);
+      // Replace this with your own UI state update.
+      console.log("SSE payload:", data);
     }
   }
 }`

@@ -820,7 +820,7 @@ export const agentsApi = {
     const controller = new AbortController()
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-    
+
     const stream = fetch(`${baseUrl}/agents/${agentId}/messages/${messageId}/regenerate`, {
       method: 'POST',
       headers: {
@@ -828,6 +828,34 @@ export const agentsApi = {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ variables }),
+      signal: controller.signal,
+    })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
+  },
+
+  /**
+   * 编辑用户消息并重新生成后续回复（流式 SSE）
+   */
+  editMessageStream: (
+    agentId: string,
+    messageId: string,
+    content: string
+  ): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+
+    const stream = fetch(`${baseUrl}/agents/${agentId}/messages/${messageId}/edit/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ content }),
       signal: controller.signal,
     })
 

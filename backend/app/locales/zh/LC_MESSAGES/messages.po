@@ -774,6 +774,15 @@ msgstr "所有收集的产物允许的最大总上传大小（MB）。默认为 
 msgid "can_only_regenerate_assistant"
 msgstr "只能重新生成助手消息"
 
+msgid "can_only_edit_user_message"
+msgstr "只能编辑用户消息"
+
+msgid "message_content_required"
+msgstr "消息内容不能为空"
+
+msgid "message_content_unchanged"
+msgstr "消息内容未改变"
+
 msgid "code_execution_failed"
 msgstr "代码执行失败"
 
@@ -823,10 +832,10 @@ msgid "cannot_update_system_permission"
 msgstr "系统权限不能被修改"
 
 msgid "captcha_invalid"
-msgstr "验证码错误"
+msgstr "人机验证失败或已过期，请重试"
 
 msgid "captcha_required"
-msgstr "请输入验证码"
+msgstr "请完成人机验证"
 
 msgid "chat_file_upload_instruction"
 msgstr "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]"

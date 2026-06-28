@@ -50,6 +50,11 @@
       "page": "Page {page}",
       "segment": "Segment {index}",
       "segmentCount": "{count} segments",
+      "showMoreSources": "Show {count} more sources",
+      "showMoreSegments": "Show {count} more segments",
+      "loadingSources": "Loading sources...",
+      "contentTruncated": "Content truncated for performance. Full length: {length} characters.",
+      "close": "Close",
       "relevance": "Relevance {score}%"
     },
     "file": {
@@ -86,6 +91,7 @@
     "message": {
       "copy": "Copy",
       "copied": "Copied",
+      "loadOlderMessages": "Load {count} older messages",
       "retry": "Retry",
       "user": "User",
       "assistant": "Assistant",
@@ -93,6 +99,10 @@
       "helpful": "Helpful",
       "notHelpful": "Not helpful",
       "regenerate": "Regenerate",
+      "edit": "Edit",
+      "saveEdit": "Save",
+      "cancelEdit": "Cancel",
+      "editPlaceholder": "Edit your message...",
       "listen": "Listen",
       "stopListening": "Stop listening",
       "speechUnavailable": "Text-to-speech is unavailable in this browser",

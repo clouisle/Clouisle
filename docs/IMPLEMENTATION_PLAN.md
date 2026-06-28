@@ -2,6 +2,63 @@
 
 ## Active
 
+- **yun-105-click-captcha-hardening** — In progress. Harden click captcha with a Cloudflare-like single click check, pointer trajectory validation, and backend-only proof minting. See `docs/plan/yun-105-click-captcha-hardening.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend pointer payload and trajectory scoring
+  - [x] 3. Frontend click-area pointer collection
+  - [x] 4. Tests and validation
+
+- **yun-105-click-captcha** — In progress. Replace typed captcha with click-based human verification while preserving login/register verification coverage. See `docs/plan/yun-105-click-captcha.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend click captcha contract and enforcement
+  - [x] 3. Frontend login click interaction and i18n
+  - [x] 4. Documentation and validation
+
+- **embed-chat-performance** — In progress. Apply the optimized chat streaming/rendering patterns to the script-embedded Agent chat widget. See `docs/plan/embed-chat-performance.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Embedded streaming commit batching
+  - [x] 3. User-input XML parse gating
+  - [x] 4. Final/stop/error cleanup
+  - [x] 5. Validation and regression checks
+
+- **chat-extreme-performance-refactor** — In progress. Refactor the chat page/message renderer for extreme performance: bounded rendering, streaming batching, memoized message bodies, and lazy source/tool output. See `docs/plan/chat-extreme-performance-refactor.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Renderer boundary extraction
+  - [x] 3. Render-time citation handling
+  - [x] 4. Streaming state commit throttling
+  - [x] 5. Message shell/body memoization
+  - [x] 6. Chat list/windowing and conversation switch optimization
+  - [x] 7. Source/tool/reasoning bounded rendering
+  - [ ] 8. Performance and regression validation
+
+- **yun-101-edit-agent-user-message-history** — In progress. Let users edit their own Agent conversation messages, store edits as message versions, and keep downstream context on the active edited branch. See `docs/plan/yun-101-edit-agent-user-message-history.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend edit endpoint, branching, audit, and tests
+  - [x] 3. Frontend edit API, UI, and i18n
+  - [x] 4. Validation and regression checks
+
+- **yun-102-configurable-theme** — In progress. Expand site theme configuration to cover practical core colors with native color pickers and runtime CSS variable application. See `docs/plan/yun-102-configurable-theme.md`
+  - [x] 1. Backend theme settings and validation (`ruff check`, `ruff format --check`, `mypy app/`)
+  - [x] 2. Public/admin theme API typing and normalization
+  - [x] 3. Runtime CSS variable mapping
+  - [x] 4. Admin color picker UI and i18n
+  - [x] 5. Targeted validation
+
+- **yun-97-observability-upgrade** — In progress. Upgrade admin observability IA, alerts, drilldowns, token/cost, workers, and slow-query guidance using existing APIs. See `docs/plan/yun-97-observability-upgrade.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Observability navigation, overview, and alert cards
+  - [x] 3. Token/cost, worker, slow-query, Agent, and Workflow display upgrades
+  - [x] 4. i18n, generated types, and validation
+
+- **yun-106-object-storage-switch** — Complete. Add configurable switching between local upload storage and S3-compatible object storage. See `docs/plan/yun-106-object-storage-switch.md`
+  - [x] 1. Planning docs
+  - [x] 2. Backend settings and storage adapter
+  - [x] 3. Upload endpoint integration
+  - [x] 4. Admin settings UI
+  - [x] 5. Skills package storage integration
+  - [x] 6. Knowledge-base document storage integration
+  - [x] 7. Tests and checks
+
 - **yun-95-log-server-side-search-pagination** — Complete. Move Agent and workflow log search/date filtering to backend queries before pagination. See `docs/plan/yun-95-log-server-side-search-pagination.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend log search/date filters

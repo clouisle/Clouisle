@@ -65,6 +65,8 @@ export interface RegisterData {
   email: string
   password: string
   terms_accepted?: boolean
+  captcha_id?: string
+  captcha_token?: string
 }
 
 export interface VerificationResponse {
@@ -74,14 +76,28 @@ export interface VerificationResponse {
 
 export interface CaptchaResponse {
   captcha_id: string
-  question: string
+  challenge: string
+  prompt: string
+  expires_in: number
+}
+
+export interface CaptchaProofResponse {
+  captcha_id: string
+  captcha_token: string
+}
+
+export interface CaptchaPointerPoint {
+  x: number
+  y: number
+  t: number
+  event?: 'enter' | 'move' | 'down' | 'up' | 'click'
 }
 
 export interface LoginData {
   username: string
   password: string
   captcha_id?: string
-  captcha_answer?: string
+  captcha_token?: string
 }
 
 export const authApi = {
@@ -90,6 +106,19 @@ export const authApi = {
    */
   getCaptcha: async (): Promise<CaptchaResponse> => {
     return api.get<CaptchaResponse>('/captcha')
+  },
+
+  /**
+   * 完成点击式人机验证
+   */
+  completeCaptchaClick: async (data: {
+    captcha_id: string
+    challenge: string
+    clicked_option: string
+    elapsed_ms: number
+    pointer?: CaptchaPointerPoint[]
+  }): Promise<CaptchaProofResponse> => {
+    return api.post<CaptchaProofResponse>('/captcha/click', data)
   },
 
   /**
@@ -102,8 +131,8 @@ export const authApi = {
     if (data.captcha_id) {
       formData.append('captcha_id', data.captcha_id)
     }
-    if (data.captcha_answer) {
-      formData.append('captcha_answer', data.captcha_answer)
+    if (data.captcha_token) {
+      formData.append('captcha_token', data.captcha_token)
     }
     return api.postForm<Token>('/login/access-token', formData, { skipAuthRedirect: true })
   },

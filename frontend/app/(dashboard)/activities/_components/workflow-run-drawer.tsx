@@ -132,15 +132,11 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
     const loadRunDetails = async () => {
       try {
         setLoading(true)
-        console.log('Loading run details for:', runId)
 
         const [runData, nodesData] = await Promise.all([
           workflowsApi.getWorkflowRun(runId),
           workflowsApi.getRunNodeExecutions(runId),
         ])
-
-        console.log('Run data:', runData)
-        console.log('Node executions:', nodesData)
 
         setRun(runData)
         setNodeExecutions(nodesData)

@@ -250,8 +250,6 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
         try {
           const data = JSON.parse(event.data)
 
-          console.log('SSE event received:', data.event, data)
-
           setEvents(prev => [...prev, {
             type: data.event || 'output',
             data: data,
@@ -260,13 +258,11 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
 
           // Update status based on events
           if (data.event === 'workflow_complete') {
-            console.log('Workflow completed, setting flag')
             workflowCompleted = true
             setStatus('completed')
             eventSource.close()
             setLoading(false)
           } else if (data.event === 'workflow_error') {
-            console.log('Workflow error')
             setStatus('failed')
             setError(resolveWorkflowUiError(data.data?.error, t('runDrawer.executionFailed')))
             eventSource.close()
@@ -292,18 +288,15 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
       eventSource.onmessage = handleEvent
 
       eventSource.onerror = (err) => {
-        console.log('SSE onerror triggered, workflowCompleted:', workflowCompleted)
         console.error('SSE error:', err)
         eventSource.close()
 
         // Only show error if workflow didn't complete normally
         if (!workflowCompleted) {
-          console.log('Showing error because workflow did not complete')
           setLoading(false)
           setStatus('failed')
           setError(t('runDrawer.streamConnectionFailed'))
         } else {
-          console.log('Workflow completed normally, not showing error')
           // Normal completion, just stop loading
           setLoading(false)
         }

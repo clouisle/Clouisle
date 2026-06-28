@@ -139,19 +139,18 @@ export type ToolContentProps = ComponentProps<"div">;
 export const ToolContent = ({ className, ...props }: ToolContentProps) => {
   const { isOpen, contentId } = useToolContext();
 
-  return (
+  return isOpen ? (
     <div
       id={contentId}
-      data-state={isOpen ? "open" : "closed"}
+      data-state="open"
       className={cn(
         "text-popover-foreground outline-none",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in",
-        !isOpen && "hidden",
+        "data-[state=open]:slide-in-from-top-2 data-[state=open]:animate-in",
         className
       )}
       {...props}
     />
-  );
+  ) : null;
 };
 
 export type ToolInputProps = ComponentProps<"div"> & {

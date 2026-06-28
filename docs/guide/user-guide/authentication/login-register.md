@@ -19,10 +19,11 @@ If enabled by administrators, you can create an account directly.
    - **Email**: Valid email address
    - **Password**: Strong password (8+ characters, mix of letters, numbers, symbols)
    - **Confirm Password**: Re-enter password
-4. Click **"Register"**
-5. Check your email for verification link (if email verification is enabled)
-6. Click the verification link to activate your account
-7. Log in with your credentials
+4. If human verification is shown, click **"Click to verify you are human"**
+5. Click **"Register"**
+6. Check your email for verification link (if email verification is enabled)
+7. Click the verification link to activate your account
+8. Log in with your credentials
 
 **Note**: If admin approval is required, you'll see a message that your account is pending approval. Wait for an administrator to activate your account.
 
@@ -47,8 +48,9 @@ Administrators can invite users via email.
 1. Navigate to the login page
 2. Enter your **username** or **email**
 3. Enter your **password**
-4. (Optional) Check **"Remember me"** to stay logged in
-5. Click **"Log In"**
+4. If human verification is shown, click **"Click to verify you are human"**
+5. (Optional) Check **"Remember me"** to stay logged in
+6. Click **"Log In"**
 
 **Security Features:**
 - Account lockout after multiple failed attempts
@@ -135,10 +137,11 @@ Clouisle enforces strong password policies:
 - Account locked for 15 minutes
 - Contact administrator if locked out repeatedly
 
-**CAPTCHA Verification:**
-- Triggered after failed login attempts
-- Prevents automated attacks
-- Required for suspicious login patterns
+**Human Verification:**
+- Required on login and self-registration when enabled by administrators (except the first bootstrap user)
+- Complete it by clicking the verification control before submitting
+- If it fails, expires, or cannot load, retry the verification control
+- Works with existing account lockout and login anomaly controls as the risk-control fallback
 
 **Login Anomaly Detection:**
 - System tracks your usual login locations and devices

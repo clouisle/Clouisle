@@ -60,6 +60,7 @@ import { useSettings } from '@/hooks/use-settings'
 import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
+import { getBrandingVisibility } from '@/lib/theme-config'
 
 interface PlatformNavItem {
   key: string
@@ -128,6 +129,9 @@ export function PlatformHeader() {
 
   // 使用默认值直到 mounted，避免水合不匹配
   const effectiveHeaderVariant = mounted ? platformHeaderVariant : 'centered'
+  const { showIcon: showBrandIcon, showName: showBrandName } = getBrandingVisibility(
+    siteSettings.theme_branding_display
+  )
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -234,32 +238,43 @@ export function PlatformHeader() {
     exact ? pathname === href : pathname.startsWith(href)
 
   return (
-    <header className="sticky flex justify-center top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky flex justify-center top-0 z-50 w-full border-b bg-navbar text-navbar-foreground backdrop-blur supports-[backdrop-filter]:bg-navbar/80">
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
-          <Link href="/app" className="flex items-center space-x-2 shrink-0" data-testid="platform-logo">
-            <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
-              {siteSettings.site_icon ? (
-                <Image
-                  src={siteSettings.site_icon}
-                  alt={siteSettings.site_name}
-                  width={32}
-                  height={32}
-                  className="size-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <DefaultSiteIcon width={32} height={32} className="size-full" />
+          {(showBrandIcon || showBrandName) && (
+            <Link href="/app" className="flex items-center space-x-2 shrink-0" data-testid="platform-logo">
+              {showBrandIcon && (
+                <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
+                  {siteSettings.site_icon ? (
+                    <Image
+                      src={siteSettings.site_icon}
+                      alt={siteSettings.site_name}
+                      width={32}
+                      height={32}
+                      className="size-full object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <DefaultSiteIcon width={32} height={32} className="size-full" />
+                  )}
+                </div>
               )}
-            </div>
-          </Link>
+              {showBrandName && (
+                <span className={cn('font-semibold', showBrandIcon && 'hidden sm:inline')}>
+                  {siteSettings.site_name || 'Clouisle'}
+                </span>
+              )}
+            </Link>
+          )}
 
           {/* Separator and Team Switcher - 没有团队时隐藏 */}
           {!hideNav && (
             <>
-              <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
+              {(showBrandIcon || showBrandName) && (
+                <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
+              )}
               <div className="min-w-0 flex-1 sm:flex-initial" data-testid="platform-team-switcher">
                 <TeamSwitcher />
               </div>
@@ -279,9 +294,13 @@ export function PlatformHeader() {
               return (
                 <Link key={item.key} href={item.href} data-testid={`nav-${item.key}`}>
                   <Button
-                    variant={isActive(item.href, 'exact' in item ? item.exact : false) ? 'secondary' : 'ghost'}
+                    variant="ghost"
                     size="sm"
-                    className="gap-2 cursor-pointer relative"
+                    className={cn(
+                      "gap-2 cursor-pointer relative text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground",
+                      isActive(item.href, 'exact' in item ? item.exact : false) &&
+                        "bg-navbar-hover text-navbar-hover-foreground"
+                    )}
                   >
                     <Icon className="size-4" />
                     {/* 极简模式只显示图标 */}
@@ -319,7 +338,7 @@ export function PlatformHeader() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 cursor-pointer"
+                className="h-8 w-8 cursor-pointer text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
                 onClick={() => setSettingsOpen(true)}
                 data-testid="platform-theme-button"
               >
@@ -334,7 +353,7 @@ export function PlatformHeader() {
           <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger
               render={(props) => (
-                <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="platform-user-menu">
+                <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full hover:bg-navbar-hover hover:text-navbar-hover-foreground" data-testid="platform-user-menu">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={user?.avatar_url || undefined} alt={user?.username || 'User'} />
                     <AvatarFallback>
@@ -456,16 +475,20 @@ export function PlatformHeader() {
 
       {/* Mobile Navigation Menu */}
       {!hideNav && mobileMenuOpen && (
-        <div className="md:hidden border-t bg-background">
+        <div className="md:hidden border-t bg-navbar text-navbar-foreground">
           <nav className="container max-w-screen-2xl px-4 py-2 space-y-1">
             {visibleNavItems.map((item) => {
               const Icon = item.icon
               return (
                 <Link key={item.key} href={item.href} onClick={() => setMobileMenuOpen(false)}>
                   <Button
-                    variant={isActive(item.href, 'exact' in item ? item.exact : false) ? 'secondary' : 'ghost'}
+                    variant="ghost"
                     size="sm"
-                    className="w-full justify-start gap-2 cursor-pointer relative"
+                    className={cn(
+                      "w-full justify-start gap-2 cursor-pointer relative text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground",
+                      isActive(item.href, 'exact' in item ? item.exact : false) &&
+                        "bg-navbar-hover text-navbar-hover-foreground"
+                    )}
                   >
                     <Icon className="size-4" />
                     <span>{t(`nav.${item.key}`)}</span>

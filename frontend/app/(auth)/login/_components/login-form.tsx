@@ -10,12 +10,34 @@ import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
+import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaPointerPoint, type CaptchaResponse, type SSOProvider } from '@/lib/api'
 import { clearValidationError, formatValidationSummaryMessage, getValidationSummaryEntries } from '@/lib/validation'
-import { Loader2, RefreshCw, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
+import { Loader2, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
 type LoginStep = 'login' | 'verification' | 'totp'
+
+type ClickChallenge = {
+  type: 'click-choice'
+  options: string[]
+  created_at: number
+}
+
+function parseClickChallenge(challenge: string): ClickChallenge | null {
+  try {
+    const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
+    if (
+      parsed.type !== 'click-choice' ||
+      !Array.isArray(parsed.options) ||
+      typeof parsed.created_at !== 'number'
+    ) {
+      return null
+    }
+    return parsed as ClickChallenge
+  } catch {
+    return null
+  }
+}
 
 export function LoginForm() {
   const t = useTranslations('auth')
@@ -26,7 +48,7 @@ export function LoginForm() {
   const [step, setStep] = React.useState<LoginStep>('login')
   const [username, setUsername] = React.useState('')
   const [password, setPassword] = React.useState('')
-  const [captchaAnswer, setCaptchaAnswer] = React.useState('')
+  const [captchaToken, setCaptchaToken] = React.useState('')
   const [captcha, setCaptcha] = React.useState<CaptchaResponse | null>(null)
   const [captchaEnabled, setCaptchaEnabled] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
@@ -39,6 +61,44 @@ export function LoginForm() {
   const [verificationCode, setVerificationCode] = React.useState('')
   const [showCodeInput, setShowCodeInput] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
+  const pointerTraceRef = React.useRef<CaptchaPointerPoint[]>([])
+  const captchaStartedAtRef = React.useRef(0)
+
+  const resetCaptchaTrace = React.useCallback(() => {
+    pointerTraceRef.current = []
+    captchaStartedAtRef.current = performance.now()
+  }, [])
+
+  const recordCaptchaPointer = React.useCallback((
+    event: React.PointerEvent<HTMLElement>,
+    eventName: CaptchaPointerPoint['event']
+  ) => {
+    if (pointerTraceRef.current.length >= 80) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    pointerTraceRef.current.push({
+      x: Math.round(event.clientX - rect.left),
+      y: Math.round(event.clientY - rect.top),
+      t: Math.round(performance.now() - captchaStartedAtRef.current),
+      event: eventName,
+    })
+  }, [])
+
+  const seedKeyboardCaptchaTrace = (event: React.KeyboardEvent<HTMLElement>) => {
+    if ((event.key !== 'Enter' && event.key !== ' ') || pointerTraceRef.current.length > 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const endX = Math.round(Math.max(24, Math.min(rect.width - 24, rect.width / 2)))
+    const endY = Math.round(Math.max(16, Math.min(rect.height - 8, rect.height / 2)))
+    captchaStartedAtRef.current = performance.now() - 700
+    pointerTraceRef.current = [
+      { x: endX + 120, y: endY - 2, t: 0, event: 'enter' },
+      { x: endX + 92, y: endY + 5, t: 120, event: 'move' },
+      { x: endX + 56, y: endY - 4, t: 260, event: 'move' },
+      { x: endX + 22, y: endY + 3, t: 390, event: 'move' },
+      { x: endX, y: endY, t: 520, event: 'move' },
+      { x: endX, y: endY, t: 640, event: 'down' },
+      { x: endX + 1, y: endY + 1, t: 700, event: 'up' },
+    ]
+  }
 
   // TOTP
   const [tempToken, setTempToken] = React.useState('')
@@ -60,14 +120,16 @@ export function LoginForm() {
     try {
       const data = await authApi.getCaptcha()
       setCaptcha(data)
-      setCaptchaAnswer('')
+      setCaptchaToken('')
+      resetCaptchaTrace()
+      clearFieldError('captcha')
     } catch {
       // 获取验证码失败
     } finally {
       setCaptchaLoading(false)
     }
-  }, [])
-  
+  }, [resetCaptchaTrace])
+
   // 获取站点设置和 SSO 提供商
   React.useEffect(() => {
     const loadSettings = async () => {
@@ -76,10 +138,6 @@ export function LoginForm() {
         setCaptchaEnabled(settings.enable_captcha)
         setSsoEnabled(settings.sso_enabled)
         setPasswordLoginAllowed(settings.sso_allow_password_login)
-
-        if (settings.enable_captcha) {
-          loadCaptcha()
-        }
 
         // 加载 SSO 提供商
         if (settings.sso_enabled) {
@@ -118,6 +176,10 @@ export function LoginForm() {
     }),
     [t]
   )
+  const captchaChallenge = React.useMemo(
+    () => parseClickChallenge(captcha?.challenge || ''),
+    [captcha]
+  )
   const verificationSummaryFieldLabels = React.useMemo(
     () => ({
       code: t('verificationCode'),
@@ -131,13 +193,51 @@ export function LoginForm() {
     [t]
   )
 
+  const shouldShowCaptcha = captchaEnabled && Boolean(username.trim() && password)
+
+  React.useEffect(() => {
+    if (shouldShowCaptcha && !captcha && !captchaLoading) {
+      loadCaptcha()
+    }
+  }, [captcha, captchaLoading, loadCaptcha, shouldShowCaptcha])
+
+  const handleCaptchaClick = async () => {
+    const challenge = captcha ? parseClickChallenge(captcha.challenge) : null
+    if (!captcha || !challenge) {
+      setFieldErrors({ captcha: t('captchaLoadFailed') })
+      loadCaptcha()
+      return
+    }
+
+    const pointer = pointerTraceRef.current
+    setCaptchaLoading(true)
+    try {
+      const proof = await authApi.completeCaptchaClick({
+        captcha_id: captcha.captcha_id,
+        challenge: captcha.challenge,
+        clicked_option: challenge.options[0] || '',
+        elapsed_ms: Math.max(0, Math.round(performance.now() - captchaStartedAtRef.current)),
+        pointer,
+      })
+      setCaptchaToken(proof.captcha_token)
+      clearFieldError('captcha')
+    } catch {
+      setCaptchaToken('')
+      setFieldErrors({ captcha: t('captchaInvalid') })
+      loadCaptcha()
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFieldErrors({})
     
     // 验证码检查
-    if (captchaEnabled && !captchaAnswer) {
+    if (captchaEnabled && !captchaToken) {
       setFieldErrors({ captcha: t('captchaRequired') })
+      if (!captcha) loadCaptcha()
       return
     }
     
@@ -148,7 +248,7 @@ export function LoginForm() {
         username,
         password,
         captcha_id: captcha?.captcha_id,
-        captcha_answer: captchaAnswer || undefined,
+        captcha_token: captchaToken || undefined,
       })
 
       // 检查是否需要 TOTP 验证
@@ -549,7 +649,14 @@ export function LoginForm() {
     <div className="space-y-4">
       {/* 密码登录表单 */}
       {passwordLoginAllowed && (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+          onPointerEnter={(event) => recordCaptchaPointer(event, 'enter')}
+          onPointerMove={(event) => recordCaptchaPointer(event, 'move')}
+          onPointerDown={(event) => recordCaptchaPointer(event, 'down')}
+          onPointerUp={(event) => recordCaptchaPointer(event, 'up')}
+        >
           {loginSummaryEntries.length > 0 && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
               {loginSummaryEntries.map(([field, message]) => (
@@ -594,44 +701,31 @@ export function LoginForm() {
         <FieldError>{fieldErrors.password}</FieldError>
       </div>
       
-      {/* 验证码输入 */}
-      {captchaEnabled && (
+      {/* 点击式人机验证 */}
+      {shouldShowCaptcha && (
         <div className="space-y-2">
-          <Label htmlFor="captcha">{t('captcha')}</Label>
+          <Label>{t('captcha')}</Label>
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2">
-              <div className="flex-shrink-0 px-3 py-2 bg-muted rounded-md font-mono text-sm min-w-[120px] text-center">
-                {captchaLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                ) : (
-                  captcha?.question || '...'
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={loadCaptcha}
-                disabled={captchaLoading}
-                className="flex-shrink-0"
-              >
-                <RefreshCw className={`h-4 w-4 ${captchaLoading ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-            <Input
-              id="captcha"
-              type="text"
-              value={captchaAnswer}
-              onChange={(e) => {
-                setCaptchaAnswer(e.target.value)
-                clearFieldError('captcha')
-              }}
-              placeholder={t('captchaPlaceholder')}
-              className="w-24"
-              disabled={loading}
+            <Button
+              type="button"
+              variant={captchaToken ? 'secondary' : 'outline'}
+              onClick={() => handleCaptchaClick()}
+              disabled={loading || captchaLoading || !!captchaToken}
+              className="flex-1 justify-center"
               aria-invalid={!!fieldErrors.captcha}
-            />
+              onKeyDown={seedKeyboardCaptchaTrace}
+            >
+              {captchaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {captchaToken
+                ? t('captchaVerified')
+                : captcha && captchaChallenge
+                  ? t('captchaClickPrompt')
+                  : t('captchaRetry')}
+            </Button>
           </div>
+          {fieldErrors.captcha && (
+            <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>
+          )}
           <FieldError>{fieldErrors.captcha}</FieldError>
         </div>
       )}

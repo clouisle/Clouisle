@@ -30,7 +30,7 @@ from app.core.email import (
     set_email_cooldown,
     send_verification_email,
 )
-from app.core.captcha import generate_captcha, verify_captcha
+from app.core.captcha import create_captcha_proof, generate_captcha, verify_captcha
 from app.core.timezone import now_utc
 from app.core.i18n import t, get_default_language
 from app.models.user import User
@@ -38,7 +38,11 @@ from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, User as UserSchema
 from app.api.v1.endpoints.users import serialize_user_with_sso
-from app.schemas.captcha import CaptchaResponse
+from app.schemas.captcha import (
+    CaptchaClickRequest,
+    CaptchaProofResponse,
+    CaptchaResponse,
+)
 from app.schemas.verification import (
     SendVerificationRequest,
     VerifyCodeRequest,
@@ -61,10 +65,51 @@ router = APIRouter()
 @router.get("/captcha", response_model=Response[CaptchaResponse])
 async def get_captcha() -> Any:
     """
-    Get a new captcha for login
+    Get a new click captcha for human verification
     """
-    captcha_id, question, _ = await generate_captcha()
-    return success(data=CaptchaResponse(captcha_id=captcha_id, question=question))
+    captcha_id, challenge = await generate_captcha()
+    return success(data=CaptchaResponse(captcha_id=captcha_id, challenge=challenge))
+
+
+@router.post("/captcha/click", response_model=Response[CaptchaProofResponse])
+async def complete_captcha_click(payload: CaptchaClickRequest) -> Any:
+    """Exchange a valid click interaction for a private one-time proof."""
+    proof = await create_captcha_proof(
+        payload.captcha_id,
+        payload.challenge,
+        payload.clicked_option,
+        payload.elapsed_ms,
+        [point.model_dump() for point in payload.pointer],
+    )
+    if not proof:
+        raise BusinessError(
+            code=ResponseCode.CAPTCHA_INVALID,
+            msg_key="captcha_invalid",
+        )
+    return success(
+        data=CaptchaProofResponse(
+            captcha_id=payload.captcha_id,
+            captcha_token=proof,
+        )
+    )
+
+
+async def validate_human_verification(
+    captcha_id: Optional[str], captcha_token: Optional[str]
+) -> None:
+    """Validate the one-time click captcha token."""
+    if not captcha_id or not captcha_token:
+        raise BusinessError(
+            code=ResponseCode.CAPTCHA_REQUIRED,
+            msg_key="captcha_required",
+        )
+
+    is_valid = await verify_captcha(captcha_id, captcha_token)
+    if not is_valid:
+        raise BusinessError(
+            code=ResponseCode.CAPTCHA_INVALID,
+            msg_key="captcha_invalid",
+        )
 
 
 @router.post("/login/access-token", response_model=Response[Token])
@@ -73,6 +118,7 @@ async def login_access_token(
     identifier: str = Form(..., alias="username"),
     password: str = Form(...),
     captcha_id: Optional[str] = Form(None),
+    captcha_token: Optional[str] = Form(None),
     captcha_answer: Optional[str] = Form(None),
 ) -> Any:
     """
@@ -91,18 +137,7 @@ async def login_access_token(
     # Check if captcha is enabled and verify it
     enable_captcha = await SiteSetting.get_value("enable_captcha", False)
     if enable_captcha:
-        if not captcha_id or not captcha_answer:
-            raise BusinessError(
-                code=ResponseCode.CAPTCHA_REQUIRED,
-                msg_key="captcha_required",
-            )
-
-        is_valid = await verify_captcha(captcha_id, captcha_answer)
-        if not is_valid:
-            raise BusinessError(
-                code=ResponseCode.CAPTCHA_INVALID,
-                msg_key="captcha_invalid",
-            )
+        await validate_human_verification(captcha_id, captcha_token or captcha_answer)
 
     # Allow login by username or email
     if "@" in identifier:
@@ -681,6 +716,9 @@ async def register(
                 code=ResponseCode.REGISTRATION_DISABLED,
                 msg_key="registration_disabled",
             )
+        enable_captcha = await SiteSetting.get_value("enable_captcha", False)
+        if enable_captcha:
+            await validate_human_verification(user_in.captcha_id, user_in.captcha_token)
         require_terms_acceptance = await SiteSetting.get_value(
             "require_terms_acceptance_on_register", False
         )
