@@ -3598,7 +3598,9 @@ async def edit_user_message_stream(
                             status="success",
                             request=request,
                             changes={
-                                "before": _message_content_audit_preview(message.content),
+                                "before": _message_content_audit_preview(
+                                    message.content
+                                ),
                                 "after": _message_content_audit_preview(edited_content),
                             },
                             metadata={
