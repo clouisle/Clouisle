@@ -89,6 +89,30 @@ async def test_public_challenge_data_alone_cannot_mint_token(
 
 
 @pytest.mark.asyncio
+async def test_tampered_challenge_options_cannot_mint_token(
+    fake_redis: FakeRedis,
+) -> None:
+    response = await login_endpoints.get_captcha()
+    captcha_id = response["data"].captcha_id
+    challenge = json.loads(response["data"].challenge)
+    challenge["options"] = ["forged-option"]
+
+    with pytest.raises(BusinessError) as exc_info:
+        await login_endpoints.complete_captcha_click(
+            CaptchaClickRequest(
+                captcha_id=captcha_id,
+                challenge=json.dumps(challenge),
+                clicked_option="forged-option",
+                elapsed_ms=700,
+                pointer=valid_pointer(),
+            )
+        )
+
+    assert exc_info.value.code == ResponseCode.CAPTCHA_INVALID
+    assert f"captcha:{captcha_id}" in fake_redis.values
+
+
+@pytest.mark.asyncio
 async def test_click_captcha_valid_proof_succeeds_once(fake_redis: FakeRedis) -> None:
     response = await login_endpoints.get_captcha()
     captcha_id = response["data"].captcha_id

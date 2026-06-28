@@ -161,7 +161,7 @@ async def create_captcha_proof(
         return None
     options = public_challenge.get("options")
     marker = public_challenge.get("marker")
-    if not isinstance(options, list) or clicked_option not in options:
+    if options != CLICK_OPTIONS or clicked_option not in CLICK_OPTIONS:
         return None
     if not isinstance(marker, str):
         return None
