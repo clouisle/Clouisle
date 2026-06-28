@@ -69,7 +69,9 @@ async def test_validate_theme_color_accepts_hex_or_empty(key, value):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["blue", "#12", "#12345", "#1234567", " #123ABC80 ", 123])
+@pytest.mark.parametrize(
+    "value", ["blue", "#12", "#12345", "#1234567", " #123ABC80 ", 123]
+)
 async def test_validate_theme_color_rejects_invalid_values(value):
     with pytest.raises(BusinessError):
         await _validate_setting_value("theme_sidebar_color", value)
