@@ -2886,11 +2886,31 @@ async def edit_user_message_stream(
         global_timeout: float = 1800.0
         idle_timeout: float = 300.0
 
-        async def restore_original_path() -> None:
-            await activate_conversation_branch(
-                conversation.id,
-                [*original_prefix, *original_descendant_branch],
+        async def _lock_conversation(conn) -> None:
+            await (
+                Conversation.filter(id=conversation.id)
+                .using_db(conn)
+                .select_for_update()
+                .first()
             )
+
+        async def restore_original_path() -> None:
+            if not edited_user_msg:
+                return
+            async with in_transaction() as conn:
+                await _lock_conversation(conn)
+                edited_is_active = await (
+                    Message.filter(id=edited_user_msg.id, is_active=True)
+                    .using_db(conn)
+                    .exists()
+                )
+                if not edited_is_active:
+                    return
+                await activate_conversation_branch(
+                    conversation.id,
+                    [*original_prefix, *original_descendant_branch],
+                    using_db=conn,
+                )
 
         async def activate_edited_path() -> None:
             if not edited_user_msg:
@@ -2899,7 +2919,16 @@ async def edit_user_message_stream(
             path = [*prefix, edited_user_msg]
             if assistant_msg:
                 path.append(assistant_msg)
-            await activate_conversation_branch(conversation.id, path)
+            async with in_transaction() as conn:
+                await _lock_conversation(conn)
+                edited_is_active = await (
+                    Message.filter(id=edited_user_msg.id, is_active=True)
+                    .using_db(conn)
+                    .exists()
+                )
+                if not edited_is_active:
+                    return
+                await activate_conversation_branch(conversation.id, path, using_db=conn)
             await stale_session_memory_if_source_outside_active_branch(conversation.id)
 
         try:
@@ -2953,6 +2982,7 @@ async def edit_user_message_stream(
 
                     round_id = uuid4()
                     async with in_transaction() as conn:
+                        await _lock_conversation(conn)
                         await (
                             Message.filter(Q(id=root_id) | Q(parent_id=root_id))
                             .using_db(conn)
@@ -3543,10 +3573,11 @@ async def edit_user_message_stream(
                         message_count=F("message_count") + created_message_count,
                         total_tokens=F("total_tokens") + total_tokens,
                     )
-                    await Team.filter(id=agent.team.id).update(
-                        total_messages=F("total_messages") + created_message_count,
-                        total_tokens=F("total_tokens") + total_tokens,
-                    )
+                    if agent.team_id:
+                        await Team.filter(id=agent.team_id).update(
+                            total_messages=F("total_messages") + created_message_count,
+                            total_tokens=F("total_tokens") + total_tokens,
+                        )
                     await Conversation.filter(id=conversation.id).update(
                         message_count=F("message_count") + created_message_count,
                         token_usage=F("token_usage") + total_tokens,
@@ -3556,27 +3587,30 @@ async def edit_user_message_stream(
                         if duration_ms > 0 and output_tokens > 0
                         else None
                     )
-                    await AuditLogService.log(
-                        user=current_user,
-                        action="edit_message",
-                        resource_type="message",
-                        resource_id=edited_user_msg.id,
-                        resource_name=str(conversation.id),
-                        operation="update",
-                        status="success",
-                        request=request,
-                        changes={
-                            "before": _message_content_audit_preview(message.content),
-                            "after": _message_content_audit_preview(edited_content),
-                        },
-                        metadata={
-                            "agent_id": str(agent.id),
-                            "conversation_id": str(conversation.id),
-                            "original_message_id": str(message.id),
-                            "new_message_id": str(edited_user_msg.id),
-                            "version_number": new_user_version_number,
-                        },
-                    )
+                    try:
+                        await AuditLogService.log(
+                            user=current_user,
+                            action="edit_message",
+                            resource_type="message",
+                            resource_id=edited_user_msg.id,
+                            resource_name=str(conversation.id),
+                            operation="update",
+                            status="success",
+                            request=request,
+                            changes={
+                                "before": _message_content_audit_preview(message.content),
+                                "after": _message_content_audit_preview(edited_content),
+                            },
+                            metadata={
+                                "agent_id": str(agent.id),
+                                "conversation_id": str(conversation.id),
+                                "original_message_id": str(message.id),
+                                "new_message_id": str(edited_user_msg.id),
+                                "version_number": new_user_version_number,
+                            },
+                        )
+                    except Exception:
+                        logger.exception("Failed to write message edit audit log")
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': total_tokens}, 'timing': {'first_token_ms': assistant_msg.first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number})}\n\n"
                 except (QuotaExceededError, InsufficientQuotaError) as e:
                     preserved_partial = await persist_partial_round_error(

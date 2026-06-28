@@ -128,6 +128,11 @@ function parseUserInputRequestSegments(segments: ContentSegment[]): ContentSegme
   return nextSegments
 }
 
+function finalTaskState(state: TaskPart['state'], isStreaming: boolean): TaskPart['state'] {
+  if (isStreaming || state === 'error') return state
+  return 'completed'
+}
+
 function buildMessageParts(
   segments: ContentSegment[],
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
@@ -144,8 +149,7 @@ function buildMessageParts(
     const ragTask: TaskPart = {
       type: 'task',
       taskType: 'rag',
-      // Mark as completed when streaming ends
-      state: isStreaming ? taskState.rag : 'completed',
+      state: finalTaskState(taskState.rag, isStreaming),
       info: taskState.ragSourceCount,
     }
     parts.push(ragTask)
@@ -156,7 +160,7 @@ function buildMessageParts(
     const compressionTask: TaskPart = {
       type: 'task',
       taskType: 'compression',
-      state: isStreaming ? taskState.compression : 'completed',
+      state: finalTaskState(taskState.compression, isStreaming),
       info: taskState.compressionInfo,
     }
     parts.push(compressionTask)
@@ -167,8 +171,7 @@ function buildMessageParts(
     const generatingTask: TaskPart = {
       type: 'task',
       taskType: 'generating',
-      // Mark as completed when streaming ends
-      state: isStreaming ? taskState.generating : 'completed',
+      state: finalTaskState(taskState.generating, isStreaming),
     }
     parts.push(generatingTask)
   }
@@ -227,6 +230,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
   }, [initialMessages])
 
   const abortRef = useRef<(() => void) | null>(null)
+  const requestIdRef = useRef(0)
   const streamingStateRef = useRef<{
     assistantMessageId: string | null
     segments: ContentSegment[]
@@ -310,6 +314,9 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
   const sendMessage = useCallback(
     async (message: string, images?: Array<{ type: string; url: string }>, fileUrls?: Array<{ filename: string; url: string; size: number; mime_type: string }>) => {
       if (!message.trim() || isLoading) return
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      const isCurrentRequest = () => requestIdRef.current === requestId
 
       const userParts: MessagePart[] = [{ type: 'text', text: message.trim() }]
       if (images && images.length > 0) {
@@ -353,6 +360,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         abortRef.current = abort
 
         const response = await stream
+        if (!isCurrentRequest()) return
         if (!response.ok) {
           await response.json().catch(() => ({}))
           throw new Error(getEmbedHttpErrorMessage(response.status, tError))
@@ -365,6 +373,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         let userInputRequestScanTail = ''
 
         for await (const event of parseSSEStream(response)) {
+          if (!isCurrentRequest()) return
           const eventType = event.event as string
           const data = event.data as Record<string, unknown>
 
@@ -578,6 +587,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
 
         setStatus('idle')
       } catch (err: unknown) {
+        if (!isCurrentRequest()) return
         cancelScheduledStreamingFlush()
         if (err instanceof DOMException && err.name === 'AbortError') {
           finishStreamingState()
@@ -590,13 +600,14 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         onError?.({ message: errorMessage })
         setStatus('error')
       } finally {
-        abortRef.current = null
+        if (isCurrentRequest()) abortRef.current = null
       }
     },
     [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError, tError, cancelScheduledStreamingFlush, finishStreamingState, flushStreamingMessage, scheduleStreamingMessageFlush]
   )
 
   const stop = useCallback(() => {
+    requestIdRef.current += 1
     abortRef.current?.()
     abortRef.current = null
     cancelScheduledStreamingFlush()
