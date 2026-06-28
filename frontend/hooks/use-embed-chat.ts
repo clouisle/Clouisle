@@ -128,6 +128,11 @@ function parseUserInputRequestSegments(segments: ContentSegment[]): ContentSegme
   return nextSegments
 }
 
+function finalTaskState(state: TaskPart['state'], isStreaming: boolean): TaskPart['state'] {
+  if (isStreaming || state === 'error') return state
+  return 'completed'
+}
+
 function buildMessageParts(
   segments: ContentSegment[],
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
@@ -144,8 +149,7 @@ function buildMessageParts(
     const ragTask: TaskPart = {
       type: 'task',
       taskType: 'rag',
-      // Mark as completed when streaming ends
-      state: isStreaming ? taskState.rag : 'completed',
+      state: finalTaskState(taskState.rag, isStreaming),
       info: taskState.ragSourceCount,
     }
     parts.push(ragTask)
@@ -156,7 +160,7 @@ function buildMessageParts(
     const compressionTask: TaskPart = {
       type: 'task',
       taskType: 'compression',
-      state: isStreaming ? taskState.compression : 'completed',
+      state: finalTaskState(taskState.compression, isStreaming),
       info: taskState.compressionInfo,
     }
     parts.push(compressionTask)
@@ -167,21 +171,15 @@ function buildMessageParts(
     const generatingTask: TaskPart = {
       type: 'task',
       taskType: 'generating',
-      // Mark as completed when streaming ends
-      state: isStreaming ? taskState.generating : 'completed',
+      state: finalTaskState(taskState.generating, isStreaming),
     }
     parts.push(generatingTask)
-  }
-
-  // Source documents
-  for (const src of ragSources) {
-    parts.push(src)
   }
 
   // Content segments
   for (const seg of segments) {
     if (seg.type === 'text') {
-      parts.push({ type: 'text', text: seg.text } as TextPart)
+      parts.push({ type: 'text', text: seg.text, state: isStreaming ? 'streaming' : 'done' } as TextPart)
     } else if (seg.type === 'reasoning') {
       const block = reasoningBlocks[seg.index]
       if (block) {
@@ -193,8 +191,11 @@ function buildMessageParts(
         } as ReasoningPart)
       }
     } else if (seg.type === 'tool-group') {
-      for (const call of seg.calls) parts.push(call)
-      for (const result of seg.results) parts.push(result)
+      for (const call of seg.calls) {
+        parts.push(call)
+        const result = seg.results.find(item => item.toolCallId === call.toolCallId)
+        if (result) parts.push(result)
+      }
     } else if (seg.type === 'user-input-request') {
       parts.push(seg.userInputRequest)
     } else if (seg.type === 'truncated') {
@@ -202,6 +203,10 @@ function buildMessageParts(
     } else if (seg.type === 'iteration-cap-reached') {
       parts.push({ type: 'iteration-cap-reached' })
     }
+  }
+
+  if (ragSources.length > 0 && !isStreaming) {
+    parts.push(...ragSources)
   }
 
   return parts
@@ -225,6 +230,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
   }, [initialMessages])
 
   const abortRef = useRef<(() => void) | null>(null)
+  const requestIdRef = useRef(0)
   const streamingStateRef = useRef<{
     assistantMessageId: string | null
     segments: ContentSegment[]
@@ -240,13 +246,77 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
     ragSources: [],
     taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   })
+  const scheduledStreamingFlushRef = useRef<
+    | { id: number; type: 'frame' }
+    | { id: ReturnType<typeof setTimeout>; type: 'timeout' }
+    | null
+  >(null)
+
+  const cancelScheduledStreamingFlush = useCallback(() => {
+    const scheduled = scheduledStreamingFlushRef.current
+    if (!scheduled) return
+    if (scheduled.type === 'frame') {
+      window.cancelAnimationFrame(scheduled.id)
+    } else {
+      globalThis.clearTimeout(scheduled.id)
+    }
+    scheduledStreamingFlushRef.current = null
+  }, [])
+
+  const flushStreamingMessage = useCallback((streaming = true) => {
+    cancelScheduledStreamingFlush()
+    const state = streamingStateRef.current
+    if (!state.assistantMessageId) return
+    const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, streaming, state.taskState)
+    setMessages(prev =>
+      prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
+    )
+  }, [cancelScheduledStreamingFlush])
+
+  const scheduleStreamingMessageFlush = useCallback(() => {
+    if (scheduledStreamingFlushRef.current) return
+    if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+      const id = window.requestAnimationFrame(() => {
+        scheduledStreamingFlushRef.current = null
+        flushStreamingMessage(true)
+      })
+      scheduledStreamingFlushRef.current = { id, type: 'frame' }
+      return
+    }
+
+    const id = globalThis.setTimeout(() => {
+      scheduledStreamingFlushRef.current = null
+      flushStreamingMessage(true)
+    }, 16)
+    scheduledStreamingFlushRef.current = { id, type: 'timeout' }
+  }, [flushStreamingMessage])
+
+  useEffect(() => cancelScheduledStreamingFlush, [cancelScheduledStreamingFlush])
 
   const isLoading = status === 'loading' || status === 'streaming'
   const isStreaming = status === 'streaming'
 
+  const finishStreamingState = useCallback(() => {
+    const state = streamingStateRef.current
+    if (state.taskState.rag === 'running') state.taskState.rag = 'completed'
+    if (state.taskState.generating === 'running') state.taskState.generating = 'completed'
+    if (state.taskState.toolCalling === 'running') state.taskState.toolCalling = 'completed'
+    if (state.taskState.compression === 'running') state.taskState.compression = 'completed'
+    state.reasoningBlocks.forEach((block) => {
+      if (block.state === 'streaming') {
+        block.state = 'done'
+        block.duration = Date.now() - block.startTime
+      }
+    })
+    state.currentReasoningIndex = -1
+  }, [])
+
   const sendMessage = useCallback(
     async (message: string, images?: Array<{ type: string; url: string }>, fileUrls?: Array<{ filename: string; url: string; size: number; mime_type: string }>) => {
       if (!message.trim() || isLoading) return
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      const isCurrentRequest = () => requestIdRef.current === requestId
 
       const userParts: MessagePart[] = [{ type: 'text', text: message.trim() }]
       if (images && images.length > 0) {
@@ -290,6 +360,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         abortRef.current = abort
 
         const response = await stream
+        if (!isCurrentRequest()) return
         if (!response.ok) {
           await response.json().catch(() => ({}))
           throw new Error(getEmbedHttpErrorMessage(response.status, tError))
@@ -298,8 +369,11 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         setStatus('streaming')
 
         let receivedTerminalEvent = false
+        let userInputRequestCandidateSeen = false
+        let userInputRequestScanTail = ''
 
         for await (const event of parseSSEStream(response)) {
+          if (!isCurrentRequest()) return
           const eventType = event.event as string
           const data = event.data as Record<string, unknown>
 
@@ -331,14 +405,20 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               } else {
                 state.segments.push({ type: 'text', text: delta })
               }
-              state.segments = parseUserInputRequestSegments(state.segments)
-              // Update assistant message
-              if (state.assistantMessageId) {
-                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
-                setMessages(prev =>
-                  prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
-                )
+              const startTag = '<user_input_request>'
+              userInputRequestScanTail = `${userInputRequestScanTail}${delta}`.slice(-startTag.length)
+              if (!userInputRequestCandidateSeen) {
+                userInputRequestCandidateSeen = delta.includes(startTag) || userInputRequestScanTail.includes(startTag)
               }
+              if (userInputRequestCandidateSeen) {
+                const parsedSegments = parseUserInputRequestSegments(state.segments)
+                if (parsedSegments !== state.segments) {
+                  state.segments = parsedSegments
+                  userInputRequestCandidateSeen = false
+                  userInputRequestScanTail = ''
+                }
+              }
+              scheduleStreamingMessageFlush()
               break
             }
 
@@ -354,12 +434,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               const reasoningDelta = (data as { delta?: string }).delta || ''
               if (state.currentReasoningIndex >= 0) {
                 state.reasoningBlocks[state.currentReasoningIndex].text += reasoningDelta
-                if (state.assistantMessageId) {
-                  const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
-                  setMessages(prev =>
-                    prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
-                  )
-                }
+                scheduleStreamingMessageFlush()
               }
               break
             }
@@ -371,11 +446,13 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                 block.duration = Date.now() - block.startTime
                 state.currentReasoningIndex = -1
               }
+              flushStreamingMessage(true)
               break
             }
 
             case 'rag_start': {
               state.taskState.rag = 'running'
+              flushStreamingMessage(true)
               break
             }
 
@@ -389,11 +466,13 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                 metadata: ctx,
               }))
               state.taskState.ragSourceCount = contexts.length
+              flushStreamingMessage(true)
               break
             }
 
             case 'compression_start': {
               state.taskState.compression = 'running'
+              flushStreamingMessage(true)
               break
             }
 
@@ -401,6 +480,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               const compressionData = data as unknown as SSECompression
               state.taskState.compression = 'completed'
               state.taskState.compressionInfo = compressionData as unknown as Record<string, unknown>
+              flushStreamingMessage(true)
               break
             }
 
@@ -422,6 +502,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                   state: 'running',
                 } as ToolCallPart)
               }
+              flushStreamingMessage(true)
               break
             }
 
@@ -445,17 +526,13 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                   } as ToolResultPart)
                 }
               }
+              flushStreamingMessage(true)
               break
             }
 
             case 'output_truncated': {
               state.segments.push({ type: 'truncated' })
-              if (state.assistantMessageId) {
-                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
-                setMessages(prev =>
-                  prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
-                )
-              }
+              flushStreamingMessage(true)
               break
             }
 
@@ -465,21 +542,15 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               if (iterationCapData.content) {
                 state.segments.push({ type: 'text', text: iterationCapData.content })
               }
-              if (state.assistantMessageId) {
-                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
-                setMessages(prev =>
-                  prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
-                )
-              }
+              flushStreamingMessage(true)
               break
             }
 
             case 'message_end': {
               receivedTerminalEvent = true
               const endData = data as unknown as SSEMessageEnd
-              state.taskState.generating = 'completed'
-              state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
-              // Note: compression state is now managed by compression_start/compression_end events
+              cancelScheduledStreamingFlush()
+              finishStreamingState()
               if (state.assistantMessageId) {
                 const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
                 setMessages(prev =>
@@ -494,7 +565,9 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
 
             case 'error': {
               receivedTerminalEvent = true
+              cancelScheduledStreamingFlush()
               state.taskState.compression = state.taskState.compression === 'running' ? 'error' : state.taskState.compression
+              flushStreamingMessage(false)
               const errorData = data as { code?: number; msg?: string }
               const errorObj = { code: errorData.code, message: errorData.msg || tError('unknown') }
               onError?.(errorObj)
@@ -504,15 +577,8 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         }
 
         if (!receivedTerminalEvent && state.assistantMessageId) {
-          state.taskState.generating = state.taskState.generating === 'running' ? 'completed' : state.taskState.generating
-          state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
-          state.taskState.compression = state.taskState.compression === 'running' ? 'completed' : state.taskState.compression
-          state.reasoningBlocks.forEach((block) => {
-            if (block.state === 'streaming') {
-              block.state = 'done'
-              block.duration = Date.now() - block.startTime
-            }
-          })
+          cancelScheduledStreamingFlush()
+          finishStreamingState()
           const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
           setMessages(prev =>
             prev.map(m => m.id === state.assistantMessageId ? { ...m, parts, metadata: { ...m.metadata, isLoading: false } } : m)
@@ -521,25 +587,34 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
 
         setStatus('idle')
       } catch (err: unknown) {
+        if (!isCurrentRequest()) return
+        cancelScheduledStreamingFlush()
         if (err instanceof DOMException && err.name === 'AbortError') {
+          finishStreamingState()
+          flushStreamingMessage(false)
           setStatus('idle')
           return
         }
         const errorMessage = err instanceof Error ? err.message : tError('unknown')
+        flushStreamingMessage(false)
         onError?.({ message: errorMessage })
         setStatus('error')
       } finally {
-        abortRef.current = null
+        if (isCurrentRequest()) abortRef.current = null
       }
     },
-    [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError, tError]
+    [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError, tError, cancelScheduledStreamingFlush, finishStreamingState, flushStreamingMessage, scheduleStreamingMessageFlush]
   )
 
   const stop = useCallback(() => {
+    requestIdRef.current += 1
     abortRef.current?.()
     abortRef.current = null
+    cancelScheduledStreamingFlush()
+    finishStreamingState()
+    flushStreamingMessage(false)
     setStatus('idle')
-  }, [])
+  }, [cancelScheduledStreamingFlush, finishStreamingState, flushStreamingMessage])
 
   const reset = useCallback(() => {
     stop()

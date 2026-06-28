@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-18T05:58:50.224Z
+// GENERATED — 2026-06-28T03:49:57.033Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -167,6 +167,9 @@ export type DashboardMessages = {
         workflows: string
         timeouts: string
         throughput: string
+        tokens: string
+        workers: string
+        "slow-queries": string
       }
       actions: {
         refresh: string
@@ -225,6 +228,15 @@ export type DashboardMessages = {
         totalTokens: string
         selectedRange: string
       }
+      alerts: {
+        reliability: string
+        latency: string
+        ttft: string
+        load: string
+        latencyHint: string
+        ttftHint: string
+        loadHint: string
+      }
       overview: {
         operationalStatus: string
         operationalStatusDesc: string
@@ -268,12 +280,23 @@ export type DashboardMessages = {
         noSlowQueries: string
         slowQueriesUnavailable: string
         slowQueriesSetupHint: string
+        reason: string
+        actions: {
+          cpuAction: string
+          memoryAction: string
+          diskAction: string
+          databaseAction: string
+          redisAction: string
+          workerAction: string
+        }
       }
       tables: {
         name: string
         team: string
         requests: string
         runs: string
+        errors: string
+        timeouts: string
         successRate: string
         timeoutRate: string
         ttftP95: string
@@ -336,6 +359,26 @@ export type DashboardMessages = {
         tokens: string
         share: string
         noTokenData: string
+      }
+      tokens: {
+        costDriver: string
+        topModel: string
+        modelCount: string
+        sourceDesc: string
+        modelDesc: string
+      }
+      workers: {
+        count: string
+        inFlight: string
+        pendingQueues: string
+        queueDesc: string
+      }
+      slowQueries: {
+        threshold: string
+        thresholdDesc: string
+        topMeanTime: string
+        setupDesc: string
+        setupSteps: string
       }
     }
   }

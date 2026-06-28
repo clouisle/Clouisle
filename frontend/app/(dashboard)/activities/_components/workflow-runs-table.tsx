@@ -225,15 +225,11 @@ export function WorkflowRunsTable() {
         triggerType: triggerTypeFilter.length > 0 ? (triggerTypeFilter as TriggerType[]) : undefined,
         userId: userFilter.length > 0 ? userFilter : undefined,
       }
-      console.log('Loading workflow runs with params:', params)
       const data = await workflowsApi.getAllWorkflowRuns(params)
-      console.log('Workflow runs loaded successfully:', data)
       setRuns(data.items)
       setTotal(data.total)
     } catch (error: unknown) {
       console.error('Failed to load workflow runs:', error)
-      const err = error as { response?: { data?: unknown } }
-      console.error('Error details:', err.response?.data)
     } finally {
       setLoading(false)
     }

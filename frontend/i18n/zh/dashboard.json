@@ -164,7 +164,10 @@
         "agents": "Agent 性能",
         "workflows": "Workflow 性能",
         "timeouts": "超时分析",
-        "throughput": "系统吞吐"
+        "throughput": "系统吞吐",
+        "tokens": "Token 与成本",
+        "workers": "Workers",
+        "slow-queries": "慢查询"
       },
       "actions": {
         "refresh": "刷新",
@@ -223,6 +226,15 @@
         "totalTokens": "总 Token",
         "selectedRange": "所选时间范围"
       },
+      "alerts": {
+        "reliability": "可靠性",
+        "latency": "延迟",
+        "ttft": "首 Token",
+        "load": "负载",
+        "latencyHint": "P99 {p99}；请查看慢 Agent 和 Workflow 行。",
+        "ttftHint": "首 Token 延迟反映模型与供应商响应能力。",
+        "loadHint": "峰值小时请求 {peak}。"
+      },
       "overview": {
         "operationalStatus": "运行状态",
         "operationalStatusDesc": "聚合展示请求可靠性、延迟和负载。",
@@ -265,13 +277,24 @@
         "workerError": "Worker 检查失败",
         "noSlowQueries": "当前阈值下没有慢查询。",
         "slowQueriesUnavailable": "慢查询数据不可用",
-        "slowQueriesSetupHint": "请在 PostgreSQL shared_preload_libraries 中启用 pg_stat_statements，重启 PostgreSQL 后刷新本页。"
+        "slowQueriesSetupHint": "请在 PostgreSQL shared_preload_libraries 中启用 pg_stat_statements，重启 PostgreSQL 后刷新本页。",
+        "reason": "原因：{reason}",
+        "actions": {
+          "cpuAction": "检查主机 CPU 饱和度和异常后台任务。",
+          "memoryAction": "检查内存压力、容器限制和 Worker 并发。",
+          "diskAction": "在写入失败前释放磁盘空间或扩容卷。",
+          "databaseAction": "检查数据库连接、连接池压力和慢查询。",
+          "redisAction": "检查 Redis 连接、内存、淘汰策略和队列积压。",
+          "workerAction": "重启不可用 Worker，并检查 Celery 日志和队列。"
+        }
       },
       "tables": {
         "name": "名称",
         "team": "团队",
         "requests": "请求数",
         "runs": "运行次数",
+        "errors": "错误数",
+        "timeouts": "超时数",
         "successRate": "成功率",
         "timeoutRate": "超时率",
         "ttftP95": "首 Token P95",
@@ -334,6 +357,26 @@
         "tokens": "Token",
         "share": "总 Token 占比",
         "noTokenData": "该时间范围内没有 Token 数据。"
+      },
+      "tokens": {
+        "costDriver": "Token 用量是主要成本驱动。",
+        "topModel": "最高用量模型",
+        "modelCount": "使用模型数",
+        "sourceDesc": "按 Agent 和 Workflow 来源拆分 Token 消耗。",
+        "modelDesc": "所选时间范围内 Token 消耗最高的模型。"
+      },
+      "workers": {
+        "count": "Worker 数量",
+        "inFlight": "处理中任务",
+        "pendingQueues": "队列等待任务",
+        "queueDesc": "按 Celery 队列查看积压；非零积压可能表示 Worker 容量不足或任务卡住。"
+      },
+      "slowQueries": {
+        "threshold": "阈值",
+        "thresholdDesc": "后端默认慢查询阈值",
+        "topMeanTime": "最高平均耗时",
+        "setupDesc": "慢查询需要在 PostgreSQL 中启用 pg_stat_statements。",
+        "setupSteps": "配置步骤：将 pg_stat_statements 加入 shared_preload_libraries，重启 PostgreSQL，必要时执行 CREATE EXTENSION，然后刷新。"
       }
     }
   }

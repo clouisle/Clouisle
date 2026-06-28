@@ -774,6 +774,15 @@ msgstr "Maximum total upload size in MB for all collected artifacts. Defaults to
 msgid "can_only_regenerate_assistant"
 msgstr "Can only regenerate assistant messages"
 
+msgid "can_only_edit_user_message"
+msgstr "Can only edit user messages"
+
+msgid "message_content_required"
+msgstr "Message content is required"
+
+msgid "message_content_unchanged"
+msgstr "Message content is unchanged"
+
 msgid "code_execution_failed"
 msgstr "Code execution failed"
 

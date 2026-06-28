@@ -12,16 +12,17 @@ import mimetypes
 import os
 import re
 import shutil
-from pathlib import Path
+import tempfile
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 from uuid import UUID
-
-import aiofiles
 
 from app.models.knowledge_base import (
     DocumentType,
 )
+from app.services.upload_storage import get_upload_storage_backend
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,24 @@ class DocumentProcessor:
         self.upload_dir = str(Path(upload_dir).resolve())
         os.makedirs(self.upload_dir, exist_ok=True)
 
+    def _storage_root(self) -> Path:
+        return Path(self.upload_dir).resolve().parent
+
+    def _storage_key(self, path: str) -> str:
+        if path.startswith("s3://"):
+            parsed = urlparse(path)
+            key = parsed.path.lstrip("/")
+            if not parsed.netloc or not key:
+                raise ValueError("validation_error")
+            return key
+        if path.startswith("documents/"):
+            return path
+        root = self._storage_root()
+        candidate = Path(path).resolve()
+        if candidate == root or root not in candidate.parents:
+            raise ValueError("validation_error")
+        return candidate.relative_to(root).as_posix()
+
     def _resolve_storage_path(self, *parts: str) -> Path:
         """Resolve a path under the document upload directory."""
         root = Path(self.upload_dir).resolve()
@@ -167,12 +186,7 @@ class DocumentProcessor:
             else f"{file_hash}{ext}"
         )
 
-        dir_path = self._resolve_storage_path(str(kb_id), *date_path.split("/"))
-        os.makedirs(dir_path, exist_ok=True)
-
-        return str(
-            self._resolve_storage_path(str(kb_id), *date_path.split("/"), unique_name)
-        )
+        return f"documents/{kb_id}/{date_path}/{unique_name}"
 
     async def save_file(self, content: bytes, path: str) -> int:
         """
@@ -185,10 +199,8 @@ class DocumentProcessor:
         Returns:
             File size in bytes
         """
-        resolved_path = self._resolve_storage_path(path)
-        os.makedirs(resolved_path.parent, exist_ok=True)
-        async with aiofiles.open(resolved_path, "wb") as f:
-            await f.write(content)
+        storage = await get_upload_storage_backend(self._storage_root())
+        await storage.save(self._storage_key(path), content)
         return len(content)
 
     async def read_file(self, path: str) -> bytes:
@@ -201,25 +213,25 @@ class DocumentProcessor:
         Returns:
             File content bytes
         """
-        resolved_path = self._resolve_storage_path(path)
-        async with aiofiles.open(resolved_path, "rb") as f:
-            return await f.read()
+        storage = await get_upload_storage_backend(self._storage_root())
+        return await storage.read(self._storage_key(path))
 
-    def delete_file(self, path: str) -> bool:
+    async def delete_file(self, path: str) -> bool:
         """
-        Delete a file from disk.
+        Delete a file from upload storage.
 
         Args:
-            path: File path
+            path: File path or storage key
 
         Returns:
             True if deleted, False if not found
         """
-        resolved_path = self._resolve_storage_path(path)
-        if os.path.exists(resolved_path):
-            os.remove(resolved_path)
-            return True
-        return False
+        storage = await get_upload_storage_backend(self._storage_root())
+        storage_key = self._storage_key(path)
+        if not await storage.exists(storage_key):
+            return False
+        await storage.delete(storage_key)
+        return True
 
     def delete_media_assets(self, kb_id: UUID, document_id: UUID) -> None:
         asset_dir = self._resolve_storage_path(str(kb_id), "media", str(document_id))
@@ -318,8 +330,8 @@ class DocumentProcessor:
         Returns:
             Tuple of (extracted_text, metadata)
         """
-        resolved_path = str(self._resolve_storage_path(path))
-        content = await self.read_file(resolved_path)
+        storage_key = self._storage_key(path)
+        content = await self.read_file(storage_key)
         metadata: dict[str, Any] = {
             "file_size": len(content),
             "doc_type": doc_type,
@@ -345,14 +357,22 @@ class DocumentProcessor:
                 "pptx",
             ]:
                 # Use MarkItDown for PDF, Office documents, Excel, and HTML
-                text, doc_meta = self._extract_with_markitdown(resolved_path, doc_type)
+                with tempfile.NamedTemporaryFile(
+                    suffix=Path(storage_key).suffix,
+                    delete=True,
+                ) as temp_file:
+                    temp_file.write(content)
+                    temp_file.flush()
+                    text, doc_meta = self._extract_with_markitdown(
+                        temp_file.name, doc_type
+                    )
                 metadata.update(doc_meta)
             else:
                 # Try to decode as text
                 text = content.decode("utf-8", errors="ignore")
 
         except Exception as e:
-            logger.error(f"Error extracting text from {resolved_path}: {e}")
+            logger.error(f"Error extracting text from {storage_key}: {e}")
             raise ValueError("document_processing_failed_generic")
 
         # Clean up text
