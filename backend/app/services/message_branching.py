@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from uuid import UUID
 
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.expressions import Q
-from tortoise.transactions import BaseDBAsyncClient
 
 from app.models.agent import (
     ConversationSessionMemory,
