@@ -43,6 +43,10 @@ def make_target(allowed_domains: list[str] | None) -> SimpleNamespace:
         (["*.example.com"], "https://example.com"),
         (["*.example.com:3000"], "https://foo.example.com:3000"),
         (["https://example.com"], "https://example.com"),
+        (["example.com:443"], "https://example.com"),
+        (["https://example.com:443"], "https://example.com"),
+        (["example.com:80"], "http://example.com"),
+        (["http://example.com:80"], "http://example.com"),
     ],
 )
 def test_check_embed_domain_allows_matching_origins(
@@ -57,6 +61,8 @@ def test_check_embed_domain_allows_matching_origins(
     [
         (["example.com:3000"], "http://example.com:4000"),
         (["*.example.com:3000"], "https://foo.example.com:4000"),
+        (["example.com:443"], "http://example.com"),
+        (["example.com:notaport"], "http://example.com"),
         (["example.com"], "https://evil.example"),
     ],
 )

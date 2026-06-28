@@ -87,7 +87,15 @@ def _check_embed_enabled(target: Agent | Workflow) -> None:
 
 def _parse_origin_host(value: str) -> tuple[str, int | None]:
     parsed = urlparse(value if "://" in value else f"//{value}")
-    return (parsed.hostname or "").lower(), parsed.port
+    try:
+        port = parsed.port
+    except ValueError:
+        return "", None
+    if port is None and parsed.scheme == "https":
+        port = 443
+    elif port is None and parsed.scheme == "http":
+        port = 80
+    return (parsed.hostname or "").lower(), port
 
 
 def _domain_matches(
