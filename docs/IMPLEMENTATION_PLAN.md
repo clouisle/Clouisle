@@ -2,6 +2,18 @@
 
 ## Active
 
+- **yun-105-click-captcha-hardening** — In progress. Harden click captcha with a Cloudflare-like single click check, pointer trajectory validation, and backend-only proof minting. See `docs/plan/yun-105-click-captcha-hardening.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend pointer payload and trajectory scoring
+  - [x] 3. Frontend click-area pointer collection
+  - [x] 4. Tests and validation
+
+- **yun-105-click-captcha** — In progress. Replace typed captcha with click-based human verification while preserving login/register verification coverage. See `docs/plan/yun-105-click-captcha.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend click captcha contract and enforcement
+  - [x] 3. Frontend login click interaction and i18n
+  - [x] 4. Documentation and validation
+
 - **embed-chat-performance** — In progress. Apply the optimized chat streaming/rendering patterns to the script-embedded Agent chat widget. See `docs/plan/embed-chat-performance.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Embedded streaming commit batching

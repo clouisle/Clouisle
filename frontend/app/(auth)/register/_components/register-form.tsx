@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, ApiError, User, siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
+import { authApi, ApiError, User, siteSettingsApi, type CaptchaPointerPoint, type CaptchaResponse, type PublicSiteSettings } from '@/lib/api'
 import {
   clearValidationError,
   formatValidationSummaryMessage,
@@ -26,6 +26,28 @@ import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-reac
 import { LegalMarkdownDialogContent } from '../../_components/legal-markdown'
 
 type Step = 'form' | 'verification' | 'success'
+
+type ClickChallenge = {
+  type: 'click-choice'
+  options: string[]
+  created_at: number
+}
+
+function parseClickChallenge(challenge: string): ClickChallenge | null {
+  try {
+    const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
+    if (
+      parsed.type !== 'click-choice' ||
+      !Array.isArray(parsed.options) ||
+      typeof parsed.created_at !== 'number'
+    ) {
+      return null
+    }
+    return parsed as ClickChallenge
+  } catch {
+    return null
+  }
+}
 
 /**
  * 解析带参数的错误 key，如 "password_min_length:8" -> { key: "password_min_length", params: { length: "8" } }
@@ -85,13 +107,100 @@ export function RegisterForm() {
   const [showCodeInput, setShowCodeInput] = React.useState(false)
   const [termsAccepted, setTermsAccepted] = React.useState(false)
   const [siteSettings, setSiteSettings] = React.useState<PublicSiteSettings | null>(null)
+  const [captcha, setCaptcha] = React.useState<CaptchaResponse | null>(null)
+  const [captchaToken, setCaptchaToken] = React.useState('')
+  const [captchaLoading, setCaptchaLoading] = React.useState(false)
+  const pointerTraceRef = React.useRef<CaptchaPointerPoint[]>([])
+  const captchaStartedAtRef = React.useRef(0)
+
+  const resetCaptchaTrace = React.useCallback(() => {
+    pointerTraceRef.current = []
+    captchaStartedAtRef.current = performance.now()
+  }, [])
+
+  const recordCaptchaPointer = React.useCallback((
+    event: React.PointerEvent<HTMLElement>,
+    eventName: CaptchaPointerPoint['event']
+  ) => {
+    if (pointerTraceRef.current.length >= 80) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    pointerTraceRef.current.push({
+      x: Math.round(event.clientX - rect.left),
+      y: Math.round(event.clientY - rect.top),
+      t: Math.round(performance.now() - captchaStartedAtRef.current),
+      event: eventName,
+    })
+  }, [])
+
+  const seedKeyboardCaptchaTrace = (event: React.KeyboardEvent<HTMLElement>) => {
+    if ((event.key !== 'Enter' && event.key !== ' ') || pointerTraceRef.current.length > 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const endX = Math.round(Math.max(24, Math.min(rect.width - 24, rect.width / 2)))
+    const endY = Math.round(Math.max(16, Math.min(rect.height - 8, rect.height / 2)))
+    captchaStartedAtRef.current = performance.now() - 700
+    pointerTraceRef.current = [
+      { x: endX + 120, y: endY - 2, t: 0, event: 'enter' },
+      { x: endX + 92, y: endY + 5, t: 120, event: 'move' },
+      { x: endX + 56, y: endY - 4, t: 260, event: 'move' },
+      { x: endX + 22, y: endY + 3, t: 390, event: 'move' },
+      { x: endX, y: endY, t: 520, event: 'move' },
+      { x: endX, y: endY, t: 640, event: 'down' },
+      { x: endX + 1, y: endY + 1, t: 700, event: 'up' },
+    ]
+  }
+
+  const loadCaptcha = React.useCallback(async () => {
+    setCaptchaLoading(true)
+    try {
+      const data = await authApi.getCaptcha()
+      setCaptcha(data)
+      setCaptchaToken('')
+      resetCaptchaTrace()
+      setFieldErrors((prev) => clearValidationError(prev, 'captcha'))
+    } catch {
+      setFieldErrors({ captcha: t('captchaLoadFailed') })
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }, [resetCaptchaTrace, t])
+
+  const handleCaptchaClick = async () => {
+    const challenge = captcha ? parseClickChallenge(captcha.challenge) : null
+    if (!captcha || !challenge) {
+      setFieldErrors({ captcha: t('captchaLoadFailed') })
+      loadCaptcha()
+      return
+    }
+
+    const pointer = pointerTraceRef.current
+    setCaptchaLoading(true)
+    try {
+      const proof = await authApi.completeCaptchaClick({
+        captcha_id: captcha.captcha_id,
+        challenge: captcha.challenge,
+        clicked_option: challenge.options[0] || '',
+        elapsed_ms: Math.max(0, Math.round(performance.now() - captchaStartedAtRef.current)),
+        pointer,
+      })
+      setCaptchaToken(proof.captcha_token)
+      setFieldErrors((prev) => clearValidationError(prev, 'captcha'))
+    } catch {
+      setCaptchaToken('')
+      setFieldErrors({ captcha: t('captchaInvalid') })
+      loadCaptcha()
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
 
   // 倒计时
   React.useEffect(() => {
     siteSettingsApi.getPublic()
-      .then(setSiteSettings)
+      .then((settings) => {
+        setSiteSettings(settings)
+      })
       .catch(() => setSiteSettings(null))
-  }, [])
+  }, [loadCaptcha])
 
   React.useEffect(() => {
     if (resendCooldown > 0) {
@@ -118,7 +227,7 @@ export function RegisterForm() {
   }
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'terms_accepted', 'code']),
+    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'terms_accepted', 'captcha', 'code']),
     [fieldErrors]
   )
   const summaryFieldLabels = React.useMemo(
@@ -128,10 +237,29 @@ export function RegisterForm() {
       password: t('password'),
       confirmPassword: t('confirmPassword'),
       terms_accepted: t('agreement'),
+      captcha: t('captcha'),
       code: t('verificationCode'),
     }),
     [t]
   )
+  const captchaChallenge = React.useMemo(
+    () => parseClickChallenge(captcha?.challenge || ''),
+    [captcha]
+  )
+  const shouldShowCaptcha = Boolean(
+    siteSettings?.enable_captcha &&
+      username.trim() &&
+      isValidEmail(email) &&
+      password.length >= 6 &&
+      password === confirmPassword &&
+      (!siteSettings.require_terms_acceptance_on_register || termsAccepted)
+  )
+
+  React.useEffect(() => {
+    if (shouldShowCaptcha && !captcha && !captchaLoading) {
+      loadCaptcha()
+    }
+  }, [captcha, captchaLoading, loadCaptcha, shouldShowCaptcha])
 
   // 步骤1：提交注册表单
   const handleSubmit = async (e: React.FormEvent) => {
@@ -161,6 +289,12 @@ export function RegisterForm() {
       return
     }
 
+    if (siteSettings?.enable_captcha && !captchaToken) {
+      setFieldErrors({ captcha: t('captchaRequired') })
+      if (!captcha) loadCaptcha()
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -169,6 +303,8 @@ export function RegisterForm() {
         email,
         password,
         terms_accepted: siteSettings?.require_terms_acceptance_on_register ? termsAccepted : undefined,
+        captcha_id: captcha?.captcha_id,
+        captcha_token: captchaToken || undefined,
       })
       setRegisteredUser(user)
 
@@ -195,6 +331,11 @@ export function RegisterForm() {
       const rawErrors = normalizeValidationErrorsRaw(err)
       if (Object.keys(rawErrors).length > 0) {
         setFieldErrors(translateErrors(rawErrors))
+      }
+      if (err instanceof ApiError && (err.code === 5302 || err.code === 5303)) {
+        setSiteSettings((prev) => ({ ...(prev || {}), enable_captcha: true }) as PublicSiteSettings)
+        setFieldErrors({ captcha: t('captchaInvalid') })
+        loadCaptcha()
       }
     } finally {
       setLoading(false)
@@ -249,7 +390,14 @@ export function RegisterForm() {
   // 步骤1：注册表单
   if (step === 'form') {
     return (
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-4"
+        onPointerEnter={(event) => recordCaptchaPointer(event, 'enter')}
+        onPointerMove={(event) => recordCaptchaPointer(event, 'move')}
+        onPointerDown={(event) => recordCaptchaPointer(event, 'down')}
+        onPointerUp={(event) => recordCaptchaPointer(event, 'up')}
+      >
         {summaryEntries.length > 0 && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
             {summaryEntries.map(([field, message]) => (
@@ -370,6 +518,34 @@ export function RegisterForm() {
               </Label>
             </div>
             <FieldError>{fieldErrors.terms_accepted}</FieldError>
+          </div>
+        )}
+
+        {shouldShowCaptcha && (
+          <div className="space-y-2">
+            <Label>{t('captcha')}</Label>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={captchaToken ? 'secondary' : 'outline'}
+                onClick={() => handleCaptchaClick()}
+                disabled={loading || captchaLoading || !!captchaToken}
+                className="flex-1 justify-center"
+                aria-invalid={!!fieldErrors.captcha}
+                onKeyDown={seedKeyboardCaptchaTrace}
+              >
+                {captchaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {captchaToken
+                  ? t('captchaVerified')
+                  : captcha && captchaChallenge
+                    ? t('captchaClickPrompt')
+                    : t('captchaRetry')}
+              </Button>
+            </div>
+            {fieldErrors.captcha && (
+              <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>
+            )}
+            <FieldError>{fieldErrors.captcha}</FieldError>
           </div>
         )}
 

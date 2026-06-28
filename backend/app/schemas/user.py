@@ -64,6 +64,8 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
     terms_accepted: bool = False
+    captcha_id: Optional[str] = None
+    captcha_token: Optional[str] = None
 
 
 class UserUpdate(BaseModel):

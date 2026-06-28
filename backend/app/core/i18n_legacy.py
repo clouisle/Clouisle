@@ -552,8 +552,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "System permissions cannot be updated",
         "zh": "系统权限不能被修改",
     },
-    "captcha_invalid": {"en": "Invalid captcha answer", "zh": "验证码错误"},
-    "captcha_required": {"en": "Captcha is required", "zh": "请输入验证码"},
+    "captcha_invalid": {
+        "en": "Human verification failed or expired. Please try again.",
+        "zh": "人机验证失败或已过期，请重试",
+    },
+    "captcha_required": {
+        "en": "Human verification is required",
+        "zh": "请完成人机验证",
+    },
     "chat_file_upload_instruction": {
         "en": "[The user uploaded the following files, please use the markitdown tool to parse the file content:]",
         "zh": "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]",

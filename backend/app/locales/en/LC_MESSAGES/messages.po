@@ -832,10 +832,10 @@ msgid "cannot_update_system_permission"
 msgstr "System permissions cannot be updated"
 
 msgid "captcha_invalid"
-msgstr "Invalid captcha answer"
+msgstr "Human verification failed or expired. Please try again."
 
 msgid "captcha_required"
-msgstr "Captcha is required"
+msgstr "Human verification is required"
 
 msgid "chat_file_upload_instruction"
 msgstr "[The user uploaded the following files, please use the markitdown tool to parse the file content:]"

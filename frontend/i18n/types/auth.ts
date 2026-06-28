@@ -48,6 +48,11 @@ export type AuthMessages = {
     captchaPlaceholder: string
     captchaRequired: string
     captchaInvalid: string
+    captchaClickPrompt: string
+    captchaVerified: string
+    captchaRetry: string
+    captchaRetryHint: string
+    captchaLoadFailed: string
     verifyYourEmail: string
     verificationEmailSent: string
     verificationEmailSentTo: string

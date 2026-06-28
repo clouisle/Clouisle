@@ -832,10 +832,10 @@ msgid "cannot_update_system_permission"
 msgstr "系统权限不能被修改"
 
 msgid "captcha_invalid"
-msgstr "验证码错误"
+msgstr "人机验证失败或已过期，请重试"
 
 msgid "captcha_required"
-msgstr "请输入验证码"
+msgstr "请完成人机验证"
 
 msgid "chat_file_upload_instruction"
 msgstr "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]"
