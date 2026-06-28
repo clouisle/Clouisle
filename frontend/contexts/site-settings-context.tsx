@@ -109,9 +109,7 @@ function PublicThemeApplicator({ settings }: { settings: PublicSiteSettings }) {
   } = settings
 
   React.useEffect(() => {
-    if (shouldApplySiteThemeMode(theme_mode)) {
-      setTheme(theme_mode)
-    }
+    setTheme(shouldApplySiteThemeMode(theme_mode) ? theme_mode : 'system')
   }, [theme_mode, setTheme])
 
   React.useEffect(() => {

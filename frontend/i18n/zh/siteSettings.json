@@ -334,6 +334,7 @@
     "themeChart4Color": "图表颜色 4",
     "themeChart5Color": "图表颜色 5",
     "themeColorHint": "可选。选择颜色和透明度，点击重置恢复默认主题。",
+    "themeColorDefault": "默认主题",
     "themeColorAlpha": "透明度",
     "resetThemeColor": "重置颜色",
     "resetAllThemeColors": "重置全部颜色",

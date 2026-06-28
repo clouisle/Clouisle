@@ -3,7 +3,7 @@
 ## Active
 
 - **yun-102-configurable-theme** — In progress. Expand site theme configuration to cover practical core colors with native color pickers and runtime CSS variable application. See `docs/plan/yun-102-configurable-theme.md`
-  - [x] 1. Backend theme settings and validation
+  - [x] 1. Backend theme settings and validation (`ruff check`, `ruff format --check`, `mypy app/`)
   - [x] 2. Public/admin theme API typing and normalization
   - [x] 3. Runtime CSS variable mapping
   - [x] 4. Admin color picker UI and i18n

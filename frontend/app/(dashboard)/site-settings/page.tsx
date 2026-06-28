@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
+import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -60,11 +61,64 @@ const THEME_COLOR_KEYS = [
 ] as const satisfies readonly ThemeColorKey[]
 
 const COLOR_INPUT_FALLBACK = '#000000'
+const DEFAULT_THEME_PREVIEW = {
+  background: 'oklch(1 0 0)',
+  foreground: 'oklch(0.145 0 0)',
+  card: 'oklch(1 0 0)',
+  cardForeground: 'oklch(0.145 0 0)',
+  border: 'oklch(0.922 0 0)',
+  primary: 'oklch(0.61 0.11 222)',
+  primaryForeground: 'oklch(0.98 0.02 201)',
+  muted: 'oklch(0.97 0 0)',
+  mutedForeground: 'oklch(0.556 0 0)',
+  accent: 'oklch(0.97 0 0)',
+  accentForeground: 'oklch(0.205 0 0)',
+  sidebar: 'oklch(0.985 0 0)',
+  sidebarForeground: 'oklch(0.145 0 0)',
+  sidebarPrimary: 'oklch(0.61 0.11 222)',
+  sidebarPrimaryForeground: 'oklch(0.98 0.02 201)',
+  sidebarAccent: 'oklch(0.97 0 0)',
+  sidebarAccentForeground: 'oklch(0.205 0 0)',
+  sidebarBorder: 'oklch(0.922 0 0)',
+  navbar: 'oklch(1 0 0)',
+  navbarForeground: 'oklch(0.145 0 0)',
+  navbarHover: 'oklch(0.97 0 0)',
+  navbarHoverForeground: 'oklch(0.145 0 0)',
+  chartColors: ['hsl(217 67% 63%)', 'hsl(191 52% 58%)', 'hsl(172 38% 57%)', 'hsl(84 45% 52%)', 'hsl(38 72% 58%)'],
+}
+const DARK_THEME_PREVIEW = {
+  background: 'oklch(0.145 0 0)',
+  foreground: 'oklch(0.985 0 0)',
+  card: 'oklch(0.205 0 0)',
+  cardForeground: 'oklch(0.985 0 0)',
+  border: 'oklch(1 0 0 / 10%)',
+  primary: 'oklch(0.71 0.13 215)',
+  primaryForeground: 'oklch(0.30 0.05 230)',
+  muted: 'oklch(0.269 0 0)',
+  mutedForeground: 'oklch(0.708 0 0)',
+  accent: 'oklch(0.371 0 0)',
+  accentForeground: 'oklch(0.985 0 0)',
+  sidebar: 'oklch(0.205 0 0)',
+  sidebarForeground: 'oklch(0.985 0 0)',
+  sidebarPrimary: 'oklch(0.80 0.13 212)',
+  sidebarPrimaryForeground: 'oklch(0.30 0.05 230)',
+  sidebarAccent: 'oklch(0.269 0 0)',
+  sidebarAccentForeground: 'oklch(0.985 0 0)',
+  sidebarBorder: 'oklch(1 0 0 / 10%)',
+  navbar: 'oklch(0.205 0 0)',
+  navbarForeground: 'oklch(0.985 0 0)',
+  navbarHover: 'oklch(0.269 0 0)',
+  navbarHoverForeground: 'oklch(0.985 0 0)',
+  chartColors: ['hsl(217 82% 68%)', 'hsl(189 78% 58%)', 'hsl(173 64% 52%)', 'hsl(82 65% 56%)', 'hsl(38 88% 62%)'],
+}
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 
 function parseThemeColor(value: string) {
+  if (value === '') {
+    return { color: COLOR_INPUT_FALLBACK, alpha: 100, isDefault: true }
+  }
   if (!HEX_COLOR_PATTERN.test(value)) {
-    return { color: COLOR_INPUT_FALLBACK, alpha: 100 }
+    return { color: COLOR_INPUT_FALLBACK, alpha: 100, isDefault: false }
   }
 
   const digits = value.slice(1)
@@ -77,7 +131,7 @@ function parseThemeColor(value: string) {
       ? digits.slice(6, 8)
       : 'ff'
 
-  return { color, alpha: Math.round((Number.parseInt(alphaHex, 16) / 255) * 100) }
+  return { color, alpha: Math.round((Number.parseInt(alphaHex, 16) / 255) * 100), isDefault: false }
 }
 
 function formatThemeColor(color: string, alpha: number) {
@@ -117,7 +171,9 @@ function ThemeColorField({
                 className="h-6 w-8 shrink-0 rounded border bg-[image:linear-gradient(45deg,#ddd_25%,transparent_25%),linear-gradient(-45deg,#ddd_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#ddd_75%),linear-gradient(-45deg,transparent_75%,#ddd_75%)] bg-[length:8px_8px] bg-[position:0_0,0_4px,4px_-4px,-4px_0]"
                 aria-hidden="true"
               >
-                <span className="block h-full w-full rounded" style={{ background: formatThemeColor(parsed.color, parsed.alpha) }} />
+                {!parsed.isDefault && (
+                  <span className="block h-full w-full rounded" style={{ background: formatThemeColor(parsed.color, parsed.alpha) }} />
+                )}
               </span>
               <span className="min-w-0 flex-1 truncate text-xs font-medium">{label}</span>
               <span className="text-xs tabular-nums text-muted-foreground">{parsed.alpha}%</span>
@@ -148,7 +204,7 @@ function ThemeColorField({
               aria-label={label}
             />
             <div className="min-w-0 flex-1 text-xs text-muted-foreground">
-              <div>{formatThemeColor(parsed.color, parsed.alpha)}</div>
+              <div>{parsed.isDefault ? t('themeColorDefault') : formatThemeColor(parsed.color, parsed.alpha)}</div>
               <div>{t('themeColorAlpha')}: {parsed.alpha}%</div>
             </div>
           </div>
@@ -180,40 +236,43 @@ function expandThemeColor(value: string) {
   return value
 }
 
-function themeColor(value: string, cssVariable: string) {
-  return HEX_COLOR_PATTERN.test(value) ? expandThemeColor(value) : `var(${cssVariable})`
+function themeColor(value: string, fallback: string) {
+  return HEX_COLOR_PATTERN.test(value) ? expandThemeColor(value) : fallback
 }
 
-function ThemePreview({ settings }: { settings: GeneralSettings }) {
+function ThemePreview({ settings, resolvedTheme }: { settings: GeneralSettings; resolvedTheme?: string }) {
   const t = useTranslations('siteSettings')
-  const background = themeColor(settings.theme_background_color, '--background')
-  const foreground = themeColor(settings.theme_foreground_color, '--foreground')
-  const card = themeColor(settings.theme_card_color, '--card')
-  const cardForeground = themeColor(settings.theme_card_foreground_color, '--card-foreground')
-  const border = themeColor(settings.theme_border_color, '--border')
-  const primary = themeColor(settings.theme_primary_color, '--primary')
-  const primaryForeground = themeColor(settings.theme_primary_foreground_color, '--primary-foreground')
-  const muted = themeColor(settings.theme_muted_color, '--muted')
-  const mutedForeground = themeColor(settings.theme_muted_foreground_color, '--muted-foreground')
-  const accent = themeColor(settings.theme_accent_color, '--accent')
-  const accentForeground = themeColor(settings.theme_accent_foreground_color, '--accent-foreground')
-  const sidebar = themeColor(settings.theme_sidebar_color, '--sidebar')
-  const sidebarForeground = themeColor(settings.theme_sidebar_foreground_color, '--sidebar-foreground')
-  const sidebarPrimary = themeColor(settings.theme_sidebar_primary_color || settings.theme_primary_color, '--sidebar-primary')
-  const sidebarPrimaryForeground = themeColor(settings.theme_sidebar_primary_foreground_color || settings.theme_primary_foreground_color, '--sidebar-primary-foreground')
-  const sidebarAccent = themeColor(settings.theme_sidebar_accent_color, '--sidebar-accent')
-  const sidebarAccentForeground = themeColor(settings.theme_sidebar_accent_foreground_color, '--sidebar-accent-foreground')
-  const sidebarBorder = themeColor(settings.theme_sidebar_border_color, '--sidebar-border')
-  const navbar = themeColor(settings.theme_navbar_color, '--navbar')
-  const navbarForeground = themeColor(settings.theme_navbar_foreground_color, '--navbar-foreground')
-  const navbarHover = themeColor(settings.theme_navbar_hover_color, '--navbar-hover')
-  const navbarHoverForeground = themeColor(settings.theme_navbar_hover_foreground_color, '--navbar-hover-foreground')
+  const base = settings.theme_mode === 'dark' || (settings.theme_mode === 'system' && resolvedTheme === 'dark')
+    ? DARK_THEME_PREVIEW
+    : DEFAULT_THEME_PREVIEW
+  const background = themeColor(settings.theme_background_color, base.background)
+  const foreground = themeColor(settings.theme_foreground_color, base.foreground)
+  const card = themeColor(settings.theme_card_color, base.card)
+  const cardForeground = themeColor(settings.theme_card_foreground_color, base.cardForeground)
+  const border = themeColor(settings.theme_border_color, base.border)
+  const primary = themeColor(settings.theme_primary_color, base.primary)
+  const primaryForeground = themeColor(settings.theme_primary_foreground_color, base.primaryForeground)
+  const muted = themeColor(settings.theme_muted_color, base.muted)
+  const mutedForeground = themeColor(settings.theme_muted_foreground_color, base.mutedForeground)
+  const accent = themeColor(settings.theme_accent_color, base.accent)
+  const accentForeground = themeColor(settings.theme_accent_foreground_color, base.accentForeground)
+  const sidebar = themeColor(settings.theme_sidebar_color, base.sidebar)
+  const sidebarForeground = themeColor(settings.theme_sidebar_foreground_color, base.sidebarForeground)
+  const sidebarPrimary = themeColor(settings.theme_sidebar_primary_color || settings.theme_primary_color, base.sidebarPrimary)
+  const sidebarPrimaryForeground = themeColor(settings.theme_sidebar_primary_foreground_color || settings.theme_primary_foreground_color, base.sidebarPrimaryForeground)
+  const sidebarAccent = themeColor(settings.theme_sidebar_accent_color, base.sidebarAccent)
+  const sidebarAccentForeground = themeColor(settings.theme_sidebar_accent_foreground_color, base.sidebarAccentForeground)
+  const sidebarBorder = themeColor(settings.theme_sidebar_border_color, base.sidebarBorder)
+  const navbar = themeColor(settings.theme_navbar_color, base.navbar)
+  const navbarForeground = themeColor(settings.theme_navbar_foreground_color, base.navbarForeground)
+  const navbarHover = themeColor(settings.theme_navbar_hover_color, base.navbarHover)
+  const navbarHoverForeground = themeColor(settings.theme_navbar_hover_foreground_color, base.navbarHoverForeground)
   const chartColors = [
-    themeColor(settings.theme_chart_1_color, '--chart-1'),
-    themeColor(settings.theme_chart_2_color, '--chart-2'),
-    themeColor(settings.theme_chart_3_color, '--chart-3'),
-    themeColor(settings.theme_chart_4_color, '--chart-4'),
-    themeColor(settings.theme_chart_5_color, '--chart-5'),
+    themeColor(settings.theme_chart_1_color, base.chartColors[0]),
+    themeColor(settings.theme_chart_2_color, base.chartColors[1]),
+    themeColor(settings.theme_chart_3_color, base.chartColors[2]),
+    themeColor(settings.theme_chart_4_color, base.chartColors[3]),
+    themeColor(settings.theme_chart_5_color, base.chartColors[4]),
   ]
 
   return (
@@ -281,6 +340,7 @@ function ThemePreview({ settings }: { settings: GeneralSettings }) {
 export default function SiteSettingsGeneralPage() {
   const t = useTranslations('siteSettings')
   const { refresh: refreshSiteSettings } = useSiteSettings()
+  const { resolvedTheme } = useTheme()
   const { canPerform } = useCanPerform()
   const canUpdate = canPerform('admin:settings:update')
   
@@ -611,7 +671,7 @@ export default function SiteSettingsGeneralPage() {
             </Select>
             <FieldError>{fieldErrors.theme_branding_display}</FieldError>
           </div>
-          <ThemePreview settings={settings} />
+          <ThemePreview settings={settings} resolvedTheme={resolvedTheme} />
 
           <div className="flex justify-end">
             <Button

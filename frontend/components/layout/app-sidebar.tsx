@@ -281,6 +281,11 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
                     <span className="text-xs text-muted-foreground">{tPlatform('admin')}</span>
                   </div>
                 )}
+                {showBrandName && !showBrandIcon && (
+                  <span className="hidden font-semibold group-data-[collapsible=icon]:block">
+                    {(siteSettings.site_name || 'Clouisle').slice(0, 1)}
+                  </span>
+                )}
                 {!showBrandIcon && !showBrandName && (
                   <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
                     <span className="text-xs text-muted-foreground">{tPlatform('admin')}</span>

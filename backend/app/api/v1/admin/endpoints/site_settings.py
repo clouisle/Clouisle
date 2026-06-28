@@ -92,6 +92,8 @@ async def _validate_setting_value(key: str, value: object) -> None:
         if not isinstance(value, str):
             raise_validation_error()
         color = value.strip()
+        if color != value:
+            raise_validation_error()
         if len(color) not in {4, 5, 7, 9} or not color.startswith("#"):
             raise_validation_error()
         if not all(char in "0123456789abcdefABCDEF" for char in color[1:]):

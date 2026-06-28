@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-27T17:03:39.981Z
+// GENERATED — 2026-06-27T18:55:50.883Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -336,6 +336,7 @@ export type SiteSettingsMessages = {
     themeChart4Color: string
     themeChart5Color: string
     themeColorHint: string
+    themeColorDefault: string
     themeColorAlpha: string
     resetThemeColor: string
     resetAllThemeColors: string

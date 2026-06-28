@@ -262,7 +262,7 @@ export function PlatformHeader() {
                 </div>
               )}
               {showBrandName && (
-                <span className="hidden font-semibold sm:inline">
+                <span className={cn('font-semibold', showBrandIcon && 'hidden sm:inline')}>
                   {siteSettings.site_name || 'Clouisle'}
                 </span>
               )}

@@ -334,6 +334,7 @@
     "themeChart4Color": "Chart Color 4",
     "themeChart5Color": "Chart Color 5",
     "themeColorHint": "Optional. Pick a color and transparency. Use reset to return to the default theme.",
+    "themeColorDefault": "Default theme",
     "themeColorAlpha": "Transparency",
     "resetThemeColor": "Reset color",
     "resetAllThemeColors": "Reset all colors",
