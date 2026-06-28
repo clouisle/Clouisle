@@ -25,6 +25,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _frontend_url() -> str:
+    from app.core.config import settings
+
+    site_url = await SiteSetting.get_value("site_url", "")
+    return (site_url or settings.FRONTEND_URL).rstrip("/")
+
+
+def _safe_sso_redirect(redirect_url: Optional[str]) -> str:
+    final_redirect = redirect_url if isinstance(redirect_url, str) else "/dashboard"
+    if final_redirect.startswith("http"):
+        return "/dashboard"
+    return final_redirect
+
+
+async def _sso_error_redirect(
+    error_code: str, redirect_url: Optional[str] = None
+) -> RedirectResponse:
+    frontend_url = await _frontend_url()
+    return RedirectResponse(
+        url=f"{frontend_url}/sso-callback?error={quote(error_code)}&redirect={quote(_safe_sso_redirect(redirect_url))}"
+    )
+
+
 # Public endpoints (no auth required)
 
 
@@ -60,32 +83,30 @@ async def sso_login(
     """Initiate SSO login flow"""
     provider = await SSOProvider.get_or_none(name=provider_name, is_enabled=True)
     if not provider:
-        raise BusinessError(
-            code=ResponseCode.SSO_PROVIDER_NOT_FOUND, msg_key="sso_provider_not_found"
-        )
+        return await _sso_error_redirect("sso_provider_not_found", redirect)
 
     session_id = secrets.token_urlsafe(32)
     expires_at = now_utc() + timedelta(minutes=10)
 
-    provider_instance = SSOService.get_provider_instance(provider)
-
-    # Build callback URL - use site_url or configured backend URL
-    from app.core.config import settings
-
-    site_url = await SiteSetting.get_value("site_url", "")
-    backend_url = getattr(settings, "BACKEND_URL", None)
-    if site_url:
-        base_url = site_url.rstrip("/")
-    elif backend_url:
-        base_url = backend_url.rstrip("/")
-    else:
-        base_url = str(request.base_url).rstrip("/")
-        if ":3000" in base_url:
-            base_url = base_url.replace(":3000", ":8000")
-
-    callback_url = f"{base_url}/api/v1/sso/callback/{provider.name}"
-
     try:
+        provider_instance = SSOService.get_provider_instance(provider)
+
+        # Build callback URL - use site_url or configured backend URL
+        from app.core.config import settings
+
+        site_url = await SiteSetting.get_value("site_url", "")
+        backend_url = getattr(settings, "BACKEND_URL", None)
+        if site_url:
+            base_url = site_url.rstrip("/")
+        elif backend_url:
+            base_url = backend_url.rstrip("/")
+        else:
+            base_url = str(request.base_url).rstrip("/")
+            if ":3000" in base_url:
+                base_url = base_url.replace(":3000", ":8000")
+
+        callback_url = f"{base_url}/api/v1/sso/callback/{provider.name}"
+
         if provider.protocol in ["oauth2", "oidc"]:
             auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
@@ -144,10 +165,7 @@ async def sso_login(
         logger.exception(
             "Failed to initialize SSO login for provider %s", provider_name
         )
-        raise BusinessError(
-            code=ResponseCode.SSO_AUTHENTICATION_FAILED,
-            msg_key="sso_login_failed",
-        )
+        return await _sso_error_redirect("sso_login_failed", redirect)
 
 
 @router.get("/callback/{provider_name}")
@@ -161,9 +179,7 @@ async def sso_callback(
     """Handle SSO callback"""
     provider = await SSOProvider.get_or_none(name=provider_name)
     if not provider:
-        raise BusinessError(
-            code=ResponseCode.SSO_PROVIDER_NOT_FOUND, msg_key="sso_provider_not_found"
-        )
+        return await _sso_error_redirect("sso_provider_not_found")
 
     if provider.protocol in ["oauth2", "oidc"]:
         session_id = state
@@ -173,19 +189,15 @@ async def sso_callback(
         session_id = request.query_params.get("RelayState")
 
     if not session_id:
-        raise BusinessError(
-            code=ResponseCode.SSO_SESSION_EXPIRED, msg_key="sso_session_expired"
-        )
+        return await _sso_error_redirect("sso_session_expired")
 
     session = await SSOSession.get_or_none(session_id=session_id, provider=provider)
     if not session or session.expires_at < now_utc():
-        raise BusinessError(
-            code=ResponseCode.SSO_SESSION_EXPIRED, msg_key="sso_session_expired"
-        )
-
-    provider_instance = SSOService.get_provider_instance(provider)
+        return await _sso_error_redirect("sso_session_expired")
 
     try:
+        provider_instance = SSOService.get_provider_instance(provider)
+
         # Build callback URL - use site_url or configured backend URL
         from app.core.config import settings
 
@@ -223,17 +235,11 @@ async def sso_callback(
                 callback_data=callback_data, redirect_uri=callback_url
             )
         else:
-            raise BusinessError(
-                code=ResponseCode.SSO_INVALID_CONFIGURATION,
-                msg_key="unsupported_protocol",
-            )
+            return await _sso_error_redirect("sso_login_failed", session.redirect_url)
 
         provider_user_id = user_info.get("provider_user_id")
         if not provider_user_id:
-            raise BusinessError(
-                code=ResponseCode.SSO_AUTHENTICATION_FAILED,
-                msg_key="missing_user_id",
-            )
+            return await _sso_error_redirect("sso_login_failed", session.redirect_url)
 
         mapped_data = provider_instance.map_user_attributes(user_info)
         mapped_data.update(user_info)
@@ -242,14 +248,9 @@ async def sso_callback(
             provider=provider, provider_user_id=provider_user_id, user_info=mapped_data
         )
 
-        from app.core.config import settings
-
         # Use public site_url for browser redirect, fall back to FRONTEND_URL
-        site_url = await SiteSetting.get_value("site_url", "")
-        frontend_url = (site_url or settings.FRONTEND_URL).rstrip("/")
-        final_redirect = session.redirect_url or "/dashboard"
-        if final_redirect.startswith("http"):
-            final_redirect = "/dashboard"
+        frontend_url = await _frontend_url()
+        final_redirect = _safe_sso_redirect(session.redirect_url)
 
         if not user.is_active:
             await session.delete()
@@ -298,8 +299,20 @@ async def sso_callback(
 
         return RedirectResponse(url=redirect_url)
 
-    except BusinessError:
-        raise
+    except BusinessError as e:
+        await AuditLogService.log(
+            user=None,
+            action="sso_login_failed",
+            resource_type="user",
+            resource_id=None,
+            resource_name=None,
+            operation="read",
+            status="failed",
+            request=request,
+            error_message=e.msg_key,
+            metadata={"provider": provider.name},
+        )
+        return await _sso_error_redirect("sso_login_failed", session.redirect_url)
     except Exception as e:
         await AuditLogService.log(
             user=None,
@@ -313,10 +326,7 @@ async def sso_callback(
             error_message=str(e),
             metadata={"provider": provider.name},
         )
-        raise BusinessError(
-            code=ResponseCode.SSO_AUTHENTICATION_FAILED,
-            msg_key="sso_login_failed",
-        )
+        return await _sso_error_redirect("sso_login_failed", session.redirect_url)
 
 
 @router.delete("/connections/{connection_id}", response_model=Response[None])
