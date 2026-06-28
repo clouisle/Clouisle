@@ -2,6 +2,13 @@
 
 ## Active
 
+- **embed-chat-performance** — In progress. Apply the optimized chat streaming/rendering patterns to the script-embedded Agent chat widget. See `docs/plan/embed-chat-performance.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Embedded streaming commit batching
+  - [x] 3. User-input XML parse gating
+  - [x] 4. Final/stop/error cleanup
+  - [x] 5. Validation and regression checks
+
 - **chat-extreme-performance-refactor** — In progress. Refactor the chat page/message renderer for extreme performance: bounded rendering, streaming batching, memoized message bodies, and lazy source/tool output. See `docs/plan/chat-extreme-performance-refactor.md`
   - [x] 1. Design docs and implementation index
   - [ ] 2. Renderer boundary extraction
