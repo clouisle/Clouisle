@@ -9,7 +9,10 @@ function normalizeAuthPageLayout(value: string | undefined): AuthPageLayout {
 
 async function getPublicSettings(): Promise<Pick<PublicSiteSettings,
   | 'site_name'
+  | 'site_description'
+  | 'site_icon'
   | 'auth_page_layout'
+  | 'theme_branding_display'
   | 'icp_record_number'
   | 'icp_record_url'
   | 'terms_enabled'
@@ -21,7 +24,10 @@ async function getPublicSettings(): Promise<Pick<PublicSiteSettings,
 >> {
   const fallback = {
     site_name: 'Clouisle',
+    site_description: '',
+    site_icon: '',
     auth_page_layout: 'centered' as AuthPageLayout,
+    theme_branding_display: 'full' as const,
     icp_record_number: '',
     icp_record_url: '',
     terms_enabled: false,
@@ -49,7 +55,10 @@ async function getPublicSettings(): Promise<Pick<PublicSiteSettings,
 
     return {
       site_name: body.data?.site_name || 'Clouisle',
+      site_description: body.data?.site_description || '',
+      site_icon: body.data?.site_icon || '',
       auth_page_layout: normalizeAuthPageLayout(body.data?.auth_page_layout),
+      theme_branding_display: body.data?.theme_branding_display || 'full',
       icp_record_number: body.data?.icp_record_number || '',
       icp_record_url: body.data?.icp_record_url || '',
       terms_enabled: body.data?.terms_enabled ?? false,
@@ -78,6 +87,7 @@ export default async function AuthLayout({
     <AuthLayoutShell
       layout={settings.auth_page_layout}
       previewImageAlt={t('previewImageAlt', { siteName: settings.site_name })}
+      brandingSettings={settings}
       legalSettings={settings}
     >
       {children}

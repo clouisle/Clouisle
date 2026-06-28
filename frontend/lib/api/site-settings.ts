@@ -1,6 +1,8 @@
 import { api } from './client'
 
 export type AuthPageLayout = 'centered' | 'split'
+export type ThemeMode = 'system' | 'light' | 'dark'
+export type ThemeBrandingDisplay = 'full' | 'name_only' | 'icon_only' | 'hidden'
 
 export interface SiteSetting {
   key: string
@@ -23,6 +25,36 @@ export interface PublicSiteSettings {
   site_url: string
   site_icon: string
   auth_page_layout: AuthPageLayout
+  theme_mode: ThemeMode
+  theme_primary_color: string
+  theme_primary_foreground_color: string
+  theme_background_color: string
+  theme_foreground_color: string
+  theme_card_color: string
+  theme_card_foreground_color: string
+  theme_border_color: string
+  theme_ring_color: string
+  theme_sidebar_color: string
+  theme_sidebar_foreground_color: string
+  theme_sidebar_primary_color: string
+  theme_sidebar_primary_foreground_color: string
+  theme_sidebar_accent_color: string
+  theme_sidebar_accent_foreground_color: string
+  theme_sidebar_border_color: string
+  theme_navbar_color: string
+  theme_navbar_foreground_color: string
+  theme_navbar_hover_color: string
+  theme_navbar_hover_foreground_color: string
+  theme_accent_color: string
+  theme_accent_foreground_color: string
+  theme_muted_color: string
+  theme_muted_foreground_color: string
+  theme_chart_1_color: string
+  theme_chart_2_color: string
+  theme_chart_3_color: string
+  theme_chart_4_color: string
+  theme_chart_5_color: string
+  theme_branding_display: ThemeBrandingDisplay
   icp_record_number: string
   icp_record_url: string
   terms_enabled: boolean
@@ -49,6 +81,36 @@ export interface GeneralSettings {
   site_icon: string
   default_language: string
   auth_page_layout: AuthPageLayout
+  theme_mode: ThemeMode
+  theme_primary_color: string
+  theme_primary_foreground_color: string
+  theme_background_color: string
+  theme_foreground_color: string
+  theme_card_color: string
+  theme_card_foreground_color: string
+  theme_border_color: string
+  theme_ring_color: string
+  theme_sidebar_color: string
+  theme_sidebar_foreground_color: string
+  theme_sidebar_primary_color: string
+  theme_sidebar_primary_foreground_color: string
+  theme_sidebar_accent_color: string
+  theme_sidebar_accent_foreground_color: string
+  theme_sidebar_border_color: string
+  theme_navbar_color: string
+  theme_navbar_foreground_color: string
+  theme_navbar_hover_color: string
+  theme_navbar_hover_foreground_color: string
+  theme_accent_color: string
+  theme_accent_foreground_color: string
+  theme_muted_color: string
+  theme_muted_foreground_color: string
+  theme_chart_1_color: string
+  theme_chart_2_color: string
+  theme_chart_3_color: string
+  theme_chart_4_color: string
+  theme_chart_5_color: string
+  theme_branding_display: ThemeBrandingDisplay
   icp_record_number: string
   icp_record_url: string
   terms_enabled: boolean
