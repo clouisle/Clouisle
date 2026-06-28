@@ -47,7 +47,7 @@ Success criteria:
 
 ## Risks & Mitigation
 - Some real users may move unusually quickly or use keyboard activation.
-  - Mitigation: keep thresholds tolerant; failed backend proof refreshes the check for retry.
+  - Mitigation: keep thresholds tolerant; keyboard activation seeds the same backend-validated proof path, and failed backend proof refreshes the check for retry.
 - A determined bot can still synthesize pointer traces.
   - Mitigation: scope this as lightweight bot friction; add rate limiting or a managed captcha later if abuse continues.
 - Login/register duplicated captcha UI can drift.

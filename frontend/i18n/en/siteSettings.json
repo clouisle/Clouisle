@@ -414,7 +414,7 @@
     "maxLoginAttempts": "Max Login Attempts",
     "lockoutDuration": "Lockout Duration",
     "enableCaptcha": "Enable Human Verification",
-    "enableCaptchaDescription": "Show human verification on login",
+    "enableCaptchaDescription": "Show human verification on login and registration",
     "twoFactorAuthentication": "Two-Factor Authentication",
     "twoFactorAuthenticationDescription": "Configure TOTP 2FA requirements",
     "requireTOTP": "Require TOTP for All Users",

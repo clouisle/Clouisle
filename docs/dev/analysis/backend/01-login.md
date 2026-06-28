@@ -151,7 +151,7 @@
   "username": "string",
   "email": "string",
   "password": "string",
-  "terms_accepted": false,
+  "terms_accepted": "boolean (启用注册协议确认时才发送)",
   "captcha_id": "string (启用验证码且非首个用户时必填)",
   "captcha_token": "string (点击验证后返回)"
 }

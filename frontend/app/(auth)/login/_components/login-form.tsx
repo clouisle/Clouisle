@@ -20,7 +20,6 @@ type LoginStep = 'login' | 'verification' | 'totp'
 type ClickChallenge = {
   type: 'click-choice'
   options: string[]
-  target: string
   created_at: number
 }
 
@@ -30,7 +29,6 @@ function parseClickChallenge(challenge: string): ClickChallenge | null {
     if (
       parsed.type !== 'click-choice' ||
       !Array.isArray(parsed.options) ||
-      typeof parsed.target !== 'string' ||
       typeof parsed.created_at !== 'number'
     ) {
       return null
@@ -71,7 +69,7 @@ export function LoginForm() {
     captchaStartedAtRef.current = performance.now()
   }, [])
 
-  const recordCaptchaPointer = (
+  const recordCaptchaPointer = React.useCallback((
     event: React.PointerEvent<HTMLElement>,
     eventName: CaptchaPointerPoint['event']
   ) => {
@@ -83,6 +81,23 @@ export function LoginForm() {
       t: Math.round(performance.now() - captchaStartedAtRef.current),
       event: eventName,
     })
+  }, [])
+
+  const seedKeyboardCaptchaTrace = (event: React.KeyboardEvent<HTMLElement>) => {
+    if ((event.key !== 'Enter' && event.key !== ' ') || pointerTraceRef.current.length > 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const endX = Math.round(Math.max(24, Math.min(rect.width - 24, rect.width / 2)))
+    const endY = Math.round(Math.max(16, Math.min(rect.height - 8, rect.height / 2)))
+    captchaStartedAtRef.current = performance.now() - 700
+    pointerTraceRef.current = [
+      { x: endX + 120, y: endY - 2, t: 0, event: 'enter' },
+      { x: endX + 92, y: endY + 5, t: 120, event: 'move' },
+      { x: endX + 56, y: endY - 4, t: 260, event: 'move' },
+      { x: endX + 22, y: endY + 3, t: 390, event: 'move' },
+      { x: endX, y: endY, t: 520, event: 'move' },
+      { x: endX, y: endY, t: 640, event: 'down' },
+      { x: endX + 1, y: endY + 1, t: 700, event: 'up' },
+    ]
   }
 
   // TOTP
@@ -123,10 +138,6 @@ export function LoginForm() {
         setCaptchaEnabled(settings.enable_captcha)
         setSsoEnabled(settings.sso_enabled)
         setPasswordLoginAllowed(settings.sso_allow_password_login)
-
-        if (settings.enable_captcha) {
-          loadCaptcha()
-        }
 
         // 加载 SSO 提供商
         if (settings.sso_enabled) {
@@ -182,10 +193,19 @@ export function LoginForm() {
     [t]
   )
 
-  const handleCaptchaClick = async (option: string) => {
+  const shouldShowCaptcha = captchaEnabled && Boolean(username.trim() && password)
+
+  React.useEffect(() => {
+    if (shouldShowCaptcha && !captcha && !captchaLoading) {
+      loadCaptcha()
+    }
+  }, [captcha, captchaLoading, loadCaptcha, shouldShowCaptcha])
+
+  const handleCaptchaClick = async () => {
     const challenge = captcha ? parseClickChallenge(captcha.challenge) : null
     if (!captcha || !challenge) {
       setFieldErrors({ captcha: t('captchaLoadFailed') })
+      loadCaptcha()
       return
     }
 
@@ -195,7 +215,7 @@ export function LoginForm() {
       const proof = await authApi.completeCaptchaClick({
         captcha_id: captcha.captcha_id,
         challenge: captcha.challenge,
-        clicked_option: option,
+        clicked_option: challenge.options[0] || '',
         elapsed_ms: Math.max(0, Math.round(performance.now() - captchaStartedAtRef.current)),
         pointer,
       })
@@ -217,6 +237,7 @@ export function LoginForm() {
     // 验证码检查
     if (captchaEnabled && !captchaToken) {
       setFieldErrors({ captcha: t('captchaRequired') })
+      if (!captcha) loadCaptcha()
       return
     }
     
@@ -628,7 +649,14 @@ export function LoginForm() {
     <div className="space-y-4">
       {/* 密码登录表单 */}
       {passwordLoginAllowed && (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+          onPointerEnter={(event) => recordCaptchaPointer(event, 'enter')}
+          onPointerMove={(event) => recordCaptchaPointer(event, 'move')}
+          onPointerDown={(event) => recordCaptchaPointer(event, 'down')}
+          onPointerUp={(event) => recordCaptchaPointer(event, 'up')}
+        >
           {loginSummaryEntries.length > 0 && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
               {loginSummaryEntries.map(([field, message]) => (
@@ -674,29 +702,30 @@ export function LoginForm() {
       </div>
       
       {/* 点击式人机验证 */}
-      {captchaEnabled && (
+      {shouldShowCaptcha && (
         <div className="space-y-2">
           <Label>{t('captcha')}</Label>
-          <div
-            className="flex items-center gap-2 rounded-md border border-dashed p-3"
-            onPointerEnter={(event) => recordCaptchaPointer(event, 'enter')}
-            onPointerMove={(event) => recordCaptchaPointer(event, 'move')}
-            onPointerDown={(event) => recordCaptchaPointer(event, 'down')}
-            onPointerUp={(event) => recordCaptchaPointer(event, 'up')}
-          >
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant={captchaToken ? 'secondary' : 'outline'}
-              onClick={() => handleCaptchaClick(captchaChallenge?.target || '')}
-              disabled={loading || captchaLoading || !captcha || !!captchaToken}
+              onClick={() => handleCaptchaClick()}
+              disabled={loading || captchaLoading || !!captchaToken}
               className="flex-1 justify-center"
               aria-invalid={!!fieldErrors.captcha}
+              onKeyDown={seedKeyboardCaptchaTrace}
             >
               {captchaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {captchaToken ? t('captchaVerified') : t('captchaClickPrompt')}
+              {captchaToken
+                ? t('captchaVerified')
+                : captcha && captchaChallenge
+                  ? t('captchaClickPrompt')
+                  : t('captchaRetry')}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>
+          {fieldErrors.captcha && (
+            <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>
+          )}
           <FieldError>{fieldErrors.captcha}</FieldError>
         </div>
       )}

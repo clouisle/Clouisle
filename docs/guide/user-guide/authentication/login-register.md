@@ -138,9 +138,9 @@ Clouisle enforces strong password policies:
 - Contact administrator if locked out repeatedly
 
 **Human Verification:**
-- Required on login and self-registration when enabled by administrators
+- Required on login and self-registration when enabled by administrators (except the first bootstrap user)
 - Complete it by clicking the verification control before submitting
-- If it fails, expires, or cannot load, use the refresh button and click again
+- If it fails, expires, or cannot load, retry the verification control
 - Works with existing account lockout and login anomaly controls as the risk-control fallback
 
 **Login Anomaly Detection:**

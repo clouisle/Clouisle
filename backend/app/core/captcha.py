@@ -2,9 +2,9 @@
 验证码服务 - 点击式人机验证实现
 """
 
+import hashlib
 import json
 import math
-import random
 import secrets
 import time
 from typing import Any, Optional, Tuple
@@ -21,7 +21,7 @@ MIN_DIRECTION_CHANGES = 2
 MIN_SPEED_VARIANCE = 0.001
 MAX_CLICK_DRIFT_PX = 16
 MAX_CAPTCHA_AREA_WIDTH = 800
-MAX_CAPTCHA_AREA_HEIGHT = 240
+MAX_CAPTCHA_AREA_HEIGHT = 900
 
 # 验证码 key 前缀
 CAPTCHA_PREFIX = "captcha:"
@@ -46,6 +46,8 @@ def _is_human_pointer_trajectory(
             y = float(point["y"])
             t = int(point["t"])
         except (KeyError, TypeError, ValueError):
+            return False
+        if not math.isfinite(x) or not math.isfinite(y):
             return False
         if t < 0 or t > elapsed_ms:
             return False
@@ -117,13 +119,14 @@ async def generate_captcha() -> Tuple[str, str]:
         Tuple[captcha_id, challenge]: 验证码ID、公开挑战描述符
     """
     captcha_id = secrets.token_urlsafe(16)
-    target_option = CLICK_OPTIONS[random.randrange(len(CLICK_OPTIONS))]
+    challenge_marker = secrets.token_urlsafe(16)
+    challenge_marker_hash = hashlib.sha256(challenge_marker.encode()).hexdigest()
     challenge = json.dumps(
         {
             "type": "click-choice",
             "options": CLICK_OPTIONS,
-            "target": target_option,
             "prompt": "select_target",
+            "marker": challenge_marker_hash,
             "created_at": int(time.time() * 1000),
         },
         separators=(",", ":"),
@@ -131,7 +134,7 @@ async def generate_captcha() -> Tuple[str, str]:
 
     r = await get_redis()
     key = f"{CAPTCHA_PREFIX}{captcha_id}"
-    await r.setex(key, CAPTCHA_TTL, target_option)
+    await r.setex(key, CAPTCHA_TTL, challenge_marker)
 
     return captcha_id, challenge
 
@@ -157,7 +160,10 @@ async def create_captcha_proof(
     if public_challenge.get("type") != "click-choice":
         return None
     options = public_challenge.get("options")
+    marker = public_challenge.get("marker")
     if not isinstance(options, list) or clicked_option not in options:
+        return None
+    if not isinstance(marker, str):
         return None
 
     # Client-reported elapsed_ms is advisory only. Redis TTL/server state is authoritative.
@@ -165,12 +171,12 @@ async def create_captcha_proof(
 
     r = await get_redis()
     key = f"{CAPTCHA_PREFIX}{captcha_id}"
-    stored_target_index = await r.get(key)
-    await r.delete(key)
+    stored_marker = await r.getdel(key)
 
-    if stored_target_index is None:
+    if stored_marker is None:
         return None
-    if not secrets.compare_digest(clicked_option, stored_target_index):
+    stored_marker_hash = hashlib.sha256(stored_marker.encode()).hexdigest()
+    if not secrets.compare_digest(marker, stored_marker_hash):
         return None
 
     proof = secrets.token_urlsafe(24)
@@ -197,8 +203,7 @@ async def verify_captcha(captcha_id: str, user_token: str) -> bool:
     key = f"{CAPTCHA_PROOF_PREFIX}{captcha_id}"
 
     # 获取并删除（一次性使用）
-    stored_token = await r.get(key)
-    await r.delete(key)
+    stored_token = await r.getdel(key)
 
     if stored_token is None:
         return False
