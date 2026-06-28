@@ -128,7 +128,7 @@ export function EmbedConfigDialog({
       .map(d => d.trim())
       .filter(Boolean)
 
-    const invalidDomain = domains.find((domain) => !/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?$/.test(domain))
+    const invalidDomain = domains.find((domain) => !/^(https?:\/\/)?(\*\.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?$/i.test(domain))
     if (invalidDomain) {
       setFieldErrors({ allowed_domains: t('invalidDomain', { value: invalidDomain }) })
       return

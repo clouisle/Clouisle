@@ -8,7 +8,7 @@ import traceback
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.api import api_router
@@ -507,8 +507,22 @@ class LanguageMiddleware(BaseHTTPMiddleware):
 # Embed security headers middleware - allow iframe embedding for /api/v1/embed/ routes
 class EmbedHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        is_embed_path = request.url.path.startswith(f"{settings.API_V1_STR}/embed/")
+        if is_embed_path and request.method == "OPTIONS":
+            return Response(
+                status_code=204,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": request.headers.get(
+                        "access-control-request-headers", "*"
+                    ),
+                    "Access-Control-Max-Age": "600",
+                },
+            )
+
         response = await call_next(request)
-        if request.url.path.startswith(f"{settings.API_V1_STR}/embed/"):
+        if is_embed_path:
             # Remove X-Frame-Options to allow iframe embedding
             if "x-frame-options" in response.headers:
                 del response.headers["x-frame-options"]
