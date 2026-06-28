@@ -21,7 +21,7 @@
     "@streamdown/math": "^1.0.2",
     "@uiw/react-md-editor": "^4.0.11",
     "@xyflow/react": "^12.10.0",
-    "ai": "^6.0.3",
+    "ai": "^7.0.4",
     "ai-elements": "^1.6.3",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
