@@ -2,7 +2,7 @@ import logging
 import secrets
 from datetime import timedelta
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -32,9 +32,30 @@ async def _frontend_url() -> str:
     return (site_url or settings.FRONTEND_URL).rstrip("/")
 
 
+def _backend_url(request: Request) -> str:
+    from app.core.config import settings
+
+    backend_url = getattr(settings, "BACKEND_URL", None)
+    if backend_url:
+        return backend_url.rstrip("/")
+
+    base_url = str(request.base_url).rstrip("/")
+    if ":3000" in base_url:
+        return base_url.replace(":3000", ":8000")
+    return base_url
+
+
 def _safe_sso_redirect(redirect_url: Optional[str]) -> str:
-    final_redirect = redirect_url if isinstance(redirect_url, str) else "/dashboard"
-    if final_redirect.startswith("http"):
+    final_redirect = redirect_url.strip() if isinstance(redirect_url, str) else ""
+    parsed = urlsplit(final_redirect)
+    if (
+        not final_redirect
+        or not final_redirect.startswith("/")
+        or final_redirect.startswith("//")
+        or parsed.scheme
+        or parsed.netloc
+        or "\\" in final_redirect
+    ):
         return "/dashboard"
     return final_redirect
 
@@ -91,21 +112,8 @@ async def sso_login(
     try:
         provider_instance = SSOService.get_provider_instance(provider)
 
-        # Build callback URL - use site_url or configured backend URL
-        from app.core.config import settings
-
-        site_url = await SiteSetting.get_value("site_url", "")
-        backend_url = getattr(settings, "BACKEND_URL", None)
-        if site_url:
-            base_url = site_url.rstrip("/")
-        elif backend_url:
-            base_url = backend_url.rstrip("/")
-        else:
-            base_url = str(request.base_url).rstrip("/")
-            if ":3000" in base_url:
-                base_url = base_url.replace(":3000", ":8000")
-
-        callback_url = f"{base_url}/api/v1/sso/callback/{provider.name}"
+        # Build callback URL from backend/API origin for IdP redirects.
+        callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
 
         if provider.protocol in ["oauth2", "oidc"]:
             auth_result = await provider_instance.get_authorization_url(
@@ -198,21 +206,8 @@ async def sso_callback(
     try:
         provider_instance = SSOService.get_provider_instance(provider)
 
-        # Build callback URL - use site_url or configured backend URL
-        from app.core.config import settings
-
-        site_url = await SiteSetting.get_value("site_url", "")
-        backend_url = getattr(settings, "BACKEND_URL", None)
-        if site_url:
-            base_url = site_url.rstrip("/")
-        elif backend_url:
-            base_url = backend_url.rstrip("/")
-        else:
-            base_url = str(request.base_url).rstrip("/")
-            if ":3000" in base_url:
-                base_url = base_url.replace(":3000", ":8000")
-
-        callback_url = f"{base_url}/api/v1/sso/callback/{provider.name}"
+        # Build callback URL from backend/API origin for IdP redirects.
+        callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
 
         if provider.protocol in ["oauth2", "oidc"]:
             callback_data = {"code": code}

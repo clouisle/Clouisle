@@ -41,10 +41,23 @@ def assert_redirect(response, error_code: str, redirect: str = "/dashboard") -> 
     )
 
 
+@pytest.mark.parametrize(
+    "unsafe_redirect",
+    [
+        "https://evil.example/path",
+        "//evil.example/path",
+        "javascript:alert(1)",
+        "HTTP://evil.example/path",
+        "/\\evil.example/path",
+        "",
+    ],
+)
 @pytest.mark.asyncio
-async def test_sso_error_redirect_sanitizes_absolute_redirect() -> None:
+async def test_sso_error_redirect_sanitizes_external_redirects(
+    unsafe_redirect: str,
+) -> None:
     response = await sso_endpoints._sso_error_redirect(
-        "sso_session_expired", "https://evil.example/path"
+        "sso_session_expired", unsafe_redirect
     )
 
     assert_redirect(response, "sso_session_expired")
