@@ -7,6 +7,7 @@ import { PasswordExpirationBanner } from '@/components/password-expiration-banne
 import { AuthGuard } from '@/components/auth-guard'
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
 import { OnboardingTour, allTourIds } from '@/components/onboarding/onboarding-tour'
+import { ProminentNotificationDialog } from '@/components/layout/prominent-notification-dialog'
 
 export default function PlatformLayout({
   children,
@@ -38,6 +39,7 @@ export default function PlatformLayout({
               <main className="flex-1 relative overflow-hidden">
                 {children}
               </main>
+              <ProminentNotificationDialog />
               {renderTours()}
             </div>
           </OnboardingProvider>
@@ -56,6 +58,7 @@ export default function PlatformLayout({
             <main className={`flex-1 relative ${isAgentConfig ? 'overflow-hidden' : 'overflow-y-auto'}`}>
               {children}
             </main>
+            <ProminentNotificationDialog />
             {renderTours()}
           </div>
         </OnboardingProvider>

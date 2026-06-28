@@ -34,7 +34,9 @@
       "delivery": "Status update",
       "general": "Notification"
     },
-    "announcementHint": "Pinned-style system notice",
+    "prominentTitle": "Important notifications",
+    "prominentDescription": "Unread announcements and security notices that need your attention.",
+    "viewNotification": "View",
     "channel": {
       "email": "Email",
       "dingtalk": "DingTalk",

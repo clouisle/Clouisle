@@ -71,17 +71,7 @@ const KIND_ICON: Record<NotificationDisplayKind, React.ComponentType<{ className
 }
 
 function getRowClassName(item: NotificationItem) {
-  const meta = getNotificationDisplayMeta(item)
-
-  return cn(
-    'cursor-pointer border-l-4 border-l-transparent',
-    !item.is_read && 'bg-primary/5',
-    meta.isAnnouncement && 'border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/15',
-    meta.isAnnouncement && !item.is_read && 'bg-amber-500/15 hover:bg-amber-500/20 dark:bg-amber-500/20',
-    meta.kind === 'security' && !meta.isAnnouncement && 'border-l-destructive bg-destructive/5',
-    meta.kind === 'security' && !meta.isAnnouncement && !item.is_read && 'bg-destructive/10',
-    meta.isProminent && 'shadow-sm',
-  )
+  return cn('cursor-pointer', !item.is_read && 'bg-primary/5')
 }
 
 function NotificationKindBadge({ item, label }: { item: NotificationItem; label: string }) {
@@ -105,7 +95,6 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   const { resolvedTheme } = useTheme()
 
   const [items, setItems] = React.useState<NotificationItem[]>([])
-  const [pinnedAnnouncements, setPinnedAnnouncements] = React.useState<NotificationItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
   const [pageSize] = React.useState(20)
@@ -149,20 +138,8 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
         unread_only: readFilter.has('unread'),
       }
       const result = await notificationsApi.list(listParams)
-      const shouldPromoteAnnouncements = page === 1 && !scope && !level && !debouncedSearchQuery && !readFilter.has('unread')
 
       setItems(result.items)
-      if (shouldPromoteAnnouncements) {
-        const announcements = await notificationsApi.list({
-          page: 1,
-          page_size: 5,
-          type: 'system_announcement',
-        })
-        const currentPageIds = new Set(result.items.map((item) => item.id))
-        setPinnedAnnouncements(announcements.items.filter((item) => !currentPageIds.has(item.id)))
-      } else {
-        setPinnedAnnouncements([])
-      }
       setTotal(result.total)
     } catch (error) {
       console.error('Failed to fetch notifications:', error)
@@ -270,47 +247,6 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
         />
       </div>
 
-      {pinnedAnnouncements.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-          {pinnedAnnouncements.map((item) => {
-            const meta = getNotificationDisplayMeta(item)
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={cn(
-                  'flex w-full cursor-pointer items-start justify-between gap-3 rounded-md px-3 py-2 text-left hover:bg-amber-500/10',
-                  !item.is_read && 'bg-amber-500/15',
-                )}
-                onClick={() => openDetail(item)}
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <NotificationKindBadge item={item} label={t(`kindOptions.${meta.kind}`)} />
-                    {!item.is_read && <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" />}
-                    <span className="min-w-0 truncate text-sm font-semibold">{item.title}</span>
-                  </div>
-                  <p className="text-xs font-medium text-amber-700 dark:text-amber-300">{t('announcementHint')}</p>
-                </div>
-                {!item.is_read && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="shrink-0 cursor-pointer"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      handleMarkRead(item.id)
-                    }}
-                  >
-                    {t('markRead')}
-                  </Button>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -355,11 +291,6 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <NotificationKindBadge item={item} label={t(`kindOptions.${meta.kind}`)} />
-                          {meta.isAnnouncement && (
-                            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                              {t('announcementHint')}
-                            </span>
-                          )}
                         </div>
                       </div>
                     </TableCell>

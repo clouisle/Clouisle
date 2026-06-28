@@ -36,7 +36,9 @@ export type NotificationsMessages = {
       delivery: string
       general: string
     }
-    announcementHint: string
+    prominentTitle: string
+    prominentDescription: string
+    viewNotification: string
     channel: {
       email: string
       dingtalk: string
