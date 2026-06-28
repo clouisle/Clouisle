@@ -27,6 +27,16 @@
       "medium": "中",
       "high": "高"
     },
+    "kindOptions": {
+      "announcement": "系统公告",
+      "security": "安全通知",
+      "action": "待处理",
+      "delivery": "状态更新",
+      "general": "普通通知"
+    },
+    "prominentTitle": "重要通知",
+    "prominentDescription": "需要关注的未读公告和安全通知。",
+    "viewNotification": "查看",
     "channel": {
       "email": "邮件",
       "dingtalk": "钉钉",

@@ -29,6 +29,16 @@ export type NotificationsMessages = {
       medium: string
       high: string
     }
+    kindOptions: {
+      announcement: string
+      security: string
+      action: string
+      delivery: string
+      general: string
+    }
+    prominentTitle: string
+    prominentDescription: string
+    viewNotification: string
     channel: {
       email: string
       dingtalk: string

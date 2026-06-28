@@ -27,6 +27,16 @@
       "medium": "Medium",
       "high": "High"
     },
+    "kindOptions": {
+      "announcement": "Announcement",
+      "security": "Security",
+      "action": "Action needed",
+      "delivery": "Status update",
+      "general": "Notification"
+    },
+    "prominentTitle": "Important notifications",
+    "prominentDescription": "Unread announcements and security notices that need your attention.",
+    "viewNotification": "View",
     "channel": {
       "email": "Email",
       "dingtalk": "DingTalk",
