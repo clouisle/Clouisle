@@ -25,6 +25,28 @@
   - [x] 3. Frontend edit API, UI, and i18n
   - [x] 4. Validation and regression checks
 
+- **yun-102-configurable-theme** — In progress. Expand site theme configuration to cover practical core colors with native color pickers and runtime CSS variable application. See `docs/plan/yun-102-configurable-theme.md`
+  - [x] 1. Backend theme settings and validation (`ruff check`, `ruff format --check`, `mypy app/`)
+  - [x] 2. Public/admin theme API typing and normalization
+  - [x] 3. Runtime CSS variable mapping
+  - [x] 4. Admin color picker UI and i18n
+  - [x] 5. Targeted validation
+
+- **yun-97-observability-upgrade** — In progress. Upgrade admin observability IA, alerts, drilldowns, token/cost, workers, and slow-query guidance using existing APIs. See `docs/plan/yun-97-observability-upgrade.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Observability navigation, overview, and alert cards
+  - [x] 3. Token/cost, worker, slow-query, Agent, and Workflow display upgrades
+  - [x] 4. i18n, generated types, and validation
+
+- **yun-106-object-storage-switch** — Complete. Add configurable switching between local upload storage and S3-compatible object storage. See `docs/plan/yun-106-object-storage-switch.md`
+  - [x] 1. Planning docs
+  - [x] 2. Backend settings and storage adapter
+  - [x] 3. Upload endpoint integration
+  - [x] 4. Admin settings UI
+  - [x] 5. Skills package storage integration
+  - [x] 6. Knowledge-base document storage integration
+  - [x] 7. Tests and checks
+
 - **yun-95-log-server-side-search-pagination** — Complete. Move Agent and workflow log search/date filtering to backend queries before pagination. See `docs/plan/yun-95-log-server-side-search-pagination.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend log search/date filters

@@ -1,9 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import { useTheme } from 'next-themes'
 import { useTranslations } from 'next-intl'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB } from '@/lib/constants'
+import { BRAND_CSS_VARIABLES, getBrandCssVariables, shouldApplySiteThemeMode } from '@/lib/theme-config'
 
 interface SiteSettingsContextType {
   settings: PublicSiteSettings
@@ -16,6 +18,36 @@ const defaultSettings: PublicSiteSettings = {
   site_description: '',
   site_url: '',
   site_icon: '',
+  theme_mode: 'system',
+  theme_primary_color: '',
+  theme_primary_foreground_color: '',
+  theme_background_color: '',
+  theme_foreground_color: '',
+  theme_card_color: '',
+  theme_card_foreground_color: '',
+  theme_border_color: '',
+  theme_ring_color: '',
+  theme_sidebar_color: '',
+  theme_sidebar_foreground_color: '',
+  theme_sidebar_primary_color: '',
+  theme_sidebar_primary_foreground_color: '',
+  theme_sidebar_accent_color: '',
+  theme_sidebar_accent_foreground_color: '',
+  theme_sidebar_border_color: '',
+  theme_navbar_color: '',
+  theme_navbar_foreground_color: '',
+  theme_navbar_hover_color: '',
+  theme_navbar_hover_foreground_color: '',
+  theme_accent_color: '',
+  theme_accent_foreground_color: '',
+  theme_muted_color: '',
+  theme_muted_foreground_color: '',
+  theme_chart_1_color: '',
+  theme_chart_2_color: '',
+  theme_chart_3_color: '',
+  theme_chart_4_color: '',
+  theme_chart_5_color: '',
+  theme_branding_display: 'full',
   icp_record_number: '',
   icp_record_url: '',
   terms_enabled: false,
@@ -41,6 +73,119 @@ const SiteSettingsContext = React.createContext<SiteSettingsContextType>({
   loading: true,
   refresh: async () => {},
 })
+
+function PublicThemeApplicator({ settings }: { settings: PublicSiteSettings }) {
+  const { setTheme } = useTheme()
+  const {
+    theme_mode,
+    theme_primary_color,
+    theme_primary_foreground_color,
+    theme_background_color,
+    theme_foreground_color,
+    theme_card_color,
+    theme_card_foreground_color,
+    theme_border_color,
+    theme_ring_color,
+    theme_sidebar_color,
+    theme_sidebar_foreground_color,
+    theme_sidebar_primary_color,
+    theme_sidebar_primary_foreground_color,
+    theme_sidebar_accent_color,
+    theme_sidebar_accent_foreground_color,
+    theme_sidebar_border_color,
+    theme_navbar_color,
+    theme_navbar_foreground_color,
+    theme_navbar_hover_color,
+    theme_navbar_hover_foreground_color,
+    theme_accent_color,
+    theme_accent_foreground_color,
+    theme_muted_color,
+    theme_muted_foreground_color,
+    theme_chart_1_color,
+    theme_chart_2_color,
+    theme_chart_3_color,
+    theme_chart_4_color,
+    theme_chart_5_color,
+  } = settings
+
+  React.useEffect(() => {
+    setTheme(shouldApplySiteThemeMode(theme_mode) ? theme_mode : 'system')
+  }, [theme_mode, setTheme])
+
+  React.useEffect(() => {
+    const root = document.documentElement
+    const variables = getBrandCssVariables({
+      theme_primary_color,
+      theme_primary_foreground_color,
+      theme_background_color,
+      theme_foreground_color,
+      theme_card_color,
+      theme_card_foreground_color,
+      theme_border_color,
+      theme_ring_color,
+      theme_sidebar_color,
+      theme_sidebar_foreground_color,
+      theme_sidebar_primary_color,
+      theme_sidebar_primary_foreground_color,
+      theme_sidebar_accent_color,
+      theme_sidebar_accent_foreground_color,
+      theme_sidebar_border_color,
+      theme_navbar_color,
+      theme_navbar_foreground_color,
+      theme_navbar_hover_color,
+      theme_navbar_hover_foreground_color,
+      theme_accent_color,
+      theme_accent_foreground_color,
+      theme_muted_color,
+      theme_muted_foreground_color,
+      theme_chart_1_color,
+      theme_chart_2_color,
+      theme_chart_3_color,
+      theme_chart_4_color,
+      theme_chart_5_color,
+    })
+
+    BRAND_CSS_VARIABLES.forEach((cssVariable) => {
+      const value = variables[cssVariable]
+      if (value) {
+        root.style.setProperty(cssVariable, value)
+      } else {
+        root.style.removeProperty(cssVariable)
+      }
+    })
+  }, [
+    theme_primary_color,
+    theme_primary_foreground_color,
+    theme_background_color,
+    theme_foreground_color,
+    theme_card_color,
+    theme_card_foreground_color,
+    theme_border_color,
+    theme_ring_color,
+    theme_sidebar_color,
+    theme_sidebar_foreground_color,
+    theme_sidebar_primary_color,
+    theme_sidebar_primary_foreground_color,
+    theme_sidebar_accent_color,
+    theme_sidebar_accent_foreground_color,
+    theme_sidebar_border_color,
+    theme_navbar_color,
+    theme_navbar_foreground_color,
+    theme_navbar_hover_color,
+    theme_navbar_hover_foreground_color,
+    theme_accent_color,
+    theme_accent_foreground_color,
+    theme_muted_color,
+    theme_muted_foreground_color,
+    theme_chart_1_color,
+    theme_chart_2_color,
+    theme_chart_3_color,
+    theme_chart_4_color,
+    theme_chart_5_color,
+  ])
+
+  return null
+}
 
 interface SiteSettingsProviderProps {
   children: React.ReactNode
@@ -95,6 +240,7 @@ export function SiteSettingsProvider({
 
   return (
     <SiteSettingsContext.Provider value={{ settings, loading, refresh: loadSettings }}>
+      <PublicThemeApplicator settings={settings} />
       {children}
     </SiteSettingsContext.Provider>
   )

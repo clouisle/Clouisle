@@ -247,6 +247,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error seeding data: {e}")
 
+    # Validate upload storage after site settings are initialized.
+    from app.api.v1.endpoints.upload import validate_upload_storage_config
+
+    await validate_upload_storage_config()
+
     cleanup_task = asyncio.create_task(cleanup_expired_clouisle_import_sessions_loop())
 
     yield

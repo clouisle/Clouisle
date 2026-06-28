@@ -278,6 +278,7 @@ async def delete_skill(
     skill_id_for_log = skill.id
     skill_name = skill.name
     team_id = str(skill.team_id) if skill.team_id else None
+    await SkillImportService.delete_private_storage(skill.package_storage_path)
     await skill.delete()
     await AuditLogService.log(
         user=current_user,
