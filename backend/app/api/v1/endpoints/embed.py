@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import (
@@ -84,6 +85,25 @@ def _check_embed_enabled(target: Agent | Workflow) -> None:
         )
 
 
+def _parse_origin_host(value: str) -> tuple[str, int | None]:
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    return (parsed.hostname or "").lower(), parsed.port
+
+
+def _domain_matches(
+    allowed_host: str,
+    allowed_port: int | None,
+    check_host: str,
+    check_port: int | None,
+) -> bool:
+    if allowed_port is not None and allowed_port != check_port:
+        return False
+    if allowed_host.startswith("*."):
+        base = allowed_host[2:]
+        return check_host == base or check_host.endswith(f".{base}")
+    return check_host == allowed_host
+
+
 def _check_embed_domain(request: Request, target: Agent | Workflow) -> None:
     """Verify request origin is in allowed domains list (if configured)."""
     embed_config = target.embed_config or {}
@@ -91,41 +111,16 @@ def _check_embed_domain(request: Request, target: Agent | Workflow) -> None:
     if not allowed_domains:
         return  # No restriction
 
-    origin = request.headers.get("origin", "")
-    referer = request.headers.get("referer", "")
-
-    # Extract hostname from origin or referer
-    check_host = ""
-    if origin:
-        # origin is like "https://example.com"
-        try:
-            from urllib.parse import urlparse
-
-            check_host = urlparse(origin).hostname or ""
-        except Exception:
-            pass
-    elif referer:
-        try:
-            from urllib.parse import urlparse
-
-            check_host = urlparse(referer).hostname or ""
-        except Exception:
-            pass
-
+    source = request.headers.get("origin") or request.headers.get("referer") or ""
+    check_host, check_port = _parse_origin_host(source)
     if not check_host:
         return  # No origin info, allow (could be direct access for testing)
 
-    # Check if host matches any allowed domain (supports wildcard subdomains)
     for domain in allowed_domains:
-        domain = domain.strip().lower()
-        if not domain:
-            continue
-        if domain.startswith("*."):
-            # Wildcard: *.example.com matches sub.example.com
-            base = domain[2:]
-            if check_host == base or check_host.endswith("." + base):
-                return
-        elif check_host == domain:
+        allowed_host, allowed_port = _parse_origin_host(str(domain).strip().lower())
+        if allowed_host and _domain_matches(
+            allowed_host, allowed_port, check_host, check_port
+        ):
             return
 
     raise BusinessError(
