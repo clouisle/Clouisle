@@ -5,11 +5,6 @@ import { memo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Streamdown } from 'streamdown'
 import { cn } from '@/lib/utils'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import type { TextPart, SourceDocumentPart } from '../types'
 
 export interface TextContentProps {
@@ -155,10 +150,13 @@ interface CitationBadgeProps {
 
 function CitationBadge({ index, source, onClick }: CitationBadgeProps) {
   const t = useTranslations('chat.source')
-  const badge = (
+  const title = source?.documentName || t('documentDefault')
+
+  return (
     <button
       type="button"
       onClick={onClick}
+      title={source ? title : undefined}
       className={cn(
         'inline-flex items-center justify-center',
         'min-w-5 h-5 px-1 mx-0.5',
@@ -170,23 +168,5 @@ function CitationBadge({ index, source, onClick }: CitationBadgeProps) {
     >
       {index}
     </button>
-  )
-
-  if (!source) {
-    return badge
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger render={badge} />
-      <TooltipContent side="top" className="max-w-xs">
-        <div className="space-y-1">
-          <div className="font-medium text-xs">{source.documentName || t('documentDefault')}</div>
-          <div className="text-xs text-muted-foreground line-clamp-3">
-            {source.content}
-          </div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
   )
 }

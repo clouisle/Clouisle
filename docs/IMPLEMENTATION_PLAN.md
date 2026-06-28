@@ -2,6 +2,29 @@
 
 ## Active
 
+- **embed-chat-performance** — In progress. Apply the optimized chat streaming/rendering patterns to the script-embedded Agent chat widget. See `docs/plan/embed-chat-performance.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Embedded streaming commit batching
+  - [x] 3. User-input XML parse gating
+  - [x] 4. Final/stop/error cleanup
+  - [x] 5. Validation and regression checks
+
+- **chat-extreme-performance-refactor** — In progress. Refactor the chat page/message renderer for extreme performance: bounded rendering, streaming batching, memoized message bodies, and lazy source/tool output. See `docs/plan/chat-extreme-performance-refactor.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Renderer boundary extraction
+  - [x] 3. Render-time citation handling
+  - [x] 4. Streaming state commit throttling
+  - [x] 5. Message shell/body memoization
+  - [x] 6. Chat list/windowing and conversation switch optimization
+  - [x] 7. Source/tool/reasoning bounded rendering
+  - [ ] 8. Performance and regression validation
+
+- **yun-101-edit-agent-user-message-history** — In progress. Let users edit their own Agent conversation messages, store edits as message versions, and keep downstream context on the active edited branch. See `docs/plan/yun-101-edit-agent-user-message-history.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend edit endpoint, branching, audit, and tests
+  - [x] 3. Frontend edit API, UI, and i18n
+  - [x] 4. Validation and regression checks
+
 - **yun-102-configurable-theme** — In progress. Expand site theme configuration to cover practical core colors with native color pickers and runtime CSS variable application. See `docs/plan/yun-102-configurable-theme.md`
   - [x] 1. Backend theme settings and validation (`ruff check`, `ruff format --check`, `mypy app/`)
   - [x] 2. Public/admin theme API typing and normalization

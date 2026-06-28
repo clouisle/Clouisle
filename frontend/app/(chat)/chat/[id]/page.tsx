@@ -166,6 +166,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     conversationId,
     sendMessage,
     regenerate,
+    editMessage,
     switchVersion,
     stop,
     reset: resetChat,
@@ -768,11 +769,13 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           ) : (
             /* Messages using ChatContainer */
             <ChatContainer
+              key={conversationId ?? 'new-chat'}
               messages={messages}
               isStreaming={isStreaming}
               hideToolCalls={agent.hide_tool_calls}
               className="flex-1 min-h-0 overflow-y-auto"
               onRegenerate={regenerate}
+              onEditMessage={editMessage}
               onSwitchVersion={switchVersion}
               onSelectOption={(option) => {
                 void handleSubmit(option, [])

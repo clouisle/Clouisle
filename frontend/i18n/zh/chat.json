@@ -50,6 +50,11 @@
       "page": "第 {page} 页",
       "segment": "片段 {index}",
       "segmentCount": "{count} 个片段",
+      "showMoreSources": "再显示 {count} 个来源",
+      "showMoreSegments": "再显示 {count} 个片段",
+      "loadingSources": "正在加载来源...",
+      "contentTruncated": "为避免卡顿已截断内容。全文长度：{length} 个字符。",
+      "close": "关闭",
       "relevance": "相关度 {score}%"
     },
     "file": {
@@ -86,6 +91,7 @@
     "message": {
       "copy": "复制",
       "copied": "已复制",
+      "loadOlderMessages": "加载前 {count} 条消息",
       "retry": "重试",
       "user": "用户",
       "assistant": "助手",
@@ -93,6 +99,10 @@
       "helpful": "有帮助",
       "notHelpful": "没帮助",
       "regenerate": "重新生成",
+      "edit": "编辑",
+      "saveEdit": "保存",
+      "cancelEdit": "取消",
+      "editPlaceholder": "编辑你的消息...",
       "listen": "朗读",
       "stopListening": "停止朗读",
       "speechUnavailable": "当前浏览器不支持文字朗读",

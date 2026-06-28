@@ -480,6 +480,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Can only regenerate assistant messages",
         "zh": "只能重新生成助手消息",
     },
+    "can_only_edit_user_message": {
+        "en": "Can only edit user messages",
+        "zh": "只能编辑用户消息",
+    },
+    "message_content_required": {
+        "en": "Message content is required",
+        "zh": "消息内容不能为空",
+    },
+    "message_content_unchanged": {
+        "en": "Message content is unchanged",
+        "zh": "消息内容未改变",
+    },
     "cannot_add_as_owner": {
         "en": "Cannot add member as owner",
         "zh": "不能将成员添加为所有者",
