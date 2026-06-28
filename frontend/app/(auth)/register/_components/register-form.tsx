@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -92,6 +92,7 @@ function RegisterLegalEntry({ label, url, text }: { label: string; url: string; 
 
 export function RegisterForm() {
   const t = useTranslations('auth')
+  const locale = useLocale()
   const router = useRouter()
 
   const [step, setStep] = React.useState<Step>('form')
@@ -305,6 +306,7 @@ export function RegisterForm() {
         terms_accepted: siteSettings?.require_terms_acceptance_on_register ? termsAccepted : undefined,
         captcha_id: captcha?.captcha_id,
         captcha_token: captchaToken || undefined,
+        locale,
       })
       setRegisteredUser(user)
 

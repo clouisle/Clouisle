@@ -67,6 +67,7 @@ export interface RegisterData {
   terms_accepted?: boolean
   captcha_id?: string
   captcha_token?: string
+  locale?: string
 }
 
 export interface VerificationResponse {

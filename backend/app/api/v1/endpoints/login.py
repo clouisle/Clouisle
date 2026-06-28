@@ -32,7 +32,7 @@ from app.core.email import (
 )
 from app.core.captcha import create_captcha_proof, generate_captcha, verify_captcha
 from app.core.timezone import now_utc
-from app.core.i18n import t, get_default_language
+from app.core.i18n import t, get_default_language, normalize_language
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -757,10 +757,11 @@ async def register(
     # Get registration settings
     require_approval = await SiteSetting.get_value("require_approval", False)
     email_verification = await SiteSetting.get_value("email_verification", True)
-    default_language = await SiteSetting.get_value("default_language", "en")
     force_first_login = await SiteSetting.get_value(
         "force_password_change_first_login", False
     )
+
+    registration_locale = normalize_language(user_in.locale)
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)
@@ -777,7 +778,7 @@ async def register(
         is_superuser=is_first_user,
         # First user auto-verified, or if email verification is disabled
         email_verified=is_first_user or not email_verification,
-        locale=default_language,
+        locale=registration_locale,
         # Initialize password expiration fields
         password_changed_at=now_utc(),
         force_password_change=force_first_login and not is_first_user,
