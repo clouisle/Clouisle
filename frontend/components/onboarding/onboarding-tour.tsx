@@ -12,6 +12,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
+import { useTeam } from '@/contexts/team-context'
 import { useOnboarding, type OnboardingTourId } from './onboarding-provider'
 import { getTourConfigById, allTourConfigs } from './steps/platform-steps'
 import type { OnboardingStep } from './steps/types'
@@ -89,6 +90,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const pathnameRef = React.useRef(pathname)
+  const { currentTeam, isLoading: isTeamLoading } = useTeam()
   const { state, startTour, nextStep, goToStep, completeTour } = useOnboarding()
   const controlsRef = React.useRef<Controls | null>(null)
   const hasAutoStarted = React.useRef(false)
@@ -110,6 +112,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
       !state.isRunning &&
       !state.completedTours.includes('overview') &&
       pathname === '/app' &&
+      !isTeamLoading &&
+      currentTeam &&
       !hasAutoStarted.current
     ) {
       hasAutoStarted.current = true
@@ -119,7 +123,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [tourId, config, state.isRunning, state.completedTours, pathname, startTour])
+  }, [tourId, config, state.isRunning, state.completedTours, pathname, isTeamLoading, currentTeam, startTour])
 
   // Get all steps (no filtering by route)
   const steps = React.useMemo(() => {
