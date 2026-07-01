@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
+import { usePermissions } from '@/hooks/use-permissions'
 import { knowledgeBasesApi, type KnowledgeBase } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -63,6 +64,7 @@ export default function KnowledgeBasePage() {
   const packageT = useTranslations('packages')
   const commonT = useTranslations('common')
   const { currentTeam } = useTeam()
+  const { user } = usePermissions()
   const { canPerform } = useCanPerform()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -157,6 +159,12 @@ export default function KnowledgeBasePage() {
   const handleSuccess = () => {
     fetchKnowledgeBases()
   }
+
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const isKbOwner = (kb: KnowledgeBase) => Boolean(user?.id && kb.created_by?.id === user.id)
+  const canEditKb = (kb: KnowledgeBase) => isTeamAdmin || isKbOwner(kb)
+  const canExportKb = (kb: KnowledgeBase) => isTeamAdmin || isKbOwner(kb)
+  const canDeleteKb = () => isTeamAdmin
 
   // 过滤知识库
   const filteredKnowledgeBases = React.useMemo(() => {
@@ -285,7 +293,7 @@ export default function KnowledgeBasePage() {
                   )}
                 />
                 <DropdownMenuContent align="end">
-                  {canPerform('kb:update') && (
+                  {canEditKb(kb) && (
                     <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleEdit(kb) }}>
                       <Pencil className="mr-2 h-4 w-4" />
                       {commonT('edit')}
@@ -297,13 +305,13 @@ export default function KnowledgeBasePage() {
                       {kbT('searchTest')}
                     </DropdownMenuItem>
                   </Link>
-                  {canPerform('kb:read') && (
+                  {canExportKb(kb) && (
                     <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleExport(kb) }}>
                       <Download className="mr-2 h-4 w-4" />
                       {packageT('export')}
                     </DropdownMenuItem>
                   )}
-                  {canPerform('kb:delete') && (
+                  {canDeleteKb() && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem

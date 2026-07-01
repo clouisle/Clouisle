@@ -316,6 +316,7 @@ export interface AgentQueryParams {
   status?: AgentStatus
   visibility?: AgentVisibility
   teamId?: string
+  ownOnly?: boolean
 }
 
 // ============ Conversation Types ============
@@ -678,7 +679,7 @@ export const agentsApi = {
    * 获取 Agent 列表
    */
   getAgents: async (params: AgentQueryParams = {}): Promise<PageData<AgentListItem>> => {
-    const { page = 1, pageSize = 20, search, status, visibility, teamId } = params
+    const { page = 1, pageSize = 20, search, status, visibility, teamId, ownOnly } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
@@ -686,6 +687,7 @@ export const agentsApi = {
     if (status) queryParams.append('status', status)
     if (visibility) queryParams.append('visibility', visibility)
     if (teamId) queryParams.append('team_id', teamId)
+    if (ownOnly) queryParams.append('own_only', 'true')
     return api.get<PageData<AgentListItem>>(`/agents?${queryParams.toString()}`)
   },
 
@@ -1137,6 +1139,11 @@ export interface ConversationTrends {
     conversations: number
     messages: number
     tokens: number
+    users?: Record<string, {
+      name: string
+      conversations: number
+      tokens: number
+    }>
   }>
 }
 

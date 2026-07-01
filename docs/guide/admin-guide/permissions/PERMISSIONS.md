@@ -2,13 +2,15 @@
 
 This document describes the permission system design of the Clouisle platform, including special permissions, permission combinations, and data visibility rules.
 
+For exact implementation semantics, use `docs/dev/design/access-control/RBAC_SPEC.md` as the source of truth. This guide is operator-facing and intentionally summarizes the current model.
+
 ## 1. Permission Categories
 
 ### 1.1 Special Permissions
 
 | Permission | Description | Purpose |
 |------------|-------------|---------|
-| `*` | Super permission | Only Super Admin role has this, bypasses all permission checks |
+| `*` | Wildcard permission code | Satisfies permission-code checks; `User.is_superuser` is the runtime bypass used by backend checks |
 | `admin:dashboard:access` | Dashboard access | Controls access to admin dashboard, key permission distinguishing "admin" from "regular user" |
 
 ### 1.2 Dashboard Management Permissions (requires `admin:dashboard:access`)
@@ -56,7 +58,7 @@ These permissions are for managing business resources. All users may have them, 
 | **Super Admin** | Super administrator | `*` (all permissions) |
 | **Admin** | Dashboard administrator | `admin:dashboard:access` + system read visibility + team-scoped resource management |
 | **Member** | Collaborative member | Daily resource creation and editing without dashboard access |
-| **Viewer** | Default read-only user | Read/chat/run/execute permissions without dashboard access |
+| **Viewer** | Default read/use-only user | Read/chat/run/execute permissions without dashboard access |
 
 ### 2.2 Role Permission Comparison
 
@@ -98,9 +100,30 @@ These permissions are for managing business resources. All users may have them, 
 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
 | `conversation:delete` | ✓ | ✓ | ✓ | |
 
+### 2.3 Default Assignment
+
+New users receive the configured default global role. During system initialization, `default_role_id` is set to the global **Viewer** role when no default exists.
+
+If `default_team_id` is configured, new users also join that team with `default_team_role`. The default team role is `member`; valid automatic team roles are `viewer`, `member`, and `admin`. `owner` is never assigned automatically.
+
+Global roles and team roles are separate: global roles provide permission codes, while team roles are mirrored into team-scoped role assignments. Team-scoped permissions apply only inside the target team and cannot satisfy `admin:*` dashboard permissions.
+
+### 2.4 Scoped Team Role Assignments
+
+Team membership is mirrored into team-scoped role assignments:
+
+| Team role | Scoped role in that team |
+|-----------|--------------------------|
+| Owner | Admin |
+| Admin | Admin |
+| Member | Member |
+| Viewer | Viewer |
+
+This does not grant or remove global roles. Legacy global `Admin` / `Member` assignments from earlier behavior are not automatically cleaned up because their source cannot be distinguished from manual assignments.
+
 ---
 
-## 3. Data Isolation Rules
+## 3. Data Visibility and Isolation
 
 ### 3.1 Core Concepts
 
@@ -150,7 +173,7 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 | Super Admin | All resources |
 | Admin | All resources in their teams |
 | Member | All resources in their teams |
-| Viewer | All resources in their teams (read-only) |
+| Viewer | All resources in their teams (view/use-only) |
 
 ---
 
@@ -176,7 +199,7 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 - ✓ Dashboard management menu
 - ✗ Other teams' conversations
 
-### 4.3 Scenario: Read-Only User
+### 4.3 Scenario: View/Use-Only User
 
 **User Role**: Viewer (default role)
 
@@ -185,7 +208,7 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 - ✓ Chat with Agent (`agent:chat`)
 - ✓ Run workflows (`workflow:run`)
 - ✓ Execute tools (`tool:execute`)
-- ✗ Create/modify/delete any resources
+- ✗ Create/modify/delete/publish resources
 - ✗ Access dashboard management
 
 ### 4.4 Scenario: Site Settings Management
@@ -285,7 +308,7 @@ else:
 | System Administrator | Super Admin | Responsible for system configuration, user management |
 | Department Manager | Admin | View dashboard data and manage team resources without changing the permission system |
 | Developer | Member | Create and edit day-to-day resources without dashboard access |
-| Business User | Viewer | Default read-only access for using agents and workflows |
+| Business User | Viewer | Default view/use-only access for using agents and workflows |
 
 ### 7.2 Custom Roles
 
@@ -306,3 +329,4 @@ You can create custom roles based on business needs, for example:
 - Only grant users the minimum permissions needed to complete their work
 - Avoid assigning `admin:dashboard:access` permission to regular users
 - `admin:settings:update` permission should be limited to system administrators only
+- Review legacy global `Admin` / `Member` grants after enabling scoped RBAC; team roles no longer maintain those global roles

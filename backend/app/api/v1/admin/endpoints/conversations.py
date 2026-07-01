@@ -110,15 +110,15 @@ async def list_all_conversations(
     List conversations.
 
     - Super Admin: Can see all conversations
-    - Admin (has dashboard:access): Can see all conversations in their teams
+    - Admin (has admin:dashboard:access): Can see all conversations in their teams
     - Member/Viewer: Can only see their own conversations
     """
-    # Check if user has dashboard:access permission (Admin level)
+    # Check if user has admin dashboard access permission (Admin level)
     has_dashboard_access = current_user.is_superuser
     if not has_dashboard_access:
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -233,12 +233,12 @@ async def get_conversation_stats(
     - Super Admin/Admin: Stats for all conversations in accessible teams
     - Member/Viewer: Stats for their own conversations only
     """
-    # Check if user has dashboard:access permission (Admin level)
+    # Check if user has admin dashboard access permission (Admin level)
     has_dashboard_access = current_user.is_superuser
     if not has_dashboard_access:
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -325,12 +325,12 @@ async def get_conversation_trends(
     - Super Admin/Admin: Trends for all conversations in accessible teams
     - Member/Viewer: Trends for their own conversations only
     """
-    # Check if user has dashboard:access permission (Admin level)
+    # Check if user has admin dashboard access permission (Admin level)
     has_dashboard_access = current_user.is_superuser
     if not has_dashboard_access:
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -455,11 +455,11 @@ async def get_conversation_detail(
 
     # Check access permissions
     if not current_user.is_superuser:
-        # Check if user has dashboard:access permission (Admin level)
+        # Check if user has admin:dashboard:access permission (Admin level)
         has_dashboard_access = False
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -548,11 +548,11 @@ async def delete_conversation_admin(
 
     # Check access permissions
     if not current_user.is_superuser:
-        # Check if user has dashboard:access permission (Admin level)
+        # Check if user has admin:dashboard:access permission (Admin level)
         has_dashboard_access = False
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -612,11 +612,11 @@ async def batch_delete_conversations(
 
     # Check access permissions
     if not current_user.is_superuser:
-        # Check if user has dashboard:access permission (Admin level)
+        # Check if user has admin:dashboard:access permission (Admin level)
         has_dashboard_access = False
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:

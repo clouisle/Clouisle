@@ -21,13 +21,13 @@ import {
   ArrowUpDown,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import { knowledgeBasesApi, type KnowledgeBase, type KnowledgeBaseStats } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DocumentsTable, UploadDocumentDialog, ImportUrlDialog } from './_components'
 import { KnowledgeBaseDialog } from '../_components/kb-dialog'
-import { PermissionGuard } from '@/components/permission-guard'
 
 export default function KnowledgeBaseDetailPage({
   params,
@@ -38,6 +38,7 @@ export default function KnowledgeBaseDetailPage({
   const t = useTranslations('knowledgeBases')
   const router = useRouter()
   const { currentTeam } = useTeam()
+  const { user } = usePermissions()
   
   // 数据状态
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
@@ -92,6 +93,10 @@ export default function KnowledgeBaseDetailPage({
     loadKnowledgeBase(false)
   }
   
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const isKbOwner = Boolean(user?.id && knowledgeBase?.created_by?.id === user.id)
+  const canUpdateKb = Boolean(knowledgeBase && (isTeamAdmin || isKbOwner))
+
   if (isLoading || !knowledgeBase) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -133,19 +138,21 @@ export default function KnowledgeBaseDetailPage({
             <Search className="mr-2 h-4 w-4" />
             {t('searchTest')}
           </Button>
-          <PermissionGuard permission="kb:update">
-            <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
-              <LinkIcon className="mr-2 h-4 w-4" />
-              {t('importUrl')}
-            </Button>
-            <Button onClick={() => setUploadDialogOpen(true)}>
-              <Upload className="mr-2 h-4 w-4" />
-              {t('uploadDocument')}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
-              <Settings className="h-4 w-4" />
-            </Button>
-          </PermissionGuard>
+          {canUpdateKb && (
+            <>
+              <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
+                <LinkIcon className="mr-2 h-4 w-4" />
+                {t('importUrl')}
+              </Button>
+              <Button onClick={() => setUploadDialogOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                {t('uploadDocument')}
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
+                <Settings className="h-4 w-4" />
+              </Button>
+            </>
+          )}
         </div>
       </div>
       

@@ -69,11 +69,14 @@ def test_admin_kb_route_requires_admin_permission(kb_permission_client):
     assert response.json()["code"] == 3000
 
 
-def test_platform_kb_route_requires_platform_permission(kb_permission_client):
-    client, user = kb_permission_client
+@pytest.mark.anyio
+async def test_platform_kb_route_uses_team_membership_not_global_permission(
+    kb_permission_client,
+):
+    _, user = kb_permission_client
     user.roles = [_Role("admin:knowledge-base:read")]
+    request = SimpleNamespace(url=SimpleNamespace(path="/api/v1/knowledge-bases"))
 
-    response = client.get("/api/v1/knowledge-bases")
+    result = await knowledge_bases.require_kb_read(request, user)
 
-    assert response.status_code == 403
-    assert response.json()["code"] == 3000
+    assert result is user

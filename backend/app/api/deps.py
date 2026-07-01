@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.redis import is_token_blacklisted
 from app.core.timezone import now_utc
 from app.core.i18n import set_language
-from app.models.user import User
+from app.models.user import User, ScopedRoleAssignment
 from app.models.api_key import APIKey
 from app.schemas.token import TokenPayload
 from app.schemas.response import ResponseCode, BusinessError
@@ -257,6 +257,52 @@ async def get_current_user_optional(
     return user
 
 
+def user_has_global_permission(user: User, required_permission: str) -> bool:
+    for role in user.roles:
+        for permission in role.permissions:
+            if permission.code == required_permission or permission.code == "*":
+                return True
+    return False
+
+
+async def user_has_scoped_permission(
+    user: User, required_permission: str, scope_type: str, scope_id: UUID
+) -> bool:
+    assignments = await ScopedRoleAssignment.filter(
+        user=user,
+        scope_type=scope_type,
+        scope_id=scope_id,
+    ).prefetch_related("role__permissions")
+    for assignment in assignments:
+        for permission in assignment.role.permissions:
+            if permission.code == required_permission or permission.code == "*":
+                return True
+    return False
+
+
+async def check_scoped_permission(
+    user: User, required_permission: str, scope_type: str, scope_id: UUID
+) -> None:
+    if user.is_superuser:
+        return
+    if required_permission.startswith("admin:") and user_has_global_permission(
+        user, required_permission
+    ):
+        return
+    if not required_permission.startswith(
+        "admin:"
+    ) and await user_has_scoped_permission(
+        user, required_permission, scope_type, scope_id
+    ):
+        return
+    raise BusinessError(
+        code=ResponseCode.PERMISSION_DENIED,
+        msg_key="operation_not_permitted",
+        status_code=status.HTTP_403_FORBIDDEN,
+        permission=required_permission,
+    )
+
+
 class PermissionChecker:
     def __init__(self, required_permission: str):
         self.required_permission = required_permission
@@ -267,23 +313,7 @@ class PermissionChecker:
         if current_user.is_superuser:
             return current_user
 
-        # Check permissions
-        # Since we prefetched roles and permissions, we can check in memory
-        # Note: roles__permissions is a list of Permission objects
-
-        has_permission = False
-        for role in current_user.roles:
-            for permission in role.permissions:
-                if (
-                    permission.code == self.required_permission
-                    or permission.code == "*"
-                ):
-                    has_permission = True
-                    break
-            if has_permission:
-                break
-
-        if not has_permission:
+        if not user_has_global_permission(current_user, self.required_permission):
             raise BusinessError(
                 code=ResponseCode.PERMISSION_DENIED,
                 msg_key="operation_not_permitted",

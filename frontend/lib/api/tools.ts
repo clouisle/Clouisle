@@ -122,6 +122,7 @@ export interface Tool {
   code_config?: CodeConfig
   mcp_config?: McpConfig
   team_id?: string
+  created_by_id?: string | null
   created_by_name?: string
   // 工具共享相关字段
   is_owned?: boolean

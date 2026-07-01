@@ -2,19 +2,56 @@ import logging
 from uuid import UUID
 
 from app.models.site_setting import SiteSetting
-from app.models.user import Role, Team, TeamMember, User
+from app.models.user import Role, ScopedRoleAssignment, Team, TeamMember, User
 
 logger = logging.getLogger(__name__)
 
-# Team role to global role mapping
-# owner/admin -> Admin, member -> Member, viewer -> no extra role
-TEAM_ROLE_TO_GLOBAL = {
+# Team role to scoped role mapping. Team roles no longer grant global roles.
+TEAM_ROLE_TO_GLOBAL: dict[str, tuple[str, ...]] = {}
+TEAM_ROLE_TO_SCOPED_ROLE = {
     "owner": "Admin",
     "admin": "Admin",
     "member": "Member",
+    "viewer": "Viewer",
 }
 
 DEFAULT_TEAM_ROLES = {"viewer", "member", "admin"}
+
+
+async def sync_scoped_role_assignment(membership: TeamMember) -> None:
+    """Mirror a team membership role into a team-scoped role assignment."""
+    role_name = TEAM_ROLE_TO_SCOPED_ROLE.get(membership.role)
+    if not role_name:
+        logger.warning("Unknown team role %r for scoped sync", membership.role)
+        return
+
+    role = await Role.filter(name=role_name).first()
+    if not role:
+        logger.warning("Scoped sync role %s not found", role_name)
+        return
+
+    await ScopedRoleAssignment.filter(
+        user=membership.user,
+        scope_type="team",
+        scope_id=membership.team.id,
+        source="system",
+    ).delete()
+    await ScopedRoleAssignment.get_or_create(
+        user=membership.user,
+        role=role,
+        scope_type="team",
+        scope_id=membership.team.id,
+        defaults={"source": "system"},
+    )
+
+
+async def remove_scoped_role_assignment(user: User, team_id: UUID) -> None:
+    """Remove team-scoped role assignments for a user in one team."""
+    await ScopedRoleAssignment.filter(
+        user=user,
+        scope_type="team",
+        scope_id=team_id,
+    ).delete()
 
 
 async def assign_default_role(user: User) -> None:
@@ -58,37 +95,34 @@ async def assign_default_team(user: User) -> bool:
         )
         return False
 
-    _, created = await TeamMember.get_or_create(
+    membership, created = await TeamMember.get_or_create(
         team=team,
         user=user,
         defaults={"role": default_team_role},
     )
+    if created:
+        await sync_scoped_role_assignment(membership)
     return created
 
 
 async def sync_user_role_from_teams(user: User) -> None:
+    """Sync team memberships into scoped role assignments.
+
+    Legacy behavior granted/removing global Admin/Member from team roles. Do not do
+    that anymore: existing global roles may be manual, and source was not tracked.
     """
-    Sync global roles based on the user's highest team role across all teams.
+    memberships = await TeamMember.filter(user=user).prefetch_related("team", "user")
+    active_team_ids = set()
+    for membership in memberships:
+        active_team_ids.add(membership.team.id)
+        await sync_scoped_role_assignment(membership)
 
-    - Any team with owner/admin -> ensure user has Admin + Member global roles
-    - Highest team role is member -> remove Admin, ensure Member
-    - Highest is viewer or no teams -> remove Admin and Member (keep others like Viewer)
-    """
-    memberships = await TeamMember.filter(user=user).all()
-
-    roles = {m.role for m in memberships}
-    has_admin = "owner" in roles or "admin" in roles
-    has_member = has_admin or "member" in roles
-
-    admin_role = await Role.filter(name="Admin").first()
-    member_role = await Role.filter(name="Member").first()
-
-    if has_admin and admin_role:
-        await user.roles.add(admin_role)
-    elif admin_role:
-        await user.roles.remove(admin_role)
-
-    if has_member and member_role:
-        await user.roles.add(member_role)
-    elif member_role:
-        await user.roles.remove(member_role)
+    await (
+        ScopedRoleAssignment.filter(
+            user=user,
+            scope_type="team",
+            source="system",
+        )
+        .exclude(scope_id__in=active_team_ids)
+        .delete()
+    )

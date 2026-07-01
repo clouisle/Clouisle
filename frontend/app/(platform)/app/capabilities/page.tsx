@@ -27,8 +27,6 @@ import {
 import {
   toolsApi,
   teamsApi,
-  packagesApi,
-  downloadBlob,
   Tool,
   ToolDetail,
   ToolCreateInput,
@@ -43,7 +41,8 @@ import { HttpToolDialog } from './_components/http-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
 import { ToolShareDialog } from './_components/tool-share-dialog'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
-import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useCanPerform } from '@/components/permission-guard'
+import { usePermissions } from '@/hooks/use-permissions'
 
 type CapabilityTab = 'tools' | 'skills'
 
@@ -52,11 +51,19 @@ export default function CapabilitiesPage() {
   const tCommon = useTranslations('common')
   const packagesT = useTranslations('packages')
   const { currentTeam } = useTeam()
+  const { user } = usePermissions()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { canPerform } = useCanPerform()
   const canReadTools = canPerform('tool:read')
   const canReadSkills = canPerform('skill:read')
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const canCreateTool = canPerform('tool:create')
+  const canEditTool = (tool: Tool) =>
+    Boolean(tool.is_owned !== false && (isTeamAdmin || tool.created_by_id === user?.id))
+  const canConfigureTool = () => isTeamAdmin
+  const canShareTool = () => isTeamAdmin
+  const canDeleteTool = () => isTeamAdmin
 
   // 没有团队时重定向到首页
   useRequireTeam()
@@ -343,12 +350,6 @@ export default function CapabilitiesPage() {
     loadTools() // 重新加载工具列表以更新共享计数
   }
 
-  const handleExportTool = async (tool: Tool) => {
-    if (!tool.id) return
-    const { blob, filename } = await packagesApi.export('tool', tool.id)
-    downloadBlob(blob, filename)
-  }
-
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
       <div className="mb-6">
@@ -385,14 +386,14 @@ export default function CapabilitiesPage() {
                 {t('tools.refresh')}
               </Button>
 
-              <PermissionGuard permission="tool:create">
+              {canCreateTool && (
                 <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="capabilities-import-button">
                   <Upload className="mr-2 h-4 w-4" />
                   {packagesT('import')}
                 </Button>
-              </PermissionGuard>
+              )}
 
-              <PermissionGuard permission="tool:create">
+              {canCreateTool && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
@@ -433,7 +434,7 @@ export default function CapabilitiesPage() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </PermissionGuard>
+              )}
             </div>
           </div>
 
@@ -449,7 +450,7 @@ export default function CapabilitiesPage() {
                 <CardDescription className="mb-4">
                   {t('tools.createToolHint')}
                 </CardDescription>
-                <PermissionGuard permission="tool:create">
+                {canCreateTool && (
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
@@ -474,7 +475,7 @@ export default function CapabilitiesPage() {
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </PermissionGuard>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -482,11 +483,14 @@ export default function CapabilitiesPage() {
               tools={tools}
               onSelect={canPerform('tool:execute') ? handleSelectTool : undefined}
               onTest={canPerform('tool:execute') ? handleSelectTool : undefined}
-              onEdit={canPerform('tool:update') ? handleEditTool : undefined}
-              onDelete={canPerform('tool:delete') ? handleDeleteClick : undefined}
-              onConfigure={canPerform('tool:update') ? handleConfigureTool : undefined}
-              onShare={canPerform('tool:update') ? handleShareTool : undefined}
-              onExport={canPerform('tool:read') ? handleExportTool : undefined}
+              onEdit={handleEditTool}
+              onDelete={handleDeleteClick}
+              onConfigure={handleConfigureTool}
+              onShare={handleShareTool}
+              canConfigure={canConfigureTool}
+              canEdit={canEditTool}
+              canShare={canShareTool}
+              canDelete={canDeleteTool}
             />
           )}
         </TabsContent>

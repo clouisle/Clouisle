@@ -70,6 +70,7 @@ import {
 import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition } from '@/lib/api/workflows'
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
+import { useTeam } from '@/contexts/team-context'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 // Custom Node Types
@@ -233,6 +234,7 @@ interface WorkflowEditorContentProps {
   api?: WorkflowEditorApi
   backHref?: string
   updatePermission?: string
+  allowPermissionUpdate?: boolean
   baseUrl?: string
 }
 
@@ -241,13 +243,14 @@ export function WorkflowEditorContent({
   api = workflowsApi,
   backHref = '/app/apps',
   updatePermission = 'workflow:update',
+  allowPermissionUpdate = false,
   baseUrl = `/app/apps/workflow/${workflowId}`,
 }: WorkflowEditorContentProps) {
   const router = useRouter()
   const t = useTranslations('workflow')
   const tCommon = useTranslations('common')
   const { canPerform } = useCanPerform()
-  const canUpdateWorkflow = canPerform(updatePermission)
+  const { currentTeam } = useTeam()
 
   // Workflow definitions earlier than schema_version 2 predate the typed-
   // variable refactor (see docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md).
@@ -278,6 +281,15 @@ export function WorkflowEditorContent({
   const [showValidationChecklist, setShowValidationChecklist] = React.useState(false)
   const [validationIssues, setValidationIssues] = React.useState<ValidationIssue[]>([])
   const [showEmbed, setShowEmbed] = React.useState(false)
+
+  const isWorkflowOwner = Boolean(currentUser?.id && workflow?.created_by_id === currentUser.id)
+  const isWorkflowTeamAdmin = Boolean(
+    workflow && currentTeam?.id === workflow.team_id && (currentTeam.role === 'owner' || currentTeam.role === 'admin')
+  )
+  const canUpdateWorkflow = Boolean(
+    workflow && (currentUser?.is_superuser || (allowPermissionUpdate && canPerform(updatePermission)) || isWorkflowTeamAdmin || isWorkflowOwner)
+  )
+  const canPublishWorkflow = canUpdateWorkflow
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()
@@ -1503,7 +1515,7 @@ export function WorkflowEditorContent({
                   {tCommon('save')}
                 </Button>
               )}
-              {canUpdateWorkflow && (
+              {canPublishWorkflow && (!hasChanges || canUpdateWorkflow) && (
                 <Button
                   variant={workflow?.status === 'published' ? 'default' : 'outline'}
                   size="sm"

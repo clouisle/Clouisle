@@ -13,7 +13,8 @@ from tortoise.expressions import F, Q
 from tortoise.functions import Count
 
 from app.api import deps
-from app.models.user import User, Team, TeamMember
+from app.api.team_access import check_team_access
+from app.models.user import User, TeamMember
 from app.models.model import TeamModel, Model
 from app.models.knowledge_base import KnowledgeBase
 from app.models.agent import (
@@ -66,39 +67,6 @@ def normalize_agent_visibility(visibility: str) -> str:
     return AgentVisibility.TEAM if visibility == AgentVisibility.PUBLIC else visibility
 
 
-async def check_team_access(
-    team_id: UUID, user: User, require_admin: bool = False
-) -> Team:
-    """Check if user has access to the team."""
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if user.is_superuser:
-        return team
-
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
-
-    if require_admin and membership.role not in ["owner", "admin", "member"]:
-        raise BusinessError(
-            code=ResponseCode.TEAM_ADMIN_REQUIRED,
-            msg_key="team_admin_required",
-            status_code=403,
-        )
-
-    return team
-
-
 async def check_agent_access(
     agent_id: UUID, user: User, require_write: bool = False
 ) -> Agent:
@@ -117,21 +85,27 @@ async def check_agent_access(
             status_code=404,
         )
 
+    if user.is_superuser:
+        return agent
+
+    is_owner = agent.created_by and agent.created_by.id == user.id
     if agent.visibility == AgentVisibility.PRIVATE:
-        if (
-            agent.created_by
-            and agent.created_by.id != user.id
-            and not user.is_superuser
-        ):
-            raise BusinessError(
-                code=ResponseCode.AGENT_ACCESS_DENIED,
-                msg_key="agent_access_denied",
-                status_code=403,
-            )
-        if not agent.created_by and not user.is_superuser:
-            await check_team_access(agent.team.id, user, require_admin=require_write)
-    else:
-        await check_team_access(agent.team.id, user, require_admin=require_write)
+        if is_owner:
+            return agent
+        if not agent.created_by:
+            await check_team_access(agent.team.id, user)
+            if require_write:
+                await check_team_access(agent.team.id, user, require_admin=True)
+            return agent
+        raise BusinessError(
+            code=ResponseCode.AGENT_ACCESS_DENIED,
+            msg_key="agent_access_denied",
+            status_code=403,
+        )
+
+    await check_team_access(agent.team.id, user)
+    if require_write and not is_owner:
+        await check_team_access(agent.team.id, user, require_admin=True)
 
     return agent
 
@@ -324,6 +298,7 @@ async def list_agents(
     status: str | None = None,
     visibility: str | None = None,
     keyword: str | None = None,
+    own_only: bool = False,
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(deps.PermissionChecker("agent:read")),
@@ -357,6 +332,9 @@ async def list_agents(
             )
             | Q(created_by=current_user, visibility=AgentVisibility.PRIVATE)
         )
+
+    if own_only and not current_user.is_superuser:
+        query = query.filter(created_by=current_user)
 
     if status:
         query = query.filter(status=status)
@@ -409,10 +387,13 @@ async def create_agent(
     *,
     request: Request,
     agent_in: AgentCreate,
-    current_user: User = Depends(deps.PermissionChecker("agent:create")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Create a new agent."""
     # Check team access
+    await deps.check_scoped_permission(
+        current_user, "agent:create", "team", agent_in.team_id
+    )
     team = await check_team_access(agent_in.team_id, current_user)
 
     # Check for duplicate name within the same team
@@ -553,10 +534,13 @@ async def update_agent(
     request: Request,
     agent_id: UUID,
     agent_in: AgentUpdate,
-    current_user: User = Depends(deps.PermissionChecker("agent:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+    await deps.check_scoped_permission(
+        current_user, "agent:update", "team", agent.team.id
+    )
 
     # Check for duplicate name within the same team (exclude self)
     if agent_in.name is not None and agent_in.name != agent.name:
@@ -859,10 +843,13 @@ async def unpublish_agent(
 async def duplicate_agent(
     agent_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("agent:create")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Duplicate an agent."""
     agent = await check_agent_access(agent_id, current_user)
+    await deps.check_scoped_permission(
+        current_user, "agent:create", "team", agent.team.id
+    )
 
     # Create a copy
     new_agent = await Agent.create(

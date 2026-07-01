@@ -65,6 +65,25 @@ async def check_team_access(team_id: UUID, user: User) -> Team:
     return team
 
 
+def _has_global_dashboard_access(user: User) -> bool:
+    if user.is_superuser:
+        return True
+    return any(
+        perm.code in ("admin:dashboard:access", "*")
+        for role in user.roles
+        for perm in role.permissions
+    )
+
+
+async def has_conversation_team_admin_access(user: User, team_id: UUID | None) -> bool:
+    if _has_global_dashboard_access(user):
+        return True
+    if not team_id:
+        return False
+    membership = await TeamMember.filter(team_id=team_id, user=user).first()
+    return bool(membership and membership.role in ["owner", "admin"])
+
+
 async def get_user_team_agent_ids(
     user: User, team_id: UUID | None = None
 ) -> list[UUID]:
@@ -111,19 +130,12 @@ async def list_all_conversations(
     List conversations.
 
     - Super Admin: Can see all conversations
-    - Admin (has dashboard:access): Can see all conversations in their teams
+    - Admin (has admin:dashboard:access): Can see all conversations in their teams
     - Member/Viewer: Can only see their own conversations
     """
-    # Check if user has dashboard:access permission (Admin level)
-    has_dashboard_access = current_user.is_superuser
-    if not has_dashboard_access:
-        for role in current_user.roles:
-            for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
-                    has_dashboard_access = True
-                    break
-            if has_dashboard_access:
-                break
+    has_dashboard_access = await has_conversation_team_admin_access(
+        current_user, team_id
+    )
 
     # Get agent IDs user has access to (team isolation for non-superusers)
     accessible_agent_ids = await get_user_team_agent_ids(current_user, team_id)
@@ -221,16 +233,9 @@ async def get_conversation_stats(
     - Super Admin/Admin: Stats for all conversations in accessible teams
     - Member/Viewer: Stats for their own conversations only
     """
-    # Check if user has dashboard:access permission (Admin level)
-    has_dashboard_access = current_user.is_superuser
-    if not has_dashboard_access:
-        for role in current_user.roles:
-            for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
-                    has_dashboard_access = True
-                    break
-            if has_dashboard_access:
-                break
+    has_dashboard_access = await has_conversation_team_admin_access(
+        current_user, team_id
+    )
 
     # Get agent IDs user has access to
     agent_ids = await get_user_team_agent_ids(current_user, team_id)
@@ -313,16 +318,9 @@ async def get_conversation_trends(
     - Super Admin/Admin: Trends for all conversations in accessible teams
     - Member/Viewer: Trends for their own conversations only
     """
-    # Check if user has dashboard:access permission (Admin level)
-    has_dashboard_access = current_user.is_superuser
-    if not has_dashboard_access:
-        for role in current_user.roles:
-            for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
-                    has_dashboard_access = True
-                    break
-            if has_dashboard_access:
-                break
+    has_dashboard_access = await has_conversation_team_admin_access(
+        current_user, team_id
+    )
 
     now_local = now()
 
@@ -368,6 +366,13 @@ async def get_conversation_trends(
     if not has_dashboard_access:
         conv_query = conv_query.filter(user_id=current_user.id)
 
+    user_map: dict[UUID, str] = {}
+    if has_dashboard_access and team_id:
+        team_user_rows = await TeamMember.filter(team_id=team_id).prefetch_related(
+            "user"
+        )
+        user_map = {member.user.id: member.user.username for member in team_user_rows}
+
     # Use database-level aggregation for conversation counts by day
     # Build time series data grouped by day
     data_points = []
@@ -382,12 +387,22 @@ async def get_conversation_trends(
         point_end_utc = to_utc(point_end)
 
         # Count conversations created in this day using database query
-        conv_count = await conv_query.filter(
+        day_conv_query = conv_query.filter(
             created_at__gte=point_start_utc, created_at__lt=point_end_utc
-        ).count()
+        )
+        conv_count = await day_conv_query.count()
 
         # Count messages for conversations in accessible scope (not just today's conversations)
         all_conv_ids = await conv_query.values_list("id", flat=True)
+        user_usage = {
+            str(user_id): {"name": username, "conversations": 0, "tokens": 0}
+            for user_id, username in user_map.items()
+        }
+        if has_dashboard_access:
+            day_conversations = await day_conv_query.all()
+            for conversation in day_conversations:
+                if conversation.user_id in user_map:
+                    user_usage[str(conversation.user_id)]["conversations"] += 1
         if all_conv_ids:
             msg_count = await Message.filter(
                 conversation_id__in=list(all_conv_ids),
@@ -408,6 +423,20 @@ async def get_conversation_trends(
                 if m["token_usage"]:
                     tokens += m["token_usage"].get("prompt", 0) or 0
                     tokens += m["token_usage"].get("completion", 0) or 0
+
+            if has_dashboard_access:
+                token_rows = await Message.filter(
+                    conversation_id__in=list(all_conv_ids),
+                    created_at__gte=point_start_utc,
+                    created_at__lt=point_end_utc,
+                    token_usage__isnull=False,
+                ).prefetch_related("conversation")
+                for message in token_rows:
+                    user_id = message.conversation.user_id
+                    if user_id in user_map and message.token_usage:
+                        user_usage[str(user_id)]["tokens"] += (
+                            message.token_usage.get("prompt", 0) or 0
+                        ) + (message.token_usage.get("completion", 0) or 0)
         else:
             msg_count = 0
             tokens = 0
@@ -421,6 +450,7 @@ async def get_conversation_trends(
                 "conversations": conv_count,
                 "messages": msg_count,
                 "tokens": tokens,
+                "users": user_usage,
             }
         )
 
@@ -458,11 +488,11 @@ async def get_conversation_detail(
 
     # Check access permissions
     if not current_user.is_superuser:
-        # Check if user has dashboard:access permission (Admin level)
+        # Check if user has admin:dashboard:access permission (Admin level)
         has_dashboard_access = False
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -551,11 +581,11 @@ async def delete_conversation_admin(
 
     # Check access permissions
     if not current_user.is_superuser:
-        # Check if user has dashboard:access permission (Admin level)
+        # Check if user has admin:dashboard:access permission (Admin level)
         has_dashboard_access = False
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:
@@ -633,11 +663,11 @@ async def batch_delete_conversations(
 
     # Check access permissions
     if not current_user.is_superuser:
-        # Check if user has dashboard:access permission (Admin level)
+        # Check if user has admin:dashboard:access permission (Admin level)
         has_dashboard_access = False
         for role in current_user.roles:
             for perm in role.permissions:
-                if perm.code == "dashboard:access" or perm.code == "*":
+                if perm.code == "admin:dashboard:access" or perm.code == "*":
                     has_dashboard_access = True
                     break
             if has_dashboard_access:

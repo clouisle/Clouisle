@@ -222,6 +222,9 @@ class ToolOut(BaseModel):
 
     # 用于后台管理的额外字段
     team_id: UUID | None = Field(default=None, description="所属团队")
+    created_by_id: UUID | None = Field(
+        default=None, description="创建者 ID (可能已删除)"
+    )
     created_by_name: str | None = Field(default=None, description="创建者名称")
 
     # 工具共享相关字段
@@ -273,9 +276,6 @@ class ToolDetailOut(ToolOut):
     team_id: UUID | None = Field(default=None, description="所属团队")
     created_at: str | None = Field(default=None, description="创建时间")
     updated_at: str | None = Field(default=None, description="更新时间")
-    created_by_id: UUID | None = Field(
-        default=None, description="创建者 ID (可能已删除)"
-    )
     created_by_name: str | None = Field(default=None, description="创建者名称")
 
 

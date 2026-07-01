@@ -3,7 +3,7 @@ import logging
 
 from tortoise import Tortoise
 
-from app.models.user import Role, Permission
+from app.models.user import Role, Permission, TeamMember
 from app.models.site_setting import init_default_settings
 from app.core.permissions import SystemPermissions
 
@@ -174,6 +174,73 @@ async def init_workflow_tables():
     logger.info("Created workflow indexes")
 
     logger.info("Workflow tables initialization complete")
+
+
+async def init_scoped_role_assignments_table():
+    """Create and backfill team-scoped role assignments."""
+    logger.info("Initializing scoped role assignments table...")
+    conn = Tortoise.get_connection("default")
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS scoped_role_assignments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+            scope_type VARCHAR(20) NOT NULL,
+            scope_id UUID NOT NULL,
+            source VARCHAR(20) NOT NULL DEFAULT 'manual',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT scoped_role_assignments_unique UNIQUE (user_id, role_id, scope_type, scope_id)
+        )
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
+        CREATE INDEX IF NOT EXISTS idx_scoped_role_assignments_user_scope
+        ON scoped_role_assignments(user_id, scope_type, scope_id)
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
+        CREATE INDEX IF NOT EXISTS idx_scoped_role_assignments_role_scope
+        ON scoped_role_assignments(role_id, scope_type, scope_id)
+        """,
+    )
+
+    role_by_team_role = {
+        "owner": await Role.filter(name="Admin").first(),
+        "admin": await Role.filter(name="Admin").first(),
+        "member": await Role.filter(name="Member").first(),
+        "viewer": await Role.filter(name="Viewer").first(),
+    }
+    created = 0
+    skipped = 0
+    memberships = await TeamMember.all().prefetch_related("team", "user")
+    for membership in memberships:
+        role = role_by_team_role.get(membership.role)
+        if not role:
+            skipped += 1
+            continue
+        await execute_startup_migration_query(
+            conn,
+            f"""
+            INSERT INTO scoped_role_assignments (user_id, role_id, scope_type, scope_id, source)
+            VALUES ('{membership.user.id}', '{role.id}', 'team', '{membership.team.id}', 'migration')
+            ON CONFLICT (user_id, role_id, scope_type, scope_id) DO NOTHING
+            """,
+        )
+        created += 1
+
+    logger.info(
+        "Scoped role assignments initialized: %s attempted, %s skipped",
+        created,
+        skipped,
+    )
 
 
 async def init_user_locale_field():
@@ -2332,12 +2399,10 @@ async def init_db():
         "agent:read",
         "agent:create",
         "agent:update",
-        "agent:delete",
         "agent:chat",
         "workflow:read",
         "workflow:create",
         "workflow:update",
-        "workflow:delete",
         "workflow:run",
         "kb:read",
         "kb:create",
@@ -2400,6 +2465,12 @@ async def init_db():
         logger.info("Created system role: Viewer")
 
     await sync_role_permissions(viewer_role, viewer_permissions, "Viewer")
+
+    try:
+        await init_scoped_role_assignments_table()
+    except Exception:
+        logger.exception("Scoped role assignment migration failed")
+        raise
 
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")

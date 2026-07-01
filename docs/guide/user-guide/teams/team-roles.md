@@ -4,7 +4,9 @@ This guide explains the different roles and permissions in Clouisle teams.
 
 ## Overview
 
-Team roles control what members can do within a team. Understanding roles helps you:
+Team roles control what members can do within a team. They are separate from global system roles. Global roles provide system-wide capabilities; team roles are mirrored into team-scoped role assignments that apply only inside that team. Team roles do not grant admin dashboard (`admin:*`) permissions.
+
+Understanding roles helps you:
 
 - **Manage access**: Control who can do what
 - **Delegate responsibilities**: Assign appropriate permissions
@@ -28,32 +30,53 @@ Viewer (lowest permissions)
 
 ### Role Comparison
 
+### Team Management
+
 | Permission | Owner | Admin | Member | Viewer |
 |------------|-------|-------|--------|--------|
-| **Team Management** |
 | Delete team | ✅ | ❌ | ❌ | ❌ |
 | Update team settings | ✅ | ✅ | ❌ | ❌ |
 | Transfer ownership | ✅ | ❌ | ❌ | ❌ |
-| **Member Management** |
+
+### Member Management
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Invite members | ✅ | ✅ | ❌ | ❌ |
 | Remove members | ✅ | ✅ | ❌ | ❌ |
-| Change member roles | ✅ | ✅ | ❌ | ❌ |
-| **Agents** |
+| Change member roles | ✅ | ❌ | ❌ | ❌ |
+
+### Agents
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create agents | ✅ | ✅ | ✅ | ❌ |
 | Save team agents | ✅ | ✅ | ✅ | ❌ |
-| Delete agents | ✅ | ✅ | ✅ | ❌ |
+| Delete agents | ✅ | ✅ | ❌ | ❌ |
 | Chat with agents | ✅ | ✅ | ✅ | ✅ |
-| **Workflows** |
+
+### Workflows
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create workflows | ✅ | ✅ | ✅ | ❌ |
 | Save team workflows | ✅ | ✅ | ✅ | ❌ |
-| Delete workflows | ✅ | ✅ | ✅ | ❌ |
+| Delete workflows | ✅ | ✅ | ❌ | ❌ |
 | Run workflows | ✅ | ✅ | ✅ | ✅ |
-| **Tools & Skills** |
+
+### Tools & Skills
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create/edit/delete tools | ✅ | ✅ | ❌ | ❌ |
 | Create/edit/delete skills | ✅ | ✅ | ❌ | ❌ |
 | Execute approved tools | ✅ | ✅ | ✅ | ✅ |
 | Execute approved skills | ✅ | ✅ | ✅ | ✅ |
-| **Knowledge Bases** |
+
+### Knowledge Bases
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create knowledge bases | ✅ | ✅ | ✅ | ❌ |
 | Upload documents | ✅ | ✅ | ✅ | ❌ |
 | Update own documents | ✅ | ✅ | ✅ | ❌ |
@@ -61,16 +84,28 @@ Viewer (lowest permissions)
 | Delete own documents | ✅ | ✅ | ✅ | ❌ |
 | Delete others' documents | ✅ | ✅ | ❌ | ❌ |
 | Search documents | ✅ | ✅ | ✅ | ✅ |
-| **API Keys** |
+
+### API Keys
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create API keys | ✅ | ✅ | ✅ | ❌ |
 | View own API keys | ✅ | ✅ | ✅ | ❌ |
 | View all API keys | ✅ | ✅ | ❌ | ❌ |
 | Revoke own API keys | ✅ | ✅ | ✅ | ❌ |
 | Revoke others' API keys | ✅ | ✅ | ❌ | ❌ |
-| **Audit & Analytics** |
+
+### Audit & Analytics
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | View team analytics | ✅ | ✅ | ❌ | ❌ |
 | View audit logs | ✅ | ✅ | ❌ | ❌ |
 | Export data | ✅ | ✅ | ❌ | ❌ |
+
+## Scope Boundary
+
+Team roles only apply inside the team where they are assigned. A team Admin can manage resources in that team, but does not gain admin dashboard permissions unless a global role separately grants `admin:*` permissions.
 
 ## Owner Role
 
@@ -94,9 +129,7 @@ Viewer (lowest permissions)
 - Manage subscription
 
 **Shared with Admin:**
-- All admin permissions
 - Invite/remove members
-- Change member roles
 - Update team settings
 - View audit logs
 
@@ -160,12 +193,11 @@ Viewer (lowest permissions)
 **Member management:**
 - Invite new members
 - Remove members (except Owner)
-- Change member roles (except Owner)
 - Approve join requests
 - View member activity
 
 **Resource management:**
-- Create/update/delete all team resources
+- Create/update/delete team resources allowed by team-scoped RBAC
 - Manage agents, workflows, knowledge bases
 - Configure resource settings
 - Monitor resource usage
@@ -214,7 +246,7 @@ Viewer (lowest permissions)
 **App collaboration:**
 - Save team agents
 - Save team workflows
-- Delete team agents and workflows when permitted by global RBAC
+- Use team agents and workflows
 
 **Resource usage:**
 - Chat with all team agents
@@ -236,6 +268,7 @@ Viewer (lowest permissions)
 - Manage team settings
 - Invite or remove members
 - Change member roles
+- Delete or publish agents and workflows
 - Update others' resources
 - Delete others' resources
 - View audit logs
@@ -245,7 +278,7 @@ Viewer (lowest permissions)
 
 ### Responsibilities
 
-**Viewers have read-only access:**
+**Viewers have view/use-only access:**
 
 - View team resources
 - Use agents and workflows
@@ -282,6 +315,10 @@ Viewer (lowest permissions)
 - Temporary access
 - Read-only auditors
 - Stakeholders
+
+## Default Team Role
+
+When a default team is configured, new users can be added automatically as `viewer`, `member`, or `admin`. If no role is configured, the default is `member`. `owner` is never assigned automatically.
 
 ## Custom Roles (If Available)
 
@@ -322,7 +359,7 @@ Viewer (lowest permissions)
 
 ### Assigning Roles
 
-**Steps (Owner/Admin only):**
+**Steps (Owner only):**
 
 1. Go to **Team Settings** → **Members**
 2. Find member
@@ -445,7 +482,7 @@ You now have additional permissions:
 
 **✅ Do:**
 - Limit Owner and Admin roles
-- Use Viewer role for read-only access
+- Use Viewer role for view/use-only access
 - Review audit logs regularly
 - Monitor role changes
 - Require approval for role changes

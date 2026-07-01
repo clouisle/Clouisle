@@ -2,6 +2,13 @@
 
 ## Active
 
+- **scoped-rbac-landing** — Complete. Decouple team authorization from global RBAC by first closing authorization gaps, then adding team-scoped role assignments. See `docs/plan/scoped-rbac.md`
+  - [x] 1. Planning docs
+  - [x] 2. Shared team access and immediate workflow authorization fixes
+  - [x] 3. Scoped role assignment model and migration
+  - [x] 4. Scoped permission helper and core endpoint migration
+  - [x] 5. Frontend compatibility and documentation
+
 - **yun-105-click-captcha-hardening** — In progress. Harden click captcha with a Cloudflare-like single click check, pointer trajectory validation, and backend-only proof minting. See `docs/plan/yun-105-click-captcha-hardening.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend pointer payload and trajectory scoring

@@ -113,6 +113,34 @@ class TeamMember(models.Model):
         return f"{self.user} in {self.team} ({self.role})"
 
 
+class ScopedRoleAssignment(models.Model):
+    """Role assignment scoped to a team or future resource scope."""
+
+    id = fields.UUIDField(pk=True)
+    user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+        "models.User", related_name="scoped_role_assignments", on_delete=fields.CASCADE
+    )
+    role: fields.ForeignKeyRelation[Role] = fields.ForeignKeyField(
+        "models.Role", related_name="scoped_assignments", on_delete=fields.CASCADE
+    )
+    scope_type = fields.CharField(max_length=20, description="Scope type, e.g. team")
+    scope_id = fields.UUIDField(description="Scoped resource ID")
+    source = fields.CharField(
+        max_length=20,
+        default="manual",
+        description="Assignment source: manual, default, migration, system",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "scoped_role_assignments"
+        unique_together = (("user", "role", "scope_type", "scope_id"),)
+
+    def __str__(self):
+        return f"{self.user} -> {self.role} ({self.scope_type}:{self.scope_id})"
+
+
 class User(models.Model):
     id = fields.UUIDField(pk=True)
     username = fields.CharField(max_length=50, unique=True)

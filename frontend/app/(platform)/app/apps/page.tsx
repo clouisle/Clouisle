@@ -52,8 +52,9 @@ import { agentsApi, type AgentListItem } from '@/lib/api/agents'
 import { workflowsApi, type WorkflowListItem } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
+import { usePermissions } from '@/hooks/use-permissions'
 import { AppCreateDialog } from './_components/app-create-dialog'
-import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { downloadBlob, packagesApi, type ClouisleResourceType } from '@/lib/api/packages'
 
@@ -76,6 +77,8 @@ interface AppItem {
   fail_count?: number
   created_at: string
   updated_at: string
+  created_by_id?: string | null
+  created_by_name?: string | null
 }
 
 export default function AppsPage() {
@@ -83,6 +86,7 @@ export default function AppsPage() {
   const packageT = useTranslations('packages')
   const tCommon = useTranslations('common')
   const { currentTeam } = useTeam()
+  const { user } = usePermissions()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { canPerform } = useCanPerform()
@@ -153,6 +157,8 @@ export default function AppsPage() {
         message_count: agent.message_count,
         created_at: agent.created_at,
         updated_at: agent.updated_at,
+        created_by_id: agent.created_by?.id ?? null,
+        created_by_name: agent.created_by?.username ?? null,
       }))
       
       // Transform workflows to unified format
@@ -168,6 +174,8 @@ export default function AppsPage() {
         fail_count: workflow.fail_count,
         created_at: workflow.created_at,
         updated_at: workflow.updated_at,
+        created_by_id: workflow.created_by_id ?? null,
+        created_by_name: workflow.created_by_name ?? null,
       }))
       
       // Combine and sort by updated_at
@@ -278,6 +286,16 @@ export default function AppsPage() {
   }
 
   const expectedImportType: ClouisleResourceType | undefined = activeTab === 'agent' || activeTab === 'workflow' ? activeTab : undefined
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const canCreateAgent = isTeamAdmin || canPerform('agent:create')
+  const canCreateWorkflow = isTeamAdmin || canPerform('workflow:create')
+  const canCreateApp = canCreateAgent || canCreateWorkflow
+  const isAppOwner = (app: AppItem) => Boolean(user?.id && app.created_by_id === user.id)
+  const canEditApp = (app: AppItem) => isTeamAdmin || isAppOwner(app)
+  const canDuplicateApp = (app: AppItem) => app.type === 'agent' ? canCreateAgent : canCreateWorkflow
+  const canExportApp = (app: AppItem) => isTeamAdmin || isAppOwner(app)
+  const canPublishApp = () => isTeamAdmin
+  const canDeleteApp = () => isTeamAdmin
 
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
@@ -288,18 +306,18 @@ export default function AppsPage() {
           <p className="text-muted-foreground mt-1">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          {currentTeam && canPerform(['agent:create', 'workflow:create']) && (
+          {currentTeam && canCreateApp && (
             <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
               <Upload className="mr-2 h-4 w-4" />
               {packageT('import')}
             </Button>
           )}
-          <PermissionGuard permission={['agent:create', 'workflow:create']}>
+          {canCreateApp && (
             <Button data-testid="apps-create-button" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createApp')}
             </Button>
-          </PermissionGuard>
+          )}
         </div>
       </div>
 
@@ -338,12 +356,12 @@ export default function AppsPage() {
             <AppWindow className="h-12 w-12 text-muted-foreground mb-4" />
             <CardTitle className="mb-2">{t('noApps')}</CardTitle>
             <CardDescription className="mb-4">{t('noAppsHint')}</CardDescription>
-            <PermissionGuard permission={['agent:create', 'workflow:create']}>
+            {canCreateApp && (
               <Button onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 {t('createFirstApp')}
               </Button>
-            </PermissionGuard>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -378,6 +396,11 @@ export default function AppsPage() {
                       <h3 className="text-sm font-medium truncate">
                         {app.name}
                       </h3>
+                      {app.created_by_name && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {tCommon('createdBy')}：{app.created_by_name}
+                        </p>
+                      )}
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <Badge
                           variant={app.status === 'published' ? 'default' : 'secondary'}
@@ -437,12 +460,14 @@ export default function AppsPage() {
                       )}
                     />
                     <DropdownMenuContent align="end">
-                      <Link href={getAppLink(app)}>
-                        <DropdownMenuItem>
-                          <FileEdit className="mr-2 h-4 w-4" />
-                          {t('configure')}
-                        </DropdownMenuItem>
-                      </Link>
+                      {canEditApp(app) && (
+                        <Link href={getAppLink(app)}>
+                          <DropdownMenuItem>
+                            <FileEdit className="mr-2 h-4 w-4" />
+                            {t('configure')}
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
                       {app.type === 'agent' && (
                         <Link href={`/chat/${app.id}`} target="_blank">
                           <DropdownMenuItem data-testid={`app-chat-button-${app.id}`}>
@@ -459,8 +484,7 @@ export default function AppsPage() {
                           </DropdownMenuItem>
                         </Link>
                       )}
-                      {((app.type === 'agent' && canPerform('agent:publish')) ||
-                        (app.type === 'workflow' && canPerform('workflow:publish'))) && (
+                      {canPublishApp() && (
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={(e) => {
@@ -472,8 +496,7 @@ export default function AppsPage() {
                           </DropdownMenuItem>
                         </>
                       )}
-                      {((app.type === 'agent' && canPerform('agent:create')) ||
-                        (app.type === 'workflow' && canPerform('workflow:create'))) && (
+                      {canDuplicateApp(app) && (
                         <DropdownMenuItem onClick={(e) => {
                           e.preventDefault()
                           handleDuplicate(app)
@@ -482,8 +505,7 @@ export default function AppsPage() {
                           {t('duplicate')}
                         </DropdownMenuItem>
                       )}
-                      {((app.type === 'agent' && canPerform('agent:read')) ||
-                        (app.type === 'workflow' && canPerform('workflow:read'))) && (
+                      {canExportApp(app) && (
                         <DropdownMenuItem onClick={(e) => {
                           e.preventDefault()
                           handleExport(app)
@@ -492,8 +514,7 @@ export default function AppsPage() {
                           {packageT('export')}
                         </DropdownMenuItem>
                       )}
-                      {((app.type === 'agent' && canPerform('agent:delete')) ||
-                        (app.type === 'workflow' && canPerform('workflow:delete'))) && (
+                      {canDeleteApp() && (
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem

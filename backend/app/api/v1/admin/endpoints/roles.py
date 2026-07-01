@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from tortoise.expressions import Q
 
 from app.api import deps
-from app.models.user import Role, Permission, User
+from app.models.user import Role, Permission, ScopedRoleAssignment, User
 from app.schemas.user import Role as RoleSchema, RoleCreate
 from app.schemas.response import (
     Response,
@@ -228,6 +228,14 @@ async def delete_role(
             code=ResponseCode.ROLE_IN_USE,
             msg_key="role_in_use",
             count=users_with_role,
+        )
+
+    scoped_assignments = await ScopedRoleAssignment.filter(role=role).count()
+    if scoped_assignments > 0:
+        raise BusinessError(
+            code=ResponseCode.ROLE_IN_USE,
+            msg_key="role_in_use",
+            count=scoped_assignments,
         )
 
     await role.delete()

@@ -20,8 +20,9 @@ import {
   Coins,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import { knowledgeBasesApi, teamModelsApi, agentsApi, workflowsApi, type TeamModel } from '@/lib/api'
-import { conversationsApi } from '@/lib/api/admin/conversations'
+import { conversationsApi } from '@/lib/api/agents'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -39,8 +40,9 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  AreaChart,
+  ComposedChart,
   Area,
+  Line,
   Cell,
   ResponsiveContainer,
   Tooltip,
@@ -287,6 +289,8 @@ export default function PlatformHomePage() {
     },
   } satisfies ChartConfig
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
+  const { user, loading: permissionsLoading } = usePermissions()
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const [stats, setStats] = React.useState<StatsData>({
     knowledgeBases: 0,
     models: 0,
@@ -299,26 +303,46 @@ export default function PlatformHomePage() {
   })
   const [recentItems, setRecentItems] = React.useState<RecentItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
-  const [usageTrendData, setUsageTrendData] = React.useState<Array<{
-    date: string
-    conversations: number
-    tokens: number
-  }>>([])
+  const [usageTrendData, setUsageTrendData] = React.useState<Array<Record<string, number | string>>>([])
+  const [usageUserKeys, setUsageUserKeys] = React.useState<string[]>([])
+  const [usageUserNames, setUsageUserNames] = React.useState<Record<string, string>>({})
+  const [hiddenUsageSeries, setHiddenUsageSeries] = React.useState<Set<string>>(new Set())
+
+  const toggleUsageSeries = (dataKey: unknown) => {
+    if (!dataKey) return
+    const key = String(dataKey)
+    const keys = key.endsWith(':conversations')
+      ? [key, key.replace(':conversations', ':tokens')]
+      : [key]
+    setHiddenUsageSeries((current) => {
+      const next = new Set(current)
+      const shouldShow = keys.some((item) => next.has(item))
+      keys.forEach((item) => {
+        if (shouldShow) {
+          next.delete(item)
+        } else {
+          next.add(item)
+        }
+      })
+      return next
+    })
+  }
 
   // 加载统计数据和最近项目
   const fetchData = React.useCallback(async () => {
-    if (!currentTeam) return
+    if (!currentTeam || permissionsLoading) return
 
     try {
       setIsLoading(true)
 
+      const ownOnly = !isTeamAdmin
       // 并行请求
       const [kbResponse, modelsResponse, agentsResponse, workflowsResponse, trendsResponse] = await Promise.all([
-        knowledgeBasesApi.getKnowledgeBases({ pageSize: 1, teamId: currentTeam.id }),
+        knowledgeBasesApi.getKnowledgeBases({ pageSize: 1, teamId: currentTeam.id, ownOnly }),
         teamModelsApi.getTeamModels(currentTeam.id),
-        agentsApi.getAgents({ pageSize: 8, teamId: currentTeam.id }),
-        workflowsApi.getWorkflows({ pageSize: 8, teamId: currentTeam.id }),
-        conversationsApi.getTrends({ team_id: currentTeam.id, period: '7d' }),
+        agentsApi.getAgents({ pageSize: 8, teamId: currentTeam.id, ownOnly }),
+        workflowsApi.getWorkflows({ pageSize: 8, teamId: currentTeam.id, ownOnly }),
+        conversationsApi.getTrends(currentTeam.id, '7d'),
       ])
 
       // 计算总的对话数和消息数
@@ -344,8 +368,33 @@ export default function PlatformHomePage() {
         successRate,
       })
 
-      // 设置趋势数据
-      setUsageTrendData(trendsResponse.data)
+      if (isTeamAdmin) {
+        const userNames: Record<string, string> = {}
+        const userKeys = new Set<string>()
+        const trendData = trendsResponse.data.map((item) => {
+          const row: Record<string, number | string> = { date: item.date }
+          Object.entries(item.users || {}).forEach(([userId, usage]) => {
+            userNames[userId] = usage.name
+            userKeys.add(userId)
+            row[`${userId}:conversations`] = usage.conversations
+            row[`${userId}:tokens`] = usage.tokens
+          })
+          return row
+        })
+        setUsageUserKeys(Array.from(userKeys).slice(0, 6))
+        setUsageUserNames(userNames)
+        setUsageTrendData(trendData)
+      } else {
+        setUsageUserKeys([])
+        setUsageUserNames({})
+        const trendData = trendsResponse.data.map((item) => ({
+          date: item.date,
+          conversations: item.conversations,
+          messages: item.messages,
+          tokens: item.tokens,
+        }))
+        setUsageTrendData(trendData)
+      }
 
       // 合并最近的 agents 和 workflows
       const recent: RecentItem[] = [
@@ -373,7 +422,7 @@ export default function PlatformHomePage() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentTeam])
+  }, [currentTeam, isTeamAdmin, permissionsLoading])
 
   React.useEffect(() => {
     if (currentTeam) {
@@ -458,17 +507,7 @@ export default function PlatformHomePage() {
               ) : (
                 <ChartContainer config={usageTrendChartConfig} className="h-[220px] w-full aspect-auto">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={usageTrendData} margin={{ left: 12, right: 12 }}>
-                      <defs>
-                        <linearGradient id="platformUsageConversations" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={CHART_COLORS[2]} stopOpacity={0.3} />
-                          <stop offset="95%" stopColor={CHART_COLORS[2]} stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="platformUsageTokens" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={CHART_COLORS[4]} stopOpacity={0.3} />
-                          <stop offset="95%" stopColor={CHART_COLORS[4]} stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
+                    <ComposedChart data={usageTrendData} margin={{ left: 12, right: 12 }}>
                       <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                       <XAxis
                         dataKey="date"
@@ -479,27 +518,68 @@ export default function PlatformHomePage() {
                       />
                       <YAxis yAxisId="left" className="text-xs" tick={{ fill: CHART_AXIS_COLOR }} hide />
                       <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fill: CHART_AXIS_COLOR }} hide />
-                      <Tooltip cursor={CHART_HOVER_CURSOR} content={<UsageTrendTooltip />} />
-                      <Legend wrapperStyle={{ color: 'var(--chart-label)' }} />
-                      <Area
-                        yAxisId="left"
-                        type="monotone"
-                        dataKey="conversations"
-                        stroke={CHART_COLORS[2]}
-                        fillOpacity={1}
-                        fill="url(#platformUsageConversations)"
-                        name={t('stats.conversations')}
+                      <Tooltip
+                        cursor={CHART_HOVER_CURSOR}
+                        content={<UsageTrendTooltip />}
+                        wrapperStyle={{ zIndex: 50, pointerEvents: 'none' }}
                       />
-                      <Area
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="tokens"
-                        stroke={CHART_COLORS[4]}
-                        fillOpacity={1}
-                        fill="url(#platformUsageTokens)"
-                        name={t('stats.tokens')}
+                      <Legend
+                        verticalAlign="bottom"
+                        height={40}
+                        wrapperStyle={{ color: 'var(--chart-label)', cursor: 'pointer' }}
+                        onClick={(entry) => toggleUsageSeries(entry.dataKey)}
                       />
-                    </AreaChart>
+                      {isTeamAdmin ? (
+                        usageUserKeys.flatMap((userId, index) => [
+                          <Area
+                            key={`${userId}:conversations`}
+                            yAxisId="left"
+                            type="monotone"
+                            stackId="conversations"
+                            dataKey={`${userId}:conversations`}
+                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                            fill={CHART_COLORS[index % CHART_COLORS.length]}
+                            fillOpacity={0.18}
+                            name={`${usageUserNames[userId] || userId} · ${t('stats.conversations')}`}
+                            hide={hiddenUsageSeries.has(`${userId}:conversations`)}
+                          />,
+                          <Line
+                            key={`${userId}:tokens`}
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey={`${userId}:tokens`}
+                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                            strokeDasharray="4 3"
+                            dot={false}
+                            legendType="none"
+                            name={`${usageUserNames[userId] || userId} · ${t('stats.tokens')}`}
+                            hide={hiddenUsageSeries.has(`${userId}:tokens`)}
+                          />,
+                        ])
+                      ) : (
+                        <>
+                          <Area
+                            yAxisId="left"
+                            type="monotone"
+                            dataKey="conversations"
+                            stroke={CHART_COLORS[2]}
+                            fill={CHART_COLORS[2]}
+                            fillOpacity={0.18}
+                            name={t('stats.conversations')}
+                            hide={hiddenUsageSeries.has('conversations')}
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="tokens"
+                            stroke={CHART_COLORS[4]}
+                            dot={false}
+                            name={t('stats.tokens')}
+                            hide={hiddenUsageSeries.has('tokens')}
+                          />
+                        </>
+                      )}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </ChartContainer>
               )}
