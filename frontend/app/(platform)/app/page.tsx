@@ -528,12 +528,6 @@ export default function PlatformHomePage() {
                         height={40}
                         wrapperStyle={{ color: 'var(--chart-label)', cursor: 'pointer' }}
                         onClick={(entry) => toggleUsageSeries(entry.dataKey)}
-                        payload={isTeamAdmin ? usageUserKeys.map((userId, index) => ({
-                          value: usageUserNames[userId] || userId,
-                          type: 'circle',
-                          color: CHART_COLORS[index % CHART_COLORS.length],
-                          dataKey: `${userId}:conversations`,
-                        })) : undefined}
                       />
                       {isTeamAdmin ? (
                         usageUserKeys.flatMap((userId, index) => [

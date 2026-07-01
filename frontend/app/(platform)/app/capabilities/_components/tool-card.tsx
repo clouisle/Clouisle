@@ -106,6 +106,7 @@ export function ToolCard({
   onEdit,
   onDelete,
   onConfigure,
+  onShare,
   canConfigure = false,
   canEdit = false,
   canShare = false,
