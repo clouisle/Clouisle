@@ -35,7 +35,7 @@ interface AgentToolbarProps {
   isSaving: boolean
   onSettingsClick: () => void
   onEmbedClick: () => void
-  sidebarCollapsed: boolean
+  onToggleSidebar: () => void
   canUpdate?: boolean
   canPublish?: boolean
 }
