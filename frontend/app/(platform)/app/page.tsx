@@ -359,7 +359,7 @@ export default function PlatformHomePage() {
 
       setStats({
         knowledgeBases: kbResponse.total,
-        models: ownOnly ? 0 : modelsResponse.filter((m: TeamModel) => m.is_enabled).length,
+        models: modelsResponse.filter((m: TeamModel) => m.is_enabled).length,
         agents: agentsResponse.total,
         workflows: workflowsResponse.total,
         totalConversations,
