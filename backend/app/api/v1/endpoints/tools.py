@@ -760,6 +760,9 @@ async def update_tool(
         )
 
     await check_tool_write_access(tool, current_user)
+    await deps.check_scoped_permission(
+        current_user, "tool:update", "team", tool.team_id
+    )
 
     # 如果修改名称，检查是否冲突
     if tool_in.name and tool_in.name != tool.name:
@@ -1155,6 +1158,9 @@ async def toggle_tool(
         )
 
     await check_tool_write_access(tool, current_user)
+    await deps.check_scoped_permission(
+        current_user, "tool:update", "team", tool.team_id
+    )
 
     tool.is_enabled = not tool.is_enabled
     await tool.save()

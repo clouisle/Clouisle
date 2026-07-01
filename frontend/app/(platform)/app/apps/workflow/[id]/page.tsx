@@ -234,6 +234,7 @@ interface WorkflowEditorContentProps {
   api?: WorkflowEditorApi
   backHref?: string
   updatePermission?: string
+  allowPermissionUpdate?: boolean
   baseUrl?: string
 }
 
@@ -242,6 +243,7 @@ export function WorkflowEditorContent({
   api = workflowsApi,
   backHref = '/app/apps',
   updatePermission = 'workflow:update',
+  allowPermissionUpdate = false,
   baseUrl = `/app/apps/workflow/${workflowId}`,
 }: WorkflowEditorContentProps) {
   const router = useRouter()
@@ -285,11 +287,9 @@ export function WorkflowEditorContent({
     workflow && currentTeam?.id === workflow.team_id && (currentTeam.role === 'owner' || currentTeam.role === 'admin')
   )
   const canUpdateWorkflow = Boolean(
-    workflow && (currentUser?.is_superuser || canPerform(updatePermission) || isWorkflowTeamAdmin || isWorkflowOwner)
+    workflow && (currentUser?.is_superuser || (allowPermissionUpdate && canPerform(updatePermission)) || isWorkflowTeamAdmin || isWorkflowOwner)
   )
-  const canPublishWorkflow = Boolean(
-    workflow && (currentUser?.is_superuser || canPerform('workflow:publish') || isWorkflowTeamAdmin || isWorkflowOwner)
-  )
+  const canPublishWorkflow = canUpdateWorkflow
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()

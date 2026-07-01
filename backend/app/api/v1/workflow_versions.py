@@ -33,11 +33,21 @@ from app.services.workflow.templates import (
 
 
 async def check_version_workflow_access(
-    workflow_id: str, version_id: str, current_user: User, require_write: bool = False
+    workflow_id: str,
+    version_id: str,
+    current_user: User,
+    require_write: bool = False,
+    required_permission: str | None = None,
 ) -> None:
     workflow = await check_workflow_access(
-        UUID(workflow_id), current_user, require_write=require_write
+        UUID(workflow_id),
+        current_user,
+        require_write=require_write or required_permission is not None,
     )
+    if required_permission:
+        await deps.check_scoped_permission(
+            current_user, required_permission, "team", workflow.team.id
+        )
     version = await get_version_manager().get_version(version_id)
     if not version:
         raise BusinessError(
@@ -212,7 +222,7 @@ async def publish_version(
     manager = get_version_manager()
 
     await check_version_workflow_access(
-        workflow_id, version_id, current_user, require_write=True
+        workflow_id, version_id, current_user, required_permission="workflow:publish"
     )
     try:
         version = await manager.publish_version(version_id, current_user.id)
