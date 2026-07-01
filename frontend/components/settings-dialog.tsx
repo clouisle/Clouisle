@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy } from 'lucide-react'
+import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy, Mail } from 'lucide-react'
 import { formatDateTime, isValidEmail } from '@/lib/utils'
 import {
   Dialog,
@@ -67,6 +67,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   // Profile form
   const [savingProfile, setSavingProfile] = React.useState(false)
+  const [emailVerificationCode, setEmailVerificationCode] = React.useState('')
+  const [emailVerificationSent, setEmailVerificationSent] = React.useState(false)
   const [sendingProfileVerification, setSendingProfileVerification] = React.useState(false)
   const [profileData, setProfileData] = React.useState({
     username: '',
@@ -150,7 +152,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }
 
   const profileSummaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(profileErrors, ['username', 'email', 'avatar_url']),
+    () => getValidationSummaryEntries(profileErrors, ['username', 'email', 'email_verification_code', 'avatar_url']),
     [profileErrors]
   )
 
@@ -174,6 +176,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     [regenerateCodeErrors]
   )
 
+  const emailChanged =
+    !!user && isValidEmail(profileData.email) && profileData.email !== user.email
+  const requiresEmailVerification =
+    emailChanged && siteSettings?.email_verification === true
+
+  const handleSendEmailVerification = async () => {
+    if (!emailChanged) return
+
+    try {
+      setSendingProfileVerification(true)
+      await authApi.sendVerification(profileData.email, 'profile_email')
+      setEmailVerificationSent(true)
+      toast.success(t('emailVerificationSent'))
+    } finally {
+      setSendingProfileVerification(false)
+    }
+  }
+
   const handleSaveProfile = async () => {
     if (!user) return
 
@@ -184,33 +204,42 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       return
     }
 
-    try {
-      setSavingProfile(true)
-      const updateData: Record<string, string | null> = {}
+    const updateData: Record<string, string | null> = {}
 
-      if (profileData.username !== user.username) {
-        updateData.username = profileData.username
-      }
-      if (profileData.email !== user.email) {
-        updateData.email = profileData.email
-      }
-      if (profileData.avatar_url !== (user.avatar_url || '')) {
-        updateData.avatar_url = profileData.avatar_url || null
-      }
+    if (profileData.username !== user.username) {
+      updateData.username = profileData.username
+    }
+    if (profileData.email !== user.email) {
+      updateData.email = profileData.email
+    }
+    if (profileData.avatar_url !== (user.avatar_url || '')) {
+      updateData.avatar_url = profileData.avatar_url || null
+    }
 
-      if (Object.keys(updateData).length === 0) {
-        toast.info(t('noChanges'))
+    if (Object.keys(updateData).length === 0) {
+      toast.info(t('noChanges'))
+      return
+    }
+
+    if (updateData.email !== undefined && requiresEmailVerification) {
+      if (!emailVerificationSent) {
+        setProfileErrors({ email_verification_code: t('emailVerificationRequired') })
         return
       }
+      if (emailVerificationCode.length !== 6) {
+        setProfileErrors({ email_verification_code: tAuth('verificationCodeInvalid') })
+        return
+      }
+      updateData.email_verification_code = emailVerificationCode
+    }
 
-      const emailChanged = profileData.email !== user.email
+    try {
+      setSavingProfile(true)
       const updatedUser = await usersApi.updateProfile(updateData, { silent: true })
       setUser(updatedUser)
-      toast.success(
-        emailChanged && !updatedUser.email_verified
-          ? t('profileUpdatedVerifyEmail')
-          : t('profileUpdated')
-      )
+      setEmailVerificationCode('')
+      setEmailVerificationSent(false)
+      toast.success(t('profileUpdated'))
     } catch (error) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
@@ -220,22 +249,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           setProfileErrors({ username: error.message })
         } else if (error.code === 5003) {
           setProfileErrors({ email: error.message })
+        } else if (error.code === 5005) {
+          setProfileErrors({ email_verification_code: error.message })
         }
       }
     } finally {
       setSavingProfile(false)
-    }
-  }
-
-  const handleResendProfileVerification = async () => {
-    if (!user) return
-
-    try {
-      setSendingProfileVerification(true)
-      await authApi.sendVerification(user.email, 'profile_email')
-      toast.success(t('verificationEmailSent'))
-    } finally {
-      setSendingProfileVerification(false)
     }
   }
 
@@ -510,29 +529,53 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   value={profileData.email}
                   onChange={(e) => {
                     setProfileData((prev) => ({ ...prev, email: e.target.value }))
+                    setEmailVerificationCode('')
+                    setEmailVerificationSent(false)
                     setProfileErrors((prev) => clearValidationError(prev, 'email'))
+                    setProfileErrors((prev) => clearValidationError(prev, 'email_verification_code'))
                   }}
                   required
                   aria-invalid={!!profileErrors.email}
                 />
                 <FieldError>{profileErrors.email}</FieldError>
-                {user && !user.email_verified && (
-                  <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
-                    <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                    <AlertDescription className="flex items-center justify-between gap-3 text-yellow-800 dark:text-yellow-200">
-                      <span>{t('emailNotVerified')}</span>
+                {requiresEmailVerification && (
+                  <div className="rounded-lg border bg-muted/50 p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Mail className="h-4 w-4" />
+                        <span>{t('emailVerificationCode')}</span>
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={handleResendProfileVerification}
+                        onClick={handleSendEmailVerification}
                         disabled={sendingProfileVerification}
                       >
                         {sendingProfileVerification && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {t('resendVerificationEmail')}
+                        {emailVerificationSent ? t('resendEmailVerification') : t('sendEmailVerification')}
                       </Button>
-                    </AlertDescription>
-                  </Alert>
+                    </div>
+                    {emailVerificationSent && (
+                      <div className="space-y-2">
+                        <InputOTP
+                          maxLength={6}
+                          value={emailVerificationCode}
+                          onChange={(value) => {
+                            setEmailVerificationCode(value)
+                            setProfileErrors((prev) => clearValidationError(prev, 'email_verification_code'))
+                          }}
+                        >
+                          <InputOTPGroup>
+                            {Array.from({ length: 6 }).map((_, index) => (
+                              <InputOTPSlot key={index} index={index} />
+                            ))}
+                          </InputOTPGroup>
+                        </InputOTP>
+                        <FieldError>{profileErrors.email_verification_code}</FieldError>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

@@ -61,8 +61,6 @@ from app.services import totp as totp_service
 
 router = APIRouter()
 
-EMAIL_VERIFICATION_PURPOSES = {"register", "profile_email"}
-
 
 @router.get("/captcha", response_model=Response[CaptchaResponse])
 async def get_captcha() -> Any:
@@ -904,9 +902,9 @@ async def send_verification(
             data={"remaining_seconds": remaining},
         )
 
-    # Check if email exists for verification purposes
+    # Check if email exists for register purpose
     user = await User.filter(email=data.email).first()
-    if data.purpose in EMAIL_VERIFICATION_PURPOSES:
+    if data.purpose == "register":
         if not user:
             raise BusinessError(
                 code=ResponseCode.NOT_FOUND,
@@ -951,7 +949,7 @@ async def verify_email_by_code(
 
     # Update user
     user = await User.filter(email=data.email).first()
-    if user and data.purpose in EMAIL_VERIFICATION_PURPOSES:
+    if user and data.purpose == "register":
         user.email_verified = True
         await user.save()
 
@@ -979,7 +977,7 @@ async def verify_email_by_token(
 
     # Update user
     user = await User.filter(email=email).first()
-    if user and purpose in EMAIL_VERIFICATION_PURPOSES:
+    if user and purpose == "register":
         user.email_verified = True
         await user.save()
 
