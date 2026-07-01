@@ -40,6 +40,7 @@ async def test_assign_default_team_creates_membership(monkeypatch):
 
     monkeypatch.setattr(team_role_sync.SiteSetting, "get_value", get_value)
     monkeypatch.setattr(team_role_sync.Team, "filter", lambda **kwargs: TeamQuery())
+    monkeypatch.setattr(team_role_sync, "sync_scoped_role_assignment", AsyncMock())
     monkeypatch.setattr(
         team_role_sync.TeamMember,
         "get_or_create",
@@ -75,6 +76,7 @@ async def test_assign_default_team_falls_back_invalid_role(monkeypatch):
 
     monkeypatch.setattr(team_role_sync.SiteSetting, "get_value", get_value)
     monkeypatch.setattr(team_role_sync.Team, "filter", lambda **kwargs: TeamQuery())
+    monkeypatch.setattr(team_role_sync, "sync_scoped_role_assignment", AsyncMock())
     monkeypatch.setattr(
         team_role_sync.TeamMember,
         "get_or_create",
