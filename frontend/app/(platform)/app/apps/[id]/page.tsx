@@ -2,6 +2,8 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import {
@@ -27,6 +29,7 @@ import { AgentOrchestrationForm } from './_components/agent-orchestration-form'
 import { AgentPreviewPanel } from './_components/agent-preview-panel'
 import { AgentSettingsDrawer } from './_components/agent-settings-drawer'
 import { EmbedConfigDialog } from './_components/embed-config-dialog'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface AgentConfigPageProps {
   params: Promise<{ id: string }>
@@ -43,19 +46,22 @@ interface AgentEditorProps {
   agentId: string
   api?: AgentEditorApi
   backHref?: string
-  updatePermission?: string
   baseUrl?: string
+  allowPermissionUpdate?: boolean
 }
 
 export function AgentEditor({
   agentId,
   api = agentsApi,
   backHref = '/app/apps',
-  updatePermission = 'agent:update',
   baseUrl = `/app/apps/${agentId}`,
+  allowPermissionUpdate = false,
 }: AgentEditorProps) {
   const t = useTranslations('agents')
   const router = useRouter()
+  const { currentTeam } = useTeam()
+  const { user } = usePermissions()
+  const { canPerform } = useCanPerform()
 
   const [agent, setAgent] = React.useState<Agent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -283,6 +289,10 @@ export function AgentEditor({
 
   // Check if tools are enabled
   const hasToolsEnabled = toolsConfig.length > 0
+  const canUpdateAgent = Boolean(
+    agent && (user?.is_superuser || (allowPermissionUpdate && canPerform('agent:update')) || currentTeam?.role === 'owner' || currentTeam?.role === 'admin' || agent.created_by?.id === user?.id)
+  )
+  const canPublishAgent = canPerform('agent:publish')
 
   if (isLoading || !agent) {
     return (
@@ -317,7 +327,8 @@ export function AgentEditor({
           onEmbedClick={() => setShowEmbed(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-          updatePermission={updatePermission}
+          canUpdate={canUpdateAgent}
+          canPublish={canPublishAgent}
         />
 
         {/* Content */}

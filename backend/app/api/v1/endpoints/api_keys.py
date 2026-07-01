@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.api.workflow_access import check_workflow_access
+from app.api.v1.endpoints.agents import check_agent_access
 from app.core.timezone import now_utc
 from app.models.user import User
 from app.models.api_key import APIKey
@@ -77,6 +79,51 @@ async def build_api_key_response(
     return response_data
 
 
+async def ensure_api_key_owner(api_key: APIKey, current_user: User) -> None:
+    if current_user.is_superuser or api_key.user_id == current_user.id:
+        return
+    raise BusinessError(
+        code=ResponseCode.PERMISSION_DENIED,
+        msg_key="permission_denied",
+        status_code=403,
+    )
+
+
+async def get_api_key_or_404(api_key_id: UUID) -> APIKey:
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("user", "agents", "workflows")
+        .first()
+    )
+    if not api_key:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="api_key_not_found",
+            status_code=404,
+        )
+    return api_key
+
+
+async def collect_allowed_agents(
+    agent_ids: list[UUID] | None, user: User
+) -> list[Agent]:
+    agents = []
+    for agent_id in agent_ids or []:
+        agent = await check_agent_access(agent_id, user)
+        agents.append(agent)
+    return agents
+
+
+async def collect_allowed_workflows(
+    workflow_ids: list[UUID] | None, user: User
+) -> list[Any]:
+    workflows = []
+    for workflow_id in workflow_ids or []:
+        workflow = await check_workflow_access(workflow_id, user)
+        workflows.append(workflow)
+    return workflows
+
+
 @router.get("", response_model=Response[PageData[APIKeyResponse]])
 async def list_api_keys(
     page: int = 1,
@@ -86,7 +133,7 @@ async def list_api_keys(
     ),
     user_id: Optional[list[UUID]] = Query(None, description="Filter by user ID"),
     search: Optional[str] = Query(None, description="Search by name or key prefix"),
-    current_user: User = Depends(deps.PermissionChecker("apikey:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     List all API keys with optional filters.
@@ -151,7 +198,7 @@ async def list_api_keys(
 
 @router.get("/stats", response_model=Response[APIKeyStats])
 async def get_api_key_stats(
-    current_user: User = Depends(deps.PermissionChecker("apikey:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Get API key statistics.
@@ -188,41 +235,16 @@ async def create_api_key(
     *,
     request: Request,
     data: APIKeyCreate,
-    current_user: User = Depends(deps.PermissionChecker("apikey:create")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Create a new API key.
     The full key is only returned once at creation time.
     """
-    # 验证 Agent IDs（检查是否存在且用户有权限访问）
-    agents = []
-    if data.agent_ids:
-        for agent_id in data.agent_ids:
-            agent = await Agent.filter(id=agent_id).first()
-            if not agent:
-                raise BusinessError(
-                    code=ResponseCode.NOT_FOUND,
-                    msg_key="agent_not_found",
-                    status_code=404,
-                )
-            # 检查用户是否有权限访问该 Agent（通过团队成员关系）
-            # 简化：这里假设用户可以访问自己创建的或所在团队的 Agent
-            agents.append(agent)
+    agents = await collect_allowed_agents(data.agent_ids, current_user)
 
     # 验证 Workflow IDs（检查是否存在且用户有权限访问）
-    workflows = []
-    if data.workflow_ids:
-        from app.models.workflow import Workflow
-
-        for workflow_id in data.workflow_ids:
-            workflow = await Workflow.filter(id=workflow_id).first()
-            if not workflow:
-                raise BusinessError(
-                    code=ResponseCode.NOT_FOUND,
-                    msg_key="workflow_not_found",
-                    status_code=404,
-                )
-            workflows.append(workflow)
+    workflows = await collect_allowed_workflows(data.workflow_ids, current_user)
 
     # Generate API key
     full_key, key_prefix, key_hash = APIKey.generate_key()
@@ -287,31 +309,13 @@ async def create_api_key(
 @router.get("/{api_key_id}", response_model=Response[APIKeyResponse])
 async def get_api_key(
     api_key_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("apikey:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Get a specific API key by ID.
     """
-    api_key = (
-        await APIKey.filter(id=api_key_id)
-        .prefetch_related("user", "agents", "workflows")
-        .first()
-    )
-
-    if not api_key:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="api_key_not_found",
-            status_code=404,
-        )
-
-    # Check permission - admin can see all, user can only see their own
-    if not current_user.is_superuser and api_key.user_id != current_user.id:
-        raise BusinessError(
-            code=ResponseCode.PERMISSION_DENIED,
-            msg_key="permission_denied",
-            status_code=403,
-        )
+    api_key = await get_api_key_or_404(api_key_id)
+    await ensure_api_key_owner(api_key, current_user)
 
     response_data = await build_api_key_response(api_key)
     return success(data=response_data)
@@ -323,45 +327,17 @@ async def update_api_key(
     request: Request,
     api_key_id: UUID,
     data: APIKeyUpdate,
-    current_user: User = Depends(deps.PermissionChecker("apikey:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Update an API key.
     """
-    api_key = (
-        await APIKey.filter(id=api_key_id)
-        .prefetch_related("user", "agents", "workflows")
-        .first()
-    )
-
-    if not api_key:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="api_key_not_found",
-            status_code=404,
-        )
-
-    # Check permission
-    if not current_user.is_superuser and api_key.user_id != current_user.id:
-        raise BusinessError(
-            code=ResponseCode.PERMISSION_DENIED,
-            msg_key="permission_denied",
-            status_code=403,
-        )
+    api_key = await get_api_key_or_404(api_key_id)
+    await ensure_api_key_owner(api_key, current_user)
 
     # 处理 Agent 关联更新
     if data.agent_ids is not None:
-        # 验证新的 Agent IDs
-        new_agents = []
-        for agent_id in data.agent_ids:
-            agent = await Agent.filter(id=agent_id).first()
-            if not agent:
-                raise BusinessError(
-                    code=ResponseCode.NOT_FOUND,
-                    msg_key="agent_not_found",
-                    status_code=404,
-                )
-            new_agents.append(agent)
+        new_agents = await collect_allowed_agents(data.agent_ids, current_user)
 
         # 清除现有关联并添加新关联
         await api_key.agents.clear()
@@ -370,19 +346,7 @@ async def update_api_key(
 
     # 处理 Workflow 关联更新
     if data.workflow_ids is not None:
-        # 验证新的 Workflow IDs
-        from app.models.workflow import Workflow
-
-        new_workflows = []
-        for workflow_id in data.workflow_ids:
-            workflow = await Workflow.filter(id=workflow_id).first()
-            if not workflow:
-                raise BusinessError(
-                    code=ResponseCode.NOT_FOUND,
-                    msg_key="workflow_not_found",
-                    status_code=404,
-                )
-            new_workflows.append(workflow)
+        new_workflows = await collect_allowed_workflows(data.workflow_ids, current_user)
 
         # 清除现有关联并添加新关联
         await api_key.workflows.clear()
@@ -431,31 +395,13 @@ async def update_api_key(
 async def delete_api_key(
     request: Request,
     api_key_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("apikey:delete")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Delete an API key.
     """
-    api_key = (
-        await APIKey.filter(id=api_key_id)
-        .prefetch_related("user", "agents", "workflows")
-        .first()
-    )
-
-    if not api_key:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="api_key_not_found",
-            status_code=404,
-        )
-
-    # Check permission
-    if not current_user.is_superuser and api_key.user_id != current_user.id:
-        raise BusinessError(
-            code=ResponseCode.PERMISSION_DENIED,
-            msg_key="permission_denied",
-            status_code=403,
-        )
+    api_key = await get_api_key_or_404(api_key_id)
+    await ensure_api_key_owner(api_key, current_user)
 
     # Store for response
     response_data = await build_api_key_response(api_key)
@@ -483,31 +429,13 @@ async def delete_api_key(
 async def activate_api_key(
     request: Request,
     api_key_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("apikey:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Activate an API key.
     """
-    api_key = (
-        await APIKey.filter(id=api_key_id)
-        .prefetch_related("agents", "workflows", "user")
-        .first()
-    )
-
-    if not api_key:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="api_key_not_found",
-            status_code=404,
-        )
-
-    # Check permission
-    if not current_user.is_superuser and api_key.user_id != current_user.id:
-        raise BusinessError(
-            code=ResponseCode.PERMISSION_DENIED,
-            msg_key="permission_denied",
-            status_code=403,
-        )
+    api_key = await get_api_key_or_404(api_key_id)
+    await ensure_api_key_owner(api_key, current_user)
 
     if api_key.is_active:
         raise BusinessError(
@@ -538,31 +466,13 @@ async def activate_api_key(
 async def deactivate_api_key(
     request: Request,
     api_key_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("apikey:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Deactivate an API key.
     """
-    api_key = (
-        await APIKey.filter(id=api_key_id)
-        .prefetch_related("agents", "workflows", "user")
-        .first()
-    )
-
-    if not api_key:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="api_key_not_found",
-            status_code=404,
-        )
-
-    # Check permission
-    if not current_user.is_superuser and api_key.user_id != current_user.id:
-        raise BusinessError(
-            code=ResponseCode.PERMISSION_DENIED,
-            msg_key="permission_denied",
-            status_code=403,
-        )
+    api_key = await get_api_key_or_404(api_key_id)
+    await ensure_api_key_owner(api_key, current_user)
 
     if not api_key.is_active:
         raise BusinessError(

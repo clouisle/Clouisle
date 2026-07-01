@@ -37,7 +37,7 @@ router = APIRouter()
 
 @router.get("/my", response_model=Response[List[UserTeamInfo]])
 async def get_my_teams(
-    current_user: User = Depends(deps.PermissionChecker("team:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Get all teams the current user belongs to with their role."""
     memberships = await TeamMember.filter(user=current_user).prefetch_related("team")
@@ -61,9 +61,10 @@ async def get_my_teams(
 @router.get("/{team_id}", response_model=Response[TeamWithMembers])
 async def get_team(
     team_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("team:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Get team by ID with members list."""
+    await deps.check_scoped_permission(current_user, "team:read", "team", team_id)
     team = await Team.filter(id=team_id).prefetch_related("owner").first()
     if not team:
         raise BusinessError(
@@ -117,9 +118,10 @@ async def update_team(
     request: Request,
     team_id: UUID,
     team_in: TeamUpdate,
-    current_user: User = Depends(deps.PermissionChecker("team:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update team info. Only owner or admin can update."""
+    await deps.check_scoped_permission(current_user, "team:update", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -183,9 +185,10 @@ async def add_team_member(
     request: Request,
     team_id: UUID,
     member_in: TeamMemberAdd,
-    current_user: User = Depends(deps.PermissionChecker("team:manage")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Add a member to the team. Only owner or admin can add members."""
+    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -297,9 +300,10 @@ async def update_team_member(
     team_id: UUID,
     user_id: UUID,
     member_in: TeamMemberUpdate,
-    current_user: User = Depends(deps.PermissionChecker("team:manage")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update member role. Only owner can change roles."""
+    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -385,9 +389,10 @@ async def remove_team_member(
     request: Request,
     team_id: UUID,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("team:manage")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Remove a member from the team."""
+    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -481,9 +486,10 @@ async def remove_team_member(
 @router.post("/{team_id}/leave", response_model=Response[dict])
 async def leave_team(
     team_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("team:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Leave a team. Owner cannot leave without transferring ownership first."""
+    await deps.check_scoped_permission(current_user, "team:read", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -517,13 +523,14 @@ async def transfer_ownership(
     *,
     team_id: UUID,
     new_owner_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("team:manage")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     Transfer team ownership to another member.
 
     Only current owner or superuser can do this.
     """
+    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(

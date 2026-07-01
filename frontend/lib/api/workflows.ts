@@ -43,6 +43,8 @@ export interface WorkflowListItem {
   run_count: number
   success_count: number
   fail_count: number
+  created_by_id?: string | null
+  created_by_name?: string | null
   created_at: string
   updated_at: string
 }
@@ -241,6 +243,7 @@ export interface WorkflowQueryParams {
   visibility?: WorkflowVisibility
   triggerType?: TriggerType
   keyword?: string
+  ownOnly?: boolean
 }
 
 export interface WorkflowRunQueryParams {
@@ -289,7 +292,7 @@ export const workflowsApi = {
    * 获取工作流列表
    */
   getWorkflows: async (params: WorkflowQueryParams = {}): Promise<PageData<WorkflowListItem>> => {
-    const { page = 1, pageSize = 20, teamId, status, visibility, triggerType, keyword } = params
+    const { page = 1, pageSize = 20, teamId, status, visibility, triggerType, keyword, ownOnly } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
@@ -298,6 +301,7 @@ export const workflowsApi = {
     if (visibility) queryParams.append('visibility', visibility)
     if (triggerType) queryParams.append('trigger_type', triggerType)
     if (keyword) queryParams.append('keyword', keyword)
+    if (ownOnly) queryParams.append('own_only', 'true')
     return api.get<PageData<WorkflowListItem>>(`/workflows?${queryParams.toString()}`)
   },
 

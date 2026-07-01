@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     models,
     knowledge_bases,
     agents,
+    conversations,
     agent_stats,
     chat,
     tools,
@@ -42,6 +43,9 @@ api_router.include_router(
     knowledge_bases.router, prefix="/knowledge-bases", tags=["knowledge-bases"]
 )
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
+api_router.include_router(
+    conversations.router, prefix="/conversations", tags=["conversations"]
+)
 api_router.include_router(agent_stats.router, prefix="/agents", tags=["agent-stats"])
 api_router.include_router(chat.router, prefix="/agents", tags=["chat"])
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])

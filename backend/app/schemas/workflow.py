@@ -96,6 +96,8 @@ class WorkflowListItem(BaseModel):
     run_count: int
     success_count: int
     fail_count: int
+    created_by_id: UUID | None
+    created_by_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

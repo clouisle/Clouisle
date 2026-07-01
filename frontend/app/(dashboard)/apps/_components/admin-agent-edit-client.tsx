@@ -15,7 +15,7 @@ export function AdminAgentEditClient({ agentId }: { agentId: string }) {
         unpublishAgent: adminAgentsApi.unpublish,
       }}
       backHref="/apps"
-      updatePermission="admin:app:update"
+      allowPermissionUpdate
       baseUrl={`/apps/agents/${agentId}/edit`}
     />
   )

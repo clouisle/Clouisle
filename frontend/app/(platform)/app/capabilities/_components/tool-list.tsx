@@ -16,12 +16,27 @@ interface ToolListProps {
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
-  onExport?: (tool: Tool) => void
+  canConfigure?: (tool: Tool) => boolean
+  canEdit?: (tool: Tool) => boolean
+  canShare?: (tool: Tool) => boolean
+  canDelete?: (tool: Tool) => boolean
 }
 
 type FilterType = 'all' | ToolType
 
-export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigure, onShare, onExport }: ToolListProps) {
+export function ToolList({
+  tools,
+  onSelect,
+  onTest,
+  onEdit,
+  onDelete,
+  onConfigure,
+  onShare,
+  canConfigure,
+  canEdit,
+  canShare,
+  canDelete,
+}: ToolListProps) {
   const t = useTranslations('platform.tools')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
@@ -128,7 +143,10 @@ export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigur
                     onDelete={onDelete}
                     onConfigure={onConfigure}
                     onShare={onShare}
-                    onExport={onExport}
+                    canConfigure={canConfigure?.(tool) ?? false}
+                    canEdit={canEdit?.(tool) ?? false}
+                    canShare={canShare?.(tool) ?? false}
+                    canDelete={canDelete?.(tool) ?? false}
                   />
                 ))}
               </div>

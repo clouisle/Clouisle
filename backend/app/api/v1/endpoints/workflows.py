@@ -14,9 +14,11 @@ from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.api.team_access import check_team_access
+from app.api.workflow_access import check_workflow_access
 from app.core.i18n import t
 from app.core.timezone import now, to_local, to_utc
-from app.models.user import User, Team, TeamMember
+from app.models.user import User, TeamMember
 from app.models.workflow import (
     Workflow,
     WorkflowRun,
@@ -67,79 +69,6 @@ def normalize_webhook_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
     if len(inputs) == 1 and isinstance(nested_inputs, dict):
         return nested_inputs
     return inputs
-
-
-async def check_team_access(
-    team_id: UUID, user: User, require_admin: bool = False
-) -> Team:
-    """Check if user has access to the team."""
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if user.is_superuser:
-        return team
-
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
-
-    if require_admin and membership.role not in ["owner", "admin", "member"]:
-        raise BusinessError(
-            code=ResponseCode.TEAM_ADMIN_REQUIRED,
-            msg_key="team_admin_required",
-            status_code=403,
-        )
-
-    return team
-
-
-async def check_workflow_access(
-    workflow_id: UUID, user: User, require_write: bool = False
-) -> Workflow:
-    """Check if user has access to the workflow."""
-    workflow = (
-        await Workflow.filter(id=workflow_id)
-        .prefetch_related("team", "created_by")
-        .first()
-    )
-    if not workflow:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="workflow_not_found",
-            status_code=404,
-        )
-
-    # Check visibility and team access
-    if workflow.visibility == WorkflowVisibility.PRIVATE:
-        # Only creator (or superuser) can access private workflows
-        # If creator is deleted, fall back to team-level access
-        if (
-            workflow.created_by
-            and workflow.created_by.id != user.id
-            and not user.is_superuser
-        ):
-            raise BusinessError(
-                code=ResponseCode.FORBIDDEN,
-                msg_key="workflow_access_denied",
-                status_code=403,
-            )
-        elif not workflow.created_by and not user.is_superuser:
-            # Creator deleted, check team access
-            await check_team_access(workflow.team.id, user, require_admin=require_write)
-    else:
-        # Team/public visibility - check team membership
-        await check_team_access(workflow.team.id, user, require_admin=require_write)
-
-    return workflow
 
 
 # ============ Global Workflow Runs (must be before /{workflow_id} routes) ============
@@ -384,6 +313,7 @@ async def list_workflows(
     trigger_type: TriggerType | None = None,
     visibility: str | None = None,
     keyword: str | None = None,
+    own_only: bool = False,
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(deps.PermissionChecker("workflow:read")),
@@ -432,6 +362,9 @@ async def list_workflows(
             )
         )
 
+    if own_only and not current_user.is_superuser:
+        query = query.filter(created_by=current_user)
+
     if status:
         query = query.filter(status=status)
 
@@ -448,13 +381,24 @@ async def list_workflows(
 
     total = await query.count()
     skip = (page - 1) * page_size
-    workflows = await query.offset(skip).limit(page_size).order_by("-updated_at")
+    workflows = (
+        await query.prefetch_related("created_by")
+        .offset(skip)
+        .limit(page_size)
+        .order_by("-updated_at")
+    )
 
-    workflow_list = [WorkflowListItem.model_validate(w) for w in workflows]
+    workflow_list = []
+    for workflow in workflows:
+        item = WorkflowListItem.model_validate(workflow).model_dump()
+        item["created_by_name"] = (
+            workflow.created_by.username if workflow.created_by else None
+        )
+        workflow_list.append(item)
 
     return success(
         data={
-            "items": [w.model_dump() for w in workflow_list],
+            "items": workflow_list,
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -467,10 +411,13 @@ async def create_workflow(
     *,
     workflow_in: WorkflowCreate,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("workflow:create")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Create a new workflow."""
     # Check team access
+    await deps.check_scoped_permission(
+        current_user, "workflow:create", "team", workflow_in.team_id
+    )
     team = await check_team_access(workflow_in.team_id, current_user)
 
     # Check for duplicate name within the same team
@@ -708,11 +655,14 @@ async def update_workflow(
     workflow_id: UUID,
     workflow_in: WorkflowUpdate,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update a workflow."""
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
+    )
+    await deps.check_scoped_permission(
+        current_user, "workflow:update", "team", workflow.team_id
     )
 
     # Check for duplicate name within the same team (exclude self)
@@ -889,10 +839,13 @@ async def unpublish_workflow(
 async def duplicate_workflow(
     workflow_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("workflow:create")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Duplicate a workflow."""
     workflow = await check_workflow_access(workflow_id, current_user)
+    await deps.check_scoped_permission(
+        current_user, "workflow:create", "team", workflow.team_id
+    )
 
     # Create a copy
     new_workflow = await Workflow.create(
@@ -939,11 +892,14 @@ async def duplicate_workflow(
 async def regenerate_webhook_token(
     workflow_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Regenerate webhook token for a workflow."""
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
+    )
+    await deps.check_scoped_permission(
+        current_user, "workflow:update", "team", workflow.team_id
     )
 
     workflow.webhook_token = secrets.token_urlsafe(32)
@@ -1606,11 +1562,12 @@ async def create_workflow_version(
     workflow_id: UUID,
     version_in: WorkflowVersionCreate,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Manually create a version snapshot of the current workflow state."""
-    workflow = await check_workflow_access(
-        workflow_id, current_user, require_write=True
+    workflow = await check_workflow_access(workflow_id, current_user)
+    await deps.check_scoped_permission(
+        current_user, "workflow:update", "team", workflow.team_id
     )
 
     # Create version snapshot
@@ -1651,11 +1608,12 @@ async def restore_workflow_version(
     version: int,
     restore_in: WorkflowVersionRestore,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Restore a workflow to a specific version."""
-    workflow = await check_workflow_access(
-        workflow_id, current_user, require_write=True
+    workflow = await check_workflow_access(workflow_id, current_user)
+    await deps.check_scoped_permission(
+        current_user, "workflow:update", "team", workflow.team_id
     )
 
     # Get the version to restore

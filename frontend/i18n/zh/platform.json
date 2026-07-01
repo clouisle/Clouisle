@@ -114,7 +114,7 @@
       "resourceComposition": "资源组成",
       "resourceCompositionDesc": "资源类型的详细分布",
       "usageTrend": "使用趋势",
-      "usageTrendDesc": "近 7 天对话和 Token 使用趋势",
+      "usageTrendDesc": "成员查看自己的使用情况，团队管理员查看按用户统计的对话和 Token 消耗。",
       "resourceOverview": "资源概览",
       "resourceOverviewDesc": "当前资源分配情况",
       "features": {

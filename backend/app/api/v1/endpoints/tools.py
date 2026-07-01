@@ -15,6 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.api import deps
+from app.api.team_access import check_team_access
 from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
@@ -97,37 +98,14 @@ def _runtime_duration_ms(runtime_result: Any) -> int | None:
 # ============ Helper Functions ============
 
 
-async def check_team_access(
-    team_id: UUID, user: User, require_admin: bool = False
-) -> Team:
-    """检查用户是否有团队访问权限"""
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
+async def check_tool_write_access(tool: Tool, user: User) -> None:
+    """Allow creators to edit their tools; team owner/admin can edit all team tools."""
     if user.is_superuser:
-        return team
+        return
 
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
-
-    if require_admin and membership.role not in ["owner", "admin"]:
-        raise BusinessError(
-            code=ResponseCode.TEAM_ADMIN_REQUIRED,
-            msg_key="team_admin_required",
-            status_code=403,
-        )
-
-    return team
+    await check_team_access(tool.team_id, user)
+    if tool.created_by_id != user.id:
+        await check_team_access(tool.team_id, user, require_admin=True)
 
 
 def _get_builtin_tool_description(
@@ -230,6 +208,7 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
+        created_by_id=tool.created_by_id,
         created_by_name=creator_name,
     )
 
@@ -654,12 +633,11 @@ async def create_tool(
     team_id: UUID,
     tool_in: ToolCreateInput,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("tool:create")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """创建自定义工具"""
-    await check_team_access(team_id, current_user, require_admin=True)
-
-    # 检查名称是否已存在
+    await check_team_access(team_id, current_user)
+    await deps.check_scoped_permission(current_user, "tool:create", "team", team_id)
     existing = await Tool.filter(team_id=team_id, name=tool_in.name).first()
     if existing:
         raise BusinessError(
@@ -781,7 +759,7 @@ async def update_tool(
             status_code=404,
         )
 
-    await check_team_access(tool.team_id, current_user, require_admin=True)
+    await check_tool_write_access(tool, current_user)
 
     # 如果修改名称，检查是否冲突
     if tool_in.name and tool_in.name != tool.name:
@@ -1176,7 +1154,7 @@ async def toggle_tool(
             status_code=404,
         )
 
-    await check_team_access(tool.team_id, current_user, require_admin=True)
+    await check_tool_write_access(tool, current_user)
 
     tool.is_enabled = not tool.is_enabled
     await tool.save()
@@ -1369,7 +1347,7 @@ async def create_tool_config(
     config_data = ToolConfigCreate(**data)
 
     if team_id:
-        await check_team_access(team_id, current_user)
+        await check_team_access(team_id, current_user, require_admin=True)
     else:
         if not current_user.is_superuser:
             raise BusinessError(
@@ -1432,7 +1410,7 @@ async def update_tool_config(
     config_data = ToolConfigUpdate(**data)
 
     if team_id:
-        await check_team_access(team_id, current_user)
+        await check_team_access(team_id, current_user, require_admin=True)
         config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
     else:
         if not current_user.is_superuser:
@@ -1485,7 +1463,7 @@ async def delete_tool_config(
     from app.models.tool_config import ToolConfig
 
     if team_id:
-        await check_team_access(team_id, current_user)
+        await check_team_access(team_id, current_user, require_admin=True)
         config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
     else:
         if not current_user.is_superuser:

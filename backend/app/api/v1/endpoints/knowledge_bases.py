@@ -178,7 +178,8 @@ async def require_kb_read(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> User:
     user = await require_kb_permission(request, current_user)
-    _require_kb_action(user, "read")
+    if _kb_access_mode.get() == "admin":
+        _require_kb_action(user, "read")
     return user
 
 
@@ -187,7 +188,8 @@ async def require_kb_create(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> User:
     user = await require_kb_permission(request, current_user)
-    _require_kb_action(user, "create")
+    if _kb_access_mode.get() == "admin":
+        _require_kb_action(user, "create")
     return user
 
 
@@ -196,7 +198,8 @@ async def require_kb_update(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> User:
     user = await require_kb_permission(request, current_user)
-    _require_kb_action(user, "update")
+    if _kb_access_mode.get() == "admin":
+        _require_kb_action(user, "update")
     return user
 
 
@@ -205,7 +208,8 @@ async def require_kb_delete(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> User:
     user = await require_kb_permission(request, current_user)
-    _require_kb_action(user, "delete")
+    if _kb_access_mode.get() == "admin":
+        _require_kb_action(user, "delete")
     return user
 
 
@@ -335,7 +339,10 @@ async def ensure_team_authorized_model(
 
 
 async def check_kb_access(
-    kb_id: UUID, user: User, require_write: bool = False
+    kb_id: UUID,
+    user: User,
+    require_write: bool = False,
+    allow_owner_write: bool = True,
 ) -> KnowledgeBase:
     """
     Check if user has access to the knowledge base.
@@ -353,8 +360,13 @@ async def check_kb_access(
             status_code=404,
         )
 
-    # Check team access
-    await check_team_access(kb.team.id, user, require_admin=require_write)
+    if user.is_superuser or _kb_access_mode.get() == "admin":
+        return kb
+
+    is_owner = kb.created_by and kb.created_by.id == user.id
+    await check_team_access(kb.team.id, user)
+    if require_write and (not allow_owner_write or not is_owner):
+        await check_team_access(kb.team.id, user, require_admin=True)
     return kb
 
 
@@ -366,6 +378,7 @@ async def list_knowledge_bases(
     team_id: UUID | None = None,
     search: str | None = None,
     status: list[str] | None = None,
+    own_only: bool = False,
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(require_kb_read),
@@ -387,6 +400,9 @@ async def list_knowledge_bases(
             "team_id", flat=True
         )
         query = query.filter(team_id__in=memberships)
+
+    if own_only and not current_user.is_superuser:
+        query = query.filter(created_by=current_user)
 
     if search:
         query = query.filter(name__icontains=search)
@@ -593,7 +609,9 @@ async def delete_knowledge_base(
     Delete knowledge base and all its documents.
     Requires admin permission in the team.
     """
-    kb = await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(
+        kb_id, current_user, require_write=True, allow_owner_write=False
+    )
     kb_name = kb.name
 
     # Delete all documents and chunks (cascades)

@@ -2,6 +2,14 @@
 
 本文档基于当前代码实现整理权限设计，不以历史设计稿或分析文档为准。
 
+权威实现入口：
+
+- `backend/app/core/permissions.py`：系统权限定义
+- `backend/app/core/init_data.py`：内置角色与默认角色初始化
+- `backend/app/services/team_role_sync.py`：团队角色到团队作用域角色授权的同步
+- `backend/app/api/deps.py`：认证与 `PermissionChecker`
+- `backend/app/api/v1/endpoints/teams.py`：团队成员角色边界
+
 适用范围：
 
 - 后端认证与授权
@@ -182,10 +190,10 @@
 
 主要权限：
 
-- 所有 `admin:*` 系统级权限
-- 所有平台业务权限：`agent:*`、`workflow:*`、`kb:*`、`tool:*`、`skill:*` 等
+- 后台管理能力：包含 `admin:dashboard:access`、用户/角色/权限读取、模型管理、设置读取、SSO 读取、审计读取/导出等；部分高危后台变更能力仅 Super Admin 拥有
+- 平台业务能力：包含团队范围的 Agent、Workflow、KB、Tool、Skill 等管理与使用权限
 
-注意：当前代码中 `Admin` 角色既承担后台能力，也会被团队角色同步逻辑自动授予，见下文。
+注意：当前代码中 `Admin` 角色既承担后台能力，也可作为团队作用域角色复用；但团队作用域 `Admin` 不能满足 `admin:*` 后台权限。
 
 ### 4.3 Member
 
@@ -194,13 +202,15 @@
 当前意图包括：
 
 - 访问团队内常用业务资源
-- 对 Agent、Workflow、KB、Tool、Skill 拥有完整 CRUD 权限
+- 对 Agent、Workflow、KB、Tool、Skill 拥有创建和更新权限
+- 可以使用 Agent、运行 Workflow、执行 Tool/Skill
 - 不具备后台访问能力（无 `admin:*` 权限）
+- 不具备 Agent / Workflow 的删除或发布权限
 
 主要权限：
 
-- `agent:read/create/update/delete/chat`
-- `workflow:read/create/update/delete/run`
+- `agent:read/create/update/chat`
+- `workflow:read/create/update/run`
 - `kb:read/create/update/delete`
 - `tool:read/create/update/delete/execute`
 - `skill:read/create/update/delete/execute`
@@ -219,14 +229,17 @@
 - `skill:read/execute`
 - `team:read`、`conversation:read`
 
-### 4.5 现状说明
+### 4.5 默认角色与默认团队
 
-虽然存在内置全局角色，但当前实现中：
+默认分配逻辑位于 `backend/app/services/team_role_sync.py`，初始化逻辑位于 `backend/app/core/init_data.py`。
 
-- `Admin` / `Member` 会被团队成员角色自动同步
-- `Viewer` 不会由团队 `viewer` 自动同步得到
+- `default_role_id`：新用户默认全局角色；系统初始化时如果为空，会写入 `Viewer` 角色 ID。
+- `default_team_id`：配置后，新注册用户会自动加入该团队。
+- `default_team_role`：自动加入默认团队时使用的团队角色，默认 `member`。
+- 自动团队角色只允许 `viewer`、`member`、`admin`；配置异常时回退到 `member`。
+- `owner` 不会作为自动默认团队角色分配。
 
-因此，全局角色并非完全独立于团队体系。
+注意：默认全局角色和默认团队角色是两套概念。全局角色提供 permission code，团队角色只决定用户在某个 team 内的管理级别。
 
 ---
 
@@ -303,47 +316,65 @@
 
 ---
 
-## 6. 团队成员角色与全局角色的关系
+## 6. 团队成员角色与作用域 RBAC 的关系
 
-当前代码存在一个重要同步机制：
+当前代码通过 `backend/app/services/team_role_sync.py` 将 `TeamMember.role` 维护为团队作用域角色授权，而不是再授予或移除全局 `Admin` / `Member`。
 
-- `backend/app/services/team_role_sync.py`
+### 6.1 ScopedRoleAssignment
 
-其逻辑是根据用户在所有团队中的最高角色，同步用户的全局角色。
+团队作用域授权存储在 `ScopedRoleAssignment`：
 
-### 6.1 映射规则
+- `user`：授权用户
+- `role`：复用现有 `Role`
+- `scope_type`：当前为 `team`
+- `scope_id`：团队 ID
+- `source`：`manual`、`migration`、`system` 等来源标记
+- `(user, role, scope_type, scope_id)` 唯一
+
+启动初始化会幂等创建表和索引，并从现有 `TeamMember` 回填团队作用域授权。
+
+### 6.2 映射规则
 
 当前规则：
 
-- 只要用户在任意团队中是 `owner` 或 `admin`
-  - 确保用户拥有全局 `Admin`
-  - 同时确保用户拥有全局 `Member`
-- 如果用户最高团队角色是 `member`
-  - 移除全局 `Admin`
-  - 确保拥有全局 `Member`
-- 如果用户只有 `viewer` 或已不在任何团队中
-  - 移除全局 `Admin`
-  - 移除全局 `Member`
-  - 保留其他角色（例如默认 `Viewer`）
+- 团队 `owner` / `admin` -> 该 team 下的作用域 `Admin`
+- 团队 `member` -> 该 team 下的作用域 `Member`
+- 团队 `viewer` -> 该 team 下的作用域 `Viewer`
 
-### 6.2 触发时机
+该同步不会删除或授予用户的全局角色。历史上由团队角色同步出来的全局 `Admin` / `Member` 因无法区分来源，不会自动批量清理。
 
-以下团队操作会触发同步：
+### 6.3 权限解析规则
+
+作用域权限检查使用 `check_scoped_permission(user, code, scope_type, scope_id)`：
+
+1. `is_superuser` 直接通过
+2. 全局角色命中目标 permission 或 `*` 时通过
+3. 对非 `admin:*` 权限，团队作用域角色命中目标 permission 或 `*` 时通过
+4. 其他情况拒绝
+
+`admin:*` 始终只允许全局角色或超级管理员满足，团队作用域角色不能授予后台管理权限。
+
+### 6.4 触发时机
+
+以下团队操作会维护团队作用域授权：
 
 - 添加成员
 - 修改成员角色
 - 移除成员
 - 主动离开团队
+- 转移所有权
 
-### 6.3 影响
+默认团队注册流程会创建 `TeamMember`，并立即同步为团队作用域授权。
 
-这意味着当前实现里：
+### 6.5 团队 Viewer 与只可浏览权限
 
-- 全局 `Admin` / `Member` 不是纯粹静态角色
-- 它们会被团队角色反向驱动
-- 团队角色与全局角色在语义上已经耦合
+团队 `viewer` 和全局 `Viewer` 不是同一个角色：
 
-这是当前权限体系最核心的实现特征之一。
+- 团队 `viewer` 只表示用户在某个团队内处于最低管理级别。
+- 团队 `viewer` 不会自动授予全局 `Viewer` 角色。
+- 全局 `Viewer` 才提供 `team:read`、`agent:read/chat`、`workflow:read/run`、`kb:read`、`tool:read/execute`、`skill:read/execute` 等 permission code。
+
+因此，“只可浏览”在当前实现中更准确地表示：不能 create / update / delete / publish，但可以在已有资源上执行安全使用类动作，例如 chat、run、execute。
 
 ---
 
@@ -359,7 +390,8 @@
 2. 超级管理员直接放行
 3. 检查用户是否为该 team 成员
 4. 如果是写操作或管理操作，且 `require_admin=True`
-   - 要求团队角色必须是 `owner` 或 `admin`
+   - 常见要求是团队角色必须是 `owner` 或 `admin`
+   - 但各资源 helper 仍有差异，KB 的后台路径可绕过普通团队成员校验
 
 ### 7.1 资源模块中的统一模式
 
@@ -391,7 +423,7 @@
 例如：
 
 - 必须是该 team 成员
-- 某些操作必须是 `owner/admin`
+- 某些操作必须是 `owner/admin`；具体以对应 endpoint/helper 为准
 
 因此，拥有某个 permission code 并不代表可以操作任意团队的数据。
 
@@ -586,12 +618,12 @@ Workflow 采用与 Agent 类似的模式：
 
 当前权限体系并非“只有内置角色 + 权限表”，而是：
 
-- **全局角色体系** 与 **团队成员体系** 同时存在
-- 且两者通过 `team_role_sync` 存在反向同步
+- **全局角色体系** 与 **团队作用域授权体系** 同时存在
+- `team_role_sync` 只维护团队作用域授权，不再把团队角色同步为全局 `Admin` / `Member`
 
 因此，当前系统更准确的描述应为：
 
-> 一个以全局 RBAC 为能力层、以 TeamMember 为作用域层、以资源可见性为对象层的复合权限系统。
+> 一个以全局 RBAC 为全局能力层、以团队作用域 RBAC 为 team 内能力层、以资源可见性为对象层的复合权限系统。
 
 ### 12.3 当前主要问题
 

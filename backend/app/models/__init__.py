@@ -1,4 +1,4 @@
-from .user import Permission, Role, Team, TeamMember, User
+from .user import Permission, Role, ScopedRoleAssignment, Team, TeamMember, User
 from .site_setting import (
     SiteSetting,
     init_default_settings,
@@ -84,6 +84,7 @@ __all__ = [
     "Permission",
     "Team",
     "TeamMember",
+    "ScopedRoleAssignment",
     "SiteSetting",
     "init_default_settings",
     "DEFAULT_SETTINGS",

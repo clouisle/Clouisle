@@ -101,6 +101,7 @@ export interface KnowledgeBaseQueryParams {
   search?: string
   status?: string[]
   teamId?: string
+  ownOnly?: boolean
 }
 
 // ============ Document Types ============
@@ -225,13 +226,14 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
      * 获取知识库列表
      */
   getKnowledgeBases: async (params: KnowledgeBaseQueryParams = {}): Promise<PageData<KnowledgeBase>> => {
-    const { page = 1, pageSize = 20, search, status, teamId } = params
+    const { page = 1, pageSize = 20, search, status, teamId, ownOnly } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     if (search) queryParams.append('search', search)
     status?.forEach((value) => queryParams.append('status', value))
     if (teamId) queryParams.append('team_id', teamId)
+    if (ownOnly) queryParams.append('own_only', 'true')
     return api.get<PageData<KnowledgeBase>>(`${prefix}?${queryParams.toString()}`)
   },
 

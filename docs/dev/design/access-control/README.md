@@ -16,5 +16,6 @@ Use this area for:
 
 ## Notes
 
-- `RBAC_SPEC.md` describes the current implementation in code, including global RBAC, team member roles, and resource visibility.
-- `TEAM_MODEL_AUTH_SPEC.md` focuses on model authorization and team-scoped isolation.
+- `RBAC_SPEC.md` is the canonical current implementation reference for global roles, team roles, default assignment, effective permissions, and Viewer view/use-only semantics.
+- `TEAM_MODEL_AUTH_SPEC.md` focuses on model authorization and team-scoped model/quota isolation.
+- Older guide or analysis documents may be higher-level or historical; when exact permission behavior matters, link back to `RBAC_SPEC.md` rather than duplicating matrices.

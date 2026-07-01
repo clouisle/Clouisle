@@ -21,7 +21,6 @@ import {
   Play,
   Settings,
   Share2,
-  Download,
   Users,
   Clock3,
   Calculator,
@@ -42,7 +41,10 @@ interface ToolCardProps {
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
-  onExport?: (tool: Tool) => void
+  canConfigure?: boolean
+  canEdit?: boolean
+  canShare?: boolean
+  canDelete?: boolean
 }
 
 // 分类图标和颜色映射
@@ -104,12 +106,13 @@ export function ToolCard({
   onEdit,
   onDelete,
   onConfigure,
-  onShare,
-  onExport,
+  canConfigure = false,
+  canEdit = false,
+  canShare = false,
+  canDelete = false,
 }: ToolCardProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
-  const packagesT = useTranslations('packages')
   const category = isPresetToolCategory(tool.category) ? categoryConfig[tool.category] : categoryConfig.other
   const categoryLabel = isPresetToolCategory(tool.category) ? t(`categories.${tool.category}`) : tool.category
   const typeColor = typeColorConfig[tool.type]
@@ -117,6 +120,8 @@ export function ToolCard({
   const needsConfig = tool.type === 'builtin' && tool.requires_config
   const isOwned = tool.is_owned !== false // 默认为 true
   const isShared = !isOwned // 共享给当前团队的工具
+  const showConfig = needsConfig && canConfigure
+  const showMenu = isEditable && (canEdit || canShare || canDelete)
 
   // 类型标签映射（使用 i18n）
   const typeLabels: Record<ToolType, string> = {
@@ -187,6 +192,11 @@ export function ToolCard({
 
             <CardDescription className="text-xs line-clamp-2 mt-0.5">
               {tool.description}
+              {tool.created_by_name && (
+                <span className="block text-muted-foreground mt-0.5 truncate">
+                  {tCommon('createdBy')}：{tool.created_by_name}
+                </span>
+              )}
               {/* 显示所有者信息（如果是共享工具） */}
               {isShared && tool.owner_team_name && (
                 <span className="block text-muted-foreground mt-0.5">
@@ -229,7 +239,7 @@ export function ToolCard({
               <Play className="h-3.5 w-3.5" />
             </Button>
 
-            {needsConfig && (
+            {showConfig && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -244,7 +254,7 @@ export function ToolCard({
               </Button>
             )}
 
-            {isEditable && (
+            {showMenu && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -259,52 +269,43 @@ export function ToolCard({
                   }
                 />
                 <DropdownMenuContent align="end">
-                  {/* 只有拥有的工具才能编辑和共享 */}
-                  {isOwned && (
-                    <>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onEdit?.(tool)
-                        }}
-                      >
-                        <Pencil className="h-4 w-4 mr-2" />
-                        {tCommon('edit')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onShare?.(tool)
-                        }}
-                      >
-                        <Share2 className="h-4 w-4 mr-2" />
-                        {t('share.title')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onExport?.(tool)
-                        }}
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        {packagesT('export')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDelete?.(tool)
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        {tCommon('delete')}
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  {/* 共享的工具只能查看，不能编辑或删除 */}
                   {isShared && (
                     <DropdownMenuItem disabled className="text-muted-foreground">
                       {t('share.sharedFrom', { teamName: tool.owner_team_name || '' })}
+                    </DropdownMenuItem>
+                  )}
+                  {isOwned && canEdit && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEdit?.(tool)
+                      }}
+                    >
+                      <Pencil className="h-4 w-4 mr-2" />
+                      {tCommon('edit')}
+                    </DropdownMenuItem>
+                  )}
+                  {isOwned && canShare && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onShare?.(tool)
+                      }}
+                    >
+                      <Share2 className="h-4 w-4 mr-2" />
+                      {t('share.title')}
+                    </DropdownMenuItem>
+                  )}
+                  {isOwned && canDelete && (
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete?.(tool)
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {tCommon('delete')}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>

@@ -247,7 +247,6 @@ export function WorkflowEditorContent({
   const t = useTranslations('workflow')
   const tCommon = useTranslations('common')
   const { canPerform } = useCanPerform()
-  const canUpdateWorkflow = canPerform(updatePermission)
 
   // Workflow definitions earlier than schema_version 2 predate the typed-
   // variable refactor (see docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md).
@@ -278,6 +277,11 @@ export function WorkflowEditorContent({
   const [showValidationChecklist, setShowValidationChecklist] = React.useState(false)
   const [validationIssues, setValidationIssues] = React.useState<ValidationIssue[]>([])
   const [showEmbed, setShowEmbed] = React.useState(false)
+
+  const canUpdateWorkflow = Boolean(
+    workflow && (currentUser?.is_superuser || canPerform(updatePermission) || workflow.created_by_id === currentUser?.id)
+  )
+  const canPublishWorkflow = canPerform('workflow:publish')
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()
@@ -1503,7 +1507,7 @@ export function WorkflowEditorContent({
                   {tCommon('save')}
                 </Button>
               )}
-              {canUpdateWorkflow && (
+              {canPublishWorkflow && (
                 <Button
                   variant={workflow?.status === 'published' ? 'default' : 'outline'}
                   size="sm"

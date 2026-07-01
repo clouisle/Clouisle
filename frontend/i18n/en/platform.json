@@ -114,7 +114,7 @@
       "resourceComposition": "Resource Composition",
       "resourceCompositionDesc": "Breakdown of resource types",
       "usageTrend": "Usage Trend",
-      "usageTrendDesc": "7-day conversation and token usage trend",
+      "usageTrendDesc": "Members see their own usage. Team admins see per-user conversations and token usage.",
       "resourceOverview": "Resource Overview",
       "resourceOverviewDesc": "Current resource allocation",
       "features": {

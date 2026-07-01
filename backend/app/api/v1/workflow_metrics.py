@@ -13,7 +13,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user
+from app.api import deps
+from app.api.workflow_access import check_workflow_access
 from app.core.i18n import t
 from app.models.user import User
 from app.services.workflow import (
@@ -100,7 +101,7 @@ class CacheStatsResponse(BaseModel):
 
 @router.get("/dashboard", response_model=DashboardSummaryResponse)
 async def get_dashboard_summary(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:dashboard:access")),
 ):
     """
     Get dashboard summary with overall workflow metrics.
@@ -129,7 +130,7 @@ async def get_dashboard_summary(
 async def get_workflow_metrics(
     workflow_id: UUID,
     time_range_minutes: int = Query(default=60, ge=1, le=1440),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ):
     """
     Get detailed metrics for a specific workflow.
@@ -141,6 +142,7 @@ async def get_workflow_metrics(
     Returns:
         Detailed workflow execution metrics
     """
+    await check_workflow_access(workflow_id, current_user)
     metrics_collector = get_metrics_collector()
     metrics = await metrics_collector.get_workflow_metrics(
         str(workflow_id),
@@ -171,7 +173,7 @@ async def get_workflow_metrics(
 
 @router.get("/nodes", response_model=dict[str, NodeMetricsResponse])
 async def get_all_node_metrics(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:dashboard:access")),
 ):
     """
     Get metrics for all node types.
@@ -205,7 +207,7 @@ async def get_all_node_metrics(
 @router.get("/nodes/{node_type}", response_model=NodeMetricsResponse)
 async def get_node_type_metrics(
     node_type: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:dashboard:access")),
 ):
     """
     Get metrics for a specific node type.
@@ -238,7 +240,7 @@ async def get_node_type_metrics(
 
 @router.get("/running", response_model=list[RunningWorkflowResponse])
 async def get_running_workflows(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:dashboard:access")),
 ):
     """
     Get list of currently running workflows.
@@ -254,7 +256,7 @@ async def get_running_workflows(
 
 @router.get("/cache", response_model=CacheStatsResponse)
 async def get_cache_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:dashboard:access")),
 ):
     """
     Get workflow cache statistics.
@@ -281,7 +283,7 @@ async def get_cache_stats(
 
 @router.delete("/cache")
 async def clear_cache(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:settings:update")),
 ):
     """
     Clear all workflow cache entries.
@@ -293,7 +295,6 @@ async def clear_cache(
     - LLM response cache
     - Tool result cache
     """
-    # TODO: Add admin check
     cache = get_workflow_cache()
     count = await cache.clear_all()
 

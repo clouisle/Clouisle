@@ -773,6 +773,13 @@ class KnowledgeBasePackageAdapter(ResourcePackageAdapter):
                     msg_key="kb_not_found",
                     status_code=404,
                 )
+        if kb.created_by_id != user.id:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="operation_not_permitted",
+                status_code=403,
+                permission=self.read_permission,
+            )
         dependencies: list[dict[str, Any]] = []
         if kb.embedding_model_id:
             model = await Model.filter(id=kb.embedding_model_id).first()
