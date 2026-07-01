@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
@@ -20,7 +20,11 @@ async def test_find_or_create_user_assigns_default_team_to_email_matched_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     existing_user = SimpleNamespace(id="user-id", email="alice@example.com")
+    manager = Mock()
     assign_default_team = AsyncMock(return_value=True)
+    create_connection = AsyncMock()
+    manager.attach_mock(assign_default_team, "assign_default_team")
+    manager.attach_mock(create_connection, "create_connection")
 
     async def get_value(key: str, default: object = None) -> object:
         return True if key == "sso_match_by_email" else default
@@ -39,18 +43,29 @@ async def test_find_or_create_user_assigns_default_team_to_email_matched_user(
     monkeypatch.setattr(
         sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery()
     )
-    monkeypatch.setattr(sso_service.UserSSOConnection, "create", AsyncMock())
+    monkeypatch.setattr(sso_service.UserSSOConnection, "create", create_connection)
     monkeypatch.setattr(team_role_sync, "assign_default_team", assign_default_team)
 
+    provider = SimpleNamespace(name="oidc")
     user, is_new = await sso_service.SSOService.find_or_create_user(
-        provider=SimpleNamespace(name="oidc"),
+        provider=provider,
         provider_user_id="provider-user-id",
         user_info={"email": "alice@example.com", "username": "alice"},
     )
 
     assert user is existing_user
     assert is_new is False
-    assign_default_team.assert_awaited_once_with(existing_user)
+    assert manager.mock_calls == [
+        call.assign_default_team(existing_user),
+        call.create_connection(
+            user=existing_user,
+            provider=provider,
+            provider_user_id="provider-user-id",
+            provider_username="alice",
+            provider_email="alice@example.com",
+            provider_data={"email": "alice@example.com", "username": "alice"},
+        ),
+    ]
 
 
 @pytest.mark.asyncio
@@ -58,7 +73,11 @@ async def test_find_or_create_user_assigns_default_team_to_new_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     new_user = SimpleNamespace(id="user-id", roles=SimpleNamespace(add=AsyncMock()))
+    manager = Mock()
     assign_default_team = AsyncMock(return_value=True)
+    create_connection = AsyncMock()
+    manager.attach_mock(assign_default_team, "assign_default_team")
+    manager.attach_mock(create_connection, "create_connection")
 
     async def get_value(key: str, default: object = None) -> object:
         values = {
@@ -97,21 +116,32 @@ async def test_find_or_create_user_assigns_default_team_to_new_user(
     monkeypatch.setattr(
         sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery()
     )
-    monkeypatch.setattr(sso_service.UserSSOConnection, "create", AsyncMock())
+    monkeypatch.setattr(sso_service.UserSSOConnection, "create", create_connection)
     monkeypatch.setattr(team_role_sync, "assign_default_role", AsyncMock())
     monkeypatch.setattr(team_role_sync, "assign_default_team", assign_default_team)
 
+    provider = SimpleNamespace(
+        name="oidc",
+        allow_signup=True,
+        require_approval=False,
+        default_role_id=None,
+    )
     user, is_new = await sso_service.SSOService.find_or_create_user(
-        provider=SimpleNamespace(
-            name="oidc",
-            allow_signup=True,
-            require_approval=False,
-            default_role_id=None,
-        ),
+        provider=provider,
         provider_user_id="provider-user-id",
         user_info={"email": "alice@example.com", "username": "alice"},
     )
 
     assert user is new_user
     assert is_new is True
-    assign_default_team.assert_awaited_once_with(new_user)
+    assert manager.mock_calls == [
+        call.assign_default_team(new_user),
+        call.create_connection(
+            user=new_user,
+            provider=provider,
+            provider_user_id="provider-user-id",
+            provider_username="alice",
+            provider_email="alice@example.com",
+            provider_data={"email": "alice@example.com", "username": "alice"},
+        ),
+    ]
