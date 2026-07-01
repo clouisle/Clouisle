@@ -93,9 +93,9 @@ export default function KnowledgeBaseDetailPage({
     loadKnowledgeBase(false)
   }
   
-  const canUpdateKb = Boolean(
-    knowledgeBase && (user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin' || knowledgeBase.created_by?.id === user?.id)
-  )
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const isKbOwner = Boolean(user?.id && knowledgeBase?.created_by?.id === user.id)
+  const canUpdateKb = Boolean(knowledgeBase && (isTeamAdmin || isKbOwner))
 
   if (isLoading || !knowledgeBase) {
     return (

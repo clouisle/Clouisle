@@ -2468,10 +2468,9 @@ async def init_db():
 
     try:
         await init_scoped_role_assignments_table()
-    except Exception as e:
-        logger.warning(
-            f"Scoped role assignment migration failed (may be first run): {e}"
-        )
+    except Exception:
+        logger.exception("Scoped role assignment migration failed")
+        raise
 
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")

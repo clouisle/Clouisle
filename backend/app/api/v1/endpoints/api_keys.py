@@ -133,7 +133,7 @@ async def list_api_keys(
     ),
     user_id: Optional[list[UUID]] = Query(None, description="Filter by user ID"),
     search: Optional[str] = Query(None, description="Search by name or key prefix"),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:read")),
 ) -> Any:
     """
     List all API keys with optional filters.
@@ -198,7 +198,7 @@ async def list_api_keys(
 
 @router.get("/stats", response_model=Response[APIKeyStats])
 async def get_api_key_stats(
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:read")),
 ) -> Any:
     """
     Get API key statistics.
@@ -235,7 +235,7 @@ async def create_api_key(
     *,
     request: Request,
     data: APIKeyCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:create")),
 ) -> Any:
     """
     Create a new API key.
@@ -309,7 +309,7 @@ async def create_api_key(
 @router.get("/{api_key_id}", response_model=Response[APIKeyResponse])
 async def get_api_key(
     api_key_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:read")),
 ) -> Any:
     """
     Get a specific API key by ID.
@@ -327,7 +327,7 @@ async def update_api_key(
     request: Request,
     api_key_id: UUID,
     data: APIKeyUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:update")),
 ) -> Any:
     """
     Update an API key.
@@ -335,19 +335,26 @@ async def update_api_key(
     api_key = await get_api_key_or_404(api_key_id)
     await ensure_api_key_owner(api_key, current_user)
 
-    # 处理 Agent 关联更新
-    if data.agent_ids is not None:
-        new_agents = await collect_allowed_agents(data.agent_ids, current_user)
+    new_agents = (
+        await collect_allowed_agents(data.agent_ids, current_user)
+        if data.agent_ids is not None
+        else None
+    )
+    new_workflows = (
+        await collect_allowed_workflows(data.workflow_ids, current_user)
+        if data.workflow_ids is not None
+        else None
+    )
 
+    # 处理 Agent 关联更新
+    if new_agents is not None:
         # 清除现有关联并添加新关联
         await api_key.agents.clear()
         if new_agents:
             await api_key.agents.add(*new_agents)
 
     # 处理 Workflow 关联更新
-    if data.workflow_ids is not None:
-        new_workflows = await collect_allowed_workflows(data.workflow_ids, current_user)
-
+    if new_workflows is not None:
         # 清除现有关联并添加新关联
         await api_key.workflows.clear()
         if new_workflows:
@@ -395,7 +402,7 @@ async def update_api_key(
 async def delete_api_key(
     request: Request,
     api_key_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:delete")),
 ) -> Any:
     """
     Delete an API key.
@@ -429,7 +436,7 @@ async def delete_api_key(
 async def activate_api_key(
     request: Request,
     api_key_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:update")),
 ) -> Any:
     """
     Activate an API key.
@@ -466,7 +473,7 @@ async def activate_api_key(
 async def deactivate_api_key(
     request: Request,
     api_key_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("apikey:update")),
 ) -> Any:
     """
     Deactivate an API key.

@@ -129,7 +129,7 @@ class ForkResponse(BaseModel):
 @router.post("", response_model=CreateVersionResponse)
 async def create_version(
     request: CreateVersionRequest,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:update"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Create a new workflow version."""
     manager = get_version_manager()
@@ -159,7 +159,7 @@ async def create_version(
 @router.get("/{workflow_id}/history", response_model=VersionListResponse)
 async def get_version_history(
     workflow_id: str,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:read"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     status: VersionStatus | None = None,
@@ -185,7 +185,7 @@ async def get_version_history(
 async def get_version(
     workflow_id: str,
     version_id: str,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:read"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Get a specific version."""
     manager = get_version_manager()
@@ -206,7 +206,7 @@ async def get_version(
 async def publish_version(
     workflow_id: str,
     version_id: str,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:publish"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Publish a version."""
     manager = get_version_manager()
@@ -237,7 +237,7 @@ async def publish_version(
 async def archive_version(
     workflow_id: str,
     version_id: str,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:update"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Archive a version."""
     manager = get_version_manager()
@@ -267,7 +267,7 @@ async def archive_version(
 @router.get("/{workflow_id}/diff", response_model=VersionDiffResponse)
 async def get_version_diff(
     workflow_id: str,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:read"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
     from_version: str = Query(..., description="Source version ID"),
     to_version: str = Query(..., description="Target version ID"),
 ):
@@ -303,7 +303,7 @@ async def get_version_diff(
 async def rollback_version(
     workflow_id: str,
     request: RollbackRequest,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:update"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Rollback to a previous version."""
     manager = get_version_manager()
@@ -335,7 +335,7 @@ async def rollback_version(
 async def fork_workflow(
     workflow_id: str,
     request: ForkRequest,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:update"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Fork a workflow to create a new one."""
     manager = get_version_manager()
@@ -366,7 +366,7 @@ async def fork_workflow(
 @router.get("/{workflow_id}/stats")
 async def get_version_stats(
     workflow_id: str,
-    current_user: Annotated[User, Depends(deps.PermissionChecker("workflow:read"))],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ):
     """Get version statistics for a workflow."""
     manager = get_version_manager()

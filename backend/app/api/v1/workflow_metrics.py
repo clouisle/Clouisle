@@ -130,7 +130,7 @@ async def get_dashboard_summary(
 async def get_workflow_metrics(
     workflow_id: UUID,
     time_range_minutes: int = Query(default=60, ge=1, le=1440),
-    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """
     Get detailed metrics for a specific workflow.

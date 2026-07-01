@@ -160,9 +160,10 @@ export default function KnowledgeBasePage() {
     fetchKnowledgeBases()
   }
 
-  const isTeamAdmin = user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin'
-  const canEditKb = (kb: KnowledgeBase) => isTeamAdmin || kb.created_by?.id === user?.id
-  const canExportKb = (kb: KnowledgeBase) => kb.created_by?.id === user?.id
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const isKbOwner = (kb: KnowledgeBase) => Boolean(user?.id && kb.created_by?.id === user.id)
+  const canEditKb = (kb: KnowledgeBase) => isTeamAdmin || isKbOwner(kb)
+  const canExportKb = (kb: KnowledgeBase) => isTeamAdmin || isKbOwner(kb)
   const canDeleteKb = () => isTeamAdmin
 
   // 过滤知识库

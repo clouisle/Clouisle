@@ -392,7 +392,9 @@ async def remove_team_member(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Remove a member from the team."""
-    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
+    is_self = str(user_id) == str(current_user.id)
+    if not is_self:
+        await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -423,7 +425,6 @@ async def remove_team_member(
             msg_key="cannot_remove_owner",
         )
 
-    is_self = str(target_user.id) == str(current_user.id)
     if not is_self and not current_user.is_superuser:
         current_membership = await TeamMember.filter(
             team=team, user=current_user

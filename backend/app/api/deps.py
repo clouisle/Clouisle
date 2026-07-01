@@ -285,7 +285,9 @@ async def check_scoped_permission(
 ) -> None:
     if user.is_superuser:
         return
-    if user_has_global_permission(user, required_permission):
+    if required_permission.startswith("admin:") and user_has_global_permission(
+        user, required_permission
+    ):
         return
     if not required_permission.startswith(
         "admin:"

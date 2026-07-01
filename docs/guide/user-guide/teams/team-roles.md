@@ -30,32 +30,53 @@ Viewer (lowest permissions)
 
 ### Role Comparison
 
+### Team Management
+
 | Permission | Owner | Admin | Member | Viewer |
 |------------|-------|-------|--------|--------|
-| **Team Management** |
 | Delete team | ✅ | ❌ | ❌ | ❌ |
 | Update team settings | ✅ | ✅ | ❌ | ❌ |
 | Transfer ownership | ✅ | ❌ | ❌ | ❌ |
-| **Member Management** |
+
+### Member Management
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Invite members | ✅ | ✅ | ❌ | ❌ |
 | Remove members | ✅ | ✅ | ❌ | ❌ |
 | Change member roles | ✅ | ❌ | ❌ | ❌ |
-| **Agents** |
+
+### Agents
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create agents | ✅ | ✅ | ✅ | ❌ |
 | Save team agents | ✅ | ✅ | ✅ | ❌ |
 | Delete agents | ✅ | ✅ | ❌ | ❌ |
 | Chat with agents | ✅ | ✅ | ✅ | ✅ |
-| **Workflows** |
+
+### Workflows
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create workflows | ✅ | ✅ | ✅ | ❌ |
 | Save team workflows | ✅ | ✅ | ✅ | ❌ |
 | Delete workflows | ✅ | ✅ | ❌ | ❌ |
 | Run workflows | ✅ | ✅ | ✅ | ✅ |
-| **Tools & Skills** |
+
+### Tools & Skills
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create/edit/delete tools | ✅ | ✅ | ❌ | ❌ |
 | Create/edit/delete skills | ✅ | ✅ | ❌ | ❌ |
 | Execute approved tools | ✅ | ✅ | ✅ | ✅ |
 | Execute approved skills | ✅ | ✅ | ✅ | ✅ |
-| **Knowledge Bases** |
+
+### Knowledge Bases
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create knowledge bases | ✅ | ✅ | ✅ | ❌ |
 | Upload documents | ✅ | ✅ | ✅ | ❌ |
 | Update own documents | ✅ | ✅ | ✅ | ❌ |
@@ -63,13 +84,21 @@ Viewer (lowest permissions)
 | Delete own documents | ✅ | ✅ | ✅ | ❌ |
 | Delete others' documents | ✅ | ✅ | ❌ | ❌ |
 | Search documents | ✅ | ✅ | ✅ | ✅ |
-| **API Keys** |
+
+### API Keys
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | Create API keys | ✅ | ✅ | ✅ | ❌ |
 | View own API keys | ✅ | ✅ | ✅ | ❌ |
 | View all API keys | ✅ | ✅ | ❌ | ❌ |
 | Revoke own API keys | ✅ | ✅ | ✅ | ❌ |
 | Revoke others' API keys | ✅ | ✅ | ❌ | ❌ |
-| **Audit & Analytics** |
+
+### Audit & Analytics
+
+| Permission | Owner | Admin | Member | Viewer |
+|------------|-------|-------|--------|--------|
 | View team analytics | ✅ | ✅ | ❌ | ❌ |
 | View audit logs | ✅ | ✅ | ❌ | ❌ |
 | Export data | ✅ | ✅ | ❌ | ❌ |

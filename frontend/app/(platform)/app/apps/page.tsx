@@ -286,12 +286,14 @@ export default function AppsPage() {
   }
 
   const expectedImportType: ClouisleResourceType | undefined = activeTab === 'agent' || activeTab === 'workflow' ? activeTab : undefined
-  const isTeamAdmin = user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin'
-  const canCreateApp = canPerform(['agent:create', 'workflow:create'])
-  const canEditApp = (app: AppItem) => isTeamAdmin || app.created_by_id === user?.id
-  const canDuplicateApp = (app: AppItem) =>
-    app.type === 'agent' ? canPerform('agent:create') : canPerform('workflow:create')
-  const canExportApp = (app: AppItem) => app.created_by_id === user?.id
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const canCreateAgent = isTeamAdmin || canPerform('agent:create')
+  const canCreateWorkflow = isTeamAdmin || canPerform('workflow:create')
+  const canCreateApp = canCreateAgent || canCreateWorkflow
+  const isAppOwner = (app: AppItem) => Boolean(user?.id && app.created_by_id === user.id)
+  const canEditApp = (app: AppItem) => isTeamAdmin || isAppOwner(app)
+  const canDuplicateApp = (app: AppItem) => app.type === 'agent' ? canCreateAgent : canCreateWorkflow
+  const canExportApp = (app: AppItem) => isTeamAdmin || isAppOwner(app)
   const canPublishApp = () => isTeamAdmin
   const canDeleteApp = () => isTeamAdmin
 

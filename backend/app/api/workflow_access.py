@@ -31,10 +31,11 @@ async def check_workflow_access(
     if workflow.visibility == WorkflowVisibility.PRIVATE:
         if is_owner:
             return workflow
+        if require_write:
+            await check_team_access(workflow.team.id, user, require_admin=True)
+            return workflow
         if not workflow.created_by:
             await check_team_access(workflow.team.id, user)
-            if require_write:
-                await check_team_access(workflow.team.id, user, require_admin=True)
             return workflow
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,

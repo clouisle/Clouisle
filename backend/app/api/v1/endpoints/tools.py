@@ -748,7 +748,7 @@ async def update_tool(
     tool_id: UUID,
     tool_in: ToolUpdateInput,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("tool:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """更新工具"""
     tool = await Tool.filter(id=tool_id).prefetch_related("created_by").first()
@@ -821,7 +821,7 @@ async def update_tool(
 async def delete_tool(
     tool_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("tool:delete")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """删除工具"""
     tool = await Tool.filter(id=tool_id).first()
@@ -1143,7 +1143,7 @@ async def execute_code_directly(
 async def toggle_tool(
     tool_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("tool:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """切换工具启用状态"""
     tool = await Tool.filter(id=tool_id).prefetch_related("created_by").first()
@@ -1336,7 +1336,7 @@ async def create_tool_config(
     data: dict,
     request: Request,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.PermissionChecker("tool:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     创建工具配置
@@ -1399,7 +1399,7 @@ async def update_tool_config(
     data: dict,
     request: Request,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.PermissionChecker("tool:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     更新工具配置
@@ -1455,7 +1455,7 @@ async def delete_tool_config(
     tool_name: str,
     request: Request,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.PermissionChecker("tool:delete")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     删除工具配置
@@ -1510,7 +1510,7 @@ async def share_tool(
     tool_id: UUID,
     share_data: ToolShareInput,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("tool:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     共享工具给其他团队
@@ -1660,7 +1660,7 @@ async def unshare_tool(
     tool_id: UUID,
     team_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("tool:update")),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
     取消工具共享

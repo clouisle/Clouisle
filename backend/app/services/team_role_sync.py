@@ -34,6 +34,7 @@ async def sync_scoped_role_assignment(membership: TeamMember) -> None:
         user=membership.user,
         scope_type="team",
         scope_id=membership.team.id,
+        source="system",
     ).delete()
     await ScopedRoleAssignment.get_or_create(
         user=membership.user,
@@ -120,6 +121,7 @@ async def sync_user_role_from_teams(user: User) -> None:
         ScopedRoleAssignment.filter(
             user=user,
             scope_type="team",
+            source="system",
         )
         .exclude(scope_id__in=active_team_ids)
         .delete()

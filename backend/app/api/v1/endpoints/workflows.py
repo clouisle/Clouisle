@@ -842,7 +842,9 @@ async def duplicate_workflow(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Duplicate a workflow."""
-    workflow = await check_workflow_access(workflow_id, current_user)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
     await deps.check_scoped_permission(
         current_user, "workflow:create", "team", workflow.team_id
     )
@@ -1565,7 +1567,9 @@ async def create_workflow_version(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Manually create a version snapshot of the current workflow state."""
-    workflow = await check_workflow_access(workflow_id, current_user)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
     await deps.check_scoped_permission(
         current_user, "workflow:update", "team", workflow.team_id
     )
@@ -1611,7 +1615,9 @@ async def restore_workflow_version(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Restore a workflow to a specific version."""
-    workflow = await check_workflow_access(workflow_id, current_user)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
     await deps.check_scoped_permission(
         current_user, "workflow:update", "team", workflow.team_id
     )

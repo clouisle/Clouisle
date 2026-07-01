@@ -70,6 +70,7 @@ import {
 import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition } from '@/lib/api/workflows'
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
+import { useTeam } from '@/contexts/team-context'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 // Custom Node Types
@@ -247,6 +248,7 @@ export function WorkflowEditorContent({
   const t = useTranslations('workflow')
   const tCommon = useTranslations('common')
   const { canPerform } = useCanPerform()
+  const { currentTeam } = useTeam()
 
   // Workflow definitions earlier than schema_version 2 predate the typed-
   // variable refactor (see docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md).
@@ -278,10 +280,16 @@ export function WorkflowEditorContent({
   const [validationIssues, setValidationIssues] = React.useState<ValidationIssue[]>([])
   const [showEmbed, setShowEmbed] = React.useState(false)
 
-  const canUpdateWorkflow = Boolean(
-    workflow && (currentUser?.is_superuser || canPerform(updatePermission) || workflow.created_by_id === currentUser?.id)
+  const isWorkflowOwner = Boolean(currentUser?.id && workflow?.created_by_id === currentUser.id)
+  const isWorkflowTeamAdmin = Boolean(
+    workflow && currentTeam?.id === workflow.team_id && (currentTeam.role === 'owner' || currentTeam.role === 'admin')
   )
-  const canPublishWorkflow = canPerform('workflow:publish')
+  const canUpdateWorkflow = Boolean(
+    workflow && (currentUser?.is_superuser || canPerform(updatePermission) || isWorkflowTeamAdmin || isWorkflowOwner)
+  )
+  const canPublishWorkflow = Boolean(
+    workflow && (currentUser?.is_superuser || canPerform('workflow:publish') || isWorkflowTeamAdmin || isWorkflowOwner)
+  )
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()
@@ -1507,7 +1515,7 @@ export function WorkflowEditorContent({
                   {tCommon('save')}
                 </Button>
               )}
-              {canPublishWorkflow && (
+              {canPublishWorkflow && (!hasChanges || canUpdateWorkflow) && (
                 <Button
                   variant={workflow?.status === 'published' ? 'default' : 'outline'}
                   size="sm"

@@ -289,7 +289,7 @@ export default function PlatformHomePage() {
     },
   } satisfies ChartConfig
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
-  const { user } = usePermissions()
+  const { user, loading: permissionsLoading } = usePermissions()
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const [stats, setStats] = React.useState<StatsData>({
     knowledgeBases: 0,
@@ -330,7 +330,7 @@ export default function PlatformHomePage() {
 
   // 加载统计数据和最近项目
   const fetchData = React.useCallback(async () => {
-    if (!currentTeam) return
+    if (!currentTeam || permissionsLoading) return
 
     try {
       setIsLoading(true)
@@ -387,7 +387,13 @@ export default function PlatformHomePage() {
       } else {
         setUsageUserKeys([])
         setUsageUserNames({})
-        setUsageTrendData(trendsResponse.data)
+        const trendData = trendsResponse.data.map((item) => ({
+          date: item.date,
+          conversations: item.conversations,
+          messages: item.messages,
+          tokens: item.tokens,
+        }))
+        setUsageTrendData(trendData)
       }
 
       // 合并最近的 agents 和 workflows
@@ -416,7 +422,7 @@ export default function PlatformHomePage() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentTeam, isTeamAdmin])
+  }, [currentTeam, isTeamAdmin, permissionsLoading])
 
   React.useEffect(() => {
     if (currentTeam) {
