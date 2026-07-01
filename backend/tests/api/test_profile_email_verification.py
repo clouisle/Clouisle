@@ -1,6 +1,8 @@
+from fastapi import BackgroundTasks
 import pytest
 from starlette.requests import Request
 
+from app.api.v1.endpoints import login as login_endpoints
 from app.api.v1.endpoints import users as user_endpoints
 from app.schemas.response import BusinessError, ResponseCode
 
@@ -192,3 +194,31 @@ async def test_profile_email_change_stays_verified_when_verification_disabled(
     )
 
     assert result["data"] == {"email": "new@example.com", "email_verified": True}
+
+
+@pytest.mark.asyncio
+async def test_profile_email_send_verification_respects_backend_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_value(key: str, default: object = None) -> object:
+        return {"smtp_enabled": True}.get(key, default)
+
+    async def fake_check_email_cooldown(_email: str, _purpose: str) -> tuple[bool, int]:
+        return False, 42
+
+    monkeypatch.setattr(login_endpoints.SiteSetting, "get_value", fake_get_value)
+    monkeypatch.setattr(
+        login_endpoints, "check_email_cooldown", fake_check_email_cooldown
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await login_endpoints.send_verification(
+            data=login_endpoints.SendVerificationRequest(
+                email="new@example.com",
+                purpose="profile_email",
+            ),
+            background_tasks=BackgroundTasks(),
+        )
+
+    assert exc_info.value.code == ResponseCode.EMAIL_SEND_TOO_FREQUENT
+    assert exc_info.value.data == {"remaining_seconds": 42}

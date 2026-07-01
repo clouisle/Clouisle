@@ -69,6 +69,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [savingProfile, setSavingProfile] = React.useState(false)
   const [emailVerificationCode, setEmailVerificationCode] = React.useState('')
   const [emailVerificationSent, setEmailVerificationSent] = React.useState(false)
+  const [emailVerificationCooldown, setEmailVerificationCooldown] = React.useState(0)
   const [sendingProfileVerification, setSendingProfileVerification] = React.useState(false)
   const [profileData, setProfileData] = React.useState({
     username: '',
@@ -181,14 +182,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const requiresEmailVerification =
     emailChanged && siteSettings?.email_verification === true
 
+  React.useEffect(() => {
+    if (emailVerificationCooldown <= 0) return
+
+    const timer = setTimeout(() => setEmailVerificationCooldown(emailVerificationCooldown - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [emailVerificationCooldown])
+
   const handleSendEmailVerification = async () => {
-    if (!emailChanged) return
+    if (!emailChanged || emailVerificationCooldown > 0) return
 
     try {
       setSendingProfileVerification(true)
       await authApi.sendVerification(profileData.email, 'profile_email')
       setEmailVerificationSent(true)
+      setEmailVerificationCooldown(60)
       toast.success(t('emailVerificationSent'))
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 5008) {
+        const remaining = (error.data as { remaining_seconds?: number } | undefined)?.remaining_seconds
+        setEmailVerificationSent(true)
+        setEmailVerificationCooldown(remaining ?? 60)
+      }
     } finally {
       setSendingProfileVerification(false)
     }
@@ -241,6 +256,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setUser(updatedUser)
       setEmailVerificationCode('')
       setEmailVerificationSent(false)
+      setEmailVerificationCooldown(0)
       toast.success(t('profileUpdated'))
     } catch (error) {
       const errors = normalizeValidationErrors(error)
@@ -533,6 +549,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     setProfileData((prev) => ({ ...prev, email: e.target.value }))
                     setEmailVerificationCode('')
                     setEmailVerificationSent(false)
+                    setEmailVerificationCooldown(0)
                     setProfileErrors((prev) => clearValidationError(prev, 'email'))
                     setProfileErrors((prev) => clearValidationError(prev, 'email_verification_code'))
                   }}
@@ -552,10 +569,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         variant="outline"
                         size="sm"
                         onClick={handleSendEmailVerification}
-                        disabled={sendingProfileVerification}
+                        disabled={sendingProfileVerification || emailVerificationCooldown > 0}
                       >
                         {sendingProfileVerification && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {emailVerificationSent ? t('resendEmailVerification') : t('sendEmailVerification')}
+                        {emailVerificationCooldown > 0
+                          ? tAuth('resendIn', { seconds: emailVerificationCooldown })
+                          : emailVerificationSent
+                            ? t('resendEmailVerification')
+                            : t('sendEmailVerification')}
                       </Button>
                     </div>
                     {!emailVerificationSent && (
@@ -565,6 +586,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       <div className="space-y-2">
                         <InputOTP
                           maxLength={6}
+                          autoComplete="one-time-code"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={emailVerificationCode}
                           onChange={(value) => {
                             setEmailVerificationCode(value)
