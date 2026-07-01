@@ -6,6 +6,7 @@ from pydantic import EmailStr
 
 from app.api import deps
 from app.core import security
+from app.core.email import verify_code
 from app.core.i18n import t
 from app.core.password import validate_password, translate_password_validation_errors
 from app.models.user import User
@@ -108,6 +109,7 @@ async def read_user_me(
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
+    email_verification_code: Optional[str] = None
     avatar_url: Optional[str] = None
     locale: Optional[str] = None
 
@@ -123,6 +125,7 @@ async def update_user_me(
     Update current user profile.
     """
     update_data = data.model_dump(exclude_unset=True)
+    email_verification_code = update_data.pop("email_verification_code", None)
 
     if "username" in update_data and update_data["username"] != current_user.username:
         existing = await User.filter(username=update_data["username"]).first()
@@ -139,7 +142,17 @@ async def update_user_me(
                 code=ResponseCode.EMAIL_EXISTS,
                 msg_key="user_with_email_exists",
             )
-        update_data["email_verified"] = False
+
+        email_verification = await SiteSetting.get_value("email_verification", True)
+        if email_verification:
+            if not email_verification_code or not await verify_code(
+                update_data["email"], email_verification_code, "profile_email"
+            ):
+                raise BusinessError(
+                    code=ResponseCode.VERIFICATION_CODE_INVALID,
+                    msg_key="verification_code_invalid",
+                )
+        update_data["email_verified"] = True
 
     await current_user.update_from_dict(update_data)
     await current_user.save()

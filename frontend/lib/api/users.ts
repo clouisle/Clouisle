@@ -35,6 +35,7 @@ export interface UserUpdateData {
 export interface UpdateProfileData {
   username?: string
   email?: string
+  email_verification_code?: string
   avatar_url?: string | null
   password?: string
   locale?: string

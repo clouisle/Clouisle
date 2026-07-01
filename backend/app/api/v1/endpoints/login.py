@@ -902,7 +902,7 @@ async def send_verification(
             data={"remaining_seconds": remaining},
         )
 
-    # Check if email exists (for register purpose, email should belong to a user)
+    # Check if email exists for register purpose
     user = await User.filter(email=data.email).first()
     if data.purpose == "register":
         if not user:
