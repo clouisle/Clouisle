@@ -67,6 +67,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   // Profile form
   const [savingProfile, setSavingProfile] = React.useState(false)
+  const [sendingProfileVerification, setSendingProfileVerification] = React.useState(false)
   const [profileData, setProfileData] = React.useState({
     username: '',
     email: '',
@@ -202,9 +203,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         return
       }
 
+      const emailChanged = profileData.email !== user.email
       const updatedUser = await usersApi.updateProfile(updateData, { silent: true })
       setUser(updatedUser)
-      toast.success(t('profileUpdated'))
+      toast.success(
+        emailChanged && !updatedUser.email_verified
+          ? t('profileUpdatedVerifyEmail')
+          : t('profileUpdated')
+      )
     } catch (error) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
@@ -218,6 +224,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       }
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  const handleResendProfileVerification = async () => {
+    if (!user) return
+
+    try {
+      setSendingProfileVerification(true)
+      await authApi.sendVerification(user.email, 'profile_email')
+      toast.success(t('verificationEmailSent'))
+    } finally {
+      setSendingProfileVerification(false)
     }
   }
 
@@ -498,6 +516,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   aria-invalid={!!profileErrors.email}
                 />
                 <FieldError>{profileErrors.email}</FieldError>
+                {user && !user.email_verified && (
+                  <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                    <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                    <AlertDescription className="flex items-center justify-between gap-3 text-yellow-800 dark:text-yellow-200">
+                      <span>{t('emailNotVerified')}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResendProfileVerification}
+                        disabled={sendingProfileVerification}
+                      >
+                        {sendingProfileVerification && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {t('resendVerificationEmail')}
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
 
               <div className="flex justify-end">

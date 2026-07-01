@@ -1,11 +1,17 @@
 from typing import Any, Optional, cast
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from pydantic import EmailStr
 
 from app.api import deps
 from app.core import security
+from app.core.email import (
+    check_email_cooldown,
+    generate_verification_code,
+    send_verification_email,
+    set_email_cooldown,
+)
 from app.core.i18n import t
 from app.core.password import validate_password, translate_password_validation_errors
 from app.models.user import User
@@ -116,6 +122,7 @@ class UpdateProfileRequest(BaseModel):
 async def update_user_me(
     *,
     request: Request,
+    background_tasks: BackgroundTasks,
     data: UpdateProfileRequest,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -139,7 +146,39 @@ async def update_user_me(
                 code=ResponseCode.EMAIL_EXISTS,
                 msg_key="user_with_email_exists",
             )
-        update_data["email_verified"] = False
+
+        email_verification = await SiteSetting.get_value("email_verification", True)
+        update_data["email_verified"] = not email_verification
+        if email_verification:
+            smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
+            if not smtp_enabled:
+                raise BusinessError(
+                    code=ResponseCode.EMAIL_SEND_FAILED,
+                    msg_key="smtp_not_configured",
+                )
+
+            can_send, remaining = await check_email_cooldown(
+                update_data["email"], "profile_email"
+            )
+            if not can_send:
+                raise BusinessError(
+                    code=ResponseCode.EMAIL_SEND_TOO_FREQUENT,
+                    msg_key="email_send_too_frequent",
+                    data={"remaining_seconds": remaining},
+                )
+
+            code, token = await generate_verification_code(
+                update_data["email"], "profile_email"
+            )
+            await set_email_cooldown(update_data["email"], "profile_email", 60)
+            background_tasks.add_task(
+                send_verification_email,
+                update_data["email"],
+                code,
+                token,
+                "profile_email",
+                getattr(current_user, "locale", None),
+            )
 
     await current_user.update_from_dict(update_data)
     await current_user.save()

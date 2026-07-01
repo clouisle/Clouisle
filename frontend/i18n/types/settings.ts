@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.038Z
+// GENERATED — 2026-07-01T17:13:43.071Z
 // Source: i18n/en/settings.json
 export type SettingsMessages = {
   settings: {
@@ -23,6 +23,10 @@ export type SettingsMessages = {
     avatarHint: string
     saveChanges: string
     profileUpdated: string
+    profileUpdatedVerifyEmail: string
+    emailNotVerified: string
+    resendVerificationEmail: string
+    verificationEmailSent: string
     noChanges: string
     changePassword: string
     changePasswordDescription: string
