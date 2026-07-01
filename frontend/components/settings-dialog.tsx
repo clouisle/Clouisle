@@ -223,7 +223,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
     if (updateData.email !== undefined && requiresEmailVerification) {
       if (!emailVerificationSent) {
-        setProfileErrors({ email_verification_code: t('emailVerificationRequired') })
+        const message = t('emailVerificationRequired')
+        setProfileErrors({ email_verification_code: message })
+        toast.warning(message)
         return
       }
       if (emailVerificationCode.length !== 6) {
@@ -556,6 +558,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         {emailVerificationSent ? t('resendEmailVerification') : t('sendEmailVerification')}
                       </Button>
                     </div>
+                    {!emailVerificationSent && (
+                      <FieldError>{profileErrors.email_verification_code}</FieldError>
+                    )}
                     {emailVerificationSent && (
                       <div className="space-y-2">
                         <InputOTP
