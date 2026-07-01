@@ -36,7 +36,9 @@ async def test_find_or_create_user_assigns_default_team_to_email_matched_user(
 
     monkeypatch.setattr(sso_service.SiteSetting, "get_value", get_value)
     monkeypatch.setattr(sso_service.User, "filter", UserModel.filter)
-    monkeypatch.setattr(sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery())
+    monkeypatch.setattr(
+        sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery()
+    )
     monkeypatch.setattr(sso_service.UserSSOConnection, "create", AsyncMock())
     monkeypatch.setattr(team_role_sync, "assign_default_team", assign_default_team)
 
@@ -68,7 +70,9 @@ async def test_find_or_create_user_assigns_default_team_to_new_user(
         return values.get(key, default)
 
     class UserQuery:
-        def __init__(self, first_value: object = None, exists_value: bool = False) -> None:
+        def __init__(
+            self, first_value: object = None, exists_value: bool = False
+        ) -> None:
             self.first_value = first_value
             self.exists_value = exists_value
 
@@ -90,7 +94,9 @@ async def test_find_or_create_user_assigns_default_team_to_new_user(
     monkeypatch.setattr(sso_service.SiteSetting, "get_value", get_value)
     monkeypatch.setattr(sso_service.User, "filter", UserModel.filter)
     monkeypatch.setattr(sso_service.User, "create", UserModel.create)
-    monkeypatch.setattr(sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery())
+    monkeypatch.setattr(
+        sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery()
+    )
     monkeypatch.setattr(sso_service.UserSSOConnection, "create", AsyncMock())
     monkeypatch.setattr(team_role_sync, "assign_default_role", AsyncMock())
     monkeypatch.setattr(team_role_sync, "assign_default_team", assign_default_team)
