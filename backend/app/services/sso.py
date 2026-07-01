@@ -86,6 +86,10 @@ class SSOService:
 
         if existing_user:
             # Link existing user to SSO provider
+            from app.services.team_role_sync import assign_default_team
+
+            await assign_default_team(existing_user)
+
             await UserSSOConnection.create(
                 user=existing_user,
                 provider=provider,
@@ -153,6 +157,10 @@ class SSOService:
             from app.services.team_role_sync import assign_default_role
 
             await assign_default_role(new_user)
+
+        from app.services.team_role_sync import assign_default_team
+
+        await assign_default_team(new_user)
 
         # Create SSO connection
         await UserSSOConnection.create(

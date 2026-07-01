@@ -38,12 +38,18 @@ async def test_assign_default_team_creates_membership(monkeypatch):
         async def first(self):
             return team
 
+    membership = SimpleNamespace(role="viewer")
+    sync_scoped_role_assignment = AsyncMock()
+
     monkeypatch.setattr(team_role_sync.SiteSetting, "get_value", get_value)
     monkeypatch.setattr(team_role_sync.Team, "filter", lambda **kwargs: TeamQuery())
     monkeypatch.setattr(
+        team_role_sync, "sync_scoped_role_assignment", sync_scoped_role_assignment
+    )
+    monkeypatch.setattr(
         team_role_sync.TeamMember,
         "get_or_create",
-        AsyncMock(return_value=(SimpleNamespace(role="viewer"), True)),
+        AsyncMock(return_value=(membership, True)),
     )
 
     assigned = await team_role_sync.assign_default_team(user)
@@ -54,6 +60,7 @@ async def test_assign_default_team_creates_membership(monkeypatch):
         user=user,
         defaults={"role": "viewer"},
     )
+    sync_scoped_role_assignment.assert_awaited_once_with(membership)
 
 
 @pytest.mark.asyncio
@@ -73,12 +80,18 @@ async def test_assign_default_team_falls_back_invalid_role(monkeypatch):
         async def first(self):
             return team
 
+    membership = SimpleNamespace(role="member")
+    sync_scoped_role_assignment = AsyncMock()
+
     monkeypatch.setattr(team_role_sync.SiteSetting, "get_value", get_value)
     monkeypatch.setattr(team_role_sync.Team, "filter", lambda **kwargs: TeamQuery())
     monkeypatch.setattr(
+        team_role_sync, "sync_scoped_role_assignment", sync_scoped_role_assignment
+    )
+    monkeypatch.setattr(
         team_role_sync.TeamMember,
         "get_or_create",
-        AsyncMock(return_value=(SimpleNamespace(role="member"), True)),
+        AsyncMock(return_value=(membership, True)),
     )
 
     assigned = await team_role_sync.assign_default_team(user)
@@ -89,6 +102,7 @@ async def test_assign_default_team_falls_back_invalid_role(monkeypatch):
         user=user,
         defaults={"role": "member"},
     )
+    sync_scoped_role_assignment.assert_awaited_once_with(membership)
 
 
 @pytest.mark.asyncio
