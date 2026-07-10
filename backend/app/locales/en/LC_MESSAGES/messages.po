@@ -1011,6 +1011,21 @@ msgstr "Hello,"
 msgid "email_or_enter_code"
 msgstr "Or enter the verification code manually:"
 
+msgid "email_profile_email_confirm_button"
+msgstr "Confirm New Email"
+
+msgid "email_profile_email_heading"
+msgstr "Confirm Your New Email"
+
+msgid "email_profile_email_ignore_notice"
+msgstr "If you did not request this email change, please ignore this email. Your current email will remain unchanged."
+
+msgid "email_profile_email_intro"
+msgstr "You are updating the email for your {site_name} account. Please confirm the new email."
+
+msgid "email_profile_email_subject"
+msgstr "【{site_name}】Confirm Your New Email"
+
 msgid "email_reset_button"
 msgstr "Reset Password"
 

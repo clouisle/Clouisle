@@ -1041,6 +1041,21 @@ msgstr "您正在注册 {site_name}，请完成邮箱验证。"
 msgid "email_verification_subject"
 msgstr "【{site_name}】邮箱验证"
 
+msgid "email_profile_email_confirm_button"
+msgstr "确认新邮箱"
+
+msgid "email_profile_email_heading"
+msgstr "确认您的新邮箱"
+
+msgid "email_profile_email_ignore_notice"
+msgstr "如非本人发起的邮箱变更，请忽略此邮件，您的当前邮箱将保持不变。"
+
+msgid "email_profile_email_intro"
+msgstr "您正在更新 {site_name} 账户的邮箱，请确认新邮箱。"
+
+msgid "email_profile_email_subject"
+msgstr "【{site_name}】确认新邮箱"
+
 msgid "email_verify_button"
 msgstr "验证邮箱"
 

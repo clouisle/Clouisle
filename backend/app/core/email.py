@@ -244,6 +244,18 @@ async def send_verification_email(
             locale=locale,
         )
 
+    elif purpose == "profile_email":
+        subject = t("email_profile_email_subject", lang=locale, site_name=site_name)
+        body_text, body_html = render_verification_email(
+            site_name,
+            code,
+            None,
+            locale=locale,
+            heading_key="email_profile_email_heading",
+            intro_key="email_profile_email_intro",
+            ignore_notice_key="email_profile_email_ignore_notice",
+        )
+
     elif purpose == "reset_password":
         subject = t("email_reset_password_subject", lang=locale, site_name=site_name)
         verify_url = f"{site_url}/reset-password?token={token}" if site_url else None
