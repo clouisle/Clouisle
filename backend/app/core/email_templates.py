@@ -24,6 +24,11 @@ def render_verification_email(
     verify_url: str | None,
     *,
     locale: str,
+    heading_key: str = "email_verification_heading",
+    intro_key: str = "email_verification_intro",
+    ignore_notice_key: str = "email_verification_ignore_notice",
+    button_key: str = "email_verify_button",
+    link_text_key: str = "email_verify_link_text",
 ) -> tuple[str, str]:
     """
     渲染注册验证邮件
@@ -33,13 +38,13 @@ def render_verification_email(
     """
     if verify_url:
         text_section = t(
-            "email_verify_link_text",
+            link_text_key,
             lang=locale,
             verify_url=verify_url,
         )
         html_section = (
             '    <p style="text-align: center; margin: 20px 0;">\n'
-            f'        <a href="{verify_url}" style="display: inline-block; background: #0066ff; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px;">{t("email_verify_button", lang=locale)}</a>\n'
+            f'        <a href="{verify_url}" style="display: inline-block; background: #0066ff; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px;">{t(button_key, lang=locale)}</a>\n'
             "    </p>\n"
             f'    <p style="color: #888; font-size: 13px; text-align: center;">{t("email_or_enter_code", lang=locale)}</p>\n'
             '    <div style="background: #f5f5f5; padding: 16px; text-align: center; margin: 12px 0; border-radius: 8px;">\n'
@@ -61,16 +66,16 @@ def render_verification_email(
         site_name=site_name,
         code=code,
         verify_section=text_section,
-        email_verification_heading=t("email_verification_heading", lang=locale),
+        email_verification_heading=t(heading_key, lang=locale),
         email_greeting=t("email_greeting", lang=locale),
         email_verification_intro=t(
-            "email_verification_intro",
+            intro_key,
             lang=locale,
             site_name=site_name,
         ),
         email_code_validity=t("email_code_validity", lang=locale),
         email_verification_ignore_notice=t(
-            "email_verification_ignore_notice",
+            ignore_notice_key,
             lang=locale,
         ),
     )
@@ -78,16 +83,16 @@ def render_verification_email(
         site_name=site_name,
         code=code,
         verify_section=html_section,
-        email_verification_heading=t("email_verification_heading", lang=locale),
+        email_verification_heading=t(heading_key, lang=locale),
         email_greeting=t("email_greeting", lang=locale),
         email_verification_intro=t(
-            "email_verification_intro",
+            intro_key,
             lang=locale,
             site_name=site_name,
         ),
         email_code_validity=t("email_code_validity", lang=locale),
         email_verification_ignore_notice=t(
-            "email_verification_ignore_notice",
+            ignore_notice_key,
             lang=locale,
         ),
     )

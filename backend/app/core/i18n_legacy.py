@@ -834,6 +834,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Or enter the verification code manually:",
         "zh": "或手动输入验证码：",
     },
+    "email_profile_email_confirm_button": {
+        "en": "Confirm New Email",
+        "zh": "确认新邮箱",
+    },
+    "email_profile_email_heading": {
+        "en": "Confirm Your New Email",
+        "zh": "确认您的新邮箱",
+    },
+    "email_profile_email_ignore_notice": {
+        "en": "If you did not request this email change, please ignore this email. Your current email will remain unchanged.",
+        "zh": "如非本人发起的邮箱变更，请忽略此邮件，您的当前邮箱将保持不变。",
+    },
+    "email_profile_email_intro": {
+        "en": "You are updating the email for your {site_name} account. Please confirm the new email.",
+        "zh": "您正在更新 {site_name} 账户的邮箱，请确认新邮箱。",
+    },
+    "email_profile_email_subject": {
+        "en": "【{site_name}】Confirm Your New Email",
+        "zh": "【{site_name}】确认新邮箱",
+    },
     "email_queued": {
         "en": "Emails have been queued for sending",
         "zh": "邮件已加入发送队列",
