@@ -1,6 +1,7 @@
 export { StartNodeConfig } from './start-node-config'
 export { CodeNodeConfig } from './code-node-config'
 export { LLMNodeConfig, type LLMNodeConfigData, defaultLLMNodeConfig } from './llm-node-config'
+export { MediaGenerationNodeConfig, type MediaGenerationConfig as MediaGenerationNodeConfigType, defaultMediaGenerationConfig } from './media-generation-node-config'
 export { ConditionNodeConfig } from './condition-node-config'
 export { IterationNodeConfig } from './iteration-node-config'
 export { LoopNodeConfig } from './loop-node-config'

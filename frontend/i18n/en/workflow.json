@@ -212,6 +212,7 @@
     },
     "nodeLabels": {
       "llm": "LLM",
+      "media_generation": "Media Generation",
       "condition": "Condition",
       "sub_workflow": "Sub-workflow",
       "agent": "Agent",
@@ -245,6 +246,7 @@
     },
     "nodeDescriptions": {
       "llm": "Call large language model",
+      "media_generation": "Generate images or videos",
       "condition": "IF/ELSE logic branching",
       "question_classifier": "LLM-powered question classification",
       "iteration": "Iterate over array data",
@@ -322,6 +324,8 @@
       "agentNotSelected": "Agent not selected",
       "knowledgeBaseNotSelected": "Knowledge base not selected",
       "queryEmpty": "Query is empty",
+      "promptEmpty": "Prompt cannot be empty",
+      "invalidMediaMode": "Invalid media generation mode",
       "containerNodeNoInput": "Container node has no input connection",
       "nodeNoInput": "Node has no input connection",
       "noOutputNode": "Workflow has no output node"
@@ -526,6 +530,11 @@
       "label": "Agent",
       "notSelected": "No agent selected"
     },
+    "nodesMediaGeneration": {
+      "label": "Media Generation",
+      "imageMode": "Image",
+      "videoMode": "Video"
+    },
     "nodesAnswer": {
       "label": "Output",
       "streaming": "Streaming output",
@@ -698,6 +707,22 @@
       "optional": "Optional",
       "code": "Code",
       "variableNamePlaceholder": "Variable name"
+    },
+    "configMediaGeneration": {
+      "mode": "Mode",
+      "imageMode": "Image",
+      "videoMode": "Video",
+      "prompt": "Prompt",
+      "promptPlaceholder": "Describe what to generate...\nType '{{' to trigger variable completion",
+      "referenceImage": "Reference image",
+      "startImage": "Start image",
+      "selectImageVariable": "Select image variable",
+      "noImageVariables": "No image variables available. Please add an Image or File parameter in an upstream node.",
+      "width": "Width",
+      "height": "Height",
+      "numImages": "Images",
+      "duration": "Duration",
+      "aspectRatio": "Aspect ratio"
     },
     "configLlm": {
       "systemPrompt": "System Prompt",

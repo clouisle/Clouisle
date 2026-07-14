@@ -7,6 +7,7 @@ import {
   SkipForward,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getImageAssetUrl, getVideoAssetUrl, isMediaImageToolResult, isMediaVideoToolResult } from '@/lib/utils/tool-result'
 
 // 节点执行追踪数据
 export interface NodeTrace {
@@ -37,6 +38,16 @@ export const nodeStatusConfig: Record<string, { icon: React.ElementType; classNa
   skipped: { icon: SkipForward, className: 'text-gray-400' },
 }
 
+function renderMediaAsset(asset?: { url?: string | null; base64?: string | null; format?: string } | null, kind: 'image' | 'video' = 'image') {
+  const url = kind === 'image' ? getImageAssetUrl(asset) : getVideoAssetUrl(asset)
+  if (!url) return null
+  return kind === 'image' ? (
+    <img src={url} alt="generated media" className="max-h-40 rounded border" />
+  ) : (
+    <video src={url} controls className="max-h-40 rounded border" />
+  )
+}
+
 // 节点输出渲染函数
 export function renderNodeOutput(
   nodeType: string,
@@ -50,6 +61,32 @@ export function renderNodeOutput(
       return (
         <div className="p-2 bg-background rounded text-sm whitespace-pre-wrap max-h-40 overflow-y-auto">
           {text}
+        </div>
+      )
+    }
+  }
+
+  if (nodeType === 'media_generation') {
+    const result = outputs.result || outputs.output
+    if (isMediaImageToolResult(result)) {
+      return (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">{t('runDrawer.result')}</div>
+          <div className="grid gap-2">
+            {result.images.map((item, index) => (
+              <div key={`${index}-${item.image.url || item.image.base64 || ''}`} className="space-y-1">
+                {renderMediaAsset(item.image, 'image')}
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    if (isMediaVideoToolResult(result)) {
+      return (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">{t('runDrawer.result')}</div>
+          {renderMediaAsset(result.video, 'video')}
         </div>
       )
     }

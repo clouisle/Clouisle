@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.api.v1.endpoints.chat_helpers.tool_executor import execute_code_tool
+from app.api.v1.endpoints.chat_helpers.tool_executor import (
+    execute_code_tool,
+    execute_tool_call as execute_helper_tool_call,
+)
 from app.api.v1.endpoints.chat_tools import execute_tool_call
 from app.llm.tools.builtin.media import ToolExecutionResult
 from app.llm.tools.registry import ToolInfo, tool_registry
@@ -230,6 +233,29 @@ class TestChatToolExecutor:
                 tool_registry.register_tool(previous_tool)
 
         assert result == {"current_images": [{"url": "data:image/png;base64,cmVm"}]}
+
+    @pytest.mark.anyio
+    async def test_execute_tool_call_forwards_current_images_to_shared_executor(self):
+        with patch(
+            "app.api.v1.endpoints.chat_tools.execute_tool_call",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as mock_shared_execute:
+            result = await execute_helper_tool_call(
+                "generate_image",
+                {"prompt": "hello"},
+                current_images=[{"url": "data:image/png;base64,cmVm"}],
+            )
+
+        assert result == {"ok": True}
+        mock_shared_execute.assert_awaited_once_with(
+            "generate_image",
+            {"prompt": "hello"},
+            agent=None,
+            tool_timeouts={},
+            user=None,
+            session_id=None,
+            current_images=[{"url": "data:image/png;base64,cmVm"}],
+        )
 
     @pytest.mark.anyio
     async def test_execute_custom_code_tool_passes_session_to_sandbox_runtime(self):

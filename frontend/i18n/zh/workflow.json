@@ -212,6 +212,7 @@
     },
     "nodeLabels": {
       "llm": "LLM",
+      "media_generation": "媒体生成",
       "condition": "条件分支",
       "sub_workflow": "子工作流",
       "agent": "智能体",
@@ -245,6 +246,7 @@
     },
     "nodeDescriptions": {
       "llm": "调用大语言模型",
+      "media_generation": "生成图片或视频",
       "condition": "IF/ELSE 逻辑判断",
       "question_classifier": "LLM 智能分类问题",
       "iteration": "遍历数组数据",
@@ -322,6 +324,8 @@
       "agentNotSelected": "未选择 Agent",
       "knowledgeBaseNotSelected": "未选择知识库",
       "queryEmpty": "查询内容为空",
+      "promptEmpty": "提示词不能为空",
+      "invalidMediaMode": "媒体生成模式无效",
       "containerNodeNoInput": "容器内节点没有输入连接",
       "nodeNoInput": "节点没有输入连接",
       "noOutputNode": "工作流没有输出节点"
@@ -526,6 +530,11 @@
       "label": "智能体",
       "notSelected": "未选择智能体"
     },
+    "nodesMediaGeneration": {
+      "label": "媒体生成",
+      "imageMode": "图片",
+      "videoMode": "视频"
+    },
     "nodesAnswer": {
       "label": "输出",
       "streaming": "流式输出",
@@ -698,6 +707,22 @@
       "optional": "可选",
       "code": "代码",
       "variableNamePlaceholder": "变量名"
+    },
+    "configMediaGeneration": {
+      "mode": "模式",
+      "imageMode": "图片",
+      "videoMode": "视频",
+      "prompt": "提示词",
+      "promptPlaceholder": "描述你想生成的内容...\n输入 '{{' 触发变量补全",
+      "referenceImage": "参考图片",
+      "startImage": "起始图片",
+      "selectImageVariable": "选择图片变量",
+      "noImageVariables": "暂无可用的图片变量。请在上游节点添加图片或文件参数。",
+      "width": "宽度",
+      "height": "高度",
+      "numImages": "图片数量",
+      "duration": "时长",
+      "aspectRatio": "宽高比"
     },
     "configLlm": {
       "systemPrompt": "系统提示词",

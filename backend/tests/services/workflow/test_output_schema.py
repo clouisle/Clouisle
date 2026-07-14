@@ -11,6 +11,9 @@ from app.services.workflow.executor import NodeExecutor
 from app.services.workflow.executors.code import CodeNodeExecutor
 from app.services.workflow.executors.condition import ConditionNodeExecutor
 from app.services.workflow.executors.llm import LLMNodeExecutor
+from app.services.workflow.executors.media_generation import (
+    MediaGenerationNodeExecutor,
+)
 from app.services.workflow.executors.variable import ParameterExtractorNodeExecutor
 from app.services.workflow.types import NodeOutputDecl, TypeSpec
 
@@ -71,6 +74,16 @@ class TestLLMOverride:
             "total_tokens",
         }
         assert all(f.kind == "number" for f in usage.fields.values())
+
+
+class TestMediaGenerationOverride:
+    def test_media_outputs_normalized_result_and_status(self):
+        decls = MediaGenerationNodeExecutor().get_output_specs({})
+        by_name = {d.name: d for d in decls}
+        assert set(by_name) >= {"result", "llmResult", "status"}
+        assert by_name["result"].type.kind == "object"
+        assert by_name["llmResult"].type.kind == "string"
+        assert by_name["status"].type.kind == "string"
 
 
 class TestCodeOverride:

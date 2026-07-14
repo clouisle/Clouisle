@@ -2,6 +2,12 @@
 
 ## Active
 
+- **yun-107-media-generation-integration** — Complete. Thread uploaded images into Agent media tools and add a first-class Workflow media-generation node. See `docs/plan/yun-107-media-generation-integration.md`
+  - [x] 1. Agent current-image plumbing
+  - [x] 2. Workflow media executor
+  - [x] 3. Workflow editor node/config/rendering
+  - [x] 4. i18n, generated types, and validation
+
 - **scoped-rbac-landing** — Complete. Decouple team authorization from global RBAC by first closing authorization gaps, then adding team-scoped role assignments. See `docs/plan/scoped-rbac.md`
   - [x] 1. Planning docs
   - [x] 2. Shared team access and immediate workflow authorization fixes

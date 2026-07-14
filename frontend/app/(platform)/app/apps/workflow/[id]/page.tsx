@@ -77,6 +77,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { UserInputNode } from './_components/nodes/user-input-node'
 import { TriggerNode } from './_components/nodes/trigger-node'
 import { LLMNode } from './_components/nodes/llm-node'
+import { MediaGenerationNode } from './_components/nodes/media-generation-node'
 import { ConditionNode } from './_components/nodes/condition-node'
 import { SubWorkflowNode } from './_components/nodes/sub-workflow-node'
 import { AgentNode } from './_components/nodes/agent-node'
@@ -128,6 +129,7 @@ const nodeTypes = {
   user_input: UserInputNode,
   trigger: TriggerNode,
   llm: LLMNode,
+  media_generation: MediaGenerationNode,
   condition: ConditionNode,
   sub_workflow: SubWorkflowNode,
   agent: AgentNode,

@@ -27,6 +27,7 @@ interface WorkflowNodeData {
     modelName?: string
     prompt?: string
     systemPrompt?: string
+    userPrompt?: string
     inputVariable?: string
     outputVariable?: string
     outputVariables?: {
@@ -34,6 +35,15 @@ interface WorkflowNodeData {
       reasoning?: string
       usage?: string
     }
+  }
+  // 媒体生成节点
+  mediaGenerationConfig?: {
+    mode?: 'image' | 'video'
+    modelId?: string
+    prompt?: string
+    referenceImageVariable?: string
+    startImageVariable?: string
+    outputVariable?: string
   }
   // 问题分类器节点
   questionClassifierConfig?: {
@@ -142,6 +152,7 @@ const nodeTypeLabelKeys: Record<string, string> = {
   user_input: 'nodeLabels.user_input',
   trigger: 'nodeLabels.trigger',
   llm: 'nodeLabels.llm',
+  media_generation: 'nodeLabels.media_generation',
   condition: 'nodeLabels.condition',
   sub_workflow: 'nodeLabels.sub_workflow',
   tool: 'nodeLabels.tool',
@@ -169,6 +180,7 @@ export const getNodeTypeColor = (nodeType: string): string => {
     user_input: 'bg-cyan-500',
     trigger: 'bg-cyan-500',
     llm: 'bg-blue-500',
+    media_generation: 'bg-fuchsia-500',
     condition: 'bg-blue-500',
     question_classifier: 'bg-violet-500',
     answer: 'bg-emerald-500',
@@ -267,7 +279,14 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
       variables.push(`${node.id}.${outputVar}`)
       break
     }
-    
+
+    case 'media_generation': {
+      const config = node.data.mediaGenerationConfig
+      const outputVar = config?.outputVariable || 'result'
+      variables.push(`${node.id}.${outputVar}`)
+      break
+    }
+
     case 'parameter_extractor': {
       const config = node.data.parameterExtractorConfig
       const params = config?.parameters || []
@@ -555,8 +574,33 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         }
 
         // 检查提示词
-        if (!config?.prompt?.trim() && !config?.systemPrompt?.trim()) {
+        if (!config?.prompt?.trim() && !config?.systemPrompt?.trim() && !config?.userPrompt?.trim()) {
           issues.push(createIssue(node, 'warning', 'suggestPrompt', 'prompt'))
+        }
+        break
+      }
+
+      // ========== 媒体生成节点 ==========
+      case 'media_generation': {
+        const config = node.data.mediaGenerationConfig
+
+        if (!config?.modelId) {
+          issues.push(createIssue(node, 'error', 'modelNotSelected', 'modelId'))
+        }
+        if (!config?.prompt?.trim()) {
+          issues.push(createIssue(node, 'error', 'promptEmpty', 'prompt'))
+        }
+        if (config?.mode && !['image', 'video'].includes(config.mode)) {
+          issues.push(createIssue(node, 'error', 'invalidMediaMode', 'mode'))
+        }
+        if (config?.referenceImageVariable && !isVariableAvailable(config.referenceImageVariable, availableVars)) {
+          issues.push(createIssue(node, 'error', 'variableNotAvailable', 'referenceImageVariable', { name: extractVariableName(config.referenceImageVariable) }))
+        }
+        if (config?.startImageVariable && !isVariableAvailable(config.startImageVariable, availableVars)) {
+          issues.push(createIssue(node, 'error', 'variableNotAvailable', 'startImageVariable', { name: extractVariableName(config.startImageVariable) }))
+        }
+        if (config?.outputVariable && !isValidVariableName(config.outputVariable)) {
+          issues.push(createIssue(node, 'error', 'invalidVariableName', 'outputVariable', { name: config.outputVariable }))
         }
         break
       }
