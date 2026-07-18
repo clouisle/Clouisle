@@ -28,6 +28,11 @@ class BaseImageAdapter(ABC):
         default_params = getattr(self.model_config, "default_params", None)
         return default_params if isinstance(default_params, dict) else {}
 
+    def _get_request_timeout(self) -> float:
+        config = getattr(self.model_config, "config", None)
+        timeout = config.get("timeout", 300) if isinstance(config, dict) else 300
+        return float(timeout)
+
     def _request_field_was_explicitly_set(
         self,
         request: ImageGenerationRequest,

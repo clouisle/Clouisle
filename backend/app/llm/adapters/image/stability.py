@@ -65,7 +65,7 @@ class StabilityImageAdapter(BaseImageAdapter):
         output_format = self._get_output_format(request)
         images: list[GeneratedImage] = []
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=self._get_request_timeout()) as client:
             for index in range(request.num_images):
                 response = await self._submit_generation(
                     client=client,

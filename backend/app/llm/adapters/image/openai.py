@@ -76,7 +76,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=self._get_request_timeout()) as client:
             try:
                 response = await client.post(
                     self._build_url("/images/generations"),

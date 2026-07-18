@@ -125,6 +125,32 @@ async def test_vision_upload_content_preserves_image_parts():
     assert content[3].text == "<uploaded_files>\nDocument content\n</uploaded_files>"
 
 
+def test_large_vision_image_is_compressed():
+    import base64
+    import io
+
+    from PIL import Image
+
+    source = io.BytesIO()
+    Image.new("RGB", (3000, 2000), "red").save(source, format="PNG")
+
+    content = chat_context.build_vision_content(
+        "Describe this.",
+        [
+            {
+                "url": f"data:image/png;base64,{base64.b64encode(source.getvalue()).decode()}"
+            }
+        ],
+    )
+
+    image = content[2].image
+    assert image is not None
+    assert image.format == "jpeg"
+    assert image.base64 is not None
+    with Image.open(io.BytesIO(base64.b64decode(image.base64))) as normalized:
+        assert max(normalized.size) == 2048
+
+
 @pytest.mark.anyio
 async def test_history_override_file_urls_append_parsed_content(monkeypatch):
     calls = []

@@ -16,6 +16,7 @@ class ModelProvider(str, Enum):
 
     # General LLM providers
     OPENAI = "openai"
+    OPENAI_RESPONSES = "openai_responses"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
     AZURE_OPENAI = "azure_openai"

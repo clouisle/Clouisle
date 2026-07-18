@@ -18,6 +18,7 @@ class ModelProvider(str, Enum):
 
     # General LLM providers
     OPENAI = "openai"
+    OPENAI_RESPONSES = "openai_responses"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
     AZURE_OPENAI = "azure_openai"
@@ -64,6 +65,11 @@ class ModelType(str, Enum):
 PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
     ModelProvider.OPENAI: {
         "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "icon": "openai",
+    },
+    ModelProvider.OPENAI_RESPONSES: {
+        "name": "OpenAI Responses",
         "base_url": "https://api.openai.com/v1",
         "icon": "openai",
     },

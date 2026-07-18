@@ -222,8 +222,13 @@ async def test_model_connection(
                 provider, model.model_id, model.api_key, model.base_url, config
             )
         elif model_type == ModelType.TEXT_TO_IMAGE:
-            _test_image_model(
-                provider, model.model_id, model.api_key, model.base_url, config
+            await _test_image_model(
+                provider,
+                model.model_id,
+                model.api_key,
+                model.base_url,
+                default_params,
+                config,
             )
         elif model_type == ModelType.TEXT_TO_VIDEO:
             _test_video_model(
@@ -341,7 +346,14 @@ async def test_model_config(
         elif model_type == ModelType.RERANK:
             await _test_rerank_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.TEXT_TO_IMAGE:
-            _test_image_model(provider, model_id, api_key, base_url, config)
+            await _test_image_model(
+                provider,
+                model_id,
+                api_key,
+                base_url,
+                default_params,
+                config,
+            )
         elif model_type == ModelType.TEXT_TO_VIDEO:
             _test_video_model(provider, model_id, api_key, base_url, config)
         elif model_type in [ModelType.TTS, ModelType.STT]:
@@ -565,11 +577,12 @@ async def _test_rerank_model(
         )
 
 
-def _test_image_model(
+async def _test_image_model(
     provider: ModelProvider,
     model_id: str,
     api_key: str | None,
     base_url: Optional[str],
+    default_params: dict,
     config: dict,
 ) -> None:
     _validate_api_key(provider, api_key)
@@ -580,11 +593,21 @@ def _test_image_model(
             self.model_id = model_id
             self.api_key = api_key
             self.base_url = base_url
+            self.default_params = default_params
             self.config = config
 
     from app.llm.adapters.image import create_image_adapter
 
-    create_image_adapter(cast(Model, TempModel()))
+    adapter = create_image_adapter(cast(Model, TempModel()))
+    if provider == ModelProvider.OPENAI_RESPONSES:
+        from app.llm.types.image import ImageGenerationRequest
+
+        await adapter.generate(
+            ImageGenerationRequest(
+                prompt="A simple connection test image",
+                quality="low",
+            )
+        )
 
 
 def _test_video_model(

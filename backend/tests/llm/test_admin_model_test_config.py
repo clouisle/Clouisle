@@ -97,7 +97,9 @@ async def test_model_config_accepts_siliconflow_image_models():
 
 @pytest.mark.anyio
 async def test_model_config_routes_siliconflow_image_requests_to_image_validation():
-    with patch.object(models_endpoint, "_test_image_model") as test_image_model:
+    with patch.object(
+        models_endpoint, "_test_image_model", new_callable=AsyncMock
+    ) as test_image_model:
         response = await run_test_model_config(
             ModelTestRequest(
                 provider=ModelProvider.SILICONFLOW,
@@ -109,14 +111,42 @@ async def test_model_config_routes_siliconflow_image_requests_to_image_validatio
             current_user=SimpleNamespace(),
         )
 
-    test_image_model.assert_called_once_with(
+    test_image_model.assert_awaited_once_with(
         ModelProvider.SILICONFLOW,
         "black-forest-labs/FLUX.1-schnell",
         "test-key",
         "https://api.siliconflow.cn/v1",
         {},
+        {},
     )
     assert response["data"].success is True
+
+
+@pytest.mark.anyio
+async def test_openai_responses_image_validation_generates_a_real_test_image():
+    adapter = SimpleNamespace(generate=AsyncMock())
+
+    with patch(
+        "app.llm.adapters.image.create_image_adapter", return_value=adapter
+    ) as create_adapter:
+        await models_endpoint._test_image_model(
+            ModelProvider.OPENAI_RESPONSES,
+            "gpt-5",
+            "test-key",
+            "https://api.openai.com/v1",
+            {"quality": "low"},
+            {"timeout": 30},
+        )
+
+    temp_model = create_adapter.call_args.args[0]
+    assert temp_model.default_params == {"quality": "low"}
+    assert temp_model.config == {"timeout": 30}
+    adapter.generate.assert_awaited_once()
+    request = adapter.generate.await_args.args[0]
+    assert request.prompt == "A simple connection test image"
+    assert request.num_images == 1
+    assert request.quality == "low"
+    assert request.images is None
 
 
 @pytest.mark.anyio

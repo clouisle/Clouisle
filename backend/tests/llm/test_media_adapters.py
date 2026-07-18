@@ -8,6 +8,7 @@ from app.llm.adapters.image import create_image_adapter
 from app.llm.adapters.image.google import GoogleImageAdapter
 from app.llm.adapters.image.luma import LumaImageAdapter
 from app.llm.adapters.image.openai import OpenAIImageAdapter
+from app.llm.adapters.image.openai_responses import OpenAIResponsesImageAdapter
 from app.llm.adapters.image.runway import RunwayImageAdapter
 from app.llm.adapters.image.siliconflow import SiliconFlowImageAdapter
 from app.llm.adapters.image.stability import StabilityImageAdapter
@@ -45,6 +46,15 @@ def build_model(provider: str, model_id: str, **extra):
 
 
 class TestImageFactory:
+    def test_request_timeout_defaults_to_five_minutes_and_allows_config_override(self):
+        default_adapter = OpenAIImageAdapter(build_model("openai", "gpt-image-1"))
+        configured_adapter = OpenAIImageAdapter(
+            build_model("openai", "gpt-image-1", config={"timeout": 420})
+        )
+
+        assert default_adapter._get_request_timeout() == 300
+        assert configured_adapter._get_request_timeout() == 420
+
     def test_supports_custom_and_task_based_image_providers(self):
         assert isinstance(
             create_image_adapter(
@@ -80,6 +90,137 @@ class TestImageFactory:
     def test_custom_image_provider_requires_base_url(self):
         with pytest.raises(InvalidRequestError):
             create_image_adapter(build_model("custom", "image-model", base_url=None))
+
+
+class TestOpenAIResponsesImageAdapter:
+    def test_factory_keeps_responses_and_images_protocols_separate(self):
+        assert isinstance(
+            create_image_adapter(build_model("openai_responses", "gpt-5")),
+            OpenAIResponsesImageAdapter,
+        )
+        assert isinstance(
+            create_image_adapter(build_model("openai", "gpt-image-1")),
+            OpenAIImageAdapter,
+        )
+
+    def test_builds_prompt_only_responses_payload(self):
+        adapter = OpenAIResponsesImageAdapter(
+            build_model(
+                "openai_responses",
+                "gpt-5",
+                default_params={
+                    "background": "transparent",
+                    "output_format": "webp",
+                    "output_compression": 60,
+                    "quality": "medium",
+                },
+            )
+        )
+
+        payload, output_format = adapter._build_payload(
+            ImageGenerationRequest(
+                prompt="A product shot",
+                quality="high",
+                extra_params={"output_compression": 85, "seed": 7},
+            )
+        )
+
+        content = payload["input"][0]["content"]
+        assert content == [{"type": "input_text", "text": "A product shot"}]
+        assert payload["tool_choice"] == {"type": "image_generation"}
+        assert payload["tools"] == [
+            {
+                "type": "image_generation",
+                "size": "1024x1024",
+                "quality": "high",
+                "background": "transparent",
+                "output_format": "webp",
+                "output_compression": 85,
+            }
+        ]
+        assert output_format == "webp"
+        assert "seed" not in payload["tools"][0]
+
+    def test_builds_optional_reference_images(self):
+        adapter = OpenAIResponsesImageAdapter(build_model("openai_responses", "gpt-5"))
+
+        payload, _ = adapter._build_payload(
+            ImageGenerationRequest(
+                prompt="Edit these",
+                images=[
+                    ImageContent(url="https://example.com/reference.png"),
+                    ImageContent(base64="aW1hZ2U=", format="jpeg"),
+                ],
+            )
+        )
+
+        assert payload["input"][0]["content"][1:] == [
+            {
+                "type": "input_image",
+                "image_url": "https://example.com/reference.png",
+                "detail": "auto",
+            },
+            {
+                "type": "input_image",
+                "image_url": "data:image/jpeg;base64,aW1hZ2U=",
+                "detail": "auto",
+            },
+        ]
+
+    def test_generates_requested_count_and_parses_image_output(self):
+        adapter = OpenAIResponsesImageAdapter(build_model("openai_responses", "gpt-5"))
+        client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=AsyncMock(
+                    side_effect=[
+                        SimpleNamespace(
+                            output=[
+                                SimpleNamespace(
+                                    type="image_generation_call", result="image-1"
+                                )
+                            ]
+                        ),
+                        SimpleNamespace(
+                            output=[
+                                SimpleNamespace(
+                                    type="image_generation_call", result="image-2"
+                                )
+                            ]
+                        ),
+                    ]
+                )
+            ),
+            close=AsyncMock(),
+        )
+
+        with patch("openai.AsyncOpenAI", return_value=client):
+            response = asyncio.run(
+                adapter.generate(
+                    ImageGenerationRequest(prompt="Two images", num_images=2)
+                )
+            )
+
+        assert [image.image.base64 for image in response.images] == [
+            "image-1",
+            "image-2",
+        ]
+        assert client.responses.create.await_count == 2
+        client.close.assert_awaited_once()
+
+    def test_rejects_response_without_generated_image(self):
+        adapter = OpenAIResponsesImageAdapter(build_model("openai_responses", "gpt-5"))
+        client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=AsyncMock(return_value=SimpleNamespace(output=[]))
+            ),
+            close=AsyncMock(),
+        )
+
+        with (
+            patch("openai.AsyncOpenAI", return_value=client),
+            pytest.raises(InvalidRequestError, match="no generated image"),
+        ):
+            asyncio.run(adapter.generate(ImageGenerationRequest(prompt="No image")))
 
 
 class TestOpenAIImageAdapter:

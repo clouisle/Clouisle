@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.035Z
+// GENERATED — 2026-07-18T11:45:09.376Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -190,6 +190,7 @@ export type ModelsMessages = {
     bulkDeleted: string
     providers: {
       openai: string
+      openai_responses: string
       anthropic: string
       google: string
       xai: string

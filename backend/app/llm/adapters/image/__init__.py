@@ -9,6 +9,7 @@ from .base import BaseImageAdapter
 from .google import GoogleImageAdapter
 from .luma import LumaImageAdapter
 from .openai import OpenAIImageAdapter
+from .openai_responses import OpenAIResponsesImageAdapter
 from .runway import RunwayImageAdapter
 from .siliconflow import SiliconFlowImageAdapter
 from .stability import StabilityImageAdapter
@@ -28,6 +29,8 @@ def create_image_adapter(model_config: Model) -> BaseImageAdapter:
 
     if provider == ModelProvider.OPENAI:
         return OpenAIImageAdapter(model_config)
+    elif provider == ModelProvider.OPENAI_RESPONSES:
+        return OpenAIResponsesImageAdapter(model_config)
     elif provider == ModelProvider.AZURE_OPENAI:
         # Azure OpenAI 使用相同的适配器，只是 base_url 不同
         return OpenAIImageAdapter(model_config)
@@ -55,6 +58,7 @@ __all__ = [
     "create_image_adapter",
     "BaseImageAdapter",
     "OpenAIImageAdapter",
+    "OpenAIResponsesImageAdapter",
     "GoogleImageAdapter",
     "RunwayImageAdapter",
     "LumaImageAdapter",

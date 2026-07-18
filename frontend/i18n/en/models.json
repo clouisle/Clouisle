@@ -188,6 +188,7 @@
     "bulkDeleted": "Successfully deleted {count} models",
     "providers": {
       "openai": "OpenAI",
+      "openai_responses": "OpenAI Responses",
       "anthropic": "Anthropic",
       "google": "Google",
       "xai": "xAI (Grok)",

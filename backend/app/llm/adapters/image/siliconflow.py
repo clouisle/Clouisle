@@ -60,7 +60,7 @@ class SiliconFlowImageAdapter(BaseImageAdapter):
         payload = self._build_payload(request)
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=self._get_request_timeout()) as client:
                 response = await client.post(
                     self._build_url("/images/generations"),
                     json=payload,

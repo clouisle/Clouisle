@@ -56,7 +56,7 @@ import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
 const PROVIDER_GROUPS = {
-  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability'],
+  international: ['openai', 'openai_responses', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability'],
   domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
   other: ['ollama', 'custom'],
 }
@@ -67,6 +67,12 @@ const DEFAULT_IMAGE_SIZE_OPTIONS = [
   { value: '1024x1792', label: '1024×1792' },
   { value: '512x512', label: '512×512' },
   { value: '256x256', label: '256×256' },
+] as const
+
+const OPENAI_RESPONSES_IMAGE_SIZE_OPTIONS = [
+  { value: '1024x1024', label: '1024×1024' },
+  { value: '1536x1024', label: '1536×1024' },
+  { value: '1024x1536', label: '1024×1536' },
 ] as const
 
 const RUNWAY_LUMA_IMAGE_SIZE_OPTIONS = [
@@ -672,7 +678,7 @@ export function ModelDialog({
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      image: ['openai', 'google', 'azure_openai', 'custom', 'siliconflow', 'runway', 'luma', 'stability'],
+      image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'runway', 'luma', 'stability'],
       video: ['runway', 'luma'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
@@ -852,13 +858,16 @@ export function ModelDialog({
   const showReasoningEffort = ['openai', 'xai', 'deepseek', 'volcengine', 'siliconflow'].includes(provider)
   const showThinkingBudget = ['anthropic', 'google'].includes(provider)
   const showExtraBody = ['openai', 'anthropic', 'xai'].includes(provider)
-  const isOpenAIImageProvider = ['openai', 'azure_openai', 'custom', 'siliconflow'].includes(provider)
+  const isOpenAIResponsesImageProvider = provider === 'openai_responses'
+  const isOpenAIImageProvider = ['openai', 'openai_responses', 'azure_openai', 'custom', 'siliconflow'].includes(provider)
   const isGoogleImageProvider = provider === 'google'
   const isStabilityImageProvider = provider === 'stability'
   const isRunwayOrLumaImageProvider = ['runway', 'luma'].includes(provider)
-  const imageSizeOptions = isRunwayOrLumaImageProvider
-    ? RUNWAY_LUMA_IMAGE_SIZE_OPTIONS
-    : DEFAULT_IMAGE_SIZE_OPTIONS
+  const imageSizeOptions = isOpenAIResponsesImageProvider
+    ? OPENAI_RESPONSES_IMAGE_SIZE_OPTIONS
+    : isRunwayOrLumaImageProvider
+      ? RUNWAY_LUMA_IMAGE_SIZE_OPTIONS
+      : DEFAULT_IMAGE_SIZE_OPTIONS
   
   // ========== 基本信息内容 ==========
   const basicInfoContent = (
@@ -1218,8 +1227,12 @@ export function ModelDialog({
                   <SelectValue>{defaultImageQuality ? t(`quality${defaultImageQuality.charAt(0).toUpperCase()}${defaultImageQuality.slice(1)}`) : t('selectQuality')}</SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
-                  <SelectItem value="standard">{t('qualityStandard')}</SelectItem>
-                  <SelectItem value="hd">{t('qualityHD')}</SelectItem>
+                  {!isOpenAIResponsesImageProvider && (
+                    <>
+                      <SelectItem value="standard">{t('qualityStandard')}</SelectItem>
+                      <SelectItem value="hd">{t('qualityHD')}</SelectItem>
+                    </>
+                  )}
                   <SelectItem value="low">{t('qualityLow')}</SelectItem>
                   <SelectItem value="medium">{t('qualityMedium')}</SelectItem>
                   <SelectItem value="high">{t('qualityHigh')}</SelectItem>

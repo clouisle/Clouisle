@@ -188,6 +188,7 @@
     "bulkDeleted": "成功删除 {count} 个模型",
     "providers": {
       "openai": "OpenAI",
+      "openai_responses": "OpenAI Responses",
       "anthropic": "Anthropic",
       "google": "Google",
       "xai": "xAI (Grok)",
