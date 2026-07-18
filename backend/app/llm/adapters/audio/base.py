@@ -4,7 +4,14 @@
 
 from abc import ABC, abstractmethod
 
-from app.llm.types import TTSRequest, TTSResponse, STTRequest, STTResponse
+from app.llm.types import (
+    AudioGenerationRequest,
+    AudioGenerationResponse,
+    STTRequest,
+    STTResponse,
+    TTSRequest,
+    TTSResponse,
+)
 
 
 class BaseTTSAdapter(ABC):
@@ -13,6 +20,17 @@ class BaseTTSAdapter(ABC):
     @abstractmethod
     async def synthesize(self, request: TTSRequest) -> TTSResponse:
         """文本转语音"""
+        pass
+
+
+class BaseAudioGenerationAdapter(ABC):
+    """Audio generation adapter base."""
+
+    @abstractmethod
+    async def generate(
+        self, request: AudioGenerationRequest
+    ) -> AudioGenerationResponse:
+        """Generate audio from a prompt and optional references."""
         pass
 
 

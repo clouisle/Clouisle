@@ -356,7 +356,25 @@ async def test_model_config(
             )
         elif model_type == ModelType.TEXT_TO_VIDEO:
             _test_video_model(provider, model_id, api_key, base_url, config)
-        elif model_type in [ModelType.TTS, ModelType.STT]:
+        elif model_type == ModelType.TTS:
+            await _test_tts_model(
+                provider,
+                model_id,
+                api_key,
+                base_url,
+                default_params,
+                config,
+            )
+        elif model_type == ModelType.AUDIO_GENERATION:
+            await _test_audio_generation_model(
+                provider,
+                model_id,
+                api_key,
+                base_url,
+                default_params,
+                config,
+            )
+        elif model_type == ModelType.STT:
             _validate_api_key(provider, api_key)
         else:
             raise BusinessError(
@@ -607,6 +625,73 @@ async def _test_image_model(
                 prompt="A simple connection test image",
                 quality="low",
             )
+        )
+
+
+async def _test_tts_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    default_params: dict,
+    config: dict,
+) -> None:
+    _validate_api_key(provider, api_key)
+
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.default_params = default_params
+            self.config = config
+
+    from app.llm.adapters.audio import create_tts_adapter
+    from app.llm.types import TTSRequest
+
+    adapter = create_tts_adapter(cast(Model, TempModel()))
+    voice = default_params.get("speaker") or default_params.get("voice")
+    response = await adapter.synthesize(
+        TTSRequest(text="Hello", voice=str(voice) if voice else None)
+    )
+    if not response.audio.has_content():
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_response",
+        )
+
+
+async def _test_audio_generation_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    default_params: dict,
+    config: dict,
+) -> None:
+    _validate_api_key(provider, api_key)
+
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.default_params = default_params
+            self.config = config
+
+    from app.llm.adapters.audio import create_audio_generation_adapter
+    from app.llm.types import AudioGenerationRequest
+
+    adapter = create_audio_generation_adapter(cast(Model, TempModel()))
+    response = await adapter.generate(
+        AudioGenerationRequest(prompt="A short, gentle bell sound")
+    )
+    if not response.audio.has_content():
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_response",
         )
 
 

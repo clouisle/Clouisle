@@ -57,6 +57,7 @@ class ModelType(str, Enum):
     RERANK = "rerank"  # Reranking models
     TTS = "tts"  # Text-to-speech
     STT = "stt"  # Speech-to-text
+    AUDIO_GENERATION = "audio_generation"  # Prompt-to-audio generation
     TEXT_TO_IMAGE = "text_to_image"  # Text-to-image generation
     TEXT_TO_VIDEO = "text_to_video"  # Text-to-video generation
 

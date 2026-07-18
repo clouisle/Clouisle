@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-18T11:45:09.376Z
+// GENERATED — 2026-07-18T17:59:00.383Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -28,6 +28,8 @@ export type ModelsMessages = {
     baseUrlPlaceholder: string
     baseUrlHint: string
     apiKey: string
+    volcengineApiKey: string
+    volcengineResourceId: string
     apiKeyPlaceholder: string
     apiKeyPlaceholderEdit: string
     apiKeyConfigured: string
@@ -176,6 +178,8 @@ export type ModelsMessages = {
     selectAspectRatio: string
     audioSettings: string
     defaultVoice: string
+    speakerId: string
+    speakerIdPlaceholder: string
     selectVoice: string
     defaultSpeed: string
     modelCreated: string
@@ -225,6 +229,7 @@ export type ModelsMessages = {
       rerank: string
       tts: string
       stt: string
+      audio_generation: string
       text_to_image: string
       text_to_video: string
     }
@@ -234,6 +239,7 @@ export type ModelsMessages = {
       rerank: string
       tts: string
       stt: string
+      audio_generation: string
       text_to_image: string
       text_to_video: string
     }

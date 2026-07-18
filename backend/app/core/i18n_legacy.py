@@ -2504,6 +2504,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "username_exists": {"en": "Username already exists", "zh": "用户名已存在"},
     "validation_error": {"en": "Validation error", "zh": "验证错误"},
+    "workflow_media_invalid_mode": {
+        "en": "Select image or video generation mode in the media generation node",
+        "zh": "请在媒体生成节点中选择图片或视频生成模式",
+    },
+    "workflow_media_model_not_found": {
+        "en": "The model selected in the media generation node no longer exists; select an available model",
+        "zh": "媒体生成节点中选择的模型已不存在，请重新选择可用模型",
+    },
+    "workflow_media_model_required": {
+        "en": "Select a model in the media generation node before running the workflow",
+        "zh": "请先在媒体生成节点中选择模型，再运行工作流",
+    },
+    "workflow_media_prompt_required": {
+        "en": "Enter a prompt in the media generation node before running the workflow",
+        "zh": "请先在媒体生成节点中填写提示词，再运行工作流",
+    },
     "vector_search_failed": {
         "en": "Vector search failed: {error}",
         "zh": "向量搜索失败：{error}",
@@ -2562,6 +2578,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "当前选择的视频模型暂不支持将上传图片作为首帧参考",
     },
     "volcengine_api_error": {"en": "Volcengine API error", "zh": "Volcengine API 错误"},
+    "volcengine_image_invalid_parameter": {
+        "en": "Invalid Volcengine image parameter: {field}",
+        "zh": "火山方舟图片参数无效：{field}",
+    },
+    "volcengine_image_response_missing_output": {
+        "en": "Volcengine image response did not contain generated images",
+        "zh": "火山方舟图片响应未包含生成结果",
+    },
     "volcengine_endpoint_not_found": {
         "en": "Volcengine endpoint not found",
         "zh": "未找到 Volcengine 接口端点",
@@ -2585,6 +2609,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "volcengine_task_polling_timed_out": {
         "en": "Volcengine task polling timed out",
         "zh": "Volcengine 任务轮询超时",
+    },
+    "volcengine_video_response_missing_output": {
+        "en": "Volcengine video task completed without video output",
+        "zh": "火山方舟视频任务已完成，但未返回视频结果",
     },
     "web_search_api_error": {
         "en": "Search API error: {status_code}",

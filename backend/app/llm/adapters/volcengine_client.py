@@ -1,5 +1,5 @@
 """
-Shared Volcengine API client for video adapters (Seedance).
+Shared Volcengine Ark API client for media adapters.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from app.llm.errors import (
 
 
 class VolcengineClient:
-    """Thin async client for Volcengine video generation APIs."""
+    """Thin async client for Volcengine Ark media generation APIs."""
 
     def __init__(self, model_config: Any):
         self.model_config = model_config
@@ -119,6 +119,9 @@ class VolcengineClient:
 
         return response.json()
 
+    async def generate_image(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", "/images/generations", json=payload)
+
     async def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/contents/generations/tasks", json=payload)
 
@@ -130,7 +133,7 @@ class VolcengineClient:
         while elapsed <= self.task_timeout:
             task = await self.get_task(task_id)
             status = str(task.get("status", "")).lower()
-            if status in {"succeeded", "failed", "cancelled"}:
+            if status in {"succeeded", "failed", "cancelled", "expired"}:
                 return task
 
             await asyncio.sleep(self.poll_interval)

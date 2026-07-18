@@ -6,6 +6,7 @@ import {
   XCircle,
   SkipForward,
 } from 'lucide-react'
+import { ImageLightbox, VideoLightbox, useLightbox } from '@/components/chat/image-lightbox'
 import { cn } from '@/lib/utils'
 import { getImageAssetUrl, getVideoAssetUrl, isMediaImageToolResult, isMediaVideoToolResult } from '@/lib/utils/tool-result'
 
@@ -38,13 +39,53 @@ export const nodeStatusConfig: Record<string, { icon: React.ElementType; classNa
   skipped: { icon: SkipForward, className: 'text-gray-400' },
 }
 
-function renderMediaAsset(asset?: { url?: string | null; base64?: string | null; format?: string } | null, kind: 'image' | 'video' = 'image') {
-  const url = kind === 'image' ? getImageAssetUrl(asset) : getVideoAssetUrl(asset)
-  if (!url) return null
-  return kind === 'image' ? (
-    <img src={url} alt="generated media" className="max-h-40 rounded border" />
-  ) : (
-    <video src={url} controls className="max-h-40 rounded border" />
+function MediaPreview({ imageUrls = [], videoUrl }: { imageUrls?: string[]; videoUrl?: string | null }) {
+  const imageLightbox = useLightbox()
+  const [videoLightboxOpen, setVideoLightboxOpen] = React.useState(false)
+
+  return (
+    <>
+      {imageUrls.length > 0 && (
+        <div className={cn('grid gap-2', imageUrls.length > 1 && 'sm:grid-cols-2')}>
+          {imageUrls.map((url, index) => (
+            <button
+              key={`${url}-${index}`}
+              type="button"
+              className="flex aspect-video items-center justify-center overflow-hidden rounded-lg border bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => imageLightbox.openLightbox(url)}
+            >
+              <img
+                src={url}
+                alt={`generated media ${index + 1}`}
+                className="h-full w-full object-contain"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+      {videoUrl && (
+        <button
+          type="button"
+          className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setVideoLightboxOpen(true)}
+        >
+          <video src={videoUrl} muted playsInline preload="metadata" className="h-full w-full object-contain" />
+        </button>
+      )}
+      <ImageLightbox
+        src={imageLightbox.imageSrc}
+        alt={imageLightbox.imageAlt}
+        isOpen={imageLightbox.isOpen}
+        onClose={imageLightbox.closeLightbox}
+      />
+      {videoUrl && (
+        <VideoLightbox
+          src={videoUrl}
+          isOpen={videoLightboxOpen}
+          onClose={() => setVideoLightboxOpen(false)}
+        />
+      )}
+    </>
   )
 }
 
@@ -59,7 +100,7 @@ export function renderNodeOutput(
     const text = outputs.text || outputs.content || outputs.response || ''
     if (typeof text === 'string' && text) {
       return (
-        <div className="p-2 bg-background rounded text-sm whitespace-pre-wrap max-h-40 overflow-y-auto">
+        <div className="max-h-40 min-w-0 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
           {text}
         </div>
       )
@@ -68,17 +109,21 @@ export function renderNodeOutput(
 
   if (nodeType === 'media_generation') {
     const result = outputs.result || outputs.output
+    if (Array.isArray(result) && result.every(url => typeof url === 'string')) {
+      return <MediaPreview imageUrls={result} />
+    }
+    if (typeof result === 'string' && result) {
+      return <MediaPreview videoUrl={result} />
+    }
     if (isMediaImageToolResult(result)) {
       return (
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">{t('runDrawer.result')}</div>
-          <div className="grid gap-2">
-            {result.images.map((item, index) => (
-              <div key={`${index}-${item.image.url || item.image.base64 || ''}`} className="space-y-1">
-                {renderMediaAsset(item.image, 'image')}
-              </div>
-            ))}
-          </div>
+          <MediaPreview
+            imageUrls={result.images
+              .map(item => getImageAssetUrl(item.image))
+              .filter((url): url is string => !!url)}
+          />
         </div>
       )
     }
@@ -86,7 +131,7 @@ export function renderNodeOutput(
       return (
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">{t('runDrawer.result')}</div>
-          {renderMediaAsset(result.video, 'video')}
+          <MediaPreview videoUrl={getVideoAssetUrl(result.video)} />
         </div>
       )
     }
@@ -104,7 +149,7 @@ export function renderNodeOutput(
           {textOutputs.map(({ key, value }) => (
             <div key={key} className="space-y-1">
               <span className="text-[10px] text-muted-foreground">{key}</span>
-              <div className="p-2 bg-background rounded text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
+              <div className="max-h-32 min-w-0 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
                 {value}
               </div>
             </div>
@@ -121,7 +166,7 @@ export function renderNodeOutput(
         {Object.entries(outputs).map(([key, value]) => (
           <div key={key} className="space-y-1">
             <span className="text-[10px] text-muted-foreground font-mono">{key}</span>
-            <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32 font-mono">
+            <pre className="max-h-32 min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-[10px] font-mono">
               {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
             </pre>
           </div>
@@ -169,7 +214,7 @@ export function renderNodeOutput(
           </div>
         )}
         {!!body && (
-          <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
+          <pre className="max-h-32 min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-[10px]">
             {typeof body === 'string' ? body : JSON.stringify(body, null, 2)}
           </pre>
         )}
@@ -181,7 +226,7 @@ export function renderNodeOutput(
   if (nodeType === 'tool') {
     const result = outputs.result || outputs.output
     return (
-      <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
+      <pre className="max-h-32 min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-[10px]">
         {typeof result === 'string' ? result : JSON.stringify(outputs, null, 2)}
       </pre>
     )
@@ -189,7 +234,7 @@ export function renderNodeOutput(
 
   // 默认 - JSON 格式显示
   return (
-    <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
+    <pre className="max-h-32 min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-[10px]">
       {JSON.stringify(outputs, null, 2)}
     </pre>
   )

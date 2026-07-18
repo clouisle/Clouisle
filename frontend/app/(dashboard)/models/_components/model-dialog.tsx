@@ -57,7 +57,7 @@ import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 // 供应商分组
 const PROVIDER_GROUPS = {
   international: ['openai', 'openai_responses', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability'],
-  domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
+  domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine'],
   other: ['ollama', 'custom'],
 }
 
@@ -75,6 +75,13 @@ const OPENAI_RESPONSES_IMAGE_SIZE_OPTIONS = [
   { value: '1024x1536', label: '1024×1536' },
 ] as const
 
+const VOLCENGINE_IMAGE_SIZE_OPTIONS = [
+  { value: '1K', label: '1K' },
+  { value: '2K', label: '2K' },
+  { value: '3K', label: '3K' },
+  { value: '4K', label: '4K' },
+] as const
+
 const RUNWAY_LUMA_IMAGE_SIZE_OPTIONS = [
   { value: '1080x1080', label: '1080×1080 (1:1)' },
   { value: '1920x1080', label: '1920×1080 (16:9)' },
@@ -90,7 +97,7 @@ const MODEL_CATEGORIES = {
   rerank: ['rerank'],
   image: ['text_to_image'],
   video: ['text_to_video'],
-  audio: ['tts', 'stt'],
+  audio: ['tts', 'stt', 'audio_generation'],
 }
 
 function getModelCategory(modelType: string): keyof typeof MODEL_CATEGORIES | null {
@@ -580,6 +587,8 @@ export function ModelDialog({
         if (parsedImageSize) {
           defaultParams.default_width = parsedImageSize.width
           defaultParams.default_height = parsedImageSize.height
+        } else if (provider === 'volcengine' && defaultImageSize) {
+          defaultParams.size = defaultImageSize
         }
         if (defaultImageStyle) defaultParams.style = defaultImageStyle
         if (defaultImageQuality) defaultParams.quality = defaultImageQuality
@@ -650,7 +659,9 @@ export function ModelDialog({
     setProvider(value)
     setErrors((prev) => clearValidationError(prev, 'provider'))
     setTestResult(null)
-    if (!baseUrl) {
+    const isVolcengineOpenSpeech = value === 'volcengine'
+      && ['tts', 'audio_generation'].includes(modelType)
+    if (!baseUrl && !isVolcengineOpenSpeech) {
       const providerInfo = providers.find(p => p.code === value)
       if (providerInfo?.base_url) setBaseUrl(providerInfo.base_url)
     }
@@ -676,11 +687,15 @@ export function ModelDialog({
     if (!category) return providers
     
     const providersByCategory: Record<string, string[]> = {
-      text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'runway', 'luma', 'stability'],
-      video: ['runway', 'luma'],
-      audio: ['openai', 'azure_openai', 'custom'],
+      text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
+      rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
+      image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'volcengine', 'runway', 'luma', 'stability'],
+      video: ['volcengine', 'runway', 'luma'],
+      audio: modelType === 'tts'
+        ? ['openai', 'azure_openai', 'custom', 'volcengine']
+        : modelType === 'audio_generation'
+          ? ['volcengine']
+          : ['openai', 'azure_openai', 'custom'],
     }
     
     const allowedProviders = providersByCategory[category] || []
@@ -746,6 +761,8 @@ export function ModelDialog({
         if (parsedImageSize) {
           defaultParams.default_width = parsedImageSize.width
           defaultParams.default_height = parsedImageSize.height
+        } else if (provider === 'volcengine' && defaultImageSize) {
+          defaultParams.size = defaultImageSize
         }
         if (defaultImageStyle) defaultParams.style = defaultImageStyle
         if (defaultImageQuality) defaultParams.quality = defaultImageQuality
@@ -863,11 +880,13 @@ export function ModelDialog({
   const isGoogleImageProvider = provider === 'google'
   const isStabilityImageProvider = provider === 'stability'
   const isRunwayOrLumaImageProvider = ['runway', 'luma'].includes(provider)
-  const imageSizeOptions = isOpenAIResponsesImageProvider
-    ? OPENAI_RESPONSES_IMAGE_SIZE_OPTIONS
-    : isRunwayOrLumaImageProvider
-      ? RUNWAY_LUMA_IMAGE_SIZE_OPTIONS
-      : DEFAULT_IMAGE_SIZE_OPTIONS
+  const imageSizeOptions = provider === 'volcengine'
+    ? VOLCENGINE_IMAGE_SIZE_OPTIONS
+    : isOpenAIResponsesImageProvider
+      ? OPENAI_RESPONSES_IMAGE_SIZE_OPTIONS
+      : isRunwayOrLumaImageProvider
+        ? RUNWAY_LUMA_IMAGE_SIZE_OPTIONS
+        : DEFAULT_IMAGE_SIZE_OPTIONS
   
   // ========== 基本信息内容 ==========
   const basicInfoContent = (
@@ -1054,7 +1073,11 @@ export function ModelDialog({
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="modelId">{t('modelId')} *</Label>
+          <Label htmlFor="modelId">
+            {provider === 'volcengine' && category === 'audio'
+              ? t('volcengineResourceId')
+              : t('modelId')} *
+          </Label>
           <Input
             id="modelId"
             value={modelId}
@@ -1093,7 +1116,9 @@ export function ModelDialog({
           
           <div className="space-y-2">
             <Label htmlFor="apiKey">
-              {t('apiKey')} {!isEditing && requiresApiKey(provider) && '*'}
+              {provider === 'volcengine' && category === 'audio'
+                ? t('volcengineApiKey')
+                : t('apiKey')} {!isEditing && requiresApiKey(provider) && '*'}
             </Label>
             <div className="relative">
               <Input
@@ -1479,20 +1504,31 @@ export function ModelDialog({
           <SectionTitle>{t('audioSettings')}</SectionTitle>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>{t('defaultVoice')}</Label>
-              <Select value={defaultVoice} onValueChange={(v) => v && setDefaultVoice(v)}>
-                <SelectTrigger>
-                  <SelectValue>{defaultVoice || t('selectVoice')}</SelectValue>
-                </SelectTrigger>
-                <SelectContent side="bottom" alignItemWithTrigger={false}>
-                  <SelectItem value="alloy">Alloy</SelectItem>
-                  <SelectItem value="echo">Echo</SelectItem>
-                  <SelectItem value="fable">Fable</SelectItem>
-                  <SelectItem value="onyx">Onyx</SelectItem>
-                  <SelectItem value="nova">Nova</SelectItem>
-                  <SelectItem value="shimmer">Shimmer</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="defaultVoice">
+                {provider === 'volcengine' ? t('speakerId') : t('defaultVoice')}
+              </Label>
+              {provider === 'volcengine' ? (
+                <Input
+                  id="defaultVoice"
+                  value={defaultVoice}
+                  onChange={(e) => setDefaultVoice(e.target.value)}
+                  placeholder={t('speakerIdPlaceholder')}
+                />
+              ) : (
+                <Select value={defaultVoice} onValueChange={(v) => v && setDefaultVoice(v)}>
+                  <SelectTrigger id="defaultVoice">
+                    <SelectValue>{defaultVoice || t('selectVoice')}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent side="bottom" alignItemWithTrigger={false}>
+                    <SelectItem value="alloy">Alloy</SelectItem>
+                    <SelectItem value="echo">Echo</SelectItem>
+                    <SelectItem value="fable">Fable</SelectItem>
+                    <SelectItem value="onyx">Onyx</SelectItem>
+                    <SelectItem value="nova">Nova</SelectItem>
+                    <SelectItem value="shimmer">Shimmer</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             
             <div className="space-y-2">

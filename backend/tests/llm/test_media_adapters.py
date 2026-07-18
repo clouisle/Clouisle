@@ -12,6 +12,7 @@ from app.llm.adapters.image.openai_responses import OpenAIResponsesImageAdapter
 from app.llm.adapters.image.runway import RunwayImageAdapter
 from app.llm.adapters.image.siliconflow import SiliconFlowImageAdapter
 from app.llm.adapters.image.stability import StabilityImageAdapter
+from app.llm.adapters.image.volcengine import VolcengineImageAdapter
 from app.llm.adapters.video import create_video_adapter
 from app.llm.adapters.video.dashscope import DashScopeVideoAdapter
 from app.llm.adapters.video.kling import KlingVideoAdapter
@@ -20,7 +21,7 @@ from app.llm.adapters.video.pika import PikaVideoAdapter
 from app.llm.adapters.video.runway import RunwayVideoAdapter
 from app.llm.adapters.video.siliconflow import SiliconFlowVideoAdapter
 from app.llm.adapters.video.volcengine import VolcengineVideoAdapter
-from app.llm.errors import InvalidRequestError
+from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.manager import ModelManager
 from app.llm.types import (
     ImageContent,
@@ -85,6 +86,10 @@ class TestImageFactory:
                 build_model("siliconflow", "black-forest-labs/flux-1-schnell")
             ),
             SiliconFlowImageAdapter,
+        )
+        assert isinstance(
+            create_image_adapter(build_model("volcengine", "doubao-seedream")),
+            VolcengineImageAdapter,
         )
 
     def test_custom_image_provider_requires_base_url(self):
@@ -297,6 +302,95 @@ class TestOpenAIImageAdapter:
         assert payload["output_format"] == "jpeg"
         assert payload["seed"] == 7
         assert payload["user"] == "abc"
+
+
+class TestVolcengineImageAdapter:
+    def test_builds_seedream_payload_with_references_and_named_size(self):
+        adapter = VolcengineImageAdapter(
+            build_model(
+                "volcengine",
+                "doubao-seedream",
+                default_params={"size": "2K", "watermark": False},
+            )
+        )
+
+        payload = adapter._build_payload(
+            ImageGenerationRequest(
+                prompt="A product shot",
+                num_images=3,
+                images=[
+                    ImageContent(url="https://example.com/reference.png"),
+                    ImageContent(base64="aW1hZ2U=", format="jpeg"),
+                ],
+                extra_params={
+                    "optimize_prompt_options": {"mode": "fast"},
+                    "sequential_image_generation": "auto",
+                },
+                seed=7,
+            )
+        )
+
+        assert payload["model"] == "doubao-seedream"
+        assert payload["size"] == "2K"
+        assert payload["watermark"] is False
+        assert payload["seed"] == 7
+        assert payload["image"] == [
+            "https://example.com/reference.png",
+            "data:image/jpeg;base64,aW1hZ2U=",
+        ]
+        assert payload["optimize_prompt_options"] == {"mode": "fast"}
+        assert payload["sequential_image_generation_options"] == {"max_images": 3}
+
+    def test_parses_url_and_base64_seedream_outputs(self):
+        adapter = VolcengineImageAdapter(build_model("volcengine", "doubao-seedream"))
+        adapter.client = SimpleNamespace(
+            generate_image=AsyncMock(
+                return_value={
+                    "data": [
+                        {
+                            "url": "https://example.com/generated.png",
+                            "revised_prompt": "Improved prompt",
+                            "seed": 9,
+                        },
+                        {"b64_json": "aW1hZ2U="},
+                    ]
+                }
+            )
+        )
+
+        response = asyncio.run(
+            adapter.generate(ImageGenerationRequest(prompt="A product shot"))
+        )
+
+        assert response.images[0].image.url == "https://example.com/generated.png"
+        assert response.images[0].revised_prompt == "Improved prompt"
+        assert response.images[0].seed == 9
+        assert response.images[1].image.base64 == "aW1hZ2U="
+
+    def test_rejects_invalid_seedream_options_and_empty_output(self):
+        adapter = VolcengineImageAdapter(build_model("volcengine", "doubao-seedream"))
+
+        with pytest.raises(InvalidRequestError):
+            adapter._build_payload(
+                ImageGenerationRequest(
+                    prompt="A product shot",
+                    extra_params={"response_format": "binary"},
+                )
+            )
+
+        with pytest.raises(InvalidRequestError):
+            adapter._build_payload(
+                ImageGenerationRequest(
+                    prompt="A product shot",
+                    extra_params={"sequential_image_generation_options": "invalid"},
+                )
+            )
+
+        adapter.client = SimpleNamespace(
+            generate_image=AsyncMock(return_value={"data": []})
+        )
+        with pytest.raises(ProviderError, match="generated images"):
+            asyncio.run(adapter.generate(ImageGenerationRequest(prompt="No output")))
 
 
 class TestRunwayImageAdapter:
@@ -1135,8 +1229,42 @@ class TestVolcengineVideoAdapter:
 
         assert payload["model"] == "seedance-1-lite"
         assert payload["content"] == [{"type": "text", "text": "Ocean waves at sunset"}]
-        assert payload["parameters"]["duration"] == 5
-        assert payload["parameters"]["aspect_ratio"] == "16:9"
+        assert payload["duration"] == 5
+        assert payload["ratio"] == "16:9"
+        assert "parameters" not in payload
+
+    def test_preserves_supported_extras_without_overriding_required_fields(self):
+        adapter = VolcengineVideoAdapter(
+            build_model(
+                "volcengine",
+                "seedance-1-lite",
+                default_params={"resolution": "1080p", "watermark": False},
+            )
+        )
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="Ocean waves at sunset",
+                duration=6,
+                aspect_ratio="9:16",
+                seed=3,
+                extra_params={
+                    "generate_audio": True,
+                    "model": "wrong-model",
+                    "content": [],
+                    "duration": 99,
+                },
+            )
+        )
+
+        assert payload["model"] == "seedance-1-lite"
+        assert payload["content"] == [{"type": "text", "text": "Ocean waves at sunset"}]
+        assert payload["duration"] == 6
+        assert payload["ratio"] == "9:16"
+        assert payload["seed"] == 3
+        assert payload["resolution"] == "1080p"
+        assert payload["watermark"] is False
+        assert payload["generate_audio"] is True
 
     def test_builds_payload_with_start_image_content(self):
         adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
@@ -1162,17 +1290,36 @@ class TestVolcengineVideoAdapter:
         assert adapter._map_status("running") == TaskStatus.PROCESSING
         assert adapter._map_status("succeeded") == TaskStatus.COMPLETED
         assert adapter._map_status("failed") == TaskStatus.FAILED
+        assert adapter._map_status("expired") == TaskStatus.FAILED
         assert adapter._map_status("cancelled") == TaskStatus.CANCELLED
         assert adapter._map_status(None) == TaskStatus.PENDING
 
     def test_extracts_video_url_from_content(self):
         adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
 
+        assert (
+            adapter._extract_video_url(
+                {"content": {"video_url": "https://cdn.volces.com/current.mp4"}}
+            )
+            == "https://cdn.volces.com/current.mp4"
+        )
         task = {"content": [{"video_url": {"url": "https://cdn.volces.com/video.mp4"}}]}
         assert adapter._extract_video_url(task) == "https://cdn.volces.com/video.mp4"
 
         assert adapter._extract_video_url({}) is None
         assert adapter._extract_video_url({"content": []}) is None
+
+    def test_completed_task_without_video_is_reported_as_failed(self):
+        adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
+        adapter.client = SimpleNamespace(
+            get_task=AsyncMock(return_value={"status": "succeeded", "content": {}})
+        )
+
+        response = asyncio.run(adapter.get_status("task-1"))
+
+        assert response.status == TaskStatus.FAILED
+        assert response.video is None
+        assert response.error
 
     def test_extracts_error_from_error_dict(self):
         adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))

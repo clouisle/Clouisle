@@ -150,6 +150,62 @@ async def test_openai_responses_image_validation_generates_a_real_test_image():
 
 
 @pytest.mark.anyio
+async def test_model_config_routes_tts_to_real_adapter_call():
+    audio = SimpleNamespace(has_content=lambda: True)
+    adapter = SimpleNamespace(
+        synthesize=AsyncMock(return_value=SimpleNamespace(audio=audio))
+    )
+
+    with patch(
+        "app.llm.adapters.audio.create_tts_adapter", return_value=adapter
+    ) as create_adapter:
+        response = await run_test_model_config(
+            ModelTestRequest(
+                provider=ModelProvider.VOLCENGINE,
+                model_id="seed-tts-2.0",
+                model_type=ModelType.TTS,
+                api_key="test-key",
+                default_params={"speaker": "test-speaker"},
+                config={"sample_rate": 24000},
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    temp_model = create_adapter.call_args.args[0]
+    assert temp_model.default_params == {"speaker": "test-speaker"}
+    assert temp_model.config == {"sample_rate": 24000}
+    adapter.synthesize.assert_awaited_once()
+    assert adapter.synthesize.await_args.args[0].voice == "test-speaker"
+    assert response["data"].success is True
+
+
+@pytest.mark.anyio
+async def test_model_config_routes_audio_generation_to_real_adapter_call():
+    audio = SimpleNamespace(has_content=lambda: True)
+    adapter = SimpleNamespace(
+        generate=AsyncMock(return_value=SimpleNamespace(audio=audio))
+    )
+
+    with patch(
+        "app.llm.adapters.audio.create_audio_generation_adapter",
+        return_value=adapter,
+    ):
+        response = await run_test_model_config(
+            ModelTestRequest(
+                provider=ModelProvider.VOLCENGINE,
+                model_id="seed-audio-1.0",
+                model_type=ModelType.AUDIO_GENERATION,
+                api_key="test-key",
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    adapter.generate.assert_awaited_once()
+    assert adapter.generate.await_args.args[0].prompt
+    assert response["data"].success is True
+
+
+@pytest.mark.anyio
 async def test_model_config_routes_moonshot_chat_requests_to_native_adapter():
     with patch.object(
         MoonshotAdapter,

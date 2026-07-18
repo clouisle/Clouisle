@@ -1902,11 +1902,20 @@ msgstr "Volcengine 触发速率限制"
 msgid "volcengine_api_error"
 msgstr "Volcengine API 错误"
 
+msgid "volcengine_image_invalid_parameter"
+msgstr "火山方舟图片参数无效：{field}"
+
+msgid "volcengine_image_response_missing_output"
+msgstr "火山方舟图片响应未包含生成结果"
+
 msgid "volcengine_task_polling_timed_out"
 msgstr "Volcengine 任务轮询超时"
 
 msgid "volcengine_task_missing_id"
 msgstr "Volcengine 任务未返回 id"
+
+msgid "volcengine_video_response_missing_output"
+msgstr "火山方舟视频任务已完成，但未返回视频结果"
 
 msgid "dashscope_request_timeout"
 msgstr "DashScope 请求超时"
@@ -2388,6 +2397,18 @@ msgstr "用户名已存在"
 
 msgid "validation_error"
 msgstr "验证错误"
+
+msgid "workflow_media_invalid_mode"
+msgstr "请在媒体生成节点中选择图片或视频生成模式"
+
+msgid "workflow_media_model_not_found"
+msgstr "媒体生成节点中选择的模型已不存在，请重新选择可用模型"
+
+msgid "workflow_media_model_required"
+msgstr "请先在媒体生成节点中选择模型，再运行工作流"
+
+msgid "workflow_media_prompt_required"
+msgstr "请先在媒体生成节点中填写提示词，再运行工作流"
 
 msgid "vector_search_failed"
 msgstr "向量搜索失败：{error}"

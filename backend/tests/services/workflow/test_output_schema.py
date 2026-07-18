@@ -77,13 +77,24 @@ class TestLLMOverride:
 
 
 class TestMediaGenerationOverride:
-    def test_media_outputs_normalized_result_and_status(self):
-        decls = MediaGenerationNodeExecutor().get_output_specs({})
+    def test_image_outputs_url_array(self):
+        decls = MediaGenerationNodeExecutor().get_output_specs(
+            {"mode": "image", "outputVariable": "images"}
+        )
         by_name = {d.name: d for d in decls}
-        assert set(by_name) >= {"result", "llmResult", "status"}
-        assert by_name["result"].type.kind == "object"
-        assert by_name["llmResult"].type.kind == "string"
-        assert by_name["status"].type.kind == "string"
+        assert set(by_name) == {"result", "images"}
+        assert by_name["result"].type.kind == "array"
+        assert by_name["result"].type.item == TypeSpec(kind="string")
+        assert by_name["images"].type == by_name["result"].type
+
+    def test_video_outputs_url_string(self):
+        decls = MediaGenerationNodeExecutor().get_output_specs(
+            {"mode": "video", "outputVariable": "video"}
+        )
+        by_name = {d.name: d for d in decls}
+        assert set(by_name) == {"result", "video"}
+        assert by_name["result"].type == TypeSpec(kind="string")
+        assert by_name["video"].type == TypeSpec(kind="string")
 
 
 class TestCodeOverride:

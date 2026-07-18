@@ -120,6 +120,7 @@ type WorkflowNodeData = {
   content?: string
   author?: string
   color?: CommentColor
+  runtimeTrace?: NodeTrace
 }
 
 type WorkflowNode = Node<WorkflowNodeData>
@@ -794,6 +795,17 @@ export function WorkflowEditorContent({
   const handleNodeTracesChange = React.useCallback((traces: Map<string, NodeTrace>) => {
     setNodeTraces(traces)
   }, [])
+
+  const renderedNodes = React.useMemo(
+    () => nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        runtimeTrace: nodeTraces.get(node.id),
+      },
+    })),
+    [nodes, nodeTraces]
+  )
 
   // Handle node update from config drawer
   const handleNodeUpdate = React.useCallback((nodeId: string, data: Record<string, unknown>) => {
@@ -1663,7 +1675,7 @@ export function WorkflowEditorContent({
         {/* ReactFlow Canvas */}
         <div className={`flex-1 relative ${editorMode === 'hand' ? '[&_.react-flow__pane]:cursor-default!' : ''}`}>
           <ReactFlow
-            nodes={nodes}
+            nodes={renderedNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}

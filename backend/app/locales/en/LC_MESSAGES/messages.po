@@ -1902,11 +1902,20 @@ msgstr "Volcengine rate limit exceeded"
 msgid "volcengine_api_error"
 msgstr "Volcengine API error"
 
+msgid "volcengine_image_invalid_parameter"
+msgstr "Invalid Volcengine image parameter: {field}"
+
+msgid "volcengine_image_response_missing_output"
+msgstr "Volcengine image response did not contain generated images"
+
 msgid "volcengine_task_polling_timed_out"
 msgstr "Volcengine task polling timed out"
 
 msgid "volcengine_task_missing_id"
 msgstr "Volcengine task did not return an id"
+
+msgid "volcengine_video_response_missing_output"
+msgstr "Volcengine video task completed without video output"
 
 msgid "dashscope_request_timeout"
 msgstr "DashScope request timeout"
@@ -2388,6 +2397,18 @@ msgstr "Username already exists"
 
 msgid "validation_error"
 msgstr "Validation error"
+
+msgid "workflow_media_invalid_mode"
+msgstr "Select image or video generation mode in the media generation node"
+
+msgid "workflow_media_model_not_found"
+msgstr "The model selected in the media generation node no longer exists; select an available model"
+
+msgid "workflow_media_model_required"
+msgstr "Select a model in the media generation node before running the workflow"
+
+msgid "workflow_media_prompt_required"
+msgstr "Enter a prompt in the media generation node before running the workflow"
 
 msgid "vector_search_failed"
 msgstr "Vector search failed: {error}"

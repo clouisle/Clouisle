@@ -13,6 +13,7 @@ from .openai_responses import OpenAIResponsesImageAdapter
 from .runway import RunwayImageAdapter
 from .siliconflow import SiliconFlowImageAdapter
 from .stability import StabilityImageAdapter
+from .volcengine import VolcengineImageAdapter
 
 
 def create_image_adapter(model_config: Model) -> BaseImageAdapter:
@@ -46,6 +47,8 @@ def create_image_adapter(model_config: Model) -> BaseImageAdapter:
         return LumaImageAdapter(model_config)
     elif provider == ModelProvider.STABILITY:
         return StabilityImageAdapter(model_config)
+    elif provider == ModelProvider.VOLCENGINE:
+        return VolcengineImageAdapter(model_config)
     else:
         raise UnsupportedOperationError(
             message=f"Image generation not supported for provider: {provider}",
@@ -64,4 +67,5 @@ __all__ = [
     "LumaImageAdapter",
     "SiliconFlowImageAdapter",
     "StabilityImageAdapter",
+    "VolcengineImageAdapter",
 ]

@@ -2,9 +2,11 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Image as ImageIcon, Video } from 'lucide-react'
+import { Image as ImageIcon, Loader2, Video, XCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { ImageLightbox, VideoLightbox, useLightbox } from '@/components/chat/image-lightbox'
 import { cn } from '@/lib/utils'
+import type { NodeTrace } from '../node-output-renderer'
 
 export type MediaGenerationMode = 'image' | 'video'
 
@@ -37,6 +39,7 @@ interface MediaGenerationNodeData {
   label: string
   mediaGenerationConfig?: MediaGenerationConfig
   config: Record<string, unknown>
+  runtimeTrace?: NodeTrace
 }
 
 interface MediaGenerationNodeProps {
@@ -50,9 +53,18 @@ export function MediaGenerationNode({ selected, data }: MediaGenerationNodeProps
   const config = data.mediaGenerationConfig || defaultMediaGenerationConfig
   const isVideo = config.mode === 'video'
   const Icon = isVideo ? Video : ImageIcon
+  const trace = data.runtimeTrace
+  const result = trace?.outputs?.result
+  const imageUrls = !isVideo && Array.isArray(result)
+    ? result.filter((url): url is string => typeof url === 'string' && !!url)
+    : []
+  const videoUrl = isVideo && typeof result === 'string' ? result : null
+  const imageLightbox = useLightbox()
+  const [videoLightboxOpen, setVideoLightboxOpen] = React.useState(false)
+  const hasPreview = imageUrls.length > 0 || !!videoUrl
 
   return (
-    <div className="group relative">
+    <div className={cn('group relative', hasPreview ? 'w-[280px]' : 'w-[180px]')}>
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">{t('nodesMediaGeneration.label')}</span>
       </div>
@@ -60,7 +72,7 @@ export function MediaGenerationNode({ selected, data }: MediaGenerationNodeProps
       <div
         className={cn(
           'relative flex items-center gap-2 px-2.5 py-2 rounded-xl border bg-card shadow-sm transition-all',
-          'min-w-[180px] max-w-[240px]',
+          'w-full min-w-[180px]',
           selected ? 'border-primary' : 'border-border hover:border-primary/50'
         )}
       >
@@ -89,6 +101,77 @@ export function MediaGenerationNode({ selected, data }: MediaGenerationNodeProps
           className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
         />
       </div>
+
+      {trace?.status === 'running' && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          {t('runDrawer.statusRunning')}
+        </div>
+      )}
+
+      {trace?.status === 'failed' && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <XCircle className="h-3.5 w-3.5" />
+          {t('runDrawer.statusFailed')}
+        </div>
+      )}
+
+      {imageUrls.length > 0 && (
+        <div className={cn(
+          'nodrag nopan mt-2 grid w-full gap-1 overflow-hidden rounded-xl border bg-muted/40 p-1',
+          imageUrls.length > 1 && 'grid-cols-2'
+        )}>
+          {imageUrls.slice(0, 4).map((url, index) => (
+            <button
+              key={`${url}-${index}`}
+              type="button"
+              className={cn(
+                'flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
+              )}
+              onClick={() => imageLightbox.openLightbox(url)}
+              aria-label={`Generated image ${index + 1}`}
+            >
+              <img
+                src={url}
+                alt={`Generated image ${index + 1}`}
+                className="h-full w-full object-contain"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {videoUrl && (
+        <button
+          type="button"
+          className="nodrag nopan mt-2 flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setVideoLightboxOpen(true)}
+          aria-label="Open generated video"
+        >
+          <video
+            src={videoUrl}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-contain"
+          />
+        </button>
+      )}
+
+      <ImageLightbox
+        src={imageLightbox.imageSrc}
+        alt={imageLightbox.imageAlt}
+        isOpen={imageLightbox.isOpen}
+        onClose={imageLightbox.closeLightbox}
+      />
+      {videoUrl && (
+        <VideoLightbox
+          src={videoUrl}
+          isOpen={videoLightboxOpen}
+          onClose={() => setVideoLightboxOpen(false)}
+        />
+      )}
     </div>
   )
 }

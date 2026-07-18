@@ -2,6 +2,30 @@
 
 ## Active
 
+- **volcengine-tts-seed-audio** — Complete. Add Volcengine OpenSpeech TTS and standalone Seed Audio generation using generic model configuration. See `docs/plan/volcengine-tts-seed-audio.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Audio-generation types and routing
+  - [x] 3. Volcengine TTS adapter
+  - [x] 4. Seed Audio adapter
+  - [x] 5. Real admin connection-test routing
+  - [x] 6. Frontend model management and i18n
+  - [x] 7. Focused tests and validation
+
+- **volcengine-ark-common-model-support** — Complete. Expose Volcengine Ark chat, text embedding, rerank, Seedream image, and Seedance video models. See `docs/plan/volcengine-ark-common-model-support.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Frontend provider exposure and naming
+  - [x] 3. Text embedding and Seedream support
+  - [x] 4. Seedance API compatibility
+  - [x] 5. Tests and validation
+
+- **workflow-media-preview-url-output** — Complete. Show generated media inside workflow canvas nodes and expose URL-only outputs. See `docs/plan/workflow-media-preview-url-output.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. URL-only backend output contract
+  - [x] 3. Canvas runtime trace projection
+  - [x] 4. In-node media preview
+  - [x] 5. Tests and validation
+  - [x] 6. Aspect-fit previews and fullscreen media viewing
+
 - **conversation-image-reference-pool** — Complete. Make active-branch uploaded and generated images reusable by Agent media tools without re-uploading. See `docs/plan/conversation-image-reference-pool.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Conversation image pool and inventory

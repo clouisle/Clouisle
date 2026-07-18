@@ -39,23 +39,28 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         mode = config.get("mode", "image")
 
         if mode not in {"image", "video"}:
-            return ExecutionResult(error="validation_error")
+            return ExecutionResult(error="workflow_media_invalid_mode")
 
         prompt = await self._build_prompt(config, context)
         if not prompt.strip():
-            return ExecutionResult(error="validation_error")
+            return ExecutionResult(error="workflow_media_prompt_required")
+
+        if not config.get("modelId"):
+            return ExecutionResult(error="workflow_media_model_required")
 
         model_id = await self._resolve_model_id(config)
         if not model_id:
-            return ExecutionResult(
-                error="validation_error" if not config.get("modelId") else "model_not_found"
-            )
+            return ExecutionResult(error="workflow_media_model_not_found")
 
         try:
             if mode == "image":
-                tool_result = await self._execute_image(config, context, prompt, model_id)
+                tool_result = await self._execute_image(
+                    config, context, prompt, model_id
+                )
             else:
-                tool_result = await self._execute_video(config, context, prompt, model_id)
+                tool_result = await self._execute_video(
+                    config, context, prompt, model_id
+                )
 
             return self._to_execution_result(tool_result, config)
         except Exception as exc:
@@ -79,7 +84,9 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             prompt=prompt,
             width=_optional_int(config.get("width")),
             height=_optional_int(config.get("height")),
-            num_images=_optional_int(config.get("numImages") or config.get("num_images"))
+            num_images=_optional_int(
+                config.get("numImages") or config.get("num_images")
+            )
             or 1,
             style=config.get("style") or None,
             quality=config.get("quality") or None,
@@ -88,7 +95,9 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             or None,
             seed=_optional_int(config.get("seed")),
             images=images,
-            extra_params=config.get("extraParams") or config.get("extra_params") or None,
+            extra_params=config.get("extraParams")
+            or config.get("extra_params")
+            or None,
             agent=self._media_agent(model_id, config),
         )
 
@@ -107,7 +116,9 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         return await generate_video(
             prompt=prompt,
             duration=_optional_float(config.get("duration")),
-            aspect_ratio=config.get("aspectRatio") or config.get("aspect_ratio") or None,
+            aspect_ratio=config.get("aspectRatio")
+            or config.get("aspect_ratio")
+            or None,
             motion_intensity=_optional_float(
                 config.get("motionIntensity") or config.get("motion_intensity")
             ),
@@ -117,7 +128,9 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             style=config.get("style") or None,
             seed=_optional_int(config.get("seed")),
             start_image_index=1 if current_images else None,
-            extra_params=config.get("extraParams") or config.get("extra_params") or None,
+            extra_params=config.get("extraParams")
+            or config.get("extra_params")
+            or None,
             agent=self._media_agent(model_id, config),
             current_images=current_images,
         )
@@ -166,7 +179,7 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             images = [value]
         if not all(isinstance(image, dict) for image in images):
             raise ValueError(t("validation_error"))
-        return images
+        return [image for image in images if isinstance(image, dict)]
 
     async def _resolve_model_id(self, config: dict[str, Any]) -> str | None:
         from app.models.model import Model, TeamModel
@@ -213,20 +226,32 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         config: dict[str, Any],
     ) -> ExecutionResult:
         display_result = tool_result.get("display_result", tool_result)
-        llm_result = tool_result.get("llm_result", "")
-        outputs: dict[str, WorkflowValue] = {
-            "result": display_result,
-            "llmResult": llm_result,
-            "status": "success" if display_result.get("success") else "error",
-        }
-        output_var = config.get("outputVariable") or "result"
-        if output_var != "result":
-            outputs[str(output_var)] = display_result
         if not display_result.get("success"):
             return ExecutionResult(
-                outputs=outputs,
                 error=str(display_result.get("error") or "media_generation_failed"),
             )
+
+        if config.get("mode", "image") == "video":
+            video = display_result.get("video") or {}
+            media_output: WorkflowValue = video.get("url")
+            if not isinstance(media_output, str) or not media_output:
+                return ExecutionResult(error="media_generation_failed")
+        else:
+            media_output = [
+                image["image"]["url"]
+                for image in display_result.get("images") or []
+                if isinstance(image, dict)
+                and isinstance(image.get("image"), dict)
+                and isinstance(image["image"].get("url"), str)
+                and image["image"]["url"]
+            ]
+            if not media_output:
+                return ExecutionResult(error="media_generation_failed")
+
+        outputs: dict[str, WorkflowValue] = {"result": media_output}
+        output_var = str(config.get("outputVariable") or "result")
+        if output_var != "result":
+            outputs[output_var] = media_output
         return ExecutionResult(outputs=outputs)
 
     async def validate_config(self, config: dict) -> list[str]:
@@ -240,34 +265,23 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         return errors
 
     def get_output_variables(self, config: dict) -> list[dict]:
-        output_var = config.get("outputVariable") or "result"
-        outputs = [
-            {"name": "result", "type": "object"},
-            {"name": "llmResult", "type": "string"},
-            {"name": "status", "type": "string"},
-        ]
+        output_type = "string" if config.get("mode") == "video" else "array"
+        output_var = str(config.get("outputVariable") or "result")
+        outputs = [{"name": "result", "type": output_type}]
         if output_var != "result":
-            outputs.append({"name": output_var, "type": "object"})
+            outputs.append({"name": output_var, "type": output_type})
         return outputs
 
     def get_output_specs(self, config: dict) -> list[NodeOutputDecl]:
-        result_spec = TypeSpec(
-            kind="object",
-            fields={
-                "kind": TypeSpec(kind="string"),
-                "success": TypeSpec(kind="boolean"),
-                "prompt": TypeSpec(kind="string"),
-                "error": TypeSpec(kind="string", nullable=True),
-            },
+        output_spec = (
+            TypeSpec(kind="string")
+            if config.get("mode") == "video"
+            else TypeSpec(kind="array", item=TypeSpec(kind="string"))
         )
-        output_var = config.get("outputVariable") or "result"
-        decls = [
-            NodeOutputDecl(name="result", type=result_spec),
-            NodeOutputDecl(name="llmResult", type=TypeSpec(kind="string")),
-            NodeOutputDecl(name="status", type=TypeSpec(kind="string")),
-        ]
+        output_var = str(config.get("outputVariable") or "result")
+        decls = [NodeOutputDecl(name="result", type=output_spec)]
         if output_var != "result":
-            decls.append(NodeOutputDecl(name=str(output_var), type=result_spec))
+            decls.append(NodeOutputDecl(name=output_var, type=output_spec))
         return decls
 
 
