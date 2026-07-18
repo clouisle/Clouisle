@@ -1013,28 +1013,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "当前智能体未启用图片生成",
     },
     "image_generation_succeeded": {
-        "en": "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}",
-        "zh": "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}",
+        "en": "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}. The generated images are already displayed by the interface. Do not include Markdown or HTML images, and do not invent image URLs in the final response.",
+        "zh": "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}。生成的图片已由界面展示，最终回复中不要输出 Markdown 或 HTML 图片，也不要编造图片地址。",
     },
     "image_reference_image_index_out_of_range": {
-        "en": "Reference image index {index} is out of range. Available uploaded images: {count}",
-        "zh": "参考图片索引 {index} 超出范围。可用上传图片数量：{count}",
+        "en": "Reference image index {index} is out of range. Available conversation images: {count}",
+        "zh": "参考图片索引 {index} 超出范围。可用会话图片数量：{count}",
     },
     "image_reference_images_conflict": {
-        "en": "Use either explicit reference images or uploaded image indexes, not both",
-        "zh": "请仅使用显式参考图或上传图片索引之一，不能同时使用",
+        "en": "Use either explicit reference images or conversation image indexes, not both",
+        "zh": "请仅使用显式参考图或会话图片索引之一，不能同时使用",
     },
     "image_reference_images_disabled": {
         "en": "Reference images are disabled for this agent",
         "zh": "当前智能体已禁用参考图",
     },
     "image_reference_invalid_uploaded_image": {
-        "en": "Uploaded image #{index} does not contain usable image data",
-        "zh": "上传图片 #{index} 不包含可用的图片数据",
+        "en": "Conversation image #{index} does not contain usable image data",
+        "zh": "会话图片 #{index} 不包含可用的图片数据",
     },
     "image_reference_no_uploaded_images": {
-        "en": "No uploaded images are available for the selected reference indexes",
-        "zh": "当前没有可用于所选参考索引的上传图片",
+        "en": "No conversation images are available for the selected reference indexes",
+        "zh": "当前没有可用于所选参考索引的会话图片",
     },
     "image_to_video_removed_from_project": {
         "en": "Image-to-video has been removed from the project",

@@ -71,6 +71,7 @@ from app.services.message_branching import (
     find_descendant_branch_from,
     get_last_active_canonical_message,
     get_prefix_path_before,
+    get_visible_conversation_messages,
     get_version_count as get_branch_version_count,
     get_version_root_id,
     stale_session_memory_if_source_outside_active_branch,
@@ -84,6 +85,9 @@ from app.api.v1.endpoints.chat_helpers import (
     should_retry_context_length,
     get_compression_trigger,
     get_tool_execution_payloads,
+    append_generated_images,
+    collect_conversation_images,
+    append_conversation_image_inventory,
     StreamIdleTimeoutError,
     iter_with_idle_timeout,
     send_heartbeat_if_needed,
@@ -619,20 +623,6 @@ async def persist_partial_round_error(
     return True
 
 
-async def get_model_capabilities(agent: Agent) -> dict:
-    """Get model capabilities (vision, function_call, etc.) for the agent."""
-    if not agent.model_id:
-        return {}
-
-    team_model = (
-        await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
-    )
-    if team_model and team_model.model.capabilities:
-        return team_model.model.capabilities
-
-    return {}
-
-
 async def get_agent_tools(agent: Agent) -> list[dict]:
     """
     Get tools configured for the agent.
@@ -1103,10 +1093,7 @@ async def chat(
         else None
     )
 
-    model_supports_vision = False
-    if chat_in.images and agent.enable_vision:
-        model_capabilities = await get_model_capabilities(agent)
-        model_supports_vision = model_capabilities.get("vision", False)
+    model_supports_vision = bool(chat_in.images and agent.enable_vision)
 
     streaming_config = get_streaming_config(agent)
     tool_timeouts = streaming_config["tool_timeouts"]
@@ -1133,6 +1120,12 @@ async def chat(
         if chat_in.history_override
         else None
     )
+    image_pool, image_inventory = collect_conversation_images(
+        await get_visible_conversation_messages(conversation.id),
+        current_message_id=user_msg.id,
+        current_images=chat_in.images,
+    )
+    model_message = append_conversation_image_inventory(final_message, image_inventory)
 
     try:
         # Import here to avoid circular import
@@ -1173,7 +1166,7 @@ async def chat(
                 prepared_context = await prepare_context(
                     agent=agent,
                     conversation=conversation,
-                    user_message=final_message,
+                    user_message=model_message,
                     model_id=model_id or "gpt-4",
                     model_context_limit=team_model.model.context_length
                     if team_model
@@ -1198,7 +1191,7 @@ async def chat(
                 prepared_context = await retry_prepare_model_context(
                     agent=agent,
                     conversation=conversation,
-                    user_message=final_message,
+                    user_message=model_message,
                     model_id=model_id or "gpt-4",
                     model_context_limit=team_model.model.context_length
                     if team_model
@@ -1231,7 +1224,7 @@ async def chat(
                 prepared_context = await retry_prepare_model_context(
                     agent=agent,
                     conversation=conversation,
-                    user_message=final_message,
+                    user_message=model_message,
                     model_id=model_id or "gpt-4",
                     model_context_limit=team_model.model.context_length
                     if team_model
@@ -1333,9 +1326,13 @@ async def chat(
                         tool_timeouts=tool_timeouts,
                         user=current_user,
                         session_id=sandbox_session_id,
-                        current_images=chat_in.images,
+                        current_images=image_pool,
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
+                    append_generated_images(image_pool, image_inventory, display_result)
+                    model_message = append_conversation_image_inventory(
+                        final_message, image_inventory
+                    )
 
                     tool_step_index = next_round_index
                     await Message.create(
@@ -1620,11 +1617,7 @@ async def chat_stream(
                 try:
                     from app.models.agent import RAGMode
 
-                    # Check if model supports vision before creating multimodal messages.
-                    model_supports_vision = False
-                    if chat_in.images and agent.enable_vision:
-                        model_capabilities = await get_model_capabilities(agent)
-                        model_supports_vision = model_capabilities.get("vision", False)
+                    model_supports_vision = bool(chat_in.images and agent.enable_vision)
 
                     # Handle RAG based on mode
                     rag_contexts: list[dict] = []
@@ -1723,6 +1716,14 @@ async def chat_stream(
                         if chat_in.history_override
                         else None
                     )
+                    image_pool, image_inventory = collect_conversation_images(
+                        await get_visible_conversation_messages(conversation.id),
+                        current_message_id=user_msg.id,
+                        current_images=chat_in.images,
+                    )
+                    model_message = append_conversation_image_inventory(
+                        final_message, image_inventory
+                    )
 
                     # Get model identifier
 
@@ -1800,7 +1801,7 @@ async def chat_stream(
                             prepared_context = await prepare_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -1844,7 +1845,7 @@ async def chat_stream(
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -1965,7 +1966,7 @@ async def chat_stream(
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -2191,10 +2192,16 @@ async def chat_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
-                                    current_images=chat_in.images,
+                                    current_images=image_pool,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
+                                )
+                                append_generated_images(
+                                    image_pool, image_inventory, display_result
+                                )
+                                model_message = append_conversation_image_inventory(
+                                    final_message, image_inventory
                                 )
                                 pending_tool_calls.append(
                                     {
@@ -2373,7 +2380,7 @@ async def chat_stream(
                     final_prepared_context = await prepare_model_context(
                         agent=agent,
                         conversation=conversation,
-                        user_message=final_message,
+                        user_message=model_message,
                         model_id=model_id or "gpt-4",
                         model_context_limit=team_model.model.context_length
                         if team_model
@@ -2385,7 +2392,7 @@ async def chat_stream(
                         file_content=file_content_str,
                         user_locale=current_user.locale,
                         history_override=working_history_override,
-                        current_images=chat_in.images,
+                        current_images=image_pool,
                         model_supports_vision=model_supports_vision,
                         current_user_message_id=user_msg.id,
                         include_current_user_message=True,
@@ -3029,6 +3036,12 @@ async def edit_user_message_stream(
                         is_round_canonical=True,
                     )
                     assistant_msg_id = str(assistant_msg.id)
+                    image_pool, image_inventory = collect_conversation_images(
+                        [*original_prefix, edited_user_msg],
+                    )
+                    model_message = append_conversation_image_inventory(
+                        final_message, image_inventory
+                    )
 
                     yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': assistant_msg_id, 'edited_message_id': str(edited_user_msg.id), 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number, 'edited_parent_id': str(root_id)})}\n\n"
                     last_event_time = time.time()
@@ -3108,7 +3121,7 @@ async def edit_user_message_stream(
                             prepared_context = await prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -3149,7 +3162,7 @@ async def edit_user_message_stream(
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -3245,7 +3258,7 @@ async def edit_user_message_stream(
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -3394,10 +3407,16 @@ async def edit_user_message_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
-                                    current_images=edited_user_msg.images,
+                                    current_images=image_pool,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
+                                )
+                                append_generated_images(
+                                    image_pool, image_inventory, display_result
+                                )
+                                model_message = append_conversation_image_inventory(
+                                    final_message, image_inventory
                                 )
                                 aggregate_output_tokens += len(llm_result) // 4
                                 pending_tool_calls.append(
@@ -3954,6 +3973,12 @@ async def regenerate_message(
                                 rag_contexts, user_message.content
                             )
 
+                    image_pool, image_inventory = collect_conversation_images(
+                        [*prefix_for_message, user_message],
+                    )
+                    model_message = append_conversation_image_inventory(
+                        final_message, image_inventory
+                    )
                     team_model = await get_agent_chat_model(agent)
                     model_id = (
                         f"{team_model.model.provider}/{team_model.model.model_id}"
@@ -4035,7 +4060,7 @@ async def regenerate_message(
                             prepared_context = await prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -4076,7 +4101,7 @@ async def regenerate_message(
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -4175,7 +4200,7 @@ async def regenerate_message(
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
                                 conversation=conversation,
-                                user_message=final_message,
+                                user_message=model_message,
                                 model_id=model_id or "gpt-4",
                                 model_context_limit=team_model.model.context_length
                                 if team_model
@@ -4330,10 +4355,16 @@ async def regenerate_message(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
-                                    current_images=user_message.images,
+                                    current_images=image_pool,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
+                                )
+                                append_generated_images(
+                                    image_pool, image_inventory, display_result
+                                )
+                                model_message = append_conversation_image_inventory(
+                                    final_message, image_inventory
                                 )
                                 pending_tool_calls.append(
                                     {
@@ -4502,7 +4533,7 @@ async def regenerate_message(
                     final_prepared_context = await prepare_model_context(
                         agent=agent,
                         conversation=conversation,
-                        user_message=final_message,
+                        user_message=model_message,
                         model_id=model_id or "gpt-4",
                         model_context_limit=team_model.model.context_length
                         if team_model

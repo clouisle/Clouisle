@@ -429,6 +429,8 @@ def test_build_media_llm_summaries_are_compact():
     assert "base64" not in image_summary
     assert "/api/v1/upload/files/" not in image_summary
     assert image_summary.startswith("Image generation succeeded")
+    assert "already displayed by the interface" in image_summary
+    assert "do not invent image urls" in image_summary.lower()
     assert (
         video_summary
         == "Video generation started. Task vid_123 is processing. Prompt: A cinematic robot walking through rain"
@@ -819,6 +821,54 @@ async def test_generate_image_rejects_reference_indexes_when_disabled():
     assert (
         result.display_result["error"] == "Reference images are disabled for this agent"
     )
+
+
+@pytest.mark.anyio
+async def test_generate_image_resolves_persisted_conversation_image(
+    tmp_path, monkeypatch
+):
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={
+            "default_model_ref": "google/gemini-2.5-flash-image",
+            "default_width": 1024,
+            "default_height": 1024,
+            "max_images": 4,
+            "allow_reference_images": True,
+        },
+    )
+    generated = tmp_path / "generated-images" / "out.png"
+    generated.parent.mkdir()
+    generated.write_bytes(b"image")
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.upload.UPLOAD_ROOT",
+        tmp_path,
+    )
+    response = ImageGenerationResponse(
+        images=[GeneratedImage(image=ImageContent(url="https://example.com/out.png"))],
+        model="google/gemini-2.5-flash-image",
+    )
+
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.media_asset_service.normalize_image",
+            AsyncMock(return_value=ImageContent(url="/api/v1/upload/files/out.png")),
+        ),
+    ):
+        result = await generate_image(
+            prompt="Use generated image",
+            reference_image_indexes=[1],
+            current_images=[{"url": "/api/v1/upload/files/generated-images/out.png"}],
+            agent=agent,
+        )
+
+    request = mock_generate.await_args.args[0]
+    assert result.display_result["success"] is True
+    assert request.images[0].file_path == str(generated)
 
 
 @pytest.mark.anyio

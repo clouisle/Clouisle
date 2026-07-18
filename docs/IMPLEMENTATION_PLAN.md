@@ -2,6 +2,19 @@
 
 ## Active
 
+- **conversation-image-reference-pool** — Complete. Make active-branch uploaded and generated images reusable by Agent media tools without re-uploading. See `docs/plan/conversation-image-reference-pool.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Conversation image pool and inventory
+  - [x] 3. Chat execution-path integration
+  - [x] 4. Persisted asset resolution
+  - [x] 5. Tests and validation
+
+- **openai-responses-image-provider** — Complete. Add an explicit image-only OpenAI Responses provider with optional reference-image inputs while preserving the existing OpenAI Images API path. See `docs/plan/openai-responses-image-provider.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend provider registration and Responses image adapter
+  - [x] 3. Frontend image-provider controls and i18n
+  - [x] 4. Regression tests and validation
+
 - **yun-107-media-generation-integration** — Complete. Thread uploaded images into Agent media tools and add a first-class Workflow media-generation node. See `docs/plan/yun-107-media-generation-integration.md`
   - [x] 1. Agent current-image plumbing
   - [x] 2. Workflow media executor
