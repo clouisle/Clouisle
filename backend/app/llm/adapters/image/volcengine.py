@@ -95,8 +95,13 @@ class VolcengineImageAdapter(BaseImageAdapter):
             self._invalid_parameter("response_format")
         payload["response_format"] = response_format
 
-        sequential_mode = payload.get("sequential_image_generation", "disabled")
+        sequential_mode = payload.get(
+            "sequential_image_generation",
+            "auto" if request.num_images > 1 else "disabled",
+        )
         if sequential_mode not in {"disabled", "auto"}:
+            self._invalid_parameter("sequential_image_generation")
+        if request.num_images > 1 and sequential_mode != "auto":
             self._invalid_parameter("sequential_image_generation")
         payload["sequential_image_generation"] = sequential_mode
 

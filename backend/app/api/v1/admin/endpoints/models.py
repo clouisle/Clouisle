@@ -240,7 +240,25 @@ async def test_model_connection(
                 default_params,
                 config,
             )
-        elif model_type in [ModelType.TTS, ModelType.STT]:
+        elif model_type == ModelType.TTS:
+            await _test_tts_model(
+                provider,
+                model.model_id,
+                model.api_key,
+                model.base_url,
+                default_params,
+                config,
+            )
+        elif model_type == ModelType.AUDIO_GENERATION:
+            await _test_audio_generation_model(
+                provider,
+                model.model_id,
+                model.api_key,
+                model.base_url,
+                default_params,
+                config,
+            )
+        elif model_type == ModelType.STT:
             _validate_api_key(provider, model.api_key)
         else:
             raise BusinessError(
@@ -634,14 +652,22 @@ async def _test_image_model(
     from app.llm.adapters.image import create_image_adapter
 
     adapter = create_image_adapter(cast(Model, TempModel()))
-    if provider == ModelProvider.OPENAI_RESPONSES:
-        from app.llm.types.image import ImageGenerationRequest
+    from app.llm.types.image import ImageGenerationRequest
 
-        await adapter.generate(
-            ImageGenerationRequest(
-                prompt="A simple connection test image",
-                quality="low",
-            )
+    request_params: dict[str, Any] = {
+        "prompt": "A simple connection test image",
+        "num_images": 1,
+    }
+    if provider == ModelProvider.OPENAI_RESPONSES:
+        request_params["quality"] = "low"
+
+    response = await adapter.generate(ImageGenerationRequest(**request_params))
+    if not response.images or not any(
+        image.image.has_content() for image in response.images
+    ):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_response",
         )
 
 

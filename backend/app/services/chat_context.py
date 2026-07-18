@@ -411,7 +411,7 @@ def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, s
             output = io.BytesIO()
             normalized_image.save(output, format="JPEG", quality=85, optimize=True)
             return base64.b64encode(output.getvalue()).decode(), "jpeg"
-    except (ValueError, UnidentifiedImageError):
+    except (OSError, ValueError, UnidentifiedImageError):
         return data, image_format or "png"
 
 

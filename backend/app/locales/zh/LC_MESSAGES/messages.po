@@ -1320,6 +1320,9 @@ msgstr "模型未找到或不可访问"
 msgid "model_test_connection_timeout"
 msgstr "连接超时"
 
+msgid "invalid_request_timeout"
+msgstr "请求超时必须是有限的正数"
+
 msgid "model_test_connection_failed_check_base_url"
 msgstr "连接失败，请检查 Base URL"
 

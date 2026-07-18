@@ -1093,7 +1093,12 @@ async def chat(
         else None
     )
 
-    model_supports_vision = bool(chat_in.images and agent.enable_vision)
+    model_supports_vision = bool(
+        chat_in.images
+        and agent.enable_vision
+        and team_model
+        and (team_model.model.capabilities or {}).get("vision")
+    )
 
     streaming_config = get_streaming_config(agent)
     tool_timeouts = streaming_config["tool_timeouts"]
@@ -1617,8 +1622,6 @@ async def chat_stream(
                 try:
                     from app.models.agent import RAGMode
 
-                    model_supports_vision = bool(chat_in.images and agent.enable_vision)
-
                     # Handle RAG based on mode
                     rag_contexts: list[dict] = []
                     final_message = chat_in.message
@@ -1707,6 +1710,12 @@ async def chat_stream(
                         f"{team_model.model.provider}/{team_model.model.model_id}"
                         if team_model
                         else None
+                    )
+                    model_supports_vision = bool(
+                        chat_in.images
+                        and agent.enable_vision
+                        and team_model
+                        and (team_model.model.capabilities or {}).get("vision")
                     )
                     working_history_override = (
                         [
@@ -3974,7 +3983,7 @@ async def regenerate_message(
                             )
 
                     image_pool, image_inventory = collect_conversation_images(
-                        [*prefix_for_message, user_message],
+                        prefix_for_message,
                     )
                     model_message = append_conversation_image_inventory(
                         final_message, image_inventory

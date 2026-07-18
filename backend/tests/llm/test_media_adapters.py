@@ -58,6 +58,15 @@ class TestImageFactory:
         assert default_adapter._get_request_timeout() == 300
         assert configured_adapter._get_request_timeout() == 420
 
+    @pytest.mark.parametrize("timeout", ["bad", 0, -1, float("nan"), float("inf")])
+    def test_request_timeout_rejects_invalid_values(self, timeout):
+        adapter = OpenAIImageAdapter(
+            build_model("openai", "gpt-image-1", config={"timeout": timeout})
+        )
+
+        with pytest.raises(InvalidRequestError):
+            adapter._get_request_timeout()
+
     def test_supports_custom_and_task_based_image_providers(self):
         assert isinstance(
             create_image_adapter(
@@ -345,6 +354,18 @@ class TestVolcengineImageAdapter:
             "data:image/jpeg;base64,aW1hZ2U=",
         ]
         assert payload["optimize_prompt_options"] == {"mode": "fast"}
+        assert payload["sequential_image_generation_options"] == {"max_images": 3}
+
+    def test_multi_image_request_enables_sequential_generation_by_default(self):
+        adapter = VolcengineImageAdapter(
+            build_model("volcengine", "doubao-seedream")
+        )
+
+        payload = adapter._build_payload(
+            ImageGenerationRequest(prompt="Three images", num_images=3)
+        )
+
+        assert payload["sequential_image_generation"] == "auto"
         assert payload["sequential_image_generation_options"] == {"max_images": 3}
 
     def test_parses_url_and_base64_seedream_outputs(self):

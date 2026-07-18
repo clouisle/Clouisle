@@ -140,6 +140,7 @@ const MANAGED_DEFAULT_PARAM_KEYS = new Set([
   'output_compression_quality',
   'duration',
   'voice',
+  'speaker',
   'speed',
   'thinking',
   'reasoning_effort',
@@ -432,7 +433,7 @@ export function ModelDialog({
       setStabilityOutputFormat((params.output_format as string) || '')
       setDefaultVideoDuration((params.duration as number)?.toString() || '')
       setDefaultVideoAspectRatio((params.aspect_ratio as string) || '')
-      setDefaultVoice((params.voice as string) || '')
+      setDefaultVoice((params[model.provider === 'volcengine' && model.model_type === 'tts' ? 'speaker' : 'voice'] as string) || '')
       setDefaultSpeed((params.speed as number)?.toString() || '')
       setReasoningEffort(
         (params.reasoning_effort as string)
@@ -616,6 +617,11 @@ export function ModelDialog({
       } else if (category === 'video') {
         if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
         if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
+      } else if (category === 'audio') {
+        if (defaultVoice) {
+          defaultParams[provider === 'volcengine' && modelType === 'tts' ? 'speaker' : 'voice'] = defaultVoice
+        }
+        if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
       }
       if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
       if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
@@ -794,7 +800,9 @@ export function ModelDialog({
         if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
         if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
       } else if (category === 'audio') {
-        if (defaultVoice) defaultParams.voice = defaultVoice
+        if (defaultVoice) {
+          defaultParams[provider === 'volcengine' && modelType === 'tts' ? 'speaker' : 'voice'] = defaultVoice
+        }
         if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
       }
       if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort

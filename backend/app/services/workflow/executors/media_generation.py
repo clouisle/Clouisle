@@ -41,18 +41,18 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         if mode not in {"image", "video"}:
             return ExecutionResult(error="workflow_media_invalid_mode")
 
-        prompt = await self._build_prompt(config, context)
-        if not prompt.strip():
-            return ExecutionResult(error="workflow_media_prompt_required")
-
-        if not config.get("modelId"):
-            return ExecutionResult(error="workflow_media_model_required")
-
-        model_id = await self._resolve_model_id(config)
-        if not model_id:
-            return ExecutionResult(error="workflow_media_model_not_found")
-
         try:
+            prompt = await self._build_prompt(config, context)
+            if not prompt.strip():
+                return ExecutionResult(error="workflow_media_prompt_required")
+
+            if not config.get("modelId"):
+                return ExecutionResult(error="workflow_media_model_required")
+
+            model_id = await self._resolve_model_id(config, run)
+            if not model_id:
+                return ExecutionResult(error="workflow_media_model_not_found")
+
             if mode == "image":
                 tool_result = await self._execute_image(
                     config, context, prompt, model_id
@@ -181,21 +181,31 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             raise ValueError(t("validation_error"))
         return [image for image in images if isinstance(image, dict)]
 
-    async def _resolve_model_id(self, config: dict[str, Any]) -> str | None:
-        from app.models.model import Model, TeamModel
+    async def _resolve_model_id(
+        self, config: dict[str, Any], run: "WorkflowRun"
+    ) -> str | None:
+        from app.models.model import TeamModel
+        from app.models.workflow import Workflow
 
         team_model_id = config.get("modelId")
-        if not team_model_id:
+        if not team_model_id or not run.workflow_id:
+            return None
+
+        workflow = await Workflow.filter(id=run.workflow_id).only("team_id").first()
+        if not workflow:
             return None
 
         team_model = (
-            await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+            await TeamModel.filter(
+                id=team_model_id,
+                team_id=workflow.team_id,
+                is_enabled=True,
+                model__is_enabled=True,
+            )
+            .prefetch_related("model")
+            .first()
         )
-        if team_model:
-            return str(team_model.model.id)
-
-        model = await Model.filter(id=team_model_id).first()
-        return str(model.id) if model else None
+        return str(team_model.model.id) if team_model else None
 
     def _media_agent(self, model_id: str, config: dict[str, Any]) -> SimpleNamespace:
         num_images = _optional_int(config.get("numImages") or config.get("num_images"))

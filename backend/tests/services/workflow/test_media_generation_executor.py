@@ -43,13 +43,15 @@ class TestMediaGenerationNodeExecutor:
     async def test_execute_returns_actionable_error_when_model_no_longer_exists(self):
         context = MagicMock()
         with (
+            patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
             patch("app.models.model.TeamModel.filter") as mock_team_model_filter,
-            patch("app.models.model.Model.filter") as mock_model_filter,
         ):
+            mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=SimpleNamespace(team_id="team-1")
+            )
             mock_team_model_filter.return_value.prefetch_related.return_value.first = (
                 AsyncMock(return_value=None)
             )
-            mock_model_filter.return_value.first = AsyncMock(return_value=None)
 
             result = await MediaGenerationNodeExecutor().execute(
                 {
@@ -91,6 +93,7 @@ class TestMediaGenerationNodeExecutor:
         team_model = SimpleNamespace(model=SimpleNamespace(id="model-1"))
 
         with (
+            patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
             patch("app.models.model.TeamModel.filter") as mock_team_model_filter,
             patch(
                 "app.services.workflow.executors.media_generation.generate_image",
@@ -119,11 +122,16 @@ class TestMediaGenerationNodeExecutor:
                 ),
             ) as mock_generate_image,
         ):
+            mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=SimpleNamespace(team_id="team-1")
+            )
             mock_team_model_filter.return_value.prefetch_related.return_value.first = (
                 AsyncMock(return_value=team_model)
             )
 
-            result = await executor.execute(node, context, MagicMock())
+            result = await executor.execute(
+                node, context, SimpleNamespace(workflow_id="workflow-1")
+            )
 
         assert result.success is True
         expected_urls = [
@@ -159,11 +167,11 @@ class TestMediaGenerationNodeExecutor:
         context.resolve_variable_ref = AsyncMock(
             return_value={"url": "https://x.test/a.png"}
         )
-        model = SimpleNamespace(id="model-1")
+        team_model = SimpleNamespace(model=SimpleNamespace(id="model-1"))
 
         with (
+            patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
             patch("app.models.model.TeamModel.filter") as mock_team_model_filter,
-            patch("app.models.model.Model.filter") as mock_model_filter,
             patch(
                 "app.services.workflow.executors.media_generation.generate_video",
                 new=AsyncMock(
@@ -183,12 +191,16 @@ class TestMediaGenerationNodeExecutor:
                 ),
             ) as mock_generate_video,
         ):
-            mock_team_model_filter.return_value.prefetch_related.return_value.first = (
-                AsyncMock(return_value=None)
+            mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=SimpleNamespace(team_id="team-1")
             )
-            mock_model_filter.return_value.first = AsyncMock(return_value=model)
+            mock_team_model_filter.return_value.prefetch_related.return_value.first = (
+                AsyncMock(return_value=team_model)
+            )
 
-            result = await executor.execute(node, context, MagicMock())
+            result = await executor.execute(
+                node, context, SimpleNamespace(workflow_id="workflow-1")
+            )
 
         assert result.success is True
         assert result.outputs == {

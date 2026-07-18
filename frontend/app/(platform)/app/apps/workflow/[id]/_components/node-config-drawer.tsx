@@ -629,18 +629,21 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       // 媒体生成节点输出变量
       if (nodeType === 'media_generation') {
         const mediaConfig = (n.data as { mediaGenerationConfig?: MediaGenerationConfig })?.mediaGenerationConfig || defaultMediaGenerationConfig
-        const outputVar = mediaConfig.outputVariable || 'result'
+        const isImage = mediaConfig.mode !== 'video'
+        const outputNames = new Set(['result', mediaConfig.outputVariable || 'result'])
 
-        variables.push({
-          id: `${n.id}.${outputVar}`,
-          name: outputVar,
-          type: 'Object',
-          group: n.id,
-          groupLabel: nodeLabel,
-          isSystem: false,
-          isArray: false,
-          isIterable: true,
-        })
+        if (filterType !== 'iterable' || isImage) {
+          outputNames.forEach(outputName => variables.push({
+            id: `${n.id}.${outputName}`,
+            name: outputName,
+            type: isImage ? 'Array' : 'String',
+            group: n.id,
+            groupLabel: nodeLabel,
+            isSystem: false,
+            isArray: isImage,
+            isIterable: isImage,
+          }))
+        }
       }
 
       // 代码节点输出变量

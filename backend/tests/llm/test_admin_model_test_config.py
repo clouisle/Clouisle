@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 from app.api.v1.admin.endpoints import models as models_endpoint
 
@@ -10,8 +11,16 @@ from app.llm.adapters.chat.moonshot_adapter import MoonshotAdapter
 from app.llm.adapters.chat.ollama_adapter import OllamaAdapter
 from app.llm.adapters.image.siliconflow import SiliconFlowImageAdapter
 from app.llm.errors import ProviderError
-from app.llm.types import TaskStatus, VideoContent, VideoGenerationResponse
+from app.llm.types import (
+    GeneratedImage,
+    ImageContent,
+    ImageGenerationResponse,
+    TaskStatus,
+    VideoContent,
+    VideoGenerationResponse,
+)
 from app.schemas.model import ModelProvider, ModelTestRequest, ModelType
+from app.schemas.response import BusinessError
 
 
 @pytest.mark.anyio
@@ -69,16 +78,27 @@ async def test_model_config_forwards_default_params_to_chat_test():
 
 @pytest.mark.anyio
 async def test_model_config_accepts_siliconflow_image_models():
-    response = await run_test_model_config(
-        ModelTestRequest(
-            provider=ModelProvider.SILICONFLOW,
-            model_id="black-forest-labs/FLUX.1-schnell",
-            model_type=ModelType.TEXT_TO_IMAGE,
-            api_key="test-key",
-            base_url="https://api.siliconflow.cn/v1",
-        ),
-        current_user=SimpleNamespace(),
+    generated = ImageGenerationResponse(
+        images=[
+            GeneratedImage(image=ImageContent(url="https://example.com/image.png"))
+        ],
+        model="black-forest-labs/FLUX.1-schnell",
     )
+    with patch.object(
+        SiliconFlowImageAdapter,
+        "generate",
+        new=AsyncMock(return_value=generated),
+    ):
+        response = await run_test_model_config(
+            ModelTestRequest(
+                provider=ModelProvider.SILICONFLOW,
+                model_id="black-forest-labs/FLUX.1-schnell",
+                model_type=ModelType.TEXT_TO_IMAGE,
+                api_key="test-key",
+                base_url="https://api.siliconflow.cn/v1",
+            ),
+            current_user=SimpleNamespace(),
+        )
 
     assert response["data"].success is True
 
@@ -126,7 +146,18 @@ async def test_model_config_routes_siliconflow_image_requests_to_image_validatio
 
 @pytest.mark.anyio
 async def test_openai_responses_image_validation_generates_a_real_test_image():
-    adapter = SimpleNamespace(generate=AsyncMock())
+    adapter = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=ImageGenerationResponse(
+                images=[
+                    GeneratedImage(
+                        image=ImageContent(url="https://example.com/image.png")
+                    )
+                ],
+                model="gpt-5",
+            )
+        )
+    )
 
     with patch(
         "app.llm.adapters.image.create_image_adapter", return_value=adapter
@@ -149,6 +180,28 @@ async def test_openai_responses_image_validation_generates_a_real_test_image():
     assert request.num_images == 1
     assert request.quality == "low"
     assert request.images is None
+
+
+@pytest.mark.anyio
+async def test_image_validation_rejects_empty_output_for_every_provider():
+    adapter = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=ImageGenerationResponse(images=[], model="image-01")
+        )
+    )
+
+    with patch("app.llm.adapters.image.create_image_adapter", return_value=adapter):
+        with pytest.raises(BusinessError):
+            await models_endpoint._test_image_model(
+                ModelProvider.MINIMAX,
+                "image-01",
+                "test-key",
+                None,
+                {},
+                {},
+            )
+
+    adapter.generate.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -178,6 +231,45 @@ async def test_model_config_routes_tts_to_real_adapter_call():
     assert temp_model.config == {"sample_rate": 24000}
     adapter.synthesize.assert_awaited_once()
     assert adapter.synthesize.await_args.args[0].voice == "test-speaker"
+    assert response["data"].success is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("model_type", "helper_name"),
+    [
+        (ModelType.TTS, "_test_tts_model"),
+        (ModelType.AUDIO_GENERATION, "_test_audio_generation_model"),
+    ],
+)
+async def test_saved_audio_model_routes_to_real_adapter_call(model_type, helper_name):
+    model = SimpleNamespace(
+        provider=ModelProvider.VOLCENGINE.value,
+        model_id="audio-model",
+        model_type=model_type.value,
+        api_key="test-key",
+        base_url="https://example.com",
+        default_params={"speaker": "test-speaker"},
+        config={"sample_rate": 24000},
+    )
+    query = SimpleNamespace(first=AsyncMock(return_value=model))
+
+    with (
+        patch.object(models_endpoint.Model, "filter", return_value=query),
+        patch.object(models_endpoint, helper_name, new_callable=AsyncMock) as helper,
+    ):
+        response = await models_endpoint.test_model_connection(
+            uuid4(), current_user=SimpleNamespace()
+        )
+
+    helper.assert_awaited_once_with(
+        ModelProvider.VOLCENGINE,
+        "audio-model",
+        "test-key",
+        "https://example.com",
+        {"speaker": "test-speaker"},
+        {"sample_rate": 24000},
+    )
     assert response["data"].success is True
 
 

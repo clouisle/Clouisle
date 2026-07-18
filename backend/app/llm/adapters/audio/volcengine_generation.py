@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import mimetypes
 from pathlib import Path
@@ -46,7 +47,7 @@ class VolcengineAudioGenerationAdapter(BaseAudioGenerationAdapter):
     async def generate(
         self, request: AudioGenerationRequest
     ) -> AudioGenerationResponse:
-        payload, audio_format = self._build_payload(request)
+        payload, audio_format = await asyncio.to_thread(self._build_payload, request)
         headers = {
             "Content-Type": "application/json",
             "X-Api-Key": str(self.api_key),

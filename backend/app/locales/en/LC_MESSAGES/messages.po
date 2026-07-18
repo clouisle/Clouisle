@@ -1320,6 +1320,9 @@ msgstr "Model not found or not accessible"
 msgid "model_test_connection_timeout"
 msgstr "Connection timeout"
 
+msgid "invalid_request_timeout"
+msgstr "Request timeout must be a finite positive number"
+
 msgid "model_test_connection_failed_check_base_url"
 msgstr "Connection failed, check base URL"
 

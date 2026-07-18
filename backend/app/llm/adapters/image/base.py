@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import math
 from typing import Any
 
+from app.core.i18n import t
+from app.llm.errors import InvalidRequestError
 from app.llm.types import ImageGenerationRequest, ImageGenerationResponse
 
 _MISSING = object()
@@ -31,7 +34,17 @@ class BaseImageAdapter(ABC):
     def _get_request_timeout(self) -> float:
         config = getattr(self.model_config, "config", None)
         timeout = config.get("timeout", 300) if isinstance(config, dict) else 300
-        return float(timeout)
+        try:
+            value = float(timeout)
+        except (TypeError, ValueError) as exc:
+            raise InvalidRequestError(
+                message=t("invalid_request_timeout"), field="timeout"
+            ) from exc
+        if not math.isfinite(value) or value <= 0:
+            raise InvalidRequestError(
+                message=t("invalid_request_timeout"), field="timeout"
+            )
+        return value
 
     def _request_field_was_explicitly_set(
         self,

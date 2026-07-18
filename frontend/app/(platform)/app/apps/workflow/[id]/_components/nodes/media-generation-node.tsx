@@ -54,11 +54,11 @@ export function MediaGenerationNode({ selected, data }: MediaGenerationNodeProps
   const isVideo = config.mode === 'video'
   const Icon = isVideo ? Video : ImageIcon
   const trace = data.runtimeTrace
-  const result = trace?.outputs?.result
-  const imageUrls = !isVideo && Array.isArray(result)
-    ? result.filter((url): url is string => typeof url === 'string' && !!url)
+  const output = trace?.outputs?.[config.outputVariable || 'result']
+  const imageUrls = !isVideo && Array.isArray(output)
+    ? output.filter((url): url is string => typeof url === 'string' && !!url)
     : []
-  const videoUrl = isVideo && typeof result === 'string' ? result : null
+  const videoUrl = isVideo && typeof output === 'string' ? output : null
   const imageLightbox = useLightbox()
   const [videoLightboxOpen, setVideoLightboxOpen] = React.useState(false)
   const hasPreview = imageUrls.length > 0 || !!videoUrl

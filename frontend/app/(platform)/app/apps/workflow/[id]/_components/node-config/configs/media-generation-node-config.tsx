@@ -47,6 +47,7 @@ export function MediaGenerationNodeConfig({
   }
 
   React.useEffect(() => {
+    let cancelled = false
     const loadModels = async () => {
       if (!currentTeam) return
 
@@ -54,14 +55,17 @@ export function MediaGenerationNodeConfig({
       try {
         const modelType = safeConfig.mode === 'image' ? 'text_to_image' : 'text_to_video'
         const models = await teamModelsApi.getTeamModels(currentTeam.id, modelType)
-        setTeamModels(models.filter(m => m.is_enabled))
+        if (!cancelled) setTeamModels(models.filter(m => m.is_enabled))
       } catch {
-        setTeamModels([])
+        if (!cancelled) setTeamModels([])
       } finally {
-        setIsLoadingModels(false)
+        if (!cancelled) setIsLoadingModels(false)
       }
     }
     loadModels()
+    return () => {
+      cancelled = true
+    }
   }, [currentTeam, safeConfig.mode])
 
   const selectedModel = React.useMemo(() => {
