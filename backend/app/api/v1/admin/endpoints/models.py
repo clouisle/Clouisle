@@ -3,6 +3,7 @@ Admin-only model management endpoints (CRUD, test, set-default).
 Public endpoints (providers, types, available, default) remain in the platform router.
 """
 
+import asyncio
 import time
 import logging
 from typing import Any, Optional, cast
@@ -231,8 +232,13 @@ async def test_model_connection(
                 config,
             )
         elif model_type == ModelType.TEXT_TO_VIDEO:
-            _test_video_model(
-                provider, model.model_id, model.api_key, model.base_url, config
+            await _test_video_model(
+                provider,
+                model.model_id,
+                model.api_key,
+                model.base_url,
+                default_params,
+                config,
             )
         elif model_type in [ModelType.TTS, ModelType.STT]:
             _validate_api_key(provider, model.api_key)
@@ -263,7 +269,9 @@ async def test_model_connection(
             error_msg = t("model_test_invalid_api_key")
         elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
             error_msg = t("model_test_model_not_accessible")
-        elif "429" in raw_error_msg or "rate limit" in raw_error_msg.lower():
+        elif (
+            "429" in raw_error_msg or "rate limit" in raw_error_msg.lower()
+        ) and model_type != ModelType.TEXT_TO_VIDEO:
             return success(
                 data=ModelTestResponse(
                     success=True,
@@ -355,7 +363,14 @@ async def test_model_config(
                 config,
             )
         elif model_type == ModelType.TEXT_TO_VIDEO:
-            _test_video_model(provider, model_id, api_key, base_url, config)
+            await _test_video_model(
+                provider,
+                model_id,
+                api_key,
+                base_url,
+                default_params,
+                config,
+            )
         elif model_type == ModelType.TTS:
             await _test_tts_model(
                 provider,
@@ -403,7 +418,9 @@ async def test_model_config(
             error_msg = t("model_test_invalid_api_key")
         elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
             error_msg = t("model_test_model_not_accessible")
-        elif "429" in raw_error_msg or "rate limit" in raw_error_msg.lower():
+        elif (
+            "429" in raw_error_msg or "rate limit" in raw_error_msg.lower()
+        ) and model_type != ModelType.TEXT_TO_VIDEO:
             return success(
                 data=ModelTestResponse(
                     success=True,
@@ -695,11 +712,12 @@ async def _test_audio_generation_model(
         )
 
 
-def _test_video_model(
+async def _test_video_model(
     provider: ModelProvider,
     model_id: str,
     api_key: str | None,
     base_url: Optional[str],
+    default_params: dict,
     config: dict,
 ) -> None:
     _validate_api_key(provider, api_key)
@@ -710,8 +728,45 @@ def _test_video_model(
             self.model_id = model_id
             self.api_key = api_key
             self.base_url = base_url
+            self.default_params = default_params
             self.config = config
 
     from app.llm.adapters.video import create_video_adapter
+    from app.llm.errors import ProviderError
+    from app.llm.types import TaskStatus, VideoGenerationRequest
 
-    create_video_adapter(cast(Model, TempModel()))
+    adapter = create_video_adapter(cast(Model, TempModel()))
+    request_params: dict[str, Any] = {"prompt": "A simple connection test video"}
+    if "duration" in default_params:
+        request_params["duration"] = default_params["duration"]
+    if "aspect_ratio" in default_params:
+        request_params["aspect_ratio"] = default_params["aspect_ratio"]
+
+    response = await adapter.generate(VideoGenerationRequest(**request_params))
+    pending_statuses = {TaskStatus.PENDING, TaskStatus.PROCESSING}
+    deadline = time.monotonic() + float(config.get("poll_timeout_s", 120))
+    poll_interval = float(config.get("poll_interval_ms", 3000)) / 1000
+
+    while response.status in pending_statuses and time.monotonic() < deadline:
+        await asyncio.sleep(poll_interval)
+        response = await adapter.get_status(response.task_id)
+
+    if response.status in pending_statuses:
+        raise ProviderError(
+            message=t("model_test_connection_timeout"),
+            provider=provider.value,
+            model=model_id,
+        )
+    if (
+        response.status == TaskStatus.COMPLETED
+        and response.video
+        and response.video.has_content()
+    ):
+        return
+
+    raise ProviderError(
+        message=response.error
+        or t("video_generation_failed", error=response.status.value),
+        provider=provider.value,
+        model=model_id,
+    )

@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-18T17:59:00.383Z
+// GENERATED — 2026-07-18T19:43:55.116Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -47,6 +47,7 @@ export type ModelsMessages = {
     testFailed: string
     fillRequiredFieldsFirst: string
     testing: string
+    videoTestCostWarning: string
     latency: string
     basicInfo: string
     parameters: string

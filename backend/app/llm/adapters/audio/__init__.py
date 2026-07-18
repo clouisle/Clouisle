@@ -6,6 +6,7 @@ from app.models.model import Model, ModelProvider
 from app.llm.errors import UnsupportedOperationError
 
 from .base import BaseAudioGenerationAdapter, BaseTTSAdapter, BaseSTTAdapter
+from .minimax_tts import MiniMaxTTSAdapter
 from .openai_tts import OpenAITTSAdapter
 from .openai_stt import OpenAISTTAdapter
 from .volcengine_generation import VolcengineAudioGenerationAdapter
@@ -30,6 +31,8 @@ def create_tts_adapter(model_config: Model) -> BaseTTSAdapter:
         return OpenAITTSAdapter(model_config)
     elif provider == ModelProvider.VOLCENGINE:
         return VolcengineTTSAdapter(model_config)
+    elif provider == ModelProvider.MINIMAX:
+        return MiniMaxTTSAdapter(model_config)
     else:
         raise UnsupportedOperationError(
             message=f"TTS not supported for provider: {provider}",
@@ -81,6 +84,7 @@ __all__ = [
     "BaseAudioGenerationAdapter",
     "BaseTTSAdapter",
     "BaseSTTAdapter",
+    "MiniMaxTTSAdapter",
     "OpenAITTSAdapter",
     "OpenAISTTAdapter",
     "VolcengineAudioGenerationAdapter",

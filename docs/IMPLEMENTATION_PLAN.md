@@ -2,6 +2,21 @@
 
 ## Active
 
+- **admin-video-model-generation-test** — Complete. Replace constructor-only video model tests with a confirmed, billable real generation and completion check. See `docs/plan/admin-video-model-generation-test.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Real generation and polling test
+  - [x] 3. Frontend cost confirmation and i18n
+  - [x] 4. Focused tests and validation
+
+- **minimax-media-integration** — Complete. Add MiniMax image, video, and synchronous TTS adapters using the existing media model and workflow architecture. See `docs/plan/minimax-media-integration.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Shared MiniMax HTTP client
+  - [x] 3. Image generation adapter
+  - [x] 4. Video generation adapter
+  - [x] 5. Synchronous TTS adapter
+  - [x] 6. Frontend provider exposure and backend i18n
+  - [x] 7. Focused tests and validation
+
 - **volcengine-tts-seed-audio** — Complete. Add Volcengine OpenSpeech TTS and standalone Seed Audio generation using generic model configuration. See `docs/plan/volcengine-tts-seed-audio.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Audio-generation types and routing

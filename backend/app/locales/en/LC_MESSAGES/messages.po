@@ -1917,6 +1917,57 @@ msgstr "Volcengine task did not return an id"
 msgid "volcengine_video_response_missing_output"
 msgstr "Volcengine video task completed without video output"
 
+msgid "invalid_minimax_api_key"
+msgstr "Invalid MiniMax API key"
+
+msgid "minimax_request_timeout"
+msgstr "MiniMax request timeout"
+
+msgid "minimax_endpoint_not_found"
+msgstr "MiniMax endpoint not found"
+
+msgid "minimax_rate_limit_exceeded"
+msgstr "MiniMax rate limit exceeded"
+
+msgid "minimax_api_error"
+msgstr "MiniMax API error"
+
+msgid "minimax_invalid_response"
+msgstr "MiniMax returned an invalid response"
+
+msgid "minimax_insufficient_balance"
+msgstr "MiniMax account balance is insufficient"
+
+msgid "minimax_content_filtered"
+msgstr "MiniMax blocked the content"
+
+msgid "minimax_invalid_request"
+msgstr "MiniMax rejected the request"
+
+msgid "minimax_task_not_found"
+msgstr "MiniMax task not found"
+
+msgid "minimax_task_missing_id"
+msgstr "MiniMax task did not return an id"
+
+msgid "minimax_invalid_parameter"
+msgstr "Invalid MiniMax parameter: {field}"
+
+msgid "minimax_image_response_missing_output"
+msgstr "MiniMax image response did not contain generated images"
+
+msgid "minimax_video_response_missing_output"
+msgstr "MiniMax video task completed without video output"
+
+msgid "minimax_video_generation_failed"
+msgstr "MiniMax video generation failed"
+
+msgid "minimax_tts_response_missing_output"
+msgstr "MiniMax TTS response did not contain audio"
+
+msgid "minimax_tts_invalid_audio"
+msgstr "MiniMax TTS returned invalid audio data"
+
 msgid "dashscope_request_timeout"
 msgstr "DashScope request timeout"
 

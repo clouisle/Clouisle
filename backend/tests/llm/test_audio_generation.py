@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.llm.adapters.audio import (
+    MiniMaxTTSAdapter,
     VolcengineAudioGenerationAdapter,
     VolcengineTTSAdapter,
     create_audio_generation_adapter,
@@ -44,6 +45,73 @@ def build_volcengine_model(model_id: str, **kwargs):
         default_params=kwargs.get("default_params", {}),
         config=kwargs.get("config", {}),
     )
+
+
+def test_minimax_tts_factory_and_payload():
+    model = SimpleNamespace(
+        provider=ModelProvider.MINIMAX,
+        model_id="speech-2.8-hd",
+        api_key="test-key",
+        base_url=None,
+        default_params={
+            "voice": "male-qn-qingse",
+            "speed": 0.8,
+            "format": "wav",
+            "sample_rate": 32000,
+        },
+        config={},
+    )
+    adapter = create_tts_adapter(model)
+
+    assert isinstance(adapter, MiniMaxTTSAdapter)
+    assert adapter._build_payload(TTSRequest(text="Hello", speed=1.25)) == {
+        "model": "speech-2.8-hd",
+        "text": "Hello",
+        "stream": False,
+        "output_format": "hex",
+        "voice_setting": {"voice_id": "male-qn-qingse", "speed": 1.25},
+        "audio_setting": {"format": "wav", "sample_rate": 32000},
+    }
+    assert (
+        adapter._build_payload(TTSRequest(text="Hello"))["voice_setting"]["speed"]
+        == 0.8
+    )
+
+
+@pytest.mark.anyio
+async def test_minimax_tts_decodes_hex_audio():
+    model = SimpleNamespace(
+        provider=ModelProvider.MINIMAX,
+        model_id="speech-2.8-hd",
+        api_key="test-key",
+        base_url=None,
+        default_params={"voice": "male-qn-qingse"},
+        config={},
+    )
+    adapter = MiniMaxTTSAdapter(model)
+    adapter.client = SimpleNamespace(
+        request=AsyncMock(return_value={"data": {"audio": "6869"}})
+    )
+
+    response = await adapter.synthesize(TTSRequest(text="Hello"))
+
+    assert response.audio.base64 == "aGk="
+    assert response.audio.format == "mp3"
+
+
+def test_minimax_tts_rejects_provider_speed_range():
+    model = SimpleNamespace(
+        provider=ModelProvider.MINIMAX,
+        model_id="speech-2.8-hd",
+        api_key="test-key",
+        base_url=None,
+        default_params={"voice": "male-qn-qingse"},
+        config={},
+    )
+    adapter = MiniMaxTTSAdapter(model)
+
+    with pytest.raises(InvalidRequestError):
+        adapter._build_payload(TTSRequest(text="Hello", speed=3))
 
 
 def test_volcengine_audio_factories():

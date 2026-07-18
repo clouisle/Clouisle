@@ -45,6 +45,7 @@
     "testFailed": "Connection test failed",
     "fillRequiredFieldsFirst": "Please fill required fields first",
     "testing": "Testing...",
+    "videoTestCostWarning": "This test will generate a real video, may incur provider charges, and can take several minutes. Continue?",
     "latency": "Latency",
     "basicInfo": "Basic Info",
     "parameters": "Parameters",

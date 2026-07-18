@@ -1917,6 +1917,57 @@ msgstr "Volcengine 任务未返回 id"
 msgid "volcengine_video_response_missing_output"
 msgstr "火山方舟视频任务已完成，但未返回视频结果"
 
+msgid "invalid_minimax_api_key"
+msgstr "无效的 MiniMax API Key"
+
+msgid "minimax_request_timeout"
+msgstr "MiniMax 请求超时"
+
+msgid "minimax_endpoint_not_found"
+msgstr "未找到 MiniMax 接口端点"
+
+msgid "minimax_rate_limit_exceeded"
+msgstr "MiniMax 触发速率限制"
+
+msgid "minimax_api_error"
+msgstr "MiniMax API 错误"
+
+msgid "minimax_invalid_response"
+msgstr "MiniMax 返回了无效响应"
+
+msgid "minimax_insufficient_balance"
+msgstr "MiniMax 账户余额不足"
+
+msgid "minimax_content_filtered"
+msgstr "MiniMax 已拦截相关内容"
+
+msgid "minimax_invalid_request"
+msgstr "MiniMax 拒绝了该请求"
+
+msgid "minimax_task_not_found"
+msgstr "未找到 MiniMax 任务"
+
+msgid "minimax_task_missing_id"
+msgstr "MiniMax 任务未返回 id"
+
+msgid "minimax_invalid_parameter"
+msgstr "MiniMax 参数无效：{field}"
+
+msgid "minimax_image_response_missing_output"
+msgstr "MiniMax 图片响应未包含生成结果"
+
+msgid "minimax_video_response_missing_output"
+msgstr "MiniMax 视频任务已完成，但未返回视频结果"
+
+msgid "minimax_video_generation_failed"
+msgstr "MiniMax 视频生成失败"
+
+msgid "minimax_tts_response_missing_output"
+msgstr "MiniMax 语音响应未包含音频"
+
+msgid "minimax_tts_invalid_audio"
+msgstr "MiniMax 语音响应包含无效音频数据"
+
 msgid "dashscope_request_timeout"
 msgstr "DashScope 请求超时"
 

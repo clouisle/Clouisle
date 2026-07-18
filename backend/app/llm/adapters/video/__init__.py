@@ -9,6 +9,7 @@ from .base import BaseVideoAdapter
 from .dashscope import DashScopeVideoAdapter
 from .kling import KlingVideoAdapter
 from .luma import LumaVideoAdapter
+from .minimax import MiniMaxVideoAdapter
 from .pika import PikaVideoAdapter
 from .runway import RunwayVideoAdapter
 from .siliconflow import SiliconFlowVideoAdapter
@@ -31,6 +32,8 @@ def create_video_adapter(model_config: Model) -> BaseVideoAdapter:
         return SiliconFlowVideoAdapter(model_config)
     if provider == ModelProvider.VOLCENGINE:
         return VolcengineVideoAdapter(model_config)
+    if provider == ModelProvider.MINIMAX:
+        return MiniMaxVideoAdapter(model_config)
     if provider == ModelProvider.QWEN:
         return DashScopeVideoAdapter(model_config)
 
@@ -48,6 +51,7 @@ __all__ = [
     "DashScopeVideoAdapter",
     "KlingVideoAdapter",
     "LumaVideoAdapter",
+    "MiniMaxVideoAdapter",
     "PikaVideoAdapter",
     "RunwayVideoAdapter",
     "SiliconFlowVideoAdapter",

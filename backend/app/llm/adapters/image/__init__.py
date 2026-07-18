@@ -8,6 +8,7 @@ from app.llm.errors import UnsupportedOperationError
 from .base import BaseImageAdapter
 from .google import GoogleImageAdapter
 from .luma import LumaImageAdapter
+from .minimax import MiniMaxImageAdapter
 from .openai import OpenAIImageAdapter
 from .openai_responses import OpenAIResponsesImageAdapter
 from .runway import RunwayImageAdapter
@@ -49,6 +50,8 @@ def create_image_adapter(model_config: Model) -> BaseImageAdapter:
         return StabilityImageAdapter(model_config)
     elif provider == ModelProvider.VOLCENGINE:
         return VolcengineImageAdapter(model_config)
+    elif provider == ModelProvider.MINIMAX:
+        return MiniMaxImageAdapter(model_config)
     else:
         raise UnsupportedOperationError(
             message=f"Image generation not supported for provider: {provider}",
@@ -65,6 +68,7 @@ __all__ = [
     "GoogleImageAdapter",
     "RunwayImageAdapter",
     "LumaImageAdapter",
+    "MiniMaxImageAdapter",
     "SiliconFlowImageAdapter",
     "StabilityImageAdapter",
     "VolcengineImageAdapter",

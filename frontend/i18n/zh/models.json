@@ -45,6 +45,7 @@
     "testFailed": "连接测试失败",
     "fillRequiredFieldsFirst": "请先填写必填字段",
     "testing": "测试中...",
+    "videoTestCostWarning": "此测试将实际生成视频，可能产生供应商费用，并可能需要等待数分钟。是否继续？",
     "latency": "延迟",
     "basicInfo": "基本信息",
     "parameters": "参数设置",

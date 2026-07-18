@@ -7,6 +7,7 @@ import pytest
 from app.llm.adapters.image import create_image_adapter
 from app.llm.adapters.image.google import GoogleImageAdapter
 from app.llm.adapters.image.luma import LumaImageAdapter
+from app.llm.adapters.image.minimax import MiniMaxImageAdapter
 from app.llm.adapters.image.openai import OpenAIImageAdapter
 from app.llm.adapters.image.openai_responses import OpenAIResponsesImageAdapter
 from app.llm.adapters.image.runway import RunwayImageAdapter
@@ -17,6 +18,7 @@ from app.llm.adapters.video import create_video_adapter
 from app.llm.adapters.video.dashscope import DashScopeVideoAdapter
 from app.llm.adapters.video.kling import KlingVideoAdapter
 from app.llm.adapters.video.luma import LumaVideoAdapter
+from app.llm.adapters.video.minimax import MiniMaxVideoAdapter
 from app.llm.adapters.video.pika import PikaVideoAdapter
 from app.llm.adapters.video.runway import RunwayVideoAdapter
 from app.llm.adapters.video.siliconflow import SiliconFlowVideoAdapter
@@ -90,6 +92,10 @@ class TestImageFactory:
         assert isinstance(
             create_image_adapter(build_model("volcengine", "doubao-seedream")),
             VolcengineImageAdapter,
+        )
+        assert isinstance(
+            create_image_adapter(build_model("minimax", "image-01")),
+            MiniMaxImageAdapter,
         )
 
     def test_custom_image_provider_requires_base_url(self):
@@ -875,6 +881,10 @@ class TestVideoFactory:
         assert isinstance(
             create_video_adapter(build_model("qwen", "wan2.1-t2v-plus")),
             DashScopeVideoAdapter,
+        )
+        assert isinstance(
+            create_video_adapter(build_model("minimax", "MiniMax-Hailuo-2.3")),
+            MiniMaxVideoAdapter,
         )
 
 

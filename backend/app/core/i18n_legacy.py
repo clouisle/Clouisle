@@ -2614,6 +2614,71 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Volcengine video task completed without video output",
         "zh": "火山方舟视频任务已完成，但未返回视频结果",
     },
+    "invalid_minimax_api_key": {
+        "en": "Invalid MiniMax API key",
+        "zh": "无效的 MiniMax API Key",
+    },
+    "minimax_request_timeout": {
+        "en": "MiniMax request timeout",
+        "zh": "MiniMax 请求超时",
+    },
+    "minimax_endpoint_not_found": {
+        "en": "MiniMax endpoint not found",
+        "zh": "未找到 MiniMax 接口端点",
+    },
+    "minimax_rate_limit_exceeded": {
+        "en": "MiniMax rate limit exceeded",
+        "zh": "MiniMax 触发速率限制",
+    },
+    "minimax_api_error": {"en": "MiniMax API error", "zh": "MiniMax API 错误"},
+    "minimax_invalid_response": {
+        "en": "MiniMax returned an invalid response",
+        "zh": "MiniMax 返回了无效响应",
+    },
+    "minimax_insufficient_balance": {
+        "en": "MiniMax account balance is insufficient",
+        "zh": "MiniMax 账户余额不足",
+    },
+    "minimax_content_filtered": {
+        "en": "MiniMax blocked the content",
+        "zh": "MiniMax 已拦截相关内容",
+    },
+    "minimax_invalid_request": {
+        "en": "MiniMax rejected the request",
+        "zh": "MiniMax 拒绝了该请求",
+    },
+    "minimax_task_not_found": {
+        "en": "MiniMax task not found",
+        "zh": "未找到 MiniMax 任务",
+    },
+    "minimax_task_missing_id": {
+        "en": "MiniMax task did not return an id",
+        "zh": "MiniMax 任务未返回 id",
+    },
+    "minimax_invalid_parameter": {
+        "en": "Invalid MiniMax parameter: {field}",
+        "zh": "MiniMax 参数无效：{field}",
+    },
+    "minimax_image_response_missing_output": {
+        "en": "MiniMax image response did not contain generated images",
+        "zh": "MiniMax 图片响应未包含生成结果",
+    },
+    "minimax_video_response_missing_output": {
+        "en": "MiniMax video task completed without video output",
+        "zh": "MiniMax 视频任务已完成，但未返回视频结果",
+    },
+    "minimax_video_generation_failed": {
+        "en": "MiniMax video generation failed",
+        "zh": "MiniMax 视频生成失败",
+    },
+    "minimax_tts_response_missing_output": {
+        "en": "MiniMax TTS response did not contain audio",
+        "zh": "MiniMax 语音响应未包含音频",
+    },
+    "minimax_tts_invalid_audio": {
+        "en": "MiniMax TTS returned invalid audio data",
+        "zh": "MiniMax 语音响应包含无效音频数据",
+    },
     "web_search_api_error": {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",

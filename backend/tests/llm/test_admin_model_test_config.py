@@ -9,6 +9,8 @@ from app.api.v1.admin.endpoints.models import test_model_config as run_test_mode
 from app.llm.adapters.chat.moonshot_adapter import MoonshotAdapter
 from app.llm.adapters.chat.ollama_adapter import OllamaAdapter
 from app.llm.adapters.image.siliconflow import SiliconFlowImageAdapter
+from app.llm.errors import ProviderError
+from app.llm.types import TaskStatus, VideoContent, VideoGenerationResponse
 from app.schemas.model import ModelProvider, ModelTestRequest, ModelType
 
 
@@ -203,6 +205,157 @@ async def test_model_config_routes_audio_generation_to_real_adapter_call():
     adapter.generate.assert_awaited_once()
     assert adapter.generate.await_args.args[0].prompt
     assert response["data"].success is True
+
+
+@pytest.mark.anyio
+async def test_model_config_generates_configured_video_and_polls_to_completion():
+    adapter = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=VideoGenerationResponse(
+                task_id="task-1",
+                status=TaskStatus.PENDING,
+                model="MiniMax-Hailuo-2.3",
+            )
+        ),
+        get_status=AsyncMock(
+            side_effect=[
+                VideoGenerationResponse(
+                    task_id="task-1",
+                    status=TaskStatus.PROCESSING,
+                    model="MiniMax-Hailuo-2.3",
+                ),
+                VideoGenerationResponse(
+                    task_id="task-1",
+                    status=TaskStatus.COMPLETED,
+                    video=VideoContent(url="https://example.com/video.mp4"),
+                    model="MiniMax-Hailuo-2.3",
+                ),
+            ]
+        ),
+    )
+
+    with (
+        patch(
+            "app.llm.adapters.video.create_video_adapter", return_value=adapter
+        ) as create_adapter,
+        patch.object(models_endpoint.asyncio, "sleep", new=AsyncMock()),
+    ):
+        response = await run_test_model_config(
+            ModelTestRequest(
+                provider=ModelProvider.MINIMAX,
+                model_id="MiniMax-Hailuo-2.3",
+                model_type=ModelType.TEXT_TO_VIDEO,
+                api_key="test-key",
+                default_params={"duration": 6, "aspect_ratio": "9:16"},
+                config={"poll_interval_ms": 1, "poll_timeout_s": 30},
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    temp_model = create_adapter.call_args.args[0]
+    assert temp_model.default_params == {"duration": 6, "aspect_ratio": "9:16"}
+    assert temp_model.config == {"poll_interval_ms": 1, "poll_timeout_s": 30}
+    request = adapter.generate.await_args.args[0]
+    assert request.duration == 6
+    assert request.aspect_ratio == "9:16"
+    assert adapter.get_status.await_count == 2
+    assert response["data"].success is True
+
+
+@pytest.mark.anyio
+async def test_video_model_test_uses_default_duration_and_rejects_empty_output():
+    adapter = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=VideoGenerationResponse(
+                task_id="task-1",
+                status=TaskStatus.COMPLETED,
+                model="gen4.5",
+            )
+        )
+    )
+
+    with patch("app.llm.adapters.video.create_video_adapter", return_value=adapter):
+        with pytest.raises(ProviderError):
+            await models_endpoint._test_video_model(
+                ModelProvider.RUNWAY,
+                "gen4.5",
+                "test-key",
+                None,
+                {},
+                {},
+            )
+
+    assert adapter.generate.await_args.args[0].duration == 5
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", [TaskStatus.FAILED, TaskStatus.CANCELLED])
+async def test_video_model_test_rejects_terminal_failure(status):
+    adapter = SimpleNamespace(
+        generate=AsyncMock(
+            return_value=VideoGenerationResponse(
+                task_id="task-1",
+                status=status,
+                error="Generation stopped",
+                model="gen4.5",
+            )
+        )
+    )
+
+    with patch("app.llm.adapters.video.create_video_adapter", return_value=adapter):
+        with pytest.raises(ProviderError, match="Generation stopped"):
+            await models_endpoint._test_video_model(
+                ModelProvider.RUNWAY,
+                "gen4.5",
+                "test-key",
+                None,
+                {},
+                {},
+            )
+
+
+@pytest.mark.anyio
+async def test_video_model_test_fails_when_polling_times_out():
+    pending = VideoGenerationResponse(
+        task_id="task-1",
+        status=TaskStatus.PENDING,
+        model="gen4.5",
+    )
+    adapter = SimpleNamespace(generate=AsyncMock(return_value=pending))
+
+    with (
+        patch("app.llm.adapters.video.create_video_adapter", return_value=adapter),
+        patch.object(models_endpoint.time, "monotonic", side_effect=[0, 1]),
+    ):
+        with pytest.raises(ProviderError):
+            await models_endpoint._test_video_model(
+                ModelProvider.RUNWAY,
+                "gen4.5",
+                "test-key",
+                None,
+                {},
+                {"poll_timeout_s": 0},
+            )
+
+
+@pytest.mark.anyio
+async def test_model_config_does_not_treat_video_rate_limit_as_success():
+    with patch.object(
+        models_endpoint,
+        "_test_video_model",
+        new=AsyncMock(side_effect=RuntimeError("429 rate limit")),
+    ):
+        response = await run_test_model_config(
+            ModelTestRequest(
+                provider=ModelProvider.RUNWAY,
+                model_id="gen4.5",
+                model_type=ModelType.TEXT_TO_VIDEO,
+                api_key="test-key",
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    assert response["data"].success is False
 
 
 @pytest.mark.anyio

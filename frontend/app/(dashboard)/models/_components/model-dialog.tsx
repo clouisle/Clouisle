@@ -565,6 +565,10 @@ export function ModelDialog({
       return
     }
 
+    if (modelType === 'text_to_video' && !window.confirm(t('videoTestCostWarning'))) {
+      return
+    }
+
     setIsTesting(true)
     setTestResult(null)
 
@@ -609,6 +613,9 @@ export function ModelDialog({
           if (stabilityStylePreset) defaultParams.style_preset = stabilityStylePreset
           if (stabilityOutputFormat) defaultParams.output_format = stabilityOutputFormat
         }
+      } else if (category === 'video') {
+        if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
+        if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
       }
       if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
       if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
@@ -689,10 +696,10 @@ export function ModelDialog({
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
-      image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'volcengine', 'runway', 'luma', 'stability'],
-      video: ['volcengine', 'runway', 'luma'],
+      image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'volcengine', 'minimax', 'runway', 'luma', 'stability'],
+      video: ['volcengine', 'minimax', 'runway', 'luma'],
       audio: modelType === 'tts'
-        ? ['openai', 'azure_openai', 'custom', 'volcengine']
+        ? ['openai', 'azure_openai', 'custom', 'volcengine', 'minimax']
         : modelType === 'audio_generation'
           ? ['volcengine']
           : ['openai', 'azure_openai', 'custom'],
