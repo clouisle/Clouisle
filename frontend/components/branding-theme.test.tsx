@@ -25,7 +25,7 @@ const settings = (overrides: Partial<PublicSiteSettings> = {}) => ({
 function SiteHarness({ children, value = settings() }: React.PropsWithChildren<{ value?: PublicSiteSettings }>) {
   spyOn(siteSettingsApi, 'getPublic').mockResolvedValue(value)
   return (
-    <NextIntlClientProvider locale="en" messages={{ platform: { admin: 'Admin' } }}>
+    <NextIntlClientProvider locale="en" timeZone="UTC" messages={{ platform: { admin: 'Admin' } }}>
       <NextThemesProvider forcedTheme="dark">
         <SiteSettingsProvider skipTitleUpdate skipFaviconUpdate>{children}</SiteSettingsProvider>
       </NextThemesProvider>
