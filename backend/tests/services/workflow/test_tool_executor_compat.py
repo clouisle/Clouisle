@@ -185,6 +185,7 @@ class TestToolNodeExecutorCompatibility:
         )
 
         assert result.error == "tool_not_found"
+        assert result.outputs == {}
         context.resolve_variable_ref.assert_not_awaited()
 
     @pytest.mark.anyio
@@ -200,7 +201,41 @@ class TestToolNodeExecutorCompatibility:
             )
 
         assert result.error == "tool_not_found"
+        assert result.outputs == {}
         mock_filter.assert_called_once_with(id="missing-tool")
+
+    @pytest.mark.anyio
+    async def test_execute_uses_no_team_when_workflow_is_missing(self):
+        run = MagicMock(workflow_id="missing-workflow", triggered_by_id=123)
+        tool = MagicMock()
+
+        with (
+            patch("app.models.tool.Tool.filter") as mock_tool_filter,
+            patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
+            patch(
+                "app.services.tool.ToolExecutor.execute",
+                new=AsyncMock(return_value="done"),
+            ) as mock_execute,
+        ):
+            mock_tool_filter.return_value.first = AsyncMock(return_value=tool)
+            mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=None
+            )
+            result = await ToolNodeExecutor().execute(
+                {"data": {"config": {"toolId": "tool-1"}}},
+                MagicMock(),
+                run,
+            )
+
+        assert result.success is True
+        assert result.outputs["result"] == "done"
+        assert set(result.outputs) == {"result", "status", "executionTime"}
+        mock_execute.assert_awaited_once_with(
+            tool=tool,
+            arguments={},
+            user_id="123",
+            team_id=None,
+        )
 
     @pytest.mark.anyio
     async def test_execute_maps_tool_failure_to_public_error_outputs(self):
@@ -240,21 +275,24 @@ class TestToolNodeExecutorCompatibility:
         translate_error.assert_called_once()
         assert isinstance(translate_error.call_args.args[0], RuntimeError)
 
-    def test_output_declarations_include_configured_alias(self):
+    @pytest.mark.parametrize(
+        ("config", "names"),
+        [
+            ({}, ["result", "status", "executionTime"]),
+            (
+                {"outputVariable": "answer"},
+                ["answer", "result", "status", "executionTime"],
+            ),
+            (
+                {"outputVariable": ""},
+                ["result", "status", "executionTime"],
+            ),
+        ],
+    )
+    def test_output_declarations_handle_default_alias_and_empty_alias(
+        self, config, names
+    ):
         executor = ToolNodeExecutor()
 
-        assert executor.get_output_variables({"outputVariable": "answer"}) == [
-            {"name": "answer", "type": "any"},
-            {"name": "result", "type": "any"},
-            {"name": "status", "type": "string"},
-            {"name": "executionTime", "type": "number"},
-        ]
-        assert [
-            (declaration.name, declaration.type.kind)
-            for declaration in executor.get_output_specs({"outputVariable": "answer"})
-        ] == [
-            ("answer", "any"),
-            ("result", "any"),
-            ("status", "string"),
-            ("executionTime", "number"),
-        ]
+        assert [item["name"] for item in executor.get_output_variables(config)] == names
+        assert [item.name for item in executor.get_output_specs(config)] == names
