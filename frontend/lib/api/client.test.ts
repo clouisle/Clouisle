@@ -226,4 +226,33 @@ describe('API response behavior', () => {
     expect(error.message).toBe('Session expired. Please login again.')
     expect(storage.get('access_token')).toBe('secret')
   })
+
+  test('redirects auth failures back to the current page', async () => {
+    const storage = useBrowserState('secret', 'en')
+    window.location.pathname = '/projects'
+    window.location.search = '?page=2'
+    axiosInstance.defaults.adapter = async (config) => ({
+      config,
+      data: { code: 401, data: null, msg: 'Unauthorized' },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    })
+
+    await api.get('/private', { silent: true }).catch(() => undefined)
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(storage.has('access_token')).toBe(false)
+    expect(window.location.href).toBe('/login?redirect=%2Fprojects%3Fpage%3D2')
+  })
+
+  test('propagates request interceptor failures', async () => {
+    const interceptor = axiosInstance.interceptors.request.use(() => Promise.reject(new Error('blocked')))
+
+    const error = await api.get('/blocked').catch(value => value)
+
+    axiosInstance.interceptors.request.eject(interceptor)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.message).toBe('Network error, please check your connection')
+  })
 })
