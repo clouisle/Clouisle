@@ -28,10 +28,10 @@ Prepare authorized, disposable accounts and data:
 
 - **Purpose:** establish session, redirect, verification, recovery, MFA, and permission-boundary behavior.
 - **Routes:** `/login`, `/register`, `/verify`, `/forgot-password`, `/reset-password`, `/change-password`, `/totp-setup`, `/sso-callback`; protected platform routes under `/app/**`; dashboard routes such as `/dashboard`.
-- **Landmarks:** `Welcome back`; `Username or email`; `Password`; `Login`; `Forgot password?`; `Human verification`; `Verify your email`; `Verification Code`; `Reset Password`; `Current Password`; `Two-Factor Authentication Required`; `6-digit code`; `Use backup code instead`; `Scan QR Code`; `Save Backup Codes`.
-- **Happy scenarios:** log in with a valid authorized account; verify that a protected-route request returns to the intended route after login; complete email verification or password reset with disposable data; complete TOTP setup and code login when provisioned.
-- **Error/access scenarios:** submit blank/invalid credentials; submit an invalid TOTP or backup code; open a protected route without a token; use a user lacking the mapped route permission; provide an unsafe SSO redirect value and confirm the application does not navigate off-site. The backend test suite covers unsafe redirect rejection and normalizes registration locale values.
-- **Side effects/cleanup:** login writes local session state; verification/reset requests send email; TOTP setup generates recovery material. Clear browser storage/session, invalidate or remove only test credentials, and do not print recovery codes.
+- **Landmarks:** `Welcome back`; `Username or email`; `Password`; `Login`; `Forgot password?`; `Human verification`; `Verify your email`; `Verification Code`; `Reset Password`; `Current Password`; `New Password`; `Confirm Password`; `Two-Factor Authentication Required`; `6-digit code`; `Use backup code instead`; `Scan QR Code`; QR image accessible name `TOTP QR Code`; `Or enter this code manually`; `Copy Code`; `Code copied!`; `Save Backup Codes`; password-warning text `Your password will expire in {days} days`; `Change Password Now`.
+- **Happy scenarios:** log in with a valid authorized account; verify that a protected-route request returns to the intended route after login; complete email verification or password reset with disposable data; change a disposable account password and confirm the requested `redirect` destination; during TOTP setup, verify the QR image, reveal the read-only manual secret, and copy it only to an approved ephemeral clipboard; for a non-exempt account expiring within seven days, verify the warning links to `/profile` and can be dismissed.
+- **Error/access scenarios:** submit blank/invalid credentials; submit mismatched new/confirmation passwords and confirm no password-change request is sent; submit an invalid TOTP or backup code; confirm the password warning stays hidden for exempt users and status-request failures; open a protected route without a token; use a user lacking the mapped route permission; provide an unsafe SSO redirect value and confirm the application does not navigate off-site. The backend test suite covers unsafe redirect rejection and normalizes registration locale values.
+- **Side effects/cleanup:** login writes local session state; verification/reset requests send email; changing a password invalidates the old credential; TOTP setup generates recovery material and copying writes the secret to the system clipboard; dismissing the expiration warning changes only component state. Clear browser storage/session and clipboard, restore or invalidate only test credentials, and do not print or retain TOTP secrets or recovery codes.
 
 ### 2. Chat
 
@@ -82,10 +82,10 @@ Prepare authorized, disposable accounts and data:
 
 - **Purpose:** verify dashboard routing, navigation, role/permission controls, and representative admin authorization boundaries.
 - **Routes:** `/dashboard`; `/dashboard/observability`; `/users`; `/roles`; `/permissions`; `/models`; `/apps`; `/capabilities`; `/api-keys`; `/memories`; `/audit-logs`; `/site-settings` and its subroutes.
-- **Landmarks:** sidebar items `Dashboard`, `Teams`, `Knowledge Bases`, `Activity Log`, `Users`, `Roles`, `Permissions`, `API Keys`, `Models`, `Apps`, `Capabilities`, `Notifications`, `Site Settings`, `Audit Logs`, `Observability`, `Memories`, `Log out`.
-- **Happy scenarios:** with an authorized disposable admin, navigate to a representative dashboard page; create/update/delete a clearly prefixed role or permission only when the environment permits; verify a selected admin page loads and its navigation landmark is visible.
-- **Error/access scenarios:** access each relevant route with a user missing its mapped permission; confirm route denial/redirect and hidden action controls; use an invalid resource ID. Route permissions include distinct codes for dashboard, users, roles, permissions, models, apps, API keys, memories, audit logs, and settings.
-- **Side effects/cleanup:** role/permission and API-key changes affect access; model/settings changes may affect shared service behavior; audit entries persist. Prefer read-only navigation tests. If mutation is necessary, use uniquely prefixed disposable records and delete them; never alter live roles, site settings, or API keys.
+- **Landmarks:** sidebar items `Dashboard`, `Teams`, `Knowledge Bases`, `Activity Log`, `Users`, `Roles`, `Permissions`, `API Keys`, `Models`, `Apps`, `Capabilities`, `Notifications`, `Site Settings`, `Audit Logs`, `Observability`, `Memories`, `Log out`; dashboard time ranges `Last 7 Days`, `Last 30 Days`, `Last 90 Days`, `All Time`; package controls `Import`, `Export`, `Import resource`, `Choose file`, `Preview`, `Install`, `Valid`, `Invalid`, `Dependencies`, `Name conflict`, `Import as renamed`, `Overwrite existing`, `Skip import`.
+- **Happy scenarios:** with an authorized disposable admin, navigate to a representative dashboard page; select each dashboard time range and confirm the visible selection and refreshed data correspond to `7d`, `30d`, `90d`, or `all`; create/update/delete a clearly prefixed role or permission only when the environment permits; export a disposable tool, agent, workflow, or KB and verify a `.clouisle` download; preview a harmless `.clouisle` file for the intended target team, inspect dependencies/conflicts, then install with an explicitly allowed action.
+- **Error/access scenarios:** access each relevant route with a user missing its mapped permission; confirm route denial/redirect and hidden action controls; use an invalid resource ID; confirm an empty time-range selection causes no change; preview a wrong-type/invalid package, a package with missing or forbidden dependencies, and a name conflict; cancel before installation; confirm failed preview/export/install requests surface an error and do not produce a success state. Route permissions include distinct codes for dashboard, users, roles, permissions, models, apps, API keys, memories, audit logs, and settings.
+- **Side effects/cleanup:** role/permission and API-key changes affect access; model/settings changes may affect shared service behavior; audit entries persist. Time-range changes should only fetch/filter data. Package export creates a local download and temporary object URL; import preview uploads a file and creates a server-side session; install may create, rename, overwrite, or skip a resource. Prefer read-only navigation and preview-only package checks. Remove downloaded files and imported test resources, let the application release temporary object URLs, and never overwrite shared resources; if another mutation is necessary, use uniquely prefixed disposable records and delete them.
 
 ## Reusable secure Agent browser-testing prompt
 
@@ -95,7 +95,7 @@ You are testing Clouisle in an authorized non-production browser environment.
 Before acting:
 1. Confirm the current account, team, route, and test-data prefix are the intended ones.
 2. Use only the documented route and visible landmark for this journey. Inspect the rendered accessibility tree before choosing a selector; do not guess CSS/XPath selectors or rely on icon-only controls without an accessible name.
-3. Treat this guide's browser validation as unavailable: stop and report any missing, renamed, differently scoped, or unexpectedly behaving landmark.
+3. Treat automated unit/API evidence as implementation evidence only, not browser proof. Validate the rendered role/name, navigation, clipboard/download behavior, network result, and persisted state in this browser; stop and report any missing, renamed, differently scoped, or unexpectedly behaving landmark.
 
 Security and data handling:
 - Use only authorized test accounts and disposable test data.
@@ -105,7 +105,9 @@ Security and data handling:
 
 Execution:
 - Run the stated happy path, then the stated error/access path using the least-privileged test account.
-- Record only observable outcomes and created test-record identifiers.
+- For authentication, also exercise password mismatch, TOTP manual-entry/copy, and the expiration-warning visible/hidden/dismiss paths without recording secrets.
+- For dashboard/package behavior, verify every time-range label, preview before install, exercise one safe package error/conflict, and verify download/import cleanup.
+- Record only browser-observable outcomes and created test-record identifiers; cite unit/API tests separately as supporting evidence, never as a passed browser step.
 - Avoid destructive actions unless explicitly required. For any mutation, create uniquely prefixed data and clean up only records created by this run.
 - Stop immediately and report the discrepancy if permissions, environment, route, or UI state differs from this guide.
 
@@ -114,6 +116,6 @@ Report: route, account role/team, actions, observed landmarks/outcomes, created 
 
 ## Existing automated evidence and next step
 
-Frontend automated tests currently include unit tests run with `bun test`; backend API/service tests cover registration locale, SSO redirect safety, CAPTCHA cleanup, profile/email behavior, RBAC, KB permissions, team ownership transfer, and notification persistence. They do not prove browser rendering or end-to-end behavior.
+Frontend `bun test` evidence now covers change-password mismatch/request/redirect behavior, TOTP QR/manual-entry/clipboard state, password-expiration warning visibility/link/dismissal and hidden failure/exemption paths, dashboard time-range options/change filtering, and package user/admin request contracts, filename handling, error propagation, temporary-link click/removal, and object-URL revocation. These are mocked unit/contract tests: they do **not** prove rendered accessibility, real navigation or clipboard permissions, dashboard refetch/rendering, browser downloads, multipart transport, server-side package sessions/install effects, or end-to-end cleanup. Backend API/service tests additionally cover registration locale, SSO redirect safety, CAPTCHA cleanup, profile/email behavior, RBAC, KB permissions, team ownership transfer, and notification persistence; browser validation remains required for every journey reported as E2E.
 
 No dedicated Markdown/documentation lint command or configuration is present. `bun run lint` is frontend ESLint and does not lint this guide. When an E2E harness is introduced, convert one journey per section into executable browser tests and validate selector/accessibility claims against the rendered application.
