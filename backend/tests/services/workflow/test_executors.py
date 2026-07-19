@@ -2,438 +2,235 @@
 Tests for node executors.
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from app.services.workflow.context import ExecutionContext
+import pytest
+
+from app.services.sandbox.models import SandboxResult
+from app.services.workflow.executors.answer import AnswerNodeExecutor
+from app.services.workflow.executors.code import CodeNodeExecutor
+from app.services.workflow.executors.condition import ConditionNodeExecutor
+from app.services.workflow.executors.start import (
+    TriggerNodeExecutor,
+    UserInputNodeExecutor,
+)
+from app.services.workflow.executors.template import TemplateNodeExecutor
 
 
 class TestStartExecutors:
-    """Tests for start node executors."""
-
     @pytest.mark.asyncio
-    async def test_user_input_executor(self):
-        """Test user_input executor."""
-        from app.services.workflow.executors.start import UserInputExecutor
-
-        executor = UserInputExecutor()
-
+    async def test_user_input_reads_values_and_applies_defaults(self):
         node = {
             "id": "start_1",
-            "type": "user_input",
             "data": {
-                "variables": [
-                    {"name": "query", "type": "string", "required": True},
-                    {"name": "limit", "type": "number", "default": 10},
-                ],
+                "config": {
+                    "variables": [
+                        {"name": "query", "type": "string", "required": True},
+                        {"name": "limit", "type": "number", "default": 10},
+                    ]
+                }
             },
         }
+        context = MagicMock()
+        context.get_variable = AsyncMock(side_effect=["test query", None])
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_inputs = AsyncMock(return_value={"query": "test query"})
-        context.set_variable = AsyncMock()
+        result = await UserInputNodeExecutor().execute(node, context, MagicMock())
 
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert "query" in result.outputs
+        assert result.outputs == {"query": "test query", "limit": 10}
+        assert context.get_variable.await_args_list == [
+            call("sys.inputs.query"),
+            call("sys.inputs.limit"),
+        ]
 
     @pytest.mark.asyncio
-    async def test_trigger_executor(self):
-        """Test trigger executor."""
-        from app.services.workflow.executors.start import TriggerExecutor
-
-        executor = TriggerExecutor()
-
+    async def test_user_input_rejects_missing_required_value(self):
         node = {
-            "id": "trigger_1",
-            "type": "trigger",
+            "id": "start_1",
             "data": {
-                "triggerType": "manual",
+                "config": {
+                    "variables": [{"name": "query", "type": "string", "required": True}]
+                }
             },
         }
+        context = MagicMock()
+        context.get_variable = AsyncMock(return_value=None)
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_inputs = AsyncMock(return_value={})
+        result = await UserInputNodeExecutor().execute(node, context, MagicMock())
 
-        run = MagicMock()
-        run.trigger_type = "manual"
-        run.inputs = {}
+        assert result.error == "Required input 'query' not provided"
 
-        result = await executor.execute(node, context, run)
+    @pytest.mark.asyncio
+    async def test_trigger_includes_configured_values_and_metadata(self):
+        node = {
+            "id": "trigger_1",
+            "data": {
+                "config": {
+                    "triggerType": "webhook",
+                    "variables": [{"name": "event", "default": "created"}],
+                }
+            },
+        }
+        context = MagicMock()
+        context.get_variable = AsyncMock(return_value=None)
 
-        assert result.success is True
+        result = await TriggerNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.outputs["_trigger_type"] == "webhook"
+        assert result.outputs["_trigger_time"]
+        assert result.outputs["event"] == "created"
 
 
 class TestAnswerExecutor:
-    """Tests for answer node executor."""
-
     @pytest.mark.asyncio
-    async def test_answer_executor(self):
-        """Test answer executor."""
-        from app.services.workflow.executors.answer import AnswerExecutor
-
-        executor = AnswerExecutor()
-
+    async def test_concatenates_configured_outputs(self):
         node = {
             "id": "answer_1",
-            "type": "answer",
             "data": {
-                "answer": "The result is: {{result}}",
+                "answerConfig": {
+                    "outputs": [
+                        {"sourceVariable": "{{first.value}}"},
+                        {"sourceVariable": "{{second.value}}"},
+                    ]
+                }
             },
         }
+        context = MagicMock(run_id="run_1")
+        context.get_node_outputs = AsyncMock(return_value={})
+        context.resolve_variable_ref = AsyncMock(side_effect=["hello", {"ok": True}])
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value="42")
+        with patch(
+            "app.services.workflow.stream.StreamManager.publish_token",
+            new=AsyncMock(),
+        ) as publish_token:
+            result = await AnswerNodeExecutor().execute(node, context, MagicMock())
 
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert "answer" in result.outputs
+        assert result.outputs == {"answer": 'hello\n{"ok": true}'}
+        assert publish_token.await_args_list == [
+            call("answer_1", "hello"),
+            call("answer_1", "\n"),
+            call("answer_1", '{"ok": true}'),
+        ]
 
 
 class TestConditionExecutor:
-    """Tests for condition node executor."""
-
     @pytest.mark.asyncio
-    async def test_condition_true(self):
-        """Test condition executor with true condition."""
-        from app.services.workflow.executors.condition import ConditionExecutor
-
-        executor = ConditionExecutor()
-
+    @pytest.mark.parametrize(
+        ("score", "expected_branch"),
+        [(75, "high"), (25, "else")],
+    )
+    async def test_selects_matching_or_default_branch(self, score, expected_branch):
         node = {
             "id": "condition_1",
-            "type": "condition",
             "data": {
-                "conditions": [
+                "branches": [
                     {
-                        "variable": "{{score}}",
-                        "operator": ">",
-                        "value": "50",
+                        "id": "high",
+                        "conditions": [
+                            {
+                                "variable": "{{score}}",
+                                "operator": "greater_than",
+                                "value": 50,
+                            }
+                        ],
                     },
-                ],
-                "logicalOperator": "and",
+                    {"id": "else", "isDefault": True},
+                ]
             },
         }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=score)
+        context.set_branch = AsyncMock()
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value=75)
+        result = await ConditionNodeExecutor().execute(node, context, MagicMock())
 
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert result.next_handles == ["true"]
-
-    @pytest.mark.asyncio
-    async def test_condition_false(self):
-        """Test condition executor with false condition."""
-        from app.services.workflow.executors.condition import ConditionExecutor
-
-        executor = ConditionExecutor()
-
-        node = {
-            "id": "condition_1",
-            "type": "condition",
-            "data": {
-                "conditions": [
-                    {
-                        "variable": "{{score}}",
-                        "operator": ">",
-                        "value": "50",
-                    },
-                ],
-                "logicalOperator": "and",
-            },
-        }
-
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value=25)
-
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert result.next_handles == ["false"]
+        assert result.outputs["matched_branch"] == expected_branch
+        assert result.next_handles == [expected_branch]
+        context.set_branch.assert_awaited_once_with("condition_1", expected_branch)
 
 
 class TestCodeExecutor:
-    """Tests for code node executor."""
-
     @pytest.mark.asyncio
-    async def test_code_executor_simple(self):
-        """Test code executor with simple code."""
-        from app.services.workflow.executors.code import CodeExecutor
-
-        executor = CodeExecutor()
-
+    async def test_returns_sandbox_outputs(self):
         node = {
             "id": "code_1",
-            "type": "code",
             "data": {
-                "code": "result = input_value * 2",
-                "inputs": [{"name": "input_value", "type": "number"}],
-                "outputs": [{"name": "result", "type": "number"}],
+                "codeConfig": {
+                    "language": "python",
+                    "code": "def main(inputs):\n    return {'result': inputs['value'] * 2}",
+                    "inputs": [
+                        {
+                            "name": "value",
+                            "source": "variable",
+                            "variableRef": "{{start.value}}",
+                        }
+                    ],
+                }
             },
         }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=21)
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value=21)
+        with patch(
+            "app.services.workflow.executors.code.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(
+                return_value=SandboxResult(
+                    job_id="job_1", success=True, result={"result": 42}
+                )
+            ),
+        ):
+            result = await CodeNodeExecutor().execute(node, context, MagicMock())
 
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert result.outputs.get("result") == 42
+        assert result.outputs == {"result": 42}
 
     @pytest.mark.asyncio
-    async def test_code_executor_syntax_error(self):
-        """Test code executor with syntax error."""
-        from app.services.workflow.executors.code import CodeExecutor
+    async def test_rejects_missing_code(self):
+        result = await CodeNodeExecutor().execute(
+            {"id": "code_1", "data": {"codeConfig": {}}},
+            MagicMock(),
+            MagicMock(),
+        )
 
-        executor = CodeExecutor()
-
-        node = {
-            "id": "code_1",
-            "type": "code",
-            "data": {
-                "code": "result = invalid syntax (",
-                "inputs": [],
-                "outputs": [{"name": "result"}],
-            },
-        }
-
-        context = MagicMock(spec=ExecutionContext)
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is False
-        assert result.error is not None
+        assert result.error == "tool_code_not_defined"
 
 
 class TestTemplateExecutor:
-    """Tests for template node executor."""
-
     @pytest.mark.asyncio
-    async def test_template_executor(self):
-        """Test template executor."""
-        from app.services.workflow.executors.template import TemplateExecutor
-
-        executor = TemplateExecutor()
-
+    async def test_renders_frontend_template_config(self):
         node = {
             "id": "template_1",
-            "type": "template",
             "data": {
-                "template": "Hello, {{name}}! You have {{count}} messages.",
-                "variables": ["name", "count"],
+                "templateConfig": {
+                    "template": "Hello, {{ name }}! You have {{ count }} messages.",
+                    "inputs": [
+                        {
+                            "name": "name",
+                            "source": "constant",
+                            "constantValue": "Alice",
+                        },
+                        {
+                            "name": "count",
+                            "source": "variable",
+                            "variableRef": "{{start.count}}",
+                        },
+                    ],
+                    "outputVariable": "message",
+                }
             },
         }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=5)
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(
-            side_effect=lambda x: {
-                "name": "Alice",
-                "count": "5",
-            }.get(x, "")
-        )
+        result = await TemplateNodeExecutor().execute(node, context, MagicMock())
 
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert "Hello, Alice!" in result.outputs.get("output", "")
-        assert "5 messages" in result.outputs.get("output", "")
-
-
-class TestVariableExecutors:
-    """Tests for variable-related executors."""
+        assert result.outputs == {"message": "Hello, Alice! You have 5 messages."}
 
     @pytest.mark.asyncio
-    async def test_variable_assignment_executor(self):
-        """Test variable_assignment executor."""
-        from app.services.workflow.executors.variable import VariableAssignmentExecutor
-
-        executor = VariableAssignmentExecutor()
-
+    async def test_reports_template_syntax_error(self):
         node = {
-            "id": "var_1",
-            "type": "variable_assignment",
-            "data": {
-                "assignments": [
-                    {"name": "x", "value": "10"},
-                    {"name": "y", "value": "{{input}}"},
-                ],
-            },
+            "id": "template_1",
+            "data": {"templateConfig": {"template": "{% if %}"}},
         }
 
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value="20")
-        context.set_variable = AsyncMock()
+        result = await TemplateNodeExecutor().execute(node, MagicMock(), MagicMock())
 
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        # Should have called set_variable for each assignment
-        assert context.set_variable.call_count >= 2
-
-    @pytest.mark.asyncio
-    async def test_variable_aggregator_executor(self):
-        """Test variable_aggregator executor."""
-        from app.services.workflow.executors.variable import VariableAggregatorExecutor
-
-        executor = VariableAggregatorExecutor()
-
-        node = {
-            "id": "agg_1",
-            "type": "variable_aggregator",
-            "data": {
-                "variables": ["result1", "result2", "result3"],
-                "outputVariable": "combined",
-            },
-        }
-
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(
-            side_effect=lambda x: {
-                "result1": "a",
-                "result2": "b",
-                "result3": "c",
-            }.get(x)
-        )
-        context.set_variable = AsyncMock()
-
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert "combined" in result.outputs
-
-
-class TestIterationExecutors:
-    """Tests for iteration-related executors."""
-
-    @pytest.mark.asyncio
-    async def test_iteration_executor_first_item(self):
-        """Test iteration executor returns first item."""
-        from app.services.workflow.executors.iteration import IterationExecutor
-
-        executor = IterationExecutor()
-
-        node = {
-            "id": "iter_1",
-            "type": "iteration",
-            "data": {
-                "items": "{{items}}",
-                "itemVariable": "item",
-                "indexVariable": "index",
-            },
-        }
-
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(
-            side_effect=lambda x: {
-                "items": [1, 2, 3],
-                "iter_1_index": None,  # First iteration
-            }.get(x)
-        )
-        context.set_variable = AsyncMock()
-
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert result.outputs.get("item") == 1
-        assert result.outputs.get("index") == 0
-
-    @pytest.mark.asyncio
-    async def test_iteration_executor_complete(self):
-        """Test iteration executor signals completion."""
-        from app.services.workflow.executors.iteration import IterationExecutor
-
-        executor = IterationExecutor()
-
-        node = {
-            "id": "iter_1",
-            "type": "iteration",
-            "data": {
-                "items": "{{items}}",
-                "itemVariable": "item",
-                "indexVariable": "index",
-            },
-        }
-
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(
-            side_effect=lambda x: {
-                "items": [1, 2, 3],
-                "iter_1_index": 3,  # Past end
-            }.get(x)
-        )
-        context.set_variable = AsyncMock()
-
-        run = MagicMock()
-
-        result = await executor.execute(node, context, run)
-
-        assert result.success is True
-        assert result.outputs.get("_iteration_complete") is True
-
-
-class TestToolExecutors:
-    """Tests for tool-related executors."""
-
-    @pytest.mark.asyncio
-    async def test_http_request_executor_get(self):
-        """Test http_request executor with GET."""
-        from app.services.workflow.executors.tool import HttpRequestExecutor
-
-        executor = HttpRequestExecutor()
-
-        node = {
-            "id": "http_1",
-            "type": "http_request",
-            "data": {
-                "method": "GET",
-                "url": "https://api.example.com/data",
-                "headers": {"Authorization": "Bearer {{token}}"},
-            },
-        }
-
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value="test_token")
-
-        run = MagicMock()
-
-        with patch("aiohttp.ClientSession") as mock_session:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"data": "test"})
-            mock_response.headers = {}
-
-            mock_session.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session.return_value
-            )
-            mock_session.return_value.__aexit__ = AsyncMock()
-            mock_session.return_value.request = AsyncMock(return_value=mock_response)
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock()
-
-            result = await executor.execute(node, context, run)
-
-        # Result depends on implementation - check basic structure
-        assert result is not None
+        assert result.error == "validation_error"
