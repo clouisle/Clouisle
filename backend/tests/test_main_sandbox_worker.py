@@ -112,6 +112,7 @@ def test_start_sandbox_worker_container_reads_root_env(
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.delenv("POSTGRES_USER", raising=False)
+    monkeypatch.delenv("REDIS_HOST", raising=False)
 
     with (
         patch("main.build_sandbox_worker_image"),

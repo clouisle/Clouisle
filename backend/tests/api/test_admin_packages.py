@@ -156,9 +156,10 @@ def test_admin_package_preview_uses_admin_source(admin_packages_client):
     assert preview_mock.await_args.kwargs["check_team_membership"] is False
 
 
-def test_admin_package_preview_rejects_platform_resource_types(admin_packages_client):
+def test_admin_package_preview_accepts_platform_resource_types(admin_packages_client):
     client, user = admin_packages_client
-    user.roles = [_Role("admin:capability:create")]
+    user.roles = [_Role("admin:app:create")]
+    preview = _preview(ClouisleResourceType.AGENT)
 
     with (
         patch(
@@ -167,6 +168,10 @@ def test_admin_package_preview_rejects_platform_resource_types(admin_packages_cl
                 SimpleNamespace(resource_type=ClouisleResourceType.AGENT),
                 {},
             ),
+        ),
+        patch(
+            "app.api.v1.admin.endpoints.packages.ClouislePackageService.preview",
+            new=AsyncMock(return_value=preview),
         ),
         patch(
             "app.api.v1.admin.endpoints.packages.AuditLogService.log",
@@ -179,8 +184,8 @@ def test_admin_package_preview_rejects_platform_resource_types(admin_packages_cl
             files={"file": ("agent.clouisle", b"package", "application/octet-stream")},
         )
 
-    assert response.status_code == 400
-    assert response.json()["msg"]
+    assert response.status_code == 200
+    assert response.json()["data"]["resource_type"] == "agent"
 
 
 def test_admin_package_install_filters_admin_sessions(admin_packages_client):
