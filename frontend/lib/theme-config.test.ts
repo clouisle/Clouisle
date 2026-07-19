@@ -84,4 +84,22 @@ describe('theme config helpers', () => {
       '--navbar-hover-foreground': '#0f172a',
     })
   })
+
+  test('falls back to core colors when navbar colors are unset', () => {
+    const variables = getBrandCssVariables({
+      theme_primary_color: '#123456',
+      theme_primary_foreground_color: '#ffffff',
+      theme_background_color: '#f8fafc',
+      theme_foreground_color: '#0f172a',
+      theme_card_color: '',
+      theme_muted_color: '#f1f5f9',
+    } as Parameters<typeof getBrandCssVariables>[0])
+
+    expect(variables).toMatchObject({
+      '--navbar': '#f8fafc',
+      '--navbar-foreground': '#0f172a',
+      '--navbar-hover': '#f1f5f9',
+      '--navbar-hover-foreground': '#0f172a',
+    })
+  })
 })
