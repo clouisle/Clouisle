@@ -129,6 +129,20 @@ def test_process_document_reports_missing_document():
     assert result == {"status": "error", "message": "document_not_found"}
 
 
+def test_process_document_ignores_stale_task_before_processing():
+    document = make_document()
+    document.metadata["task_id"] = "current-task"
+
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        task_id(process_document_task, "stale-task"),
+    ):
+        result = process_document_task.run(str(document.id))
+
+    assert result == {"status": "stale", "document_id": str(document.id)}
+    document.save.assert_not_awaited()
+
+
 def test_process_document_embeds_existing_chunks_without_extracting():
     document = make_document()
     expected = {"status": "success", "embedded_count": 2}
@@ -311,6 +325,22 @@ def test_retry_failed_chunks_succeeds_when_nothing_needs_retry():
     assert result["status"] == "success"
     assert result["retried_count"] == 0
     assert document.status == DocumentStatus.COMPLETED.value
+
+
+def test_retry_one_chunk_rejects_missing_or_cross_document_chunk():
+    document = make_document()
+    chunk_id = uuid4()
+
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=Query()) as filter_chunks,
+        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+    ):
+        result = retry_failed_chunk_task.run(str(document.id), str(chunk_id))
+
+    assert result["status"] == "error"
+    assert result["message"] == "chunk_not_found"
+    filter_chunks.assert_called_once_with(id=chunk_id, document_id=document.id)
 
 
 def test_retry_one_chunk_rejects_non_failed_chunk():
