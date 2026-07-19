@@ -9,7 +9,7 @@ from app.models.tool import CustomToolType, ToolType
 from app.schemas.tool import CodeConfigSchema, ToolExecuteRequest
 from app.services.sandbox.compiler import normalize_code_config
 from app.services.sandbox.models import (
-    SandboxArtifactSpec,
+    SandboxArtifact,
     SandboxExecutionMetadata,
     SandboxJobSource,
 )
@@ -69,10 +69,17 @@ async def test_test_tool_routes_saved_code_tools_through_sandbox_gateway():
         error=None,
         stdout="done",
         artifacts=[
-            SandboxArtifactSpec(
+            SandboxArtifact(
                 path="/workspace/output/result.json",
                 optional=False,
                 description="result file",
+                file_type="file",
+                size=12,
+                checksum="abc123",
+                content_type="application/json",
+                storage_path="sandbox/job/result.json",
+                url="/api/v1/files/sandbox/job/result.json",
+                filename="result.json",
             )
         ],
         metadata=SandboxExecutionMetadata(duration_ms=777, total_ms=777),

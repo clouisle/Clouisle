@@ -83,7 +83,7 @@ def _serialize_runtime_artifacts(
     return [
         artifact
         if isinstance(artifact, SandboxArtifactSchema)
-        else SandboxArtifactSchema.model_validate(artifact)
+        else SandboxArtifactSchema.model_validate(artifact, from_attributes=True)
         for artifact in artifacts
     ]
 

@@ -6,7 +6,7 @@ import pytest
 from app.api.v1.endpoints.tools import execute_code_directly
 from app.schemas.tool import CodeExecuteRequest
 from app.services.sandbox.models import (
-    SandboxArtifactSpec,
+    SandboxArtifact,
     SandboxExecutionMetadata,
     SandboxJobSource,
 )
@@ -94,10 +94,17 @@ class TestExecuteCodeDirectly:
             error=None,
             stdout="done",
             artifacts=[
-                SandboxArtifactSpec(
+                SandboxArtifact(
                     path="/workspace/output/result.json",
                     optional=False,
                     description="result file",
+                    file_type="file",
+                    size=12,
+                    checksum="abc123",
+                    content_type="application/json",
+                    storage_path="sandbox/job/result.json",
+                    url="/api/v1/files/sandbox/job/result.json",
+                    filename="result.json",
                 )
             ],
             metadata=SandboxExecutionMetadata(duration_ms=654, total_ms=654),

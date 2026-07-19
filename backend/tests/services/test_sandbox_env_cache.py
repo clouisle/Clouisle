@@ -35,6 +35,9 @@ class FakePythonEnvManager:
             "PATH": f"{env_dir / 'bin'}:/usr/bin",
         }
 
+    def build_workspace_env_vars(self, workspace_root: Path, tmp_dir: Path):
+        return {"PATH": self.runtime_path()}
+
     def runtime_path(self):
         return "/usr/local/bin:/usr/bin:/bin"
 
