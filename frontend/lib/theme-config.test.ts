@@ -26,7 +26,7 @@ describe('theme config helpers', () => {
     expect(BRAND_CSS_VARIABLES).toContain('--card')
     expect(BRAND_CSS_VARIABLES).toContain('--chart-5')
     expect(BRAND_CSS_VARIABLES).toContain('--navbar')
-    expect(getBrandCssVariables({
+    const settings = {
       theme_primary_color: '#123456',
       theme_primary_foreground_color: '#ffffff',
       theme_background_color: '#f8fafc',
@@ -55,7 +55,9 @@ describe('theme config helpers', () => {
       theme_chart_3_color: '#f97316',
       theme_chart_4_color: '#9333ea',
       theme_chart_5_color: '#dc2626',
-    })).toMatchObject({
+    }
+
+    expect(getBrandCssVariables(settings)).toMatchObject({
       '--primary': '#123456',
       '--sidebar-primary': '#123456',
       '--primary-foreground': '#ffffff',
@@ -66,6 +68,20 @@ describe('theme config helpers', () => {
       '--navbar': '#ffffffcc',
       '--navbar-hover': '#e0f2fe99',
       '--chart-5': '#dc2626',
+    })
+
+    expect(getBrandCssVariables({
+      ...settings,
+      theme_card_color: '',
+      theme_navbar_color: '',
+      theme_navbar_foreground_color: '',
+      theme_navbar_hover_color: '',
+      theme_navbar_hover_foreground_color: '',
+    })).toMatchObject({
+      '--navbar': '#f8fafc',
+      '--navbar-foreground': '#0f172a',
+      '--navbar-hover': '#f1f5f9',
+      '--navbar-hover-foreground': '#0f172a',
     })
   })
 })
