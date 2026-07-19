@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
+
+import pytest
 
 from app.services.workflow.schema_inference import (
     infer_run_schemas,
     merge_into_definition,
 )
+from app.services.workflow.types import TypeSpec
 
 
 @dataclass
@@ -69,6 +73,30 @@ class TestInferRunSchemas:
         result = infer_run_schemas(execs)
         assert set(result.keys()) == {"b"}
 
+    @pytest.mark.parametrize(
+        "execution",
+        [
+            _FakeExecution("", {"value": "ignored"}),
+            _FakeExecution("node", None),
+        ],
+    )
+    def test_skips_execution_without_node_id_or_mapping_outputs(self, execution):
+        assert infer_run_schemas([execution]) == {}
+
+    def test_merges_null_output_across_loop_iterations(self):
+        result = infer_run_schemas(
+            [
+                _FakeExecution("loop", {"title": "first"}),
+                _FakeExecution("loop", {"title": None}),
+            ]
+        )
+
+        title = result["loop"]["title"]
+        assert title.kind == "string"
+        assert title.nullable is True
+        assert title.source == "inferred"
+        assert title.sample == "first"
+
 
 class TestMergeIntoDefinition:
     def _def(self, *nodes: dict) -> dict:
@@ -128,8 +156,36 @@ class TestMergeIntoDefinition:
         out = merge_into_definition(defn, {"other": {"v": _spec("number")}})
         assert "inferredSchema" not in out["nodes"][0]["data"]
 
+    def test_invalid_stored_schema_is_replaced_by_new_inference(self):
+        defn = self._def(
+            {
+                "id": "c",
+                "data": {"inferredSchema": {"value": {"kind": "invalid"}}},
+            }
+        )
+
+        out = merge_into_definition(defn, {"c": {"value": _spec("boolean")}})
+
+        assert out["nodes"][0]["data"]["inferredSchema"] == {
+            "value": {
+                "kind": "boolean",
+                "nullable": False,
+                "source": "declared",
+            }
+        }
+
+    def test_merge_does_not_mutate_matched_node(self):
+        defn = self._def({"id": "c", "data": {"label": "keep"}})
+        original = deepcopy(defn)
+
+        merge_into_definition(defn, {"c": {"value": _spec("number")}})
+
+        assert defn == original
+
+    @pytest.mark.parametrize("definition", [None, {"nodes": {}}, {"nodes": None}])
+    def test_invalid_definition_is_returned_unchanged(self, definition):
+        assert merge_into_definition(definition, {"c": {}}) is definition
+
 
 def _spec(kind: str):
-    from app.services.workflow.types import TypeSpec
-
     return TypeSpec(kind=kind)  # type: ignore[arg-type]
