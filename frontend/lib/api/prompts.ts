@@ -103,6 +103,7 @@ export async function* parsePromptSSEStream(
 
   const decoder = new TextDecoder()
   let buffer = ''
+  let currentEventType: PromptSSEEventType | null = null
 
   try {
     while (true) {
@@ -114,8 +115,6 @@ export async function* parsePromptSSEStream(
       // Process complete events
       const lines = buffer.split('\n')
       buffer = lines.pop() || '' // Keep incomplete line in buffer
-
-      let currentEventType: PromptSSEEventType | null = null
 
       for (const line of lines) {
         if (line.startsWith('event: ')) {
