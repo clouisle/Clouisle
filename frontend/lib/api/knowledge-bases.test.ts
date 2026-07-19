@@ -178,4 +178,39 @@ describe('knowledge base APIs', () => {
       Object.assign(globalThis, { fetch: originalFetch, localStorage: originalLocalStorage })
     }
   })
+
+  test('downloads a successful response and releases its object URL', async () => {
+    const blob = new Blob(['report'])
+    const link = { href: '', download: '', click: mock(() => {}) }
+    const body = { appendChild: mock(() => {}), removeChild: mock(() => {}) }
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const fetch = spyOn(globalThis, 'fetch').mockResolvedValue(new Response(blob))
+    const createObjectURL = spyOn(URL, 'createObjectURL').mockReturnValue('blob:report')
+    const revokeObjectURL = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    Object.defineProperties(globalThis, {
+      document: { configurable: true, value: { createElement: () => link, body } },
+      localStorage: { configurable: true, value: { getItem: () => 'token-1' } },
+    })
+
+    try {
+      await knowledgeBasesApi.downloadDocument('kb-1', 'doc-1', 'report.pdf')
+
+      expect(link).toMatchObject({ href: 'blob:report', download: 'report.pdf' })
+      expect(body.appendChild).toHaveBeenCalledWith(link)
+      expect(link.click).toHaveBeenCalled()
+      expect(body.removeChild).toHaveBeenCalledWith(link)
+      expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:report')
+    } finally {
+      fetch.mockRestore()
+      createObjectURL.mockRestore()
+      revokeObjectURL.mockRestore()
+      if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument)
+      else Reflect.deleteProperty(globalThis, 'document')
+      if (originalLocalStorage) Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
+      else Reflect.deleteProperty(globalThis, 'localStorage')
+    }
+  })
 })
