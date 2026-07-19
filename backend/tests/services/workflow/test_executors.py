@@ -620,3 +620,301 @@ class TestVariableExecutors:
             {"nested": {"keep": 1}, "replace": 1},
             {"nested": {"add": 2}, "replace": {"now": "object"}},
         ) == {"nested": {"keep": 1, "add": 2}, "replace": {"now": "object"}}
+
+    @pytest.mark.asyncio
+    async def test_parameter_extractor_rejects_missing_source_value(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=None)
+
+        result = await ParameterExtractorNodeExecutor().execute(
+            {
+                "data": {
+                    "parameterExtractorConfig": {
+                        "sourceVariable": "{{start.payload}}",
+                        "extractionMethod": "regex",
+                    }
+                }
+            },
+            context,
+            MagicMock(),
+        )
+
+        assert result.error == "validation_error"
+
+    @pytest.mark.asyncio
+    async def test_parameter_extractor_regex_converts_matches_and_defaults(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(
+            return_value="quantity=12 active=yes tags=red tags=blue"
+        )
+        result = await ParameterExtractorNodeExecutor().execute(
+            {
+                "data": {
+                    "config": {
+                        "sourceVariable": "{{payload}}",
+                        "extractionMethod": "regex",
+                        "parameters": [
+                            {
+                                "name": "quantity",
+                                "pattern": r"quantity=(\d+)",
+                                "type": "number",
+                            },
+                            {
+                                "name": "active",
+                                "pattern": r"active=(\w+)",
+                                "type": "boolean",
+                            },
+                            {
+                                "name": "tags",
+                                "pattern": r"tags=(\w+)",
+                                "type": "array",
+                            },
+                            {
+                                "name": "missing",
+                                "pattern": r"missing=(\w+)",
+                                "type": "object",
+                                "defaultValue": '{"fallback": true}',
+                            },
+                            {"name": "optional", "pattern": "absent"},
+                            {"name": "ignored"},
+                        ],
+                    }
+                }
+            },
+            context,
+            MagicMock(),
+        )
+
+        assert result.outputs == {
+            "quantity": 12,
+            "active": True,
+            "tags": ["red", "blue"],
+            "missing": {"fallback": True},
+            "optional": None,
+            "_extraction_method": "regex",
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "parameter",
+        [
+            {"name": "required", "pattern": "absent", "required": True},
+            {"name": "required", "pattern": "[", "required": True},
+        ],
+    )
+    async def test_parameter_extractor_regex_rejects_required_failures(self, parameter):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        result = await ParameterExtractorNodeExecutor()._extract_with_regex(
+            "input", [parameter]
+        )
+
+        assert result.error == "validation_error"
+
+    @pytest.mark.asyncio
+    async def test_parameter_extractor_jsonpath_handles_matches_and_boundaries(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        executor = ParameterExtractorNodeExecutor()
+        result = await executor._extract_with_jsonpath(
+            {"users": [{"name": "Ada"}, {"name": "Lin"}]},
+            [
+                {
+                    "name": "names",
+                    "jsonPath": "$.users[*].name",
+                    "type": "array",
+                },
+                {
+                    "name": "limit",
+                    "jsonPath": "$.limit",
+                    "type": "number",
+                    "defaultValue": "2.5",
+                },
+                {"name": "optional", "jsonPath": "$.optional"},
+                {"jsonPath": "$.ignored"},
+            ],
+        )
+        invalid_input = await executor._extract_with_jsonpath("{}", [])
+        required_missing = await executor._extract_with_jsonpath(
+            {}, [{"name": "value", "jsonPath": "$.value", "required": True}]
+        )
+        invalid_optional = await executor._extract_with_jsonpath(
+            {},
+            [
+                {
+                    "name": "fallback",
+                    "jsonPath": "$.[",
+                    "type": "array",
+                    "defaultValue": "not-json",
+                }
+            ],
+        )
+
+        assert result.outputs == {
+            "names": ["Ada", "Lin"],
+            "limit": 2.5,
+            "optional": None,
+            "_extraction_method": "json_path",
+        }
+        assert invalid_input.error == "validation_error"
+        assert required_missing.error == "validation_error"
+        assert invalid_optional.outputs == {
+            "fallback": "not-json",
+            "_extraction_method": "json_path",
+        }
+
+    @pytest.mark.asyncio
+    async def test_parameter_extractor_llm_requires_a_model(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        result = await ParameterExtractorNodeExecutor()._extract_with_llm(
+            "input", [], {}, MagicMock()
+        )
+
+        assert result.error == "validation_error"
+
+    @pytest.mark.asyncio
+    async def test_parameter_extractor_llm_parses_response_and_required_values(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        team_model = MagicMock()
+        team_model.model.id = "model-1"
+        query = MagicMock()
+        query.prefetch_related.return_value.first = AsyncMock(return_value=team_model)
+        chat_result = MagicMock(content='Result: {"date": "2026-07-19"}')
+
+        with (
+            patch("app.models.model.TeamModel.filter", return_value=query),
+            patch("app.models.model.Model.filter") as model_filter,
+            patch(
+                "app.llm.model_manager.chat", new=AsyncMock(return_value=chat_result)
+            ) as chat,
+        ):
+            result = await ParameterExtractorNodeExecutor()._extract_with_llm(
+                {"text": "July 19"},
+                [
+                    {"name": "date", "required": True},
+                    {"name": "location", "required": False},
+                    {},
+                ],
+                {"modelId": "team-model-1", "systemPrompt": "Extract values"},
+                MagicMock(),
+            )
+
+        assert result.outputs == {
+            "date": "2026-07-19",
+            "location": None,
+            "_extraction_method": "llm",
+            "_extraction_confidence": 0.9,
+        }
+        model_filter.assert_not_called()
+        assert chat.await_args.kwargs["model_id"] == "model-1"
+        assert chat.await_args.kwargs["messages"][1]["content"] == '{"text": "July 19"}'
+
+    @pytest.mark.asyncio
+    async def test_parameter_extractor_llm_handles_model_and_response_errors(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        missing_query = MagicMock()
+        missing_query.prefetch_related.return_value.first = AsyncMock(return_value=None)
+        direct_model_query = MagicMock()
+        direct_model_query.first = AsyncMock(return_value=None)
+
+        with (
+            patch("app.models.model.TeamModel.filter", return_value=missing_query),
+            patch("app.models.model.Model.filter", return_value=direct_model_query),
+        ):
+            missing_model = await ParameterExtractorNodeExecutor()._extract_with_llm(
+                "input", [], {"modelId": "missing"}, MagicMock()
+            )
+
+        model = MagicMock(id="model-1")
+        direct_model_query.first.return_value = model
+        with (
+            patch("app.models.model.TeamModel.filter", return_value=missing_query),
+            patch("app.models.model.Model.filter", return_value=direct_model_query),
+            patch(
+                "app.llm.model_manager.chat",
+                new=AsyncMock(return_value=MagicMock(content="not-json")),
+            ),
+        ):
+            invalid_json = await ParameterExtractorNodeExecutor()._extract_with_llm(
+                "input", [], {"modelId": "model-1"}, MagicMock()
+            )
+
+        with (
+            patch("app.models.model.TeamModel.filter", return_value=missing_query),
+            patch("app.models.model.Model.filter", return_value=direct_model_query),
+            patch(
+                "app.llm.model_manager.chat",
+                new=AsyncMock(side_effect=RuntimeError("provider failed")),
+            ),
+            patch(
+                "app.services.workflow.executors.variable.translate_public_workflow_error",
+                return_value="workflow_execution_error",
+            ),
+        ):
+            provider_error = await ParameterExtractorNodeExecutor()._extract_with_llm(
+                "input", [], {"modelId": "model-1"}, MagicMock()
+            )
+
+        assert missing_model.error == "model_not_found"
+        assert invalid_json.error == "workflow_execution_error"
+        assert provider_error.error == "workflow_execution_error"
+
+    def test_parameter_extractor_value_and_output_declarations(self):
+        from app.services.workflow.executors.variable import (
+            ParameterExtractorNodeExecutor,
+        )
+
+        executor = ParameterExtractorNodeExecutor()
+
+        assert executor._parse_default_value("false", "boolean") is False
+        assert executor._parse_default_value("3", "number") == 3
+        assert executor._convert_value("3.5", "number") == 3.5
+        assert executor._convert_value("invalid", "number") == "invalid"
+        assert executor._convert_value("yes", "boolean") is True
+        assert executor.get_output_variables(
+            {"parameters": [{"name": "count", "type": "number"}, {}]}
+        ) == [
+            {"name": "count", "type": "number"},
+            {"name": "_extraction_confidence", "type": "number"},
+        ]
+        specs = executor.get_output_specs(
+            {
+                "parameters": [
+                    {
+                        "name": "items",
+                        "typeSpec": {"kind": "array", "item": {"kind": "string"}},
+                        "description": "Extracted items",
+                    },
+                    {"name": "count", "type": "number"},
+                    {"name": ""},
+                    "ignored",
+                ]
+            }
+        )
+        assert [(spec.name, spec.type.kind) for spec in specs] == [
+            ("items", "array"),
+            ("count", "number"),
+            ("_extraction_confidence", "number"),
+        ]
+        assert specs[0].description == "Extracted items"
