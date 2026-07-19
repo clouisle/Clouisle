@@ -74,8 +74,14 @@ class TestMergeTypeSpec:
     @pytest.mark.parametrize(
         ("left", "right"),
         [
-            (TypeSpec(kind="string", source="inferred"), TypeSpec(kind="null", source="inferred", nullable=True)),
-            (TypeSpec(kind="null", source="inferred", nullable=True), TypeSpec(kind="string", source="inferred")),
+            (
+                TypeSpec(kind="string", source="inferred"),
+                TypeSpec(kind="null", source="inferred", nullable=True),
+            ),
+            (
+                TypeSpec(kind="null", source="inferred", nullable=True),
+                TypeSpec(kind="string", source="inferred"),
+            ),
         ],
     )
     def test_merge_with_null_marks_nullable(self, left, right):
