@@ -249,44 +249,83 @@ class TestConditionExecutor:
 
 class TestCodeExecutor:
     @pytest.mark.asyncio
-    async def test_returns_sandbox_outputs(self):
+    async def test_resolves_inputs_and_returns_mapping(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value="search")
         node = {
-            "id": "code_1",
             "data": {
                 "codeConfig": {
-                    "language": "python",
-                    "code": "def main(inputs):\n    return {'result': inputs['value'] * 2}",
+                    "code": "def main(inputs): return inputs",
                     "inputs": [
-                        {
-                            "name": "value",
-                            "source": "variable",
-                            "variableRef": "{{start.value}}",
-                        }
+                        {"name": "query", "variableRef": "{{start.query}}"},
+                        {"name": "limit", "source": "constant", "constantValue": 3},
                     ],
                 }
-            },
+            }
         }
-        context = MagicMock()
-        context.resolve_variable_ref = AsyncMock(return_value=21)
 
         with patch(
             "app.services.workflow.executors.code.sandbox_gateway.submit_and_wait",
             new=AsyncMock(
                 return_value=SandboxResult(
-                    job_id="job_1", success=True, result={"result": 42}
+                    job_id="job_1", success=True, result={"answer": "ok"}
+                )
+            ),
+        ) as submit_and_wait:
+            result = await CodeNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.outputs == {"answer": "ok"}
+        context.resolve_variable_ref.assert_awaited_once_with("{{start.query}}")
+        assert submit_and_wait.await_args.args[0].metadata["params"] == {
+            "query": "search",
+            "limit": 3,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sandbox_output", "expected"),
+        [(None, {"result": None}), (7, {"result": 7})],
+    )
+    async def test_wraps_non_mapping_sandbox_outputs(self, sandbox_output, expected):
+        with patch(
+            "app.services.workflow.executors.code.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(
+                return_value=SandboxResult(
+                    job_id="job_1", success=True, result=sandbox_output
                 )
             ),
         ):
-            result = await CodeNodeExecutor().execute(node, context, MagicMock())
+            result = await CodeNodeExecutor().execute(
+                {"data": {"codeConfig": {"code": "def main(inputs): return None"}}},
+                MagicMock(),
+                MagicMock(),
+            )
 
-        assert result.outputs == {"result": 42}
+        assert result.outputs == expected
+
+    @pytest.mark.asyncio
+    async def test_translates_sandbox_failure(self):
+        with patch(
+            "app.services.workflow.executors.code.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(
+                return_value=SandboxResult(
+                    job_id="job_1", success=False, error="code_execution_failed"
+                )
+            ),
+        ):
+            result = await CodeNodeExecutor().execute(
+                {"data": {"codeConfig": {"code": "def main(inputs): return 1"}}},
+                MagicMock(),
+                MagicMock(),
+            )
+
+        assert not result.success
+        assert result.error
 
     @pytest.mark.asyncio
     async def test_rejects_missing_code(self):
         result = await CodeNodeExecutor().execute(
-            {"id": "code_1", "data": {"codeConfig": {}}},
-            MagicMock(),
-            MagicMock(),
+            {"data": {"codeConfig": {}}}, MagicMock(), MagicMock()
         )
 
         assert result.error == "tool_code_not_defined"
