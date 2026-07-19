@@ -65,7 +65,7 @@
 - **Validation**: Run the full backend/frontend pre-commit checks, prove a temporary threshold above measured coverage fails, and inspect CI artifact paths.
 
 ## Baseline Results
-- Backend provisional baseline (2026-07-19): 37% combined line/branch report over all `app` source (`37,248` statements and `11,630` branches). The run had 612 passed, 68 failed, and 2 skipped tests, so this is gap-sizing data rather than final evidence. The existing 99.56% report is invalid because it covers only `app/llm/types`.
+- Backend clean baseline (2026-07-19, commit `f45530d`): 43.22% line coverage (`16,100/37,249`) and 18.95% branch coverage (`2,204/11,630`) over all `app` source; 710 tests passed and 2 were skipped. The existing 99.56% report is invalid because it covers only `app/llm/types`.
 - Frontend provisional baseline (2026-07-19): Bun's loaded-file report is 75.77% lines and 94.44% functions across only three loaded source files; the census reports 467 eligible application files absent from LCOV. The loaded-file percentage is therefore not acceptance evidence.
 - Record each clean baseline with its commit SHA before starting the corresponding test batches.
 - Baseline blockers found on 2026-07-19: stale workflow tests import renamed/removed APIs (`ExecutionNode`, `CircuitState`, and obsolete decorator signatures), and other existing failures span sandbox/workflow behavior. These must be aligned with current behavior before the backend baseline is valid.
