@@ -175,7 +175,14 @@ class IterationNodeExecutor(NodeExecutor):
         # Object iteration variables
         key_var = config.get("keyVariable", "key")
         value_var = config.get("valueVariable", "value")
-        max_iterations = min(config.get("maxIterations", 100), MAX_ITERATIONS)
+        configured_max = config.get("maxIterations", 100)
+        max_iterations = (
+            min(configured_max, MAX_ITERATIONS)
+            if isinstance(configured_max, int)
+            and not isinstance(configured_max, bool)
+            and configured_max > 0
+            else 100
+        )
 
         # Get the data to iterate
         items = await context.resolve_variable_ref(input_var)
@@ -194,6 +201,32 @@ class IterationNodeExecutor(NodeExecutor):
         return await self._execute_array_iteration(
             node_id, items, item_var, index_var, max_iterations, context
         )
+
+    async def validate_config(self, config: dict) -> list[str]:
+        """Validate iteration configuration."""
+        errors = []
+        if not config.get("iteratorVariable") and not config.get("inputVariable"):
+            errors.append("Iteration variable is required")
+        if config.get("iteratorType", "array") not in {"array", "object"}:
+            errors.append("Iterator type must be 'array' or 'object'")
+
+        max_iterations = config.get("maxIterations", 100)
+        if (
+            not isinstance(max_iterations, int)
+            or isinstance(max_iterations, bool)
+            or max_iterations <= 0
+        ):
+            errors.append("Maximum iterations must be a positive integer")
+
+        if config.get("parallel"):
+            max_parallel = config.get("maxParallel", 10)
+            if (
+                not isinstance(max_parallel, int)
+                or isinstance(max_parallel, bool)
+                or max_parallel <= 0
+            ):
+                errors.append("Maximum parallelism must be a positive integer")
+        return errors
 
     async def _execute_array_iteration(
         self,
