@@ -234,3 +234,252 @@ class TestTemplateExecutor:
         result = await TemplateNodeExecutor().execute(node, MagicMock(), MagicMock())
 
         assert result.error == "validation_error"
+
+
+class VariableExecutionContext:
+    """In-memory context matching variable executor interactions."""
+
+    def __init__(self, variables=None, node_outputs=None):
+        self.variables = variables or {}
+        self.node_outputs = node_outputs or {}
+
+    async def resolve_variable_ref(self, reference):
+        return self.variables.get(reference)
+
+    async def get_variable(self, name):
+        return self.variables.get(name)
+
+    async def set_variable(self, name, value):
+        self.variables[name] = value
+
+    async def get_node_outputs(self, node_id):
+        return self.node_outputs.get(node_id)
+
+    async def set_node_outputs(self, node_id, outputs):
+        self.node_outputs[node_id] = outputs
+
+    async def get_all_node_outputs(self):
+        return self.node_outputs
+
+
+class TestVariableExecutors:
+    @pytest.mark.asyncio
+    async def test_assignment_updates_conversation_and_matching_node_outputs(self):
+        from app.services.workflow.executors.variable import (
+            VariableAssignmentNodeExecutor,
+        )
+
+        context = VariableExecutionContext(
+            variables={"{{start.query}}": "processed"},
+            node_outputs={"start": {"query": "raw"}, "other": {"untouched": 1}},
+        )
+        result = await VariableAssignmentNodeExecutor().execute(
+            {
+                "id": "assign",
+                "data": {
+                    "variableAssignmentConfig": {
+                        "assignments": [
+                            {
+                                "targetVariable": "conversation.query",
+                                "operation": "overwrite",
+                                "variableRef": "{{start.query}}",
+                            },
+                            {
+                                "targetVariable": "conversation.status",
+                                "operation": "set",
+                                "constantValue": "complete",
+                            },
+                            {
+                                "targetVariable": "conversation.temp",
+                                "operation": "clear",
+                            },
+                            {"operation": "set", "constantValue": "ignored"},
+                        ]
+                    }
+                },
+            },
+            context,
+            MagicMock(),
+        )
+
+        assert result.success
+        assert result.outputs == {
+            "query": "processed",
+            "status": "complete",
+            "temp": None,
+        }
+        assert context.variables["query"] == "processed"
+        assert context.variables["conversation.query"] == "processed"
+        assert context.node_outputs["start"]["query"] == "processed"
+        assert context.node_outputs["other"] == {"untouched": 1}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("current", "appended", "expected"),
+        [
+            ([1], 2, [1, 2]),
+            ([1], [2, 3], [1, 2, 3]),
+            ({"left": 1}, {"right": 2}, {"left": 1, "right": 2}),
+            ("a", 2, "a2"),
+            (1, 2.5, 3.5),
+            (None, "first", ["first"]),
+            ("wrong", {"value": 1}, ["wrong", {"value": 1}]),
+        ],
+    )
+    async def test_assignment_append_handles_supported_value_types(
+        self, current, appended, expected
+    ):
+        from app.services.workflow.executors.variable import (
+            VariableAssignmentNodeExecutor,
+        )
+
+        context = VariableExecutionContext({"items": current, "{{value}}": appended})
+        result = await VariableAssignmentNodeExecutor().execute(
+            {
+                "data": {
+                    "config": {
+                        "assignments": [
+                            {
+                                "targetVariable": "items",
+                                "operation": "append",
+                                "variableRef": "{{value}}",
+                            }
+                        ]
+                    }
+                }
+            },
+            context,
+            MagicMock(),
+        )
+
+        assert result.outputs == {"items": expected}
+        assert context.variables["items"] == expected
+
+    @pytest.mark.asyncio
+    async def test_assignment_updates_node_and_loop_iteration_result_state(self):
+        from app.services.workflow.executors.variable import (
+            VariableAssignmentNodeExecutor,
+        )
+
+        context = VariableExecutionContext(
+            variables={
+                "{{next}}": "b",
+                "loop.results": ["a"],
+                "loop._iteration_state": {"results": ["a"]},
+                "loop._loop_state": {"results": ["a"]},
+            },
+            node_outputs={"loop": {"results": ["a"]}},
+        )
+        result = await VariableAssignmentNodeExecutor().execute(
+            {
+                "data": {
+                    "config": {
+                        "assignments": [
+                            {
+                                "targetVariable": "loop.results",
+                                "operation": "append",
+                                "variableRef": "{{next}}",
+                            }
+                        ]
+                    }
+                }
+            },
+            context,
+            MagicMock(),
+        )
+
+        assert result.outputs == {"results": ["a", "b"]}
+        assert context.node_outputs["loop"]["results"] == ["a", "b"]
+        assert context.variables["loop._iteration_state"]["results"] == ["a", "b"]
+        assert context.variables["loop._loop_state"]["results"] == ["a", "b"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("mode", "variables", "separator", "expected"),
+        [
+            ("array", [("first", 1), ("second", None)], "", [1, None]),
+            ("object", [("first", 1), ("second", 2)], "", {"first": 1, "second": 2}),
+            ("concat", [("first", "a"), ("second", None), ("third", 3)], "/", "a/3"),
+            (
+                "merge",
+                [
+                    ("first", {"nested": {"left": 1}, "first": True}),
+                    ("second", {"nested": {"right": 2}, "second": True}),
+                    ("ignored", "not-an-object"),
+                ],
+                "",
+                {"nested": {"left": 1, "right": 2}, "first": True, "second": True},
+            ),
+            ("unknown", [("first", 1)], "", {"first": 1}),
+        ],
+    )
+    async def test_aggregator_modes_resolve_current_node_shape(
+        self, mode, variables, separator, expected
+    ):
+        from app.services.workflow.executors.variable import (
+            VariableAggregatorNodeExecutor,
+        )
+
+        context = VariableExecutionContext(
+            {f"{{{{{key}}}}}": value for key, value in variables}
+        )
+        result = await VariableAggregatorNodeExecutor().execute(
+            {
+                "data": {
+                    "variableAggregatorConfig": {
+                        "mode": mode,
+                        "separator": separator,
+                        "outputVariable": "combined",
+                        "variables": [
+                            {
+                                "id": f"id-{key}",
+                                "targetKey": key,
+                                "sourceVariable": f"{{{{{key}}}}}",
+                            }
+                            for key, _ in variables
+                        ],
+                    }
+                }
+            },
+            context,
+            MagicMock(),
+        )
+
+        assert result.success
+        assert result.outputs == {"combined": expected}
+
+    def test_variable_executor_output_declarations(self):
+        from app.services.workflow.executors.variable import (
+            VariableAggregatorNodeExecutor,
+            VariableAssignmentNodeExecutor,
+        )
+
+        assert VariableAssignmentNodeExecutor().get_output_variables(
+            {"assignments": [{"name": "value"}, {"targetVariable": "ignored"}]}
+        ) == [{"name": "value", "type": "any"}]
+        assert (
+            VariableAssignmentNodeExecutor()
+            .get_output_specs({"assignments": [{"name": "value"}]})[0]
+            .type.kind
+            == "any"
+        )
+        assert VariableAggregatorNodeExecutor().get_output_variables(
+            {"mode": "merge", "outputVariable": "combined"}
+        ) == [{"name": "combined", "type": "object"}]
+        assert (
+            VariableAggregatorNodeExecutor()
+            .get_output_specs({"mode": "concat", "outputVariable": "combined"})[0]
+            .type.kind
+            == "string"
+        )
+
+    def test_aggregator_deep_merge_overwrites_non_matching_values(self):
+        from app.services.workflow.executors.variable import (
+            VariableAggregatorNodeExecutor,
+        )
+
+        assert VariableAggregatorNodeExecutor()._deep_merge(
+            {"nested": {"keep": 1}, "replace": 1},
+            {"nested": {"add": 2}, "replace": {"now": "object"}},
+        ) == {"nested": {"keep": 1, "add": 2}, "replace": {"now": "object"}}
+
