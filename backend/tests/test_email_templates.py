@@ -1,7 +1,10 @@
 import pytest
 
 from app.core import email as email_module
-from app.core.email_templates import render_verification_email
+from app.core.email_templates import (
+    render_reset_password_email,
+    render_verification_email,
+)
 
 
 def test_profile_email_template_uses_html_link_and_custom_copy() -> None:
@@ -23,6 +26,30 @@ def test_profile_email_template_uses_html_link_and_custom_copy() -> None:
     assert "https://example.com/verify?token=abc" in body_html
     assert "123456" in body_text
     assert "123456" in body_html
+
+
+def test_verification_email_without_link_shows_code_only() -> None:
+    body_text, body_html = render_verification_email(
+        "Clouisle", "123456", None, locale="en"
+    )
+
+    assert "123456" in body_text
+    assert "123456" in body_html
+    assert "Verify Email" not in body_html
+    assert "Or enter the verification code manually:" not in body_html
+
+
+def test_reset_password_email_renders_link_and_localized_content() -> None:
+    body_text, body_html = render_reset_password_email(
+        "Clouisle", "654321", "https://example.com/reset?token=abc", locale="zh"
+    )
+
+    assert "https://example.com/reset?token=abc" in body_text
+    assert "https://example.com/reset?token=abc" in body_html
+    assert "重置密码" in body_html
+    assert "或手动输入验证码：" in body_html
+    assert "654321" in body_text
+    assert "654321" in body_html
 
 
 @pytest.mark.asyncio
