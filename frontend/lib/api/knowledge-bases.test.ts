@@ -185,6 +185,7 @@ describe('knowledge base APIs', () => {
     const body = { appendChild: mock(() => {}), removeChild: mock(() => {}) }
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
     const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
     const fetch = spyOn(globalThis, 'fetch').mockResolvedValue(new Response(blob))
     const createObjectURL = spyOn(URL, 'createObjectURL').mockReturnValue('blob:report')
     const revokeObjectURL = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
@@ -192,6 +193,7 @@ describe('knowledge base APIs', () => {
     Object.defineProperties(globalThis, {
       document: { configurable: true, value: { createElement: () => link, body } },
       localStorage: { configurable: true, value: { getItem: () => 'token-1' } },
+      window: { configurable: true, value: { URL } },
     })
 
     try {
@@ -211,6 +213,8 @@ describe('knowledge base APIs', () => {
       else Reflect.deleteProperty(globalThis, 'document')
       if (originalLocalStorage) Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
       else Reflect.deleteProperty(globalThis, 'localStorage')
+      if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
+      else Reflect.deleteProperty(globalThis, 'window')
     }
   })
 })
