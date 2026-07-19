@@ -5,9 +5,12 @@
 from app.models.model import Model, ModelProvider
 from app.llm.errors import UnsupportedOperationError
 
-from .base import BaseTTSAdapter, BaseSTTAdapter
+from .base import BaseAudioGenerationAdapter, BaseTTSAdapter, BaseSTTAdapter
+from .minimax_tts import MiniMaxTTSAdapter
 from .openai_tts import OpenAITTSAdapter
 from .openai_stt import OpenAISTTAdapter
+from .volcengine_generation import VolcengineAudioGenerationAdapter
+from .volcengine_tts import VolcengineTTSAdapter
 
 
 def create_tts_adapter(model_config: Model) -> BaseTTSAdapter:
@@ -26,12 +29,28 @@ def create_tts_adapter(model_config: Model) -> BaseTTSAdapter:
         return OpenAITTSAdapter(model_config)
     elif provider == ModelProvider.AZURE_OPENAI:
         return OpenAITTSAdapter(model_config)
+    elif provider == ModelProvider.VOLCENGINE:
+        return VolcengineTTSAdapter(model_config)
+    elif provider == ModelProvider.MINIMAX:
+        return MiniMaxTTSAdapter(model_config)
     else:
         raise UnsupportedOperationError(
             message=f"TTS not supported for provider: {provider}",
             operation="text_to_speech",
             provider=provider,
         )
+
+
+def create_audio_generation_adapter(model_config: Model) -> BaseAudioGenerationAdapter:
+    """Create a prompt-to-audio adapter for a configured model."""
+    provider = model_config.provider
+    if provider == ModelProvider.VOLCENGINE:
+        return VolcengineAudioGenerationAdapter(model_config)
+    raise UnsupportedOperationError(
+        message=f"Audio generation not supported for provider: {provider}",
+        operation="audio_generation",
+        provider=provider,
+    )
 
 
 def create_stt_adapter(model_config: Model) -> BaseSTTAdapter:
@@ -60,9 +79,14 @@ def create_stt_adapter(model_config: Model) -> BaseSTTAdapter:
 
 __all__ = [
     "create_tts_adapter",
+    "create_audio_generation_adapter",
     "create_stt_adapter",
+    "BaseAudioGenerationAdapter",
     "BaseTTSAdapter",
     "BaseSTTAdapter",
+    "MiniMaxTTSAdapter",
     "OpenAITTSAdapter",
     "OpenAISTTAdapter",
+    "VolcengineAudioGenerationAdapter",
+    "VolcengineTTSAdapter",
 ]

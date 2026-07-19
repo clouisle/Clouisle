@@ -47,11 +47,17 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
         task = await self.client.get_task(task_id)
         status = self._map_status(task.get("status"))
         video_url = self._extract_video_url(task)
+        error = self._extract_error(task)
+        if status == TaskStatus.COMPLETED and not video_url:
+            status = TaskStatus.FAILED
+            error = t("volcengine_video_response_missing_output")
         return VideoGenerationResponse(
             task_id=task_id,
             status=status,
             video=VideoContent(url=video_url, format="mp4") if video_url else None,
-            error=None if status != TaskStatus.FAILED else self._extract_error(task),
+            error=error
+            if status in {TaskStatus.FAILED, TaskStatus.CANCELLED}
+            else None,
             model=self.model_id,
         )
 
@@ -63,11 +69,21 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
             if request.camera_motion
             else None,
         )
+        default_params = getattr(self.model_config, "default_params", None) or {}
+        extra_params = request.extra_params or {}
         payload: dict[str, Any] = {
-            "model": self.model_id,
-            "content": [{"type": "text", "text": prompt}],
-            "parameters": {},
+            key: value
+            for key, value in {**default_params, **extra_params}.items()
+            if key in {"resolution", "watermark", "generate_audio"}
         }
+        payload.update(
+            {
+                "model": self.model_id,
+                "content": [{"type": "text", "text": prompt}],
+                "duration": request.duration,
+                "ratio": request.aspect_ratio,
+            }
+        )
 
         if request.start_image is not None:
             payload["content"].append(
@@ -84,16 +100,8 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
                 }
             )
 
-        if request.duration:
-            payload["parameters"]["duration"] = request.duration
-        if request.aspect_ratio:
-            payload["parameters"]["aspect_ratio"] = request.aspect_ratio
-
         if request.seed is not None:
-            payload["parameters"]["seed"] = request.seed
-
-        if request.extra_params:
-            payload["parameters"].update(request.extra_params)
+            payload["seed"] = request.seed
 
         return payload
 
@@ -101,7 +109,7 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
         status = str(raw_status or "").lower()
         if status == "succeeded":
             return TaskStatus.COMPLETED
-        if status == "failed":
+        if status in {"failed", "expired"}:
             return TaskStatus.FAILED
         if status == "cancelled":
             return TaskStatus.CANCELLED
@@ -111,14 +119,24 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
 
     def _extract_video_url(self, task: dict[str, Any]) -> str | None:
         content = task.get("content")
-        if isinstance(content, list) and content:
-            first = content[0]
-            if isinstance(first, dict):
-                video_url = first.get("video_url")
-                if isinstance(video_url, dict):
-                    url = video_url.get("url")
-                    if isinstance(url, str):
+        if isinstance(content, dict):
+            return self._video_url_value(content.get("video_url"))
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    url = self._video_url_value(item.get("video_url"))
+                    if url:
                         return url
+        return None
+
+    @staticmethod
+    def _video_url_value(value: Any) -> str | None:
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, dict):
+            url = value.get("url")
+            if isinstance(url, str) and url:
+                return url
         return None
 
     def _extract_error(self, task: dict[str, Any]) -> str | None:

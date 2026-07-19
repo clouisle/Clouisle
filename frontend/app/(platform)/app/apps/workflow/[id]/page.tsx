@@ -77,6 +77,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { UserInputNode } from './_components/nodes/user-input-node'
 import { TriggerNode } from './_components/nodes/trigger-node'
 import { LLMNode } from './_components/nodes/llm-node'
+import { MediaGenerationNode } from './_components/nodes/media-generation-node'
 import { ConditionNode } from './_components/nodes/condition-node'
 import { SubWorkflowNode } from './_components/nodes/sub-workflow-node'
 import { AgentNode } from './_components/nodes/agent-node'
@@ -119,6 +120,7 @@ type WorkflowNodeData = {
   content?: string
   author?: string
   color?: CommentColor
+  runtimeTrace?: NodeTrace
 }
 
 type WorkflowNode = Node<WorkflowNodeData>
@@ -128,6 +130,7 @@ const nodeTypes = {
   user_input: UserInputNode,
   trigger: TriggerNode,
   llm: LLMNode,
+  media_generation: MediaGenerationNode,
   condition: ConditionNode,
   sub_workflow: SubWorkflowNode,
   agent: AgentNode,
@@ -792,6 +795,17 @@ export function WorkflowEditorContent({
   const handleNodeTracesChange = React.useCallback((traces: Map<string, NodeTrace>) => {
     setNodeTraces(traces)
   }, [])
+
+  const renderedNodes = React.useMemo(
+    () => nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        runtimeTrace: nodeTraces.get(node.id),
+      },
+    })),
+    [nodes, nodeTraces]
+  )
 
   // Handle node update from config drawer
   const handleNodeUpdate = React.useCallback((nodeId: string, data: Record<string, unknown>) => {
@@ -1661,7 +1675,7 @@ export function WorkflowEditorContent({
         {/* ReactFlow Canvas */}
         <div className={`flex-1 relative ${editorMode === 'hand' ? '[&_.react-flow__pane]:cursor-default!' : ''}`}>
           <ReactFlow
-            nodes={nodes}
+            nodes={renderedNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}

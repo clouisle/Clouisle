@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,6 +19,10 @@ def main() -> int:
     LEGACY_PATH.write_text(
         render_legacy_module(build_translations()),
         encoding="utf-8",
+    )
+    subprocess.run(
+        [sys.executable, "-m", "ruff", "format", str(LEGACY_PATH)],
+        check=True,
     )
     print(f"Wrote {LEGACY_PATH}")
     return 0

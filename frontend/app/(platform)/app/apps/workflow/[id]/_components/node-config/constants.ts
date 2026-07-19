@@ -34,6 +34,7 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
   user_input: { icon: Home, color: 'bg-primary', titleKey: 'user_input' },
   trigger: { icon: Zap, color: 'bg-amber-500', titleKey: 'trigger' },
   llm: { icon: Bot, color: 'bg-blue-500', titleKey: 'llm' },
+  media_generation: { icon: Images, color: 'bg-fuchsia-500', titleKey: 'media_generation' },
   condition: { icon: GitBranch, color: 'bg-cyan-500', titleKey: 'condition' },
   iteration: { icon: RefreshCw, color: 'bg-cyan-500', titleKey: 'iteration' },
   loop: { icon: Infinity, color: 'bg-cyan-500', titleKey: 'loop' },

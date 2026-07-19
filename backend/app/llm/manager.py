@@ -26,6 +26,7 @@ from .adapters import (
     create_image_adapter,
     create_rerank_adapter,
     create_tts_adapter,
+    create_audio_generation_adapter,
     create_stt_adapter,
     create_video_adapter,
 )
@@ -65,6 +66,8 @@ from .types import (
     VideoGenerationResponse,
     TTSRequest,
     TTSResponse,
+    AudioGenerationRequest,
+    AudioGenerationResponse,
     STTRequest,
     STTResponse,
     RerankResponse,
@@ -742,6 +745,28 @@ class ModelManager:
             raise
         except Exception as e:
             logger.exception(f"TTS error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def generate_audio(
+        self,
+        request: AudioGenerationRequest | dict,
+        model_id: str | None = None,
+    ) -> AudioGenerationResponse:
+        """Generate audio from a prompt and optional references."""
+        if isinstance(request, dict):
+            request = AudioGenerationRequest(**request)
+
+        model_config = await self._get_model_config(
+            model_id, ModelType.AUDIO_GENERATION
+        )
+        adapter = create_audio_generation_adapter(model_config)
+
+        try:
+            return await adapter.generate(request)
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"Audio generation error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
 
     async def speech_to_text(

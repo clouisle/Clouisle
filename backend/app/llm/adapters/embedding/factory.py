@@ -78,6 +78,7 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
         ModelProvider.QWEN,
         ModelProvider.BAICHUAN,
         ModelProvider.MINIMAX,
+        ModelProvider.VOLCENGINE,
         ModelProvider.XAI,
         ModelProvider.OLLAMA,
         ModelProvider.CUSTOM,
@@ -92,6 +93,7 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             ModelProvider.QWEN: "https://dashscope.aliyuncs.com/compatible-mode/v1",
             ModelProvider.BAICHUAN: "https://api.baichuan-ai.com/v1",
             ModelProvider.MINIMAX: "https://api.minimax.chat/v1",
+            ModelProvider.VOLCENGINE: "https://ark.cn-beijing.volces.com/api/v3",
             ModelProvider.XAI: "https://api.x.ai/v1",
             ModelProvider.OLLAMA: "http://localhost:11434/v1",
         }

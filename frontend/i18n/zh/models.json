@@ -26,6 +26,8 @@
     "baseUrlPlaceholder": "留空使用默认地址",
     "baseUrlHint": "自定义 API 端点（可选）",
     "apiKey": "API Key",
+    "volcengineApiKey": "X-Api-Key",
+    "volcengineResourceId": "X-Api-Resource-Id",
     "apiKeyPlaceholder": "输入 API Key",
     "apiKeyPlaceholderEdit": "留空保持不变",
     "apiKeyConfigured": "API Key 已配置",
@@ -43,6 +45,7 @@
     "testFailed": "连接测试失败",
     "fillRequiredFieldsFirst": "请先填写必填字段",
     "testing": "测试中...",
+    "videoTestCostWarning": "此测试将实际生成视频，可能产生供应商费用，并可能需要等待数分钟。是否继续？",
     "latency": "延迟",
     "basicInfo": "基本信息",
     "parameters": "参数设置",
@@ -174,6 +177,8 @@
     "selectAspectRatio": "选择宽高比",
     "audioSettings": "音频设置",
     "defaultVoice": "默认声音",
+    "speakerId": "音色 ID",
+    "speakerIdPlaceholder": "例如：zh_female_vv_uranus_bigtts",
     "selectVoice": "选择声音",
     "defaultSpeed": "默认语速",
     "modelCreated": "模型创建成功",
@@ -188,6 +193,7 @@
     "bulkDeleted": "成功删除 {count} 个模型",
     "providers": {
       "openai": "OpenAI",
+      "openai_responses": "OpenAI Responses",
       "anthropic": "Anthropic",
       "google": "Google",
       "xai": "xAI (Grok)",
@@ -206,7 +212,7 @@
       "stability": "Stability AI",
       "midjourney": "Midjourney",
       "siliconflow": "SiliconFlow",
-      "volcengine": "火山引擎",
+      "volcengine": "火山方舟",
       "custom": "自定义"
     },
     "providerGroups": {
@@ -222,6 +228,7 @@
       "rerank": "重排序模型",
       "tts": "语音合成",
       "stt": "语音识别",
+      "audio_generation": "音频生成",
       "text_to_image": "文生图",
       "text_to_video": "文生视频"
     },
@@ -231,6 +238,7 @@
       "rerank": "重排序",
       "tts": "语音合成",
       "stt": "语音识别",
+      "audio_generation": "音频生成",
       "text_to_image": "文生图",
       "text_to_video": "文生视频"
     }

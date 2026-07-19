@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.035Z
+// GENERATED — 2026-07-18T19:43:55.116Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -28,6 +28,8 @@ export type ModelsMessages = {
     baseUrlPlaceholder: string
     baseUrlHint: string
     apiKey: string
+    volcengineApiKey: string
+    volcengineResourceId: string
     apiKeyPlaceholder: string
     apiKeyPlaceholderEdit: string
     apiKeyConfigured: string
@@ -45,6 +47,7 @@ export type ModelsMessages = {
     testFailed: string
     fillRequiredFieldsFirst: string
     testing: string
+    videoTestCostWarning: string
     latency: string
     basicInfo: string
     parameters: string
@@ -176,6 +179,8 @@ export type ModelsMessages = {
     selectAspectRatio: string
     audioSettings: string
     defaultVoice: string
+    speakerId: string
+    speakerIdPlaceholder: string
     selectVoice: string
     defaultSpeed: string
     modelCreated: string
@@ -190,6 +195,7 @@ export type ModelsMessages = {
     bulkDeleted: string
     providers: {
       openai: string
+      openai_responses: string
       anthropic: string
       google: string
       xai: string
@@ -224,6 +230,7 @@ export type ModelsMessages = {
       rerank: string
       tts: string
       stt: string
+      audio_generation: string
       text_to_image: string
       text_to_video: string
     }
@@ -233,6 +240,7 @@ export type ModelsMessages = {
       rerank: string
       tts: string
       stt: string
+      audio_generation: string
       text_to_image: string
       text_to_video: string
     }

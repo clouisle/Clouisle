@@ -2,6 +2,64 @@
 
 ## Active
 
+- **admin-video-model-generation-test** — Complete. Replace constructor-only video model tests with a confirmed, billable real generation and completion check. See `docs/plan/admin-video-model-generation-test.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Real generation and polling test
+  - [x] 3. Frontend cost confirmation and i18n
+  - [x] 4. Focused tests and validation
+
+- **minimax-media-integration** — Complete. Add MiniMax image, video, and synchronous TTS adapters using the existing media model and workflow architecture. See `docs/plan/minimax-media-integration.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Shared MiniMax HTTP client
+  - [x] 3. Image generation adapter
+  - [x] 4. Video generation adapter
+  - [x] 5. Synchronous TTS adapter
+  - [x] 6. Frontend provider exposure and backend i18n
+  - [x] 7. Focused tests and validation
+
+- **volcengine-tts-seed-audio** — Complete. Add Volcengine OpenSpeech TTS and standalone Seed Audio generation using generic model configuration. See `docs/plan/volcengine-tts-seed-audio.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Audio-generation types and routing
+  - [x] 3. Volcengine TTS adapter
+  - [x] 4. Seed Audio adapter
+  - [x] 5. Real admin connection-test routing
+  - [x] 6. Frontend model management and i18n
+  - [x] 7. Focused tests and validation
+
+- **volcengine-ark-common-model-support** — Complete. Expose Volcengine Ark chat, text embedding, rerank, Seedream image, and Seedance video models. See `docs/plan/volcengine-ark-common-model-support.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Frontend provider exposure and naming
+  - [x] 3. Text embedding and Seedream support
+  - [x] 4. Seedance API compatibility
+  - [x] 5. Tests and validation
+
+- **workflow-media-preview-url-output** — Complete. Show generated media inside workflow canvas nodes and expose URL-only outputs. See `docs/plan/workflow-media-preview-url-output.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. URL-only backend output contract
+  - [x] 3. Canvas runtime trace projection
+  - [x] 4. In-node media preview
+  - [x] 5. Tests and validation
+  - [x] 6. Aspect-fit previews and fullscreen media viewing
+
+- **conversation-image-reference-pool** — Complete. Make active-branch uploaded and generated images reusable by Agent media tools without re-uploading. See `docs/plan/conversation-image-reference-pool.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Conversation image pool and inventory
+  - [x] 3. Chat execution-path integration
+  - [x] 4. Persisted asset resolution
+  - [x] 5. Tests and validation
+
+- **openai-responses-image-provider** — Complete. Add an explicit image-only OpenAI Responses provider with optional reference-image inputs while preserving the existing OpenAI Images API path. See `docs/plan/openai-responses-image-provider.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend provider registration and Responses image adapter
+  - [x] 3. Frontend image-provider controls and i18n
+  - [x] 4. Regression tests and validation
+
+- **yun-107-media-generation-integration** — Complete. Thread uploaded images into Agent media tools and add a first-class Workflow media-generation node. See `docs/plan/yun-107-media-generation-integration.md`
+  - [x] 1. Agent current-image plumbing
+  - [x] 2. Workflow media executor
+  - [x] 3. Workflow editor node/config/rendering
+  - [x] 4. i18n, generated types, and validation
+
 - **scoped-rbac-landing** — Complete. Decouple team authorization from global RBAC by first closing authorization gaps, then adding team-scoped role assignments. See `docs/plan/scoped-rbac.md`
   - [x] 1. Planning docs
   - [x] 2. Shared team access and immediate workflow authorization fixes

@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.041Z
+// GENERATED — 2026-07-18T17:59:00.390Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -271,6 +271,7 @@ export type WorkflowMessages = {
     }
     nodeLabels: {
       llm: string
+      media_generation: string
       condition: string
       sub_workflow: string
       agent: string
@@ -304,6 +305,7 @@ export type WorkflowMessages = {
     }
     nodeDescriptions: {
       llm: string
+      media_generation: string
       condition: string
       question_classifier: string
       iteration: string
@@ -381,6 +383,8 @@ export type WorkflowMessages = {
       agentNotSelected: string
       knowledgeBaseNotSelected: string
       queryEmpty: string
+      promptEmpty: string
+      invalidMediaMode: string
       containerNodeNoInput: string
       nodeNoInput: string
       noOutputNode: string
@@ -585,6 +589,11 @@ export type WorkflowMessages = {
       label: string
       notSelected: string
     }
+    nodesMediaGeneration: {
+      label: string
+      imageMode: string
+      videoMode: string
+    }
     nodesAnswer: {
       label: string
       streaming: string
@@ -757,6 +766,22 @@ export type WorkflowMessages = {
       optional: string
       code: string
       variableNamePlaceholder: string
+    }
+    configMediaGeneration: {
+      mode: string
+      imageMode: string
+      videoMode: string
+      prompt: string
+      promptPlaceholder: string
+      referenceImage: string
+      startImage: string
+      selectImageVariable: string
+      noImageVariables: string
+      width: string
+      height: string
+      numImages: string
+      duration: string
+      aspectRatio: string
     }
     configLlm: {
       systemPrompt: string

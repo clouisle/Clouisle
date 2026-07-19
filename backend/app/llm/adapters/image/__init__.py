@@ -8,10 +8,13 @@ from app.llm.errors import UnsupportedOperationError
 from .base import BaseImageAdapter
 from .google import GoogleImageAdapter
 from .luma import LumaImageAdapter
+from .minimax import MiniMaxImageAdapter
 from .openai import OpenAIImageAdapter
+from .openai_responses import OpenAIResponsesImageAdapter
 from .runway import RunwayImageAdapter
 from .siliconflow import SiliconFlowImageAdapter
 from .stability import StabilityImageAdapter
+from .volcengine import VolcengineImageAdapter
 
 
 def create_image_adapter(model_config: Model) -> BaseImageAdapter:
@@ -28,6 +31,8 @@ def create_image_adapter(model_config: Model) -> BaseImageAdapter:
 
     if provider == ModelProvider.OPENAI:
         return OpenAIImageAdapter(model_config)
+    elif provider == ModelProvider.OPENAI_RESPONSES:
+        return OpenAIResponsesImageAdapter(model_config)
     elif provider == ModelProvider.AZURE_OPENAI:
         # Azure OpenAI 使用相同的适配器，只是 base_url 不同
         return OpenAIImageAdapter(model_config)
@@ -43,6 +48,10 @@ def create_image_adapter(model_config: Model) -> BaseImageAdapter:
         return LumaImageAdapter(model_config)
     elif provider == ModelProvider.STABILITY:
         return StabilityImageAdapter(model_config)
+    elif provider == ModelProvider.VOLCENGINE:
+        return VolcengineImageAdapter(model_config)
+    elif provider == ModelProvider.MINIMAX:
+        return MiniMaxImageAdapter(model_config)
     else:
         raise UnsupportedOperationError(
             message=f"Image generation not supported for provider: {provider}",
@@ -55,9 +64,12 @@ __all__ = [
     "create_image_adapter",
     "BaseImageAdapter",
     "OpenAIImageAdapter",
+    "OpenAIResponsesImageAdapter",
     "GoogleImageAdapter",
     "RunwayImageAdapter",
     "LumaImageAdapter",
+    "MiniMaxImageAdapter",
     "SiliconFlowImageAdapter",
     "StabilityImageAdapter",
+    "VolcengineImageAdapter",
 ]

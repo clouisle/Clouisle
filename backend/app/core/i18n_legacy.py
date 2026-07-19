@@ -476,21 +476,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "File path to write. Use /workspace/script.py, /workspace/output/result.txt, or a relative path; paths outside /workspace are rejected.",
         "zh": "要写入的文件路径。使用 /workspace/script.py、/workspace/output/result.txt 或相对路径；/workspace 外的路径会被拒绝。",
     },
-    "can_only_regenerate_assistant": {
-        "en": "Can only regenerate assistant messages",
-        "zh": "只能重新生成助手消息",
-    },
     "can_only_edit_user_message": {
         "en": "Can only edit user messages",
         "zh": "只能编辑用户消息",
     },
-    "message_content_required": {
-        "en": "Message content is required",
-        "zh": "消息内容不能为空",
-    },
-    "message_content_unchanged": {
-        "en": "Message content is unchanged",
-        "zh": "消息内容未改变",
+    "can_only_regenerate_assistant": {
+        "en": "Can only regenerate assistant messages",
+        "zh": "只能重新生成助手消息",
     },
     "cannot_add_as_owner": {
         "en": "Cannot add member as owner",
@@ -992,6 +984,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Google reference image must include url, base64, or file_path",
         "zh": "Google 参考图像必须包含 url、base64 或 file_path",
     },
+    "http_tool_request_failed_status": {
+        "en": "HTTP request failed with status {status_code}",
+        "zh": "HTTP 请求失败，状态码：{status_code}",
+    },
+    "http_tool_url_host_cannot_be_resolved": {
+        "en": "HTTP URL host cannot be resolved",
+        "zh": "无法解析 HTTP URL 主机",
+    },
+    "http_tool_url_host_not_allowed": {
+        "en": "HTTP URL host is not allowed",
+        "zh": "不允许访问该 HTTP URL 主机",
+    },
+    "http_tool_url_invalid": {"en": "Invalid HTTP URL", "zh": "HTTP URL 无效"},
     "http_tool_url_templates_not_supported": {
         "en": "HTTP tool URL templates are not supported",
         "zh": "HTTP 工具不支持 URL 模板",
@@ -1013,28 +1018,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "当前智能体未启用图片生成",
     },
     "image_generation_succeeded": {
-        "en": "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}",
-        "zh": "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}",
+        "en": "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}. The generated images are already displayed by the interface. Do not include Markdown or HTML images, and do not invent image URLs in the final response.",
+        "zh": "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}。生成的图片已由界面展示，最终回复中不要输出 Markdown 或 HTML 图片，也不要编造图片地址。",
     },
     "image_reference_image_index_out_of_range": {
-        "en": "Reference image index {index} is out of range. Available uploaded images: {count}",
-        "zh": "参考图片索引 {index} 超出范围。可用上传图片数量：{count}",
+        "en": "Reference image index {index} is out of range. Available conversation images: {count}",
+        "zh": "参考图片索引 {index} 超出范围。可用会话图片数量：{count}",
     },
     "image_reference_images_conflict": {
-        "en": "Use either explicit reference images or uploaded image indexes, not both",
-        "zh": "请仅使用显式参考图或上传图片索引之一，不能同时使用",
+        "en": "Use either explicit reference images or conversation image indexes, not both",
+        "zh": "请仅使用显式参考图或会话图片索引之一，不能同时使用",
     },
     "image_reference_images_disabled": {
         "en": "Reference images are disabled for this agent",
         "zh": "当前智能体已禁用参考图",
     },
     "image_reference_invalid_uploaded_image": {
-        "en": "Uploaded image #{index} does not contain usable image data",
-        "zh": "上传图片 #{index} 不包含可用的图片数据",
+        "en": "Conversation image #{index} does not contain usable image data",
+        "zh": "会话图片 #{index} 不包含可用的图片数据",
     },
     "image_reference_no_uploaded_images": {
-        "en": "No uploaded images are available for the selected reference indexes",
-        "zh": "当前没有可用于所选参考索引的上传图片",
+        "en": "No conversation images are available for the selected reference indexes",
+        "zh": "当前没有可用于所选参考索引的会话图片",
     },
     "image_to_video_removed_from_project": {
         "en": "Image-to-video has been removed from the project",
@@ -1075,6 +1080,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Invalid MCP tool name format: {tool_name}",
         "zh": "无效的 MCP 工具名称格式：{tool_name}",
     },
+    "invalid_minimax_api_key": {
+        "en": "Invalid MiniMax API key",
+        "zh": "无效的 MiniMax API Key",
+    },
     "invalid_notification_scope": {
         "en": "Invalid notification scope",
         "zh": "通知范围无效",
@@ -1084,6 +1093,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "无效的通知类型：{type_key}",
     },
     "invalid_pika_api_key": {"en": "Invalid Pika API key", "zh": "无效的 Pika API Key"},
+    "invalid_request_timeout": {
+        "en": "Request timeout must be a finite positive number",
+        "zh": "请求超时必须是有限的正数",
+    },
     "invalid_runway_api_key": {
         "en": "Invalid Runway API key",
         "zh": "无效的 Runway API Key",
@@ -1302,8 +1315,77 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "entity_name is required for update_memory_entity",
         "zh": "update_memory_entity 需要 entity_name 参数",
     },
+    "message_content_required": {
+        "en": "Message content is required",
+        "zh": "消息内容不能为空",
+    },
+    "message_content_unchanged": {
+        "en": "Message content is unchanged",
+        "zh": "消息内容未改变",
+    },
     "message_deleted": {"en": "Message deleted successfully", "zh": "消息删除成功"},
     "message_not_found": {"en": "Message not found", "zh": "消息未找到"},
+    "minimax_api_error": {"en": "MiniMax API error", "zh": "MiniMax API 错误"},
+    "minimax_content_filtered": {
+        "en": "MiniMax blocked the content",
+        "zh": "MiniMax 已拦截相关内容",
+    },
+    "minimax_endpoint_not_found": {
+        "en": "MiniMax endpoint not found",
+        "zh": "未找到 MiniMax 接口端点",
+    },
+    "minimax_image_response_missing_output": {
+        "en": "MiniMax image response did not contain generated images",
+        "zh": "MiniMax 图片响应未包含生成结果",
+    },
+    "minimax_insufficient_balance": {
+        "en": "MiniMax account balance is insufficient",
+        "zh": "MiniMax 账户余额不足",
+    },
+    "minimax_invalid_parameter": {
+        "en": "Invalid MiniMax parameter: {field}",
+        "zh": "MiniMax 参数无效：{field}",
+    },
+    "minimax_invalid_request": {
+        "en": "MiniMax rejected the request",
+        "zh": "MiniMax 拒绝了该请求",
+    },
+    "minimax_invalid_response": {
+        "en": "MiniMax returned an invalid response",
+        "zh": "MiniMax 返回了无效响应",
+    },
+    "minimax_rate_limit_exceeded": {
+        "en": "MiniMax rate limit exceeded",
+        "zh": "MiniMax 触发速率限制",
+    },
+    "minimax_request_timeout": {
+        "en": "MiniMax request timeout",
+        "zh": "MiniMax 请求超时",
+    },
+    "minimax_task_missing_id": {
+        "en": "MiniMax task did not return an id",
+        "zh": "MiniMax 任务未返回 id",
+    },
+    "minimax_task_not_found": {
+        "en": "MiniMax task not found",
+        "zh": "未找到 MiniMax 任务",
+    },
+    "minimax_tts_invalid_audio": {
+        "en": "MiniMax TTS returned invalid audio data",
+        "zh": "MiniMax 语音响应包含无效音频数据",
+    },
+    "minimax_tts_response_missing_output": {
+        "en": "MiniMax TTS response did not contain audio",
+        "zh": "MiniMax 语音响应未包含音频",
+    },
+    "minimax_video_generation_failed": {
+        "en": "MiniMax video generation failed",
+        "zh": "MiniMax 视频生成失败",
+    },
+    "minimax_video_response_missing_output": {
+        "en": "MiniMax video task completed without video output",
+        "zh": "MiniMax 视频任务已完成，但未返回视频结果",
+    },
     "missing_user_id": {
         "en": "Missing user ID from SSO provider",
         "zh": "SSO 提供商未返回用户 ID",
@@ -2369,19 +2451,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "tool_execute_success": {"en": "Tool executed successfully", "zh": "工具执行成功"},
     "tool_execution_failed": {"en": "Tool execution failed", "zh": "工具执行失败"},
-    "http_tool_request_failed_status": {
-        "en": "HTTP request failed with status {status_code}",
-        "zh": "HTTP 请求失败，状态码：{status_code}",
-    },
-    "http_tool_url_invalid": {"en": "Invalid HTTP URL", "zh": "HTTP URL 无效"},
-    "http_tool_url_host_not_allowed": {
-        "en": "HTTP URL host is not allowed",
-        "zh": "不允许访问该 HTTP URL 主机",
-    },
-    "http_tool_url_host_cannot_be_resolved": {
-        "en": "HTTP URL host cannot be resolved",
-        "zh": "无法解析 HTTP URL 主机",
-    },
     "tool_knowledge_search": {"en": "Knowledge Search", "zh": "知识库搜索"},
     "tool_name_exists": {
         "en": "Tool with this name already exists",
@@ -2566,6 +2635,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Volcengine endpoint not found",
         "zh": "未找到 Volcengine 接口端点",
     },
+    "volcengine_image_invalid_parameter": {
+        "en": "Invalid Volcengine image parameter: {field}",
+        "zh": "火山方舟图片参数无效：{field}",
+    },
+    "volcengine_image_response_missing_output": {
+        "en": "Volcengine image response did not contain generated images",
+        "zh": "火山方舟图片响应未包含生成结果",
+    },
     "volcengine_rate_limit_exceeded": {
         "en": "Volcengine rate limit exceeded",
         "zh": "Volcengine 触发速率限制",
@@ -2585,6 +2662,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "volcengine_task_polling_timed_out": {
         "en": "Volcengine task polling timed out",
         "zh": "Volcengine 任务轮询超时",
+    },
+    "volcengine_video_response_missing_output": {
+        "en": "Volcengine video task completed without video output",
+        "zh": "火山方舟视频任务已完成，但未返回视频结果",
     },
     "web_search_api_error": {
         "en": "Search API error: {status_code}",
@@ -2646,6 +2727,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "workflow_execution_error": {
         "en": "Workflow execution error",
         "zh": "工作流执行错误",
+    },
+    "workflow_media_invalid_mode": {
+        "en": "Select image or video generation mode in the media generation node",
+        "zh": "请在媒体生成节点中选择图片或视频生成模式",
+    },
+    "workflow_media_model_not_found": {
+        "en": "The model selected in the media generation node no longer exists; select an available model",
+        "zh": "媒体生成节点中选择的模型已不存在，请重新选择可用模型",
+    },
+    "workflow_media_model_required": {
+        "en": "Select a model in the media generation node before running the workflow",
+        "zh": "请先在媒体生成节点中选择模型，再运行工作流",
+    },
+    "workflow_media_prompt_required": {
+        "en": "Enter a prompt in the media generation node before running the workflow",
+        "zh": "请先在媒体生成节点中填写提示词，再运行工作流",
     },
     "workflow_name_exists": {
         "en": "Workflow with this name already exists",

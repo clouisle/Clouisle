@@ -16,6 +16,7 @@ class ModelProvider(str, Enum):
 
     # General LLM providers
     OPENAI = "openai"
+    OPENAI_RESPONSES = "openai_responses"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
     AZURE_OPENAI = "azure_openai"
@@ -54,6 +55,7 @@ class ModelType(str, Enum):
     RERANK = "rerank"
     TTS = "tts"
     STT = "stt"
+    AUDIO_GENERATION = "audio_generation"
     TEXT_TO_IMAGE = "text_to_image"
     TEXT_TO_VIDEO = "text_to_video"
 

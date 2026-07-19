@@ -84,6 +84,11 @@ async def get_model_types() -> Any:
         {"code": OrmModelType.TTS.value, "name": "TTS", "description": "语音合成"},
         {"code": OrmModelType.STT.value, "name": "STT", "description": "语音识别"},
         {
+            "code": OrmModelType.AUDIO_GENERATION.value,
+            "name": "Audio Generation",
+            "description": "音频生成",
+        },
+        {
             "code": OrmModelType.TEXT_TO_IMAGE.value,
             "name": "Text to Image",
             "description": "文生图",

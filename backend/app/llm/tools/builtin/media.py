@@ -163,6 +163,15 @@ def _chat_image_to_generation_image(image: Any, *, index: int) -> ImageContent:
             payload, image_format = parsed
             return ImageContent(base64=payload, format=image_format or "png")
 
+        upload_prefix = "/api/v1/upload/files/"
+        if url.startswith(upload_prefix):
+            from app.api.v1.endpoints.upload import _resolve_upload_path
+
+            relative_path = url.removeprefix(upload_prefix)
+            path = _resolve_upload_path(*relative_path.split("/"))
+            if path.is_file():
+                return ImageContent(file_path=str(path))
+
     raise ValueError(t("image_reference_invalid_uploaded_image", index=index))
 
 
@@ -616,9 +625,9 @@ def register_media_tools() -> None:
         description=(
             "Generate one or more images from a prompt. Use this when the user asks "
             "you to create illustrations, product shots, mockups, concept art, "
-            "or edit/reference-based image outputs. Uploaded chat images are "
-            "available as 1-based indexes; use reference_image_indexes for only "
-            "the specific uploaded images the user wants to reference."
+            "or edit/reference-based image outputs. Available conversation images "
+            "are listed with 1-based indexes; use reference_image_indexes for only "
+            "the specific images the user wants to reference."
         ),
         parameters=[
             ToolParameter(
@@ -666,8 +675,8 @@ def register_media_tools() -> None:
                 name="images",
                 type="array",
                 description=(
-                    "Optional explicit reference image objects. For images uploaded "
-                    "in the current chat, use reference_image_indexes instead."
+                    "Optional explicit reference image objects. For images listed in "
+                    "the conversation inventory, use reference_image_indexes instead."
                 ),
                 items={"type": "object"},
             ),
@@ -675,9 +684,9 @@ def register_media_tools() -> None:
                 name="reference_image_indexes",
                 type="array",
                 description=(
-                    "1-based indexes of uploaded chat images to use as references. "
-                    "Choose only the specific images needed, e.g. [3] for uploaded "
-                    "image #3 or [5] for the last image when five images were uploaded."
+                    "1-based indexes of available conversation images to use as "
+                    "references. Choose only the specific images needed, e.g. [3] "
+                    "for image #3 or [5] when five images are available."
                 ),
                 items={"type": "integer"},
             ),
@@ -694,8 +703,8 @@ def register_media_tools() -> None:
         description=(
             "Generate a short video clip from a prompt. Use this when the user asks "
             "for cinematic motion, animated scenes, or motion-based concept clips. "
-            "When the user asks to use an uploaded image as the video's first frame, "
-            "set start_image_index to that uploaded image's 1-based index. Current "
+            "When the user asks to use an available conversation image as the video's "
+            "first frame, set start_image_index to its 1-based index. Current "
             "video providers may reject image references explicitly if unsupported."
         ),
         parameters=[
@@ -739,8 +748,8 @@ def register_media_tools() -> None:
                 name="start_image_index",
                 type="integer",
                 description=(
-                    "1-based index of the uploaded chat image to use as the video's "
-                    "starting frame/reference image when the selected video model supports it."
+                    "1-based index of an available conversation image to use as the "
+                    "video's starting frame when the selected video model supports it."
                 ),
             ),
             ToolParameter(

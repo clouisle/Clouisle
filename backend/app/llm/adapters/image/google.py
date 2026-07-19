@@ -66,9 +66,13 @@ class GoogleImageAdapter(BaseImageAdapter):
         from google import genai
         from google.genai import types
 
-        client_kwargs: dict[str, Any] = {"api_key": self.api_key}
-        if self.base_url:
-            client_kwargs["http_options"] = types.HttpOptions(base_url=self.base_url)
+        client_kwargs: dict[str, Any] = {
+            "api_key": self.api_key,
+            "http_options": types.HttpOptions(
+                base_url=self.base_url,
+                timeout=int(self._get_request_timeout() * 1000),
+            ),
+        }
         client = genai.Client(**client_kwargs)
 
         reference_images, config_overrides = self._split_extra_params(request)

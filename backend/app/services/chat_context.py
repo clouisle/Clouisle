@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import logging
 from collections.abc import Sequence
@@ -10,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
+
+from PIL import Image, UnidentifiedImageError
 
 from app.llm.errors import ContextLengthError
 from app.llm.adapters.media_utils import parse_image_data_url
@@ -388,6 +392,29 @@ When you need the user to choose from predefined options, use this XML format:
 - When guiding the conversation flow"""
 
 
+def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, str]:
+    try:
+        with Image.open(io.BytesIO(base64.b64decode(data))) as image:
+            if max(image.size) <= 2048 and len(data) <= 1_000_000:
+                return data, image_format or "png"
+
+            image.thumbnail((2048, 2048))
+            normalized_image: Image.Image = image
+            if image.mode not in ("RGB", "L"):
+                background = Image.new("RGB", image.size, "white")
+                if "A" in image.getbands():
+                    background.paste(image, mask=image.getchannel("A"))
+                else:
+                    background.paste(image)
+                normalized_image = background
+
+            output = io.BytesIO()
+            normalized_image.save(output, format="JPEG", quality=85, optimize=True)
+            return base64.b64encode(output.getvalue()).decode(), "jpeg"
+    except (OSError, ValueError, UnidentifiedImageError):
+        return data, image_format or "png"
+
+
 def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
     """Build multimodal content for vision-capable models."""
     content_parts: list[ContentPart] = [ContentPart(type=ContentType.TEXT, text=text)]
@@ -403,11 +430,11 @@ def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
         )
         parsed_data_url = parse_image_data_url(img_url)
         if parsed_data_url:
-            data_part, image_format = parsed_data_url
+            data_part, image_format = _normalize_vision_image(*parsed_data_url)
             content_parts.append(
                 ContentPart(
                     type=ContentType.IMAGE,
-                    image=ImageContent(base64=data_part, format=image_format or "png"),
+                    image=ImageContent(base64=data_part, format=image_format),
                 )
             )
         else:

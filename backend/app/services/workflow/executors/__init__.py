@@ -16,6 +16,7 @@ from . import iteration
 from . import tool
 from . import subworkflow
 from . import knowledge
+from . import media_generation
 
 __all__ = [
     "start",
@@ -29,4 +30,5 @@ __all__ = [
     "tool",
     "subworkflow",
     "knowledge",
+    "media_generation",
 ]

@@ -26,6 +26,8 @@
     "baseUrlPlaceholder": "Leave blank to use default",
     "baseUrlHint": "Custom API endpoint (optional)",
     "apiKey": "API Key",
+    "volcengineApiKey": "X-Api-Key",
+    "volcengineResourceId": "X-Api-Resource-Id",
     "apiKeyPlaceholder": "Enter API key",
     "apiKeyPlaceholderEdit": "Leave blank to keep current",
     "apiKeyConfigured": "API key is configured",
@@ -43,6 +45,7 @@
     "testFailed": "Connection test failed",
     "fillRequiredFieldsFirst": "Please fill required fields first",
     "testing": "Testing...",
+    "videoTestCostWarning": "This test will generate a real video, may incur provider charges, and can take several minutes. Continue?",
     "latency": "Latency",
     "basicInfo": "Basic Info",
     "parameters": "Parameters",
@@ -174,6 +177,8 @@
     "selectAspectRatio": "Select aspect ratio",
     "audioSettings": "Audio Settings",
     "defaultVoice": "Default Voice",
+    "speakerId": "Speaker ID",
+    "speakerIdPlaceholder": "e.g., zh_female_vv_uranus_bigtts",
     "selectVoice": "Select voice",
     "defaultSpeed": "Default Speed",
     "modelCreated": "Model created successfully",
@@ -188,6 +193,7 @@
     "bulkDeleted": "Successfully deleted {count} models",
     "providers": {
       "openai": "OpenAI",
+      "openai_responses": "OpenAI Responses",
       "anthropic": "Anthropic",
       "google": "Google",
       "xai": "xAI (Grok)",
@@ -206,7 +212,7 @@
       "stability": "Stability AI",
       "midjourney": "Midjourney",
       "siliconflow": "SiliconFlow",
-      "volcengine": "Volcengine",
+      "volcengine": "Volcengine Ark",
       "custom": "Custom"
     },
     "providerGroups": {
@@ -222,6 +228,7 @@
       "rerank": "Rerank",
       "tts": "Text to Speech",
       "stt": "Speech to Text",
+      "audio_generation": "Audio Generation",
       "text_to_image": "Text to Image",
       "text_to_video": "Text to Video"
     },
@@ -231,6 +238,7 @@
       "rerank": "Rerank",
       "tts": "TTS",
       "stt": "STT",
+      "audio_generation": "Audio",
       "text_to_image": "T2I",
       "text_to_video": "T2V"
     }

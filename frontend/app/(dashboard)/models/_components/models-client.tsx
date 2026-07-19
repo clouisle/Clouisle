@@ -288,6 +288,10 @@ export function ModelsClient() {
   
   // 测试连接
   const handleTestConnection = async (model: Model) => {
+    if (model.model_type === 'text_to_video' && !window.confirm(t('videoTestCostWarning'))) {
+      return
+    }
+
     const toastId = toast.loading(t('testing'))
     try {
       const result = await modelsApi.testConnection(model.id)

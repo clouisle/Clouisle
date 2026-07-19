@@ -1320,6 +1320,9 @@ msgstr "Model not found or not accessible"
 msgid "model_test_connection_timeout"
 msgstr "Connection timeout"
 
+msgid "invalid_request_timeout"
+msgstr "Request timeout must be a finite positive number"
+
 msgid "model_test_connection_failed_check_base_url"
 msgstr "Connection failed, check base URL"
 
@@ -1902,11 +1905,71 @@ msgstr "Volcengine rate limit exceeded"
 msgid "volcengine_api_error"
 msgstr "Volcengine API error"
 
+msgid "volcengine_image_invalid_parameter"
+msgstr "Invalid Volcengine image parameter: {field}"
+
+msgid "volcengine_image_response_missing_output"
+msgstr "Volcengine image response did not contain generated images"
+
 msgid "volcengine_task_polling_timed_out"
 msgstr "Volcengine task polling timed out"
 
 msgid "volcengine_task_missing_id"
 msgstr "Volcengine task did not return an id"
+
+msgid "volcengine_video_response_missing_output"
+msgstr "Volcengine video task completed without video output"
+
+msgid "invalid_minimax_api_key"
+msgstr "Invalid MiniMax API key"
+
+msgid "minimax_request_timeout"
+msgstr "MiniMax request timeout"
+
+msgid "minimax_endpoint_not_found"
+msgstr "MiniMax endpoint not found"
+
+msgid "minimax_rate_limit_exceeded"
+msgstr "MiniMax rate limit exceeded"
+
+msgid "minimax_api_error"
+msgstr "MiniMax API error"
+
+msgid "minimax_invalid_response"
+msgstr "MiniMax returned an invalid response"
+
+msgid "minimax_insufficient_balance"
+msgstr "MiniMax account balance is insufficient"
+
+msgid "minimax_content_filtered"
+msgstr "MiniMax blocked the content"
+
+msgid "minimax_invalid_request"
+msgstr "MiniMax rejected the request"
+
+msgid "minimax_task_not_found"
+msgstr "MiniMax task not found"
+
+msgid "minimax_task_missing_id"
+msgstr "MiniMax task did not return an id"
+
+msgid "minimax_invalid_parameter"
+msgstr "Invalid MiniMax parameter: {field}"
+
+msgid "minimax_image_response_missing_output"
+msgstr "MiniMax image response did not contain generated images"
+
+msgid "minimax_video_response_missing_output"
+msgstr "MiniMax video task completed without video output"
+
+msgid "minimax_video_generation_failed"
+msgstr "MiniMax video generation failed"
+
+msgid "minimax_tts_response_missing_output"
+msgstr "MiniMax TTS response did not contain audio"
+
+msgid "minimax_tts_invalid_audio"
+msgstr "MiniMax TTS returned invalid audio data"
 
 msgid "dashscope_request_timeout"
 msgstr "DashScope request timeout"
@@ -2389,6 +2452,18 @@ msgstr "Username already exists"
 msgid "validation_error"
 msgstr "Validation error"
 
+msgid "workflow_media_invalid_mode"
+msgstr "Select image or video generation mode in the media generation node"
+
+msgid "workflow_media_model_not_found"
+msgstr "The model selected in the media generation node no longer exists; select an available model"
+
+msgid "workflow_media_model_required"
+msgstr "Select a model in the media generation node before running the workflow"
+
+msgid "workflow_media_prompt_required"
+msgstr "Enter a prompt in the media generation node before running the workflow"
+
 msgid "vector_search_failed"
 msgstr "Vector search failed: {error}"
 
@@ -2606,16 +2681,16 @@ msgid "image_reference_images_disabled"
 msgstr "Reference images are disabled for this agent"
 
 msgid "image_reference_images_conflict"
-msgstr "Use either explicit reference images or uploaded image indexes, not both"
+msgstr "Use either explicit reference images or conversation image indexes, not both"
 
 msgid "image_reference_image_index_out_of_range"
-msgstr "Reference image index {index} is out of range. Available uploaded images: {count}"
+msgstr "Reference image index {index} is out of range. Available conversation images: {count}"
 
 msgid "image_reference_invalid_uploaded_image"
-msgstr "Uploaded image #{index} does not contain usable image data"
+msgstr "Conversation image #{index} does not contain usable image data"
 
 msgid "image_reference_no_uploaded_images"
-msgstr "No uploaded images are available for the selected reference indexes"
+msgstr "No conversation images are available for the selected reference indexes"
 
 msgid "image_generation_invalid_quality"
 msgstr "Image quality '{quality}' is not supported. Supported values: {supported}"
@@ -2624,7 +2699,7 @@ msgid "image_generation_failed"
 msgstr "Image generation failed: {error}"
 
 msgid "image_generation_succeeded"
-msgstr "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}"
+msgstr "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}. The generated images are already displayed by the interface. Do not include Markdown or HTML images, and do not invent image URLs in the final response."
 
 msgid "video_generation_not_enabled_for_agent"
 msgstr "Video generation is not enabled for this agent"

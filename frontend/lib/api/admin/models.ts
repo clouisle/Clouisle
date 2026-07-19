@@ -35,7 +35,7 @@ export const modelsApi = {
     api.delete<Model>(`/admin/models/${modelId}`),
 
   testConnection: async (modelId: string): Promise<{ success: boolean; message: string; latency_ms?: number }> =>
-    api.post(`/admin/models/${modelId}/test`),
+    api.post(`/admin/models/${modelId}/test`, undefined, { timeout: 300000 }),
 
   testModelConfig: async (data: {
     provider: string
@@ -46,7 +46,7 @@ export const modelsApi = {
     default_params?: Record<string, unknown> | null
     config?: Record<string, unknown> | null
   }): Promise<{ success: boolean; message: string; latency_ms?: number }> =>
-    api.post('/admin/models/test', data),
+    api.post('/admin/models/test', data, { timeout: 300000 }),
 
   setDefault: async (modelId: string): Promise<Model> =>
     api.post<Model>(`/admin/models/${modelId}/set-default`),

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import { X, ZoomIn, ZoomOut, RotateCw, Download, MessageSquareText, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -135,7 +136,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
 
   if (!isOpen) return null
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
@@ -242,7 +243,77 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
         />
       </div>
 
-    </div>
+    </div>,
+    document.body
+  )
+}
+
+interface VideoLightboxProps {
+  src: string
+  isOpen: boolean
+  onClose: () => void
+}
+
+export function VideoLightbox({ src, isOpen, onClose }: VideoLightboxProps) {
+  const t = useTranslations('chat.lightbox')
+
+  React.useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = ''
+    }
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div className="absolute right-4 top-4 z-10 flex gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
+          onClick={(event) => event.stopPropagation()}
+          render={<a href={src} download />}
+          title={t('download')}
+        >
+          <Download className="h-5 w-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
+          onClick={(event) => {
+            event.stopPropagation()
+            onClose()
+          }}
+          title={t('close')}
+        >
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
+      <video
+        src={src}
+        controls
+        autoPlay
+        playsInline
+        className="max-h-[90vh] max-w-[92vw] rounded-lg bg-black object-contain"
+        onClick={(event) => event.stopPropagation()}
+      />
+    </div>,
+    document.body
   )
 }
 

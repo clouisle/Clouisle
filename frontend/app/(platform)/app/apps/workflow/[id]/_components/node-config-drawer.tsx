@@ -24,6 +24,7 @@ import { ParameterExtractorConfig, defaultParameterExtractorConfig } from './nod
 import { QuestionClassifierConfig, defaultQuestionClassifierConfig } from './nodes/question-classifier-node'
 import { AnswerNodeConfig as AnswerNodeConfigData, defaultAnswerNodeConfig } from './nodes/answer-node'
 import { ToolNodeConfig as ToolNodeConfigData, defaultToolNodeConfig } from './nodes/tool-node'
+import { MediaGenerationConfig, defaultMediaGenerationConfig } from './nodes/media-generation-node'
 import { COMMENT_COLORS, type CommentColor } from './nodes/comment-node'
 import {
   Parameter,
@@ -37,6 +38,7 @@ import {
   LLMNodeConfig,
   LLMNodeConfigData,
   defaultLLMNodeConfig,
+  MediaGenerationNodeConfig,
   CodeNodeConfig,
   ConditionNodeConfig,
   IterationNodeConfig,
@@ -95,7 +97,10 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   
   // LLM 配置状态
   const [llmConfig, setLlmConfig] = React.useState<LLMNodeConfigData>(defaultLLMNodeConfig)
-  
+
+  // 媒体生成节点配置状态
+  const [mediaGenerationConfig, setMediaGenerationConfig] = React.useState<MediaGenerationConfig>(defaultMediaGenerationConfig)
+
   // 代码节点配置状态
   const [codeConfig, setCodeConfig] = React.useState<CodeConfig>(defaultCodeConfig)
   
@@ -189,7 +194,12 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         const existingConfig = (node.data as { llmConfig?: LLMNodeConfigData })?.llmConfig
         setLlmConfig(existingConfig || defaultLLMNodeConfig)
       }
-      
+
+      if (nodeType === 'media_generation') {
+        const existingConfig = (node.data as { mediaGenerationConfig?: MediaGenerationConfig })?.mediaGenerationConfig
+        setMediaGenerationConfig(existingConfig || defaultMediaGenerationConfig)
+      }
+
       if (nodeType === 'code') {
         const existingConfig = (node.data as { codeConfig?: CodeConfig })?.codeConfig
         setCodeConfig(existingConfig || defaultCodeConfig)
@@ -278,6 +288,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         if (nodeType === 'iteration') updateData.iterationConfig = iterationConfig
         if (nodeType === 'loop') updateData.loopConfig = loopConfig
         if (nodeType === 'llm') updateData.llmConfig = llmConfig
+        if (nodeType === 'media_generation') updateData.mediaGenerationConfig = mediaGenerationConfig
         if (nodeType === 'code') updateData.codeConfig = codeConfig
         if (nodeType === 'template') updateData.templateConfig = templateConfig
         if (nodeType === 'file_to_url') updateData.fileToUrlConfig = fileToUrlConfig
@@ -299,7 +310,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, commentColor, commentContent, node, onUpdate, readOnly])
+  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, mediaGenerationConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, commentColor, commentContent, node, onUpdate, readOnly])
 
   // 获取上游节点 ID 集合（当前节点可以引用的节点）
   const getUpstreamNodeIds = React.useCallback((): Set<string> => {
@@ -615,6 +626,26 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         })
       }
       
+      // 媒体生成节点输出变量
+      if (nodeType === 'media_generation') {
+        const mediaConfig = (n.data as { mediaGenerationConfig?: MediaGenerationConfig })?.mediaGenerationConfig || defaultMediaGenerationConfig
+        const isImage = mediaConfig.mode !== 'video'
+        const outputNames = new Set(['result', mediaConfig.outputVariable || 'result'])
+
+        if (filterType !== 'iterable' || isImage) {
+          outputNames.forEach(outputName => variables.push({
+            id: `${n.id}.${outputName}`,
+            name: outputName,
+            type: isImage ? 'Array' : 'String',
+            group: n.id,
+            groupLabel: nodeLabel,
+            isSystem: false,
+            isArray: isImage,
+            isIterable: isImage,
+          }))
+        }
+      }
+
       // 代码节点输出变量
       if (nodeType === 'code') {
         const cdConfig = (n.data as { codeConfig?: CodeConfig })?.codeConfig || defaultCodeConfig
@@ -1033,7 +1064,16 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             getAvailableVariables={getAvailableVariables}
           />
         )
-      
+
+      case 'media_generation':
+        return (
+          <MediaGenerationNodeConfig
+            config={mediaGenerationConfig}
+            onChange={setMediaGenerationConfig}
+            getAvailableVariables={getAvailableVariables}
+          />
+        )
+
       case 'condition':
         return (
           <ConditionNodeConfig

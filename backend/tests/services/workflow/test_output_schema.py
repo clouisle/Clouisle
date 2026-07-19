@@ -11,6 +11,9 @@ from app.services.workflow.executor import NodeExecutor
 from app.services.workflow.executors.code import CodeNodeExecutor
 from app.services.workflow.executors.condition import ConditionNodeExecutor
 from app.services.workflow.executors.llm import LLMNodeExecutor
+from app.services.workflow.executors.media_generation import (
+    MediaGenerationNodeExecutor,
+)
 from app.services.workflow.executors.variable import ParameterExtractorNodeExecutor
 from app.services.workflow.types import NodeOutputDecl, TypeSpec
 
@@ -71,6 +74,27 @@ class TestLLMOverride:
             "total_tokens",
         }
         assert all(f.kind == "number" for f in usage.fields.values())
+
+
+class TestMediaGenerationOverride:
+    def test_image_outputs_url_array(self):
+        decls = MediaGenerationNodeExecutor().get_output_specs(
+            {"mode": "image", "outputVariable": "images"}
+        )
+        by_name = {d.name: d for d in decls}
+        assert set(by_name) == {"result", "images"}
+        assert by_name["result"].type.kind == "array"
+        assert by_name["result"].type.item == TypeSpec(kind="string")
+        assert by_name["images"].type == by_name["result"].type
+
+    def test_video_outputs_url_string(self):
+        decls = MediaGenerationNodeExecutor().get_output_specs(
+            {"mode": "video", "outputVariable": "video"}
+        )
+        by_name = {d.name: d for d in decls}
+        assert set(by_name) == {"result", "video"}
+        assert by_name["result"].type == TypeSpec(kind="string")
+        assert by_name["video"].type == TypeSpec(kind="string")
 
 
 class TestCodeOverride:

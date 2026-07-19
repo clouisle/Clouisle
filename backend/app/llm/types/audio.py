@@ -5,7 +5,7 @@
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from .base import AudioContent
+from .base import AudioContent, ImageContent
 
 
 class TTSVoice(str, Enum):
@@ -37,7 +37,7 @@ class TTSRequest(BaseModel):
     """语音合成请求"""
 
     text: str = Field(..., description="要合成的文本")
-    voice: str = Field(default="alloy", description="声音名称")
+    voice: str | None = Field(default=None, description="声音名称")
     speed: float = Field(default=1.0, ge=0.25, le=4.0, description="语速")
     format: str = Field(default="mp3", description="输出格式")
 
@@ -47,6 +47,32 @@ class TTSResponse(BaseModel):
 
     audio: AudioContent = Field(..., description="生成的音频")
     model: str = Field(..., description="使用的模型")
+
+
+# ==================== Audio generation ====================
+
+
+class AudioGenerationRequest(BaseModel):
+    """Prompt-driven audio generation request."""
+
+    prompt: str = Field(..., min_length=1, description="Audio generation prompt")
+    image: ImageContent | None = Field(
+        default=None, description="Optional reference image"
+    )
+    audio_references: list[AudioContent] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Optional reference audio clips",
+    )
+    format: str = Field(default="mp3", description="Output audio format")
+    extra_params: dict = Field(default_factory=dict, description="Provider options")
+
+
+class AudioGenerationResponse(BaseModel):
+    """Prompt-driven audio generation response."""
+
+    audio: AudioContent = Field(..., description="Generated audio")
+    model: str = Field(..., description="Effective model or resource ID")
 
 
 # ==================== STT ====================
