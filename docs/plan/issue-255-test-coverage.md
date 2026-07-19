@@ -67,7 +67,7 @@
 ## Baseline Results
 - Backend clean baseline (2026-07-19, commit `f45530d`): 43.22% line coverage (`16,100/37,249`) and 18.95% branch coverage (`2,204/11,630`) over all `app` source; 710 tests passed and 2 were skipped. The existing 99.56% report is invalid because it covers only `app/llm/types`.
 - Frontend provisional baseline (2026-07-19): Bun's loaded-file report is 75.77% lines and 94.44% functions across only three loaded source files; the census reports 467 eligible application files absent from LCOV. The loaded-file percentage is therefore not acceptance evidence.
-- Backend progress checkpoint (2026-07-19, commit `7e3ac087`): 992 tests passed and 2 were skipped; whole-app coverage is 44%. Subsequent focused usage-tracker and TOTP batches added 42 passing behavioral tests and await the next full-suite measurement. The final 95% line and branch gates remain inactive.
+- Backend progress checkpoint (2026-07-19, commit `85dad391`): 1,072 tests passed and 2 were skipped; whole-app coverage is 45% after focused usage-tracker, TOTP, upload-storage, and SSO service/provider batches. The final 95% line and branch gates remain inactive.
 - Frontend progress checkpoint (2026-07-19, commit `142c9b8d`): 278 tests passed; Bun's loaded-module report is 69.09% lines and 62.90% functions. The latest source census reports 376 eligible files absent from LCOV, improved from 467 but still far from acceptance.
 - Baseline blockers found on 2026-07-19: stale workflow tests import renamed/removed APIs (`ExecutionNode`, `CircuitState`, and obsolete decorator signatures), and other existing failures span sandbox/workflow behavior. These must be aligned with current behavior before the backend baseline is valid.
 
