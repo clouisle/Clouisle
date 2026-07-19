@@ -5,7 +5,7 @@ Tests for the ExecutionPlan class.
 import pytest
 
 from app.services.workflow.errors import CyclicDependencyError, WorkflowValidationError
-from app.services.workflow.plan import ExecutionPlan, NodeDependency, ExecutionStage
+from app.services.workflow.plan import ExecutionPlan, ExecutionStage, NodeDependency
 
 
 class TestNodeDependency:
@@ -301,3 +301,51 @@ class TestExecutionPlanCycles:
 
         with pytest.raises(CyclicDependencyError):
             ExecutionPlan.from_workflow(workflow_def)
+
+
+class TestExecutionPlanUncoveredBranches:
+    def test_rejects_multiple_start_nodes(self):
+        workflow_def = {
+            "nodes": [
+                {"id": "input", "type": "user_input", "data": {}},
+                {"id": "trigger", "type": "trigger", "data": {}},
+            ],
+            "edges": [],
+        }
+
+        with pytest.raises(WorkflowValidationError):
+            ExecutionPlan.from_workflow(workflow_def)
+
+    def test_uses_data_type_and_ignores_invalid_edges(self):
+        workflow_def = {
+            "nodes": [
+                {"id": "start", "type": "unknown", "data": {"type": "trigger"}},
+                {"id": "end", "type": "answer", "data": {}},
+            ],
+            "edges": [
+                {"target": "end"},
+                {"source": "missing", "target": "end"},
+                {"source": "start", "target": "end"},
+            ],
+        }
+
+        plan = ExecutionPlan.from_workflow(workflow_def)
+
+        assert plan.start_node_id == "start"
+        assert plan.get_upstream_nodes("end") == ["start"]
+
+    def test_validate_reports_isolated_executable_node_only(self):
+        workflow_def = {
+            "nodes": [
+                {"id": "start", "type": "user_input", "data": {}},
+                {"id": "isolated", "type": "llm", "data": {}},
+                {"id": "internal", "type": "iteration_start", "data": {}},
+                {"id": "end", "type": "answer", "data": {}},
+            ],
+            "edges": [{"source": "start", "target": "end"}],
+        }
+
+        errors = ExecutionPlan.from_workflow(workflow_def).validate()
+
+        assert len(errors) == 1
+        assert "isolated" in errors[0]
