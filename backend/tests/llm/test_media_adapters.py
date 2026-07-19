@@ -357,9 +357,7 @@ class TestVolcengineImageAdapter:
         assert payload["sequential_image_generation_options"] == {"max_images": 3}
 
     def test_multi_image_request_enables_sequential_generation_by_default(self):
-        adapter = VolcengineImageAdapter(
-            build_model("volcengine", "doubao-seedream")
-        )
+        adapter = VolcengineImageAdapter(build_model("volcengine", "doubao-seedream"))
 
         payload = adapter._build_payload(
             ImageGenerationRequest(prompt="Three images", num_images=3)
