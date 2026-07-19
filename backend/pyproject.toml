@@ -83,6 +83,7 @@ dev = [
 testpaths = ["tests"]
 pythonpath = [".", ".."]
 addopts = [
+    "--import-mode=importlib",
     "--cov=app",
     "--cov-branch",
     "--cov-report=term-missing",
