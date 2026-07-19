@@ -71,10 +71,15 @@ class TestMergeTypeSpec:
         merged = merge_type_spec(a, b)
         assert merged.kind == "string"
 
-    def test_merge_with_null_marks_nullable(self):
-        a = TypeSpec(kind="string", source="inferred")
-        b = TypeSpec(kind="null", source="inferred", nullable=True)
-        merged = merge_type_spec(a, b)
+    @pytest.mark.parametrize(
+        ("left", "right"),
+        [
+            (TypeSpec(kind="string", source="inferred"), TypeSpec(kind="null", source="inferred", nullable=True)),
+            (TypeSpec(kind="null", source="inferred", nullable=True), TypeSpec(kind="string", source="inferred")),
+        ],
+    )
+    def test_merge_with_null_marks_nullable(self, left, right):
+        merged = merge_type_spec(left, right)
         assert merged.kind == "string"
         assert merged.nullable is True
 
