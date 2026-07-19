@@ -1,66 +1,87 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import {
   getImageAssetUrl,
   getVideoAssetUrl,
   inferToolResultIsError,
+  isMediaImageToolResult,
+  isMediaVideoToolResult,
   parseToolResultOutput,
   shouldDisplayMediaResultInBody,
 } from './tool-result'
 
-describe('tool result helpers', () => {
-  test('parses JSON strings and preserves other values', () => {
-    const object = { id: 'result' }
+describe('parseToolResultOutput', () => {
+  it('parses valid JSON while preserving non-string values', () => {
+    const object = { value: 1 }
 
-    expect(parseToolResultOutput('{"id":"result"}')).toEqual(object)
-    expect(parseToolResultOutput('{invalid')).toBe('{invalid')
+    expect(parseToolResultOutput('{"value":1}')).toEqual(object)
     expect(parseToolResultOutput(object)).toBe(object)
+    expect(parseToolResultOutput(null)).toBeNull()
   })
 
-  test('infers explicit failed and error results', () => {
-    expect(inferToolResultIsError('{"success":false}')).toBe(true)
-    expect(inferToolResultIsError({ error: 'failed' })).toBe(true)
-    expect(inferToolResultIsError({ error: { code: 'failed' } })).toBe(true)
-    expect(inferToolResultIsError({ success: true, error: '  ' })).toBe(false)
-    expect(inferToolResultIsError(null)).toBe(false)
+  it('preserves malformed and empty string output', () => {
+    expect(parseToolResultOutput('')).toBe('')
+    expect(parseToolResultOutput('{invalid')).toBe('{invalid')
+  })
+})
+
+describe('inferToolResultIsError', () => {
+  it('recognizes explicit failures from objects and JSON strings', () => {
+    expect(inferToolResultIsError({ success: false })).toBe(true)
+    expect(inferToolResultIsError('{"error":"failed"}')).toBe(true)
   })
 
-  test('recognizes successful media results only', () => {
-    expect(
-      shouldDisplayMediaResultInBody({
-        kind: 'media.image',
-        success: true,
-        images: [],
-      })
-    ).toBe(true)
-    expect(
-      shouldDisplayMediaResultInBody('{"kind":"media.video","success":true,"status":"ready"}')
-    ).toBe(true)
-    expect(
-      shouldDisplayMediaResultInBody({
-        kind: 'media.image',
-        success: false,
-        images: [],
-      })
-    ).toBe(false)
-    expect(shouldDisplayMediaResultInBody({ kind: 'media.image', success: true })).toBe(false)
+  it('ignores empty errors and non-error boundary inputs', () => {
+    expect(inferToolResultIsError({ error: '   ' })).toBe(false)
+    expect(inferToolResultIsError({ error: 0 })).toBe(false)
+    expect(inferToolResultIsError({ error: {} })).toBe(true)
+    expect(inferToolResultIsError('')).toBe(false)
+    expect(inferToolResultIsError('null')).toBe(false)
+    expect(inferToolResultIsError([])).toBe(false)
+  })
+})
+
+describe('media result guards and display', () => {
+  const image = { kind: 'media.image', success: true, prompt: 'draw', images: [] }
+  const video = { kind: 'media.video', success: true, prompt: 'animate', status: 'complete' }
+
+  it('identifies valid image and video result shapes', () => {
+    expect(isMediaImageToolResult(image)).toBe(true)
+    expect(isMediaVideoToolResult(video)).toBe(true)
   })
 
-  test('returns image URLs or data URIs', () => {
-    expect(getImageAssetUrl({ url: 'https://example.test/image.png', base64: 'ignored' })).toBe(
-      'https://example.test/image.png'
-    )
-    expect(getImageAssetUrl({ base64: 'abc' })).toBe('data:image/png;base64,abc')
+  it('rejects malformed and empty media result shapes', () => {
+    expect(isMediaImageToolResult(null)).toBe(false)
+    expect(isMediaImageToolResult({ kind: 'media.image', images: {} })).toBe(false)
+    expect(isMediaVideoToolResult('')).toBe(false)
+    expect(isMediaVideoToolResult({ kind: 'media.video', status: null })).toBe(false)
+  })
+
+  it('displays successful recognized media results, including JSON strings', () => {
+    expect(shouldDisplayMediaResultInBody(image)).toBe(true)
+    expect(shouldDisplayMediaResultInBody(JSON.stringify(video))).toBe(true)
+  })
+
+  it('does not display unsuccessful or unrecognized results', () => {
+    expect(shouldDisplayMediaResultInBody({ ...image, success: false })).toBe(false)
+    expect(shouldDisplayMediaResultInBody({ kind: 'other', success: true })).toBe(false)
+    expect(shouldDisplayMediaResultInBody('{invalid')).toBe(false)
+  })
+})
+
+describe('media asset URLs', () => {
+  it('prefers direct URLs and formats image base64 fallback', () => {
+    expect(getImageAssetUrl({ url: 'https://example.com/image.png', base64: 'ignored' })).toBe('https://example.com/image.png')
     expect(getImageAssetUrl({ base64: 'abc', format: 'webp' })).toBe('data:image/webp;base64,abc')
-    expect(getImageAssetUrl({ file_path: '/tmp/image.png' })).toBeNull()
-    expect(getImageAssetUrl()).toBeNull()
+    expect(getImageAssetUrl({ base64: 'abc' })).toBe('data:image/png;base64,abc')
   })
 
-  test('returns video URLs or data URIs', () => {
-    expect(getVideoAssetUrl({ url: 'https://example.test/video.mp4', base64: 'ignored' })).toBe(
-      'https://example.test/video.mp4'
-    )
-    expect(getVideoAssetUrl({ base64: 'abc' })).toBe('data:video/mp4;base64,abc')
+  it('formats video base64 fallback and handles empty assets', () => {
+    expect(getVideoAssetUrl({ url: 'https://example.com/video.mp4', base64: 'ignored' })).toBe('https://example.com/video.mp4')
     expect(getVideoAssetUrl({ base64: 'abc', format: 'webm' })).toBe('data:video/webm;base64,abc')
-    expect(getVideoAssetUrl()).toBeNull()
+    expect(getVideoAssetUrl({ base64: 'abc' })).toBe('data:video/mp4;base64,abc')
+    expect(getImageAssetUrl()).toBeNull()
+    expect(getImageAssetUrl({})).toBeNull()
+    expect(getVideoAssetUrl(null)).toBeNull()
+    expect(getVideoAssetUrl({})).toBeNull()
   })
 })
