@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -67,6 +67,19 @@ async def test_team_member_cannot_use_team_admin_action(monkeypatch):
         await check_team_access(team.id, user, require_admin=True)
 
     assert error.value.msg_key == "team_admin_required"
+
+
+@pytest.mark.anyio
+async def test_superuser_bypasses_team_membership_check(monkeypatch):
+    team = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), is_superuser=True)
+    team_member_filter = Mock()
+    _TeamModel.team = team
+    monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
+    monkeypatch.setattr("app.api.team_access.TeamMember.filter", team_member_filter)
+
+    assert await check_team_access(team.id, user, require_admin=True) is team
+    team_member_filter.assert_not_called()
 
 
 @pytest.mark.anyio
