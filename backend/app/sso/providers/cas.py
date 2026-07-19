@@ -98,65 +98,59 @@ class CASProvider(BaseSSOProvider):
         Returns:
             User info dict
         """
+        if version == "1":
+            # CAS 1.0: Simple yes/no response
+            lines = xml_response.strip().split("\n")
+            if lines[0] == "yes":
+                username = lines[1] if len(lines) > 1 else ""
+                return {
+                    "provider_user_id": username,
+                    "username": username,
+                }
+            logger.warning("CAS validation failed without explicit error details")
+            raise ValueError(t("sso_cas_validation_failed"))
+
         try:
             root = ET.fromstring(xml_response)
 
             # Define namespace
             ns = {"cas": "http://www.yale.edu/tp/cas"}
 
-            if version == "1":
-                # CAS 1.0: Simple yes/no response
-                lines = xml_response.strip().split("\n")
-                if lines[0] == "yes":
-                    username = lines[1] if len(lines) > 1 else ""
-                    return {
-                        "provider_user_id": username,
-                        "username": username,
-                    }
-                else:
-                    logger.warning(
-                        "CAS validation failed without explicit error details"
-                    )
-                    raise ValueError(t("sso_cas_validation_failed"))
-
-            else:
-                # CAS 2.0/3.0: XML response
-                success = root.find(".//cas:authenticationSuccess", ns)
-                if success is None:
-                    failure = root.find(".//cas:authenticationFailure", ns)
-                    error_msg = (
-                        failure.text
-                        if failure is not None and failure.text is not None
-                        else "Unknown error"
-                    )
-                    logger.warning("CAS validation failed: %s", error_msg)
-                    raise ValueError(t("sso_cas_validation_failed"))
-
-                # Extract user
-                user_elem = success.find("cas:user", ns)
-                username = (
-                    user_elem.text
-                    if user_elem is not None and user_elem.text is not None
-                    else ""
+            # CAS 2.0/3.0: XML response
+            success = root.find(".//cas:authenticationSuccess", ns)
+            if success is None:
+                failure = root.find(".//cas:authenticationFailure", ns)
+                error_msg = (
+                    failure.text
+                    if failure is not None and failure.text is not None
+                    else "Unknown error"
                 )
+                logger.warning("CAS validation failed: %s", error_msg)
+                raise ValueError(t("sso_cas_validation_failed"))
 
-                user_info: Dict[str, Any] = {
-                    "provider_user_id": username,
-                    "username": username,
-                }
+            # Extract user
+            user_elem = success.find("cas:user", ns)
+            username = (
+                user_elem.text
+                if user_elem is not None and user_elem.text is not None
+                else ""
+            )
 
-                # Extract attributes (CAS 3.0)
-                if version == "3":
-                    attributes = success.find("cas:attributes", ns)
-                    if attributes is not None:
-                        for attr in attributes:
-                            # Remove namespace prefix from tag
-                            tag = (
-                                attr.tag.split("}")[-1] if "}" in attr.tag else attr.tag
-                            )
-                            user_info[tag] = attr.text or ""
+            user_info: Dict[str, Any] = {
+                "provider_user_id": username,
+                "username": username,
+            }
 
-                return user_info
+            # Extract attributes (CAS 3.0)
+            if version == "3":
+                attributes = success.find("cas:attributes", ns)
+                if attributes is not None:
+                    for attr in attributes:
+                        # Remove namespace prefix from tag
+                        tag = attr.tag.split("}")[-1] if "}" in attr.tag else attr.tag
+                        user_info[tag] = attr.text or ""
+
+            return user_info
 
         except ET.ParseError as e:
             logger.warning("Failed to parse CAS response: %s", e)
