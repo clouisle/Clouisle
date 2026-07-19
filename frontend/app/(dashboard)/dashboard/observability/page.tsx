@@ -37,6 +37,7 @@ import {
   WorkersPanel,
   WorkflowsPanel,
 } from './_components/observability-panels'
+import { hasTabData, type TabData } from './tab-data'
 
 type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput' | 'tokens' | 'workers' | 'slow-queries'
 
@@ -138,7 +139,8 @@ export default function ObservabilityPage() {
     router.push(`/dashboard/observability?tab=${newTab}`, { scroll: false })
   }
 
-  const showSkeleton = isLoading && !hasTabData(activeTab, { overview, health, agents, workflows, timeouts, throughput, tokens, workers, slowQueries })
+  const tabData: TabData = { overview, health, agents, workflows, timeouts, throughput, tokens, workers, slowQueries }
+  const showSkeleton = isLoading && !hasTabData(activeTab, tabData)
   const showTimeRange = activeTab !== 'health' && activeTab !== 'workers' && activeTab !== 'slow-queries'
 
   return (
@@ -194,29 +196,4 @@ export default function ObservabilityPage() {
       </div>
     </RoutePermissionGuard>
   )
-}
-
-function hasTabData(
-  tab: ObservabilityTab,
-  data: {
-    overview: ObservabilityOverview | null
-    health: SystemHealthResponse | null
-    agents: AgentPerformanceRow[]
-    workflows: WorkflowPerformanceRow[]
-    timeouts: TimeoutResponse | null
-    throughput: ThroughputResponse | null
-    tokens: TokenResponse | null
-    workers: WorkerResponse | null
-    slowQueries: SlowQueriesResponse | null
-  }
-) {
-  if (tab === 'overview') return Boolean(data.overview)
-  if (tab === 'health') return Boolean(data.health)
-  if (tab === 'agents') return data.agents.length > 0
-  if (tab === 'workflows') return data.workflows.length > 0
-  if (tab === 'timeouts') return Boolean(data.timeouts)
-  if (tab === 'throughput') return Boolean(data.throughput)
-  if (tab === 'tokens') return Boolean(data.tokens)
-  if (tab === 'workers') return Boolean(data.workers)
-  return Boolean(data.slowQueries)
 }
