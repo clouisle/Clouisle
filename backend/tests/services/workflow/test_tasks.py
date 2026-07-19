@@ -241,6 +241,41 @@ def test_check_scheduled_workflows_skips_invalid_and_triggers_current_cron():
     )
 
 
+@pytest.mark.parametrize(
+    ("task", "args", "extra_modules"),
+    [
+        (execute_workflow_task, (str(uuid4()), {}, str(uuid4())), {}),
+        (execute_node_task, ("run-1", "node-1", "code", {}), {}),
+        (cancel_workflow_task, ("run-1",), {}),
+        (cleanup_workflow_task, ("run-1",), {}),
+        (
+            check_scheduled_workflows,
+            (),
+            {"croniter": SimpleNamespace(croniter=MagicMock())},
+        ),
+        (cleanup_old_runs, (), {}),
+    ],
+)
+def test_tasks_create_event_loop_when_worker_has_none(task, args, extra_modules):
+    loop = MagicMock()
+
+    def run(coroutine):
+        coroutine.close()
+        return {"ok": True}
+
+    loop.run_until_complete.side_effect = run
+    with (
+        patch("asyncio.get_event_loop", side_effect=RuntimeError),
+        patch("asyncio.new_event_loop", return_value=loop) as new_loop,
+        patch("asyncio.set_event_loop") as set_loop,
+        patch.dict("sys.modules", extra_modules),
+    ):
+        assert task.run(*args) == {"ok": True}
+
+    new_loop.assert_called_once_with()
+    set_loop.assert_called_once_with(loop)
+
+
 def test_cleanup_old_runs_uses_requested_retention_window():
     query = MagicMock()
     query.delete = AsyncMock(return_value=7)

@@ -38,6 +38,21 @@ async def test_publish_numbers_and_persists_events():
 
 
 @pytest.mark.asyncio
+async def test_publish_accepts_synchronous_redis_clients():
+    redis = Mock()
+    redis.publish.return_value = 1
+    redis.rpush.return_value = 1
+    redis.expire.return_value = True
+
+    with patch("app.services.workflow.stream.get_redis", AsyncMock(return_value=redis)):
+        await StreamManager("run-1").publish(StreamEvent(StreamEventType.STATUS))
+
+    redis.publish.assert_called_once()
+    redis.rpush.assert_called_once()
+    redis.expire.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_publish_propagates_redis_errors_without_buffering():
     redis = Mock()
     redis.publish = AsyncMock(side_effect=ConnectionError("redis unavailable"))
@@ -54,6 +69,44 @@ async def test_publish_propagates_redis_errors_without_buffering():
 
     redis.rpush.assert_not_awaited()
     redis.expire.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_event_helpers_publish_expected_boundaries():
+    manager = StreamManager("run-1")
+    manager.publish = AsyncMock()
+
+    await manager.publish_workflow_start("workflow-1", "Workflow", {"input": 1})
+    await manager.publish_workflow_complete({"output": 2}, 10)
+    await manager.publish_workflow_error("failed", "node-1")
+    await manager.publish_node_start("node-1", "llm", "LLM", True)
+    await manager.publish_node_complete("node-1", {"text": "done"}, 5, "llm", True)
+    await manager.publish_node_error("node-1", "failed")
+    await manager.publish_node_skip("node-2", node_type="code")
+    await manager.publish_token("node-1", "token")
+    await manager.publish_chunk("node-1", "chunk")
+    await manager.publish_output("node-1", 42)
+    await manager.publish_iteration("node-1", 1, 2, item="first")
+    await manager.publish_iteration("node-1", 1, 2, is_start=False, item="ignored")
+
+    events = [call.args[0] for call in manager.publish.await_args_list]
+    assert [event.event_type for event in events] == [
+        StreamEventType.WORKFLOW_START,
+        StreamEventType.WORKFLOW_COMPLETE,
+        StreamEventType.WORKFLOW_ERROR,
+        StreamEventType.NODE_START,
+        StreamEventType.NODE_COMPLETE,
+        StreamEventType.NODE_ERROR,
+        StreamEventType.NODE_SKIP,
+        StreamEventType.TOKEN,
+        StreamEventType.CHUNK,
+        StreamEventType.OUTPUT,
+        StreamEventType.ITERATION_START,
+        StreamEventType.ITERATION_COMPLETE,
+    ]
+    assert events[6].data["node_label"] == "node-2"
+    assert events[10].data["item"] == "first"
+    assert "item" not in events[11].data
 
 
 @pytest.mark.asyncio
