@@ -75,7 +75,7 @@ class TestInferRunSchemas:
         result = infer_run_schemas(execs)
         assert set(result.keys()) == {"b"}
 
-    def test_skips_missing_node_id_and_stringifies_output_keys(self):
+    def test_skips_missing_node_id_and_preserves_output_keys(self):
         execs = [
             SimpleNamespace(node_id=None, outputs={"x": 1}),
             _FakeExecution("valid", {1: "one", "_private": True}),
@@ -85,6 +85,26 @@ class TestInferRunSchemas:
 
         assert set(result) == {"valid"}
         assert result["valid"][1].kind == "string"
+
+    def test_infers_primitives_empty_array_and_unknown_values(self):
+        result = infer_run_schemas(
+            [
+                _FakeExecution(
+                    "node-1",
+                    {
+                        "flag": True,
+                        "nothing": None,
+                        "items": [],
+                        "unknown": object(),
+                    },
+                )
+            ]
+        )
+        specs = result["node-1"]
+        assert specs["flag"].kind == "boolean"
+        assert specs["nothing"].kind == "null" and specs["nothing"].nullable
+        assert specs["items"].kind == "array" and specs["items"].item is None
+        assert specs["unknown"].kind == "any"
 
 
 class TestMergeIntoDefinition:
@@ -217,6 +237,12 @@ class TestMergeRunIntoWorkflow:
         await merge_run_into_workflow(
             "workflow-id", [_FakeExecution("code", {"answer": 42})]
         )
+
+
+def _spec(kind: str):
+    from app.services.workflow.types import TypeSpec
+
+    return TypeSpec(kind=kind)  # type: ignore[arg-type]
 
 
 def _spec(kind: str):
