@@ -24,6 +24,7 @@ mock.module('recharts', () => ({
   PieChart: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   Pie: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   Cell: () => null,
+  Legend: () => null,
   Tooltip: ({ content }: { content: (props: typeof tooltipProps) => React.ReactNode }) => <>{content(tooltipProps)}</>,
 }))
 
