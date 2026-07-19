@@ -16,7 +16,9 @@ from app.core import webhook
         {"enabled": True, "url": ""},
     ],
 )
-async def test_send_webhook_skips_disabled_or_unconfigured_webhooks(monkeypatch, config):
+async def test_send_webhook_skips_disabled_or_unconfigured_webhooks(
+    monkeypatch, config
+):
     monkeypatch.setattr(webhook, "get_webhook_config", AsyncMock(return_value=config))
 
     assert await webhook.send_webhook_notification("Title", "Content") is False
@@ -97,7 +99,10 @@ async def test_send_webhook_uses_get_parameters_and_reports_non_success(monkeypa
     )
     monkeypatch.setattr(webhook.httpx, "AsyncClient", lambda **kwargs: client)
 
-    assert await webhook.send_webhook_notification("Title", "Content", "https://app.test") is False
+    assert (
+        await webhook.send_webhook_notification("Title", "Content", "https://app.test")
+        is False
+    )
     get.assert_awaited_once_with(
         "https://hooks.example.test/events",
         params={
