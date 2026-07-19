@@ -246,6 +246,141 @@ class TestConditionExecutor:
 
         assert result is False
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("actual", "operator", "expected", "result"),
+        [
+            ("same", "equals", "same", True),
+            ("same", "not_equals", "same", False),
+            ("alphabet", "contains", "pha", True),
+            ("alphabet", "not_contains", "z", True),
+            ("alphabet", "starts_with", "alpha", True),
+            ("alphabet", "ends_with", "bet", True),
+            (2, "greater_than", 1, True),
+            (1, "less_than", 2, True),
+            (2, "greater_or_equal", 2, True),
+            (2, "less_or_equal", 2, True),
+            ([], "is_empty", None, True),
+            ([0], "is_not_empty", None, True),
+            (None, "is_null", None, True),
+            (0, "is_not_null", None, True),
+            ("abc123", "regex_match", r"abc\d+", True),
+        ],
+    )
+    async def test_expression_operators(self, actual, operator, expected, result):
+        from app.services.workflow.executors.condition import ConditionNodeExecutor
+
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=actual)
+
+        evaluated = await ConditionNodeExecutor()._evaluate_condition(
+            {"variable": "{{value}}", "operator": operator, "value": expected},
+            context,
+        )
+
+        assert evaluated is result
+
+    @pytest.mark.asyncio
+    async def test_resolves_comparison_reference_and_defaults_unknown_operator(self):
+        from app.services.workflow.executors.condition import ConditionNodeExecutor
+
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(side_effect=["same", "same"])
+
+        result = await ConditionNodeExecutor()._evaluate_condition(
+            {
+                "variable": "{{first}}",
+                "operator": "unknown",
+                "value": "{{second}}",
+            },
+            context,
+        )
+
+        assert result is True
+        assert context.resolve_variable_ref.await_count == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("logical_operator", "values", "expected_branch"),
+        [
+            ("and", [True, True], "match"),
+            ("and", [True, False], "fallback"),
+            ("or", [False, True], "match"),
+            ("or", [False, False], "fallback"),
+        ],
+    )
+    async def test_combines_embedded_condition_groups(
+        self, logical_operator, values, expected_branch
+    ):
+        from app.services.workflow.executors.condition import ConditionNodeExecutor
+
+        node = {
+            "id": "condition_1",
+            "data": {
+                "branches": [
+                    {
+                        "id": "match",
+                        "logicalOperator": logical_operator,
+                        "conditions": [
+                            {"variable": "{{first}}", "value": True},
+                            {"variable": "{{second}}", "value": True},
+                        ],
+                    },
+                    {"id": "fallback", "isDefault": True},
+                ]
+            },
+        }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(side_effect=values)
+        context.set_branch = AsyncMock()
+
+        result = await ConditionNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.next_handles == [expected_branch]
+        context.set_branch.assert_awaited_once_with("condition_1", expected_branch)
+
+    @pytest.mark.asyncio
+    async def test_top_level_references_and_empty_groups_use_implicit_fallback(self):
+        from app.services.workflow.executors.condition import ConditionNodeExecutor
+
+        node = {
+            "data": {
+                "conditionConfig": {
+                    "conditions": [{"id": "false_condition", "variable": "{{value}}"}],
+                    "branches": [
+                        {"id": "empty", "conditions": []},
+                        {"id": "unresolved", "conditions": ["missing"]},
+                        {"id": "referenced", "conditions": ["false_condition"]},
+                    ],
+                }
+            }
+        }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=False)
+        context.set_branch = AsyncMock()
+
+        result = await ConditionNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.outputs == {
+            "matched_branch": "else",
+            "condition_results": {"false_condition": False},
+        }
+        context.set_branch.assert_awaited_once_with("", "else")
+
+    @pytest.mark.asyncio
+    async def test_invalid_numeric_expression_returns_false(self):
+        from app.services.workflow.executors.condition import ConditionNodeExecutor
+
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value="not-a-number")
+
+        result = await ConditionNodeExecutor()._evaluate_condition(
+            {"variable": "{{value}}", "operator": "greater_than", "value": 1},
+            context,
+        )
+
+        assert result is False
+
 
 class TestCodeExecutor:
     @pytest.mark.asyncio
