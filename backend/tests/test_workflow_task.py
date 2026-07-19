@@ -90,6 +90,46 @@ def test_run_workflow_task_marks_run_failed_on_execution_error():
     run.save.assert_awaited_once_with()
 
 
+def test_run_workflow_task_creates_an_event_loop_when_none_is_available():
+    orchestrator = MagicMock()
+    orchestrator.run_with_run_id = AsyncMock(return_value=UUID(RUN_ID))
+    run = SimpleNamespace(outputs={})
+    loop = MagicMock()
+    loop.run_until_complete.side_effect = lambda coroutine: (
+        coroutine.close() or {"status": "success"}
+    )
+
+    with (
+        patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator),
+        patch("app.tasks.workflow.WorkflowRun") as workflow_run,
+        patch("asyncio.get_event_loop", side_effect=RuntimeError),
+        patch("asyncio.new_event_loop", return_value=loop),
+        patch("asyncio.set_event_loop") as set_event_loop,
+    ):
+        workflow_run.filter.return_value.first = AsyncMock(return_value=run)
+        assert run_workflow_task.run(RUN_ID, WORKFLOW_ID, {}, None) == {
+            "status": "success"
+        }
+
+    set_event_loop.assert_called_once_with(loop)
+
+
+def test_cancel_workflow_task_creates_an_event_loop_when_none_is_available():
+    loop = MagicMock()
+    loop.run_until_complete.side_effect = lambda coroutine: (
+        coroutine.close() or {"status": "success"}
+    )
+
+    with (
+        patch("asyncio.get_event_loop", side_effect=RuntimeError),
+        patch("asyncio.new_event_loop", return_value=loop),
+        patch("asyncio.set_event_loop") as set_event_loop,
+    ):
+        assert cancel_workflow_task.run(RUN_ID) == {"status": "success"}
+
+    set_event_loop.assert_called_once_with(loop)
+
+
 def test_cancel_workflow_task_returns_or_translates_result():
     orchestrator = MagicMock()
     orchestrator.cancel = AsyncMock(return_value=True)
