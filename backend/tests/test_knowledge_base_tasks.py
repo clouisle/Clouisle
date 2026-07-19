@@ -7,8 +7,15 @@ from uuid import uuid4
 import pytest
 
 from app.models.knowledge_base import DocumentStatus
-from app.services.vector_store import DimensionMismatchError
+from app.services.vector_store import (
+    DimensionMismatchError,
+    EmbeddingRequestTimeoutError,
+)
 from app.tasks.knowledge_base import (
+    _clear_task_metadata,
+    _get_embedding_error,
+    _is_finished_task,
+    _is_stale_task,
     embed_document_chunks_task,
     process_document_task,
     process_url_document_task,
@@ -116,6 +123,57 @@ def chunk(status="embedded", tokens=5):
         error_message="old error",
         save=AsyncMock(),
     )
+
+
+def test_task_guards_require_matching_task_ownership_and_terminal_status():
+    document = SimpleNamespace(metadata={"task_id": "current"}, status="completed")
+
+    assert _is_stale_task(document, None) is False
+    assert _is_stale_task(document, "current") is False
+    assert _is_stale_task(document, "other") is True
+    assert _is_finished_task(document, None) is False
+    assert _is_finished_task(document, "other") is False
+    assert _is_finished_task(document, "current") is True
+
+    document.status = "processing"
+    assert _is_finished_task(document, "current") is False
+
+
+def test_embedding_errors_translate_timeout_and_generic_failures(monkeypatch):
+    document = SimpleNamespace(uploaded_by_id="user-id")
+    translations = []
+
+    def fake_translate(key, **kwargs):
+        translations.append((key, kwargs))
+        return f"translated:{key}"
+
+    monkeypatch.setattr(f"{MODULE}.t", fake_translate)
+
+    assert _get_embedding_error(document, EmbeddingRequestTimeoutError(), "zh") == (
+        "translated:request_timeout"
+    )
+    assert _get_embedding_error(document, RuntimeError()) == (
+        "translated:unknown_error_generic"
+    )
+    assert translations == [
+        ("request_timeout", {"lang": "zh"}),
+        ("unknown_error_generic", {"lang": "en"}),
+    ]
+
+
+def test_clear_task_metadata_preserves_unrelated_values():
+    document = SimpleNamespace(
+        metadata={
+            "embed_progress": {"embedded": 1},
+            "task_name": "embed_document_chunks_task",
+            "task_args": ["document-id"],
+            "clean_text": False,
+        }
+    )
+
+    _clear_task_metadata(document)
+
+    assert document.metadata == {"clean_text": False}
 
 
 def test_process_document_reports_missing_document():
