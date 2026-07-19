@@ -1,253 +1,130 @@
-"""
-Tests for the ExecutionContext class.
-"""
+"""Tests for Redis-backed workflow execution context state."""
+
+from typing import Any
+from uuid import uuid4
 
 import pytest
-import json
-from unittest.mock import AsyncMock, patch
-from uuid import uuid4
 
 from app.services.workflow.context import ExecutionContext
 
 
+class FakeRedis:
+    def __init__(self):
+        self.values: dict[str, str] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.expirations: list[tuple[str, int]] = []
+
+    async def set(self, key: str, value: str):
+        self.values[key] = value
+
+    async def get(self, key: str):
+        return self.values.get(key)
+
+    async def hset(self, key: str, field=None, value=None, *, mapping=None):
+        target = self.hashes.setdefault(key, {})
+        if mapping is not None:
+            target.update({name: str(item) for name, item in mapping.items()})
+        elif field is not None:
+            target[field] = value
+
+    async def hget(self, key: str, field: str):
+        return self.hashes.get(key, {}).get(field)
+
+    async def hgetall(self, key: str):
+        return dict(self.hashes.get(key, {}))
+
+    async def expire(self, key: str, seconds: int):
+        self.expirations.append((key, seconds))
+
+
+@pytest.fixture
+def redis_client() -> Any:
+    return FakeRedis()
+
+
+@pytest.fixture
+def context(redis_client: Any) -> ExecutionContext:
+    return ExecutionContext(run_id=str(uuid4()), redis_client=redis_client)
+
+
 class TestExecutionContextCreation:
-    """Tests for ExecutionContext creation."""
-
     @pytest.mark.asyncio
-    async def test_create_context(self):
-        """Test creating a new execution context."""
+    async def test_create_context(self, redis_client):
         run_id = str(uuid4())
         workflow_id = str(uuid4())
-
-        with patch("app.services.workflow.context.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_get_redis.return_value = mock_redis
-
-            context = await ExecutionContext.create(
-                run_id=run_id,
-                workflow_id=workflow_id,
-            )
-
-            assert context.run_id == run_id
-            assert context.workflow_id == workflow_id
-
-            # Check Redis set was called
-            mock_redis.set.assert_called()
+        user_id = str(uuid4())
+        context = await ExecutionContext.create(
+            run_id, redis_client, workflow_id, user_id=user_id, ttl=60
+        )
+        assert context.run_id == run_id
+        assert context._system_variables["workflow_id"] == workflow_id
+        assert context._system_variables["user_id"] == user_id
+        assert await context.get_status() == "pending"
+        assert len(redis_client.expirations) == 5
 
     @pytest.mark.asyncio
-    async def test_load_context(self):
-        """Test loading an existing execution context."""
+    async def test_load_context(self, redis_client):
         run_id = str(uuid4())
         workflow_id = str(uuid4())
-
-        context_data = {
-            "run_id": run_id,
-            "workflow_id": workflow_id,
-            "variables": {"var1": "value1"},
-            "inputs": {},
-            "node_outputs": {},
-            "branches_taken": [],
-            "status": "running",
-        }
-
-        with patch("app.services.workflow.context.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_redis.get = AsyncMock(return_value=json.dumps(context_data))
-            mock_get_redis.return_value = mock_redis
-
-            context = await ExecutionContext.load(run_id)
-
-            assert context.run_id == run_id
-            assert context.workflow_id == workflow_id
-            mock_redis.get.assert_called_once()
+        await redis_client.hset(
+            ExecutionContext.META_KEY.format(run_id=run_id),
+            mapping={"workflow_id": workflow_id, "user_id": "user-1"},
+        )
+        context = await ExecutionContext.load(run_id, redis_client)
+        assert context._system_variables["workflow_id"] == workflow_id
+        assert context._system_variables["user_id"] == "user-1"
 
     @pytest.mark.asyncio
-    async def test_load_nonexistent_context(self):
-        """Test loading a non-existent context raises error."""
-        run_id = str(uuid4())
-
-        with patch("app.services.workflow.context.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_redis.get = AsyncMock(return_value=None)
-            mock_get_redis.return_value = mock_redis
-
-            with pytest.raises(ValueError, match="Context not found"):
-                await ExecutionContext.load(run_id)
+    async def test_load_missing_context(self, redis_client):
+        context = await ExecutionContext.load(str(uuid4()), redis_client)
+        assert context._system_variables == {}
 
 
 class TestExecutionContextVariables:
-    """Tests for ExecutionContext variable operations."""
-
-    @pytest.fixture
-    def context(self):
-        """Create a test context."""
-        ctx = ExecutionContext.__new__(ExecutionContext)
-        ctx.run_id = str(uuid4())
-        ctx.workflow_id = str(uuid4())
-        ctx.variables = {}
-        ctx.inputs = {}
-        ctx.node_outputs = {}
-        ctx.branches_taken = []
-        ctx.status = "running"
-        ctx._redis = AsyncMock()
-        return ctx
+    @pytest.mark.asyncio
+    async def test_variables_round_trip(self, context):
+        await context.set_variable("test_var", {"value": [1, 2]})
+        assert await context.get_variable("test_var") == {"value": [1, 2]}
+        assert await context.get_variable("missing") is None
+        assert await context.get_all_variables() == {"test_var": {"value": [1, 2]}}
 
     @pytest.mark.asyncio
-    async def test_set_variable(self, context):
-        """Test setting a variable."""
-        await context.set_variable("test_var", "test_value")
-
-        assert context.variables["test_var"] == "test_value"
-        context._redis.set.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_get_variable(self, context):
-        """Test getting a variable."""
-        context.variables["test_var"] = "test_value"
-
-        value = await context.get_variable("test_var")
-        assert value == "test_value"
-
-    @pytest.mark.asyncio
-    async def test_get_variable_default(self, context):
-        """Test getting a non-existent variable with default."""
-        value = await context.get_variable("missing", default="default")
-        assert value == "default"
-
-    @pytest.mark.asyncio
-    async def test_set_inputs(self, context):
-        """Test setting inputs."""
+    async def test_inputs_round_trip(self, context):
         inputs = {"query": "test", "limit": 10}
         await context.set_inputs(inputs)
-
-        assert context.inputs == inputs
-        # Inputs should also be available as variables
-        assert context.variables.get("sys.query") or True  # Implementation may vary
-
-    @pytest.mark.asyncio
-    async def test_get_inputs(self, context):
-        """Test getting inputs."""
-        context.inputs = {"query": "test"}
-
-        inputs = await context.get_inputs()
-        assert inputs == {"query": "test"}
+        assert await context.get_inputs() == inputs
+        assert await context.get_variable("sys.inputs.query") == "test"
+        assert await context.get_variable("sys.inputs.limit") == 10
 
 
 class TestExecutionContextNodeOutputs:
-    """Tests for ExecutionContext node output operations."""
-
-    @pytest.fixture
-    def context(self):
-        """Create a test context."""
-        ctx = ExecutionContext.__new__(ExecutionContext)
-        ctx.run_id = str(uuid4())
-        ctx.workflow_id = str(uuid4())
-        ctx.variables = {}
-        ctx.inputs = {}
-        ctx.node_outputs = {}
-        ctx.branches_taken = []
-        ctx.status = "running"
-        ctx._redis = AsyncMock()
-        return ctx
-
     @pytest.mark.asyncio
-    async def test_set_node_outputs(self, context):
-        """Test setting node outputs."""
+    async def test_node_outputs_round_trip(self, context):
         outputs = {"result": "success", "data": [1, 2, 3]}
         await context.set_node_outputs("node_1", outputs)
-
-        assert context.node_outputs["node_1"] == outputs
-        context._redis.set.assert_called()
+        assert await context.get_node_outputs("node_1") == outputs
 
     @pytest.mark.asyncio
-    async def test_get_node_outputs(self, context):
-        """Test getting node outputs."""
-        context.node_outputs["node_1"] = {"result": "success"}
-
-        outputs = await context.get_node_outputs("node_1")
-        assert outputs == {"result": "success"}
-
-    @pytest.mark.asyncio
-    async def test_get_node_outputs_not_found(self, context):
-        """Test getting outputs for non-existent node."""
-        outputs = await context.get_node_outputs("missing_node")
-        assert outputs is None
+    async def test_missing_node_outputs(self, context):
+        assert await context.get_node_outputs("missing_node") is None
 
 
 class TestExecutionContextStatus:
-    """Tests for ExecutionContext status operations."""
-
-    @pytest.fixture
-    def context(self):
-        """Create a test context."""
-        ctx = ExecutionContext.__new__(ExecutionContext)
-        ctx.run_id = str(uuid4())
-        ctx.workflow_id = str(uuid4())
-        ctx.variables = {}
-        ctx.inputs = {}
-        ctx.node_outputs = {}
-        ctx.branches_taken = []
-        ctx.status = "running"
-        ctx._redis = AsyncMock()
-        return ctx
-
     @pytest.mark.asyncio
-    async def test_set_status(self, context):
-        """Test setting status."""
+    async def test_status_round_trip(self, context):
+        assert await context.get_status() is None
         await context.set_status("cancelled")
-
-        assert context.status == "cancelled"
-        context._redis.set.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_get_status(self, context):
-        """Test getting status."""
-        context.status = "running"
-
-        status = await context.get_status()
-        assert status == "running"
-
-    @pytest.mark.asyncio
-    async def test_is_cancelled(self, context):
-        """Test checking if cancelled."""
-        context.status = "running"
-        assert await context.is_cancelled() is False
-
-        context.status = "cancelled"
-        assert await context.is_cancelled() is True
+        assert await context.get_status() == "cancelled"
 
 
 class TestExecutionContextBranches:
-    """Tests for ExecutionContext branch tracking."""
-
-    @pytest.fixture
-    def context(self):
-        """Create a test context."""
-        ctx = ExecutionContext.__new__(ExecutionContext)
-        ctx.run_id = str(uuid4())
-        ctx.workflow_id = str(uuid4())
-        ctx.variables = {}
-        ctx.inputs = {}
-        ctx.node_outputs = {}
-        ctx.branches_taken = []
-        ctx.status = "running"
-        ctx._redis = AsyncMock()
-        return ctx
+    @pytest.mark.asyncio
+    async def test_single_branch_round_trip(self, context):
+        await context.set_branch("node_1", "true")
+        assert await context.get_active_branches("node_1") == ["true"]
 
     @pytest.mark.asyncio
-    async def test_add_branch(self, context):
-        """Test adding a branch."""
-        await context.add_branch("node_1", "true")
-
-        assert {"node_id": "node_1", "handle": "true"} in context.branches_taken
-
-    @pytest.mark.asyncio
-    async def test_get_branches(self, context):
-        """Test getting all branches."""
-        context.branches_taken = [
-            {"node_id": "node_1", "handle": "true"},
-            {"node_id": "node_2", "handle": "false"},
-        ]
-
-        branches = await context.get_branches()
-        assert len(branches) == 2
+    async def test_multiple_and_missing_branches(self, context):
+        await context.set_active_branches("node_1", ["case-1", "case-2"])
+        assert await context.get_active_branches("node_1") == ["case-1", "case-2"]
+        assert await context.get_active_branches("missing") is None

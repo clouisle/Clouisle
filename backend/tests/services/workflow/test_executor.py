@@ -11,6 +11,8 @@ from app.services.workflow.executor import (
     ExecutionResult,
 )
 from app.services.workflow.context import ExecutionContext
+from app.services.workflow.errors import NodeTypeNotFoundError
+from app.services.workflow.types import NodeInputMapping
 
 
 class DummyExecutor(NodeExecutor):
@@ -19,10 +21,7 @@ class DummyExecutor(NodeExecutor):
     node_type = "dummy"
 
     async def execute(self, node, context, run):
-        return ExecutionResult(
-            success=True,
-            outputs={"result": "dummy_output"},
-        )
+        return ExecutionResult(outputs={"result": "dummy_output"})
 
 
 class TestExecutionResult:
@@ -30,10 +29,7 @@ class TestExecutionResult:
 
     def test_success_result(self):
         """Test successful execution result."""
-        result = ExecutionResult(
-            success=True,
-            outputs={"key": "value"},
-        )
+        result = ExecutionResult(outputs={"key": "value"})
         assert result.success is True
         assert result.outputs == {"key": "value"}
         assert result.error is None
@@ -41,21 +37,13 @@ class TestExecutionResult:
 
     def test_error_result(self):
         """Test error execution result."""
-        result = ExecutionResult(
-            success=False,
-            outputs={},
-            error="Something went wrong",
-        )
+        result = ExecutionResult(error="Something went wrong")
         assert result.success is False
         assert result.error == "Something went wrong"
 
     def test_branching_result(self):
         """Test result with next handles for branching."""
-        result = ExecutionResult(
-            success=True,
-            outputs={},
-            next_handles=["true", "false"],
-        )
+        result = ExecutionResult(next_handles=["true", "false"])
         assert result.next_handles == ["true", "false"]
 
 
@@ -73,115 +61,94 @@ class TestNodeExecutorRegistry:
 
     def test_register_executor(self):
         """Test registering an executor."""
-        NodeExecutorRegistry.register(DummyExecutor)
+        NodeExecutorRegistry.register("dummy")(DummyExecutor)
         assert "dummy" in NodeExecutorRegistry._executors
         assert NodeExecutorRegistry._executors["dummy"] is DummyExecutor
 
     def test_get_executor(self):
         """Test getting a registered executor."""
-        NodeExecutorRegistry.register(DummyExecutor)
+        NodeExecutorRegistry.register("dummy")(DummyExecutor)
         executor = NodeExecutorRegistry.get("dummy")
         assert isinstance(executor, DummyExecutor)
 
     def test_get_unknown_executor(self):
         """Test getting an unknown executor raises error."""
-        with pytest.raises(ValueError, match="Unknown node type"):
+        with pytest.raises(NodeTypeNotFoundError):
             NodeExecutorRegistry.get("unknown_type")
 
     def test_decorator_registration(self):
         """Test the register_executor decorator."""
 
-        @NodeExecutorRegistry.register
+        @NodeExecutorRegistry.register("test_decorated")
         class TestExecutor(NodeExecutor):
             node_type = "test_decorated"
 
             async def execute(self, node, context, run):
-                return ExecutionResult(success=True, outputs={})
+                return ExecutionResult()
 
         assert "test_decorated" in NodeExecutorRegistry._executors
 
     def test_list_executors(self):
         """Test listing all registered executors."""
-        NodeExecutorRegistry.register(DummyExecutor)
-        executors = NodeExecutorRegistry.list()
-        assert "dummy" in executors
+        NodeExecutorRegistry.register("dummy")(DummyExecutor)
+        assert "dummy" in NodeExecutorRegistry.list_types()
 
 
 class TestNodeExecutorHelpers:
-    """Tests for NodeExecutor helper methods."""
-
     def setup_method(self):
-        """Set up test fixtures."""
         self.executor = DummyExecutor()
-        self.node = {
-            "id": "node_1",
-            "type": "dummy",
-            "data": {
-                "label": "Test Node",
-                "param1": "value1",
-                "param2": "{{var1}}",
-            },
-        }
-
-    def test_get_node_id(self):
-        """Test extracting node ID."""
-        node_id = self.executor.get_node_id(self.node)
-        assert node_id == "node_1"
-
-    def test_get_node_data(self):
-        """Test extracting node data."""
-        data = self.executor.get_node_data(self.node)
-        assert data["label"] == "Test Node"
-        assert data["param1"] == "value1"
 
     @pytest.mark.asyncio
-    async def test_resolve_variable_simple(self):
-        """Test resolving a simple variable."""
+    async def test_resolve_typed_inputs(self):
         context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value="resolved_value")
+        context.resolve_variable_ref = AsyncMock(return_value="resolved")
+        mappings = [
+            NodeInputMapping(name="query", variableRef="{{start.query}}"),
+            NodeInputMapping(name="limit", source="constant", constantValue=10),
+        ]
 
-        result = await self.executor.resolve_variable("{{var1}}", context)
-        assert result == "resolved_value"
-        context.get_variable.assert_called_once_with("var1")
+        result = await self.executor.resolve_inputs(context, mappings)
+
+        assert result == {"query": "resolved", "limit": 10}
+        context.resolve_variable_ref.assert_awaited_once_with("{{start.query}}")
 
     @pytest.mark.asyncio
-    async def test_resolve_variable_non_template(self):
-        """Test resolving a non-template value."""
+    async def test_resolve_legacy_inputs(self):
         context = MagicMock(spec=ExecutionContext)
+        context.resolve_variable_ref = AsyncMock(return_value="resolved")
 
-        result = await self.executor.resolve_variable("plain_value", context)
-        assert result == "plain_value"
-        context.get_variable.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_resolve_variable_with_default(self):
-        """Test resolving a variable with default value."""
-        context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(return_value=None)
-
-        result = await self.executor.resolve_variable(
-            "{{missing_var}}", context, default="default_value"
+        result = await self.executor.resolve_inputs(
+            context,
+            [
+                {"name": "query", "value": "{{start.query}}"},
+                {"name": "limit", "source": "constant", "constantValue": 10},
+                {},
+            ],
         )
-        assert result == "default_value"
+
+        assert result == {"query": "resolved", "limit": 10}
+
+    @pytest.mark.asyncio
+    async def test_duplicate_inputs_are_rejected(self):
+        with pytest.raises(ValueError):
+            await self.executor.resolve_inputs(
+                MagicMock(spec=ExecutionContext),
+                [
+                    NodeInputMapping(name="query"),
+                    NodeInputMapping(name="query"),
+                ],
+            )
+
+    @pytest.mark.asyncio
+    async def test_default_helpers(self):
+        assert await self.executor.validate_config({}) == []
+        assert self.executor.get_output_variables({}) == []
+        assert self.executor.get_output_specs({}) == []
 
 
 class TestExecutorExecution:
-    """Tests for executor execution."""
-
     @pytest.mark.asyncio
     async def test_dummy_executor_execute(self):
-        """Test executing the dummy executor."""
-        executor = DummyExecutor()
-        context = MagicMock(spec=ExecutionContext)
-        run = MagicMock()
-
-        node = {
-            "id": "node_1",
-            "type": "dummy",
-            "data": {},
-        }
-
-        result = await executor.execute(node, context, run)
-
+        result = await DummyExecutor().execute({}, MagicMock(), MagicMock())
         assert result.success is True
         assert result.outputs == {"result": "dummy_output"}
