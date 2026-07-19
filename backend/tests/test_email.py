@@ -154,6 +154,89 @@ async def test_verification_and_rate_limit_helpers_use_redis_keys():
 
 
 @pytest.mark.asyncio
+async def test_send_verification_email_selects_each_template():
+    settings = AsyncMock(
+        side_effect=lambda key, default: {
+            "site_name": "Clouisle",
+            "site_url": "https://app.example.test",
+            "default_language": "en",
+        }.get(key, default)
+    )
+    sender = AsyncMock()
+    verification_template = MagicMock(
+        return_value=("verification text", "verification html")
+    )
+    reset_template = MagicMock(return_value=("reset text", "reset html"))
+
+    with (
+        patch("app.core.email.SiteSetting.get_value", new=settings),
+        patch("app.core.email.t", side_effect=lambda key, **_: key),
+        patch(
+            "app.core.email_templates.render_verification_email",
+            verification_template,
+        ),
+        patch("app.core.email_templates.render_reset_password_email", reset_template),
+        patch("app.core.email.send_email", new=sender),
+    ):
+        await email.send_verification_email("user@example.test", "123456", "token")
+        await email.send_verification_email(
+            "user@example.test", "123456", "token", purpose="profile_email", locale="zh"
+        )
+        await email.send_verification_email(
+            "user@example.test", "123456", "token", purpose="reset_password"
+        )
+        await email.send_verification_email(
+            "user@example.test", "123456", "token", purpose="other"
+        )
+
+    assert sender.await_args_list[0].args == (
+        "user@example.test",
+        "email_verification_subject",
+        "verification text",
+        "verification html",
+    )
+    assert verification_template.call_args_list[0].args == (
+        "Clouisle",
+        "123456",
+        "https://app.example.test/verify?token=token",
+    )
+    assert verification_template.call_args_list[1].kwargs["heading_key"] == (
+        "email_profile_email_heading"
+    )
+    assert reset_template.call_args.args == (
+        "Clouisle",
+        "123456",
+        "https://app.example.test/reset-password?token=token",
+    )
+    assert sender.await_args_list[-1].args == (
+        "user@example.test",
+        "email_code_subject",
+        "email_code_body_text",
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_verification_and_recipient_rate_boundaries():
+    redis = MagicMock()
+    redis.get = AsyncMock(side_effect=[None, "123456:token", None, "5", "4"])
+    redis.incrby = AsyncMock(return_value=3)
+    redis.incr = AsyncMock(return_value=2)
+    redis.expire = AsyncMock()
+
+    with patch("app.core.email.get_redis", new=AsyncMock(return_value=redis)):
+        assert not await email.verify_code("user@example.test", "123456")
+        assert not await email.verify_code("user@example.test", "wrong")
+        assert await email.verify_token("missing") is None
+        assert await email.check_recipient_email_rate("user@example.test") == (False, 5)
+        assert await email.check_recipient_email_rate("user@example.test") == (True, 4)
+        await email.increment_bulk_email_count("admin", 2)
+        await email.increment_recipient_email_count("user@example.test")
+
+    redis.expire.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_filters_recipients_by_rate_limit():
     with patch(
         "app.core.email.check_recipient_email_rate",
