@@ -2,12 +2,28 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
+<<<<<<< HEAD
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './alert'
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card'
 import { Progress } from './progress'
 import { Skeleton } from './skeleton'
 import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from './table'
 
+=======
+import { Badge } from './badge'
+import { ButtonGroup, ButtonGroupSeparator, ButtonGroupText } from './button-group'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './collapsible'
+import { Popover, PopoverTrigger } from './popover'
+import { Separator } from './separator'
+import { Textarea } from './textarea'
+import { TooltipProvider } from './tooltip'
+
+Object.assign(globalThis, {
+  window: {},
+  requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(callback, 0),
+  cancelAnimationFrame: clearTimeout,
+})
+>>>>>>> 729ff6dd (test: cover basic UI primitives)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const renderers: ReactTestRenderer[] = []
@@ -27,6 +43,7 @@ afterEach(() => {
 })
 
 describe('simple UI primitives', () => {
+<<<<<<< HEAD
   test('renders alert semantics, content slots, and warning variant', () => {
     const renderer = render(
       <Alert variant="warning" aria-label="Quota warning">
@@ -104,5 +121,81 @@ describe('simple UI primitives', () => {
     expect(table.findAllByType('th').map(cell => cell.children[0])).toEqual(['Invoice', 'Total'])
     const selected = table.find(node => node.type === 'tr' && node.props['data-state'] === 'selected')
     expect(selected.props.className).toContain('data-[state=selected]:bg-muted')
+=======
+  test('renders badge variants and forwards custom attributes', () => {
+    const renderer = render(<Badge variant="destructive" data-testid="status">Failed</Badge>)
+    const badge = renderer.root.find(node => node.type === 'span' && node.props['data-testid'] === 'status')
+
+    expect(badge.type).toBe('span')
+    expect(badge.props.className).toContain('text-destructive')
+    expect(badge.children).toEqual(['Failed'])
+  })
+
+  test('renders button group semantics, text, and separator orientation', () => {
+    const renderer = render(
+      <ButtonGroup orientation="vertical" aria-label="Actions">
+        <ButtonGroupText>Actions</ButtonGroupText>
+        <ButtonGroupSeparator />
+      </ButtonGroup>,
+    )
+    const group = renderer.root.findByProps({ 'data-slot': 'button-group' })
+
+    expect(group.props.role).toBe('group')
+    expect(group.props['data-orientation']).toBe('vertical')
+    expect(group.findByProps({ 'data-slot': 'button-group-text' }).children).toEqual(['Actions'])
+    expect(group.findByProps({ 'data-slot': 'button-group-separator' }).props.orientation).toBe('vertical')
+  })
+
+  test('opens and closes collapsible content from its trigger', () => {
+    const renderer = render(
+      <Collapsible>
+        <CollapsibleTrigger>Details</CollapsibleTrigger>
+        <CollapsibleContent>Visible details</CollapsibleContent>
+      </Collapsible>,
+    )
+    const trigger = renderer.root.findByType('button')
+
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('Visible details')
+    act(() => trigger.props.onClick({ defaultPrevented: false }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('Visible details')
+  })
+
+  test('renders textarea sizing behavior with forwarded native properties', () => {
+    const renderer = render(<Textarea rows={4} placeholder="Write a note" aria-label="Note" />)
+    const textarea = renderer.root.findByType('textarea')
+
+    expect(textarea.props.rows).toBe(4)
+    expect(textarea.props.placeholder).toBe('Write a note')
+    expect(textarea.props['aria-label']).toBe('Note')
+    expect(textarea.props.className).not.toContain('field-sizing-content')
+  })
+
+  test('renders separator orientations with semantic slots', () => {
+    const renderer = render(<Separator orientation="vertical" aria-label="Column divider" />)
+    const separator = renderer.root.findByProps({ 'data-slot': 'separator' })
+
+    expect(separator.props.orientation).toBe('vertical')
+    expect(separator.props['aria-label']).toBe('Column divider')
+    expect(separator.props.className).toContain('data-[orientation=vertical]:w-px')
+  })
+
+  test('renders popover trigger semantics and forwards custom attributes', () => {
+    const renderer = render(
+      <Popover>
+        <PopoverTrigger aria-label="More actions">More</PopoverTrigger>
+      </Popover>,
+    )
+    const trigger = renderer.root.findByProps({ 'data-slot': 'popover-trigger' })
+
+    expect(trigger.props['aria-label']).toBe('More actions')
+    expect(trigger.props.className).toContain('cursor-pointer')
+  })
+
+  test('uses an immediate default delay for tooltip providers', () => {
+    const renderer = render(<TooltipProvider />)
+    const provider = renderer.root.findByProps({ 'data-slot': 'tooltip-provider' })
+
+    expect(provider.props.delay).toBe(0)
+>>>>>>> 729ff6dd (test: cover basic UI primitives)
   })
 })
