@@ -57,7 +57,7 @@
 ### Stage 5: Agent UI automation guide and reusable prompt
 - **Files modified**: `docs/guide/testing/agent-ui-automation.md`
 - **Specific logic**: Maintain a model-readable feature map alongside frontend functional tests. For each critical UI flow, document its purpose, prerequisites/test data, route, stable visible landmarks, happy/error scenarios, side effects and cleanup, and reusable Agent prompt instructions. Keep selectors semantic and behavior-oriented so the guide is useful across browser automation implementations.
-- **Validation**: Cross-check every documented flow against its functional test and manually run at least one prompt-driven happy path and one failure path when a browser test environment is available.
+- **Validation**: Cross-check every documented flow against its functional test. Record browser validation separately when a browser test environment is available; do not claim it from source inspection alone.
 
 ### Stage 6: CI reporting, final 95% gates, and documentation
 - **Files modified**: `.github/workflows/ci.yml`, `backend/pyproject.toml`, `frontend/bunfig.toml`, `docs/dev/README.md`, relevant backend/frontend testing docs, planning docs
@@ -67,7 +67,8 @@
 ## Baseline Results
 - Backend clean baseline (2026-07-19, commit `f45530d`): 43.22% line coverage (`16,100/37,249`) and 18.95% branch coverage (`2,204/11,630`) over all `app` source; 710 tests passed and 2 were skipped. The existing 99.56% report is invalid because it covers only `app/llm/types`.
 - Frontend provisional baseline (2026-07-19): Bun's loaded-file report is 75.77% lines and 94.44% functions across only three loaded source files; the census reports 467 eligible application files absent from LCOV. The loaded-file percentage is therefore not acceptance evidence.
-- Record each clean baseline with its commit SHA before starting the corresponding test batches.
+- Backend progress checkpoint (2026-07-19, commit `45245a22`): 780 tests passed and 2 were skipped; whole-app coverage is 39% after workflow cache, error translation, iteration, variable, and schema-inference behavior tests. The final 95% line and branch gates remain inactive.
+- Frontend progress checkpoint (2026-07-19, commit `45245a22`): 59 tests passed; Bun's loaded-module report is 38.90% lines and 22.15% functions after chat/helper and API-client tests. The census reports 405 eligible sources absent from LCOV, so neither loaded-module percentages nor the coverage target have passed.
 - Baseline blockers found on 2026-07-19: stale workflow tests import renamed/removed APIs (`ExecutionNode`, `CircuitState`, and obsolete decorator signatures), and other existing failures span sandbox/workflow behavior. These must be aligned with current behavior before the backend baseline is valid.
 
 ## Testing Strategy
