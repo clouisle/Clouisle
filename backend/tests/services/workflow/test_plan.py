@@ -4,15 +4,16 @@ Tests for the ExecutionPlan class.
 
 import pytest
 
-from app.services.workflow.plan import ExecutionPlan, ExecutionNode, ExecutionStage
+from app.services.workflow.errors import CyclicDependencyError, WorkflowValidationError
+from app.services.workflow.plan import ExecutionPlan, NodeDependency, ExecutionStage
 
 
-class TestExecutionNode:
-    """Tests for ExecutionNode dataclass."""
+class TestNodeDependency:
+    """Tests for NodeDependency dataclass."""
 
     def test_node_creation(self):
         """Test creating an execution node."""
-        node = ExecutionNode(
+        node = NodeDependency(
             node_id="node_1",
             node_type="llm",
             node_data={"data": {"label": "Test"}},
@@ -28,7 +29,7 @@ class TestExecutionNode:
 
     def test_node_with_handle_map(self):
         """Test creating a node with handle map."""
-        node = ExecutionNode(
+        node = NodeDependency(
             node_id="condition_1",
             node_type="condition",
             node_data={},
@@ -50,11 +51,11 @@ class TestExecutionStage:
     def test_stage_creation(self):
         """Test creating an execution stage."""
         stage = ExecutionStage(
-            index=0,
+            stage_index=0,
             node_ids=["node_1", "node_2", "node_3"],
         )
 
-        assert stage.index == 0
+        assert stage.stage_index == 0
         assert len(stage.node_ids) == 3
         assert "node_1" in stage.node_ids
 
@@ -92,7 +93,7 @@ class TestExecutionPlanFromWorkflow:
 
         assert len(plan.nodes) == 3
         assert plan.start_node_id == "start"
-        assert plan.end_node_ids == {"end"}
+        assert plan.nodes["end"].downstream == set()
 
         # Check stages
         assert len(plan.stages) >= 1
@@ -187,10 +188,8 @@ class TestExecutionPlanValidation:
             "edges": [],
         }
 
-        plan = ExecutionPlan.from_workflow(workflow_def)
-        errors = plan.validate()
-
-        assert len(errors) > 0  # Should have error about empty workflow
+        with pytest.raises(WorkflowValidationError):
+            ExecutionPlan.from_workflow(workflow_def)
 
     def test_disconnected_nodes(self):
         """Test validating a workflow with disconnected nodes."""
@@ -300,6 +299,5 @@ class TestExecutionPlanCycles:
             ],
         }
 
-        plan = ExecutionPlan.from_workflow(workflow_def)
-        # Should handle iteration cycles gracefully
-        assert plan is not None
+        with pytest.raises(CyclicDependencyError):
+            ExecutionPlan.from_workflow(workflow_def)
