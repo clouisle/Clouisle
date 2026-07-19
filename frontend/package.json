@@ -58,7 +58,9 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
+    "@happy-dom/global-registrator": "^20.11.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.3.2",
     "@types/d3-drag": "^3.0.7",
     "@types/d3-force": "^3.0.10",
     "@types/d3-selection": "^3.0.11",
@@ -69,6 +71,7 @@
     "@types/react-test-renderer": "^19.1.0",
     "eslint": "^10",
     "eslint-config-next": "16.2.10",
+    "happy-dom": "^20.11.0",
     "license-checker-rseidelsohn": "^5.0.1",
     "react-test-renderer": "19.2.7",
     "tailwindcss": "^4",
