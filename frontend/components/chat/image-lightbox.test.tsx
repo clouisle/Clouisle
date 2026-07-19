@@ -17,14 +17,18 @@ Object.assign(globalThis, {
 })
 
 const dom = { window }
-;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+;(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true
 
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
 
 mock.module('@/components/ui/button', () => ({
-  Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button>,
+  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
 }))
 
 let ImageLightbox: typeof import('./image-lightbox').ImageLightbox
@@ -61,7 +65,11 @@ afterEach(() => {
 
 describe('ImageLightbox', () => {
   test('keeps closed lightboxes out of the portal and restores scrolling', () => {
-    const container = renderImage({ src: '/image.png', isOpen: false, onClose: mock(() => {}) })
+    const container = renderImage({
+      src: '/image.png',
+      isOpen: false,
+      onClose: mock(() => {}),
+    })
 
     expect(container.textContent).toBe('')
     expect(document.body.style.overflow).toBe('')
@@ -91,13 +99,87 @@ describe('ImageLightbox', () => {
     renderImage({ src: '/image.png', alt: 'Prompt', isOpen: true, onClose })
 
     const image = document.body.querySelector('img')!
-    act(() => image.parentElement!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+    act(() =>
+      image.parentElement!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    )
     expect(document.body.textContent).toContain('125%')
     expect(onClose).not.toHaveBeenCalled()
 
     const backdrop = document.body.querySelector('.fixed')!
     act(() => backdrop.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows prompts, pans zoomed images, and downloads through browser APIs', async () => {
+    const fetchImage = mock(async () => ({
+      blob: async () => new Blob(['image']),
+    }))
+    const createObjectUrl = mock(() => 'blob:image')
+    const revokeObjectUrl = mock(() => {})
+    const originalFetch = globalThis.fetch
+    const originalCreateObjectUrl = window.URL.createObjectURL
+    const originalRevokeObjectUrl = window.URL.revokeObjectURL
+    globalThis.fetch = fetchImage as typeof fetch
+    window.URL.createObjectURL = createObjectUrl
+    window.URL.revokeObjectURL = revokeObjectUrl
+
+    try {
+      renderImage({
+        src: '/image.png',
+        alt: 'Generated prompt',
+        isOpen: true,
+        onClose: mock(() => {}),
+      })
+
+      act(() => document.body.querySelector('button[title="showPrompt"]')!.click())
+      expect(document.body.textContent).toContain('Generated prompt')
+      act(() => document.body.querySelector('button[title="hidePrompt"]')!.click())
+      expect(document.body.textContent).not.toContain('Generated prompt')
+
+      const image = document.body.querySelector('img')!
+      const imageContainer = image.parentElement!
+      act(() => imageContainer.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+      act(() =>
+        imageContainer.dispatchEvent(
+          new dom.window.MouseEvent('mousedown', {
+            bubbles: true,
+            clientX: 15,
+            clientY: 20,
+          }),
+        ),
+      )
+      act(() =>
+        document.body.querySelector('.fixed')!.dispatchEvent(
+          new dom.window.MouseEvent('mousemove', {
+            bubbles: true,
+            clientX: 35,
+            clientY: 50,
+          }),
+        ),
+      )
+      act(() =>
+        document.body
+          .querySelector('.fixed')!
+          .dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true })),
+      )
+      expect(image.getAttribute('style')).toContain('translate(20px, 30px)')
+
+      act(() =>
+        imageContainer.dispatchEvent(
+          new dom.window.WheelEvent('wheel', { bubbles: true, deltaY: 1 }),
+        ),
+      )
+      expect(document.body.textContent).toContain('115%')
+
+      await act(async () => document.body.querySelector('button[title="download"]')!.click())
+      expect(fetchImage).toHaveBeenCalledWith('/image.png')
+      expect(createObjectUrl).toHaveBeenCalled()
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image')
+    } finally {
+      globalThis.fetch = originalFetch
+      window.URL.createObjectURL = originalCreateObjectUrl
+      window.URL.revokeObjectURL = originalRevokeObjectUrl
+    }
   })
 
   test('keeps video controls open while closing through Escape, close, or backdrop', () => {
@@ -107,12 +189,24 @@ describe('ImageLightbox', () => {
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.body.querySelector('video')?.getAttribute('src')).toBe('/video.mp4')
 
-    act(() => document.body.querySelector('video')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+    act(() =>
+      document.body
+        .querySelector('video')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    )
     expect(onClose).not.toHaveBeenCalled()
 
     keydown('Escape')
-    act(() => document.body.querySelector('button:last-child')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
-    act(() => document.body.querySelector('.fixed')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+    act(() =>
+      document.body
+        .querySelector('button:last-child')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    )
+    act(() =>
+      document.body
+        .querySelector('.fixed')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    )
     expect(onClose).toHaveBeenCalledTimes(3)
   })
 
