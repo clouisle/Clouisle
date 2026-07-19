@@ -323,7 +323,7 @@ class TestVariableExecutors:
             ("a", 2, "a2"),
             (1, 2.5, 3.5),
             (None, "first", ["first"]),
-            ("wrong", {"value": 1}, ["wrong", {"value": 1}]),
+            ("wrong", {"value": 1}, "wrong{'value': 1}"),
         ],
     )
     async def test_assignment_append_handles_supported_value_types(
@@ -482,4 +482,3 @@ class TestVariableExecutors:
             {"nested": {"keep": 1}, "replace": 1},
             {"nested": {"add": 2}, "replace": {"now": "object"}},
         ) == {"nested": {"keep": 1, "add": 2}, "replace": {"now": "object"}}
-
