@@ -99,6 +99,7 @@
 - Frontend progress checkpoint (2026-07-20, commit `148e2469`): 611 isolated tests passed. Bun reports 87.39% lines and 84.98% functions after file attachment metadata, download, image preview, and category behavior coverage. The source census remains inactive because 265 eligible application files are absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 - Backend progress checkpoint (2026-07-20, commit `110bab9f`): 1,881 tests passed and 2 were skipped; whole-app combined coverage is 55% (`37,272` statements, `14,856` missed; `11,640` branches, `1,242` partial) after SMTP, verification-email routing, and email rate-limit coverage. The final independent 95% line and branch gates remain inactive.
 - Frontend progress checkpoint (2026-07-20, commit `53202bbc`): 616 isolated tests passed with 2,689 assertions; reasoning message content now covers streaming auto-open/cursor, duration formatting, and processing fallback behavior. The source census and final independent 95% metrics remain inactive because eligible sources are still absent from LCOV.
+- Frontend progress checkpoint (2026-07-20, commit `61a13d1a`): 619 isolated tests passed with 2,700 assertions; Bun reports 87.85% lines and 85.46% functions after tool-call/result state, MCP server, input, output, and error-style coverage. The source census remains failing because 265 eligible sources are absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
