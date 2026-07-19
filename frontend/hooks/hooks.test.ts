@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import * as React from 'react'
 
 type EffectSlot = {
   cleanup?: () => void
@@ -26,6 +27,7 @@ function resetHooks() {
 }
 
 mock.module('react', () => ({
+  ...React,
   useState<T>(initialValue: T | (() => T)) {
     const index = stateIndex++
     if (!(index in states)) {

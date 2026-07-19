@@ -28,9 +28,12 @@ describe('ssoApi', () => {
   })
 
   test('initiates login with optional encoded redirect', () => {
-    const originalWindow = globalThis.window
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
     const location = { href: '' }
-    Object.assign(globalThis, { window: { location } })
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { location },
+    })
 
     try {
       ssoApi.initiateLogin('oidc')
@@ -41,7 +44,11 @@ describe('ssoApi', () => {
         `${API_BASE_URL}/sso/login/saml?redirect=%2Fsettings%2Fsso%3Ftab%3Dconnections%26from%3Dlogin`
       )
     } finally {
-      Object.assign(globalThis, { window: originalWindow })
+      if (originalWindow) {
+        Object.defineProperty(globalThis, 'window', originalWindow)
+      } else {
+        Reflect.deleteProperty(globalThis, 'window')
+      }
     }
   })
 
