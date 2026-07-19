@@ -91,7 +91,11 @@ def run_workflow_task(
             return {"status": "error", "message": public_error}
 
     # Run the async function
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     return loop.run_until_complete(_run())
 
 
@@ -123,5 +127,9 @@ def cancel_workflow_task(self, run_id: str) -> dict:
             logger.exception(f"Workflow cancellation error: {e}")
             return {"status": "error", "message": translate_public_workflow_error(e)}
 
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     return loop.run_until_complete(_cancel())
