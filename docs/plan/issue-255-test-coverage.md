@@ -93,6 +93,7 @@
 - Frontend focused checkpoint (2026-07-20): the active branch's broader validation-helper suite has 11 passing tests and 27 assertions, with `lib/validation.ts` at 100% line/function coverage. The final source census and 95% frontend metrics remain inactive.
 - Frontend progress checkpoint (2026-07-20, commits through `2fc1f912`): 596 isolated tests passed with 2,651 assertions; Bun reports 87.20% lines and 84.80% functions after TOTP QR-code, theme, and application-constant coverage batches. The source census reports 265 eligible application files absent from LCOV. The final independent 95% metrics and zero-absent-source gate remain inactive.
 - Backend progress checkpoint (2026-07-20, commits through `8ecb2351`): 1,845 tests passed and 2 were skipped; whole-app combined coverage remains 54% (`37,272` statements, `15,182` missed; `11,640` branches, `1,216` partial) after media normalization and sandbox cache/lifecycle batches. The final independent 95% line and branch gates remain inactive.
+- Backend progress checkpoint (2026-07-20, commits through `a1dc8fc1`): 1,871 tests passed and 2 were skipped; whole-app combined coverage remains 54% (`37,272` statements, `14,956` missed; `11,640` branches, `1,243` partial) after Redis and Slack, WeChat, DingTalk, and Feishu notification-delivery batches. The final independent 95% line and branch gates remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
