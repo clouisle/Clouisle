@@ -252,3 +252,143 @@ class TestMediaGenerationNodeExecutor:
 
         assert result.success is False
         assert result.outputs == {}
+
+    @pytest.mark.anyio
+    async def test_validate_config_reports_each_missing_requirement(self):
+        executor = MediaGenerationNodeExecutor()
+
+        assert await executor.validate_config({}) == [
+            "Model ID is required",
+            "Prompt or inputs are required",
+        ]
+        assert await executor.validate_config(
+            {"mode": "audio", "modelId": "model-1", "inputs": [{}]}
+        ) == ["Invalid media generation mode"]
+        assert (
+            await executor.validate_config(
+                {"mode": "video", "modelId": "model-1", "prompt": "animate"}
+            )
+            == []
+        )
+
+    @pytest.mark.anyio
+    async def test_build_prompt_resolves_template_and_input_mappings(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(side_effect=["cats", None, 3])
+
+        prompt = await MediaGenerationNodeExecutor()._build_prompt(
+            {
+                "prompt": "Draw {{start.subject}} and {{missing.value}}",
+                "inputs": [
+                    {
+                        "name": "count",
+                        "source": "variable",
+                        "variableRef": "{{start.count}}",
+                    },
+                    {"name": "style", "source": "constant", "constantValue": "ink"},
+                ],
+            },
+            context,
+        )
+
+        assert prompt == ("count: 3\nstyle: ink\n\nDraw cats and {{missing.value}}")
+
+    @pytest.mark.anyio
+    async def test_image_dispatch_maps_optional_and_legacy_config(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=None)
+        with patch(
+            "app.services.workflow.executors.media_generation.generate_image",
+            new=AsyncMock(return_value={}),
+        ) as generate:
+            await MediaGenerationNodeExecutor()._execute_image(
+                {
+                    "width": "1024",
+                    "height": 768,
+                    "num_images": "2",
+                    "negative_prompt": "blur",
+                    "seed": "7",
+                    "extra_params": {"steps": 20},
+                },
+                context,
+                "draw",
+                "model-1",
+            )
+
+        generate.assert_awaited_once()
+        assert generate.await_args.kwargs == {
+            "prompt": "draw",
+            "width": 1024,
+            "height": 768,
+            "num_images": 2,
+            "style": None,
+            "quality": None,
+            "negative_prompt": "blur",
+            "seed": 7,
+            "images": None,
+            "extra_params": {"steps": 20},
+            "agent": generate.await_args.kwargs["agent"],
+        }
+
+    @pytest.mark.anyio
+    async def test_execute_translates_resolution_errors(self):
+        executor = MediaGenerationNodeExecutor()
+        executor._resolve_model_id = AsyncMock(side_effect=RuntimeError("secret"))
+        with patch(
+            "app.services.workflow.executors.media_generation.translate_public_workflow_error",
+            return_value="workflow_execution_failed",
+        ) as translate:
+            result = await executor.execute(
+                {
+                    "id": "media_1",
+                    "data": {
+                        "config": {
+                            "mode": "image",
+                            "modelId": "model-1",
+                            "inputs": [
+                                {
+                                    "name": "subject",
+                                    "source": "constant",
+                                    "constantValue": "cat",
+                                }
+                            ],
+                        }
+                    },
+                },
+                MagicMock(),
+                SimpleNamespace(workflow_id="workflow-1"),
+            )
+
+        assert result.error == "workflow_execution_failed"
+        translate.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ("config", "expected_variables", "expected_kind", "expected_item_kind"),
+        [
+            ({}, [{"name": "result", "type": "array"}], "array", "string"),
+            (
+                {"mode": "video", "outputVariable": "clip"},
+                [
+                    {"name": "result", "type": "string"},
+                    {"name": "clip", "type": "string"},
+                ],
+                "string",
+                None,
+            ),
+        ],
+    )
+    def test_output_declarations_match_media_mode(
+        self, config, expected_variables, expected_kind, expected_item_kind
+    ):
+        executor = MediaGenerationNodeExecutor()
+
+        assert executor.get_output_variables(config) == expected_variables
+        specs = executor.get_output_specs(config)
+        assert [spec.name for spec in specs] == [
+            item["name"] for item in expected_variables
+        ]
+        assert all(spec.type.kind == expected_kind for spec in specs)
+        assert all(
+            (spec.type.item.kind if spec.type.item else None) == expected_item_kind
+            for spec in specs
+        )
