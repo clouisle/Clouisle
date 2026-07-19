@@ -125,6 +125,7 @@
 - Frontend progress checkpoint (2026-07-20, commit `7efae68f`): 665 isolated tests passed with 2,975 assertions; Bun reports 89.64% lines and 87.68% functions after TOTP QR-code copy-confirmation reset coverage. The source census remains failing with 247 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 - Frontend progress checkpoint (2026-07-20, commit `cd067693`): 666 isolated tests passed with 2,975 assertions; Bun reports 89.69% lines and 87.73% functions after admin API barrel-export coverage. The source census remains failing with 246 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 - Frontend progress checkpoint (2026-07-20, commit `a499f9e1`): 667 isolated tests passed with 2,980 assertions; Bun reports 89.73% lines and 87.79% functions after chat-layout viewport and metadata-isolation coverage. The source census remains failing with 245 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
+- Frontend progress checkpoint (2026-07-20, commit `8125b109`): 672 isolated tests passed with 2,986 assertions; Bun reports 89.78% lines and 87.84% functions after public chat-agent metadata success, fallback, icon-precedence, and layout-pass-through coverage. The source census remains failing with 244 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
