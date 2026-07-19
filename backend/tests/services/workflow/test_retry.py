@@ -87,6 +87,7 @@ class TestRetryPolicy:
         # Not all delays should be exactly the same
         assert len(set(delays)) > 1
 
+
 class TestWithRetry:
     """Tests for the with_retry function."""
 
