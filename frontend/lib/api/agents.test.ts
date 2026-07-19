@@ -182,6 +182,8 @@ describe('streaming agent API requests', () => {
     const edit = agentsApi.editMessageStream('agent-1', 'message-1', 'Revised')
     const chat = agentsApi.chatStream('agent-1', { message: 'Hello' })
     regenerate.abort()
+    edit.abort()
+    chat.abort()
 
     expect(fetch).toHaveBeenNthCalledWith(1, 'http://localhost:8000/api/v1/agents/agent-1/messages/message-1/regenerate', {
       method: 'POST',
@@ -201,9 +203,22 @@ describe('streaming agent API requests', () => {
       body: JSON.stringify({ message: 'Hello' }),
       signal: expect.any(AbortSignal),
     })
-    expect((fetch.mock.calls[0]?.[1]?.signal as AbortSignal).aborted).toBe(true)
+    expect(fetch.mock.calls.map((call) => (call[1]?.signal as AbortSignal).aborted)).toEqual([
+      true,
+      true,
+      true,
+    ])
 
     await Promise.all([regenerate.stream, edit.stream, chat.stream])
+  })
+
+  it('propagates streaming fetch failures unchanged', async () => {
+    const failure = new Error('stream unavailable')
+    spyOnFetch().mockRejectedValue(failure)
+
+    await expect(agentsApi.regenerateStream('agent-1', 'message-1').stream).rejects.toBe(failure)
+    await expect(agentsApi.editMessageStream('agent-1', 'message-1', 'Revised').stream).rejects.toBe(failure)
+    await expect(agentsApi.chatStream('agent-1', { message: 'Hello' }).stream).rejects.toBe(failure)
   })
 })
 
@@ -258,6 +273,13 @@ describe('public agents API requests', () => {
     await request.stream
   })
 
+  it('propagates public streaming fetch failures unchanged', async () => {
+    const failure = new Error('stream unavailable')
+    spyOnFetch().mockRejectedValue(failure)
+
+    await expect(publicAgentsApi.chatStream('agent-1', { message: 'Hello' }).stream).rejects.toBe(failure)
+  })
+
   it('preserves safe API errors with data across public request methods', async () => {
     const errorBody = { msg: 'This agent is not available', data: { reason: 'private' } }
     spyOnFetch().mockImplementation(async () => (
@@ -279,20 +301,47 @@ describe('public agents API requests', () => {
     }
   })
 
-  it('replaces malformed and technical errors with status-specific messages', async () => {
-    spyOnFetch()
-      .mockResolvedValueOnce(new Response('not json', { status: 404 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ msg: 'Traceback: internal details' }), { status: 500 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ msg: 'errors.agent.private' }), { status: 400 }))
+  it('replaces malformed errors across public request methods', async () => {
+    spyOnFetch().mockResolvedValue(new Response('not json', { status: 404 }))
 
-    await expect(publicAgentsApi.getPublicAgent('missing')).rejects.toMatchObject<ApiError>({
-      code: 404,
-      message: getErrorMessage('resourceNotFound'),
-    })
-    await expect(publicAgentsApi.getPublicAgent('broken')).rejects.toMatchObject<ApiError>({
-      code: 500,
-      message: getErrorMessage('serverError'),
-    })
+    for (const request of [
+      () => publicAgentsApi.getPublicAgent('missing'),
+      () => publicAgentsApi.getConversations('missing'),
+      () => publicAgentsApi.getConversation('missing'),
+      () => publicAgentsApi.deleteConversation('missing'),
+      () => publicAgentsApi.updateConversation('missing', { title: 'Renamed' }),
+    ]) {
+      await expect(request()).rejects.toMatchObject<ApiError>({
+        code: 404,
+        message: getErrorMessage('resourceNotFound'),
+      })
+    }
+  })
+
+  it('replaces unsafe error messages with status-specific messages', async () => {
+    const fetch = spyOnFetch()
+    for (const msg of [
+      null,
+      'Traceback: internal details',
+      'errors.agent.private',
+      'Exception: internal details',
+      'HTTP 400 internal details',
+      'Failed to fetch private endpoint',
+      'line one\nline two',
+      'x'.repeat(201),
+      '   ',
+    ]) {
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify({ msg }), { status: 500 }))
+    }
+
+    for (let index = 0; index < 9; index += 1) {
+      await expect(publicAgentsApi.getPublicAgent('broken')).rejects.toMatchObject<ApiError>({
+        code: 500,
+        message: getErrorMessage('serverError'),
+      })
+    }
+
+    fetch.mockResolvedValueOnce(new Response(JSON.stringify({ msg: 'errors.agent.private' }), { status: 400 }))
     await expect(publicAgentsApi.getPublicAgent('private')).rejects.toMatchObject<ApiError>({
       code: 400,
       message: getErrorMessage('requestFailed'),
@@ -319,6 +368,30 @@ describe('parseSSEStream', () => {
       { event: 'content_delta', data: { delta: 'Hello' } },
       { event: 'message_end', data: { usage: { total_tokens: 1 } } },
     ])
+  })
+
+  it('drops incomplete, data-only, and empty events at boundaries', async () => {
+    const events = []
+    const body = new Response([
+      'data: {"orphan":true}\n\n',
+      'event: content_delta\n\n',
+      'event: content_delta\ndata: {"delta":"discarded"}\nevent: message_end\ndata: {"usage":{}}\n\n',
+      'ignored line',
+    ].join('')).body
+
+    for await (const event of parseSSEStream(new Response(body))) events.push(event)
+
+    expect(events).toEqual([])
+  })
+
+  it('emits a valid event from the final unterminated buffer', async () => {
+    const events = []
+
+    for await (const event of parseSSEStream(new Response('event: content_delta\ndata: {"delta":"done"}'))) {
+      events.push(event)
+    }
+
+    expect(events).toEqual([{ event: 'content_delta', data: { delta: 'done' } }])
   })
 
   it('returns without events when the response has no body', async () => {
