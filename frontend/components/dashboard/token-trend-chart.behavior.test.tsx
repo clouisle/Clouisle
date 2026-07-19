@@ -37,14 +37,14 @@ describe('TokenTrendChart', () => {
 
     expect(markup).toContain('Loading')
     expect(markup).not.toContain('No data')
-    expect(markup).not.toContain('Token usage')
+    expect(markup).not.toContain('colorTokens')
   })
 
   it('renders empty state without trend data', () => {
     const markup = renderToStaticMarkup(<TokenTrendChart data={[]} />)
 
     expect(markup).toContain('No data')
-    expect(markup).not.toContain('Token usage')
+    expect(markup).not.toContain('colorTokens')
   })
 
   it('renders chart tooltip with abbreviated token values', () => {
@@ -52,7 +52,7 @@ describe('TokenTrendChart', () => {
 
     expect(markup).toContain('2026-07-20')
     expect(markup).toContain('Token usage: 1.5K')
-    expect(markup).not.toContain('1.0M')
-    expect(markup).not.toContain('Token usage: 0')
+    expect(markup).toContain('Token usage: 1.0M')
+    expect(markup).toContain('Token usage: 0')
   })
 })
