@@ -47,8 +47,22 @@ jobs:
     # - name: Type check with Mypy
     #   run: uv run mypy .
 
-    # - name: Run tests
-    #   run: uv run pytest
+    - name: Run tests with coverage
+      run: uv run pytest
+
+    - name: Upload backend coverage XML
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-coverage-xml
+        path: backend/coverage.xml
+
+    - name: Upload backend coverage HTML
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-coverage-html
+        path: backend/htmlcov/
 
   frontend-check:
     runs-on: ubuntu-latest
@@ -72,6 +86,19 @@ jobs:
 
     - name: Lint
       run: bun run lint
+
+    - name: Run tests with coverage
+      run: bun run test:coverage
+
+    - name: Check coverage source census
+      run: bun run coverage:check
+
+    - name: Upload frontend coverage LCOV
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-coverage-lcov
+        path: frontend/coverage/lcov.info
 
     - name: Build check
       env:
