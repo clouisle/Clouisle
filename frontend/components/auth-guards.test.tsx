@@ -30,9 +30,9 @@ const router = {
   prefetch: mock(() => Promise.resolve()),
 }
 
-function render(component: React.ReactNode, pathname = '/dashboard', search = '') {
+async function render(component: React.ReactNode, pathname = '/dashboard', search = '') {
   let renderer: ReactTestRenderer
-  act(() => {
+  await act(async () => {
     renderer = create(
       <AppRouterContext.Provider value={router}>
         <PathnameContext.Provider value={pathname}>
@@ -84,7 +84,7 @@ describe('AuthGuard', () => {
       verify = () => resolve({} as Awaited<ReturnType<typeof authApi.getCurrentUser>>)
     }))
 
-    const renderer = render(<AuthGuard><span>Allowed</span></AuthGuard>)
+    const renderer = await render(<AuthGuard><span>Allowed</span></AuthGuard>)
     expect(renderer.toJSON()).toBeNull()
     expect(router.replace).not.toHaveBeenCalled()
 
@@ -93,10 +93,10 @@ describe('AuthGuard', () => {
     act(() => renderer.unmount())
   })
 
-  test('redirects a visitor without a token to login with the current URL', () => {
+  test('redirects a visitor without a token to login with the current URL', async () => {
     globalThis.localStorage = { getItem: () => null } as Storage
     const getCurrentUser = spyOn(authApi, 'getCurrentUser')
-    const renderer = render(<AuthGuard><span>Denied</span></AuthGuard>, '/settings', 'tab=profile')
+    const renderer = await render(<AuthGuard><span>Denied</span></AuthGuard>, '/settings', 'tab=profile')
 
     expect(renderer.toJSON()).toBeNull()
     expect(getCurrentUser).not.toHaveBeenCalled()
@@ -108,8 +108,7 @@ describe('AuthGuard', () => {
     globalThis.localStorage = { getItem: () => 'expired' } as Storage
     spyOn(authApi, 'getCurrentUser').mockRejectedValue(new Error('unauthorized'))
 
-    const renderer = render(<AuthGuard><span>Denied</span></AuthGuard>, '/app')
-    await act(async () => Promise.resolve())
+    const renderer = await render(<AuthGuard><span>Denied</span></AuthGuard>, '/app')
 
     expect(renderer.toJSON()).toBeNull()
     expect(router.replace).toHaveBeenCalledWith('/login?redirect=%2Fapp')
@@ -118,19 +117,19 @@ describe('AuthGuard', () => {
 })
 
 describe('PermissionGuard', () => {
-  test('handles loading, allowed, and denied fallback states', () => {
+  test('handles loading, allowed, and denied fallback states', async () => {
     usePermissions(permissionsState([], { loading: true }))
-    const loading = render(<FlexiblePermissionGuard permission="item:read">Allowed</FlexiblePermissionGuard>)
+    const loading = await render(<FlexiblePermissionGuard permission="item:read">Allowed</FlexiblePermissionGuard>)
     expect(loading.toJSON()).toBeNull()
     act(() => loading.unmount())
 
     usePermissions(permissionsState(['item:read']))
-    const allowed = render(<FlexiblePermissionGuard permission="item:read">Allowed</FlexiblePermissionGuard>)
+    const allowed = await render(<FlexiblePermissionGuard permission="item:read">Allowed</FlexiblePermissionGuard>)
     expect(json(allowed)).toContain('Allowed')
     act(() => allowed.unmount())
 
     usePermissions(permissionsState())
-    const denied = render(
+    const denied = await render(
       <FlexiblePermissionGuard permission="item:read" fallback={<span>Fallback</span>}>
         Allowed
       </FlexiblePermissionGuard>,
@@ -139,15 +138,15 @@ describe('PermissionGuard', () => {
     act(() => denied.unmount())
   })
 
-  test('supports any and all permission lists', () => {
+  test('supports any and all permission lists', async () => {
     usePermissions(permissionsState(['item:read']))
-    const any = render(
+    const any = await render(
       <FlexiblePermissionGuard permission={['item:read', 'item:write']}>Any</FlexiblePermissionGuard>,
     )
     expect(json(any)).toContain('Any')
     act(() => any.unmount())
 
-    const all = render(
+    const all = await render(
       <FlexiblePermissionGuard permission={['item:read', 'item:write']} requireAll fallback="Denied">
         All
       </FlexiblePermissionGuard>,
@@ -158,25 +157,25 @@ describe('PermissionGuard', () => {
 })
 
 describe('auth permission guards', () => {
-  test('single permission guard handles loading, allowed, fallback, and redirect', () => {
+  test('single permission guard handles loading, allowed, fallback, and redirect', async () => {
     usePermissions(permissionsState([], { loading: true }))
-    const loading = render(<PermissionGuard permission="item:read">Allowed</PermissionGuard>)
+    const loading = await render(<PermissionGuard permission="item:read">Allowed</PermissionGuard>)
     expect(loading.toJSON()).toBeNull()
     act(() => loading.unmount())
 
     usePermissions(permissionsState(['item:read']))
-    const allowed = render(<PermissionGuard permission="item:read">Allowed</PermissionGuard>)
+    const allowed = await render(<PermissionGuard permission="item:read">Allowed</PermissionGuard>)
     expect(json(allowed)).toContain('Allowed')
     act(() => allowed.unmount())
 
     usePermissions(permissionsState())
-    const fallback = render(
+    const fallback = await render(
       <PermissionGuard permission="item:read" fallback="Fallback">Allowed</PermissionGuard>,
     )
     expect(json(fallback)).toContain('Fallback')
     act(() => fallback.unmount())
 
-    const redirected = render(
+    const redirected = await render(
       <PermissionGuard permission="item:read" redirectTo="/app">Allowed</PermissionGuard>,
     )
     expect(redirected.toJSON()).toBeNull()
@@ -184,13 +183,13 @@ describe('auth permission guards', () => {
     act(() => redirected.unmount())
   })
 
-  test('any, all, and superuser guards enforce their respective access rules', () => {
+  test('any, all, and superuser guards enforce their respective access rules', async () => {
     usePermissions(permissionsState(['item:read']))
-    const any = render(<AnyPermissionGuard permissions={['item:read', 'item:write']}>Any</AnyPermissionGuard>)
+    const any = await render(<AnyPermissionGuard permissions={['item:read', 'item:write']}>Any</AnyPermissionGuard>)
     expect(json(any)).toContain('Any')
     act(() => any.unmount())
 
-    const all = render(
+    const all = await render(
       <AllPermissionsGuard permissions={['item:read', 'item:write']} fallback="All denied">
         All
       </AllPermissionsGuard>,
@@ -199,19 +198,19 @@ describe('auth permission guards', () => {
     act(() => all.unmount())
 
     usePermissions(permissionsState([], { isSuperuser: true }))
-    const superuser = render(<SuperuserGuard>Superuser</SuperuserGuard>)
+    const superuser = await render(<SuperuserGuard>Superuser</SuperuserGuard>)
     expect(json(superuser)).toContain('Superuser')
     act(() => superuser.unmount())
   })
 
-  test('route guard allows permitted routes and redirects denied routes', () => {
+  test('route guard allows permitted routes and redirects denied routes', async () => {
     usePermissions(permissionsState(['admin:dashboard:access']))
-    const allowed = render(<RoutePermissionGuard>Dashboard</RoutePermissionGuard>)
+    const allowed = await render(<RoutePermissionGuard>Dashboard</RoutePermissionGuard>)
     expect(json(allowed)).toContain('Dashboard')
     act(() => allowed.unmount())
 
     usePermissions(permissionsState())
-    const denied = render(<RoutePermissionGuard>Dashboard</RoutePermissionGuard>)
+    const denied = await render(<RoutePermissionGuard>Dashboard</RoutePermissionGuard>)
     expect(denied.toJSON()).toBeNull()
     expect(router.replace).toHaveBeenCalledWith('/app')
     act(() => denied.unmount())
