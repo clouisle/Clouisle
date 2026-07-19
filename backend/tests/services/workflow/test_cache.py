@@ -34,8 +34,6 @@ def test_hash_content_distinguishes_values_and_hashes_raw_strings():
     assert hash_content("hello") == "2cf24dba5fb0a30e"
 
 
-
-
 @pytest.fixture
 def redis():
     client = MagicMock()
