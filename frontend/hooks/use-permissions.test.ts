@@ -32,7 +32,8 @@ mock.module('@/lib/api', () => ({
 
 const { canAccessMenuItem, MENU_PERMISSION_MAP, usePermissions } = await import('./use-permissions')
 
-function renderPermissions() {
+function usePermissionsHarness() {
+  // eslint-disable-next-line react-hooks/globals -- reset the test-only mocked hook cursor.
   stateCursor = 0
   return usePermissions()
 }
@@ -77,10 +78,10 @@ describe('usePermissions', () => {
       ],
     })
 
-    expect(renderPermissions().loading).toBe(true)
+    expect(usePermissionsHarness().loading).toBe(true)
     await Promise.resolve()
 
-    const permissions = renderPermissions()
+    const permissions = usePermissionsHarness()
     expect(getCurrentUserCalls).toEqual([[{ skipAuthRedirect: true }]])
     expect(permissions.loading).toBe(false)
     expect(permissions.hasPermission('team:read')).toBe(true)
@@ -92,10 +93,10 @@ describe('usePermissions', () => {
   it('grants all permissions to superusers', async () => {
     getCurrentUser = async () => user({ is_superuser: true })
 
-    renderPermissions()
+    usePermissionsHarness()
     await Promise.resolve()
 
-    const permissions = renderPermissions()
+    const permissions = usePermissionsHarness()
     expect(permissions.isSuperuser).toBe(true)
     expect(permissions.hasPermission('any:permission')).toBe(true)
     expect(permissions.permissions).toEqual(new Set(['*']))
@@ -104,10 +105,10 @@ describe('usePermissions', () => {
   it('cleans up loading after a failed user request', async () => {
     getCurrentUser = async () => { throw new Error('unauthenticated') }
 
-    renderPermissions()
+    usePermissionsHarness()
     await Promise.resolve()
 
-    const permissions = renderPermissions()
+    const permissions = usePermissionsHarness()
     expect(permissions.user).toBeNull()
     expect(permissions.loading).toBe(false)
     expect(permissions.permissions).toEqual(new Set())
