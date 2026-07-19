@@ -82,6 +82,8 @@
 - Frontend progress checkpoint (2026-07-20, commits through `39a07abc`): 536 isolated tests passed; Bun reports 85.71% lines and 82.84% functions after tool-element and permission-guard behavior coverage. The source census still reports 270 eligible application files absent from LCOV. The final independent 95% metrics and zero-absent-source gate remain inactive.
 - Frontend build checkpoint (2026-07-20, commit `192babe0`): `bun run build` passes after excluding the standalone Bun-only coverage script from Next.js application typechecking; the script remains run directly by `bun run coverage:check`.
 - Backend progress checkpoint (2026-07-20, commits through `7d7903cd`): 1,781 tests passed and 2 were skipped; whole-app combined coverage is 53% (`37,272` statements, `15,403` missed; `11,640` branches, `1,214` partial) after tool-service error coverage. The final independent 95% line and branch gates remain inactive.
+- Backend progress checkpoint (2026-07-20, commits through `e19458e5`): 1,784 tests passed and 2 were skipped; whole-app combined coverage is 53% (`37,272` statements, `15,392` missed; `11,640` branches, `1,213` partial) after workflow-orchestrator and event-loop fallback coverage. The final independent 95% line and branch gates remain inactive.
+- Frontend progress checkpoint (2026-07-20, commits through `d813b0a4`): 542 isolated tests passed; dashboard workflow-status, agent-performance, and team-token charts now cover loading, empty, and populated data states. The source census remains intentionally failing because eligible sources are still absent from LCOV; final independent 95% metrics and zero-absent-source gate remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
