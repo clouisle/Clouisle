@@ -9,7 +9,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  BreadcrumbEllipsis,
 } from './breadcrumb'
+import { AvatarBadge, AvatarGroup, AvatarGroupCount } from './avatar'
 import { RadioGroup, RadioGroupItem } from './radio-group'
 import { Switch } from './switch'
 import { ToggleGroup, ToggleGroupItem } from './toggle-group'
@@ -28,6 +30,21 @@ describe('simple UI primitive semantics', () => {
     expect(html).toContain('YL')
   })
 
+  test('renders avatar image, grouping, count, and badge semantics', () => {
+    const html = renderToStaticMarkup(
+      <AvatarGroup className="team">
+        <Avatar size="sm">
+          <AvatarBadge>+</AvatarBadge>
+        </Avatar>
+        <AvatarGroupCount>2</AvatarGroupCount>
+      </AvatarGroup>,
+    )
+
+    expect(html).toContain('data-slot="avatar-group"')
+    expect(html).toContain('data-slot="avatar-badge"')
+    expect(html).toContain('data-slot="avatar-group-count"')
+  })
+
   test('renders an accessible breadcrumb trail', () => {
     const html = renderToStaticMarkup(
       <Breadcrumb>
@@ -35,7 +52,8 @@ describe('simple UI primitive semantics', () => {
           <BreadcrumbItem>
             <BreadcrumbLink href="/home">Home</BreadcrumbLink>
           </BreadcrumbItem>
-          <BreadcrumbSeparator />
+          <BreadcrumbSeparator>→</BreadcrumbSeparator>
+          <BreadcrumbEllipsis />
           <BreadcrumbItem>
             <BreadcrumbPage>Settings</BreadcrumbPage>
           </BreadcrumbItem>
@@ -47,6 +65,8 @@ describe('simple UI primitive semantics', () => {
     expect(html).toContain('href="/home"')
     expect(html).toContain('aria-current="page"')
     expect(html).toContain('aria-hidden="true"')
+    expect(html).toContain('→')
+    expect(html).toContain('More')
   })
 
   test('exposes radio, switch, and toggle state semantics', () => {
