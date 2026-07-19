@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
-import { api } from './client'
 import { usersApi as adminUsersApi } from './admin/users'
-import { usersApi } from './users'
+import { api } from './client'
+import { totpApi, usersApi } from './users'
 
 let getSpy: ReturnType<typeof spyOn<typeof api, 'get'>>
 let postSpy: ReturnType<typeof spyOn<typeof api, 'post'>>
@@ -64,6 +64,33 @@ describe('admin users API', () => {
 })
 
 describe('current user API', () => {
+  it('gets the current user and password status', async () => {
+    getSpy.mockResolvedValue({})
+
+    await usersApi.getCurrentUser()
+    await usersApi.getPasswordStatus()
+
+    expect(getSpy).toHaveBeenNthCalledWith(1, '/users/me')
+    expect(getSpy).toHaveBeenNthCalledWith(2, '/users/me/password-status')
+  })
+
+  it('updates the profile with and without request options', async () => {
+    const data = { username: 'ada', locale: 'en' }
+    putSpy.mockResolvedValue({})
+
+    await usersApi.updateProfile(data)
+    await usersApi.updateProfile(data, { skipAuthRedirect: true, silent: true })
+
+    expect(putSpy).toHaveBeenNthCalledWith(1, '/users/me', data, {
+      skipAuthRedirect: undefined,
+      silent: undefined,
+    })
+    expect(putSpy).toHaveBeenNthCalledWith(2, '/users/me', data, {
+      skipAuthRedirect: true,
+      silent: true,
+    })
+  })
+
   it('posts password changes with the requested silent option', async () => {
     postSpy.mockResolvedValue(null)
 
@@ -76,11 +103,107 @@ describe('current user API', () => {
     )
   })
 
+  it('posts password changes without request options', async () => {
+    postSpy.mockResolvedValue(null)
+
+    await usersApi.changePassword({ current_password: 'old', new_password: 'new' })
+
+    expect(postSpy).toHaveBeenCalledWith(
+      '/users/me/change-password',
+      { current_password: 'old', new_password: 'new' },
+      { silent: undefined }
+    )
+  })
+
+  it('deletes the account with and without request options', async () => {
+    deleteSpy.mockResolvedValue(null)
+
+    await usersApi.deleteAccount('secret')
+    await usersApi.deleteAccount('secret', { silent: true })
+
+    expect(deleteSpy).toHaveBeenNthCalledWith(1, '/users/me', { password: 'secret' }, { silent: undefined })
+    expect(deleteSpy).toHaveBeenNthCalledWith(2, '/users/me', { password: 'secret' }, { silent: true })
+  })
+
   it('propagates password status errors', async () => {
     const error = new Error('unavailable')
     getSpy.mockRejectedValue(error)
 
     await expect(usersApi.getPasswordStatus()).rejects.toBe(error)
     expect(getSpy).toHaveBeenCalledWith('/users/me/password-status')
+  })
+
+  it('propagates mutation errors', async () => {
+    const error = new Error('rejected')
+    putSpy.mockRejectedValue(error)
+    postSpy.mockRejectedValue(error)
+    deleteSpy.mockRejectedValue(error)
+
+    await expect(usersApi.updateProfile({ username: 'ada' })).rejects.toBe(error)
+    await expect(usersApi.changePassword({ current_password: 'old', new_password: 'new' })).rejects.toBe(error)
+    await expect(usersApi.deleteAccount('secret')).rejects.toBe(error)
+  })
+})
+
+describe('TOTP API', () => {
+  it('uses setup, enable, and status routes', async () => {
+    postSpy.mockResolvedValue({})
+    getSpy.mockResolvedValue({})
+
+    await totpApi.setup()
+    await totpApi.enable('123456')
+    await totpApi.getStatus()
+
+    expect(postSpy).toHaveBeenNthCalledWith(1, '/totp/setup')
+    expect(postSpy).toHaveBeenNthCalledWith(2, '/totp/enable', { code: '123456' })
+    expect(getSpy).toHaveBeenCalledWith('/totp/status')
+  })
+
+  it('disables TOTP with default and explicit options', async () => {
+    postSpy.mockResolvedValue(null)
+
+    await totpApi.disable('secret', '123456')
+    await totpApi.disable('secret', 'backup-code', true, { silent: true })
+
+    expect(postSpy).toHaveBeenNthCalledWith(
+      1,
+      '/totp/disable',
+      { password: 'secret', code: '123456', is_backup_code: false },
+      { silent: undefined }
+    )
+    expect(postSpy).toHaveBeenNthCalledWith(
+      2,
+      '/totp/disable',
+      { password: 'secret', code: 'backup-code', is_backup_code: true },
+      { silent: true }
+    )
+  })
+
+  it('regenerates backup codes with and without request options', async () => {
+    postSpy.mockResolvedValue({ codes: ['backup-code'] })
+
+    await totpApi.regenerateBackupCodes('123456')
+    await totpApi.regenerateBackupCodes('123456', { silent: true })
+
+    expect(postSpy).toHaveBeenNthCalledWith(
+      1,
+      '/totp/regenerate-backup-codes',
+      { code: '123456' },
+      { silent: undefined }
+    )
+    expect(postSpy).toHaveBeenNthCalledWith(
+      2,
+      '/totp/regenerate-backup-codes',
+      { code: '123456' },
+      { silent: true }
+    )
+  })
+
+  it('propagates TOTP request errors', async () => {
+    const error = new Error('invalid code')
+    postSpy.mockRejectedValue(error)
+
+    await expect(totpApi.enable('bad-code')).rejects.toBe(error)
+    expect(postSpy).toHaveBeenCalledWith('/totp/enable', { code: 'bad-code' })
   })
 })
