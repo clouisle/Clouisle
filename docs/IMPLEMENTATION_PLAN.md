@@ -2,6 +2,13 @@
 
 ## Active
 
+- **issue-255-test-coverage** — In progress. Establish honest backend and frontend coverage measurement, cover critical happy/error paths, and enforce independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Backend and frontend coverage baselines
+  - [ ] 3. Backend critical-path coverage
+  - [ ] 4. Frontend critical-path coverage
+  - [ ] 5. CI reporting, final 95% gates, and documentation
+
 - **admin-video-model-generation-test** — Complete. Replace constructor-only video model tests with a confirmed, billable real generation and completion check. See `docs/plan/admin-video-model-generation-test.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Real generation and polling test
