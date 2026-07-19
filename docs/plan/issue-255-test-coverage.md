@@ -67,9 +67,9 @@
 ## Baseline Results
 - Backend clean baseline (2026-07-19, commit `f45530d`): 43.22% line coverage (`16,100/37,249`) and 18.95% branch coverage (`2,204/11,630`) over all `app` source; 710 tests passed and 2 were skipped. The existing 99.56% report is invalid because it covers only `app/llm/types`.
 - Frontend provisional baseline (2026-07-19): Bun's loaded-file report is 75.77% lines and 94.44% functions across only three loaded source files; the census reports 467 eligible application files absent from LCOV. The loaded-file percentage is therefore not acceptance evidence.
-- Backend progress checkpoint (2026-07-19, commit `f5f76e3c`): 1,218 tests passed and 2 were skipped; whole-app combined coverage is 47% after service, workflow benchmark/executor, notification, audit/password-expiration, vector-store, and knowledge-task batches. The final independent 95% line and branch gates remain inactive.
-- Frontend progress checkpoint (2026-07-19, commit `3b618cf1`): 313 tests passed; Bun's loaded-module report is 70.15% lines and 64.58% functions after completing agent/client and knowledge-base API behavior coverage. The source census still reports 376 eligible files absent from LCOV. Settings/team context tests subsequently landed and pass targeted validation, but await the next full measurement.
-- Baseline blockers found on 2026-07-19: stale workflow tests import renamed/removed APIs (`ExecutionNode`, `CircuitState`, and obsolete decorator signatures), and other existing failures span sandbox/workflow behavior. These must be aligned with current behavior before the backend baseline is valid.
+- Backend progress checkpoint (2026-07-19): 1,337 tests passed and 2 were skipped; whole-app combined coverage is 49% after service, workflow benchmark/executor, notification, audit/password-expiration, vector-store, and knowledge-task batches. The final independent 95% line and branch gates remain inactive.
+- Frontend progress checkpoint (2026-07-19, commits `57addbcb`, `74192ca0`, and `bf03c57b`): 377 isolated tests passed; Bun reports 77.05% lines and 73.37% functions after resolving cross-suite browser-global pollution and adding branding/theme coverage. The source census still reports 344 eligible application files absent from LCOV. The final independent 95% metrics and zero-absent-source gate remain inactive.
+- Backend baseline collection issues previously observed in stale worktrees have been resolved on the branch: the complete current suite is the source of truth.
 
 ## Testing Strategy
 - Happy path tests:
