@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import { convertBackendMessage, convertBackendMessages, type BackendMessage } from './message-converter'
+import {
+  convertBackendMessage,
+  convertBackendMessages,
+  isBackendMessage,
+  type BackendMessage,
+} from './message-converter'
 
 function message(overrides: Partial<BackendMessage>): BackendMessage {
   return {
@@ -31,6 +36,109 @@ describe('message converter', () => {
       { type: 'text', text: 'See attachments', state: 'done' },
       { type: 'image', url: 'https://example.com/image.png' },
       { type: 'file', filename: 'notes.txt', url: 'https://example.com/notes.txt', size: 42, mimeType: 'text/plain' },
+    ])
+  })
+
+  it('converts assistant reasoning, user input requests, status, and metadata', () => {
+    const converted = convertBackendMessage(message({
+      content: `Partial answer
+<user_input_request>
+  <question>Choose a path</question>
+  <options><option>Alpha</option><option>Beta</option></options>
+</user_input_request>`,
+      reasoning_content: 'Consider both paths',
+      duration_ms: 1250,
+      round_status: 'max_iterations_reached',
+      is_manually_stopped: true,
+      version_number: 2,
+      version_count: 3,
+    }))
+
+    expect(converted).toMatchObject({
+      parts: [
+        { type: 'reasoning', text: 'Consider both paths', state: 'done', duration: 1250 },
+        { type: 'text', text: 'Partial answer', state: 'done' },
+        { type: 'user-input-request', question: 'Choose a path', options: ['Alpha', 'Beta'], state: 'answered' },
+        { type: 'iteration-cap-reached' },
+        { type: 'stopped' },
+      ],
+      metadata: { isManuallyStopped: true, isError: false, preservedPartialProgress: false },
+      versionNumber: 2,
+      versionCount: 3,
+    })
+  })
+
+  it('keeps malformed user input request XML as text', () => {
+    const content = '<user_input_request><question>Choose one</question><options><option>Only</option></options></user_input_request>'
+
+    expect(convertBackendMessage(message({ content }))?.parts).toEqual([
+      { type: 'text', text: content, state: 'done' },
+    ])
+  })
+
+  it('converts ordered assistant steps and their tool results', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Final answer',
+      steps: [
+        {
+          id: 'tool-step',
+          role: 'tool',
+          content: JSON.stringify({ answer: 42 }),
+          tool_call_id: 'call-1',
+          tool_name: 'calculator',
+          created_at: '2026-07-19T00:00:02.000Z',
+          round_index: 2,
+        },
+        {
+          id: 'assistant-step',
+          role: 'assistant',
+          content: 'Using calculator',
+          reasoning_content: 'Need arithmetic',
+          tool_calls: [{ id: 'call-1', name: 'calculate', display_name: 'Calculator', arguments: { expression: '6 * 7' } }],
+          created_at: '2026-07-19T00:00:01.000Z',
+          round_index: 1,
+        },
+      ],
+    }))
+
+    expect(converted?.parts).toEqual([
+      { type: 'reasoning', text: 'Need arithmetic', state: 'done' },
+      { type: 'text', text: 'Using calculator', state: 'done' },
+      { type: 'tool-call', toolCallId: 'call-1', toolName: 'calculate', toolDisplayName: 'Calculator', input: { expression: '6 * 7' }, state: 'done' },
+      { type: 'tool-result', toolCallId: 'call-1', toolName: 'calculator', output: { answer: 42 }, isError: false },
+      { type: 'text', text: 'Final answer', state: 'done' },
+    ])
+  })
+
+  it('renders media results from assistant step traces', () => {
+    const output = {
+      kind: 'media.image',
+      success: true,
+      images: [{ image: { url: 'https://example.com/step.png' } }],
+    }
+    const converted = convertBackendMessage(message({
+      content: '',
+      steps: [
+        {
+          id: 'assistant-step',
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ id: 'call-1', name: 'generate_image', arguments: {} }],
+          created_at: '2026-07-19T00:00:01.000Z',
+        },
+        {
+          id: 'tool-step',
+          role: 'tool',
+          content: JSON.stringify(output),
+          tool_call_id: 'call-1',
+          created_at: '2026-07-19T00:00:02.000Z',
+        },
+      ],
+    }))
+
+    expect(converted?.parts).toEqual([
+      { type: 'tool-call', toolCallId: 'call-1', toolName: 'generate_image', toolDisplayName: undefined, input: {}, state: 'done' },
+      { type: 'media-result', output },
     ])
   })
 
@@ -83,5 +191,62 @@ describe('message converter', () => {
       },
     })
     expect(converted[0].parts.some((part) => part.type === 'tool-result')).toBe(false)
+  })
+
+  it('aggregates RAG chunks onto the next assistant response', () => {
+    const converted = convertBackendMessages([
+      message({
+        role: 'user',
+        content: 'Question',
+        rag_context: [
+          { document_id: 'doc-1', document_name: 'Guide', content: 'First chunk', kb_id: 'kb-1', score: 0.4 },
+          { document_id: 'doc-1', document_name: 'Guide', content: 'Second chunk', kb_id: 'kb-1', kb_name: 'Docs', score: 0.9 },
+          { document_id: 'doc-2', document_name: 'FAQ', content: 'Other answer' },
+        ],
+      }),
+      message({ id: 'assistant-1', content: 'Answer' }),
+      message({ id: 'assistant-2', content: 'Follow-up' }),
+    ])
+
+    expect(converted[1].parts.slice(-2)).toEqual([
+      {
+        type: 'source-document',
+        sourceId: 'doc-1',
+        documentId: 'doc-1',
+        documentName: 'Guide',
+        content: 'First chunk\n\nSecond chunk',
+        metadata: { kb_id: 'kb-1', kb_name: undefined, score: 0.9 },
+      },
+      {
+        type: 'source-document',
+        sourceId: 'doc-2',
+        documentId: 'doc-2',
+        documentName: 'FAQ',
+        content: 'Other answer',
+        metadata: { kb_id: undefined, kb_name: undefined, score: undefined },
+      },
+    ])
+    expect(converted[2].parts.some((part) => part.type === 'source-document')).toBe(false)
+  })
+
+  it('marks error metadata and preserved partial progress', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Provider unavailable',
+      reasoning_content: 'Partial reasoning',
+      round_status: 'error',
+    }))
+
+    expect(converted?.metadata).toEqual({
+      isManuallyStopped: false,
+      isError: true,
+      preservedPartialProgress: true,
+      errorMessage: 'Provider unavailable',
+    })
+  })
+
+  it('recognizes only message-shaped objects', () => {
+    expect(isBackendMessage(message({}))).toBe(true)
+    expect(isBackendMessage(null)).toBe(false)
+    expect(isBackendMessage({ id: 'message-1', role: 'assistant' })).toBe(false)
   })
 })
