@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 
+from app.services.workflow import templates as templates_module
 from app.services.workflow.templates import (
     TemplateCategory,
     TemplateManager,
@@ -189,6 +190,23 @@ async def test_rating_updates_average_and_rejects_invalid_ratings(
     assert template.rating_count == 2
     assert await manager.rate_template(template.id, "user-3", 0) is False
     assert await manager.rate_template("missing", "user-3", 4) is False
+
+
+async def test_public_category_and_featured_helpers(manager: TemplateManager):
+    assert await manager.get_by_category(TemplateCategory.GENERAL) == [
+        await manager.get_template("builtin_qa_bot")
+    ]
+    assert await manager.get_featured(limit=1) == [
+        await manager.get_template("builtin_qa_bot")
+    ]
+
+
+def test_get_template_manager_reuses_global_instance(monkeypatch):
+    monkeypatch.setattr(templates_module, "_template_manager", None)
+
+    manager = templates_module.get_template_manager()
+
+    assert templates_module.get_template_manager() is manager
 
 
 async def test_serialization_and_stats_reflect_template_state(manager: TemplateManager):
