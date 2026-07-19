@@ -172,3 +172,89 @@ class TestToolNodeExecutorCompatibility:
             user_id=None,
             team_id=None,
         )
+
+    @pytest.mark.anyio
+    async def test_execute_rejects_config_without_tool_identifier(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock()
+
+        result = await ToolNodeExecutor().execute(
+            {"data": {"toolConfig": {"toolType": "custom"}}},
+            context,
+            MagicMock(),
+        )
+
+        assert result.error == "tool_not_found"
+        context.resolve_variable_ref.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_execute_returns_not_found_when_configured_tool_is_missing(self):
+        run = MagicMock(workflow_id=None)
+
+        with patch("app.models.tool.Tool.filter") as mock_filter:
+            mock_filter.return_value.first = AsyncMock(return_value=None)
+            result = await ToolNodeExecutor().execute(
+                {"data": {"config": {"toolId": "missing-tool"}}},
+                MagicMock(),
+                run,
+            )
+
+        assert result.error == "tool_not_found"
+        mock_filter.assert_called_once_with(id="missing-tool")
+
+    @pytest.mark.anyio
+    async def test_execute_maps_tool_failure_to_public_error_outputs(self):
+        run = MagicMock(workflow_id=None, triggered_by_id="user-1")
+        tool = MagicMock()
+
+        with (
+            patch("app.models.tool.Tool.filter") as mock_filter,
+            patch(
+                "app.services.tool.ToolExecutor.execute",
+                new=AsyncMock(side_effect=RuntimeError("private detail")),
+            ),
+            patch(
+                "app.services.workflow.executors.tool.translate_public_workflow_error",
+                return_value="public error",
+            ) as translate_error,
+        ):
+            mock_filter.return_value.first = AsyncMock(return_value=tool)
+            result = await ToolNodeExecutor().execute(
+                {
+                    "data": {
+                        "toolConfig": {
+                            "toolId": "tool-1",
+                            "outputVariable": "answer",
+                        }
+                    }
+                },
+                MagicMock(),
+                run,
+            )
+
+        assert result.error == "public error"
+        assert result.outputs["result"] is None
+        assert result.outputs["answer"] is None
+        assert result.outputs["status"] == "error"
+        assert isinstance(result.outputs["executionTime"], int)
+        translate_error.assert_called_once()
+        assert isinstance(translate_error.call_args.args[0], RuntimeError)
+
+    def test_output_declarations_include_configured_alias(self):
+        executor = ToolNodeExecutor()
+
+        assert executor.get_output_variables({"outputVariable": "answer"}) == [
+            {"name": "answer", "type": "any"},
+            {"name": "result", "type": "any"},
+            {"name": "status", "type": "string"},
+            {"name": "executionTime", "type": "number"},
+        ]
+        assert [
+            (declaration.name, declaration.type.kind)
+            for declaration in executor.get_output_specs({"outputVariable": "answer"})
+        ] == [
+            ("answer", "any"),
+            ("result", "any"),
+            ("status", "string"),
+            ("executionTime", "number"),
+        ]
