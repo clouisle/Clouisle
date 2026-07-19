@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getNotificationDisplayMeta } from './display'
+import { getNotificationDisplayMeta, normalizeNotificationType } from './display'
 import type { NotificationItem } from '@/lib/api'
 
 function notification(overrides: Partial<NotificationItem>): Pick<NotificationItem, 'type' | 'source' | 'scope' | 'level'> {
@@ -11,6 +11,12 @@ function notification(overrides: Partial<NotificationItem>): Pick<NotificationIt
     ...overrides,
   }
 }
+
+describe('normalizeNotificationType', () => {
+  it('normalizes every dot in a notification type', () => {
+    expect(normalizeNotificationType('workflow.run.failed')).toBe('workflow_run_failed')
+  })
+})
 
 describe('getNotificationDisplayMeta', () => {
   it('promotes system announcements above ordinary notifications', () => {
@@ -58,12 +64,25 @@ describe('getNotificationDisplayMeta', () => {
     expect(meta.priorityScore).toBe(1)
   })
 
-  it('classifies unmatched notification types as general', () => {
-    const meta = getNotificationDisplayMeta(notification({ type: 'comment_replied', level: 'high' }))
+  it('recognizes any system-sourced announcement suffix after normalization', () => {
+    const meta = getNotificationDisplayMeta(notification({ type: 'maintenance.announcement', source: 'system', level: 'low' }))
 
-    expect(meta.kind).toBe('general')
-    expect(meta.isAnnouncement).toBe(false)
-    expect(meta.isProminent).toBe(true)
-    expect(meta.priorityScore).toBe(3)
+    expect(meta).toEqual({
+      kind: 'announcement',
+      isAnnouncement: true,
+      isProminent: true,
+      priorityScore: 3,
+    })
+  })
+
+  it('keeps non-system announcement suffixes general', () => {
+    const meta = getNotificationDisplayMeta(notification({ type: 'maintenance.announcement', source: 'biz', level: 'medium' }))
+
+    expect(meta).toEqual({
+      kind: 'general',
+      isAnnouncement: false,
+      isProminent: false,
+      priorityScore: 2,
+    })
   })
 })
