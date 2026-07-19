@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from app.services.workflow.types import (
+    NodeInputMapping,
+    NodeOutputDecl,
     TypeSpec,
     infer_type_spec,
+    legacy_type_to_spec,
     merge_type_spec,
     to_text,
 )
@@ -116,6 +120,32 @@ class TestMergeTypeSpec:
         assert merge_type_spec(a, b).source == "declared"
         c = TypeSpec(kind="string", source="inferred")
         assert merge_type_spec(a, c).source == "inferred"
+
+
+class TestPublicModels:
+    def test_node_input_mapping_defaults_and_preserves_constant(self):
+        mapping = NodeInputMapping(name="query", constantValue={"locale": "zh"})
+
+        assert mapping.source == "variable"
+        assert mapping.variableRef is None
+        assert mapping.constantValue == {"locale": "zh"}
+
+    def test_public_models_reject_invalid_fields(self):
+        with pytest.raises(ValidationError):
+            TypeSpec(kind="unknown")
+        with pytest.raises(ValidationError):
+            NodeInputMapping(name="query", unexpected=True)
+        with pytest.raises(ValidationError):
+            NodeOutputDecl(name="result", type={"kind": "string"}, unexpected=True)
+
+
+class TestLegacyTypeToSpec:
+    @pytest.mark.parametrize(
+        ("type_str", "expected"),
+        [("TEXT", "string"), ("list", "array"), (None, "any"), ("unknown", "any")],
+    )
+    def test_aliases_and_unknown_values_fallback_to_any(self, type_str, expected):
+        assert legacy_type_to_spec(type_str).kind == expected
 
 
 class TestToText:
