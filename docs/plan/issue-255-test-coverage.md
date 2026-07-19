@@ -161,6 +161,7 @@
 - Frontend progress checkpoint (2026-07-20, commit `8fa75be2`): 710 isolated tests passed with 3,060 assertions; Bun reports 90.91% lines and 89.09% functions after notifications-page permission-protected dashboard-layout coverage. The source census remains failing with 211 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 - Frontend progress checkpoint (2026-07-20, commit `c89daa54`): 712 isolated tests passed with 3,064 assertions; Bun reports 90.93% lines and 88.84% functions after security-settings validation and read-only-control coverage. The source census remains failing with 210 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 - Frontend progress checkpoint (2026-07-20, commit `bab6ed11`): 714 isolated tests passed with 3,069 assertions; Bun reports 90.90% lines and 88.68% functions after SSO provider-toggle and read-only-action coverage. The source census remains failing with 209 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
+- Frontend progress checkpoint (2026-07-20, commit `88160116`): 716 isolated tests passed with 3,074 assertions; Bun reports 90.85% lines and 88.47% functions after storage-settings validation and read-only-save coverage. The source census remains failing with 208 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
