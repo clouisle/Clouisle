@@ -89,6 +89,8 @@
 - Frontend progress checkpoint (2026-07-20, commits through `c9813ea4`): 576 isolated tests passed with 2,588 assertions; Bun reports 86.64% lines and 84.10% functions. The source census reports 266 eligible application files absent from LCOV. Dashboard workflow-trigger states and tooltips, debounce timing, and API/schema coverage batches are included; final independent 95% metrics and the zero-absent-source gate remain inactive.
 - Backend progress checkpoint (2026-07-20, commits through `9eef9f77`): 1,831 tests passed and 2 were skipped; whole-app combined coverage is 54%. The audit-decorator success and failure paths are covered; final independent 95% line and branch gates remain inactive.
 - Frontend progress checkpoint (2026-07-20, commits through `935eef86`): 585 isolated tests passed with 2,618 assertions. Permission-guard single, OR, require-all, fallback, and loading paths are covered. The source census and final independent 95% metrics remain inactive because eligible sources are still absent from LCOV.
+- Backend focused checkpoint (2026-07-20, commit `41e0b0f0`): 16 Volcengine audio-generation tests passed. Payload precedence, validation, reference conversion, and provider response/error paths are covered; the final whole-app 95% line and branch gates remain inactive.
+- Frontend focused checkpoint (2026-07-20): the active branch's broader validation-helper suite has 11 passing tests and 27 assertions, with `lib/validation.ts` at 100% line/function coverage. The final source census and 95% frontend metrics remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
