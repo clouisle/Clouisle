@@ -209,3 +209,20 @@ def test_chunk_text_custom_separator_applies_overlap():
     # Overlap should appear at the start of chunk 1 and 2.
     assert chunks[1]["overlap_length"] == 10
     assert chunks[2]["overlap_length"] == 10
+    assert chunks[1]["content"].startswith(chunks[0]["content"][-10:])
+    assert chunks[1]["char_count"] == len(chunks[1]["content"])
+    assert chunks[1]["token_count"] == len(chunks[1]["content"]) // 4
+
+
+def test_chunk_text_empty_and_exact_overlap_boundaries():
+    assert chunk_text(" \n ") == []
+
+    chunks = chunk_text(
+        "abc|def",
+        chunk_size=10,
+        chunk_overlap=3,
+        separators=["|"],
+    )
+
+    assert [chunk["content"] for chunk in chunks] == ["abc", "abcdef"]
+    assert [chunk["overlap_length"] for chunk in chunks] == [0, 3]
