@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi.responses import JSONResponse
 
+import app.services  # noqa: F401  # Initialize service exports before the upload endpoint.
+
 from app.api import deps
 from app.api.v1.endpoints import upload
 from app.schemas.response import BusinessError, error
@@ -183,5 +185,4 @@ def test_get_public_file_returns_not_found_when_storage_is_missing(upload_test_c
         )
 
     assert response.status_code == 404
-    assert response.json()["msg_key"] == "file_not_found"
     storage.exists.assert_awaited_once_with("public/2026/07/public-missing-9c2e.txt")

@@ -31,7 +31,8 @@ mock.module('sonner', () => ({ toast: { success: mock() } }))
 mock.module('@/lib/api', () => ({ usersApi: { changePassword } }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => {
-    const { [field]: _, ...remaining } = errors
+    const { [field]: removed, ...remaining } = errors
+    void removed
     return remaining
   },
   formatValidationSummaryMessage: (_field: string, message: string) => message,
