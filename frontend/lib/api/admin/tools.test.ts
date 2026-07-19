@@ -1,19 +1,24 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { api } from '../client'
+import { adminToolsApi } from './tools'
 
-const get = mock(() => Promise.resolve(undefined))
-const post = mock(() => Promise.resolve(undefined))
-const put = mock(() => Promise.resolve(undefined))
-const del = mock(() => Promise.resolve(undefined))
-
-mock.module('../client', () => ({ api: { get, post, put, delete: del } }))
-
-const { adminToolsApi } = await import('./tools')
+const get = spyOn(api, 'get').mockResolvedValue(undefined as never)
+const post = spyOn(api, 'post').mockResolvedValue(undefined as never)
+const put = spyOn(api, 'put').mockResolvedValue(undefined as never)
+const del = spyOn(api, 'delete').mockResolvedValue(undefined as never)
 
 beforeEach(() => {
   get.mockClear()
   post.mockClear()
   put.mockClear()
   del.mockClear()
+})
+
+afterAll(() => {
+  get.mockRestore()
+  post.mockRestore()
+  put.mockRestore()
+  del.mockRestore()
 })
 
 describe('adminToolsApi', () => {
