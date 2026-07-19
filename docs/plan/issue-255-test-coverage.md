@@ -54,15 +54,21 @@
 - **Specific logic**: Cover pure helpers and API contracts first, then hooks/contexts, then critical auth, chat, workflow, knowledge, permission, notification, and admin component behavior. Avoid snapshot-only and import-only tests.
 - **Validation**: Run targeted tests plus coverage/census after each batch. Confirm eligible source representation and all metrics never regress.
 
-### Stage 5: CI reporting, final 95% gates, and documentation
+### Stage 5: Agent UI automation guide and reusable prompt
+- **Files modified**: `docs/guide/testing/agent-ui-automation.md`
+- **Specific logic**: Maintain a model-readable feature map alongside frontend functional tests. For each critical UI flow, document its purpose, prerequisites/test data, route, stable visible landmarks, happy/error scenarios, side effects and cleanup, and reusable Agent prompt instructions. Keep selectors semantic and behavior-oriented so the guide is useful across browser automation implementations.
+- **Validation**: Cross-check every documented flow against its functional test and manually run at least one prompt-driven happy path and one failure path when a browser test environment is available.
+
+### Stage 6: CI reporting, final 95% gates, and documentation
 - **Files modified**: `.github/workflows/ci.yml`, `backend/pyproject.toml`, `frontend/bunfig.toml`, `docs/dev/README.md`, relevant backend/frontend testing docs, planning docs
 - **Specific logic**: Run both suites in CI; upload separate backend XML/HTML and frontend LCOV artifacts with `if: always()`; document exact local commands; activate final independent 95% thresholds; mark plans complete.
 - **Validation**: Run the full backend/frontend pre-commit checks, prove a temporary threshold above measured coverage fails, and inspect CI artifact paths.
 
 ## Baseline Results
-- Backend: pending clean whole-`app` measurement. The existing 99.56% report is invalid because it covers only `app/llm/types`.
-- Frontend: pending clean census-backed measurement. The existing ignored report is stale and approximately 9.49% lines, 5.77% functions, 9.25% statements, and 5.80% branches.
+- Backend provisional baseline (2026-07-19): 37% combined line/branch report over all `app` source (`37,248` statements and `11,630` branches). The run had 612 passed, 68 failed, and 2 skipped tests, so this is gap-sizing data rather than final evidence. The existing 99.56% report is invalid because it covers only `app/llm/types`.
+- Frontend provisional baseline (2026-07-19): Bun's loaded-file report is 75.77% lines and 94.44% functions across only three loaded source files; the census reports 467 eligible application files absent from LCOV. The loaded-file percentage is therefore not acceptance evidence.
 - Record each clean baseline with its commit SHA before starting the corresponding test batches.
+- Baseline blockers found on 2026-07-19: stale workflow tests import renamed/removed APIs (`ExecutionNode`, `CircuitState`, and obsolete decorator signatures), and other existing failures span sandbox/workflow behavior. These must be aligned with current behavior before the backend baseline is valid.
 
 ## Testing Strategy
 - Happy path tests:

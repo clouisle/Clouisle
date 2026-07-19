@@ -7,7 +7,8 @@
   - [ ] 2. Backend and frontend coverage baselines
   - [ ] 3. Backend critical-path coverage
   - [ ] 4. Frontend critical-path coverage
-  - [ ] 5. CI reporting, final 95% gates, and documentation
+  - [ ] 5. Agent UI automation guide and reusable prompt
+  - [ ] 6. CI reporting, final 95% gates, and documentation
 
 - **admin-video-model-generation-test** — Complete. Replace constructor-only video model tests with a confirmed, billable real generation and completion check. See `docs/plan/admin-video-model-generation-test.md`
   - [x] 1. Design docs and implementation index
