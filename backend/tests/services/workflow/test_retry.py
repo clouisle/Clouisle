@@ -231,30 +231,39 @@ class TestRetryableExecutor:
         assert mock_executor.execute.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_retry_on_exception(self, mock_executor):
-        """Test executor retries on exception."""
-        call_count = 0
-
-        async def flaky_execute(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count < 3:
-                raise TimeoutError("temporary")
-            return ExecutionResult(outputs={})
-
-        mock_executor.execute = flaky_execute
-
-        policy = RetryPolicy(max_retries=3, base_delay=0.01)
-        retryable_exec = RetryableExecutor(mock_executor, policy)
-
-        result = await retryable_exec.execute(
-            node={"id": "test"},
-            context=MagicMock(),
-            run=MagicMock(),
+    async def test_retries_error_results_then_returns_final_error(self, mock_executor):
+        mock_executor.execute = AsyncMock(
+            return_value=ExecutionResult(error="validation_error")
+        )
+        retryable_exec = RetryableExecutor(
+            mock_executor, RetryPolicy(max_retries=1, base_delay=0)
         )
 
+        result = await retryable_exec.execute({}, MagicMock(), MagicMock())
+
+        assert result.error == "validation_error"
+        assert mock_executor.execute.await_count == 2
+        assert retryable_exec.attempts == 2
+        assert retryable_exec.last_error == "validation_error"
+
+    @pytest.mark.asyncio
+    async def test_retry_on_exception(self, mock_executor):
+        """Test executor retries on exception."""
+        mock_executor.execute = AsyncMock(
+            side_effect=[
+                TimeoutError("temporary"),
+                ExecutionResult(outputs={}),
+            ]
+        )
+        retryable_exec = RetryableExecutor(
+            mock_executor, RetryPolicy(max_retries=1, base_delay=0)
+        )
+
+        result = await retryable_exec.execute({}, MagicMock(), MagicMock())
+
         assert result.success is True
-        assert call_count == 3
+        assert mock_executor.execute.await_count == 2
+        assert retryable_exec.last_error == "temporary"
 
 
 class TestCircuitBreaker:
@@ -317,8 +326,10 @@ class TestCircuitBreaker:
         for _ in range(3):
             breaker.record_failure()
         await asyncio.sleep(0.15)
-
         assert breaker.can_execute() is True
+
+        # Record successes in half-open
+        breaker.record_success()
         breaker.record_success()
 
         assert breaker.state == "closed"
@@ -330,11 +341,26 @@ class TestCircuitBreaker:
         for _ in range(3):
             breaker.record_failure()
         await asyncio.sleep(0.15)
+        assert breaker.can_execute() is True
 
         # Failure in half-open
         breaker.record_failure()
 
         assert breaker.state == "open"
+
+    def test_half_open_request_limit_and_reset(self, breaker):
+        breaker._state = "half_open"
+
+        assert breaker.can_execute() is True
+        assert breaker.can_execute() is True
+        assert breaker.can_execute() is False
+
+        breaker.reset()
+
+        assert breaker.state == "closed"
+        assert breaker._failure_count == 0
+        assert breaker._last_failure_time is None
+        assert breaker._half_open_count == 0
 
 
 class TestDefaultPolicies:
