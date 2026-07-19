@@ -8,8 +8,9 @@ const originalAdapter = axiosInstance.defaults.adapter
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+const originalFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
 
-function restoreGlobal(name: 'window' | 'document' | 'localStorage', descriptor?: PropertyDescriptor): void {
+function restoreGlobal(name: 'window' | 'document' | 'localStorage' | 'fetch', descriptor?: PropertyDescriptor): void {
   if (descriptor) Object.defineProperty(globalThis, name, descriptor)
   else Reflect.deleteProperty(globalThis, name)
 }
@@ -48,6 +49,7 @@ afterEach(() => {
   restoreGlobal('window', originalWindow)
   restoreGlobal('document', originalDocument)
   restoreGlobal('localStorage', originalLocalStorage)
+  restoreGlobal('fetch', originalFetch)
 })
 
 describe('ApiError', () => {
@@ -91,6 +93,26 @@ describe('API request behavior', () => {
     expect(configs[5]?.data).toBe(form)
     expect(configs[5]?.timeout).toBe(1234)
     expect(configs[5]?.headers.get('Content-Type')).toBe('application/x-www-form-urlencoded')
+  })
+
+  test('passes method, body, and headers through the fetch adapter', async () => {
+    let request: Request | undefined
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      value: async (input: RequestInfo | URL) => {
+        request = input as Request
+        return new Response(JSON.stringify({ code: 0, data: 'saved', msg: '' }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      },
+    })
+    axiosInstance.defaults.adapter = 'fetch'
+
+    expect(await api.post('/fetch-options', { enabled: true }, { headers: { 'X-Custom': 'yes' } })).toBe('saved')
+    expect(request?.url).toBe(`${API_BASE_URL}/fetch-options`)
+    expect(request?.method).toBe('POST')
+    expect(request?.headers.get('X-Custom')).toBe('yes')
+    expect(await request?.json()).toEqual({ enabled: true })
   })
 
   test('uses the configured base URL', () => {
@@ -143,6 +165,26 @@ describe('API response behavior', () => {
     expect(error.code).toBe(1001)
     expect(error.message).toBe('Request failed')
     expect(error.getFieldErrors()).toEqual({ name: 'Required' })
+  })
+
+  test('uses safe localized backend messages and rejects technical details', async () => {
+    useBrowserState(undefined, 'zh-CN')
+    const messages: unknown[] = ['资料已更新', 'Public message', 'HTTP 500\nException stack']
+    axiosInstance.defaults.adapter = async (config) => ({
+      config,
+      data: { code: 400, data: null, msg: messages.shift() },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    })
+
+    const localized = await api.get('/localized', { silent: true }).catch(value => value)
+    const wrongLanguage = await api.get('/wrong-language', { silent: true }).catch(value => value)
+    const technical = await api.get('/technical', { silent: true }).catch(value => value)
+
+    expect(localized.message).toBe('资料已更新')
+    expect(wrongLanguage.message).toBe('Request failed')
+    expect(technical.message).toBe('Request failed')
   })
 
   test('maps timeout and plain HTTP failures to stable ApiError messages', async () => {
