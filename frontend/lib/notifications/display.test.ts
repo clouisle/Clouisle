@@ -57,4 +57,13 @@ describe('getNotificationDisplayMeta', () => {
     expect(meta.isProminent).toBe(false)
     expect(meta.priorityScore).toBe(1)
   })
+
+  it('classifies unmatched notification types as general', () => {
+    const meta = getNotificationDisplayMeta(notification({ type: 'comment_replied', level: 'high' }))
+
+    expect(meta.kind).toBe('general')
+    expect(meta.isAnnouncement).toBe(false)
+    expect(meta.isProminent).toBe(true)
+    expect(meta.priorityScore).toBe(3)
+  })
 })

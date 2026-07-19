@@ -52,6 +52,7 @@ describe('tool result helpers', () => {
     expect(getImageAssetUrl({ base64: 'abc' })).toBe('data:image/png;base64,abc')
     expect(getImageAssetUrl({ base64: 'abc', format: 'webp' })).toBe('data:image/webp;base64,abc')
     expect(getImageAssetUrl({ file_path: '/tmp/image.png' })).toBeNull()
+    expect(getImageAssetUrl()).toBeNull()
   })
 
   test('returns video URLs or data URIs', () => {
