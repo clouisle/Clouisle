@@ -74,10 +74,29 @@ describe('dashboardApi requests', () => {
     expect(result).toEqual([{ model: 'claude-sonnet', count: 4, percentage: 25 }])
   })
 
+  it('returns an empty model distribution for malformed data', async () => {
+    const get = spyOn(api, 'get').mockResolvedValue({ items: 'not-an-array' })
+
+    await expect(dashboardApi.getModelDistribution()).resolves.toEqual([])
+    expect(get).toHaveBeenCalledWith('/admin/dashboard/stats/models/distribution?time_range=30d')
+  })
+
+  it('maps valid counts while normalizing invalid percentages', async () => {
+    spyOn(api, 'get').mockResolvedValue([
+      { model: 'model-a', count: 2, percentage: 'not-a-number' },
+      { model: 'model-b', count: 3, percentage: 40 },
+    ])
+
+    await expect(dashboardApi.getModelDistribution()).resolves.toEqual([
+      { model: 'model-a', count: 2, percentage: 0 },
+      { model: 'model-b', count: 3, percentage: 40 },
+    ])
+  })
+
   it('preserves a meaningful request failure', async () => {
     const failure = new Error('dashboard stats request failed')
     spyOn(api, 'get').mockRejectedValue(failure)
 
-    expect(dashboardApi.getStats()).rejects.toBe(failure)
+    await expect(dashboardApi.getStats()).rejects.toBe(failure)
   })
 })
