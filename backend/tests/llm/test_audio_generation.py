@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -198,6 +199,96 @@ def test_seed_audio_rejects_mixed_image_and_audio_references():
                 audio_references=[AudioContent(base64="YQ==")],
             )
         )
+
+
+def test_seed_audio_payload_uses_default_params_before_config_and_runtime_format():
+    adapter = VolcengineAudioGenerationAdapter(
+        build_volcengine_model(
+            "seed-audio-1.0",
+            default_params={"format": "wav", "sample_rate": 48000, "speech_rate": 1.1},
+            config={"format": "mp3", "sample_rate": 16000, "speech_rate": 0.8},
+        )
+    )
+
+    payload, audio_format = adapter._build_payload(
+        AudioGenerationRequest(
+            prompt="Ocean", format="mp3", extra_params={"speech_rate": 1.5}
+        )
+    )
+
+    assert audio_format == "mp3"
+    assert payload["audio_config"] == {
+        "format": "mp3",
+        "sample_rate": 48000,
+        "speech_rate": 1.5,
+    }
+
+
+def test_seed_audio_rejects_invalid_model_format_and_sample_rate():
+    adapter = VolcengineAudioGenerationAdapter(build_volcengine_model("other"))
+    with pytest.raises(InvalidRequestError, match="requires seed-audio-1.0"):
+        adapter._build_payload(AudioGenerationRequest(prompt="Ocean"))
+
+    adapter = VolcengineAudioGenerationAdapter(
+        build_volcengine_model("seed-audio-1.0", default_params={"sample_rate": 12345})
+    )
+    with pytest.raises(InvalidRequestError, match="sample rate"):
+        adapter._build_payload(AudioGenerationRequest(prompt="Ocean"))
+
+
+def test_seed_audio_converts_data_uri_and_rejects_invalid_image_file(tmp_path):
+    adapter = VolcengineAudioGenerationAdapter(build_volcengine_model("seed-audio-1.0"))
+    payload, _ = adapter._build_payload(
+        AudioGenerationRequest(
+            prompt="Ocean",
+            image=ImageContent(base64="data:image/png;base64,YQ=="),
+        )
+    )
+    assert payload["references"] == [{"image_data": "YQ=="}]
+
+    invalid_file = tmp_path / "reference.txt"
+    invalid_file.write_text("not an image")
+    with pytest.raises(InvalidRequestError, match="image reference"):
+        adapter._reference(ImageContent(file_path=str(invalid_file)), "image")
+
+
+@pytest.mark.anyio
+async def test_seed_audio_generate_maps_success_and_provider_responses():
+    adapter = VolcengineAudioGenerationAdapter(build_volcengine_model("seed-audio-1.0"))
+    response = httpx.Response(
+        200,
+        json={"code": 20000000, "audio": "YQ==", "duration": "1.25"},
+        request=httpx.Request("POST", adapter.base_url),
+    )
+    client = AsyncMock()
+    client.post.return_value = response
+    client.__aenter__.return_value = client
+
+    with patch("httpx.AsyncClient", return_value=client):
+        result = await adapter.generate(AudioGenerationRequest(prompt="Ocean"))
+
+    assert result.audio.base64 == "YQ=="
+    assert result.audio.duration == 1.25
+    assert result.audio.format == "mp3"
+
+    response = httpx.Response(
+        200,
+        json={"code": 400, "message": "denied"},
+        request=httpx.Request("POST", adapter.base_url),
+    )
+    client.post.return_value = response
+    with (
+        patch("httpx.AsyncClient", return_value=client),
+        pytest.raises(ProviderError, match="denied"),
+    ):
+        await adapter.generate(AudioGenerationRequest(prompt="Ocean"))
+
+    client.post.side_effect = httpx.TimeoutException("slow")
+    with (
+        patch("httpx.AsyncClient", return_value=client),
+        pytest.raises(ProviderError, match="timeout"),
+    ):
+        await adapter.generate(AudioGenerationRequest(prompt="Ocean"))
 
 
 @pytest.mark.anyio
