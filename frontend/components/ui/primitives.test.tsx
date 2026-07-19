@@ -2,19 +2,16 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
-<<<<<<< HEAD
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './alert'
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card'
-import { Progress } from './progress'
-import { Skeleton } from './skeleton'
-import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from './table'
-
-=======
 import { Badge } from './badge'
 import { ButtonGroup, ButtonGroupSeparator, ButtonGroupText } from './button-group'
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './collapsible'
 import { Popover, PopoverTrigger } from './popover'
+import { Progress } from './progress'
 import { Separator } from './separator'
+import { Skeleton } from './skeleton'
+import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from './table'
 import { Textarea } from './textarea'
 import { TooltipProvider } from './tooltip'
 
@@ -23,7 +20,6 @@ Object.assign(globalThis, {
   requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(callback, 0),
   cancelAnimationFrame: clearTimeout,
 })
->>>>>>> 729ff6dd (test: cover basic UI primitives)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const renderers: ReactTestRenderer[] = []
@@ -43,7 +39,6 @@ afterEach(() => {
 })
 
 describe('simple UI primitives', () => {
-<<<<<<< HEAD
   test('renders alert semantics, content slots, and warning variant', () => {
     const renderer = render(
       <Alert variant="warning" aria-label="Quota warning">
@@ -121,7 +116,8 @@ describe('simple UI primitives', () => {
     expect(table.findAllByType('th').map(cell => cell.children[0])).toEqual(['Invoice', 'Total'])
     const selected = table.find(node => node.type === 'tr' && node.props['data-state'] === 'selected')
     expect(selected.props.className).toContain('data-[state=selected]:bg-muted')
-=======
+  })
+
   test('renders badge variants and forwards custom attributes', () => {
     const renderer = render(<Badge variant="destructive" data-testid="status">Failed</Badge>)
     const badge = renderer.root.find(node => node.type === 'span' && node.props['data-testid'] === 'status')
@@ -196,6 +192,5 @@ describe('simple UI primitives', () => {
     const provider = renderer.root.findByProps({ 'data-slot': 'tooltip-provider' })
 
     expect(provider.props.delay).toBe(0)
->>>>>>> 729ff6dd (test: cover basic UI primitives)
   })
 })
