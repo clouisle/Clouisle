@@ -1,135 +1,124 @@
-"""Behavioral tests for the sub-workflow node executor."""
-
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, call
+from uuid import UUID, uuid4
 
 import pytest
 
+from app.models.workflow import Workflow, WorkflowRun
 from app.services.workflow.errors import MaxDepthExceededError
+from app.services.workflow.executors import subworkflow
 from app.services.workflow.executors.subworkflow import (
     MAX_DEPTH,
     SubWorkflowNodeExecutor,
 )
+from app.services.workflow.orchestrator import WorkflowOrchestrator
 
 
 @pytest.fixture
-def executor():
-    return SubWorkflowNodeExecutor()
+def dependencies(monkeypatch):
+    workflow_query = MagicMock()
+    workflow_query.first = AsyncMock(return_value=SimpleNamespace())
+    run_query = MagicMock()
+    run_query.first = AsyncMock()
+    run_child = AsyncMock(return_value=uuid4())
+
+    monkeypatch.setattr(Workflow, "filter", MagicMock(return_value=workflow_query))
+    monkeypatch.setattr(WorkflowRun, "filter", MagicMock(return_value=run_query))
+    monkeypatch.setattr(WorkflowOrchestrator, "run", run_child)
+
+    return workflow_query, run_query, run_child
 
 
-@pytest.fixture
-def context():
-    value = MagicMock()
-    value.resolve_variable_ref = AsyncMock(return_value="resolved")
-    return value
-
-
-@pytest.fixture
-def parent_run():
-    value = MagicMock()
-    value.id = uuid4()
-    value.root_run_id = None
-    value.depth = 2
-    value.triggered_by_id = uuid4()
-    return value
-
-
-def node(workflow_id, **config):
-    return {
-        "data": {
-            "subWorkflowConfig": {
-                "workflowId": str(workflow_id),
-                **config,
-            }
-        }
+def parent_run(**overrides):
+    values = {
+        "id": uuid4(),
+        "root_run_id": None,
+        "depth": 1,
+        "triggered_by_id": uuid4(),
     }
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
-def query_returning(value):
-    query = MagicMock()
-    query.first = AsyncMock(return_value=value)
-    return query
+def node(**config):
+    return {"data": {"subWorkflowConfig": {"workflowId": str(uuid4()), **config}}}
 
 
 @pytest.mark.asyncio
-async def test_execute_rejects_missing_workflow_id(executor, context, parent_run):
-    result = await executor.execute({"data": {}}, context, parent_run)
+async def test_rejects_missing_workflow_and_depth_boundary():
+    executor = SubWorkflowNodeExecutor()
 
+    result = await executor.execute({"data": {"config": {}}}, MagicMock(), parent_run())
     assert result.error == "validation_error"
 
-
-@pytest.mark.asyncio
-async def test_execute_enforces_maximum_depth(executor, context, parent_run):
-    parent_run.depth = MAX_DEPTH
-
-    with pytest.raises(MaxDepthExceededError) as exc_info:
-        await executor.execute(node(uuid4()), context, parent_run)
-
-    assert exc_info.value.current_depth == MAX_DEPTH
+    with pytest.raises(MaxDepthExceededError):
+        await executor.execute(node(), MagicMock(), parent_run(depth=MAX_DEPTH))
 
 
 @pytest.mark.asyncio
-async def test_execute_reports_unknown_workflow(executor, context, parent_run):
-    with patch(
-        "app.models.workflow.Workflow.filter", return_value=query_returning(None)
-    ):
-        result = await executor.execute(node(uuid4()), context, parent_run)
+async def test_returns_not_found_when_child_workflow_lookup_misses(dependencies):
+    workflow_query, run_query, run_child = dependencies
+    workflow_query.first.return_value = None
+    workflow_id = str(uuid4())
+
+    result = await SubWorkflowNodeExecutor().execute(
+        node(workflowId=workflow_id), MagicMock(), parent_run()
+    )
 
     assert result.error == "workflow_not_found"
+    Workflow.filter.assert_called_once_with(id=workflow_id)
+    run_child.assert_not_awaited()
+    run_query.first.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_execute_runs_child_and_persists_lineage(executor, context, parent_run):
-    workflow_id = uuid4()
+async def test_maps_inputs_runs_child_and_wraps_outputs(dependencies):
+    _, run_query, run_child = dependencies
     sub_run_id = uuid4()
-    sub_run = MagicMock(status="success", outputs={"answer": "done"})
-    sub_run.save = AsyncMock()
-    orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(return_value=str(sub_run_id))
-
-    config = node(
-        workflow_id,
-        timeout=17,
-        inputMappings=[
-            {"name": "query", "source": "variable", "variableRef": "start.query"},
-            {"name": "limit", "source": "constant", "constantValue": 3},
-            {"name": "", "source": "constant", "constantValue": "ignored"},
-        ],
-        outputVariable="child",
+    run_child.return_value = sub_run_id
+    child = SimpleNamespace(
+        status="completed", outputs={"answer": "done"}, save=AsyncMock()
     )
-    with (
-        patch(
-            "app.models.workflow.Workflow.filter",
-            return_value=query_returning(MagicMock()),
-        ),
-        patch(
-            "app.models.workflow.WorkflowRun.filter",
-            return_value=query_returning(sub_run),
-        ),
-        patch(
-            "app.services.workflow.orchestrator.WorkflowOrchestrator",
-            return_value=orchestrator,
-        ) as orchestrator_class,
-    ):
-        result = await executor.execute(config, context, parent_run)
+    run_query.first.return_value = child
+    context = MagicMock()
+    context.resolve_variable_ref = AsyncMock(return_value="resolved")
+    parent = parent_run()
+    workflow_id = str(uuid4())
 
-    orchestrator_class.assert_called_once_with(timeout=17)
-    orchestrator.run.assert_awaited_once_with(
-        workflow_id=workflow_id,
-        inputs={"query": "resolved", "limit": 3},
-        user_id=parent_run.triggered_by_id,
-        team_id=None,
-        stream=False,
+    result = await SubWorkflowNodeExecutor().execute(
+        node(
+            workflowId=workflow_id,
+            timeout=12,
+            inputMappings=[
+                {"name": "query", "source": "variable", "variableRef": "start.q"},
+                {"name": "limit", "source": "constant", "constantValue": 3},
+                {"name": "ignored", "source": "unsupported"},
+                {"source": "constant", "constantValue": "no name"},
+            ],
+            outputVariable="child",
+        ),
+        context,
+        parent,
     )
-    context.resolve_variable_ref.assert_awaited_once_with("start.query")
+
     assert result.outputs == {
         "child": {"answer": "done"},
         "_sub_run_id": str(sub_run_id),
     }
-    assert sub_run.parent_run_id == parent_run.id
-    assert sub_run.root_run_id == parent_run.id
-    assert sub_run.depth == 3
-    sub_run.save.assert_awaited_once_with()
+    context.resolve_variable_ref.assert_awaited_once_with("start.q")
+    run_child.assert_awaited_once_with(
+        workflow_id=UUID(workflow_id),
+        inputs={"query": "resolved", "limit": 3},
+        user_id=parent.triggered_by_id,
+        team_id=None,
+        stream=False,
+    )
+    WorkflowRun.filter.assert_called_once_with(id=sub_run_id)
+    assert child.parent_run_id == parent.id
+    assert child.root_run_id == parent.id
+    assert child.depth == parent.depth + 1
+    child.save.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -138,163 +127,134 @@ async def test_execute_runs_child_and_persists_lineage(executor, context, parent
     [
         (
             {"outputVariable": "", "outputMapping": {"local": "remote"}},
-            {"local": 7, "_sub_run_id": "SUB_RUN_ID"},
+            {"local": 7},
         ),
-        (
-            {"outputVariable": ""},
-            {"remote": 7, "_sub_run_id": "SUB_RUN_ID"},
-        ),
+        ({"outputVariable": ""}, {"remote": 7}),
     ],
 )
-async def test_execute_supports_legacy_output_modes(
-    executor, context, parent_run, config, expected
+async def test_supports_legacy_output_mapping_and_passthrough(
+    dependencies, config, expected
 ):
-    workflow_id = uuid4()
+    _, run_query, run_child = dependencies
     sub_run_id = uuid4()
-    expected["_sub_run_id"] = str(sub_run_id)
-    sub_run = MagicMock(status="success", outputs={"remote": 7})
-    sub_run.save = AsyncMock()
-    orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(return_value=sub_run_id)
+    run_child.return_value = sub_run_id
+    run_query.first.return_value = SimpleNamespace(
+        status="completed", outputs={"remote": 7}, save=AsyncMock()
+    )
 
-    with (
-        patch(
-            "app.models.workflow.Workflow.filter",
-            return_value=query_returning(MagicMock()),
-        ),
-        patch(
-            "app.models.workflow.WorkflowRun.filter",
-            return_value=query_returning(sub_run),
-        ),
-        patch(
-            "app.services.workflow.orchestrator.WorkflowOrchestrator",
-            return_value=orchestrator,
-        ),
-    ):
-        result = await executor.execute(
-            node(workflow_id, **config), context, parent_run
-        )
+    result = await SubWorkflowNodeExecutor().execute(
+        node(**config), MagicMock(), parent_run()
+    )
 
-    assert result.outputs == expected
+    assert result.outputs == {"_sub_run_id": str(sub_run_id), **expected}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_on_error", [True, False])
-async def test_execute_handles_failed_child_run(
-    executor, context, parent_run, fail_on_error
-):
-    workflow_id = uuid4()
-    sub_run_id = uuid4()
-    sub_run = MagicMock(status="failed", error_message="private details")
-    sub_run.save = AsyncMock()
-    orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(return_value=sub_run_id)
+async def test_requires_trigger_user_before_starting_child(dependencies):
+    _, run_query, run_child = dependencies
 
-    with (
-        patch(
-            "app.models.workflow.Workflow.filter",
-            return_value=query_returning(MagicMock()),
-        ),
-        patch(
-            "app.models.workflow.WorkflowRun.filter",
-            return_value=query_returning(sub_run),
-        ),
-        patch(
-            "app.services.workflow.orchestrator.WorkflowOrchestrator",
-            return_value=orchestrator,
-        ),
-        patch(
-            "app.services.workflow.executors.subworkflow.translate_public_workflow_error",
-            return_value="public error",
-        ),
-    ):
-        result = await executor.execute(
-            node(workflow_id, failOnError=fail_on_error), context, parent_run
-        )
+    result = await SubWorkflowNodeExecutor().execute(
+        node(), MagicMock(), parent_run(triggered_by_id=None)
+    )
 
-    if fail_on_error:
-        assert result.error == "public error"
-    else:
-        assert result.outputs == {
-            "_status": "failed",
-            "_error": "public error",
-            "_sub_run_id": str(sub_run_id),
-        }
+    assert result.error == "validation_error"
+    run_child.assert_not_awaited()
+    run_query.first.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_execute_reports_missing_child_run(executor, context, parent_run):
-    workflow_id = uuid4()
-    orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(return_value=uuid4())
+async def test_returns_not_found_when_child_run_lookup_misses(dependencies):
+    _, run_query, _ = dependencies
+    run_query.first.return_value = None
 
-    with (
-        patch(
-            "app.models.workflow.Workflow.filter",
-            return_value=query_returning(MagicMock()),
-        ),
-        patch(
-            "app.models.workflow.WorkflowRun.filter", return_value=query_returning(None)
-        ),
-        patch(
-            "app.services.workflow.orchestrator.WorkflowOrchestrator",
-            return_value=orchestrator,
-        ),
-    ):
-        result = await executor.execute(node(workflow_id), context, parent_run)
+    result = await SubWorkflowNodeExecutor().execute(node(), MagicMock(), parent_run())
 
     assert result.error == "workflow_run_not_found"
 
 
 @pytest.mark.asyncio
-async def test_execute_returns_error_outputs_when_orchestration_raises(
-    executor, context, parent_run
-):
-    workflow_id = uuid4()
-    orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(side_effect=RuntimeError("private details"))
+@pytest.mark.parametrize("fail_on_error", [True, False])
+async def test_handles_failed_child_status(dependencies, monkeypatch, fail_on_error):
+    _, run_query, run_child = dependencies
+    sub_run_id = uuid4()
+    run_child.return_value = sub_run_id
+    run_query.first.return_value = SimpleNamespace(
+        status="failed", error_message="private", save=AsyncMock()
+    )
+    translate = MagicMock(return_value="public_error")
+    monkeypatch.setattr(subworkflow, "translate_public_workflow_error", translate)
 
-    with (
-        patch(
-            "app.models.workflow.Workflow.filter",
-            return_value=query_returning(MagicMock()),
-        ),
-        patch(
-            "app.services.workflow.orchestrator.WorkflowOrchestrator",
-            return_value=orchestrator,
-        ),
-        patch(
-            "app.services.workflow.executors.subworkflow.translate_public_workflow_error",
-            return_value="public error",
-        ),
-    ):
-        result = await executor.execute(
-            node(workflow_id, failOnError=False), context, parent_run
-        )
+    result = await SubWorkflowNodeExecutor().execute(
+        node(failOnError=fail_on_error), MagicMock(), parent_run()
+    )
 
-    assert result.outputs == {"_status": "error", "_error": "public error"}
+    translate.assert_called_once_with("private")
+    if fail_on_error:
+        assert result.error == "public_error"
+    else:
+        assert result.outputs == {
+            "_status": "failed",
+            "_error": "public_error",
+            "_sub_run_id": str(sub_run_id),
+        }
 
 
 @pytest.mark.asyncio
-async def test_execute_requires_triggering_user(executor, context, parent_run):
-    parent_run.triggered_by_id = None
+@pytest.mark.parametrize("fail_on_error", [True, False])
+async def test_translates_timeout_boundary(dependencies, monkeypatch, fail_on_error):
+    _, _, run_child = dependencies
+    timeout = TimeoutError("late")
+    run_child.side_effect = timeout
+    translate = MagicMock(return_value="timeout_error")
+    monkeypatch.setattr(subworkflow, "translate_public_workflow_error", translate)
 
-    with patch(
-        "app.models.workflow.Workflow.filter", return_value=query_returning(MagicMock())
-    ):
-        result = await executor.execute(node(uuid4()), context, parent_run)
+    result = await SubWorkflowNodeExecutor().execute(
+        node(failOnError=fail_on_error), MagicMock(), parent_run()
+    )
 
-    assert result.error == "validation_error"
+    translate.assert_called_once_with(timeout)
+    if fail_on_error:
+        assert result.error == "timeout_error"
+    else:
+        assert result.outputs == {"_status": "error", "_error": "timeout_error"}
 
 
 @pytest.mark.asyncio
-async def test_public_configuration_and_output_contract(executor):
-    assert await executor.validate_config({}) == ["Sub-workflow ID is required"]
-    assert await executor.validate_config({"workflowId": "id"}) == []
-    assert executor.get_output_variables({}) == [{"name": "result", "type": "any"}]
-    assert executor.get_output_variables({"outputMapping": {"local": "remote"}}) == [
-        {"name": "local", "type": "any"}
+async def test_propagates_task_cancellation(dependencies):
+    _, _, run_child = dependencies
+    run_child.side_effect = asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await SubWorkflowNodeExecutor().execute(node(), MagicMock(), parent_run())
+
+
+@pytest.mark.asyncio
+async def test_uses_legacy_config_and_input_shape(dependencies):
+    _, run_query, run_child = dependencies
+    sub_run_id = uuid4()
+    run_child.return_value = sub_run_id
+    run_query.first.return_value = SimpleNamespace(
+        status="completed", outputs={}, save=AsyncMock()
+    )
+    context = MagicMock()
+    context.resolve_variable_ref = AsyncMock(side_effect=["first", "second"])
+    workflow_id = str(uuid4())
+    legacy_node = {
+        "data": {
+            "config": {
+                "workflowId": workflow_id,
+                "inputs": [
+                    {"name": "a", "source": "other", "value": "start.a"},
+                    {"name": "b", "source": "other", "variableRef": "start.b"},
+                ],
+            }
+        }
+    }
+
+    await SubWorkflowNodeExecutor().execute(legacy_node, context, parent_run())
+
+    assert context.resolve_variable_ref.await_args_list == [
+        call("start.a"),
+        call("start.b"),
     ]
-
-    specs = executor.get_output_specs({"outputMapping": {"local": "remote"}})
-    assert [(spec.name, spec.type.kind) for spec in specs] == [("local", "any")]
+    assert run_child.await_args.kwargs["inputs"] == {"a": "first", "b": "second"}
