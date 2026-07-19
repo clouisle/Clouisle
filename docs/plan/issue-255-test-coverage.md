@@ -74,6 +74,8 @@
 - Backend baseline collection issues previously observed in stale worktrees have been resolved on the branch: the complete current suite is the source of truth.
 - Backend progress checkpoint (2026-07-19, commits through `ef4cd5ef`): 1,405 tests passed and 2 were skipped; whole-app combined coverage remains 49% (`37,272` statements, `16,822` missed; `11,640` branches, `1,120` partial) after team-model access, upload-storage, workflow-cancellation, and TOTP/error-message batches. The final independent 95% line and branch gates remain inactive.
 - Frontend progress checkpoint (2026-07-19, commits through `ef4cd5ef`): 438 isolated tests passed; Bun reports 86.25% lines and 84.66% functions after package API, time-range selector, and change-password behavior coverage. The source census reports 324 eligible application files absent from LCOV. The final independent 95% metrics and zero-absent-source gate remain inactive.
+- Backend progress checkpoint (2026-07-20, commits through `c3b6f5e6`): 1,445 tests passed and 2 were skipped; whole-app combined coverage is 50% (`37,272` statements, `16,528` missed; `11,640` branches, `1,159` partial). The usage-quota tests now freeze their reset date so the suite remains deterministic across calendar changes. The final independent 95% line and branch gates remain inactive.
+- Frontend progress checkpoint (2026-07-20, commits through `c3b6f5e6`): 453 isolated tests passed; Bun reports 86.49% lines and 84.84% functions after conversation, language-toggle, and simple primitive behavior coverage. The source census reports 313 eligible application files absent from LCOV. The final independent 95% metrics and zero-absent-source gate remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
