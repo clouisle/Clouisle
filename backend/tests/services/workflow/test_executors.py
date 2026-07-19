@@ -147,6 +147,105 @@ class TestConditionExecutor:
         assert result.next_handles == [expected_branch]
         context.set_branch.assert_awaited_once_with("condition_1", expected_branch)
 
+    @pytest.mark.asyncio
+    async def test_top_level_condition_reference_selects_branch(self):
+        node = {
+            "id": "condition_1",
+            "data": {
+                "conditionConfig": {
+                    "conditions": [
+                        {
+                            "id": "score_high",
+                            "variable": "{{score}}",
+                            "operator": "greater_than",
+                            "value": 50,
+                        }
+                    ],
+                    "branches": [
+                        {"id": "high", "conditions": ["score_high"]},
+                        {"id": "else", "isDefault": True},
+                    ],
+                }
+            },
+        }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value=75)
+        context.set_branch = AsyncMock()
+
+        result = await ConditionNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.outputs == {
+            "matched_branch": "high",
+            "condition_results": {"score_high": True},
+        }
+        assert result.next_handles == ["high"]
+        context.set_branch.assert_awaited_once_with("condition_1", "high")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("branches", "expected_branch"),
+        [
+            ([{"id": "fallback", "type": "else"}], "fallback"),
+            ([], "else"),
+        ],
+    )
+    async def test_uses_default_or_implicit_fallback(self, branches, expected_branch):
+        context = MagicMock()
+        context.set_branch = AsyncMock()
+
+        result = await ConditionNodeExecutor().execute(
+            {"id": "condition_1", "data": {"branches": branches}},
+            context,
+            MagicMock(),
+        )
+
+        assert result.next_handles == [expected_branch]
+        context.set_branch.assert_awaited_once_with("condition_1", expected_branch)
+
+    @pytest.mark.asyncio
+    async def test_resolves_comparison_value_reference(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(side_effect=[10, 10])
+
+        result = await ConditionNodeExecutor()._evaluate_condition(
+            {
+                "variable": "{{source.value}}",
+                "operator": "equals",
+                "value": "{{other.value}}",
+            },
+            context,
+        )
+
+        assert result is True
+        assert context.resolve_variable_ref.await_args_list == [
+            (("{{source.value}}",), {}),
+            (("{{other.value}}",), {}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_unknown_operator_defaults_to_equals(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value="same")
+
+        result = await ConditionNodeExecutor()._evaluate_condition(
+            {"variable": "{{value}}", "operator": "unknown", "value": "same"},
+            context,
+        )
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_operator_type_error_returns_false(self):
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock(return_value="not-a-number")
+
+        result = await ConditionNodeExecutor()._evaluate_condition(
+            {"variable": "{{value}}", "operator": "greater_than", "value": 1},
+            context,
+        )
+
+        assert result is False
+
 
 class TestCodeExecutor:
     @pytest.mark.asyncio
