@@ -3,6 +3,11 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.sandbox.cache import (
+    acquire_cache_lock,
+    build_cache_key,
+    normalize_package_source_url,
+)
 from app.services.sandbox.manager import SandboxManager
 from app.services.sandbox.models import SandboxJob, SandboxJobSource
 from app.services.sandbox.node_env import NodeEnvironmentManager
@@ -61,6 +66,26 @@ class FakeNodeEnvManager:
             "SANDBOX_NODE_BINARY": "/usr/bin/node",
             "PATH": f"{env_dir / 'node_modules' / '.bin'}:/usr/bin",
         }
+
+
+def test_sandbox_cache_helpers_normalize_urls_and_release_locks():
+    key = build_cache_key({"packages": ["requests"]}, "standard")
+
+    assert key == build_cache_key({"packages": ["requests"]}, "standard")
+    assert key != build_cache_key({"packages": ["httpx"]}, "standard")
+    assert normalize_package_source_url(None) is None
+    assert normalize_package_source_url("  ") is None
+    assert (
+        normalize_package_source_url(
+            " https://registry.example.test/npm///?a=1#latest "
+        )
+        == "https://registry.example.test/npm?a=1#latest"
+    )
+
+    with acquire_cache_lock("python", key):
+        pass
+    with acquire_cache_lock("python", key):
+        pass
 
 
 @pytest.mark.anyio
