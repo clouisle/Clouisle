@@ -4,6 +4,7 @@ Tests for the tool execution service.
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -137,3 +138,94 @@ class TestToolExecutor:
         assert result["stdout"] == "log line"
         mock_compile.assert_called_once()
         mock_submit.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_builtin_execution_returns_safe_error(self):
+        executor = ToolExecutor()
+
+        with (
+            patch.object(
+                executor, "_get_tool_credentials", new=AsyncMock(return_value={})
+            ),
+            patch(
+                "app.services.tool.tool_registry.execute",
+                new=AsyncMock(side_effect=RuntimeError("provider failed")),
+            ),
+            patch(
+                "app.services.tool.resolve_user_visible_error",
+                return_value="Tool unavailable",
+            ),
+        ):
+            result = await executor.execute_builtin_tool("weather", {})
+
+        assert result == {"success": False, "error": "Tool unavailable"}
+
+    @pytest.mark.anyio
+    async def test_custom_tool_rejects_missing_configuration_and_unknown_type(self):
+        executor = ToolExecutor()
+        tool = MagicMock()
+
+        tool.custom_type = CustomToolType.HTTP
+        tool.http_config = None
+        with pytest.raises(ValueError):
+            await executor._execute_custom_tool(tool, {})
+
+        tool.custom_type = "unsupported"
+        with pytest.raises(ValueError):
+            await executor._execute_custom_tool(tool, {})
+
+    @pytest.mark.anyio
+    async def test_mcp_tool_requires_configuration_and_executes(self):
+        executor = ToolExecutor()
+        tool = MagicMock()
+        tool.name = "calendar"
+        tool.mcp_config = None
+        with pytest.raises(ValueError):
+            await executor._execute_mcp_tool(tool, {})
+
+        tool.mcp_config = {"transport": "stdio", "command": "calendar"}
+        with patch(
+            "app.services.tool.execute_mcp_tool",
+            new=AsyncMock(return_value={"events": []}),
+        ) as mock_execute:
+            result = await executor._execute_mcp_tool(tool, {"date": "2026-04-01"})
+
+        assert result == {"events": []}
+        mock_execute.assert_awaited_once_with(
+            tool_name="calendar",
+            mcp_config=tool.mcp_config,
+            arguments={"date": "2026-04-01"},
+        )
+
+    @pytest.mark.anyio
+    async def test_credentials_prefer_team_config_then_fall_back_to_global(self):
+        executor = ToolExecutor()
+        team_query = MagicMock(first=AsyncMock(return_value=None))
+        global_query = MagicMock(
+            first=AsyncMock(return_value=SimpleNamespace(credentials={"key": "global"}))
+        )
+
+        with patch(
+            "app.services.tool.ToolConfig.filter",
+            side_effect=[team_query, global_query],
+        ) as mock_filter:
+            credentials = await executor._get_tool_credentials("weather", UUID(int=1))
+
+        assert credentials == {"key": "global"}
+        assert mock_filter.call_args_list[0].kwargs == {
+            "tool_name": "weather",
+            "team_id": UUID(int=1),
+        }
+        assert mock_filter.call_args_list[1].kwargs == {
+            "tool_name": "weather",
+            "team_id": None,
+        }
+
+    @pytest.mark.anyio
+    async def test_execute_rejects_unknown_tool_type(self):
+        tool = MagicMock()
+        tool.type = "other"
+        tool.team_id = None
+
+        with pytest.raises(ValueError):
+            await ToolExecutor().execute(tool, {})
