@@ -294,6 +294,10 @@
 
 - Frontend progress checkpoint (2026-07-20, commit `06ecee57`): 987 isolated tests passed with 4,179 assertions after workflow parameter editor add/edit initialization, name validation and duplicate exclusion, trimmed save/cancel, scalar/JSON/checkbox defaults, select option add/edit/remove/default selection, file/image upload constraints, description, and required-state coverage. `bun run test:coverage` passes; Bun reports 91.27% lines and 86.48% functions for loaded sources. The honest source census reports 91 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Frontend answer-config batch reassessment (2026-07-20): focused-test attempts exposed two transitive React mock leaks and an overly strict nested-text count. The answer-node dependency was isolated explicitly, and the visible variable-name assertion checks presence because the selected value and picker option intentionally render the same name.
+
+- Frontend progress checkpoint (2026-07-20, commit `a34eb06c`): 990 isolated tests passed with 4,193 assertions after workflow answer configuration empty state, output add/remove, selected-variable display, grouped upstream/system choices, search/no-match, selection metadata, and popover reset coverage. `bun run test:coverage` passes; Bun reports 91.30% lines and 86.52% functions for loaded sources. The honest source census reports 90 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
