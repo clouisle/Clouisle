@@ -12,11 +12,18 @@ Object.assign(globalThis, {
   HTMLElement: window.HTMLElement,
   HTMLTextAreaElement: window.HTMLTextAreaElement,
   MutationObserver: window.MutationObserver,
+  NodeFilter: window.NodeFilter,
+  Event: window.Event,
+  CustomEvent: window.CustomEvent,
+  localStorage: window.localStorage,
 })
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const Icon = (props: React.ComponentProps<'svg'>) => <svg {...props} />
 const openLightbox = mock(() => {})
+const codeToTokens = mock(async () => ({ tokens: [] }))
+let lastStreamdownProps: Record<string, unknown> = {}
+let lastDialogProps: Record<string, unknown> = {}
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en-US',
@@ -52,7 +59,7 @@ mock.module('lucide-react', () => ({
 }))
 mock.module('@/lib/utils', () => ({ cn: (...classes: unknown[]) => classes.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/popover', () => ({ Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>, PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</> }))
-mock.module('@/components/ui/dialog', () => ({ Dialog: ({ children }: { children: React.ReactNode }) => <>{children}</>, DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2> }))
+mock.module('@/components/ui/dialog', () => ({ Dialog: (props: { children: React.ReactNode }) => { lastDialogProps = props as unknown as Record<string, unknown>; return <>{props.children}</> }, DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2> }))
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button> }))
 const Textarea = React.forwardRef<HTMLTextAreaElement, React.ComponentProps<'textarea'>>(function Textarea({ onChange, ...props }, ref) {
   return <textarea ref={ref} {...props} onInput={onChange} />
@@ -84,10 +91,14 @@ mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: 
 mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
   Block: ({ content }: { content: string }) => <div data-streamdown="code-block"><div data-streamdown="code-block-header"><div /></div><pre>{content}</pre></div>,
-  Streamdown: ({ children, BlockComponent }: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => <div>{BlockComponent ? <BlockComponent content={String(children)} index={0} shouldParseIncompleteMarkdown={false} /> : children}</div>,
+  Streamdown: (props: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => {
+    lastStreamdownProps = props as unknown as Record<string, unknown>
+    const content = String(props.children)
+    return <div>{props.BlockComponent && content.startsWith('```') ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} /> : props.children}</div>
+  },
   defaultRehypePlugins: { sanitize: 'sanitize', harden: 'harden' },
 }))
-mock.module('shiki', () => ({ bundledLanguages: {}, codeToTokens: mock(() => Promise.resolve({})) }))
+mock.module('shiki', () => ({ bundledLanguages: { javascript: {} }, codeToTokens }))
 mock.module('@streamdown/math', () => ({ createMathPlugin: () => ({}) }))
 
 const { Message } = await import('./message')
@@ -519,5 +530,274 @@ describe('message behavior', () => {
     expect(html).not.toContain('(ref:9)')
     expect(html).toContain('$$')
     expect(html).toContain('` [1]`')
+  })
+
+  test('copies citation-free text and reports clipboard failures', async () => {
+    const writeText = mock(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const container = render(<Message message={{ id: 'copy', role: 'assistant', parts: [{ type: 'text', text: 'Answer [[cite:1]]' }] }} />)
+
+    await act(async () => button(container, 'chat.message.copy').click())
+    expect(writeText).toHaveBeenCalledWith('Answer')
+    expect(button(container, 'chat.message.copied')).not.toBeNull()
+
+    const error = new Error('denied')
+    const consoleError = mock(() => {})
+    console.error = consoleError
+    writeText.mockImplementationOnce(async () => { throw error })
+    await act(async () => button(container, 'chat.message.copied').click())
+    expect(consoleError).toHaveBeenCalledWith('Failed to copy:', error)
+  })
+
+  test('speaks normalized text, highlights sentence boundaries, and stops accessibly', async () => {
+    type TestUtterance = {
+      text: string
+      lang: string
+      voice?: SpeechSynthesisVoice
+      onboundary?: (event: { charIndex: number }) => void
+      onend?: () => void
+      onerror?: () => void
+    }
+    class Utterance {
+      text: string
+      lang = ''
+      constructor(text: string) { this.text = text }
+    }
+    const voice = { lang: 'en-GB' } as SpeechSynthesisVoice
+    const speak = mock((value: TestUtterance) => { void value })
+    const cancel = mock(() => {})
+    const addEventListener = mock(() => {})
+    const removeEventListener = mock(() => {})
+    Object.assign(window, {
+      SpeechSynthesisUtterance: Utterance,
+      speechSynthesis: { speak, cancel, getVoices: () => [voice], addEventListener, removeEventListener },
+    })
+    ;(globalThis as typeof globalThis & { SpeechSynthesisUtterance: typeof Utterance }).SpeechSynthesisUtterance = Utterance
+    const onRequestScrollIntoView = mock(() => {})
+    const container = render(<Message
+      message={{ id: 'speech', role: 'assistant', parts: [{ type: 'text', text: '# Dr. Smith has **one** item. Next item! `code` 🎉' }] }}
+      onRequestScrollIntoView={onRequestScrollIntoView}
+    />)
+    await act(async () => {})
+
+    expect(button(container, 'chat.message.listen').disabled).toBe(false)
+    act(() => button(container, 'chat.message.listen').click())
+    const utterance = speak.mock.calls[0][0]
+    expect(utterance.text).toBe('Dr. Smith has one item. Next item! code')
+    expect(utterance.lang).toBe('en-GB')
+    expect(speak).toHaveBeenCalledTimes(1)
+    expect(onRequestScrollIntoView).toHaveBeenCalledTimes(1)
+    expect(button(container, 'chat.message.stopListening')).not.toBeNull()
+
+    act(() => utterance.onboundary?.({ charIndex: 24 }))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(utterance.text.slice(24, 34)).toBe('Next item!')
+    act(() => button(container, 'chat.message.stopListening').click())
+    expect(cancel).toHaveBeenCalledTimes(2)
+    expect(button(container, 'chat.message.listen')).not.toBeNull()
+
+    act(() => button(container, 'chat.message.listen').click())
+    act(() => utterance.onerror?.())
+    expect(button(container, 'chat.message.listen')).not.toBeNull()
+  })
+
+  test('classifies every previewable fence and falls back to source', async () => {
+    const onOpenCodePreview = mock(() => {})
+    const cases = [
+      ['mermaid', 'graph TD', 'mermaid'],
+      ['html', '<main />', 'html'],
+      ['css', 'body {}', 'css'],
+      ['javascript', 'alert(1)', 'javascript'],
+      ['markdown', '# title', 'markdown'],
+      ['python', 'print(1)', 'source'],
+      ['', 'plain', 'source'],
+    ] as const
+
+    for (const [language, code, kind] of cases) {
+      const container = render(<Message
+        message={{ id: `preview-${language}`, role: 'assistant', parts: [{ type: 'text', text: `\`\`\`${language}\n${code}\n\`\`\``, state: 'done' }] }}
+        onOpenCodePreview={onOpenCodePreview}
+      />)
+      await act(async () => {})
+      act(() => button(container, 'chat.message.openCodePreview').click())
+      expect(onOpenCodePreview.mock.calls.at(-1)?.[0].kind).toBe(kind)
+    }
+  })
+
+  test('loads authenticated markdown images and blocks unsafe sources', async () => {
+    render(<Message message={{ id: 'image-renderer', role: 'assistant', parts: [{ type: 'text', text: 'image' }] }} />)
+    const components = lastStreamdownProps.components as { img: React.ComponentType<React.ComponentProps<'img'>> }
+    const createObjectURL = mock(() => 'blob:secured')
+    const fetchMock = mock(async () => ({ ok: true, blob: async () => new Blob(['image']) }))
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: mock(() => {}) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    localStorage.setItem('access_token', 'secret')
+
+    const secured = render(React.createElement(components.img, { src: '/api/v1/files/one', alt: 'Secured image' }))
+    expect(secured.textContent).toContain('Secured image')
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(secured.querySelector('img')?.getAttribute('src')).toBe('blob:secured')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/files/one', { headers: { Authorization: 'Bearer secret' } })
+
+    const blocked = render(React.createElement(components.img, { src: 'javascript:alert(1)', alt: 'Blocked image' }))
+    expect(blocked.textContent).toContain('Blocked image')
+    const external = render(React.createElement(components.img, { src: 'https://example.test/image.png', alt: 'External image' }))
+    expect(external.querySelector('img')?.getAttribute('loading')).toBe('lazy')
+  })
+
+  test('checks same-origin links and exposes safety-modal decisions', () => {
+    renderToStaticMarkup(<Message message={{ id: 'links', role: 'assistant', parts: [{ type: 'text', text: 'links' }] }} />)
+    const linkSafety = lastStreamdownProps.linkSafety as {
+      onLinkCheck: (url: string) => boolean
+      renderModal: (props: { url: string; isOpen: boolean; onClose: () => void; onConfirm: () => void }) => React.ReactNode
+    }
+    expect(linkSafety.onLinkCheck('/safe')).toBe(true)
+    expect(linkSafety.onLinkCheck('https://other.test/path')).toBe(false)
+    expect(linkSafety.onLinkCheck('javascript:bad')).toBe(false)
+
+    const onClose = mock(() => {})
+    const onConfirm = mock(() => {})
+    render(<>{linkSafety.renderModal({ url: 'https://other.test/path', isOpen: true, onClose, onConfirm })}</>)
+    expect(document.body.textContent).toContain('https://other.test/path')
+    act(() => button(document.body, 'chat.message.linkSafetyCancel').click())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    act(() => button(document.body, 'chat.message.linkSafetyContinue').click())
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  test('renders remaining task, media-error, and math normalization branches', () => {
+    const html = renderToStaticMarkup(<Message message={{
+      id: 'remaining-branches',
+      role: 'assistant',
+      parts: [
+        { type: 'task', taskType: 'rag', state: 'running' },
+        { type: 'task', taskType: 'compression', state: 'running', info: { pressure_level: 'over_budget' } },
+        { type: 'task', taskType: 'compression', state: 'running' },
+        { type: 'task', taskType: 'generating', state: 'running' },
+        { type: 'media-result', output: { kind: 'media.image', success: false, prompt: 'bad', images: [], error: 'image failed' } },
+        { type: 'media-result', output: { kind: 'media.video', success: false, prompt: 'bad', error: 'video failed' } },
+        { type: 'text', text: '\\frac{a}{b}=1\nplain [words]\ninline (\\sqrt{x})\n$$\n\\sum x\n$$' },
+      ],
+    }} />)
+    expect(html).toContain('chat.task.searchingKnowledge')
+    expect(html).toContain('chat.task.compressingContextBlocking')
+    expect(html).toContain('chat.task.compressingContextProactive')
+    expect(html).toContain('chat.task.generating')
+    expect(html).toContain('image failed')
+    expect(html).toContain('video failed')
+    expect(html).toContain('$')
+  })
+
+  test('executes Streamdown safety, rendering, and highlighting integration hooks', async () => {
+    const container = render(<Message message={{ id: 'hooks', role: 'assistant', parts: [{ type: 'text', text: 'hook text' }] }} />)
+    const plugins = lastStreamdownProps.plugins as {
+      code: {
+        supportsLanguage: (language: string) => boolean
+        getSupportedLanguages: () => string[]
+        getThemes: () => string[]
+        highlight: (options: { language: string; code: string; themes: string[] }, callback: (value: unknown) => void) => null
+      }
+    }
+    expect(plugins.code.supportsLanguage('javascript')).toBe(true)
+    expect(plugins.code.supportsLanguage('unknown')).toBe(false)
+    expect(plugins.code.getSupportedLanguages()).toEqual(['javascript'])
+    expect(plugins.code.getThemes()).toEqual(['github-light', 'github-dark'])
+    expect(plugins.code.highlight({ language: 'unknown', code: '', themes: [] }, () => {})).toBeNull()
+    const highlighted = mock(() => {})
+    plugins.code.highlight({ language: 'javascript', code: 'const a = 1', themes: ['light', 'dark'] }, highlighted)
+    await act(async () => { await Promise.resolve() })
+    expect(codeToTokens).toHaveBeenCalledTimes(1)
+    expect(highlighted).toHaveBeenCalledTimes(1)
+    codeToTokens.mockImplementationOnce(async () => { throw new Error('highlight failed') })
+    plugins.code.highlight({ language: 'javascript', code: 'bad code', themes: ['light', 'dark'] }, highlighted)
+    await act(async () => { await Promise.resolve() })
+    expect(highlighted).toHaveBeenCalledTimes(1)
+
+    const components = lastStreamdownProps.components as {
+      p: React.ComponentType<React.ComponentProps<'p'> & { node?: { children?: Array<{ tagName?: string; type?: string }> } }>
+    }
+    expect(renderToStaticMarkup(React.createElement(components.p, null, 'plain'))).toStartWith('<p')
+    expect(renderToStaticMarkup(React.createElement(components.p, { node: { children: [{ type: 'element', tagName: 'img' }] } }, 'image'))).toStartWith('<div')
+    expect(renderToStaticMarkup(React.createElement(components.p, null, <div>block</div>))).toStartWith('<div')
+
+    const linkSafety = lastStreamdownProps.linkSafety as { renderModal: (props: { url: string; isOpen: boolean; onClose: () => void; onConfirm: () => void }) => React.ReactNode }
+    expect(renderToStaticMarkup(<>{linkSafety.renderModal({ url: '/closed', isOpen: false, onClose: () => {}, onConfirm: () => {} })}</>)).toBe('')
+    const onClose = mock(() => {})
+    render(<>{linkSafety.renderModal({ url: '/open', isOpen: true, onClose, onConfirm: () => {} })}</>)
+    act(() => (lastDialogProps.onOpenChange as (open: boolean) => void)(false))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('hook text')
+  })
+
+  test('shows authenticated image failures and reuses successful cached assets', async () => {
+    render(<Message message={{ id: 'image-hooks', role: 'assistant', parts: [{ type: 'text', text: 'image' }] }} />)
+    const components = lastStreamdownProps.components as { img: React.ComponentType<React.ComponentProps<'img'>> }
+    globalThis.fetch = mock(async () => ({ ok: false })) as unknown as typeof fetch
+    localStorage.removeItem('access_token')
+    const failed = render(React.createElement(components.img, { src: '/api/v1/files/failure', alt: 'Unavailable image' }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(failed.textContent).toContain('Unavailable image')
+
+    const cached = render(React.createElement(components.img, { src: '/api/v1/files/one', alt: 'Cached image' }))
+    expect(cached.querySelector('img')?.getAttribute('src')).toBe('blob:secured')
+  })
+
+  test('normalizes empty and invalid math while preserving code blocks', () => {
+    const html = renderToStaticMarkup(<Message message={{ id: 'math-edges', role: 'assistant', parts: [{
+      type: 'text',
+      text: '`**code**suffix`\n[plain words]\n(plain words)\n\\(\\cos{x}\\)\n\n',
+    }] }} />)
+    expect(html).toContain('`**code**suffix`')
+    expect(html).toContain('[plain words]')
+    expect(html).toContain('(plain words)')
+    expect(html).toContain('$\\cos{x}$')
+  })
+
+  test('highlights the actively spoken plain-text sentence and clears it on completion', async () => {
+    type TestUtterance = { onboundary?: (event: { charIndex: number }) => void; onend?: () => void }
+    class Utterance {}
+    const speak = mock((value: TestUtterance) => { void value })
+    Object.assign(window, {
+      SpeechSynthesisUtterance: Utterance,
+      speechSynthesis: {
+        speak,
+        cancel: mock(() => {}),
+        getVoices: () => [],
+        addEventListener: mock(() => {}),
+        removeEventListener: mock(() => {}),
+      },
+    })
+    ;(globalThis as typeof globalThis & { SpeechSynthesisUtterance: typeof Utterance }).SpeechSynthesisUtterance = Utterance
+    const container = render(<Message message={{ id: 'speech-highlight', role: 'assistant', parts: [{ type: 'text', text: 'First sentence. Second sentence!' }] }} />)
+    await act(async () => {})
+    act(() => button(container, 'chat.message.listen').click())
+    const utterance = speak.mock.calls[0][0]
+    act(() => utterance.onboundary?.({ charIndex: 16 }))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(container.querySelector('mark[data-speech-highlight="true"]')?.textContent).toBe('Second sentence!')
+    act(() => utterance.onend?.())
+    expect(container.querySelector('mark[data-speech-highlight="true"]')).toBeNull()
+  })
+
+  test('rerenders when each memoized public prop changes', () => {
+    const message = { id: 'memo', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'memo' }] }
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    roots.push(root)
+    const base = { message }
+    const variants = [
+      { isStreaming: true }, { renderPart: () => <span>custom</span> }, { showCopy: false }, { showFeedback: true },
+      { onRegenerate: () => {} }, { onEditMessage: async () => {} }, { onFeedback: () => {} }, { onSwitchVersion: () => {} },
+      { onSelectOption: () => {} }, { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
+      { onChainOfThoughtOpenChange: () => {} }, { onRequestScrollIntoView: () => {} }, { className: 'changed' },
+    ]
+    act(() => root.render(<Message {...base} />))
+    for (const variant of variants) {
+      act(() => root.render(<Message {...base} {...variant} />))
+      act(() => root.render(<Message {...base} />))
+    }
+    expect(container.textContent).toContain('memo')
   })
 })
