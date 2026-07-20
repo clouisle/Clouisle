@@ -272,14 +272,104 @@ describe('auth forms', () => {
     change(input(renderer.root, 'confirmPassword'), 'different')
     await submit(renderer.root)
     expect(text(renderer)).toContain(messages.passwordMismatch)
+    expect(input(renderer.root, 'confirmPassword').props['aria-invalid']).toBe(true)
 
     change(input(renderer.root, 'confirmPassword'), 'secret')
+    expect(input(renderer.root, 'confirmPassword').props['aria-invalid']).toBe(false)
     act(() => otp(renderer.root).props.onChange('123456'))
     await submit(renderer.root)
     expect(text(renderer)).toContain(messages.verificationCodeInvalid)
+    act(() => otp(renderer.root).props.onChange('654321'))
+    expect(text(renderer)).not.toContain(messages.verificationCodeInvalid)
     await submit(renderer.root)
-    expect(resetPassword).toHaveBeenLastCalledWith('alice@example.com', '123456', 'secret')
+    expect(resetPassword).toHaveBeenLastCalledWith('alice@example.com', '654321', 'secret')
     expect(text(renderer)).toContain(messages.passwordResetComplete)
+
+    await clickButton(renderer.root, messages.goToLogin)
+    expect(router.push).toHaveBeenCalledWith('/login')
+    act(() => renderer.unmount())
+  })
+
+  test('exposes pending email submission and recovers from API validation', async () => {
+    let rejectRequest!: (reason: unknown) => void
+    const forgotPassword = spyOn(authApi, 'forgotPassword').mockImplementationOnce(() => new Promise((_, reject) => {
+      rejectRequest = reject
+    }))
+    const renderer = render(<ForgotPasswordForm />)
+
+    change(input(renderer.root, 'email'), 'alice@example.com')
+    let request!: Promise<void>
+    act(() => {
+      request = renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })
+    })
+    expect(input(renderer.root, 'email').props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ type: 'submit' }).props.disabled).toBe(true)
+
+    await act(async () => rejectRequest(new ApiError(1001, 'invalid', {
+      errors: { email: ['Email is unavailable'], provider: ['Provider rejected request'] },
+    })))
+    await request
+    expect(input(renderer.root, 'email').props.disabled).toBe(false)
+    expect(input(renderer.root, 'email').props['aria-invalid']).toBe(true)
+    expect(text(renderer)).toContain('Email is unavailable')
+    expect(text(renderer)).toContain('Provider rejected request')
+
+    change(input(renderer.root, 'email'), 'bob@example.com')
+    expect(input(renderer.root, 'email').props['aria-invalid']).toBe(false)
+    forgotPassword.mockResolvedValueOnce(undefined)
+    await submit(renderer.root)
+    expect(text(renderer)).toContain('bob@example.com')
+    act(() => renderer.unmount())
+  })
+
+  test('resends after the cooldown and remains retryable after failure', async () => {
+    const timers: Array<() => void> = []
+    spyOn(globalThis, 'setTimeout').mockImplementation((callback) => {
+      if (typeof callback === 'function') timers.push(callback)
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    })
+    const forgotPassword = spyOn(authApi, 'forgotPassword')
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('delivery failed'))
+      .mockResolvedValueOnce(undefined)
+    const renderer = render(<ForgotPasswordForm />)
+
+    change(input(renderer.root, 'email'), 'alice@example.com')
+    await submit(renderer.root)
+    expect(text(renderer)).toContain('60')
+    for (let second = 0; second < 60; second += 1) {
+      act(() => timers.shift()!())
+    }
+
+    await clickButton(renderer.root, messages.resendEmail)
+    expect(forgotPassword).toHaveBeenCalledTimes(2)
+    await clickButton(renderer.root, messages.resendEmail)
+    expect(forgotPassword).toHaveBeenCalledTimes(3)
+    expect(text(renderer)).toContain('60')
+    act(() => renderer.unmount())
+  })
+
+  test('returns to a clean email step and routes back to login', async () => {
+    spyOn(authApi, 'forgotPassword').mockResolvedValue(undefined)
+    const renderer = render(<ForgotPasswordForm />)
+
+    await clickButton(renderer.root, messages.backToLogin)
+    expect(router.push).toHaveBeenCalledWith('/login')
+    change(input(renderer.root, 'email'), 'alice@example.com')
+    await submit(renderer.root)
+    await clickButton(renderer.root, messages.orEnterCodeManually)
+    change(input(renderer.root, 'newPassword'), 'secret')
+    change(input(renderer.root, 'confirmPassword'), 'different')
+    act(() => otp(renderer.root).props.onChange('123456'))
+    await submit(renderer.root)
+
+    await clickButton(renderer.root, messages.changeEmail)
+    expect(input(renderer.root, 'email').props.value).toBe('alice@example.com')
+    expect(text(renderer)).not.toContain(messages.passwordMismatch)
+    await submit(renderer.root)
+    expect(input(renderer.root, 'newPassword').props.value).toBe('')
+    expect(input(renderer.root, 'confirmPassword').props.value).toBe('')
+    expect(otp(renderer.root).props.value).toBe('')
     act(() => renderer.unmount())
   })
 
