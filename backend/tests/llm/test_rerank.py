@@ -156,3 +156,49 @@ class TestRerankFactory:
         adapter = create_rerank_adapter(model_config)
 
         assert isinstance(adapter, LLMRerankAdapter)
+
+    def test_factory_selects_google_adapter(self):
+        model_config = SimpleNamespace(
+            provider=ModelProvider.GOOGLE,
+            model_id="gemini-2.0-flash",
+            api_key="test-key",
+            base_url=None,
+            default_params=None,
+            config=None,
+            max_output_tokens=None,
+        )
+
+        with (
+            patch("app.llm.adapters.rerank.factory.GeminiAdapter") as chat_adapter,
+            patch("app.llm.adapters.rerank.factory.LLMRerankAdapter") as rerank_adapter,
+        ):
+            adapter = create_rerank_adapter(model_config)
+
+        assert adapter is rerank_adapter.return_value
+        chat_adapter.assert_called_once_with(model_config)
+        rerank_adapter.assert_called_once_with(model_config, chat_adapter.return_value)
+
+    def test_factory_ignores_non_boolean_native_rerank_config(self):
+        model_config = SimpleNamespace(
+            provider=ModelProvider.OPENAI,
+            model_id="gpt-4o-mini",
+            api_key="test-key",
+            base_url=None,
+            default_params=None,
+            config={"native_rerank": "true"},
+            max_output_tokens=None,
+        )
+
+        with (
+            patch("app.llm.adapters.rerank.factory.OpenAIAdapter") as chat_adapter,
+            patch("app.llm.adapters.rerank.factory.LLMRerankAdapter") as rerank_adapter,
+            patch(
+                "app.llm.adapters.rerank.factory.OpenAICompatibleRerankAdapter"
+            ) as native_adapter,
+        ):
+            adapter = create_rerank_adapter(model_config)
+
+        assert adapter is rerank_adapter.return_value
+        chat_adapter.assert_called_once_with(model_config)
+        rerank_adapter.assert_called_once_with(model_config, chat_adapter.return_value)
+        native_adapter.assert_not_called()
