@@ -256,10 +256,6 @@ async def test_update_existing_setting_persists_and_audits(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="Site-setting audit logs currently expose object-storage secrets",
-)
 async def test_update_secret_setting_never_audits_secret_value(monkeypatch):
     secret_key = "object_storage_secret_key"
     old = setting(secret_key, "old-test-secret", category="storage", is_public=False)
