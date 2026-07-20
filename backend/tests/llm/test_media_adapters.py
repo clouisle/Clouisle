@@ -14,6 +14,16 @@ from app.llm.adapters.image.runway import RunwayImageAdapter
 from app.llm.adapters.image.siliconflow import SiliconFlowImageAdapter
 from app.llm.adapters.image.stability import StabilityImageAdapter
 from app.llm.adapters.image.volcengine import VolcengineImageAdapter
+from app.llm.adapters.media_utils import (
+    append_prompt_directives,
+    closest_aspect_ratio,
+    image_content_to_raw_base64,
+    infer_format,
+    infer_image_format_from_mime,
+    media_content_to_data_uri,
+    parse_image_data_url,
+    require_remote_url,
+)
 from app.llm.adapters.video import create_video_adapter
 from app.llm.adapters.video.dashscope import DashScopeVideoAdapter
 from app.llm.adapters.video.kling import KlingVideoAdapter
@@ -46,6 +56,115 @@ def build_model(provider: str, model_id: str, **extra):
         max_output_tokens=extra.pop("max_output_tokens", None),
         **extra,
     )
+
+
+class TestMediaUtils:
+    def test_prompt_format_and_ratio_helpers_handle_boundaries(self):
+        assert append_prompt_directives("Base", None, "  ", "Style: clean") == (
+            "Base\n\nStyle: clean"
+        )
+        assert closest_aspect_ratio(None, 720) == "1:1"
+        assert closest_aspect_ratio(1920, 1080) == "16:9"
+        assert infer_format("https://cdn.example.com/image.WEBP", "png") == "webp"
+        assert parse_image_data_url("data:image/jpeg;base64,aW1hZ2U=") == (
+            "aW1hZ2U=",
+            "jpg",
+        )
+        assert parse_image_data_url("data:text/plain,not-base64") is None
+
+    def test_media_content_to_data_uri_prefers_url_base64_and_file_path(self, tmp_path):
+        image_path = tmp_path / "reference.webp"
+        image_path.write_bytes(b"image")
+
+        assert (
+            media_content_to_data_uri(
+                ImageContent(url="https://cdn.example.com/reference.png"),
+                default_mime="image/png",
+                provider="test",
+                model="model",
+                field_name="image",
+            )
+            == "https://cdn.example.com/reference.png"
+        )
+        assert (
+            image_content_to_raw_base64(
+                ImageContent(base64="aW1hZ2U=", format="jpeg"),
+                provider="test",
+                model="model",
+                field_name="image",
+            )
+            == "aW1hZ2U="
+        )
+        assert (
+            media_content_to_data_uri(
+                ImageContent(file_path=str(image_path)),
+                default_mime="image/png",
+                provider="test",
+                model="model",
+                field_name="image",
+            )
+            == "data:image/webp;base64,aW1hZ2U="
+        )
+
+    def test_media_helpers_cover_default_and_passthrough_branches(self):
+        assert append_prompt_directives("Base", None, "  ") == "Base"
+        assert infer_format(None, "png") == "png"
+        assert infer_format("https://cdn.example.com/image", "png") == "png"
+        assert infer_image_format_from_mime(None) is None
+        assert infer_image_format_from_mime("text/plain") is None
+        assert infer_image_format_from_mime("image/webp; charset=utf-8") == "webp"
+        assert parse_image_data_url("https://cdn.example.com/image.png") is None
+        assert parse_image_data_url("data:image/png;base64") is None
+        assert (
+            image_content_to_raw_base64(
+                ImageContent(url="https://cdn.example.com/reference.png"),
+                provider="test",
+                model="model",
+                field_name="image",
+            )
+            == "https://cdn.example.com/reference.png"
+        )
+        assert (
+            media_content_to_data_uri(
+                ImageContent(base64="data:image/png;base64,aW1hZ2U="),
+                default_mime="image/png",
+                provider="test",
+                model="model",
+                field_name="image",
+            )
+            == "data:image/png;base64,aW1hZ2U="
+        )
+        assert (
+            require_remote_url(
+                ImageContent(url="https://cdn.example.com/reference.png"),
+                provider="luma",
+                model="ray-2",
+                field_name="start_image",
+            )
+            == "https://cdn.example.com/reference.png"
+        )
+
+    def test_media_content_helpers_reject_missing_or_non_remote_content(self):
+        with pytest.raises(InvalidRequestError) as exc_info:
+            media_content_to_data_uri(
+                ImageContent(),
+                default_mime="image/png",
+                provider="test",
+                model="model",
+                field_name="image",
+            )
+
+        assert exc_info.value.field == "image"
+
+        with pytest.raises(InvalidRequestError) as exc_info:
+            require_remote_url(
+                ImageContent(base64="aW1hZ2U="),
+                provider="luma",
+                model="ray-2",
+                field_name="start_image",
+            )
+
+        assert exc_info.value.field == "start_image"
 
 
 class TestImageFactory:
