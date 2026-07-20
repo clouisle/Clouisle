@@ -15,6 +15,16 @@ media_module = importlib.import_module("app.services.media_asset_service")
 
 
 @pytest.mark.asyncio
+async def test_normalize_none_and_format_boundaries() -> None:
+    service = MediaAssetService()
+
+    assert await service.normalize_image(None) is None
+    assert await service.normalize_video(None) is None
+    assert service._split_data_url("aW1hZ2U=") == (None, "aW1hZ2U=")
+    assert service._get_image_mime_type(ImageContent(format="jpg")) == "image/jpeg"
+
+
+@pytest.mark.asyncio
 async def test_normalize_image_saves_inline_data_uri_with_detected_mime_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
