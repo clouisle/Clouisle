@@ -11,6 +11,8 @@ import {
   SelectGroup,
   SelectItem,
   SelectLabel,
+  SelectScrollDownButton,
+  SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
   SelectValue,
@@ -95,10 +97,13 @@ describe('Select', () => {
       alignOffset: 6,
       side: 'top',
       sideOffset: 8,
+      alignItemWithTrigger: true,
       className: 'custom-content',
-      children: e(SelectGroup, null,
-        e(SelectLabel, null, 'Fruit'),
-        e(SelectItem, { value: 'apple' }, 'Apple')
+      children: e(SelectGroup, { className: 'custom-group' },
+        e(SelectLabel, { className: 'custom-label' }, 'Fruit'),
+        e(SelectItem, { value: 'apple', className: 'custom-item' }, 'Apple'),
+        e(SelectSeparator, { className: 'custom-separator' }),
+        e(SelectEmpty, { className: 'custom-empty' }, 'Empty')
       ),
     }) as React.ReactElement
 
@@ -109,12 +114,34 @@ describe('Select', () => {
       alignOffset: 6,
       side: 'top',
       sideOffset: 8,
+      alignItemWithTrigger: true,
     })
     const popup = positioner.props.children as React.ReactElement
     expect(popup.props.className).toContain('custom-content')
     const list = popup.props.children[1] as React.ReactElement
-    const groupChildren = list.props.children.props.children as React.ReactElement[]
+    const group = list.props.children as React.ReactElement
+    const groupChildren = group.props.children as React.ReactElement[]
+    expect(group.props.className).toContain('custom-group')
+    expect(groupChildren[0].props.className).toContain('custom-label')
     expect(groupChildren[0].props.children).toBe('Fruit')
+    expect(groupChildren[1].props.className).toContain('custom-item')
     expect(groupChildren[1].props.children).toBe('Apple')
+    expect(groupChildren[2].props.className).toContain('custom-separator')
+    expect(groupChildren[3].props.className).toContain('custom-empty')
+    expect(groupChildren[3].props.children).toBe('Empty')
+  })
+
+  test('builds trigger, value, and scroll buttons with defaults and custom classes', () => {
+    const trigger = SelectTrigger({ children: e(SelectValue, { className: 'custom-value', placeholder: 'Pick' }) }) as React.ReactElement
+    expect(trigger.props['data-size']).toBe('default')
+    expect(trigger.props.className).toContain('data-[size=default]:h-9')
+
+    const value = trigger.props.children[0] as React.ReactElement
+    expect(value.props.className).toContain('custom-value')
+
+    const scrollUp = SelectScrollUpButton({ className: 'custom-up' }) as React.ReactElement
+    const scrollDown = SelectScrollDownButton({ className: 'custom-down' }) as React.ReactElement
+    expect(scrollUp.props.className).toContain('custom-up')
+    expect(scrollDown.props.className).toContain('custom-down')
   })
 })
