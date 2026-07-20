@@ -28,30 +28,42 @@ def test_image_adapter_resolves_request_params_in_precedence_order() -> None:
         SimpleNamespace(default_params={"style": "default", "quality": "hd"})
     )
 
-    assert adapter._get_effective_param(
-        ImageGenerationRequest(
-            prompt="test", style="request", extra_params={"style": "extra"}
-        ),
-        field_name="style",
-        param_key="style",
-    ) == "request"
-    assert adapter._get_effective_param(
-        ImageGenerationRequest(prompt="test", extra_params={"style": "extra"}),
-        field_name="style",
-        param_key="style",
-    ) == "extra"
-    assert adapter._get_effective_param(
-        ImageGenerationRequest(prompt="test"),
-        field_name="quality",
-        param_key="quality",
-        fallback="standard",
-    ) == "hd"
-    assert adapter._get_effective_param(
-        ImageGenerationRequest(prompt="test", style=""),
-        field_name="style",
-        param_key="style",
-        fallback="natural",
-    ) == "default"
+    assert (
+        adapter._get_effective_param(
+            ImageGenerationRequest(
+                prompt="test", style="request", extra_params={"style": "extra"}
+            ),
+            field_name="style",
+            param_key="style",
+        )
+        == "request"
+    )
+    assert (
+        adapter._get_effective_param(
+            ImageGenerationRequest(prompt="test", extra_params={"style": "extra"}),
+            field_name="style",
+            param_key="style",
+        )
+        == "extra"
+    )
+    assert (
+        adapter._get_effective_param(
+            ImageGenerationRequest(prompt="test"),
+            field_name="quality",
+            param_key="quality",
+            fallback="standard",
+        )
+        == "hd"
+    )
+    assert (
+        adapter._get_effective_param(
+            ImageGenerationRequest(prompt="test", style=""),
+            field_name="style",
+            param_key="style",
+            fallback="natural",
+        )
+        == "default"
+    )
 
 
 def test_image_adapter_merges_extra_params_and_filters_empty_values() -> None:
@@ -84,7 +96,10 @@ def test_image_adapter_rejects_invalid_request_timeout(timeout: object) -> None:
 
 
 def test_image_adapter_uses_valid_or_default_request_timeout() -> None:
-    assert ImageAdapter(SimpleNamespace(config={"timeout": "12.5"}))._get_request_timeout() == 12.5
+    assert (
+        ImageAdapter(SimpleNamespace(config={"timeout": "12.5"}))._get_request_timeout()
+        == 12.5
+    )
     assert ImageAdapter(SimpleNamespace(config=None))._get_request_timeout() == 300
 
 
