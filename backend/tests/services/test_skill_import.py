@@ -297,6 +297,10 @@ async def test_clone_git_repo_kills_timed_out_process(tmp_path: Path):
     process = Mock()
     process.communicate = AsyncMock()
 
+    async def _raise_timeout(awaitable, timeout):
+        awaitable.close()
+        raise TimeoutError
+
     with (
         patch.object(
             skill_import.asyncio,
@@ -306,7 +310,7 @@ async def test_clone_git_repo_kills_timed_out_process(tmp_path: Path):
         patch.object(
             skill_import.asyncio,
             "wait_for",
-            AsyncMock(side_effect=TimeoutError),
+            _raise_timeout,
         ),
         pytest.raises(BusinessError) as exc_info,
     ):
