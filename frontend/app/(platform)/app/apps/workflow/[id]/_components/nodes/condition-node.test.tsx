@@ -11,7 +11,7 @@ mock.module('@xyflow/react', () => ({ Handle: element, Position: { Left: 'left',
 mock.module('lucide-react', () => ({ GitBranch: element, Home: element }))
 mock.module('@/lib/utils', () => ({ cn: (...values: string[]) => values.filter(Boolean).join(' ') }))
 
-const { ConditionNode } = await import('./condition-node')
+const { ConditionNode, getConditionOperatorLabels, getConditionOperatorShortLabels } = await import('./condition-node')
 
 type TreeNode = { props: Record<string, unknown> }
 
@@ -21,6 +21,14 @@ function findAll(node: unknown, predicate: (node: TreeNode) => boolean): TreeNod
   const current = node as TreeNode
   return [...(predicate(current) ? [current] : []), ...findAll(current.props.children, predicate)]
 }
+
+test('returns translated condition operator labels', () => {
+  const t = (key: string) => `translated:${key}`
+
+  expect(getConditionOperatorLabels(t).equals).toBe('translated:nodesCondition.operatorEquals')
+  expect(getConditionOperatorShortLabels(t).is_empty).toBe('translated:nodesCondition.shortIsEmpty')
+  expect(getConditionOperatorShortLabels(t).greater_or_equal).toBe('≥')
+})
 
 test('renders selected conditional branches, values, and branch-specific handles', () => {
   const tree = ConditionNode({
