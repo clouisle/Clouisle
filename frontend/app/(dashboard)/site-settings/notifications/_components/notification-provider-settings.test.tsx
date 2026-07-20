@@ -46,10 +46,8 @@ mock.module('@/lib/api/admin/site-settings', () => ({
   siteSettingsApi: { updateSlack, sendTestSlack, updateFeishu, sendTestFeishu, updateDingTalk, sendTestDingTalk, updateWeChat, sendTestWeChat },
 }))
 mock.module('@/lib/validation', () => ({
-  clearValidationError: (errors: Record<string, string>, key: string) => {
-    const { [key]: _error, ...remaining } = errors
-    return remaining
-  },
+  clearValidationError: (errors: Record<string, string>, key: string) =>
+    Object.fromEntries(Object.entries(errors).filter(([field]) => field !== key)),
   getValidationSummaryEntries: (errors: Record<string, string>) => Object.entries(errors),
   normalizeValidationErrors: (error: { errors?: Record<string, string> }) => error.errors ?? {},
   mapValidationErrors: (errors: Record<string, string>) => errors,
@@ -61,23 +59,6 @@ const { FeishuSettingsTab } = await import('./feishu-settings')
 const { DingTalkSettingsTab } = await import('./dingtalk-settings')
 const { WeChatSettingsTab } = await import('./wechat-settings')
 
-type Node = { props?: Record<string, unknown> }
-
-function find(node: unknown, predicate: (props: Record<string, unknown>) => boolean): Record<string, unknown> {
-  if (!node || typeof node !== 'object') throw new Error('element not found')
-  const { props, type } = node as Node & { type?: unknown }
-  if (props && predicate(props)) return props
-  if (typeof type === 'function') {
-    try { return find((type as (props: Record<string, unknown>) => unknown)(props ?? {}), predicate) } catch { /* continue */ }
-  }
-  if (typeof type === 'function' && props?.children) {
-    try { return find(props.children, predicate) } catch { /* continue */ }
-  }
-  for (const child of Array.isArray(props?.children) ? props.children : [props?.children]) {
-    try { return find(child, predicate) } catch { /* continue */ }
-  }
-  throw new Error('element not found')
-}
 
 const click = async (tree: unknown, label: string) => {
   render(tree)
