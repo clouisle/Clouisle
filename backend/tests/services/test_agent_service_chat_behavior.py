@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.llm.types import FunctionCall, ToolCall
+from app.llm.types import FunctionCall, MessageRole, ToolCall, ToolDefinition
+from app.models.agent import RAGMode
 
 # ToolCall is currently evaluated from a TYPE_CHECKING-only import in agent.py.
 builtins.ToolCall = ToolCall
@@ -53,3 +54,64 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
         ("tool", "{'results': ['match']}"),
     ]
     service._execute_tool.assert_awaited_once_with(agent=agent, tool_call=tool_call)
+
+
+@pytest.mark.anyio
+async def test_build_messages_adds_context_history_and_rag_before_current_message():
+    agent = SimpleNamespace(system_prompt="Be concise", rag_mode=RAGMode.AUTO)
+    service = AgentService()
+    service._retrieve_rag_context = AsyncMock(return_value="Trusted context")
+
+    messages = await service._build_messages(
+        agent,
+        "Current question",
+        context={"region": "EU"},
+        conversation_history=[
+            {"role": "user", "content": "Earlier question"},
+            {"role": "assistant", "content": "Earlier answer"},
+            {"role": "system", "content": "Additional rule"},
+            {"role": "ignored", "content": "Do not include"},
+        ],
+    )
+
+    assert [(message.role, message.content) for message in messages] == [
+        (MessageRole.SYSTEM, "Be concise\n\nContext:\n- region: EU"),
+        (MessageRole.USER, "Earlier question"),
+        (MessageRole.ASSISTANT, "Earlier answer"),
+        (MessageRole.SYSTEM, "Additional rule"),
+        (MessageRole.SYSTEM, "Relevant context:\nTrusted context"),
+        (MessageRole.USER, "Current question"),
+    ]
+    service._retrieve_rag_context.assert_awaited_once_with(agent, "Current question")
+
+
+@pytest.mark.anyio
+async def test_agent_tools_include_available_builtin_media_and_agentic_search():
+    agent = SimpleNamespace(
+        tools_config=[
+            {"type": "builtin", "name": "web_search"},
+            {"type": "builtin", "name": "missing"},
+            {"type": "mcp", "name": "future"},
+        ],
+        enable_image_generation=True,
+        enable_video_generation=False,
+        rag_mode=RAGMode.AGENTIC,
+    )
+    builtin = ToolDefinition(
+        type="function",
+        function={
+            "name": "web_search",
+            "description": "Search",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    )
+    service = AgentService()
+    service._get_builtin_tool = lambda name: builtin if name in {"web_search", "generate_image"} else None
+
+    tools = await service._get_agent_tools(agent)
+
+    assert [tool.function.name for tool in tools] == [
+        "web_search",
+        "web_search",
+        "search_knowledge_base",
+    ]
