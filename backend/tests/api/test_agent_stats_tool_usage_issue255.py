@@ -62,6 +62,10 @@ def client(app):
 
 
 def test_tool_usage_requires_authentication(app):
+    async def reject_unauthenticated():
+        raise BusinessError(status_code=403)
+
+    app.dependency_overrides[deps.get_current_user] = reject_unauthenticated
     response = TestClient(app).get(f"/api/v1/agents/{uuid4()}/stats/tool-usage")
 
     assert response.status_code == 403
