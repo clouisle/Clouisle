@@ -33,7 +33,9 @@ async def test_tts_normalizes_options_and_returns_encoded_audio():
     client = AsyncClient(SimpleNamespace(status_code=200, content=b"audio"))
     adapter = OpenAITTSAdapter(model("tts-1"))
 
-    with patch("app.llm.adapters.audio.openai_tts.httpx.AsyncClient", return_value=client):
+    with patch(
+        "app.llm.adapters.audio.openai_tts.httpx.AsyncClient", return_value=client
+    ):
         result = await adapter.synthesize(
             TTSRequest(text="Hello", voice="unsupported", format="other", speed=1.25)
         )
@@ -112,7 +114,9 @@ async def test_stt_posts_audio_options_and_parses_verbose_response():
     client = AsyncClient(response)
     adapter = OpenAISTTAdapter(model("whisper-1"))
 
-    with patch("app.llm.adapters.audio.openai_stt.httpx.AsyncClient", return_value=client):
+    with patch(
+        "app.llm.adapters.audio.openai_stt.httpx.AsyncClient", return_value=client
+    ):
         result = await adapter.transcribe(
             STTRequest(
                 audio=AudioContent(base64="YXVkaW8="),
@@ -143,7 +147,9 @@ async def test_stt_handles_text_and_missing_audio():
     adapter._get_audio_data = AsyncMock(return_value=b"audio")
     client = AsyncClient(SimpleNamespace(status_code=200, text="Transcript"))
 
-    with patch("app.llm.adapters.audio.openai_stt.httpx.AsyncClient", return_value=client):
+    with patch(
+        "app.llm.adapters.audio.openai_stt.httpx.AsyncClient", return_value=client
+    ):
         result = await adapter.transcribe(
             STTRequest(audio=AudioContent(base64="YQ=="), response_format="text")
         )
@@ -160,12 +166,20 @@ async def test_stt_loads_audio_from_file_and_url(tmp_path):
     audio_file.write_bytes(b"file-audio")
     adapter = OpenAISTTAdapter(model("whisper-1"))
 
-    assert await adapter._get_audio_data(
-        STTRequest(audio=AudioContent(file_path=str(audio_file)))
-    ) == b"file-audio"
+    assert (
+        await adapter._get_audio_data(
+            STTRequest(audio=AudioContent(file_path=str(audio_file)))
+        )
+        == b"file-audio"
+    )
 
     client = AsyncClient(SimpleNamespace(status_code=200, content=b"url-audio"))
-    with patch("app.llm.adapters.audio.openai_stt.httpx.AsyncClient", return_value=client):
-        assert await adapter._get_audio_data(
-            STTRequest(audio=AudioContent(url="https://example.test/audio"))
-        ) == b"url-audio"
+    with patch(
+        "app.llm.adapters.audio.openai_stt.httpx.AsyncClient", return_value=client
+    ):
+        assert (
+            await adapter._get_audio_data(
+                STTRequest(audio=AudioContent(url="https://example.test/audio"))
+            )
+            == b"url-audio"
+        )
