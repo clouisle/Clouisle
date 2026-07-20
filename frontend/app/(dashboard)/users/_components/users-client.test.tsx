@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
@@ -7,8 +7,10 @@ const usersApi = {
   getStats: mock(async () => ({ total: 1, active: 1, inactive: 0, pending: 0 })),
   deactivateUser: mock(),
   activateUser: mock(),
+  deleteUser: mock(),
 }
 const toast = { success: mock(() => {}) }
+const canPerform = mock(() => true)
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -22,8 +24,8 @@ mock.module('@/lib/api', () => ({ siteSettingsApi: { getPublic: mock(async () =>
 mock.module('@/lib/api/admin/roles', () => ({ rolesApi: { getRoles: mock(async () => ({ items: [] })) } }))
 mock.module('@/lib/utils', () => ({ formatDateTime: (value: string) => value }))
 mock.module('@/components/permission-guard', () => ({
-  PermissionGuard: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  useCanPerform: () => ({ canPerform: () => true }),
+  PermissionGuard: ({ children, permission }: React.PropsWithChildren<{ permission: string }>) => canPerform(permission) ? <>{children}</> : null,
+  useCanPerform: () => ({ canPerform }),
 }))
 mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => React.useState('') }))
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
@@ -39,13 +41,13 @@ mock.module('@/components/ui/table', () => ({
   TableHeader: ({ children }: React.PropsWithChildren) => <thead>{children}</thead>,
   TableRow: ({ children, ...props }: React.HTMLAttributes<HTMLTableRowElement>) => <tr {...props}>{children}</tr>,
 }))
-mock.module('@/components/ui/select', () => ({ Select: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectItem: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectValue: () => null }))
+mock.module('@/components/ui/select', () => ({ Select: ({ children, onValueChange }: React.PropsWithChildren<{ onValueChange: (value: string) => void }>) => <div data-select onClick={() => onValueChange('20')}>{children}</div>, SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectItem: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectValue: () => null }))
 mock.module('@/components/ui/dropdown-menu', () => ({ DropdownMenu: ({ children }: React.PropsWithChildren) => <>{children}</>, DropdownMenuContent: ({ children }: React.PropsWithChildren) => <>{children}</>, DropdownMenuItem: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>, DropdownMenuSeparator: () => null, DropdownMenuTrigger: ({ children }: React.PropsWithChildren) => <>{children}</> }))
-mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: () => null }))
+mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: ({ title, onSelectionChange }: { title: string, onSelectionChange: (values: Set<string>) => void }) => <button onClick={() => onSelectionChange(new Set([title === 'status' ? 'inactive' : 'admin']))}>{`filter-${title}`}</button> }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>, TooltipContent: ({ children }: React.PropsWithChildren) => <>{children}</>, TooltipTrigger: ({ children, render, ...props }: React.PropsWithChildren<{ render?: React.ReactElement }>) => render ? React.cloneElement(render, props) : <>{children}</> }))
 mock.module('@/components/ui/alert-dialog', () => ({ AlertDialog: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogAction: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>, AlertDialogCancel: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogContent: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogDescription: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogFooter: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogHeader: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogTitle: ({ children }: React.PropsWithChildren) => <>{children}</> }))
-mock.module('./user-dialog', () => ({ UserDialog: () => null }))
-mock.module('./delete-user-dialog', () => ({ DeleteUserDialog: () => null }))
+mock.module('./user-dialog', () => ({ UserDialog: ({ open, user, onSuccess }: { open: boolean, user: typeof user | null, onSuccess: () => void }) => open ? <button onClick={onSuccess}>{user ? `save-${user.username}` : 'save-new-user'}</button> : null }))
+mock.module('./delete-user-dialog', () => ({ DeleteUserDialog: ({ open, user, onSuccess }: { open: boolean, user: typeof user | null, onSuccess: () => void }) => open ? <button onClick={onSuccess}>{`confirm-delete-${user?.username}`}</button> : null }))
 mock.module('./send-notification-dialog', () => ({ SendNotificationDialog: () => null }))
 mock.module('lucide-react', () => new Proxy({}, { get: () => () => <span /> }))
 
@@ -68,14 +70,20 @@ function button(renderer: ReactTestRenderer, label: string) {
   return renderer.root.findAllByType('button').find(node => node.children.includes(label))!
 }
 
+beforeEach(() => {
+  canPerform.mockImplementation(() => true)
+  usersApi.getUsers.mockReset()
+  usersApi.getStats.mockReset()
+  usersApi.getStats.mockResolvedValue({ total: 1, active: 1, inactive: 0, pending: 0 })
+  usersApi.deactivateUser.mockReset()
+  usersApi.activateUser.mockReset()
+  usersApi.deleteUser.mockReset()
+  toast.success.mockClear()
+})
+
 afterEach(() => {
   for (const renderer of renderers) act(() => renderer.unmount())
   renderers.length = 0
-  mock.restore()
-  usersApi.getUsers.mockReset()
-  usersApi.getStats.mockResolvedValue({ total: 1, active: 1, inactive: 0, pending: 0 })
-  usersApi.deactivateUser.mockReset()
-  toast.success.mockClear()
 })
 
 describe('UsersClient', () => {
@@ -96,6 +104,66 @@ describe('UsersClient', () => {
     expect(JSON.stringify(renderer.toJSON())).toContain('ada@example.com')
   })
 
+  test('filters the list and recovers from an initial API failure', async () => {
+    usersApi.getUsers.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValue({ items: [user], total: 1 })
+    const renderer = render()
+    await act(async () => {})
+    expect(JSON.stringify(renderer.toJSON())).toContain('noUsers')
+
+    const search = renderer.root.findByProps({ placeholder: 'filterUsers' })
+    await act(async () => search.props.onChange({ target: { value: 'ada' } }))
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: undefined, roles: undefined, search: 'ada' })
+    expect(JSON.stringify(renderer.toJSON())).toContain('Ada')
+
+    await act(async () => button(renderer, 'filter-status').props.onClick())
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: ['inactive'], roles: undefined, search: 'ada' })
+    await act(async () => button(renderer, 'filter-role').props.onClick())
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: ['inactive'], roles: ['admin'], search: 'ada' })
+  })
+
+  test('changes page and page size through pagination controls', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 25 })
+    const renderer = render()
+    await act(async () => {})
+
+    const paginationButtons = renderer.root.findAllByType('button').filter(node => node.props.size === 'icon' && node.props.variant === 'outline')
+    await act(async () => paginationButtons[2].props.onClick())
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 2, pageSize: 10, status: undefined, roles: undefined, search: undefined })
+
+    await act(async () => renderer.root.findByProps({ 'data-select': true }).props.onClick())
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, status: undefined, roles: undefined, search: undefined })
+  })
+
+  test('opens create and edit dialogs and refreshes after each success callback', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
+    const renderer = render()
+    await act(async () => {})
+
+    await act(async () => button(renderer, 'createUser').props.onClick())
+    await act(async () => button(renderer, 'save-new-user').props.onClick())
+    expect(usersApi.getUsers).toHaveBeenCalledTimes(2)
+    expect(usersApi.getStats).toHaveBeenCalledTimes(2)
+
+    await act(async () => button(renderer, 'edit').props.onClick())
+    expect(button(renderer, 'save-Ada')).toBeDefined()
+    await act(async () => button(renderer, 'save-Ada').props.onClick())
+    expect(usersApi.getUsers).toHaveBeenCalledTimes(3)
+  })
+
+  test('deactivates an active user and reloads list and stats', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
+    usersApi.deactivateUser.mockResolvedValue(undefined)
+    const renderer = render()
+    await act(async () => {})
+
+    await act(async () => button(renderer, 'deactivate').props.onClick())
+
+    expect(usersApi.deactivateUser).toHaveBeenCalledWith('user-1')
+    expect(toast.success).toHaveBeenCalledWith('userDeactivated')
+    expect(usersApi.getUsers).toHaveBeenCalledTimes(2)
+    expect(usersApi.getStats).toHaveBeenCalledTimes(2)
+  })
+
   test('contains a failed status action without reporting success', async () => {
     usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
     usersApi.deactivateUser.mockRejectedValueOnce(new Error('unavailable'))
@@ -106,5 +174,36 @@ describe('UsersClient', () => {
 
     expect(usersApi.deactivateUser).toHaveBeenCalledWith('user-1')
     expect(toast.success).not.toHaveBeenCalled()
+    expect(usersApi.getUsers).toHaveBeenCalledTimes(1)
+  })
+
+  test('hides create, edit, status, and delete actions without permission', async () => {
+    canPerform.mockImplementation(() => false)
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
+    const renderer = render()
+    await act(async () => {})
+
+    for (const label of ['createUser', 'edit', 'deactivate']) {
+      expect(renderer.root.findAllByType('button').some(node => node.children.includes(label))).toBe(false)
+    }
+    expect(renderer.root.findAllByType('button').filter(node => node.children.includes('delete'))).toHaveLength(1)
+    expect(canPerform).toHaveBeenCalledWith('admin:user:delete')
+  })
+
+  test('deletes selected users and refreshes list and stats', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
+    usersApi.deleteUser.mockResolvedValue(undefined)
+    const renderer = render()
+    await act(async () => {})
+
+    const checkboxes = renderer.root.findAllByType('input').filter(node => node.props.type === 'checkbox')
+    await act(async () => checkboxes[1].props.onChange())
+    const deleteButtons = renderer.root.findAllByType('button').filter(node => node.children.includes('delete'))
+    await act(async () => deleteButtons.at(-1)!.props.onClick())
+
+    expect(usersApi.deleteUser).toHaveBeenCalledWith('user-1')
+    expect(toast.success).toHaveBeenCalledWith('bulkDeleted:1')
+    expect(usersApi.getUsers).toHaveBeenCalledTimes(2)
+    expect(usersApi.getStats).toHaveBeenCalledTimes(2)
   })
 })
