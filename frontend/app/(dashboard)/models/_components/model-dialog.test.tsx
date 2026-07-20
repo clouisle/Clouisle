@@ -5,6 +5,7 @@ const createModel = mock(() => Promise.resolve({}))
 const updateModel = mock(() => Promise.resolve({}))
 const testModelConfig = mock(() => Promise.resolve({ success: true, message: 'Connected', latency_ms: 12 }))
 const toastSuccess = mock()
+const toastError = mock()
 let state: unknown[] = []
 let stateIndex = 0
 
@@ -31,7 +32,7 @@ const translation = (namespace: string) => Object.assign(
   { has: () => true },
 )
 mock.module('next-intl', () => ({ useTranslations: translation }))
-mock.module('sonner', () => ({ toast: { success: toastSuccess, error: mock() } }))
+mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api/admin/models', () => ({
   modelsApi: { createModel, updateModel, testModelConfig },
 }))
@@ -76,9 +77,23 @@ const { ModelDialog } = await import('./model-dialog')
 type Tree = { type: unknown; props: Record<string, unknown> }
 const providers = [
   { code: 'openai', name: 'OpenAI', base_url: 'https://api.openai.com/v1' },
+  { code: 'openai_responses', name: 'OpenAI Responses', base_url: 'https://api.openai.com/v1' },
+  { code: 'anthropic', name: 'Anthropic', base_url: 'https://api.anthropic.com' },
+  { code: 'google', name: 'Google', base_url: 'https://generativelanguage.googleapis.com' },
+  { code: 'azure_openai', name: 'Azure OpenAI', base_url: '' },
+  { code: 'deepseek', name: 'DeepSeek', base_url: 'https://api.deepseek.com' },
+  { code: 'qwen', name: 'Qwen', base_url: 'https://dashscope.aliyuncs.com' },
+  { code: 'volcengine', name: 'Volcengine', base_url: 'https://ark.cn-beijing.volces.com' },
+  { code: 'runway', name: 'Runway', base_url: 'https://api.dev.runwayml.com' },
+  { code: 'stability', name: 'Stability', base_url: 'https://api.stability.ai' },
   { code: 'ollama', name: 'Ollama', base_url: 'http://localhost:11434/v1' },
 ]
-const modelTypes = [{ code: 'chat', name: 'Chat' }]
+const modelTypes = [
+  { code: 'chat', name: 'Chat' },
+  { code: 'text_to_image', name: 'Image' },
+  { code: 'text_to_video', name: 'Video' },
+  { code: 'tts', name: 'TTS' },
+]
 const onOpenChange = mock()
 const onSuccess = mock()
 
@@ -105,9 +120,9 @@ function find(node: ReactNode, predicate: (tree: Tree) => boolean): Tree {
   return match
 }
 
-function render() {
+function render(model?: Parameters<typeof ModelDialog>[0]['model']) {
   stateIndex = 0
-  return ModelDialog({ open: true, onOpenChange, onSuccess, providers, modelTypes })
+  return ModelDialog({ open: true, onOpenChange, onSuccess, providers, modelTypes, model })
 }
 
 function change(id: string, value: string) {
@@ -115,8 +130,8 @@ function change(id: string, value: string) {
   ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
 }
 
-function chooseModelType() {
-  state[3] = 'chat'
+function chooseModelType(code = 'chat') {
+  state[3] = code
 }
 
 function chooseProvider(code: string) {
