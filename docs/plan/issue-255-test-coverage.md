@@ -395,6 +395,8 @@
 
 - Backend progress checkpoint (2026-07-21, commits through `04064cff`): 2,707 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 8,989 missed and 11,640 branches with 1,547 partial, for 72% aggregate coverage after platform tools, conversations, and login authentication-boundary coverage. Conversations reaches 83% focused statement and 79% branch coverage; focused results remain incremental evidence only. Final 95% line and branch gates remain inactive.
 
+- Frontend progress checkpoint (2026-07-21, commits through `00e117ef`): 1,476 isolated tests passed with 6,675 assertions. Complete LCOV aggregation reports 76.86% functions (`5,543/7,212`) and 84.82% lines (`77,081/90,876`); all 470 eligible tracked sources appear in LCOV. Dashboard user-management behavior now covers loading, filters, pagination, mutation callbacks, permission-hidden actions, and failure recovery, and the Agent UI automation guide is synchronized without claiming browser/E2E proof. Final 95% gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
