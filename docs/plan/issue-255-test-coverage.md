@@ -399,6 +399,10 @@
 
 - Backend progress checkpoint (2026-07-21, commits through `576b7bb8`): 2,712 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 8,927 missed and 11,640 branches with 1,574 partial, for 72% aggregate coverage after notification endpoint filtering, authorization, persistence, provider-error redaction, and no-external-delivery boundaries. Final 95% line and branch gates remain inactive.
 
+- Frontend progress checkpoint (2026-07-21, commits through `ff9d069a`): 1,487 isolated tests passed with 6,744 assertions. Complete LCOV aggregation reports 78.15% functions (`5,652/7,232`) and 85.21% lines (`77,424/90,863`); all 470 eligible tracked sources appear in LCOV. Agent orchestration reaches 92.11% focused functions and 96.79% lines, the platform MCP dialog reaches 70.18% functions and 94.57% lines, and settings-dialog account deletion now covers validation, mapped failure, recovery, and success. Final 95% line/function/statement gates remain inactive.
+
+- Backend progress checkpoint (2026-07-21, commits through `3cbad9fc`): 2,738 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 8,811 missed and 11,640 branches with 1,568 partial, for 73% aggregate coverage after LLM-manager lookup, routing, provider-failure, timeout, authorization, quota, usage, and media-status coverage. The manager reaches 75% in its focused report; focused results remain incremental evidence only. Final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
