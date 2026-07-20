@@ -429,6 +429,20 @@ async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch)
     with pytest.raises(RuntimeError, match="provider down"):
         await store._rerank_results("query", recalled, "model", False, None)
 
+    team_manager = SimpleNamespace(
+        team_rerank=AsyncMock(side_effect=RuntimeError("team provider down"))
+    )
+    monkeypatch.setattr(
+        vector_store, "_get_model_manager", Mock(return_value=team_manager)
+    )
+    team_store = VectorStore(team_id="team")
+    assert (
+        await team_store._rerank_results("query", recalled, "model", True, None)
+        is recalled
+    )
+    with pytest.raises(RuntimeError, match="team provider down"):
+        await team_store._rerank_results("query", recalled, "model", False, None)
+
 
 @pytest.mark.asyncio
 async def test_team_rerank_and_search_apply_candidate_window(monkeypatch):
@@ -604,3 +618,106 @@ async def test_deletion_skips_remote_calls_for_missing_dimensions_and_collection
     documents = SimpleNamespace(values_list=AsyncMock(return_value=[]))
     monkeypatch.setattr(vector_store.Document, "filter", Mock(return_value=documents))
     assert await VectorStore().delete_kb_vectors(KB_ID) == 0
+
+
+def test_qdrant_dependency_filter_and_score_boundaries(monkeypatch, qdrant_models):
+    monkeypatch.setattr(vector_store, "qmodels", None)
+    with pytest.raises(RuntimeError, match="qdrant-client is not installed"):
+        vector_store._qdrant_distance()
+    with pytest.raises(RuntimeError, match="qdrant-client is not installed"):
+        vector_store._build_qdrant_filter(KB_ID, None)
+
+    monkeypatch.setattr(vector_store, "qmodels", qdrant_models)
+    document_ids = [uuid4(), uuid4()]
+    q_filter = vector_store._build_qdrant_filter(KB_ID, document_ids)
+    assert q_filter.must[0].match.value == str(KB_ID)
+    assert q_filter.must[1].match.any == [str(value) for value in document_ids]
+
+    monkeypatch.setattr(vector_store.settings, "QDRANT_DISTANCE", "euclid")
+    assert vector_store._normalize_qdrant_score(3.0) == 0.25
+    monkeypatch.setattr(vector_store.settings, "QDRANT_DISTANCE", "dot")
+    assert vector_store._normalize_qdrant_score(3.0) == 3.0
+
+
+@pytest.mark.asyncio
+async def test_collection_and_payload_index_existing_boundaries(monkeypatch):
+    client = SimpleNamespace(
+        get_collection=AsyncMock(return_value=object()),
+        create_collection=AsyncMock(),
+        create_payload_index=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        vector_store, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+
+    collection = vector_store._collection_name(7)
+    assert await vector_store._ensure_collection(7) == collection
+    client.create_collection.assert_not_awaited()
+    await vector_store._ensure_payload_index(collection, "kb_id")
+    assert client.create_payload_index.await_count == 2
+
+    monkeypatch.setattr(vector_store, "qmodels", None)
+    with pytest.raises(RuntimeError, match="qdrant-client is not installed"):
+        await vector_store._ensure_collection(8)
+    with pytest.raises(RuntimeError, match="qdrant-client is not installed"):
+        await vector_store._ensure_payload_index("kb_8", "kb_id")
+
+
+@pytest.mark.asyncio
+async def test_embedding_storage_dimension_boundaries(monkeypatch):
+    client = SimpleNamespace(
+        upsert=AsyncMock(return_value=SimpleNamespace(status="completed"))
+    )
+    ensure_collection = AsyncMock(return_value="kb_2")
+    monkeypatch.setattr(vector_store, "_ensure_collection", ensure_collection)
+    monkeypatch.setattr(
+        vector_store, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    store = VectorStore()
+
+    chunk_id = uuid4()
+    await store._store_embedding(chunk_id, [0.1, 0.2])
+    assert store._detected_dimension == 2
+    assert client.upsert.await_args.kwargs["points"][0].payload == {}
+
+    with pytest.raises(ValueError, match="Cannot determine embedding dimension"):
+        await VectorStore()._batch_store_embeddings([uuid4()], [[]])
+
+
+@pytest.mark.asyncio
+async def test_mutation_paths_delete_existing_remote_vectors(monkeypatch):
+    document_id = uuid4()
+    chunk_id = uuid4()
+    values = [
+        SimpleNamespace(values_list=AsyncMock(return_value=[document_id])),
+        SimpleNamespace(delete=AsyncMock(return_value=1)),
+    ]
+    monkeypatch.setattr(vector_store.DocumentChunk, "filter", Mock(side_effect=values))
+    monkeypatch.setattr(
+        vector_store.Document,
+        "filter",
+        Mock(return_value=SimpleNamespace(values_list=AsyncMock(return_value=[KB_ID]))),
+    )
+    monkeypatch.setattr(
+        vector_store, "get_kb_embedding_dimension", AsyncMock(return_value=3)
+    )
+    monkeypatch.setattr(
+        vector_store, "_collection_exists", AsyncMock(return_value=True)
+    )
+    delete_points = AsyncMock()
+    monkeypatch.setattr(vector_store, "_delete_qdrant_points", delete_points)
+
+    assert await VectorStore().delete_chunk_vector(chunk_id) is True
+    delete_points.assert_awaited_once_with(
+        vector_store._collection_name(3), [str(chunk_id)]
+    )
+
+    documents = SimpleNamespace(values_list=AsyncMock(return_value=[document_id]))
+    chunks = SimpleNamespace(delete=AsyncMock(return_value=2))
+    monkeypatch.setattr(vector_store.Document, "filter", Mock(return_value=documents))
+    monkeypatch.setattr(vector_store.DocumentChunk, "filter", Mock(return_value=chunks))
+    delete_filter = AsyncMock()
+    monkeypatch.setattr(vector_store, "_delete_qdrant_filter", delete_filter)
+
+    assert await VectorStore().delete_kb_vectors(KB_ID) == 2
+    delete_filter.assert_awaited_once()

@@ -196,3 +196,72 @@ async def test_hybrid_retrieval_falls_back_when_vector_provider_fails(monkeypatc
         {"chunk_id": "fulltext", "score": 0.5, "search_type": "hybrid"}
     ]
     fulltext_search.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_vector_retrieval_keeps_mapping_metadata_and_euclidean_scores(
+    monkeypatch,
+):
+    chunk_id = UUID(int=3)
+    document_id = UUID(int=2)
+    chunk = SimpleNamespace(
+        id=chunk_id,
+        document_id=document_id,
+        document=SimpleNamespace(name="Guide"),
+        content="Result",
+        metadata={"page": 1},
+    )
+    store = VectorStore(embedding_dimension=2)
+    monkeypatch.setattr(store, "embed_query", AsyncMock(return_value=[0.1, 0.2]))
+    monkeypatch.setattr(
+        vector_store_module, "_ensure_collection", AsyncMock(return_value="kb_2")
+    )
+    monkeypatch.setattr(
+        vector_store_module,
+        "_qdrant_search",
+        AsyncMock(return_value=[SimpleNamespace(id=chunk_id, score=3.0)]),
+    )
+    monkeypatch.setattr(
+        vector_store_module.DocumentChunk, "filter", lambda **_kwargs: Query([chunk])
+    )
+    monkeypatch.setattr(vector_store_module.settings, "QDRANT_DISTANCE", "euclid")
+
+    assert await store._vector_search(UUID(int=1), "query", 1) == [
+        {
+            "chunk_id": chunk_id,
+            "document_id": document_id,
+            "document_name": "Guide",
+            "content": "Result",
+            "score": 0.25,
+            "metadata": {"page": 1},
+            "search_type": "vector",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_without_dimension_or_results_skips_optional_branches(monkeypatch):
+    store = VectorStore()
+    monkeypatch.setattr(
+        vector_store_module, "get_kb_embedding_dimension", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        store,
+        "_resolve_rerank_config",
+        AsyncMock(
+            return_value={
+                "enabled": True,
+                "model_id": "reranker",
+                "candidate_k": 2,
+                "fail_open": True,
+                "score_threshold": None,
+            }
+        ),
+    )
+    monkeypatch.setattr(store, "_vector_search", AsyncMock(return_value=[]))
+    rerank = AsyncMock()
+    monkeypatch.setattr(store, "_rerank_results", rerank)
+
+    assert await store.search(UUID(int=1), "query", search_mode="vector") == []
+    assert store.embedding_dimension is None
+    rerank.assert_not_awaited()
