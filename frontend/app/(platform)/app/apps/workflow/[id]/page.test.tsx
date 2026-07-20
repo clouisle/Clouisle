@@ -4,7 +4,12 @@ type Props = Record<string, unknown>
 type TestNode = { type: unknown; props: Props }
 type StateRecord = { value: unknown; set: (value: unknown) => void }
 
-const jsx = (type: unknown, props: Props = {}): TestNode => ({ type, props })
+const jsx = (type: unknown, props: Props = {}): TestNode => {
+  if (props.ref && typeof props.ref === 'object') {
+    ;(props.ref as { current: unknown }).current = { getBoundingClientRect: () => ({ right: 48, top: 24 }) }
+  }
+  return { type, props }
+}
 const element = (props: Props) => jsx('element', props)
 const listeners = new Map<string, Set<EventListener>>()
 globalThis.window = {
@@ -270,6 +275,8 @@ test('creates the selected start node for an empty workflow', async () => {
   const emptyApi = api({ getWorkflow: mock(async () => ({ ...workflow, definition: { nodes: [], edges: [] } })) })
   let tree = await settle(emptyApi)
   const selector = descendants(tree).find((node) => node.type === 'start-node-selector')!
+  ;(selector.props.onCancel as () => void)()
+  expect(push).toHaveBeenCalledWith('/app/apps')
 
   ;(selector.props.onSelect as (type: string) => void)('trigger')
   tree = render(emptyApi)
@@ -400,8 +407,17 @@ test('adds connected container nodes and validates selection on the canvas', asy
   tree = render(editorApi)
   const popover = descendants(tree).find((node) => node.type === 'add-node-popover')!
   expect(popover.props.position).toEqual({ x: 500, y: 300 })
+  ;(popover.props.onClose as () => void)()
+  tree = render(editorApi)
+  expect(descendants(tree).some((node) => node.type === 'add-node-popover')).toBe(false)
+  ;(canvas.props.onConnectStart as (event: unknown, params: Props) => void)({}, {
+    nodeId: 'start-1', handleId: 'source-a', handleType: 'source',
+  })
+  ;(canvas.props.onConnectEnd as (event: Props, state: Props) => void)({ clientX: 500, clientY: 300 }, { isValid: false })
+  tree = render(editorApi)
+  const reopenedPopover = descendants(tree).find((node) => node.type === 'add-node-popover')!
 
-  ;(popover.props.onSelect as (type: string, source: string, handle?: string) => void)('loop', 'start-1', 'source-a')
+  ;(reopenedPopover.props.onSelect as (type: string, source: string, handle?: string) => void)('loop', 'start-1', 'source-a')
   tree = render(editorApi)
   expect((flow(tree).props.nodes as Props[]).map((node) => node.type)).toEqual(['user_input', 'loop', 'loop_start'])
   expect(flow(tree).props.edges).toEqual([expect.objectContaining({ source: 'start-1', sourceHandle: 'source-a' })])
@@ -410,8 +426,13 @@ test('adds connected container nodes and validates selection on the canvas', asy
     typeof node.props.onClick === 'function' && String(node.props.className).includes('relative h-8 w-8'))!
   ;(checklistButton.props.onClick as () => void)()
   tree = render(editorApi)
-  const checklist = descendants(tree).find((node) => node.type === 'validation-checklist')!
+  let checklist = descendants(tree).find((node) => node.type === 'validation-checklist')!
   expect(checklist.props.issues).toEqual([{ nodeId: 'start-1', message: 'invalid' }])
+  ;(checklist.props.onClose as () => void)()
+  tree = render(editorApi)
+  ;(checklistButton.props.onClick as () => void)()
+  tree = render(editorApi)
+  checklist = descendants(tree).find((node) => node.type === 'validation-checklist')!
   ;(checklist.props.onSelectNode as (id: string) => void)('start-1')
   expect(setCenter).toHaveBeenCalledWith(100, 50, { zoom: 1, duration: 300 })
 })
@@ -437,6 +458,9 @@ test('supports run refetch, settings, save failure recovery, and custom navigati
   tree = render(editorApi, { backHref: '/custom/workflows', baseUrl: '/custom/workflows/workflow-1' })
   runDrawer = descendants(tree).find((node) => node.type === 'workflow-run-drawer')!
   expect((runDrawer.props.workflow as Props).name).toBe('Refetched')
+  ;(runDrawer.props.onClose as () => void)()
+  tree = render(editorApi, { backHref: '/custom/workflows', baseUrl: '/custom/workflows/workflow-1' })
+  expect(descendants(tree).find((node) => node.type === 'workflow-run-drawer')?.props.open).toBe(false)
   editorApi.getWorkflow.mockRejectedValueOnce(new Error('best effort'))
   await (runDrawer.props.onDebugRunComplete as () => Promise<void>)()
 
@@ -511,4 +535,236 @@ test('handles keyboard copy, paste, delete, modes, save, and listener cleanup', 
 
   cleanups.forEach((cleanup) => cleanup?.())
   expect(listeners.get('keydown')?.size ?? 0).toBe(0)
+})
+
+test('drives toolbar actions, drawers, navigation, fullscreen, and dialog mutations', async () => {
+  const editorApi = api()
+  let tree = await settle(editorApi)
+
+  const addButton = descendants(tree).find((node) => node.props.ref && node.props.onClick)!
+  ;(addButton.props.onClick as (event: Props) => void)({ currentTarget: { getBoundingClientRect: () => ({ right: 80, top: 30 }) } })
+  tree = render(editorApi)
+  let popover = descendants(tree).find((node) => node.type === 'add-node-popover')!
+  expect(popover.props.position).toEqual({ x: 88, y: 30 })
+  ;(popover.props.onSelect as (type: string, source: string) => void)('llm', '')
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).some((node) => node.type === 'llm')).toBe(true)
+
+  ;(addButton.props.onClick as (event: Props) => void)({ currentTarget: { getBoundingClientRect: () => ({ right: 80, top: 30 }) } })
+  tree = render(editorApi)
+  popover = descendants(tree).find((node) => node.type === 'add-node-popover')!
+  ;(popover.props.onSelect as (type: string, source: string) => void)('iteration', '')
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).filter((node) => String(node.type).startsWith('iteration'))).toHaveLength(2)
+
+  let toolbarActions = descendants(tree).filter((node) => node.props.onClick && String(node.props.className).includes('p-1.5'))
+  ;(toolbarActions[1].props.onClick as () => void)()
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).find((node) => node.type === 'comment')).toEqual(expect.objectContaining({
+    data: expect.objectContaining({ author: 'owner' }),
+  }))
+
+  toolbarActions = descendants(tree).filter((node) => node.props.onClick && String(node.props.className).includes('p-1.5'))
+  ;(toolbarActions[4].props.onClick as () => void)()
+  await new Promise((resolve) => setTimeout(resolve, 110))
+  expect(fitView).toHaveBeenCalledWith({ padding: 0.2, duration: 300 })
+  expect(toastSuccess).toHaveBeenCalledWith('editor.nodesArranged')
+
+  const actionIcons = descendants(tree).filter((node) => node.props.onClick && String(node.props.className).includes('h-8 w-8'))
+  ;(actionIcons.at(-1)!.props.onClick as () => void)()
+  tree = render(editorApi)
+  const settings = descendants(tree).find((node) => node.type === 'workflow-settings-drawer')!
+  expect(settings.props.open).toBe(true)
+  ;(settings.props.onUpdate as (value: Props) => void)({ ...workflow, name: 'Renamed' })
+  ;(settings.props.onClose as () => void)()
+
+  const embedButton = actionIcons.at(-2)!
+  ;(embedButton.props.onClick as () => void)()
+  tree = render(editorApi)
+  const embed = descendants(tree).find((node) => node.type === 'embed-config-dialog')!
+  expect(embed.props.open).toBe(true)
+  ;(embed.props.onUpdate as (value: Props) => void)({ ...workflow, name: 'Embedded' })
+  ;(embed.props.onOpenChange as (open: boolean) => void)(false)
+
+  const fullscreen = descendants(tree).filter((node) => node.props.onClick && String(node.props.className).includes('p-1.5')).at(-1)!
+  ;(fullscreen.props.onClick as () => void)()
+  tree = render(editorApi)
+  expect(String(tree.props.className)).toContain('fixed inset-0')
+  const escape = [...listeners.get('keydown')!].find((listener) => listener !== [...listeners.get('keydown')!][0]) as (event: Props) => void
+  escape({ key: 'Escape' })
+  tree = render(editorApi)
+  expect(String(tree.props.className)).not.toContain('fixed inset-0')
+
+  const logs = descendants(tree).find((node) => node.props.onClick && text(node.props.children).includes('logs'))!
+  ;(logs.props.onClick as () => void)()
+  const monitor = descendants(tree).find((node) => node.props.onClick && text(node.props.children).includes('monitor'))!
+  ;(monitor.props.onClick as () => void)()
+  expect(push).toHaveBeenCalledWith('/app/apps/workflow/workflow-1/logs')
+  expect(push).toHaveBeenCalledWith('/app/apps/workflow/workflow-1/monitor')
+
+  const back = descendants(tree).find((node) => node.props.onClick && !text(node.props.children))!
+  ;(back.props.onClick as () => void)()
+  tree = render(editorApi)
+  const leave = descendants(tree).find((node) => node.props.onClick && text(node.props.children) === 'editor.leaveWithoutSaving')!
+  ;(leave.props.onClick as () => void)()
+  expect(push).toHaveBeenCalledWith('/app/apps')
+})
+
+test('handles nested connections, drag parenting, loop propagation, traces, and deletion', async () => {
+  const nested = {
+    ...workflow,
+    definition: {
+      nodes: [
+        workflow.definition.nodes[0],
+        { id: 'loop-1', type: 'loop', selected: true, position: { x: 100, y: 100 }, width: 500, height: 280, data: { type: 'loop', label: 'Loop', config: {} } },
+        { id: 'loop-start', type: 'loop_start', parentId: 'loop-1', position: { x: 20, y: 80 }, data: { type: 'loop_start', label: 'Loop start', config: {}, parentLoopId: 'loop-1' } },
+        { id: 'llm-1', type: 'llm', position: { x: 150, y: 160 }, data: { type: 'llm', label: 'LLM', config: {} } },
+      ],
+      edges: [{ id: 'inside', source: 'loop-start', target: 'llm-1' }],
+    },
+  }
+  const editorApi = api({ getWorkflow: mock(async () => nested) })
+  let tree = await settle(editorApi)
+  let canvas = flow(tree)
+
+  ;(canvas.props.onNodeDragStop as (event: unknown, node: Props) => void)({}, (canvas.props.nodes as Props[]).find((node) => node.id === 'llm-1')!)
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).find((node) => node.id === 'llm-1')?.parentId).toBe('loop-1')
+
+  const loop = (flow(tree).props.nodes as Props[]).find((node) => node.id === 'loop-1')!
+  ;(flow(tree).props.onNodeClick as (event: unknown, node: Props) => void)({}, loop)
+  tree = render(editorApi)
+  const drawer = descendants(tree).find((node) => node.type === 'node-config-drawer')!
+  ;(drawer.props.onUpdate as (id: string, data: Props) => void)('loop-1', { type: 'loop', label: 'Loop', config: {}, loopConfig: { max: 3 } })
+  tree = render(editorApi)
+  expect(((flow(tree).props.nodes as Props[]).find((node) => node.id === 'loop-start')?.data as Props).loopConfig).toEqual({ max: 3 })
+  ;(drawer.props.onClose as () => void)()
+
+  const run = descendants(tree).find((node) => node.type === 'workflow-run-drawer')!
+  ;(run.props.onNodeTracesChange as (traces: Map<string, Props>) => void)(new Map([['loop-1', { status: 'success' }]]))
+  tree = render(editorApi)
+  expect(((flow(tree).props.nodes as Props[]).find((node) => node.id === 'loop-1')?.data as Props).runtimeTrace).toEqual({ status: 'success' })
+
+  canvas = flow(tree)
+  ;(canvas.props.onConnectStart as (event: unknown, params: Props) => void)({}, { nodeId: 'loop-start', handleType: 'source' })
+  ;(canvas.props.onConnectEnd as (event: Props, state: Props) => void)({ touches: [{ clientX: 400, clientY: 250 }] }, { isValid: false })
+  tree = render(editorApi)
+  const nestedPopover = descendants(tree).find((node) => node.type === 'add-node-popover')!
+  expect(nestedPopover.props.isInsideLoop).toBe(true)
+  ;(nestedPopover.props.onSelect as (type: string, source: string) => void)('answer', 'loop-start')
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).find((node) => node.type === 'answer')?.parentId).toBe('loop-1')
+
+  const keydown = [...listeners.get('keydown')!][0] as (event: Props) => void
+  keydown({ key: 'Delete', ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'DIV', contentEditable: 'false' }, preventDefault() {} })
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).some((node) => node.id === 'loop-1' || node.parentId === 'loop-1')).toBe(false)
+})
+
+
+
+test('executes controller guards for iteration containment, dragging, and protected deletion', async () => {
+  const guardedWorkflow = {
+    ...workflow,
+    definition: {
+      nodes: [
+        { ...workflow.definition.nodes[0], selected: true },
+        { id: 'iteration-1', type: 'iteration', position: { x: 100, y: 100 }, width: 500, height: 280, data: { type: 'iteration', label: 'Iteration', config: {} } },
+        { id: 'iteration-start', type: 'iteration_start', parentId: 'iteration-1', position: { x: 20, y: 80 }, data: { type: 'iteration_start', label: 'Start', config: {} } },
+        { id: 'child-1', type: 'llm', parentId: 'iteration-1', position: { x: 30, y: 90 }, data: { type: 'llm', label: 'Child', config: {} } },
+        { id: 'outside-1', type: 'llm', position: { x: 150, y: 150 }, data: { type: 'llm', label: 'Outside', config: {} } },
+      ],
+      edges: [],
+    },
+  }
+  const editorApi = api({ getWorkflow: mock(async () => guardedWorkflow) })
+  let tree = await settle(editorApi)
+  const canvas = flow(tree)
+
+  ;(canvas.props.onNodesChange as (changes: Props[]) => void)([{ type: 'remove', id: 'outside-1' }])
+  expect(onNodesChangeBase).toHaveBeenCalledWith([{ type: 'remove', id: 'outside-1' }])
+  ;(canvas.props.onNodeDragStop as (event: unknown, node: Props | null) => void)({}, null)
+  ;(canvas.props.onNodeDragStop as (event: unknown, node: Props) => void)({}, (canvas.props.nodes as Props[]).find((node) => node.id === 'child-1')!)
+  ;(canvas.props.onNodeDragStop as (event: unknown, node: Props) => void)({}, (canvas.props.nodes as Props[]).find((node) => node.id === 'outside-1')!)
+  tree = render(editorApi)
+  expect((flow(tree).props.nodes as Props[]).find((node) => node.id === 'outside-1')?.parentId).toBeUndefined()
+
+  ;(flow(tree).props.onConnectStart as (event: unknown, params: Props) => void)({}, { nodeId: 'child-1', handleType: 'source' })
+  ;(flow(tree).props.onConnectEnd as (event: Props, state: Props) => void)({ clientX: 300, clientY: 220 }, { isValid: false })
+  tree = render(editorApi)
+  expect(descendants(tree).find((node) => node.type === 'add-node-popover')?.props.isInsideIteration).toBe(true)
+
+  const keydown = [...listeners.get('keydown')!][0] as (event: Props) => void
+  keydown({ key: 'Delete', ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'DIV', contentEditable: 'false' }, preventDefault() {} })
+  expect(toastError).toHaveBeenCalledWith('editor.cannotDeleteStart')
+})
+
+test('copies container children and numbers duplicate labels', async () => {
+  const containerWorkflow = {
+    ...workflow,
+    definition: {
+      nodes: [
+        workflow.definition.nodes[0],
+        { id: 'iteration-1', type: 'iteration', selected: true, position: { x: 100, y: 100 }, data: { type: 'iteration', label: 'Iteration', config: {} } },
+        { id: 'iteration-copy', type: 'iteration', selected: false, position: { x: 700, y: 100 }, data: { type: 'iteration', label: 'Iteration-copy', config: {} } },
+        { id: 'iteration-start', type: 'iteration_start', parentId: 'iteration-1', position: { x: 20, y: 80 }, data: { type: 'iteration_start', label: 'Start', config: {}, parentIterationId: 'iteration-1' } },
+      ],
+      edges: [],
+    },
+  }
+  const editorApi = api({ getWorkflow: mock(async () => containerWorkflow) })
+  let tree = await settle(editorApi)
+  const keydown = [...listeners.get('keydown')!][0] as (event: Props) => void
+  const event = (key: string) => ({ key, ctrlKey: true, metaKey: false, shiftKey: false, target: { tagName: 'DIV', contentEditable: 'false' }, preventDefault() {} })
+  keydown(event('c'))
+  keydown(event('v'))
+  tree = render(editorApi)
+
+  const copiedParent = (flow(tree).props.nodes as Props[]).find((node) => (node.data as Props).label === 'Iteration-copy 1')!
+  expect(copiedParent).toBeDefined()
+  expect((flow(tree).props.nodes as Props[]).some((node) => node.parentId === copiedParent.id)).toBe(true)
+})
+
+test('covers permission alternatives, rejected publishing, guarded events, and default wrapper', async () => {
+  currentUser = { id: 'admin-user', username: 'admin', is_superuser: false }
+  currentTeam = { id: 'team-1', role: 'admin' }
+  const editorApi = api({ publishWorkflow: mock(async () => { throw new Error('publish failed') }) })
+  let tree = await settle(editorApi)
+  expect(text(tree)).toContain('save')
+  await (findAction(tree, 'publish').props.onClick as () => Promise<void>)()
+  tree = render(editorApi)
+  expect(findAction(tree, 'publish').props.disabled).toBe(false)
+  expect(toastSuccess).not.toHaveBeenCalledWith('published')
+
+  const canvas = flow(tree)
+  ;(canvas.props.onConnectStart as (event: unknown, params: Props) => void)({}, { nodeId: 'start-1', handleType: 'target' })
+  ;(canvas.props.onConnectEnd as (event: Props, state: Props) => void)({ clientX: 10, clientY: 10 }, { isValid: false })
+  expect(descendants(render(editorApi)).some((node) => node.type === 'add-node-popover')).toBe(false)
+  ;(canvas.props.onConnectStart as (event: unknown, params: Props) => void)({}, { nodeId: 'start-1', handleType: 'source' })
+  ;(canvas.props.onConnectEnd as (event: Props, state: Props) => void)({ clientX: 10, clientY: 10 }, { isValid: true })
+  expect(descendants(render(editorApi)).some((node) => node.type === 'add-node-popover')).toBe(false)
+
+  const inputKey = [...listeners.get('keydown')!][0] as (event: Props) => void
+  const shortcut = (key: string) => ({ key, ctrlKey: true, metaKey: false, shiftKey: false, target: { tagName: 'DIV', contentEditable: 'false' }, preventDefault: mock(() => {}) })
+  inputKey(shortcut('1'))
+  tree = render(editorApi)
+  expect(descendants(tree).find((node) => node.type === 'add-node-popover')?.props.position).toEqual({ x: 56, y: 24 })
+  const commentShortcut = shortcut('2')
+  inputKey(commentShortcut)
+  inputKey(shortcut('5'))
+  await new Promise((resolve) => setTimeout(resolve, 110))
+  tree = render(editorApi)
+  expect(commentShortcut.preventDefault).toHaveBeenCalled()
+  expect(fitView).toHaveBeenCalled()
+
+  for (const key of ['v', 'Delete']) {
+    const preventDefault = mock(() => {})
+    inputKey({ key, ctrlKey: key === 'v', metaKey: false, shiftKey: false, target: { tagName: 'TEXTAREA', contentEditable: 'false' }, preventDefault })
+    expect(preventDefault).not.toHaveBeenCalled()
+  }
+
+  const pageModule = await import('./page')
+  const wrapper = pageModule.default() as TestNode
+  expect(wrapper.props.children.type).toBe(WorkflowEditorContent)
+  expect(wrapper.props.children.props.workflowId).toBe('workflow-1')
 })
