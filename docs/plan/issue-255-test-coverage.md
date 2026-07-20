@@ -300,6 +300,10 @@
 
 - Frontend progress checkpoint (2026-07-20, commit `722f7f73`): 992 isolated tests passed with 4,204 assertions after workflow start configuration system parameters, empty and populated user-input states, add/row-edit/icon-edit/remove actions, propagation guards, required/unnamed labels, and unknown-type fallback coverage. `bun run test:coverage` passes; Bun reports 91.32% lines and 86.55% functions for loaded sources. The honest source census reports 89 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Backend progress checkpoint (2026-07-20, commit `164e9c3c`): 4 focused API-key expiration task tests pass, and the target reaches 100% statements and branches (49 statements, 10 branches). The batch covers due reminders, under-one-day boundaries, skipped reminder days, expired keys, error propagation, and open/closed/missing event-loop paths; focused Ruff and diff checks pass. Whole-application backend line and branch targets remain incomplete.
+
+- Frontend progress checkpoint (2026-07-20, commit `979f68cb`): 995 isolated tests passed with 4,221 assertions after workflow file-to-URL configuration empty/file-variable hints, add/edit/delete/update callbacks, invalid/duplicate names, scalar/list output types, absolute-URL toggle, and output-collapse behavior coverage. `bun run test:coverage` passes; Bun reports 91.35% lines and 86.59% functions for loaded sources. The honest source census reports 88 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
