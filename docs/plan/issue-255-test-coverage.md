@@ -328,6 +328,8 @@
 
 - Backend focused checkpoint (2026-07-20, commits `f58d2d37` and `fb0d16b8`): chat message version utilities have 5 focused tests and 100% statement/branch coverage; prompt-generator helpers and SSE endpoints have 7 focused tests and 97% branch-aware coverage. Focused Ruff check and format check pass. The latest whole-application backend checkpoint remains 60%, so final 95% line and branch gates remain inactive.
 
+- Backend progress checkpoint (2026-07-20, commits through `c638420e`): 2,140 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,272 statements with 13,044 missed and 11,640 branches with 1,351 partial, for 60% aggregate coverage after chat-version, prompt-generator, and SSO attribute-mapping batches. The final independent 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
