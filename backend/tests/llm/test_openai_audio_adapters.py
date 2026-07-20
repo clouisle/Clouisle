@@ -161,6 +161,49 @@ async def test_stt_handles_text_and_missing_audio():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        (SimpleNamespace(status_code=401), AuthenticationError),
+        (
+            SimpleNamespace(
+                status_code=400,
+                json=lambda: {"error": {"message": "invalid audio"}},
+            ),
+            InvalidRequestError,
+        ),
+        (SimpleNamespace(status_code=503, text="unavailable"), ProviderError),
+    ],
+)
+async def test_stt_translates_provider_failures(response, expected):
+    adapter = OpenAISTTAdapter(model("whisper-1"))
+    adapter._get_audio_data = AsyncMock(return_value=b"audio")
+    with patch(
+        "app.llm.adapters.audio.openai_stt.httpx.AsyncClient",
+        return_value=AsyncClient(response),
+    ):
+        with pytest.raises(expected):
+            await adapter.transcribe(STTRequest(audio=AudioContent(base64="YQ==")))
+
+
+@pytest.mark.anyio
+async def test_stt_translates_transport_failures():
+    adapter = OpenAISTTAdapter(model("whisper-1"))
+    adapter._get_audio_data = AsyncMock(return_value=b"audio")
+    request = httpx.Request("POST", "https://api.openai.com")
+    for error in (
+        httpx.TimeoutException("timed out", request=request),
+        httpx.RequestError("offline", request=request),
+    ):
+        with patch(
+            "app.llm.adapters.audio.openai_stt.httpx.AsyncClient",
+            return_value=AsyncClient(error=error),
+        ):
+            with pytest.raises(ProviderError):
+                await adapter.transcribe(STTRequest(audio=AudioContent(base64="YQ==")))
+
+
+@pytest.mark.anyio
 async def test_stt_loads_audio_from_file_and_url(tmp_path):
     audio_file = tmp_path / "audio.mp3"
     audio_file.write_bytes(b"file-audio")
