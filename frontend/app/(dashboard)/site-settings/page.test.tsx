@@ -271,3 +271,129 @@ test('formats theme alpha, resets colors, and ignores unsupported select values'
   expect(updateGeneral).toHaveBeenLastCalledWith(expect.objectContaining({ theme_primary_color: '' }))
   act(() => renderer.unmount())
 })
+
+test('updates every text field, switch, and supported select branch', async () => {
+  const renderer = await render()
+  const selects = renderer.root.findAllByProps({ 'data-select': true })
+
+  act(() => {
+    renderer.root.findByProps({ id: 'siteDescription' }).props.onChange({ target: { value: 'Knowledge hub' } })
+    renderer.root.findByProps({ id: 'siteUrl' }).props.onChange({ target: { value: 'https://example.com' } })
+    renderer.root.findByProps({ id: 'icpRecordNumber' }).props.onChange({ target: { value: 'ICP-1' } })
+    renderer.root.findByProps({ id: 'icpRecordUrl' }).props.onChange({ target: { value: 'https://beian.example.com' } })
+    renderer.root.findByProps({ id: 'termsUrl' }).props.onChange({ target: { value: 'https://example.com/terms' } })
+    renderer.root.findByProps({ id: 'privacyEnabled' }).props.onCheckedChange(true)
+    renderer.root.findByProps({ id: 'privacyUrl' }).props.onChange({ target: { value: 'https://example.com/privacy' } })
+    renderer.root.findByProps({ id: 'privacyText' }).props.onChange({ target: { value: 'Privacy' } })
+    renderer.root.findByProps({ id: 'requireTermsAcceptanceOnRegister' }).props.onCheckedChange(true)
+    selects[0].props.onValueChange('light')
+    selects[1].props.onValueChange('name_only')
+    selects[1].props.onValueChange('icon_only')
+    selects[2].props.onValueChange('')
+    selects[3].props.onValueChange('centered')
+  })
+  await act(async () => saveButton(renderer).props.onClick())
+
+  expect(updateGeneral).toHaveBeenLastCalledWith(expect.objectContaining({
+    site_description: 'Knowledge hub',
+    site_url: 'https://example.com',
+    icp_record_number: 'ICP-1',
+    icp_record_url: 'https://beian.example.com',
+    terms_url: 'https://example.com/terms',
+    privacy_enabled: true,
+    privacy_url: 'https://example.com/privacy',
+    privacy_text: 'Privacy',
+    require_terms_acceptance_on_register: true,
+    theme_mode: 'light',
+    theme_branding_display: 'icon_only',
+    default_language: 'en',
+    auth_page_layout: 'centered',
+  }))
+  act(() => renderer.unmount())
+})
+
+test('updates and resets every theme color field', async () => {
+  const renderer = await render()
+  const colorIds = [
+    'themePrimaryColor',
+    'themePrimaryForegroundColor',
+    'themeBackgroundColor',
+    'themeForegroundColor',
+    'themeCardColor',
+    'themeCardForegroundColor',
+    'themeBorderColor',
+    'themeRingColor',
+    'themeSidebarColor',
+    'themeSidebarForegroundColor',
+    'themeSidebarPrimaryColor',
+    'themeSidebarPrimaryForegroundColor',
+    'themeSidebarAccentColor',
+    'themeSidebarAccentForegroundColor',
+    'themeSidebarBorderColor',
+    'themeNavbarColor',
+    'themeNavbarForegroundColor',
+    'themeNavbarHoverColor',
+    'themeNavbarHoverForegroundColor',
+    'themeAccentColor',
+    'themeAccentForegroundColor',
+    'themeMutedColor',
+    'themeMutedForegroundColor',
+    'themeChart1Color',
+    'themeChart2Color',
+    'themeChart3Color',
+    'themeChart4Color',
+    'themeChart5Color',
+  ]
+
+  act(() => {
+    for (const id of colorIds) {
+      renderer.root.findByProps({ id: `${id}Picker` }).props.onChange({ target: { value: '#112233' } })
+    }
+  })
+  await act(async () => saveButton(renderer).props.onClick())
+  expect(updateGeneral).toHaveBeenLastCalledWith(expect.objectContaining({
+    theme_primary_foreground_color: '#112233',
+    theme_background_color: '#112233',
+    theme_chart_5_color: '#112233',
+  }))
+
+  act(() => {
+    for (const button of renderer.root.findAllByType('button').filter((node) => node.children.includes('resetThemeColor'))) {
+      button.props.onClick()
+    }
+  })
+  await act(async () => saveButton(renderer).props.onClick())
+  expect(updateGeneral).toHaveBeenLastCalledWith(expect.objectContaining({
+    theme_primary_foreground_color: '',
+    theme_background_color: '',
+    theme_chart_5_color: '',
+  }))
+  act(() => renderer.unmount())
+})
+
+test('recovers after legal validation and a failed save without server field errors', async () => {
+  updateGeneral.mockRejectedValueOnce(new Error('timeout'))
+  const renderer = await render()
+
+  act(() => {
+    renderer.root.findByProps({ id: 'termsEnabled' }).props.onCheckedChange(true)
+    renderer.root.findByProps({ id: 'privacyEnabled' }).props.onCheckedChange(true)
+  })
+  await act(async () => saveButton(renderer).props.onClick())
+  expect(updateGeneral).not.toHaveBeenCalled()
+  expect(renderer.root.findByProps({ id: 'privacyUrl' }).props['aria-invalid']).toBe(true)
+
+  act(() => {
+    renderer.root.findByProps({ id: 'termsText' }).props.onChange({ target: { value: 'Terms' } })
+    renderer.root.findByProps({ id: 'privacyText' }).props.onChange({ target: { value: 'Privacy' } })
+  })
+  await act(async () => saveButton(renderer).props.onClick())
+  expect(updateGeneral).toHaveBeenCalledTimes(1)
+  expect(refresh).not.toHaveBeenCalled()
+  expect(renderer.root.findByProps({ id: 'privacyUrl' }).props['aria-invalid']).toBe(false)
+
+  await act(async () => saveButton(renderer).props.onClick())
+  expect(refresh).toHaveBeenCalledTimes(1)
+  expect(toastSuccess).toHaveBeenCalledWith('saveSuccess')
+  act(() => renderer.unmount())
+})
