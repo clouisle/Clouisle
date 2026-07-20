@@ -23,6 +23,17 @@ class _Role:
         self.permissions = [_Permission(code) for code in codes]
 
 
+class _AwaitableValue:
+    def __init__(self, value):
+        self.value = value
+
+    def __await__(self):
+        async def resolve():
+            return self.value
+
+        return resolve().__await__()
+
+
 class _Query:
     def __init__(self, rows=(), *, total=None, first=None, values=()):
         self.rows = list(rows)
@@ -138,8 +149,34 @@ def test_memory_routes_require_their_admin_permissions():
 
     with TestClient(app) as client:
         assert client.get("/memories/entities").status_code == 403
+        assert client.get("/memories/entities/stats").status_code == 403
+        assert client.get(f"/memories/entities/{uuid4()}").status_code == 403
         assert client.put(f"/memories/entities/{uuid4()}", json={}).status_code == 403
+        assert client.delete(f"/memories/entities/{uuid4()}").status_code == 403
+        assert client.get("/memories/relations").status_code == 403
         assert client.delete(f"/memories/relations/{uuid4()}").status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_serializers_fetch_unprefetched_relations():
+    entity = _entity()
+    user = entity.user
+    del entity._fetched_relations
+    entity.user = _AwaitableValue(user)
+
+    relation = _relation(entity)
+    source = relation.source_entity
+    target = relation.target_entity
+    del relation._fetched_relations
+    relation.source_entity = _AwaitableValue(source)
+    relation.target_entity = _AwaitableValue(target)
+
+    entity_data = await memories.serialize_entity_with_user(entity)
+    relation_data = await memories.serialize_relation_with_entities(relation)
+
+    assert entity_data["user_name"] == "owner"
+    assert relation_data["source_entity_name"] == "Project Atlas"
+    assert relation_data["target_entity_name"] == "Customer Beta"
 
 
 @pytest.mark.asyncio
@@ -171,6 +208,24 @@ async def test_list_entities_applies_scope_filters_and_pagination():
 
 
 @pytest.mark.asyncio
+async def test_list_entities_without_optional_filters_uses_base_query():
+    query = _Query()
+
+    with patch.object(memories.MemoryEntity, "all", return_value=query):
+        response = await memories.list_entities(
+            page=1,
+            page_size=20,
+            user_id=None,
+            entity_type=None,
+            search=None,
+            current_user=SimpleNamespace(),
+        )
+
+    assert query.filters == []
+    assert response["data"].items == []
+
+
+@pytest.mark.asyncio
 async def test_stats_aggregates_types_and_top_users():
     user_ids = [uuid4() for _ in range(12)]
     entity_queries = [
@@ -190,7 +245,7 @@ async def test_stats_aggregates_types_and_top_users():
     ]
     users = [
         SimpleNamespace(id=user_id, username=f"user-{index}")
-        for index, user_id in enumerate(user_ids[:10])
+        for index, user_id in enumerate(user_ids[:9])
     ]
 
     with (
@@ -206,7 +261,7 @@ async def test_stats_aggregates_types_and_top_users():
     assert response["data"]["total_relations"] == 9
     assert response["data"]["by_type"] == {"person": 8, "project": 6}
     assert response["data"]["by_user"] == {
-        f"user-{index}": 20 - index for index in range(10)
+        f"user-{index}": 20 - index for index in range(9)
     }
     assert user_filter.call_args.kwargs == {"id__in": user_ids[:10]}
 
@@ -288,6 +343,27 @@ async def test_update_entity_persists_changes_then_audits():
 
 
 @pytest.mark.asyncio
+async def test_update_entity_ignores_omitted_fields():
+    entity = _entity()
+
+    with (
+        patch.object(
+            memories.MemoryEntity, "filter", return_value=_Query(first=entity)
+        ),
+        patch.object(memories.AuditLogService, "log", AsyncMock()),
+    ):
+        response = await memories.update_entity(
+            entity.id,
+            memories.MemoryEntityUpdate(),
+            SimpleNamespace(),
+            current_user=SimpleNamespace(),
+        )
+
+    assert response["data"]["description"] == "Knowledge graph"
+    assert response["data"]["properties"] == {"status": "active"}
+
+
+@pytest.mark.asyncio
 async def test_update_entity_persistence_failure_skips_audit():
     entity = _entity()
     entity.save.side_effect = RuntimeError("database unavailable")
@@ -352,6 +428,23 @@ async def test_list_relations_applies_owner_type_and_pagination():
     assert query.prefetches == [("source_entity", "target_entity")]
     assert query.offset_value == 2
     assert response["data"].items[0]["source_entity_name"] == "Project Atlas"
+
+
+@pytest.mark.asyncio
+async def test_list_relations_without_optional_filters_uses_base_query():
+    query = _Query()
+
+    with patch.object(memories.MemoryRelation, "all", return_value=query):
+        response = await memories.list_relations(
+            page=1,
+            page_size=20,
+            user_id=None,
+            relation_type=None,
+            current_user=SimpleNamespace(),
+        )
+
+    assert query.filters == []
+    assert response["data"].items == []
 
 
 @pytest.mark.asyncio
