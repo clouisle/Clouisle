@@ -70,6 +70,7 @@ async def test_concrete_audio_adapter_implementations_are_awaitable() -> None:
         is stt_response
     )
 
+
 @pytest.mark.parametrize(
     ("factory_name", "provider", "adapter_name"),
     [
