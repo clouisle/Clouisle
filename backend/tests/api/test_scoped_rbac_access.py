@@ -200,3 +200,91 @@ async def test_team_workflow_owner_can_write_without_team_admin(monkeypatch):
         await check_workflow_access(workflow.id, user, require_write=True) is workflow
     )
     check_team.assert_awaited_once_with(team.id, user)
+
+
+@pytest.mark.anyio
+async def test_missing_workflow_is_not_found(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    _WorkflowModel.workflow = None
+    monkeypatch.setattr("app.api.workflow_access.Workflow", _WorkflowModel)
+
+    with pytest.raises(BusinessError) as error:
+        await check_workflow_access(uuid4(), user)
+
+    assert error.value.msg_key == "workflow_not_found"
+
+
+@pytest.mark.anyio
+async def test_superuser_can_access_workflow_without_team_check(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=True)
+    workflow = SimpleNamespace(
+        id=uuid4(),
+        visibility=WorkflowVisibility.PRIVATE,
+        created_by=SimpleNamespace(id=uuid4()),
+        team=SimpleNamespace(id=uuid4()),
+    )
+    _WorkflowModel.workflow = workflow
+    check_team = AsyncMock()
+    monkeypatch.setattr("app.api.workflow_access.Workflow", _WorkflowModel)
+    monkeypatch.setattr("app.api.workflow_access.check_team_access", check_team)
+
+    assert await check_workflow_access(workflow.id, user) is workflow
+    check_team.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_private_workflow_owner_can_access_without_team_check(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    workflow = SimpleNamespace(
+        id=uuid4(),
+        visibility=WorkflowVisibility.PRIVATE,
+        created_by=user,
+        team=SimpleNamespace(id=uuid4()),
+    )
+    _WorkflowModel.workflow = workflow
+    check_team = AsyncMock()
+    monkeypatch.setattr("app.api.workflow_access.Workflow", _WorkflowModel)
+    monkeypatch.setattr("app.api.workflow_access.check_team_access", check_team)
+
+    assert await check_workflow_access(workflow.id, user) is workflow
+    check_team.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_unowned_private_workflow_requires_team_membership(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    team = SimpleNamespace(id=uuid4())
+    workflow = SimpleNamespace(
+        id=uuid4(),
+        visibility=WorkflowVisibility.PRIVATE,
+        created_by=None,
+        team=team,
+    )
+    _WorkflowModel.workflow = workflow
+    check_team = AsyncMock()
+    monkeypatch.setattr("app.api.workflow_access.Workflow", _WorkflowModel)
+    monkeypatch.setattr("app.api.workflow_access.check_team_access", check_team)
+
+    assert await check_workflow_access(workflow.id, user) is workflow
+    check_team.assert_awaited_once_with(team.id, user)
+
+
+@pytest.mark.anyio
+async def test_private_workflow_write_requires_team_admin(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    team = SimpleNamespace(id=uuid4())
+    workflow = SimpleNamespace(
+        id=uuid4(),
+        visibility=WorkflowVisibility.PRIVATE,
+        created_by=SimpleNamespace(id=uuid4()),
+        team=team,
+    )
+    _WorkflowModel.workflow = workflow
+    check_team = AsyncMock()
+    monkeypatch.setattr("app.api.workflow_access.Workflow", _WorkflowModel)
+    monkeypatch.setattr("app.api.workflow_access.check_team_access", check_team)
+
+    assert (
+        await check_workflow_access(workflow.id, user, require_write=True) is workflow
+    )
+    check_team.assert_awaited_once_with(team.id, user, require_admin=True)
