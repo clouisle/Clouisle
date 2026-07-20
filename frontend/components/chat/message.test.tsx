@@ -66,12 +66,27 @@ mock.module('@/components/ai-elements/message', () => ({
   MessageAttachments: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   MessageContent: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
 }))
-mock.module('@/components/ai-elements/chain-of-thought', () => ({ ChainOfThought: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, ChainOfThoughtContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, ChainOfThoughtHeader: ({ title }: { title: string }) => <h3>{title}</h3>, ChainOfThoughtStep: ({ children, label }: { children?: React.ReactNode; label: React.ReactNode }) => <div>{label}{children}</div> }))
-mock.module('@/components/ai-elements/tool', () => ({ Tool: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, ToolContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, ToolHeader: ({ title }: { title: string }) => <h4>{title}</h4>, ToolInput: ({ input }: { input: unknown }) => <pre>{JSON.stringify(input)}</pre>, ToolOutput: ({ output, errorText }: { output?: unknown; errorText?: string }) => <pre>{errorText ?? JSON.stringify(output)}</pre> }))
+mock.module('@/components/ai-elements/chain-of-thought', () => ({
+  ChainOfThought: ({ children, isStreaming, open, onOpenChange }: { children: React.ReactNode; isStreaming?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) => <div data-streaming={String(Boolean(isStreaming))} data-open={String(Boolean(open))}><button type="button" onClick={() => onOpenChange?.(!open)}>toggle reasoning</button>{children}</div>,
+  ChainOfThoughtContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ChainOfThoughtHeader: ({ title }: { title: string }) => <h3>{title}</h3>,
+  ChainOfThoughtStep: ({ children, label, status }: { children?: React.ReactNode; label: React.ReactNode; status?: string }) => <div data-step-status={status}>{label}{children}</div>,
+}))
+mock.module('@/components/ai-elements/tool', () => ({
+  Tool: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ToolContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ToolHeader: ({ title, state }: { title: string; state?: string }) => <h4 data-tool-state={state}>{title}</h4>,
+  ToolInput: ({ input }: { input: unknown }) => <pre>{JSON.stringify(input)}</pre>,
+  ToolOutput: ({ output, errorText }: { output?: unknown; errorText?: string }) => <pre>{errorText ?? JSON.stringify(output)}</pre>,
+}))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside>, FileListContent: ({ files }: { files: Array<{ filename: string }> }) => <div>artifacts:{files.map((file) => file.filename).join(',')}</div> }))
 mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
-mock.module('streamdown', () => ({ Block: ({ content }: { content: string }) => <pre>{content}</pre>, Streamdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, defaultRehypePlugins: { sanitize: 'sanitize', harden: 'harden' } }))
+mock.module('streamdown', () => ({
+  Block: ({ content }: { content: string }) => <div data-streamdown="code-block"><div data-streamdown="code-block-header"><div /></div><pre>{content}</pre></div>,
+  Streamdown: ({ children, BlockComponent }: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => <div>{BlockComponent ? <BlockComponent content={String(children)} index={0} shouldParseIncompleteMarkdown={false} /> : children}</div>,
+  defaultRehypePlugins: { sanitize: 'sanitize', harden: 'harden' },
+}))
 mock.module('shiki', () => ({ bundledLanguages: {}, codeToTokens: mock(() => Promise.resolve({})) }))
 mock.module('@streamdown/math', () => ({ createMathPlugin: () => ({}) }))
 
@@ -341,5 +356,168 @@ describe('message behavior', () => {
     expect(error).toContain('text-destructive')
     expect(streaming).not.toContain('chat.message.regenerate')
     expect(streaming).not.toContain('chat.message.copy')
+  })
+
+  test('groups reasoning tools and maps task and tool states', () => {
+    const onOpenChange = mock(() => {})
+    const container = render(<Message
+      message={{
+        id: 'reasoning-states',
+        role: 'assistant',
+        parts: [
+          { type: 'task', taskType: 'rag', state: 'completed', info: 3 },
+          { type: 'task', taskType: 'compression', state: 'running', info: { trigger: 'context_length_error' } },
+          { type: 'reasoning', text: 'Inspecting evidence', state: 'streaming' },
+          { type: 'tool-call', toolCallId: 'running', toolName: 'search', toolDisplayName: 'Web search', input: { q: 'docs' }, state: 'running' },
+          { type: 'tool-result', toolCallId: 'running', toolName: 'search', output: { hits: 2 } },
+          { type: 'tool-call', toolCallId: 'failed', toolName: 'broken', input: {}, state: 'error' },
+          { type: 'mcp-tool-call', toolCallId: 'pending', serverName: 'repo', toolName: 'read', input: {}, state: 'pending' },
+          { type: 'mcp-tool-result', toolCallId: 'pending', serverName: 'repo', toolName: 'read', output: 'waiting' },
+          { type: 'task', taskType: 'generating', state: 'error' },
+        ],
+      }}
+      chainOfThoughtOpen
+      onChainOfThoughtOpenChange={onOpenChange}
+    />)
+
+    expect(container.textContent).toContain('chat.task.foundSources')
+    expect(container.textContent).toContain('chat.task.compressingContextReactive')
+    expect(container.textContent).toContain('chat.message.toolRunning')
+    expect(container.textContent).toContain('chat.message.toolFailed')
+    expect(container.textContent).toContain('repo/read')
+    expect(container.textContent).toContain('chat.task.generating')
+    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
+    expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
+    expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['input-available', 'output-error', 'input-streaming'])
+
+    act(() => button(container, 'toggle reasoning').click())
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('renders completed compression variants and completed reasoning tools', () => {
+    const html = renderToStaticMarkup(<Message message={{
+      id: 'completed-steps',
+      role: 'assistant',
+      parts: [
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 100, after_tokens: 50, trigger: 'context_length_error' } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 90, after_tokens: 40, trigger: 'blocking_threshold', summary_turns: 2 } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 80, after_tokens: 30, pressure_level: 'blocking' } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 70, after_tokens: 20, summary_turns: 2, compacted_blocks: 4 } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 60, after_tokens: 10 } },
+        { type: 'reasoning', text: 'Done thinking', state: 'done', duration: 1200 },
+        { type: 'tool-call', toolCallId: 'done', toolName: 'lookup', input: {}, state: 'done' },
+        { type: 'tool-result', toolCallId: 'done', toolName: 'lookup', output: { ok: true } },
+      ],
+    }} />)
+
+    expect(html).toContain('chat.task.compressionCompletedReactive')
+    expect(html).toContain('chat.task.compressionCompletedBlockingSummary')
+    expect(html).toContain('chat.task.compressionCompletedBlocking')
+    expect(html).toContain('chat.task.compressionCompletedProactiveSummary')
+    expect(html).toContain('chat.task.compressionCompletedProactive')
+    expect(html).toContain('chat.message.toolCompleted')
+    expect(html).toContain('data-tool-state="output-available"')
+    expect(html).toContain('Done thinking')
+  })
+
+  test('renders media URLs, fallbacks, string results, and artifact metadata', () => {
+    const html = renderToStaticMarkup(<Message message={{
+      id: 'media-variants',
+      role: 'assistant',
+      parts: [
+        { type: 'media-result', output: { kind: 'media.video', success: true, prompt: 'Clip', status: 'completed', video: { url: '/clip.mp4' } } },
+        { type: 'media-result', output: { kind: 'media.video', success: true, prompt: 'Missing clip', status: 'completed' } },
+        { type: 'media-result', output: { kind: 'media.video', success: true, prompt: 'Unknown clip', status: 'failed', error: 'Codec failed' } },
+        { type: 'media-result', output: { kind: 'media.image', success: true, prompt: '', images: [{ image: { base64: 'abc', format: 'webp' } }, { image: {} }] } },
+        { type: 'tool-call', toolCallId: 'json', toolName: 'JSON tool', input: {}, state: 'done' },
+        { type: 'tool-result', toolCallId: 'json', toolName: 'JSON tool', output: '{"answer":42}' },
+        { type: 'tool-call', toolCallId: 'file', toolName: 'File tool', input: {}, state: 'done' },
+        { type: 'tool-result', toolCallId: 'file', toolName: 'File tool', output: { artifacts: [{ url: '/download', filename: 'named.bin', size: 12, contentType: 'application/test' }] } },
+      ],
+    }} />)
+
+    expect(html).toContain('src="/clip.mp4"')
+    expect(html).toContain('controls=""')
+    expect(html).toContain('chat.message.videoPreviewUnavailable')
+    expect(html).toContain('chat.message.videoUnavailable')
+    expect(html).toContain('Codec failed')
+    expect(html).toContain('data:image/webp;base64,abc')
+    expect(html).toContain('chat.message.generatedImageAlt')
+    expect(html).toContain('&quot;answer&quot;:42')
+    expect(html).toContain('artifacts:named.bin')
+  })
+
+  test('supports custom part rendering and user control boundaries', () => {
+    const onSwitchVersion = mock(() => {})
+    const renderPart = mock((part: { type: string }, index: number) => <span key={index}>custom:{part.type}:{index}</span>)
+    const container = render(<Message
+      message={{ id: 'custom-user', role: 'user', versionNumber: 1, versionCount: 2, parts: [{ type: 'text', text: 'Editable' }, { type: 'file', filename: 'notes.txt' }] }}
+      renderPart={renderPart}
+      onSwitchVersion={onSwitchVersion}
+    />)
+
+    expect(container.textContent).toContain('custom:file:0')
+    expect(container.textContent).toContain('custom:text:0')
+    const versionButtons = [...container.querySelectorAll('button')]
+    expect(versionButtons[0].disabled).toBe(true)
+    expect(versionButtons[1].disabled).toBe(false)
+    act(() => versionButtons[1].click())
+    expect(onSwitchVersion).toHaveBeenCalledWith(1)
+    expect(container.firstElementChild?.getAttribute('data-role')).toBe('user')
+  })
+
+  test('saves edits with keyboard shortcuts and disables controls while saving', async () => {
+    let finishSave!: () => void
+    const onEditMessage = mock(() => new Promise<void>((resolve) => { finishSave = resolve }))
+    const container = render(<Message message={{ id: 'edit-keyboard', role: 'user', parts: [{ type: 'text', text: 'Original' }] }} onEditMessage={onEditMessage} />)
+
+    act(() => button(container, 'chat.message.edit').click())
+    const textarea = container.querySelector('textarea')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Changed')
+      textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    act(() => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })))
+
+    expect(onEditMessage).toHaveBeenCalledWith('Changed')
+    expect(container.querySelector('textarea')?.disabled).toBe(true)
+    expect(button(container, 'chat.message.cancelEdit').disabled).toBe(true)
+    await act(async () => finishSave())
+    expect(container.querySelector('textarea')).toBeNull()
+  })
+
+  test('opens fenced code previews with a stable payload only after streaming', async () => {
+    const onOpenCodePreview = mock(() => {})
+    const code = '```xml\n<svg viewBox="0 0 1 1"></svg>\n```'
+    const container = render(<Message message={{ id: 'preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'xml:29:<svg viewBox="0 0 1 1"></svg>',
+      language: 'xml',
+      code: '<svg viewBox="0 0 1 1"></svg>',
+      kind: 'svg',
+    })
+
+    const streaming = renderToStaticMarkup(<Message message={{ id: 'streaming-preview', role: 'assistant', parts: [{ type: 'text', text: code }] }} isStreaming onOpenCodePreview={onOpenCodePreview} />)
+    expect(streaming).not.toContain('chat.message.openCodePreview')
+  })
+
+  test('normalizes citations, strong markers, and math outside code', () => {
+    const html = renderToStaticMarkup(<Message message={{
+      id: 'normalized-text',
+      role: 'assistant',
+      parts: [
+        { type: 'source-document', content: 'Only source' },
+        { type: 'text', text: '**Bold**suffix [ref:1] (ref:9)\n\\[\\frac{1}{2}\\]\n`[ref:1]`' },
+      ],
+    }} />)
+
+    expect(html).toContain('&lt;strong&gt;Bold&lt;/strong&gt;suffix')
+    expect(html).toContain(' [1]')
+    expect(html).not.toContain('(ref:9)')
+    expect(html).toContain('$$')
+    expect(html).toContain('` [1]`')
   })
 })
