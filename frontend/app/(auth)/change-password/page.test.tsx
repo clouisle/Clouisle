@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 
 const changePassword = mock(() => Promise.resolve())
 const push = mock()
+const success = mock()
 let search = new URLSearchParams()
+let normalizedErrors: Record<string, string> = {}
 let state: unknown[] = []
 let stateIndex = 0
 
@@ -27,7 +29,7 @@ mock.module('next/navigation', () => ({
   useSearchParams: () => search,
 }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
-mock.module('sonner', () => ({ toast: { success: mock() } }))
+mock.module('sonner', () => ({ toast: { success } }))
 mock.module('@/lib/api', () => ({ usersApi: { changePassword } }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => {
@@ -37,7 +39,7 @@ mock.module('@/lib/validation', () => ({
   },
   formatValidationSummaryMessage: (_field: string, message: string) => message,
   getValidationSummaryEntries: (errors: Record<string, string>) => Object.entries(errors),
-  normalizeValidationErrors: () => ({}),
+  normalizeValidationErrors: () => normalizedErrors,
 }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
@@ -85,11 +87,18 @@ function change(id: string, value: string) {
   ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
 }
 
+async function submit() {
+  const form = find(render(), (tree) => tree.type === 'form')
+  await (form.props.onSubmit as (event: { preventDefault(): void }) => Promise<void>)({ preventDefault() {} })
+}
+
 beforeEach(() => {
   changePassword.mockReset()
   changePassword.mockResolvedValue(undefined)
   push.mockReset()
+  success.mockReset()
   search = new URLSearchParams()
+  normalizedErrors = {}
   state = []
 })
 
@@ -99,8 +108,7 @@ describe('ChangePasswordPage', () => {
     change('newPassword', 'new-password')
     change('confirmPassword', 'different-password')
 
-    const form = find(render(), (tree) => tree.type === 'form')
-    await (form.props.onSubmit as (event: { preventDefault(): void }) => Promise<void>)({ preventDefault() {} })
+    await submit()
 
     expect(changePassword).not.toHaveBeenCalled()
     expect(find(render(), (tree) => tree.props.children === 'passwordMismatch')).toBeDefined()
@@ -112,13 +120,90 @@ describe('ChangePasswordPage', () => {
     change('newPassword', 'new-password')
     change('confirmPassword', 'new-password')
 
-    const form = find(render(), (tree) => tree.type === 'form')
-    await (form.props.onSubmit as (event: { preventDefault(): void }) => Promise<void>)({ preventDefault() {} })
+    await submit()
 
     expect(changePassword).toHaveBeenCalledWith({
       current_password: 'current-password',
       new_password: 'new-password',
     })
+    expect(success).toHaveBeenCalledWith('password_changed')
     expect(push).toHaveBeenCalledWith('/app/settings')
+  })
+
+  test('shows expired-password copy and falls back to the app redirect', async () => {
+    search = new URLSearchParams('reason=expired')
+    change('currentPassword', 'current-password')
+    change('newPassword', 'new-password')
+    change('confirmPassword', 'new-password')
+
+    expect(find(render(), (tree) => tree.props.children === 'passwordExpired')).toBeDefined()
+
+    await submit()
+
+    expect(push).toHaveBeenCalledWith('/app')
+  })
+
+  test('shows forced-change defaults and password input boundaries', () => {
+    const tree = render()
+
+    expect(find(tree, (node) => node.props.children === 'forcePasswordChange')).toBeDefined()
+    for (const id of ['currentPassword', 'newPassword', 'confirmPassword']) {
+      const input = find(tree, (node) => node.props.id === id)
+      expect(input.props.type).toBe('password')
+      expect(input.props.required).toBe(true)
+      expect(input.props.autoComplete).toBe(id === 'currentPassword' ? 'current-password' : 'new-password')
+    }
+  })
+
+  test('shows the force-change alert for a non-expiration reason', () => {
+    search = new URLSearchParams('reason=force')
+
+    const alert = find(render(), (tree) => tree.type === 'aside')
+    expect(find(alert, (tree) => tree.props.children === 'forcePasswordChangeDescription')).toBeDefined()
+  })
+
+  test('shows normalized API errors and clears each error when its field changes', async () => {
+    normalizedErrors = {
+      current_password: 'current password is wrong',
+      new_password: 'new password is weak',
+      confirmPassword: 'confirmation is invalid',
+    }
+    changePassword.mockRejectedValue(new Error('invalid password'))
+    change('currentPassword', 'bad-password')
+    change('newPassword', 'new-password')
+    change('confirmPassword', 'new-password')
+
+    await submit()
+
+    expect(push).not.toHaveBeenCalled()
+    for (const [id, message] of [
+      ['currentPassword', 'current password is wrong'],
+      ['newPassword', 'new password is weak'],
+      ['confirmPassword', 'confirmation is invalid'],
+    ]) {
+      expect(find(render(), (tree) => tree.props.children === message)).toBeDefined()
+      expect(find(render(), (tree) => tree.props.id === id).props['aria-invalid']).toBe(true)
+      change(id, 'corrected-password')
+      expect(find(render(), (tree) => tree.props.id === id).props['aria-invalid']).toBe(false)
+    }
+  })
+
+  test('disables submission and shows progress while the API request is pending', async () => {
+    let resolveRequest: (() => void) | undefined
+    changePassword.mockImplementation(() => new Promise<void>((resolve) => { resolveRequest = resolve }))
+    change('currentPassword', 'current-password')
+    change('newPassword', 'new-password')
+    change('confirmPassword', 'new-password')
+
+    const pending = submit()
+    await Promise.resolve()
+
+    const button = find(render(), (tree) => tree.type === 'button')
+    expect(button.props.disabled).toBe(true)
+    expect(find(button, (tree) => tree.type === 'svg').props.className).toContain('animate-spin')
+
+    resolveRequest!()
+    await pending
+    expect(find(render(), (tree) => tree.type === 'button').props.disabled).toBe(false)
   })
 })
