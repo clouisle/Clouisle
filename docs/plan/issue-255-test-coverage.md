@@ -198,6 +198,7 @@
 - Backend progress checkpoint (2026-07-20, commit `3fd92513`): 1,886 tests passed and 2 skipped after sandbox skill compilation, scheduling, metric/cleanup no-op, and worker-iteration coverage. The whole-`app` report measures 37,272 statements with 14,837 missed and 11,640 branches with 1,242 partial, for 55% aggregate coverage; the final independent 95% line and branch gates remain inactive.
 - Backend progress checkpoint (2026-07-20, commit `4e2e19a0`): 1,889 tests passed and 2 skipped after model display-name coverage. The whole-`app` report measures 37,272 statements with 14,831 missed and 11,640 branches with 1,242 partial, for 55% aggregate coverage; the final independent 95% line and branch gates remain inactive.
 - Frontend progress checkpoint (2026-07-20, commit `79a7c7a8`): 777 isolated tests passed with 3,231 assertions; Bun reports 90.68% lines and 87.77% functions after platform skill-detail route propagation and no-team redirect coverage. The coverage test command passed, while the source census remains failing with 172 eligible sources absent from LCOV; final independent 95% metrics and the zero-absent-source gate remain inactive.
+- Backend progress checkpoint (2026-07-20, commit `fa802590`): 1,891 tests passed and 2 skipped after ORM-object and plain-mapping user schema conversion coverage. The whole-`app` report measures 37,272 statements with 14,827 missed and 11,640 branches with 1,242 partial, for 55% aggregate coverage; the final independent 95% line and branch gates remain inactive.
 
 ## Testing Strategy
 - Happy path tests:
