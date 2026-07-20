@@ -131,12 +131,44 @@ test('renders sidebar primitives and rejects missing context', () => {
   const badge = sidebar.SidebarMenuBadge({ children: '3' }) as { props: Record<string, unknown> }
   const skeleton = sidebar.SidebarMenuSkeleton({ showIcon: true }) as { props: Record<string, unknown> }
   const subButton = sidebar.SidebarMenuSubButton({ isActive: true }) as { props: Record<string, unknown> }
+  const primitives = [
+    sidebar.SidebarInset({ className: 'inset' }),
+    sidebar.SidebarInput({ className: 'input' }),
+    sidebar.SidebarHeader({ className: 'header' }),
+    sidebar.SidebarFooter({ className: 'footer' }),
+    sidebar.SidebarSeparator({ className: 'separator' }),
+    sidebar.SidebarContent({ className: 'content' }),
+    sidebar.SidebarGroupLabel({ className: 'label' }),
+    sidebar.SidebarGroupAction({ className: 'action' }),
+    sidebar.SidebarGroupContent({ className: 'group-content' }),
+    sidebar.SidebarMenu({ className: 'menu' }),
+    sidebar.SidebarMenuItem({ className: 'menu-item' }),
+    sidebar.SidebarMenuAction({ showOnHover: true, className: 'menu-action' }),
+    sidebar.SidebarMenuSub({ className: 'menu-sub' }),
+    sidebar.SidebarMenuSubItem({ className: 'menu-sub-item' }),
+  ] as Array<{ props: Record<string, unknown> }>
 
   expect(group.props['data-sidebar']).toBe('group')
   expect(group.props.className).toContain('navigation')
   expect(badge.props['data-slot']).toBe('sidebar-menu-badge')
   expect(skeleton.props.children).toHaveLength(2)
   expect(subButton.props['data-active']).toBe(true)
+  expect(primitives.map((primitive) => primitive.props['data-slot'])).toEqual([
+    'sidebar-inset',
+    'sidebar-input',
+    'sidebar-header',
+    'sidebar-footer',
+    'sidebar-separator',
+    'sidebar-content',
+    'sidebar-group-label',
+    'sidebar-group-action',
+    'sidebar-group-content',
+    'sidebar-menu',
+    'sidebar-menu-item',
+    'sidebar-menu-action',
+    'sidebar-menu-sub',
+    'sidebar-menu-sub-item',
+  ])
 
   sidebarContext = null
   expect(() => sidebar.useSidebar()).toThrow('useSidebar must be used within a SidebarProvider.')
