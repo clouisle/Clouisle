@@ -51,10 +51,14 @@ type WorkflowEvent = {
 type Hook = typeof import('./use-workflow-run').useWorkflowRun
 let useWorkflowRun: Hook
 
+function Render(options: Parameters<Hook>[0]) {
+  return useWorkflowRun(options)
+}
+
 function render(options: Parameters<Hook>[0]) {
   stateIndex = 0
   refIndex = 0
-  return useWorkflowRun(options)
+  return Render(options)
 }
 
 function emit(type: string, data: Record<string, unknown> = {}) {
@@ -160,6 +164,61 @@ describe('useWorkflowRun', () => {
     ])
     expect(hook.messages[1]).toMatchObject({ parts: [{ type: 'text', text: 'Could not finish request' }] })
     expect(hook.isStreaming).toBe(false)
+  })
+
+  test('falls back for empty, key-like, multiline, and non-string workflow errors', async () => {
+    const options = { workflowId: 'workflow-1' }
+    let hook = render(options)
+    await hook.start({})
+
+    for (const error of ['', 'errors.request_failed', 'line one\nline two', { detail: 'bad' }]) {
+      emit('workflow_error', { error })
+    }
+    hook = render(options)
+
+    expect(hook.messages.map((message) => message.parts[0])).toEqual([
+      { type: 'text', text: 'Request failed' },
+      { type: 'text', text: 'Request failed' },
+      { type: 'text', text: 'Request failed' },
+      { type: 'text', text: 'Request failed' },
+    ])
+  })
+
+  test('handles skipped nodes, ignored output events, and answer tokens appended after a tool call', async () => {
+    const options = { workflowId: 'workflow-1' }
+    let hook = render(options)
+    await hook.start({})
+
+    emit('node_start', { node_id: 'tool', node_type: 'search', inputs: { query: 'x' } })
+    emit('node_complete', { node_id: 'tool', node_type: 'search', outputs: 'ok', duration_ms: 1 })
+    emit('node_start', { node_id: 'skip-me', node_type: 'filter' })
+    emit('node_skip', { node_id: 'skip-me' })
+    emit('node_start', { node_id: 'answer', node_type: 'answer' })
+    emit('output', { text: 'ignored' })
+    emit('token', { node_id: 'answer', token: 'visible' })
+    hook = render(options)
+
+    expect(hook.executionState.nodes.get('skip-me')?.status).toBe('skipped')
+    expect(hook.messages[0].parts).toEqual([
+      expect.objectContaining({ type: 'tool-call', toolCallId: 'tool', state: 'done' }),
+      expect.objectContaining({ type: 'tool-result', output: 'ok' }),
+      expect.objectContaining({ type: 'tool-call', toolCallId: 'skip-me', state: 'running' }),
+      { type: 'text', text: 'visible', state: 'streaming' },
+    ])
+  })
+
+  test('starts without a query message and stop without a run is a no-op', async () => {
+    const options = { workflowId: 'workflow-1' }
+    let hook = render(options)
+    hook.stop()
+    expect(closeConnection).not.toHaveBeenCalled()
+    expect(cancelWorkflowRun).not.toHaveBeenCalled()
+
+    await hook.start({ query: '', other: true })
+    hook = render(options)
+
+    expect(hook.messages).toEqual([])
+    expect(runWorkflow).toHaveBeenCalledWith('workflow-1', { inputs: { query: '', other: true } })
   })
 
   test('cleans up active runs on stop and reset, and recovers from start failures', async () => {
