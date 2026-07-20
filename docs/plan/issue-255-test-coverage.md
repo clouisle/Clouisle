@@ -381,6 +381,10 @@
 
 - Frontend focused checkpoint (2026-07-21, commits `ebe9380a` and `55687ec0`): model-dialog tests pass with 78.70% focused functions and 85.57% lines; site-settings tests pass with 48.68% focused functions and 99.76% lines. These focused results are incremental evidence only; the latest complete frontend metrics remain below 95%, so final gates remain inactive.
 
+- Frontend progress checkpoint (2026-07-21, commits through `5c9a0a51`): 1,463 isolated tests passed with 6,599 assertions. Complete LCOV aggregation reports 76.03% functions (`5,472/7,197`) and 84.36% lines (`76,682/90,895`); all 470 eligible tracked sources appear in LCOV. Site-settings now reaches 97.37% focused functions and 99.88% lines, while model-dialog remains 78.70% functions and 85.57% lines pending its active deepening batch. The Agent UI automation guide is synchronized with source-visible site-setting/model happy and error journeys and explicitly does not claim browser/E2E proof. Final 95% gates remain inactive.
+
+- Backend focused checkpoint (2026-07-21, commit `3bdafde5`): the integrated knowledge-task test set passes 32 tests and reaches 83% branch-aware coverage for `app/tasks/knowledge_base.py`. This focused result does not replace the latest complete backend checkpoint, and final 95% line/branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
