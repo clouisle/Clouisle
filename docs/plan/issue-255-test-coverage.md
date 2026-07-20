@@ -324,6 +324,10 @@
 
 - Frontend progress checkpoint (2026-07-20, commits through `aab7788d`): 1,046 isolated tests passed with 4,536 assertions after agent-toolbar permissions/actions, prompt-editor variables and token replacement, tool-card ownership/action routing, and workflow-settings validation/save/retry coverage. `bun run test:coverage` passes; Bun reports 91.56% lines and 86.86% functions for loaded sources. The honest source census reports 71 eligible sources absent from LCOV and exits nonzero as intended. The metric decrease reflects newly represented larger stateful modules; final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commits through `9b880d17`): 1,067 isolated tests passed with 4,636 assertions after knowledge-base selection/configuration, tool-list and tool-selector grouping/filtering/actions, agent-sidebar navigation, variable editing, activities loading/fallback/tab selection, and workflow validation-checklist behavior coverage. `bun run test:coverage` passes; Bun reports 91.57% lines and 86.94% functions for loaded sources. The honest source census reports 66 eligible sources absent from LCOV and exits nonzero as intended. Final 95% metrics and the zero-absent-source gate remain inactive.
+
+- Backend focused checkpoint (2026-07-20, commits `f58d2d37` and `fb0d16b8`): chat message version utilities have 5 focused tests and 100% statement/branch coverage; prompt-generator helpers and SSE endpoints have 7 focused tests and 97% branch-aware coverage. Focused Ruff check and format check pass. The latest whole-application backend checkpoint remains 60%, so final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
