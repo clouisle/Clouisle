@@ -1,7 +1,7 @@
 import stat
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 from zipfile import ZipFile, ZipInfo
 
 import pytest
@@ -193,3 +193,146 @@ async def test_preview_zip_validates_input_before_creating_temp_files():
                 team_id=None, user=user, filename="skill.zip", content=b"12"
             )
         assert size_error.value.msg_key == "skill_zip_too_large"
+
+
+@pytest.mark.anyio
+async def test_preview_zip_extracts_and_hands_off_session(tmp_path: Path):
+    user = object()
+    team = object()
+    expected = object()
+    create_preview = AsyncMock(return_value=expected)
+
+    with (
+        patch.object(skill_import.tempfile, "mkdtemp", return_value=str(tmp_path)),
+        patch.object(
+            SkillImportService, "_resolve_import_team", AsyncMock(return_value=team)
+        ),
+        patch.object(SkillImportService, "_create_preview_session", create_preview),
+    ):
+        result = await SkillImportService.preview_zip(
+            team_id=None,
+            user=user,
+            filename="skills.ZIP",
+            content=_zip_bytes({"echo/SKILL.md": b"instructions"}),
+        )
+
+    assert result is expected
+    assert (tmp_path / "source" / "echo" / "SKILL.md").read_bytes() == b"instructions"
+    create_preview.assert_awaited_once_with(
+        team_id=None,
+        team=team,
+        user=user,
+        source_type=skill_import.SkillSourceType.ZIP,
+        source_uri="skills.ZIP",
+        source_ref=None,
+        source_subdir=None,
+        source_root=tmp_path / "source",
+        temp_storage_path=tmp_path,
+    )
+
+
+@pytest.mark.anyio
+async def test_preview_git_uses_resolved_ref_and_redacted_url(tmp_path: Path):
+    user = object()
+    expected = object()
+    clone = AsyncMock()
+    create_preview = AsyncMock(return_value=expected)
+
+    with (
+        patch.object(skill_import.tempfile, "mkdtemp", return_value=str(tmp_path)),
+        patch.object(
+            SkillImportService, "_resolve_import_team", AsyncMock(return_value=None)
+        ),
+        patch.object(SkillImportService, "_clone_git_repo", clone),
+        patch.object(
+            SkillImportService, "_resolve_git_ref", AsyncMock(return_value="abc123")
+        ),
+        patch.object(SkillImportService, "_create_preview_session", create_preview),
+    ):
+        result = await SkillImportService.preview_git(
+            team_id=None,
+            user=user,
+            repo_url="https://example.com:8443/repo.git",
+            ref="main",
+        )
+
+    assert result is expected
+    clone.assert_awaited_once_with(
+        "https://example.com:8443/repo.git", "main", tmp_path / "repo"
+    )
+    assert create_preview.await_args.kwargs["source_uri"] == (
+        "https://example.com:8443/repo.git"
+    )
+    assert create_preview.await_args.kwargs["source_ref"] == "abc123"
+
+
+@pytest.mark.anyio
+async def test_clone_git_repo_reports_stderr_on_failure(tmp_path: Path):
+    process = Mock(returncode=1)
+    process.communicate = AsyncMock(return_value=(b"", b"fatal: unavailable"))
+
+    with patch.object(
+        skill_import.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=process),
+    ) as create_process:
+        with pytest.raises(BusinessError) as exc_info:
+            await SkillImportService._clone_git_repo(
+                "https://example.com/repo.git", "stable", tmp_path / "repo"
+            )
+
+    assert exc_info.value.msg_key == "skill_git_clone_failed"
+    assert exc_info.value.data == {"stderr": "fatal: unavailable"}
+    assert create_process.await_args.args[:5] == (
+        "git",
+        "clone",
+        "--depth",
+        "1",
+        "--branch",
+    )
+
+
+@pytest.mark.anyio
+async def test_clone_git_repo_kills_timed_out_process(tmp_path: Path):
+    process = Mock()
+    process.communicate = AsyncMock()
+
+    with (
+        patch.object(
+            skill_import.asyncio,
+            "create_subprocess_exec",
+            AsyncMock(return_value=process),
+        ),
+        patch.object(
+            skill_import.asyncio,
+            "wait_for",
+            AsyncMock(side_effect=TimeoutError),
+        ),
+        pytest.raises(BusinessError) as exc_info,
+    ):
+        await SkillImportService._clone_git_repo(
+            "https://example.com/repo.git", None, tmp_path / "repo"
+        )
+
+    assert exc_info.value.msg_key == "skill_git_clone_timeout"
+    process.kill.assert_called_once_with()
+    assert process.communicate.await_args_list == [call()]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    [(0, b"abc123\n", "abc123"), (1, b"ignored", None), (0, b"", None)],
+)
+async def test_resolve_git_ref_handles_process_outcomes(
+    tmp_path: Path, returncode: int, stdout: bytes, expected: str | None
+):
+    process = Mock(returncode=returncode)
+    process.communicate = AsyncMock(return_value=(stdout, b""))
+
+    with patch.object(
+        skill_import.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=process),
+    ):
+        assert await SkillImportService._resolve_git_ref(tmp_path) == expected
