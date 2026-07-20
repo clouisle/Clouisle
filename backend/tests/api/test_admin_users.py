@@ -736,3 +736,211 @@ async def test_expiring_passwords_filters_and_paginates(admin, filter_name):
         assert not any(call[0] == "filter" for call in query.calls)
     else:
         assert any(call[0] == "filter" for call in query.calls)
+
+
+@pytest.mark.parametrize(
+    ("is_active", "approval_status", "expected"),
+    [
+        (False, "pending", "pending"),
+        (True, "pending", "active"),
+        (False, "approved", "inactive"),
+    ],
+)
+def test_get_user_status_boundaries(is_active, approval_status, expected):
+    assert (
+        users.get_user_status(
+            _user(is_active=is_active, approval_status=approval_status)
+        )
+        == expected
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("roles_fetched", [True, False])
+async def test_serialize_user_includes_roles_permissions_and_sso(roles_fetched):
+    permission = SimpleNamespace(
+        id=uuid4(), scope="users", code="admin:user:read", description="Read users"
+    )
+    role = SimpleNamespace(
+        id=uuid4(),
+        name="auditor",
+        description="Audits users",
+        is_system_role=True,
+        permissions=[permission],
+    )
+    provider = SimpleNamespace(
+        id=uuid4(),
+        name="oidc",
+        display_name="Company SSO",
+        icon_url="https://example.com/icon.png",
+    )
+    connection = SimpleNamespace(
+        id=uuid4(),
+        provider=provider,
+        provider_user_id="external-1",
+        provider_username="external-user",
+        provider_email="external@example.com",
+        first_login=datetime.now(UTC) - timedelta(days=2),
+        last_login=datetime.now(UTC),
+    )
+    role_query = _Query([role])
+    role_manager = SimpleNamespace(all=lambda: role_query)
+    target = _user(roles=[role] if roles_fetched else role_manager)
+    if roles_fetched:
+        target._fetched_relations = {"roles"}
+
+    with patch(
+        "app.models.user_sso_connection.UserSSOConnection.filter",
+        return_value=_Query([connection]),
+    ):
+        serialized = await users.serialize_user_with_sso(target)
+
+    assert serialized["status"] == "active"
+    assert serialized["roles"][0]["permissions"][0]["code"] == "admin:user:read"
+    assert serialized["sso_connections"][0]["provider_name"] == "oidc"
+    if not roles_fetched:
+        assert ("prefetch_related", ("permissions",), {}) in role_query.calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("smtp_enabled", "bulk_rate", "found_users", "expected_key"),
+    [
+        (False, (True, 0, 100), [], "smtp_not_configured"),
+        (True, (False, 100, 0), [], "email_rate_limit_exceeded"),
+        (True, (True, 0, 100), [], "user_not_found"),
+        (True, (True, 0, 1), [_user(), _user()], "email_quota_insufficient"),
+    ],
+)
+async def test_send_email_rejects_configuration_rate_and_recipient_boundaries(
+    admin, smtp_enabled, bulk_rate, found_users, expected_key
+):
+    with (
+        patch.object(
+            users.SiteSetting, "get_value", AsyncMock(return_value=smtp_enabled)
+        ),
+        patch.object(users, "check_bulk_email_rate", AsyncMock(return_value=bulk_rate)),
+        patch.object(users.User, "filter", return_value=_Query(found_users)),
+        pytest.raises(BusinessError) as exc,
+    ):
+        await users.send_email_to_users(
+            data=users.SendEmailRequest(
+                subject="Maintenance", content="Tonight", user_ids=[uuid4()]
+            ),
+            background_tasks=MagicMock(),
+            current_user=admin,
+        )
+
+    assert exc.value.msg_key == expected_key
+
+
+@pytest.mark.anyio
+async def test_send_email_queues_eligible_users_and_persists_rate_counts(admin):
+    eligible = _user(username="eligible")
+    missing_email = _user(email="")
+    rate_limited = _user(email="limited@example.com")
+    background_tasks = MagicMock()
+    increment_recipient = AsyncMock()
+    increment_bulk = AsyncMock()
+
+    with (
+        patch.object(users.SiteSetting, "get_value", AsyncMock(return_value=True)),
+        patch.object(
+            users, "check_bulk_email_rate", AsyncMock(return_value=(True, 4, 96))
+        ),
+        patch.object(
+            users,
+            "check_recipient_email_rate",
+            AsyncMock(side_effect=[(True, 0), (False, 5)]),
+        ),
+        patch.object(users, "increment_recipient_email_count", increment_recipient),
+        patch.object(users, "increment_bulk_email_count", increment_bulk),
+        patch.object(
+            users.User,
+            "filter",
+            return_value=_Query([eligible, missing_email, rate_limited]),
+        ),
+    ):
+        response = await users.send_email_to_users(
+            data=users.SendEmailRequest(
+                subject="Maintenance",
+                content="Tonight",
+                user_ids=[eligible.id, missing_email.id, rate_limited.id],
+            ),
+            background_tasks=background_tasks,
+            current_user=admin,
+        )
+
+    assert response["data"] == {"sent_count": 1, "skipped_count": 1, "total": 3}
+    assert background_tasks.add_task.call_args.kwargs["to_email"] == eligible.email
+    assert "Hi eligible" in background_tasks.add_task.call_args.kwargs["body_html"]
+    increment_recipient.assert_awaited_once_with(eligible.email)
+    increment_bulk.assert_awaited_once_with(str(admin.id), 1)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "function",
+    [
+        users.update_user,
+        users.force_password_change,
+        users.reset_password_expiration,
+        users.exempt_password_expiration,
+    ],
+)
+async def test_user_mutations_reject_missing_user(fake_request, admin, function):
+    kwargs = {"current_user": admin}
+    if function is users.update_user:
+        kwargs["user_in"] = UserUpdate(email="new@example.com")
+    elif function is users.exempt_password_expiration:
+        kwargs["data"] = users.ExemptPasswordExpirationRequest(exempt=False)
+
+    with (
+        patch.object(users.User, "filter", return_value=_Query(None)),
+        pytest.raises(BusinessError) as exc,
+    ):
+        await function(request=fake_request, user_id=uuid4(), **kwargs)
+
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_exemption_false_preserves_force_change(fake_request, admin):
+    target = _user(force_password_change=True)
+
+    with (
+        patch.object(users.User, "filter", return_value=_Query(target)),
+        patch.object(users.AuditLogService, "log", AsyncMock()),
+    ):
+        await users.exempt_password_expiration(
+            fake_request,
+            target.id,
+            users.ExemptPasswordExpirationRequest(exempt=False),
+            current_user=admin,
+        )
+
+    assert target.password_expiration_exempt is False
+    assert target.force_password_change is True
+
+
+@pytest.mark.anyio
+async def test_expiring_passwords_serializes_missing_optional_dates(admin):
+    target = _user(
+        password_changed_at=None,
+        password_expires_at=None,
+        last_login=None,
+    )
+
+    with (
+        patch.object(users.SiteSetting, "get_value", AsyncMock(return_value=7)),
+        patch.object(users.User, "filter", return_value=_Query([target], count=1)),
+    ):
+        response = await users.get_expiring_passwords(
+            page=1, page_size=20, filter="all", current_user=admin
+        )
+
+    item = response["data"].items[0]
+    assert item.password_changed_at is None
+    assert item.password_expires_at is None
+    assert item.days_until_expiration is None
+    assert item.last_login is None
