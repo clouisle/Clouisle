@@ -113,4 +113,58 @@ describe('message rendering', () => {
     expect(html).toContain('2/3')
     expect(html).toContain('chat.message.edit')
   })
+
+  test('hides duplicated error text while keeping the error boundary visible', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'assistant-error',
+        role: 'assistant',
+        metadata: { isError: true, errorMessage: 'network failed' },
+        parts: [{ type: 'text', text: 'network failed' }],
+      }}
+    />)
+
+    expect(html).toContain('network failed')
+    expect(html).toContain('text-destructive')
+    expect(html).not.toContain('<pre>network failed</pre>')
+  })
+
+  test('renders tool calls in content only when chain of thought is not hidden', () => {
+    const parts = [
+      { type: 'tool-call' as const, toolCallId: 'tool-1', toolName: 'search', input: { q: 'coverage' }, state: 'done' as const },
+      { type: 'tool-result' as const, toolCallId: 'tool-1', toolName: 'search', output: { ok: true } },
+    ]
+
+    const visible = renderToStaticMarkup(<Message message={{ id: 'tool-visible', role: 'assistant', parts }} />)
+    const hidden = renderToStaticMarkup(<Message
+      message={{
+        id: 'tool-hidden',
+        role: 'assistant',
+        parts: [{ type: 'reasoning' as const, text: 'thinking', state: 'done' as const }, ...parts],
+      }}
+      hideToolCalls
+    />)
+
+    expect(visible).toContain('search')
+    expect(visible).toContain('&quot;q&quot;:&quot;coverage&quot;')
+    expect(hidden).not.toContain('&quot;q&quot;:&quot;coverage&quot;')
+    expect(hidden).toContain('chat.reasoning.thought')
+  })
+
+  test('renders iteration cap and stopped markers once', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'assistant-marker',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'chat.message.iterationCapReached' },
+          { type: 'iteration-cap-reached' },
+          { type: 'stopped' },
+        ],
+      }}
+    />)
+
+    expect(html.match(/chat\.message\.iterationCapReached/g)?.length).toBe(1)
+    expect(html).toContain('chat.message.manuallyStopped')
+  })
 })
