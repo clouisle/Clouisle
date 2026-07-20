@@ -67,7 +67,9 @@ async def test_chat_builds_request_and_normalizes_mixed_response():
         content=[
             SimpleNamespace(type="thinking", thinking="considering "),
             SimpleNamespace(type="text", text="answer "),
-            SimpleNamespace(type="tool_use", id="call-1", name="lookup", input={"q": "docs"}),
+            SimpleNamespace(
+                type="tool_use", id="call-1", name="lookup", input={"q": "docs"}
+            ),
         ],
         usage=SimpleNamespace(input_tokens=9, output_tokens=4),
     )
