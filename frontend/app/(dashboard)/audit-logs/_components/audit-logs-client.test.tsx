@@ -11,6 +11,7 @@ let states: unknown[] = []
 let stateIndex = 0
 let effects: Array<() => void | Promise<void>> = []
 let search = ''
+let canExport = true
 const originalConsoleError = console.error
 
 const component = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) =>
@@ -37,7 +38,10 @@ mock.module('@/lib/api/admin/audit-logs', () => ({ auditLogsApi: api }))
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => [search, (value: string) => { search = value }],
 }))
-mock.module('@/components/permission-guard', () => ({ PermissionGuard: component }))
+<<<<<<< HEAD
+mock.module('@/components/permission-guard', () => ({
+  PermissionGuard: ({ children }: React.PropsWithChildren) => canExport ? React.createElement(React.Fragment, {}, children) : null,
+}))
 mock.module('@/components/ui/card', () => ({ Card: component, CardContent: component, CardHeader: component, CardTitle: component }))
 mock.module('@/components/ui/table', () => ({
   Table: tableComponent, TableBody: component, TableCell: component, TableHead: component, TableHeader: component, TableRow: component,
@@ -84,6 +88,7 @@ beforeEach(() => {
   stateIndex = 0
   effects = []
   search = ''
+  canExport = true
   api.getStats.mockReset()
   api.list.mockReset()
   api.getActions.mockReset()
@@ -125,6 +130,16 @@ describe('audit-log dashboard behavior', () => {
     expect(text(tree)).toContain('denied')
     expect(text(tree)).toContain('"role": "admin"')
     expect(text(tree)).toContain('"source": "sso"')
+  })
+
+  test('hides export controls without audit export permission', async () => {
+    canExport = false
+    api.getActions.mockResolvedValue([])
+    api.list.mockResolvedValue({ items: [], total_pages: 0 })
+
+    render(AuditLogsTable)
+    await Promise.all(effects.map((effect) => effect()))
+    expect(text(render(AuditLogsTable))).not.toContain('auditLogs.export')
   })
 
   test('loads logs, applies the search filter, and recovers from a failed refresh', async () => {
