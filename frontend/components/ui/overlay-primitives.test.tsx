@@ -37,7 +37,16 @@ mock.module('@base-ui/react/dialog', () => ({
 }))
 
 const { Popover, PopoverContent, PopoverTrigger } = await import('./popover')
-const { Sheet, SheetContent, SheetTrigger } = await import('./sheet')
+const {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} = await import('./sheet')
 
 describe('overlay UI primitives', () => {
   test('forwards popover trigger events and default positioning', () => {
@@ -84,5 +93,35 @@ describe('overlay UI primitives', () => {
     expect(content.props['data-side']).toBe('left')
     expect(content.children).toEqual(['Panel'])
     expect(renderer!.root.findAllByType('sheet-close')).toHaveLength(0)
+  })
+
+  test('renders default sheet close control and structural sections', () => {
+    let renderer: ReturnType<typeof create>
+
+    act(() => {
+      renderer = create(
+        <Sheet>
+          <SheetContent className="custom-content">
+            <SheetHeader className="custom-header">
+              <SheetTitle className="custom-title">Title</SheetTitle>
+              <SheetDescription className="custom-description">Description</SheetDescription>
+            </SheetHeader>
+            <SheetFooter className="custom-footer">
+              <SheetClose>Dismiss</SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      )
+    })
+
+    const content = renderer!.root.findByType('sheet-popup')
+    expect(content.props['data-side']).toBe('right')
+    expect(content.props.className).toContain('custom-content')
+    expect(renderer!.root.findByType('sheet-backdrop').props['data-slot']).toBe('sheet-overlay')
+    expect(renderer!.root.findByType('sheet-title').props.className).toContain('custom-title')
+    expect(renderer!.root.findByType('sheet-description').props.className).toContain('custom-description')
+    expect(renderer!.root.findByProps({ 'data-slot': 'sheet-header' }).props.className).toContain('custom-header')
+    expect(renderer!.root.findByProps({ 'data-slot': 'sheet-footer' }).props.className).toContain('custom-footer')
+    expect(renderer!.root.findAllByType('sheet-close')).toHaveLength(2)
   })
 })
