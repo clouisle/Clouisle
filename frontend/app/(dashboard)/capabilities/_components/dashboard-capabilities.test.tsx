@@ -50,9 +50,10 @@ const teamsApiMock = {
   getTeams: mock(async () => ({ items: [], total: 0, page: 1, pageSize: 100 })),
 }
 const adminPackagesApiMock = { export: mock(async () => ({ blob: new Blob(), filename: 'tool.zip' })) }
+const downloadBlob = mock(() => {})
 
 mock.module('@/lib/api/admin', () => ({ adminToolsApi: adminToolsApiMock, adminSkillsApi: adminSkillsApiMock, teamsApi: teamsApiMock }))
-mock.module('@/lib/api/packages', () => ({ adminPackagesApi: adminPackagesApiMock, downloadBlob: mock(() => {}) }))
+mock.module('@/lib/api/packages', () => ({ adminPackagesApi: adminPackagesApiMock, downloadBlob }))
 mock.module('next-intl', () => ({
   useTranslations: (namespace: string) => (key: string, values?: Record<string, unknown>) =>
     `${namespace}.${key}${values ? JSON.stringify(values) : ''}`,
@@ -178,14 +179,17 @@ mock.module('@/components/ui/table', () => ({ Table: passthrough('table'), Table
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: passthrough(), CollapsibleContent: passthrough(), CollapsibleTrigger: passthrough('button') }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: passthrough() }))
 mock.module('@/components/ui/dropdown-menu', () => ({ DropdownMenu: passthrough(), DropdownMenuContent: passthrough(), DropdownMenuItem: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>, DropdownMenuSeparator: passthrough(), DropdownMenuTrigger: passthrough('button') }))
-mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough(), TooltipContent: passthrough(), TooltipTrigger: passthrough('button') }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: passthrough(), TooltipContent: passthrough(),
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement; children?: React.ReactNode } & Record<string, unknown>) => render ? React.cloneElement(render, props) : <button {...props}>{children}</button>,
+}))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: ({ title, onSelectionChange }: { title: string; onSelectionChange: (values: Set<string>) => void }) => <button onClick={() => onSelectionChange(new Set(['selected']))}>{title}</button> }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-category-input', () => ({ ToolCategoryInput: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <input value={value} onChange={(event) => onChange(event.currentTarget.value)} /> }))
 mock.module('@/app/(platform)/app/capabilities/_components/http-tool-dialog', () => ({ HttpToolDialog: ({ open, onSave }: { open: boolean; onSave: (data: unknown) => Promise<void> }) => open ? <button onClick={() => onSave({ name: 'http' })}>mock-http-save</button> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/mcp-tool-dialog', () => ({ McpToolDialog: ({ open, onSave }: { open: boolean; onSave: (data: unknown) => Promise<void> }) => open ? <button onClick={() => onSave({ name: 'mcp' })}>mock-mcp-save</button> : null }))
 mock.module('./delete-tool-dialog', () => ({ DeleteToolDialog: ({ open }: { open: boolean }) => open ? <div>delete-dialog</div> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-test-panel', () => ({ ToolTestPanel: ({ tool }: { tool: { name: string } | null }) => tool ? <div>test:{tool.name}</div> : null }))
-mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({ ToolConfigDialog: ({ open }: { open: boolean }) => open ? <div>config-dialog</div> : null }))
+mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({ ToolConfigDialog: ({ open, onSave }: { open: boolean; onSave: (config: Record<string, string>) => Promise<void> }) => open ? <button onClick={() => onSave({ api_key: 'secret' })}>config-dialog</button> : null }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: ({ open }: { open: boolean }) => open ? <div>import-package</div> : null }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, key: string) => { const next = { ...errors }; delete next[key]; return next },
@@ -217,7 +221,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount())
   document.body.replaceChildren()
   mock.restore()
-  toastError.mockClear(); toastSuccess.mockClear(); toastInfo.mockClear(); setSearchQuery.mockClear(); routerPush.mockClear()
+  toastError.mockClear(); toastSuccess.mockClear(); toastInfo.mockClear(); setSearchQuery.mockClear(); routerPush.mockClear(); downloadBlob.mockClear()
 })
 
 async function render(element: React.ReactElement) {
@@ -324,6 +328,79 @@ describe('dashboard capability clients', () => {
 
     expect(createTool).toHaveBeenCalledWith('team-1', { name: 'http' })
     expect(toastSuccess).toHaveBeenCalledWith('tools.toolCreated')
+  })
+
+  test('ToolsClient applies and resets filters and changes page size', async () => {
+    spyOn(teamsApiMock, 'getTeams').mockResolvedValue(teamsPage)
+    const listPage = spyOn(adminToolsApiMock, 'listPage').mockResolvedValue({ items: [tool], total: 25, page: 1, pageSize: 10 })
+    spyOn(adminToolsApiMock, 'getFilterOptions').mockResolvedValue({
+      categories: [{ value: 'api', label: 'API' }], creators: [{ value: 'me', label: 'Me' }], teams: [{ value: 'team-1', label: 'Core' }, { value: 'team-2', label: 'Docs' }],
+    })
+    const container = await render(<ToolsClient />)
+
+    click(button(container, 'tools.type'))
+    await act(async () => await Promise.resolve())
+    expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, type: ['selected'] }))
+    click(button(container, 'common.reset'))
+    expect(setSearchQuery).toHaveBeenCalledWith('')
+
+    await act(async () => button(container, '20').click())
+    expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }))
+  })
+
+  test('ToolsClient selects mutable tools and confirms bulk deletion', async () => {
+    const customTool = { ...tool, id: 'custom-1', name: 'http_lookup', display_name: 'HTTP Lookup', type: 'custom' as const, custom_type: 'http' as const }
+    spyOn(teamsApiMock, 'getTeams').mockResolvedValue(teamsPage)
+    spyOn(adminToolsApiMock, 'listPage').mockResolvedValue({ items: [tool, customTool], total: 2, page: 1, pageSize: 10 })
+    spyOn(adminToolsApiMock, 'getFilterOptions').mockResolvedValue({ categories: [], creators: [], teams: [] })
+    const deleteTool = spyOn(adminToolsApiMock, 'delete').mockResolvedValue({})
+    const container = await render(<ToolsClient />)
+
+    const checkboxes = [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    click(checkboxes[1] as unknown as HTMLButtonElement)
+    expect(container.textContent).toContain('1 tools.toolsSelected')
+    click([...container.querySelectorAll<HTMLButtonElement>('button.text-destructive')].at(-1)!)
+    await act(async () => [...container.querySelectorAll('button')].filter((item) => item.textContent?.includes('common.delete')).at(-1)!.click())
+
+    expect(deleteTool).toHaveBeenCalledWith('custom-1')
+    expect(toastSuccess).toHaveBeenCalledWith('tools.bulkDeleted{"count":1}')
+  })
+
+  test('ToolsClient runs custom tool actions and builtin configuration callbacks', async () => {
+    const customTool = { ...tool, id: 'custom-1', name: 'http_lookup', display_name: 'HTTP Lookup', type: 'custom' as const, custom_type: 'http' as const, is_enabled: false }
+    const builtinTool = { ...tool, id: undefined, name: 'web_search', display_name: 'Web Search', requires_config: true }
+    spyOn(teamsApiMock, 'getTeams').mockResolvedValue(teamsPage)
+    spyOn(adminToolsApiMock, 'listPage').mockResolvedValue({ items: [customTool, builtinTool], total: 2, page: 1, pageSize: 10 })
+    spyOn(adminToolsApiMock, 'getFilterOptions').mockResolvedValue({ categories: [], creators: [], teams: [] })
+    const getById = spyOn(adminToolsApiMock, 'getById').mockResolvedValue(customTool)
+    const duplicate = spyOn(adminToolsApiMock, 'duplicate').mockResolvedValue({})
+    const toggle = spyOn(adminToolsApiMock, 'toggle').mockResolvedValue({})
+    const exportTool = spyOn(adminPackagesApiMock, 'export').mockResolvedValue({ blob: new Blob(['tool']), filename: 'tool.zip' })
+    const createConfig = spyOn(adminToolsApiMock, 'createConfig').mockResolvedValue({})
+    spyOn(adminToolsApiMock, 'getConfig').mockRejectedValue({ response: { status: 404 } })
+    const container = await render(<ToolsClient />)
+
+    click(button(container, 'common.edit'))
+    await act(async () => await Promise.resolve())
+    expect(getById).toHaveBeenCalledWith('custom-1')
+    expect(container.textContent).toContain('mock-http-save')
+    click(button(container, 'tools.duplicate'))
+    click(button(container, 'tools.enable'))
+    await act(async () => button(container, 'packages.export').click())
+    expect(duplicate).toHaveBeenCalledWith('custom-1')
+    expect(toggle).toHaveBeenCalledWith('custom-1')
+    expect(exportTool).toHaveBeenCalledWith('tool', 'custom-1')
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'tool.zip')
+    await act(async () => button(container, 'tools.share.title').click())
+    expect(container.textContent).toContain('tools.share.description{"toolName":"HTTP Lookup"}')
+    click(button(container, 'tools.runTest'))
+    expect(container.textContent).toContain('test:http_lookup')
+
+    const editButtons = [...container.querySelectorAll('button')].filter((item) => item.textContent?.includes('common.edit'))
+    click(editButtons.at(-1) as HTMLButtonElement)
+    await act(async () => button(container, 'config-dialog').click())
+    expect(createConfig).toHaveBeenCalledWith('web_search', { api_key: 'secret' }, 'team-1')
+    expect(toastSuccess).toHaveBeenCalledWith('tools.configSaved')
   })
 
   test('AdminSkillsPanel loads skills and installs selected git preview entries', async () => {
