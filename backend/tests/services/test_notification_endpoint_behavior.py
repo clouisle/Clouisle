@@ -1,20 +1,31 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from app.api.v1.endpoints.notifications import list_notifications, mark_read
+from app.api.v1.endpoints.notifications import (
+    admin_create_notification,
+    admin_list_notifications,
+    check_team_admin_permission,
+    list_notifications,
+    mark_read,
+)
 from app.models.notification import (
+    Notification,
     NotificationAudit,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationDeliveryStatus,
     NotificationLevel,
     NotificationRead,
     NotificationScope,
     NotificationSource,
     NotificationStatus,
 )
-from app.schemas.notification import NotificationReadRequest
+from app.models.user import Team, TeamMember, User
+from app.schemas.notification import NotificationAdminCreate, NotificationReadRequest
 from app.schemas.response import BusinessError
 
 
@@ -184,3 +195,157 @@ async def test_mark_read_no_visible_notifications_is_noop():
 
     assert response["data"] == {"updated": 0}
     create_reads.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_list_includes_safe_delivery_errors_and_pagination():
+    notification_id = uuid4()
+    notification = notification_row(notification_id)
+    query = FakeQuery(rows=[notification], total=1)
+    timestamp = datetime.now(timezone.utc)
+    deliveries = FakeQuery(
+        rows=[
+            SimpleNamespace(
+                notification_id=notification_id,
+                channel=NotificationChannel.WEBHOOK,
+                status=NotificationDeliveryStatus.FAILED,
+                error_message="provider leaked details",
+                retry_count=2,
+                sent_at=None,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+        ]
+    )
+
+    with (
+        patch.object(Notification, "all", return_value=query),
+        patch.object(NotificationDelivery, "filter", return_value=deliveries),
+        patch("app.api.v1.endpoints.notifications.t", return_value="Unknown error"),
+        patch("app.api.v1.endpoints.notifications.has_translation", return_value=False),
+    ):
+        response = await admin_list_notifications(
+            scope=[NotificationScope.GLOBAL],
+            type="system.notice",
+            level=["medium"],
+            search="maint",
+            page=2,
+            page_size=5,
+            current_user=SimpleNamespace(is_superuser=True),
+        )
+
+    assert response["data"]["total"] == 1
+    assert query.pagination == [5, 5]
+    assert response["data"]["items"][0].deliveries[0].error_message == "Unknown error"
+    assert any(args for args, _ in query.filters)
+
+
+@pytest.mark.asyncio
+async def test_team_admin_permission_handles_missing_team_and_non_admin():
+    missing_team = MagicMock()
+    missing_team.first = AsyncMock(return_value=None)
+    with patch.object(Team, "filter", return_value=missing_team):
+        with pytest.raises(BusinessError) as exc_info:
+            await check_team_admin_permission(uuid4(), SimpleNamespace())
+    assert exc_info.value.status_code == 404
+
+    team = SimpleNamespace(id=uuid4())
+    found_team = MagicMock()
+    found_team.first = AsyncMock(return_value=team)
+    missing_membership = MagicMock()
+    missing_membership.first = AsyncMock(return_value=None)
+    with (
+        patch.object(Team, "filter", return_value=found_team),
+        patch.object(TeamMember, "filter", return_value=missing_membership),
+    ):
+        with pytest.raises(BusinessError) as exc_info:
+            await check_team_admin_permission(
+                team.id, SimpleNamespace(is_superuser=False)
+            )
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_create_user_notification_persists_without_external_dispatch():
+    actor = SimpleNamespace(id=uuid4(), is_superuser=True)
+    target_id = uuid4()
+    created = notification_row(uuid4())
+    created.scope = NotificationScope.USER
+    created.user_id = target_id
+    user_query = MagicMock()
+    user_query.first = AsyncMock(return_value=SimpleNamespace(id=target_id))
+    payload = NotificationAdminCreate(
+        scope=NotificationScope.USER,
+        user_id=target_id,
+        type="account.notice",
+        title="Account notice",
+        content="Review your account",
+    )
+
+    with (
+        patch.object(User, "filter", return_value=user_query),
+        patch.object(
+            Notification, "create", new=AsyncMock(return_value=created)
+        ) as create,
+        patch(
+            "app.api.v1.endpoints.notifications.create_notification", new=AsyncMock()
+        ) as persist,
+        patch.object(
+            NotificationDelivery, "create", new=AsyncMock()
+        ) as create_delivery,
+    ):
+        response = await admin_create_notification(payload, actor)
+
+    assert response["data"].id == created.id
+    create.assert_awaited_once()
+    persist.assert_awaited_once_with(created, actor=actor, meta={"source": "admin"})
+    create_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_create_rejects_missing_user_before_persistence():
+    target_id = uuid4()
+    user_query = MagicMock()
+    user_query.first = AsyncMock(return_value=None)
+    payload = NotificationAdminCreate(
+        scope=NotificationScope.USER,
+        user_id=target_id,
+        type="account.notice",
+        title="Account notice",
+        content="Review your account",
+    )
+
+    with (
+        patch.object(User, "filter", return_value=user_query),
+        patch.object(Notification, "create", new=AsyncMock()) as create,
+    ):
+        with pytest.raises(BusinessError) as exc_info:
+            await admin_create_notification(payload, SimpleNamespace(is_superuser=True))
+
+    assert exc_info.value.status_code == 404
+    create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_create_provider_failure_is_safe_and_does_not_persist():
+    payload = NotificationAdminCreate(
+        scope=NotificationScope.GLOBAL,
+        type="system.notice",
+        title="Maintenance",
+        content="Scheduled",
+        notify_channels=[NotificationChannel.WEBHOOK],
+    )
+
+    with (
+        patch(
+            "app.core.webhook.get_webhook_config",
+            new=AsyncMock(return_value={"enabled": False, "url": None}),
+        ),
+        patch.object(Notification, "create", new=AsyncMock()) as create,
+    ):
+        with pytest.raises(BusinessError) as exc_info:
+            await admin_create_notification(payload, SimpleNamespace(is_superuser=True))
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.msg_key == "webhook_not_enabled"
+    create.assert_not_awaited()
