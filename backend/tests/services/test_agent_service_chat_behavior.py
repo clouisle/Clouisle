@@ -154,6 +154,42 @@ async def test_execute_tool_rejects_invalid_arguments_and_unknown_tools():
 
 
 @pytest.mark.anyio
+async def test_execute_tool_uses_team_credentials_and_reports_execution_errors():
+    service = AgentService()
+    agent = SimpleNamespace(id="agent-1", team_id="team-1")
+    tool_call = ToolCall(
+        id="call-search",
+        function=FunctionCall(name="search", arguments='{"query": "docs"}'),
+    )
+    config_query = SimpleNamespace(
+        first=AsyncMock(
+            return_value=SimpleNamespace(credentials={"TEST_API_KEY": "mock-key"})
+        )
+    )
+
+    with (
+        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
+        patch("app.models.tool_config.ToolConfig.filter", return_value=config_query),
+        patch(
+            "app.llm.tools.tool_registry.execute",
+            new=AsyncMock(side_effect=[{"results": ["match"]}, RuntimeError("failed")]),
+        ) as execute,
+    ):
+        success = await service._execute_tool(agent, tool_call)
+        failure = await service._execute_tool(agent, tool_call)
+
+    assert success == {"results": ["match"]}
+    assert failure == {"error": "failed", "success": False}
+    assert execute.await_args_list[0].kwargs == {
+        "name": "search",
+        "arguments": {"query": "docs"},
+        "credentials": {"TEST_API_KEY": "mock-key"},
+        "agent": agent,
+        "team_id": "team-1",
+    }
+
+
+@pytest.mark.anyio
 async def test_agent_tools_include_available_builtin_media_and_agentic_search():
     agent = SimpleNamespace(
         tools_config=[
