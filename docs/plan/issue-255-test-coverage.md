@@ -330,6 +330,8 @@
 
 - Backend progress checkpoint (2026-07-20, commits through `c638420e`): 2,140 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,272 statements with 13,044 missed and 11,640 branches with 1,351 partial, for 60% aggregate coverage after chat-version, prompt-generator, and SSO attribute-mapping batches. The final independent 95% line and branch gates remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commits through `ad845c6c`): 1,088 isolated tests passed with 4,741 assertions after activity-conversation, API-key reveal, site-branding, authentication-layout, document-chunks, and dashboard URL-import behavior coverage. `bun run test:coverage` passes; Bun reports 91.64% lines and 87.04% functions for loaded sources. The honest source census reports 64 eligible sources absent from LCOV and exits nonzero as intended. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
