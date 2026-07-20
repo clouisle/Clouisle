@@ -19,6 +19,7 @@ def build_model(provider: str, **overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
+<<<<<<< HEAD
 @pytest.mark.parametrize(
     ("provider", "expected_base_url"),
     [
