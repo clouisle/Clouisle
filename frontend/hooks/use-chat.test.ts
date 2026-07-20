@@ -5,6 +5,7 @@ type StateSetter<T> = (value: T | ((previous: T) => T)) => void
 type HookOptions = {
   agentId: string
   conversationId?: string
+  variables?: Record<string, unknown>
   onConversationChange?: (id: string) => void
   onError?: (error: { code?: number; message: string }) => void
   onStreamStart?: () => void
@@ -12,6 +13,7 @@ type HookOptions = {
 }
 
 type HookResult = ReturnType<typeof import('./use-chat').useChat>
+type ChatMessage = HookResult['messages'][number]
 
 let stateSlots: unknown[] = []
 let refSlots: Array<{ current: unknown }> = []
@@ -25,7 +27,19 @@ type StreamEvent = { event: string; data: unknown }
 let streamEvents: Array<StreamEvent | Promise<StreamEvent>> = []
 
 const chatStream = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
-const agentsApi = { chatStream }
+const editMessageStream = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
+const regenerateStream = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
+const getConversation = mock(() => Promise.resolve({ messages: [] }))
+const getMessageVersions = mock(() => Promise.resolve<Array<{ id: string }>>([]))
+const switchMessageVersion = mock(() => Promise.resolve())
+const agentsApi = {
+  chatStream,
+  editMessageStream,
+  regenerateStream,
+  getConversation,
+  getMessageVersions,
+  switchMessageVersion,
+}
 
 mock.module('@/lib/api', () => ({
   agentsApi,
@@ -36,6 +50,10 @@ mock.module('@/lib/api', () => ({
 
 mock.module('@/lib/api/client', () => ({
   getErrorMessage: (key: string) => `api.${key}`,
+}))
+
+mock.module('@/lib/utils/message-converter', () => ({
+  convertBackendMessages: (messages: ChatMessage[]) => messages,
 }))
 
 mock.module('@/lib/utils/tool-result', () => ({
@@ -110,7 +128,17 @@ beforeEach(() => {
   stateSlots = []
   refSlots = []
   renderScheduled = false
-  chatStream.mockReset()
+  for (const apiMock of [
+    chatStream,
+    editMessageStream,
+    regenerateStream,
+    getConversation,
+    getMessageVersions,
+    switchMessageVersion,
+  ]) apiMock.mockReset()
+  getConversation.mockResolvedValue({ messages: [] })
+  getMessageVersions.mockResolvedValue([])
+  switchMessageVersion.mockResolvedValue()
   streamEvents = []
   options = { agentId: 'agent-1' }
   renderHookHarness()
@@ -217,6 +245,8 @@ describe('useChat', () => {
     const abort = mock(() => blocked.reject(abortError))
     options = { agentId: 'agent-1', conversationId: 'conversation-1' }
     renderHookHarness()
+    result.setConversationId('conversation-1')
+    await flush()
     streamEvents = [blocked.promise.then(() => ({ event: 'message_end', data: {} }))]
     chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort })
 
@@ -391,5 +421,194 @@ describe('useChat', () => {
 
     pending.reject(new Error('network unavailable'))
     await sending
+  })
+
+  it('constructs requests with conversation context and variables', async () => {
+    options = { agentId: 'agent-1', conversationId: 'conversation-1', variables: { locale: 'en' } }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    await flush()
+    streamEvents = [{ event: 'message_end', data: {} }]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('  contextual question  ')
+
+    expect(chatStream).toHaveBeenCalledWith('agent-1', {
+      message: 'contextual question',
+      images: undefined,
+      file_urls: undefined,
+      conversation_id: 'conversation-1',
+      variables: { locale: 'en' },
+    })
+  })
+
+  it('switches a valid message version and reloads the conversation', async () => {
+    const messageId = '11111111-1111-1111-1111-111111111111'
+    const reloaded = [{ id: 'version-2', role: 'assistant', parts: [{ type: 'text', text: 'new' }] }] as ChatMessage[]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    await flush()
+    result.setMessages([{ id: messageId, role: 'assistant', parts: [] }] as ChatMessage[])
+    await flush()
+    getMessageVersions.mockResolvedValue([{ id: 'version-1' }, { id: 'version-2' }])
+    getConversation.mockResolvedValue({ messages: reloaded })
+
+    await result.switchVersion(messageId, 4)
+    expect(switchMessageVersion).not.toHaveBeenCalled()
+
+    await result.switchVersion(messageId, 1)
+
+    expect(switchMessageVersion).toHaveBeenCalledWith('agent-1', messageId, 'version-2')
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    expect(result.messages).toEqual(reloaded)
+
+    await result.switchVersion('missing', 0)
+    expect(switchMessageVersion).toHaveBeenCalledTimes(1)
+  })
+
+  it('edits a user message, streams its replacement, and reloads authoritative history', async () => {
+    const userId = '11111111-1111-1111-1111-111111111111'
+    const onStreamStart = mock()
+    const onStreamEnd = mock()
+    const reloaded = [
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'edited' }], versionNumber: 2 },
+      { id: 'assistant-2', role: 'assistant', parts: [{ type: 'text', text: 'replacement' }] },
+    ] as ChatMessage[]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1', onStreamStart, onStreamEnd }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+      { id: 'assistant-old', role: 'assistant', parts: [{ type: 'text', text: 'stale' }] },
+    ] as ChatMessage[])
+    await flush()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: 'assistant-2', edited_message_id: userId, edited_version_number: 2, edited_version_count: 2 } },
+      { event: 'content_delta', data: { delta: 'replace' } },
+      { event: 'content_delta', data: { delta: 'ment' } },
+      { event: 'message_end', data: {} },
+    ]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockResolvedValue({ messages: reloaded })
+
+    await result.editMessage(userId, 'edited')
+
+    expect(editMessageStream).toHaveBeenCalledWith('agent-1', userId, 'edited')
+    expect(onStreamStart).toHaveBeenCalledTimes(1)
+    expect(onStreamEnd).toHaveBeenCalledTimes(1)
+    expect(result.messages).toEqual(reloaded)
+    expect(result.status).toBe('idle')
+
+    await result.editMessage('temporary-id', 'ignored')
+    await result.editMessage('assistant-2', 'ignored')
+    expect(editMessageStream).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers authoritative messages after an edit stream error', async () => {
+    const userId = '11111111-1111-1111-1111-111111111111'
+    const onError = mock()
+    const recovered = [{ id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] }] as ChatMessage[]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1', onError }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages(recovered)
+    await flush()
+    streamEvents = [{ event: 'error', data: { code: 429, msg: 'try later', quota_type: 'usage' } }]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockResolvedValue({ messages: recovered })
+
+    await result.editMessage(userId, 'edited')
+
+    expect(onError).toHaveBeenCalledWith({ code: 429, message: 'try later', quotaType: 'usage' })
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    expect(result.messages).toEqual(recovered)
+    expect(result.status).toBe('idle')
+  })
+
+  it('resends text and images when regenerating an unsaved assistant', async () => {
+    result.setMessages([
+      {
+        id: 'user-temporary',
+        role: 'user',
+        parts: [{ type: 'text', text: 'retry me' }, { type: 'image', url: '/dummy.png' }],
+      },
+      { id: 'assistant-temporary', role: 'assistant', parts: [] },
+    ] as ChatMessage[])
+    await flush()
+    streamEvents = [{ event: 'message_end', data: {} }]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.regenerate('assistant-temporary')
+
+    expect(regenerateStream).not.toHaveBeenCalled()
+    expect(chatStream).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      message: 'retry me',
+      images: [{ type: 'image_url', url: '/dummy.png' }],
+    }))
+  })
+
+  it('preserves partial regeneration progress when the stream reports an error', async () => {
+    const messageId = '22222222-2222-2222-2222-222222222222'
+    const onError = mock()
+    options = { agentId: 'agent-1', onError }
+    renderHookHarness()
+    result.setMessages([{ id: messageId, role: 'assistant', parts: [{ type: 'text', text: 'old' }] }] as ChatMessage[])
+    await flush()
+    streamEvents = [
+      { event: 'content_delta', data: { delta: 'partial retry' } },
+      { event: 'error', data: { code: 6105, msg: 'vision unavailable' } },
+    ]
+    regenerateStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.regenerate(messageId)
+
+    expect(onError).toHaveBeenCalledWith({ code: 6105, message: 'vision unavailable', quotaType: undefined })
+    expect(result.messages[0].metadata).toMatchObject({
+      isLoading: false,
+      isError: true,
+      errorMessage: 'errors.modelVisionNotSupported',
+      preservedPartialProgress: true,
+    })
+    expect(result.messages[0].parts).toContainEqual({ type: 'text', text: 'partial retry', state: 'done' })
+  })
+
+  it('regenerates a saved assistant across message, tool, media, and version boundaries', async () => {
+    const messageId = '22222222-2222-2222-2222-222222222222'
+    const onStreamStart = mock()
+    const onStreamEnd = mock()
+    options = { agentId: 'agent-1', onStreamStart, onStreamEnd }
+    renderHookHarness()
+    result.setMessages([
+      { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'question' }] },
+      { id: messageId, role: 'assistant', parts: [{ type: 'text', text: 'old' }], metadata: { isError: true } },
+      { id: 'descendant', role: 'user', parts: [{ type: 'text', text: 'stale branch' }] },
+    ] as ChatMessage[])
+    await flush()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: 'version-2', version_number: 2, version_count: 2 } },
+      { event: 'content_delta', data: { delta: 'new answer' } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'lookup', arguments: { q: 'safe dummy' } } },
+      { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'lookup', result: { ok: true }, is_error: false } },
+      { event: 'media_result', data: { kind: 'image', url: '/dummy.png' } },
+      { event: 'message_end', data: { version_number: 3, version_count: 3, usage: { total_tokens: 4 } } },
+    ]
+    regenerateStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.regenerate(messageId)
+
+    expect(regenerateStream).toHaveBeenCalledWith('agent-1', messageId, {})
+    expect(onStreamStart).toHaveBeenCalledTimes(1)
+    expect(onStreamEnd).toHaveBeenCalledTimes(1)
+    expect(result.messages).toHaveLength(2)
+    expect(result.messages[1]).toMatchObject({
+      id: 'version-2',
+      versionNumber: 3,
+      versionCount: 3,
+      metadata: { isLoading: false, isError: false, usage: { total_tokens: 4 } },
+    })
+    expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'new answer', state: 'done' })
+    expect(result.messages[1].parts).toContainEqual(expect.objectContaining({ type: 'tool-call', state: 'done' }))
+    expect(result.messages[1].parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
   })
 })
