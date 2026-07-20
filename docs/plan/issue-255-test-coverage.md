@@ -290,6 +290,10 @@
 
 - Frontend progress checkpoint (2026-07-20, commit `86c7f7a1`): 983 isolated tests passed with 4,158 assertions after workflow template-input add/edit, grouped upstream/system selection, search/no-match and popover reset, valid trimmed save, invalid-name, empty-input, and disabled-save coverage. `bun run test:coverage` passes; Bun reports 91.26% lines and 86.46% functions for loaded sources. The honest source census reports 92 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Backend progress checkpoint (2026-07-20, commit `97599bb3`): 14 focused native OpenAI-compatible rerank adapter tests pass, and the target adapter reaches 100% statements and branches (68 statements, 28 branches). The batch covers endpoint/header/payload construction, runtime-over-config precedence, missing base URL, optional authentication and `top_n`, malformed result/usage boundaries, HTTP behavior, and empty-document short-circuit; focused Ruff check and format check pass. Whole-application backend line and branch targets remain incomplete.
+
+- Frontend progress checkpoint (2026-07-20, commit `06ecee57`): 987 isolated tests passed with 4,179 assertions after workflow parameter editor add/edit initialization, name validation and duplicate exclusion, trimmed save/cancel, scalar/JSON/checkbox defaults, select option add/edit/remove/default selection, file/image upload constraints, description, and required-state coverage. `bun run test:coverage` passes; Bun reports 91.27% lines and 86.48% functions for loaded sources. The honest source census reports 91 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
