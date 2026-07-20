@@ -1,16 +1,21 @@
 import io
 import json
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
 from app.api.v1.endpoints.packages import _content_disposition
 from app.models.package_import import ClouisleImportSessionStatus
-from app.schemas.clouisle_package import ClouisleResourceType
+from app.schemas.clouisle_package import (
+    ClouisleConflictAction,
+    ClouisleImportInstallRequest,
+    ClouisleResourceType,
+)
 from app.schemas.response import BusinessError
 from app.services.clouisle_package import ClouislePackageService
 from app.services.clouisle_package_resources import (
@@ -351,3 +356,48 @@ def test_build_package_round_trips_resource_payload():
     assert manifest.resource_type == ClouisleResourceType.TOOL
     assert manifest.resource_name == "Demo Tool"
     assert resource == payload
+
+
+@pytest.mark.asyncio
+async def test_install_skip_completes_session_without_adapter_install(
+    tmp_path, monkeypatch
+):
+    staged = tmp_path / "staged"
+    staged.mkdir()
+
+    class Session:
+        status = ClouisleImportSessionStatus.PREVIEWED
+        source = "platform"
+        expires_at = datetime.now(UTC) + timedelta(minutes=5)
+        team_id = uuid4()
+        resource_type = "tool"
+        temp_storage_path = str(staged)
+
+        async def save(self, update_fields):
+            assert update_fields == ["status", "updated_at"]
+
+    session = Session()
+
+    class Query:
+        async def first(self):
+            return session
+
+    monkeypatch.setattr(
+        "app.services.clouisle_package.ClouisleImportSession.filter",
+        lambda **_kwargs: Query(),
+    )
+    monkeypatch.setattr(
+        ClouislePackageService,
+        "_check_team_access",
+        AsyncMock(return_value=SimpleNamespace(id=session.team_id)),
+    )
+
+    result = await ClouislePackageService.install(
+        session_id=uuid4(),
+        user=SimpleNamespace(is_superuser=True),
+        install_in=ClouisleImportInstallRequest(action=ClouisleConflictAction.SKIP),
+    )
+
+    assert result.skipped is True
+    assert session.status == ClouisleImportSessionStatus.INSTALLED
+    assert not staged.exists()
