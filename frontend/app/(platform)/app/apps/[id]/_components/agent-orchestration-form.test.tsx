@@ -137,6 +137,10 @@ function render(onUpdate = mock(() => undefined), currentAgent = agent) {
 }
 
 const find = (tree: Node, type: unknown) => descendants(tree).filter((node) => node.type === type)
+const findByTestId = (tree: Node, testId: string) => descendants(tree).find((node) => node.props['data-testid'] === testId)!
+const renderComponent = (node: Node) => (node.type as (props: Record<string, unknown>) => Node)(node.props)
+const change = (node: Node, value: string) =>
+  (node.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 beforeEach(() => {
@@ -278,6 +282,139 @@ describe('AgentOrchestrationForm', () => {
       memory_config: expect.objectContaining({ max_memories_per_retrieval: 10 }),
       image_generation_config: expect.objectContaining({ default_width: 256 }),
       video_generation_config: expect.objectContaining({ poll_interval_ms: 30000 }),
+    }))
+  })
+
+  test('covers card actions, selection callbacks, and all remaining validation bounds', async () => {
+    getKnowledgeBases.mockResolvedValue({ items: [{ id: 'kb-1', name: 'Docs', description: 'Evidence', team: { id: 'team-1' } }] })
+    listFileParsers.mockResolvedValue([{ id: 'parser-1', type: 'custom', name: 'parser', display_name: 'Parser' }])
+    getTeamModels
+      .mockResolvedValueOnce([{ id: 'image-team-model', model: { id: 'image-1', name: 'Image One' } }])
+      .mockResolvedValueOnce([{ id: 'video-team-model', model: { id: 'video-1', name: 'Video One' } }])
+    const enabledAgent = {
+      ...agent,
+      knowledge_bases: [{ knowledge_base: { id: 'kb-1' }, retrieval_top_k: 3, score_threshold: 0.3, search_mode: 'hybrid' }],
+      enable_file_upload: true,
+      enable_memory: true,
+      enable_image_generation: true,
+      enable_video_generation: true,
+      image_generation_config: {
+        default_model_ref: 'missing-image', default_width: 1024, default_height: 1024,
+        max_images: 4, allow_reference_images: true, allowed_providers: [], require_confirmation: false,
+      },
+      video_generation_config: {
+        default_model_ref: 'missing-video', default_duration: 5, max_duration: 10,
+        default_aspect_ratio: '16:9', poll_interval_ms: 3000, poll_timeout_s: 120,
+        allowed_providers: [], require_confirmation: false,
+      },
+    } as never
+    const onUpdate = mock(() => undefined)
+    render(onUpdate, enabledAgent)
+    await flush()
+    let tree = render(onUpdate, enabledAgent).tree
+
+    for (const testId of [
+      'agent-variables-section', 'agent-kb-section', 'agent-tools-section', 'agent-vision-section',
+      'agent-file-upload-section', 'agent-user-input-section', 'agent-memory-section',
+      'agent-image-generation-section', 'agent-video-generation-section',
+    ]) {
+      const card = findByTestId(tree, testId)
+      ;(card.props.onToggle as () => void)()
+      tree = render(onUpdate, enabledAgent).tree
+    }
+
+    const addVariable = find(tree, AddVariableButton)[0]
+    ;(addVariable.props.onAdd as (type: string) => void)('select')
+    tree = render(onUpdate, enabledAgent).tree
+    const variableEditor = find(tree, VariableEditor)[0]
+    ;(variableEditor.props.onEditingIndexChange as (index: number | null) => void)(null)
+    ;(variableEditor.props.onChange as (variables: unknown[]) => void)([{ name: 'region', type: 'text' }])
+
+    const select = (value: string) => find(tree, Select).find((node) => node.props.value === value)!
+    const choose = (current: string, next: string) => {
+      ;(select(current).props.onValueChange as (value: string) => void)(next)
+      tree = render(onUpdate, enabledAgent).tree
+    }
+    const input = (min: number, max: number, index = 0) =>
+      find(tree, Input).filter((node) => node.props.min === min && node.props.max === max)[index]
+    const enter = (min: number, max: number, value: string, index = 0) => {
+      change(input(min, max, index), value)
+      tree = render(onUpdate, enabledAgent).tree
+    }
+
+    choose('agentic', 'auto')
+    expect(onUpdate.mock.calls.at(-1)?.[0].rag_mode).toBe('auto')
+    choose('builtin:markitdown', 'custom:parser-1')
+    expect(onUpdate.mock.calls.at(-1)?.[0].file_upload_config.parser).toEqual({ type: 'custom', tool_id: 'parser-1' })
+    choose('custom:parser-1', '')
+    choose('end', 'middle')
+    expect(onUpdate.mock.calls.at(-1)?.[0].file_upload_config).toEqual(expect.objectContaining({ parser: null, truncate_strategy: 'middle' }))
+    choose('missing-image', 'image-1')
+    choose('missing-video', '__default__')
+    choose('16:9', '9:16')
+    enter(256, 4096, '9999', 1)
+    enter(1, 10, '-5')
+    expect(onUpdate.mock.calls.at(-1)?.[0].image_generation_config).toEqual(expect.objectContaining({ default_model_ref: 'image-1', default_height: 4096, max_images: 1 }))
+    enter(1, 30, '99')
+    enter(1, 30, '-5', 1)
+    enter(5, 600, '9999')
+
+    const payload = onUpdate.mock.calls.at(-1)?.[0]
+    expect(payload).toEqual(expect.objectContaining({
+      rag_mode: 'auto',
+      variables: [{ name: 'region', type: 'text' }],
+      file_upload_config: expect.objectContaining({ parser: null, truncate_strategy: 'middle' }),
+      image_generation_config: expect.objectContaining({ default_model_ref: 'image-1', default_height: 4096, max_images: 1 }),
+      video_generation_config: expect.objectContaining({ default_model_ref: null, default_duration: 30, max_duration: 1, default_aspect_ratio: '9:16', poll_timeout_s: 600 }),
+    }))
+
+    const promptButton = find(tree, Button).find((node) => node.props['data-testid'] === 'agent-prompt-ai-generate')!
+    ;(promptButton.props.onClick as () => void)()
+    tree = render(onUpdate, enabledAgent).tree
+    expect(find(tree, PromptGenerateDialog)[0].props.open).toBe(true)
+    expect(find(tree, PromptGenerateDialog)[0].props.context).toEqual(expect.objectContaining({
+      agent_name: 'Researcher',
+      knowledge_bases: [expect.objectContaining({ name: 'Docs', config: expect.objectContaining({ knowledge_base_id: 'kb-1' }) })],
+      rag_mode: 'auto',
+    }))
+
+    const renderedCard = renderComponent(findByTestId(tree, 'agent-variables-section'))
+    expect(renderedCard.props['data-testid']).toBe('agent-variables-section')
+  })
+
+  test('synchronizes replacement agent data and reloads after team/API recovery', async () => {
+    getKnowledgeBases.mockRejectedValueOnce(new Error('forbidden'))
+    const onUpdate = mock(() => undefined)
+    render(onUpdate)
+    await flush()
+    expect(states[27]).toEqual([])
+
+    currentTeam = { id: 'team-2' }
+    getKnowledgeBases.mockResolvedValue({ items: [{ id: 'kb-2', name: 'Recovered', team: { id: 'team-2' } }] })
+    effects = []
+    render(onUpdate)
+    await flush()
+    let tree = render(onUpdate).tree
+    expect(find(tree, AddKnowledgeBaseButton)[0].props.knowledgeBases).toEqual([expect.objectContaining({ id: 'kb-2' })])
+
+    const replacement = {
+      ...agent,
+      system_prompt: 'Replacement',
+      variables: [{ name: 'query', type: 'text' }],
+      knowledge_bases: [{ knowledge_base: { id: 'kb-2' }, retrieval_top_k: 7, score_threshold: 0.8, search_mode: null }],
+      tools_config: [{ type: 'skill', skill_id: 'skill-1', name: 'writer' }],
+      enable_vision: true,
+      rag_mode: 'off',
+    } as never
+    tree = render(onUpdate, replacement).tree
+    tree = render(onUpdate, replacement).tree
+    expect(find(tree, PromptEditor)[0].props.value).toBe('Replacement')
+    expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({
+      variables: [{ name: 'query', type: 'text' }],
+      knowledge_base_configs: [{ knowledge_base_id: 'kb-2', retrieval_top_k: 7, score_threshold: 0.8, search_mode: 'hybrid' }],
+      tools_config: [{ type: 'skill', skill_id: 'skill-1', name: 'writer' }],
+      enable_vision: true,
+      rag_mode: 'off',
     }))
   })
 })
