@@ -1,6 +1,8 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from app.llm.adapters.rerank.factory import create_rerank_adapter
 from app.llm.adapters.rerank.llm_adapter import LLMRerankAdapter
@@ -71,6 +73,135 @@ class TestLLMRerankAdapter:
         assert response.results[0].reason == "best"
         assert response.results[1].score == 0.0
         assert response.usage.total_tokens == 15
+
+
+class TestOpenAICompatibleRerankAdapter:
+    @staticmethod
+    def build_adapter(**overrides):
+        config = {
+            "model_id": "rerank-model",
+            "base_url": "https://rerank.example/v1/",
+            "api_key": "secret",
+            "config": {},
+        }
+        config.update(overrides)
+        return OpenAICompatibleRerankAdapter(SimpleNamespace(**config))
+
+    def test_builds_endpoint_headers_and_payload_with_runtime_precedence(self):
+        adapter = self.build_adapter(
+            config={
+                "instruction": "configured",
+                "max_chunks_per_doc": 3,
+                "return_documents": True,
+            }
+        )
+
+        assert adapter._get_endpoint() == "https://rerank.example/v1/rerank"
+        assert adapter._build_headers() == {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer secret",
+        }
+        assert adapter._build_payload(
+            "query",
+            ["first", "second"],
+            1,
+            instruction="runtime",
+            overlap_tokens=8,
+        ) == {
+            "model": "rerank-model",
+            "query": "query",
+            "documents": ["first", "second"],
+            "return_documents": True,
+            "top_n": 1,
+            "instruction": "runtime",
+            "max_chunks_per_doc": 3,
+            "overlap_tokens": 8,
+        }
+
+    def test_requires_base_url_and_omits_optional_auth_and_top_n(self):
+        adapter = self.build_adapter(base_url=None, api_key=None)
+
+        with pytest.raises(ValueError, match="base_url"):
+            adapter._get_endpoint()
+
+        assert adapter._build_headers() == {"Content-Type": "application/json"}
+        assert "top_n" not in adapter._build_payload("query", ["doc"], None)
+
+    def test_parses_results_and_usage_boundaries(self):
+        adapter = self.build_adapter()
+
+        results = adapter._parse_results(
+            {
+                "results": [
+                    {"index": "2", "relevance_score": 1.5},
+                    {"index": 1, "score": -0.5},
+                    {"index": 0, "score": "invalid"},
+                    {"index": None, "score": 0.8},
+                    {"index": "invalid", "score": 0.7},
+                    "invalid",
+                ]
+            }
+        )
+
+        assert [(item.index, item.score) for item in results] == [
+            (2, 1.0),
+            (1, 0.0),
+            (0, 0.0),
+        ]
+        assert adapter._parse_usage(
+            {"meta": [{"tokens": {"input_tokens": "4", "output_tokens": 2}}]}
+        ) == Usage(prompt_tokens=4, completion_tokens=2, total_tokens=6)
+        assert adapter._parse_usage({"meta": ["invalid"]}) == Usage()
+        assert adapter._parse_usage({"meta": "invalid"}) == Usage()
+
+    def test_rerank_posts_request_and_returns_parsed_response(self):
+        adapter = self.build_adapter()
+        response = Mock()
+        response.json.return_value = {
+            "results": [{"index": 0, "relevance_score": 0.75}],
+            "tokens": {"input_tokens": 5},
+        }
+        client = AsyncMock()
+        client.post.return_value = response
+        context = AsyncMock()
+        context.__aenter__.return_value = client
+
+        with patch(
+            "app.llm.adapters.rerank.openai_compatible_adapter.httpx.AsyncClient",
+            return_value=context,
+        ) as client_factory:
+            result = asyncio.run(adapter.rerank("query", ["doc"], top_n=1, timeout=9))
+
+        client_factory.assert_called_once_with(timeout=9)
+        client.post.assert_awaited_once_with(
+            "https://rerank.example/v1/rerank",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret",
+            },
+            json={
+                "model": "rerank-model",
+                "query": "query",
+                "documents": ["doc"],
+                "return_documents": False,
+                "top_n": 1,
+            },
+        )
+        response.raise_for_status.assert_called_once_with()
+        assert [(item.index, item.score) for item in result.results] == [(0, 0.75)]
+        assert result.usage == Usage(prompt_tokens=5, total_tokens=5)
+
+    def test_empty_documents_skip_http_request(self):
+        adapter = self.build_adapter()
+
+        with patch(
+            "app.llm.adapters.rerank.openai_compatible_adapter.httpx.AsyncClient"
+        ) as client_factory:
+            result = asyncio.run(adapter.rerank("query", []))
+
+        client_factory.assert_not_called()
+        assert result.model == "rerank-model"
+        assert result.results == []
 
 
 class TestModelManagerModelLookup:
