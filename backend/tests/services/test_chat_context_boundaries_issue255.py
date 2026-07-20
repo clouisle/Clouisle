@@ -107,7 +107,9 @@ def test_macro_compaction_summarizes_only_unprotected_old_turns(monkeypatch):
                 ContentPart(type=ContentType.TEXT, text="image question"),
                 ContentPart(
                     type=ContentType.IMAGE,
-                    image=chat_context.ImageContent(url="https://example.test/image.png"),
+                    image=chat_context.ImageContent(
+                        url="https://example.test/image.png"
+                    ),
                 ),
             ],
         ),
@@ -128,7 +130,9 @@ def test_macro_compaction_summarizes_only_unprotected_old_turns(monkeypatch):
         )
     )
 
-    contents = [chat_context._stringify_content(message.content) for message in compacted]
+    contents = [
+        chat_context._stringify_content(message.content) for message in compacted
+    ]
     assert summary_turns == blocks == 1
     assert recent_turns == 1
     assert tool_turns == 1
@@ -186,7 +190,9 @@ async def test_prepare_model_context_emergency_fallback_boundary(
     def estimate(messages, *, model_id, provider):
         return 100 if len(messages) > 2 else emergency_tokens
 
-    monkeypatch.setattr(chat_context, "_build_messages_with_file_content", build_messages)
+    monkeypatch.setattr(
+        chat_context, "_build_messages_with_file_content", build_messages
+    )
     monkeypatch.setattr(
         chat_context, "_apply_session_memory_compaction", no_session_memory
     )
