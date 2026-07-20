@@ -1,3 +1,4 @@
+from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -503,6 +504,140 @@ async def test_email_provider_boundaries_are_mocked(monkeypatch):
             data=site_settings.TestEmailRequest(email="admin@example.com")
         )
     assert exc_info.value.msg_key == "email_send_failed"
+    send.assert_awaited_once()
+
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "get_value",
+        AsyncMock(side_effect=[True, "Test Site"]),
+    )
+    send.reset_mock()
+    send.return_value = True
+    await site_settings.send_test_email(
+        data=site_settings.TestEmailRequest(email="admin@example.com")
+    )
+    send.assert_awaited_once()
+
+
+PROVIDER_CASES = [
+    (
+        "dingtalk",
+        site_settings.send_test_dingtalk,
+        {"notification_type": "webhook", "webhook_url": "https://notify.test"},
+        {
+            "notification_type": "app",
+            "app_key": "key",
+            "app_secret": "secret",
+            "agent_id": "1",
+        },
+    ),
+    (
+        "wechat",
+        site_settings.send_test_wechat,
+        {"notification_type": "webhook", "webhook_url": "https://notify.test"},
+        {
+            "notification_type": "app",
+            "corp_id": "corp",
+            "secret": "secret",
+            "agent_id": "1",
+        },
+    ),
+    (
+        "feishu",
+        site_settings.send_test_feishu,
+        {"notification_type": "webhook", "webhook_url": "https://notify.test"},
+        {"notification_type": "app", "app_id": "app", "app_secret": "secret"},
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("provider", "endpoint", "webhook", "app"), PROVIDER_CASES)
+async def test_chat_notification_provider_boundaries_are_mocked(
+    monkeypatch, provider, endpoint, webhook, app
+):
+    module = import_module(f"app.core.{provider}")
+    get_config = AsyncMock()
+    send = AsyncMock()
+    monkeypatch.setattr(module, f"get_{provider}_config", get_config)
+    monkeypatch.setattr(module, f"send_{provider}_notification", send)
+    monkeypatch.setattr(
+        site_settings.SiteSetting, "get_value", AsyncMock(return_value="Test Site")
+    )
+
+    get_config.return_value = {"enabled": False}
+    with pytest.raises(BusinessError) as exc_info:
+        await endpoint()
+    assert exc_info.value.msg_key == f"{provider}_not_enabled"
+    send.assert_not_awaited()
+
+    incomplete = {key: value for key, value in webhook.items()}
+    incomplete[next(key for key in incomplete if key.endswith("url"))] = ""
+    get_config.return_value = {"enabled": True, **incomplete}
+    with pytest.raises(BusinessError) as exc_info:
+        await endpoint()
+    assert exc_info.value.msg_key == f"{provider}_not_configured"
+    send.assert_not_awaited()
+
+    incomplete = {**app, next(key for key in app if "secret" in key): ""}
+    get_config.return_value = {"enabled": True, **incomplete}
+    with pytest.raises(BusinessError) as exc_info:
+        await endpoint()
+    assert exc_info.value.msg_key == f"{provider}_not_configured"
+    send.assert_not_awaited()
+
+    get_config.return_value = {"enabled": True, **webhook}
+    send.return_value = False
+    with pytest.raises(BusinessError) as exc_info:
+        await endpoint()
+    assert exc_info.value.msg_key == f"{provider}_send_failed"
+
+    send.reset_mock()
+    get_config.return_value = {"enabled": True, **app}
+    send.return_value = True
+    await endpoint()
+    send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "endpoint", "config_key"),
+    [
+        ("webhook", site_settings.send_test_webhook, "url"),
+        ("slack", site_settings.send_test_slack, "webhook_url"),
+    ],
+)
+async def test_webhook_notification_provider_boundaries_are_mocked(
+    monkeypatch, provider, endpoint, config_key
+):
+    module = import_module(f"app.core.{provider}")
+    get_config = AsyncMock()
+    send = AsyncMock()
+    monkeypatch.setattr(module, f"get_{provider}_config", get_config)
+    monkeypatch.setattr(module, f"send_{provider}_notification", send)
+    monkeypatch.setattr(
+        site_settings.SiteSetting, "get_value", AsyncMock(return_value="Test Site")
+    )
+
+    for config, expected in [
+        ({"enabled": False}, f"{provider}_not_enabled"),
+        ({"enabled": True, config_key: ""}, f"{provider}_not_configured"),
+    ]:
+        get_config.return_value = config
+        with pytest.raises(BusinessError) as exc_info:
+            await endpoint()
+        assert exc_info.value.msg_key == expected
+    send.assert_not_awaited()
+
+    get_config.return_value = {"enabled": True, config_key: "https://notify.test"}
+    send.return_value = False
+    with pytest.raises(BusinessError) as exc_info:
+        await endpoint()
+    assert exc_info.value.msg_key == f"{provider}_send_failed"
+
+    send.reset_mock()
+    send.return_value = True
+    await endpoint()
     send.assert_awaited_once()
 
 
