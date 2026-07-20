@@ -276,6 +276,8 @@
 
 - Frontend progress checkpoint (2026-07-20, commit `48b0c77d`): 965 isolated tests passed with 4,073 assertions after workflow node-output text, answer, code, branch, HTTP success/failure, tool, fallback, image/video preview, lightbox action, structured media, and empty-output coverage. `bun run test:coverage` passes; Bun reports 91.12% lines and 86.40% functions for loaded sources. The honest source census reports 99 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commit `3d2580cb`): 967 isolated tests passed with 4,081 assertions after workflow prompt-textarea variable mapping, value/change and styling option forwarding, default/custom minimum height, and empty-variable coverage. `bun run test:coverage` passes; Bun reports 91.14% lines and 86.43% functions for loaded sources. The honest source census reports 98 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
