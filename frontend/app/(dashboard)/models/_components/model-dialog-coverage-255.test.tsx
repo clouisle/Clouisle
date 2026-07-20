@@ -4,7 +4,9 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const createModel = mock(async () => ({}))
 const updateModel = mock(async () => ({}))
-const testModelConfig = mock(async () => ({ success: true, message: 'Connected' }))
+const testModelConfig = mock(async () => ({ success: true, message: 'Connected', latency_ms: 12 }))
+const toastSuccess = mock(() => {})
+const toastError = mock(() => {})
 
 mock.module('next-intl', () => ({
   useTranslations: () => {
@@ -14,7 +16,7 @@ mock.module('next-intl', () => ({
   },
 }))
 
-mock.module('sonner', () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }))
+mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api/admin/models', () => ({
   modelsApi: { createModel, updateModel, testModelConfig },
 }))
@@ -64,15 +66,28 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const providers = [
   { code: 'openai', base_url: 'https://api.openai.test' },
+  { code: 'anthropic', base_url: 'https://api.anthropic.test' },
+  { code: 'google', base_url: 'https://api.google.test' },
+  { code: 'azure_openai', base_url: 'https://azure.test' },
+  { code: 'volcengine', base_url: 'https://volcengine.test' },
+  { code: 'stability', base_url: 'https://stability.test' },
   { code: 'ollama', base_url: 'http://ollama.test' },
 ] as React.ComponentProps<typeof ModelDialog>['providers']
-const modelTypes = [{ code: 'chat' }, { code: 'text_to_image' }] as React.ComponentProps<typeof ModelDialog>['modelTypes']
+const modelTypes = [
+  { code: 'chat' },
+  { code: 'text_to_image' },
+  { code: 'text_to_video' },
+  { code: 'tts' },
+] as React.ComponentProps<typeof ModelDialog>['modelTypes']
 const renderers: ReactTestRenderer[] = []
 
 afterEach(() => {
   createModel.mockClear()
   updateModel.mockClear()
-  testModelConfig.mockClear()
+  testModelConfig.mockReset()
+  testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+  toastSuccess.mockClear()
+  toastError.mockClear()
   for (const renderer of renderers) act(() => renderer.unmount())
   renderers.length = 0
 })
@@ -94,8 +109,29 @@ function change(renderer: ReactTestRenderer, id: string, value: string) {
   act(() => input(renderer, id).props.onChange({ target: { value } }))
 }
 
+function selects(renderer: ReactTestRenderer) {
+  return renderer.root.findAllByType('select')
+}
+
 function modelTypeSelect(renderer: ReactTestRenderer) {
-  return renderer.root.findAllByType('select').find((select) => !select.props.disabled)!
+  return selects(renderer).find((select) => !select.props.disabled)!
+}
+
+function selectValue(renderer: ReactTestRenderer, value: string, occurrence = 0) {
+  const select = selects(renderer).filter((candidate) =>
+    candidate.findAllByType('option').some((option) => option.props.value === value),
+  )[occurrence]!
+  act(() => select.props.onChange({ target: { value } }))
+}
+
+function switchValue(renderer: ReactTestRenderer, index: number, checked: boolean) {
+  act(() => renderer.root.findAllByProps({ type: 'checkbox' })[index].props.onChange({ target: { checked } }))
+}
+
+function buttonWithText(renderer: ReactTestRenderer, text: string) {
+  return renderer.root.findAllByType('button').find((button) =>
+    button.findAll((node) => node.children.includes(text)).length > 0,
+  )!
 }
 
 function selectProvider(renderer: ReactTestRenderer, code: string) {
@@ -176,5 +212,120 @@ describe('model management dialog', () => {
       name: 'Renamed', base_url: 'https://new.test', is_enabled: false, is_default: true,
     }))
     expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
+
+  test('constructs a rich chat payload from parameters, capabilities, and extension JSON', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', '  Reasoning model  ')
+    change(renderer, 'modelId', '  reasoning-1  ')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'contextLength', '128000')
+    change(renderer, 'maxOutputTokens', '8192')
+    change(renderer, 'inputPrice', '1.25')
+    change(renderer, 'outputPrice', '5.5')
+    change(renderer, 'temperature', '0.2')
+    change(renderer, 'topP', '0.9')
+    change(renderer, 'frequencyPenalty', '-0.1')
+    change(renderer, 'presencePenalty', '0.3')
+    change(renderer, 'maxTokens', '4096')
+    change(renderer, 'extraBody', '{"metadata":{"tier":"gold"}}')
+    change(renderer, 'defaultParamsExtension', '{"seed":7,"temperature":1.8}')
+    change(renderer, 'configExtension', '{"region":"us-east"}')
+    selectValue(renderer, 'high')
+    switchValue(renderer, 0, false)
+    switchValue(renderer, 1, true)
+    switchValue(renderer, 2, true)
+    switchValue(renderer, 3, true)
+    switchValue(renderer, 4, false)
+    switchValue(renderer, 5, true)
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith({
+      name: 'Reasoning model', provider: 'openai', model_id: 'reasoning-1', model_type: 'chat',
+      base_url: 'https://api.openai.test', api_key: 'secret', context_length: 128000,
+      max_output_tokens: 8192, input_price: 1.25, output_price: 5.5,
+      default_params: {
+        seed: 7, temperature: 0.2, top_p: 0.9, frequency_penalty: -0.1,
+        presence_penalty: 0.3, max_tokens: 4096, reasoning_effort: 'high',
+        extra_body: { metadata: { tier: 'gold' } },
+      },
+      capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
+      config: { region: 'us-east' }, is_enabled: false, is_default: true,
+    })
+  })
+
+  test('blocks invalid extension JSON, clears the field error, and succeeds after correction', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', 'JSON recovery')
+    change(renderer, 'modelId', 'json-recovery')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'defaultParamsExtension', '[]')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    expect(createModel).not.toHaveBeenCalled()
+    expect(input(renderer, 'defaultParamsExtension').props['aria-invalid']).toBe(true)
+
+    change(renderer, 'defaultParamsExtension', '{"seed":42}')
+    expect(input(renderer, 'defaultParamsExtension').props['aria-invalid']).toBe(false)
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({ default_params: { seed: 42 } }))
+  })
+
+  test('recovers a failed connection test and reports the successful retry', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'modelId', 'connection-test')
+    change(renderer, 'apiKey', 'secret')
+    testModelConfig.mockRejectedValueOnce(new Error('Network unavailable'))
+
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+    expect(testModelConfig).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai', model_id: 'connection-test', api_key: 'secret',
+    }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('testFailed')
+
+    change(renderer, 'apiKey', 'replacement')
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+
+    expect(testModelConfig).toHaveBeenLastCalledWith(expect.objectContaining({ api_key: 'replacement' }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('Connected')
+    expect(toastSuccess).toHaveBeenCalledWith('testSuccess')
+  })
+
+  test('constructs Google image parameters and keeps image capabilities null', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'text_to_image' } }))
+    selectProvider(renderer, 'google')
+    change(renderer, 'name', 'Image model')
+    change(renderer, 'modelId', 'imagen-test')
+    change(renderer, 'apiKey', 'secret')
+    selectValue(renderer, '1024x1024')
+    selectValue(renderer, 'vivid')
+    selectValue(renderer, 'high')
+    selectValue(renderer, '16:9')
+    selectValue(renderer, '2K')
+    selectValue(renderer, 'ALLOW_ADULT')
+    selectValue(renderer, 'DONT_ALLOW', 1)
+    selectValue(renderer, 'image/jpeg')
+    change(renderer, 'googleOutputCompressionQuality', '88')
+    change(renderer, 'defaultParamsExtensionImage', '{"seed":9}')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'google', model_type: 'text_to_image', capabilities: null,
+      default_params: {
+        seed: 9, default_width: 1024, default_height: 1024, style: 'vivid', quality: 'high',
+        aspect_ratio: '16:9', image_size: '2K', person_generation: 'ALLOW_ADULT',
+        prominent_people: 'DONT_ALLOW', output_mime_type: 'image/jpeg', output_compression_quality: 88,
+      },
+    }))
   })
 })
