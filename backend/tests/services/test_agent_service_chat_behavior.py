@@ -190,6 +190,64 @@ async def test_execute_tool_uses_team_credentials_and_reports_execution_errors()
 
 
 @pytest.mark.anyio
+async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
+    class Query:
+        def prefetch_related(self, *_args):
+            return self
+
+        def __await__(self):
+            async def resolve():
+                return [
+                    SimpleNamespace(knowledge_base=None),
+                    SimpleNamespace(
+                        knowledge_base=SimpleNamespace(
+                            id="kb-1",
+                            name="Guides",
+                            embedding_model_id=None,
+                            rerank_model_id=None,
+                            team_id="team-1",
+                        ),
+                        search_mode="hybrid",
+                        retrieval_top_k=2,
+                        score_threshold=0.5,
+                    ),
+                ]
+
+            return resolve().__await__()
+
+    search = AsyncMock(
+        return_value=[
+            {"content": "Lower", "score": 0.6},
+            {"content": "Higher", "score": 0.9},
+        ]
+    )
+    store = SimpleNamespace(search=search)
+    service = AgentService()
+    agent = SimpleNamespace(id="agent-1")
+
+    with (
+        patch("app.services.agent.AgentKnowledgeBase.filter", return_value=Query()),
+        patch("app.services.vector_store.VectorStore", return_value=store),
+    ):
+        result = await service._retrieve_rag_context(agent, "setup")
+
+    assert result == "[Guides] Higher\n\n[Guides] Lower"
+    search.assert_awaited_once_with(
+        kb_id="kb-1",
+        query="setup",
+        search_mode="hybrid",
+        top_k=2,
+        score_threshold=0.5,
+    )
+
+    with patch(
+        "app.services.agent.AgentKnowledgeBase.filter",
+        side_effect=RuntimeError("unavailable"),
+    ):
+        assert await service._retrieve_rag_context(agent, "setup") is None
+
+
+@pytest.mark.anyio
 async def test_agent_tools_include_available_builtin_media_and_agentic_search():
     agent = SimpleNamespace(
         tools_config=[
