@@ -8,7 +8,12 @@ import pytest
 from app.api.v1.endpoints import chat as chat_module
 from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason
 from app.models.agent import AgentVisibility, MessageRole, MessageRoundStatus
-from app.schemas.agent import ChatRequest, SwitchVersionRequest
+from app.schemas.agent import (
+    ChatRequest,
+    EditMessageRequest,
+    RegenerateRequest,
+    SwitchVersionRequest,
+)
 from app.schemas.response import BusinessError, ResponseCode
 
 
@@ -464,6 +469,122 @@ async def test_switch_version_rejects_other_group_and_activates_valid_branch(
     assert result["data"] is output
     activate.assert_awaited_once_with(current.conversation_id, [*prefix, *descendants])
     stale.assert_awaited_once_with(current.conversation_id)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("case", "code", "msg_key", "status"),
+    [
+        ("missing", ResponseCode.NOT_FOUND, "message_not_found", 404),
+        ("wrong_role", ResponseCode.BAD_REQUEST, "can_only_edit_user_message", 400),
+        ("empty", ResponseCode.BAD_REQUEST, "message_content_required", 400),
+        ("unchanged", ResponseCode.BAD_REQUEST, "message_content_unchanged", 400),
+        ("forbidden", ResponseCode.FORBIDDEN, "access_denied", 403),
+        ("missing_agent", ResponseCode.NOT_FOUND, "agent_not_found", 404),
+    ],
+)
+async def test_edit_user_message_stream_rejects_invalid_preflight(
+    monkeypatch, case, code, msg_key, status
+):
+    current_user = user()
+    current_agent = agent()
+    current_message = message(role=MessageRole.USER, content="original")
+    requested_content = "updated"
+    conversation = SimpleNamespace(agent_id=current_agent.id)
+
+    if case == "missing":
+        current_message = None
+    elif case == "wrong_role":
+        current_message = message(role=MessageRole.ASSISTANT)
+    elif case == "empty":
+        requested_content = "   "
+    elif case == "unchanged":
+        requested_content = " original "
+    elif case == "forbidden":
+        conversation = None
+    elif case == "missing_agent":
+        current_agent = None
+
+    monkeypatch.setattr(
+        chat_module.Message, "filter", lambda **kwargs: Query(current_message)
+    )
+    monkeypatch.setattr(
+        chat_module.Conversation, "filter", lambda **kwargs: Query(conversation)
+    )
+    monkeypatch.setattr(
+        chat_module.Agent, "filter", lambda **kwargs: Query(current_agent)
+    )
+
+    with pytest.raises(BusinessError) as error:
+        await chat_module.edit_user_message_stream(
+            uuid4(),
+            uuid4(),
+            EditMessageRequest(content=requested_content),
+            SimpleNamespace(),
+            current_user,
+        )
+
+    assert_business_error(error, code, status)
+    assert error.value.msg_key == msg_key
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("case", "code", "msg_key", "status"),
+    [
+        ("missing", ResponseCode.NOT_FOUND, "message_not_found", 404),
+        (
+            "wrong_role",
+            ResponseCode.BAD_REQUEST,
+            "can_only_regenerate_assistant",
+            400,
+        ),
+        ("forbidden", ResponseCode.FORBIDDEN, "access_denied", 403),
+        ("missing_agent", ResponseCode.NOT_FOUND, "agent_not_found", 404),
+        ("no_user_message", ResponseCode.BAD_REQUEST, "no_user_message_found", 400),
+    ],
+)
+async def test_regenerate_message_rejects_invalid_preflight(
+    monkeypatch, case, code, msg_key, status
+):
+    current_user = user()
+    current_agent = agent()
+    current_message = message(role=MessageRole.ASSISTANT)
+    conversation = SimpleNamespace(agent_id=current_agent.id)
+
+    if case == "missing":
+        current_message = None
+    elif case == "wrong_role":
+        current_message = message(role=MessageRole.USER)
+    elif case == "forbidden":
+        conversation = None
+    elif case == "missing_agent":
+        current_agent = None
+
+    monkeypatch.setattr(
+        chat_module.Message, "filter", lambda **kwargs: Query(current_message)
+    )
+    monkeypatch.setattr(
+        chat_module.Conversation, "filter", lambda **kwargs: Query(conversation)
+    )
+    monkeypatch.setattr(
+        chat_module.Agent, "filter", lambda **kwargs: Query(current_agent)
+    )
+    monkeypatch.setattr(
+        chat_module, "get_prefix_path_before", AsyncMock(return_value=[])
+    )
+
+    with pytest.raises(BusinessError) as error:
+        await chat_module.regenerate_message(
+            uuid4(),
+            uuid4(),
+            RegenerateRequest(),
+            SimpleNamespace(),
+            current_user,
+        )
+
+    assert_business_error(error, code, status)
+    assert error.value.msg_key == msg_key
 
 
 @pytest.mark.anyio
