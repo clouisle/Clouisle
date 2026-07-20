@@ -338,6 +338,10 @@
 
 - Backend progress checkpoint (2026-07-20, commits through `9b617b54`): 2,182 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,272 statements with 12,901 missed and 11,640 branches with 1,351 partial, for 61% aggregate coverage. This includes the integrated DashScope and Volcengine media-client, API-key state, agent tool-usage, file-parse cache, xAI adapter, and team-model quota batches. The final independent 95% line and branch gates remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commits through `24e232ed`): 1,122 isolated tests passed with 4,900 assertions after document table, upload dialog, permissions client, knowledge-base search page/client, and related route-wrapper coverage. `bun run test:coverage` passes; Bun reports 91.65% lines and 86.69% functions for loaded sources. The honest source census reports 56 eligible sources absent from LCOV and exits nonzero as intended. Final 95% metrics and the zero-absent-source gate remain inactive.
+
+- Backend progress checkpoint (2026-07-20, commits through `b6f62569`): 2,208 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,272 statements with 12,829 missed and 11,640 branches with 1,345 partial, for 61% aggregate coverage. The sandbox policies and session-store branches are fully covered, but the final independent 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
