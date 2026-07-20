@@ -98,6 +98,66 @@ async def test_minimax_tts_decodes_hex_audio():
 
     assert response.audio.base64 == "aGk="
     assert response.audio.format == "mp3"
+    adapter.client.request.assert_awaited_once_with(
+        "POST",
+        "/t2a_v2",
+        json={
+            "model": "speech-2.8-hd",
+            "text": "Hello",
+            "stream": False,
+            "output_format": "hex",
+            "voice_setting": {"voice_id": "male-qn-qingse", "speed": 1.0},
+            "audio_setting": {"format": "mp3"},
+        },
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("audio", [None, "not-hex", ""])
+async def test_minimax_tts_rejects_missing_or_invalid_provider_audio(audio):
+    adapter = MiniMaxTTSAdapter(
+        SimpleNamespace(
+            provider=ModelProvider.MINIMAX,
+            model_id="speech-2.8-hd",
+            api_key="test-key",
+            base_url=None,
+            default_params={"voice": "male-qn-qingse"},
+            config={},
+        )
+    )
+    adapter.client = SimpleNamespace(
+        request=AsyncMock(return_value={"data": {"audio": audio}})
+    )
+
+    with pytest.raises(ProviderError):
+        await adapter.synthesize(TTSRequest(text="Hello"))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "tts_request",
+    [
+        TTSRequest(text=""),
+        TTSRequest(text="Hello", format="opus"),
+    ],
+)
+async def test_minimax_tts_rejects_invalid_request_before_provider_call(tts_request):
+    adapter = MiniMaxTTSAdapter(
+        SimpleNamespace(
+            provider=ModelProvider.MINIMAX,
+            model_id="speech-2.8-hd",
+            api_key="test-key",
+            base_url=None,
+            default_params={"voice": "male-qn-qingse"},
+            config={},
+        )
+    )
+    adapter.client = SimpleNamespace(request=AsyncMock())
+
+    with pytest.raises(InvalidRequestError):
+        await adapter.synthesize(tts_request)
+
+    adapter.client.request.assert_not_awaited()
 
 
 def test_minimax_tts_rejects_provider_speed_range():
