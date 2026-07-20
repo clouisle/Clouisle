@@ -1,10 +1,14 @@
+from types import SimpleNamespace
+
 import pytest
 
+from app.llm.adapters import audio
 from app.llm.adapters.audio.base import (
     BaseAudioGenerationAdapter,
     BaseSTTAdapter,
     BaseTTSAdapter,
 )
+from app.llm.errors import UnsupportedOperationError
 from app.llm.types import (
     AudioContent,
     AudioGenerationRequest,
@@ -65,3 +69,55 @@ async def test_concrete_audio_adapter_implementations_are_awaitable() -> None:
         )
         is stt_response
     )
+
+@pytest.mark.parametrize(
+    ("factory_name", "provider", "adapter_name"),
+    [
+        ("create_tts_adapter", "openai", "OpenAITTSAdapter"),
+        ("create_tts_adapter", "azure_openai", "OpenAITTSAdapter"),
+        ("create_tts_adapter", "volcengine", "VolcengineTTSAdapter"),
+        ("create_tts_adapter", "minimax", "MiniMaxTTSAdapter"),
+        (
+            "create_audio_generation_adapter",
+            "volcengine",
+            "VolcengineAudioGenerationAdapter",
+        ),
+        ("create_stt_adapter", "openai", "OpenAISTTAdapter"),
+        ("create_stt_adapter", "azure_openai", "OpenAISTTAdapter"),
+    ],
+)
+def test_audio_factories_select_adapter_without_calling_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    factory_name: str,
+    provider: str,
+    adapter_name: str,
+) -> None:
+    config = SimpleNamespace(provider=provider)
+    created: list[object] = []
+
+    def adapter_factory(model_config: object) -> object:
+        created.append(model_config)
+        return adapter_name
+
+    monkeypatch.setattr(audio, adapter_name, adapter_factory)
+
+    assert getattr(audio, factory_name)(config) == adapter_name
+    assert created == [config]
+
+
+@pytest.mark.parametrize(
+    ("factory_name", "provider", "operation"),
+    [
+        ("create_tts_adapter", "unsupported", "text_to_speech"),
+        ("create_audio_generation_adapter", "openai", "audio_generation"),
+        ("create_stt_adapter", "unsupported", "speech_to_text"),
+    ],
+)
+def test_audio_factories_reject_unsupported_providers(
+    factory_name: str, provider: str, operation: str
+) -> None:
+    with pytest.raises(UnsupportedOperationError) as exc_info:
+        getattr(audio, factory_name)(SimpleNamespace(provider=provider))
+
+    assert exc_info.value.operation == operation
+    assert exc_info.value.provider == provider
