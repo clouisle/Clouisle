@@ -22,10 +22,84 @@ import { Loader2, Mail, CheckCircle2, ArrowLeft, KeyRound, ChevronDown } from 'l
 
 type Step = 'email' | 'reset' | 'success'
 
+type SubmitResult = { ok: true } | { ok: false; fieldErrors: Record<string, string> }
+
+interface SendResetEmailInput {
+  email: string
+}
+
+interface ResetPasswordWithCodeInput {
+  email: string
+  verificationCode: string
+  newPassword: string
+  confirmPassword: string
+}
+
 export function getForgotPasswordEmailError(email: string, t: (key: string) => string): string | null {
   if (!email) return t('emailRequired')
   if (!isValidEmail(email)) return t('invalidEmail')
   return null
+}
+
+function renamePasswordErrors(rawErrors: Record<string, string[]>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(rawErrors).map(([field, messages]) => [field === 'password' ? 'newPassword' : field, messages.join('; ')])
+  )
+}
+
+export function getForgotPasswordLoginRedirect(): string {
+  return '/login'
+}
+
+export async function submitResetEmail(
+  input: SendResetEmailInput,
+  t: (key: string) => string,
+  forgotPassword: typeof authApi.forgotPassword = authApi.forgotPassword
+): Promise<SubmitResult> {
+  const emailError = getForgotPasswordEmailError(input.email, t)
+  if (emailError) {
+    return { ok: false, fieldErrors: { email: emailError } }
+  }
+
+  try {
+    await forgotPassword(input.email)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, fieldErrors: normalizeValidationErrors(err) }
+  }
+}
+
+export async function submitResetPasswordWithCode(
+  input: ResetPasswordWithCodeInput,
+  t: (key: string) => string,
+  resetPassword: typeof authApi.resetPassword = authApi.resetPassword
+): Promise<SubmitResult> {
+  if (input.newPassword !== input.confirmPassword) {
+    return { ok: false, fieldErrors: { confirmPassword: t('passwordMismatch') } }
+  }
+
+  if (input.newPassword.length < 6) {
+    return { ok: false, fieldErrors: { newPassword: t('passwordTooShort') } }
+  }
+
+  if (input.verificationCode.length !== 6) {
+    return { ok: false, fieldErrors: { code: t('verificationCodeRequired') } }
+  }
+
+  try {
+    await resetPassword(input.email, input.verificationCode, input.newPassword)
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err.isValidationError()) {
+        return { ok: false, fieldErrors: renamePasswordErrors(normalizeValidationErrorsRaw(err)) }
+      }
+      if (err.code === 5005) {
+        return { ok: false, fieldErrors: { code: t('verificationCodeInvalid') } }
+      }
+    }
+    return { ok: false, fieldErrors: {} }
+  }
 }
 
 export function ForgotPasswordForm() {
@@ -69,23 +143,16 @@ export function ForgotPasswordForm() {
     e.preventDefault()
     setFieldErrors({})
 
-    const emailError = getForgotPasswordEmailError(email, t)
-    if (emailError) {
-      setFieldErrors({ email: emailError })
-      return
-    }
-
     setLoading(true)
 
     try {
-      await authApi.forgotPassword(email)
-      setResendCooldown(60)
-      setStep('reset')
-      toast.success(t('resetPasswordEmailSent'))
-    } catch (err) {
-      const errors = normalizeValidationErrors(err)
-      if (Object.keys(errors).length > 0) {
-        setFieldErrors(errors)
+      const result = await submitResetEmail({ email }, t)
+      if (result.ok) {
+        setResendCooldown(60)
+        setStep('reset')
+        toast.success(t('resetPasswordEmailSent'))
+      } else if (Object.keys(result.fieldErrors).length > 0) {
+        setFieldErrors(result.fieldErrors)
       }
     } finally {
       setLoading(false)
@@ -97,41 +164,18 @@ export function ForgotPasswordForm() {
     e.preventDefault()
     setFieldErrors({})
 
-    // 验证密码匹配
-    if (newPassword !== confirmPassword) {
-      setFieldErrors({ confirmPassword: t('passwordMismatch') })
-      return
-    }
-
-    // 验证密码长度
-    if (newPassword.length < 6) {
-      setFieldErrors({ newPassword: t('passwordTooShort') })
-      return
-    }
-
-    // 验证验证码
-    if (verificationCode.length !== 6) {
-      setFieldErrors({ code: t('verificationCodeRequired') })
-      return
-    }
-
     setLoading(true)
 
     try {
-      await authApi.resetPassword(email, verificationCode, newPassword)
-      toast.success(t('passwordResetSuccess'))
-      setStep('success')
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.isValidationError()) {
-          const rawErrors = normalizeValidationErrorsRaw(err)
-          const renamedErrors = Object.fromEntries(
-            Object.entries(rawErrors).map(([field, messages]) => [field === 'password' ? 'newPassword' : field, messages.join('; ')])
-          )
-          setFieldErrors(renamedErrors)
-        } else if (err.code === 5005) {
-          setFieldErrors({ code: t('verificationCodeInvalid') })
-        }
+      const result = await submitResetPasswordWithCode(
+        { email, verificationCode, newPassword, confirmPassword },
+        t
+      )
+      if (result.ok) {
+        toast.success(t('passwordResetSuccess'))
+        setStep('success')
+      } else if (Object.keys(result.fieldErrors).length > 0) {
+        setFieldErrors(result.fieldErrors)
       }
     } finally {
       setLoading(false)
@@ -162,7 +206,7 @@ export function ForgotPasswordForm() {
 
   // 跳转到登录页
   const handleGoToLogin = () => {
-    router.push('/login')
+    router.push(getForgotPasswordLoginRedirect())
   }
 
   // 步骤1：输入邮箱
