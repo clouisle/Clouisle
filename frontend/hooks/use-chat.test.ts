@@ -20,10 +20,28 @@ let refIndex = 0
 let options: HookOptions
 let result: HookResult
 let useChat: typeof import('./use-chat').useChat
-let agentsApi: typeof import('../lib/api').agentsApi
 let renderScheduled = false
+type StreamEvent = { event: string; data: unknown }
+let streamEvents: Array<StreamEvent | Promise<StreamEvent>> = []
 
 const chatStream = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
+const agentsApi = { chatStream }
+
+mock.module('@/lib/api', () => ({
+  agentsApi,
+  async *parseSSEStream() {
+    for (const event of streamEvents) yield await event
+  },
+}))
+
+mock.module('@/lib/api/client', () => ({
+  getErrorMessage: (key: string) => `api.${key}`,
+}))
+
+mock.module('@/lib/utils/tool-result', () => ({
+  parseToolResultOutput: (output: unknown) => output,
+  shouldDisplayMediaResultInBody: () => true,
+}))
 
 function renderHookHarness() {
   stateIndex = 0
@@ -86,8 +104,6 @@ mock.module('next-intl', () => ({
 
 beforeAll(async () => {
   ;({ useChat } = await import('./use-chat'))
-  ;({ agentsApi } = await import('../lib/api'))
-  agentsApi.chatStream = chatStream as typeof agentsApi.chatStream
 })
 
 beforeEach(() => {
@@ -95,6 +111,7 @@ beforeEach(() => {
   refSlots = []
   renderScheduled = false
   chatStream.mockReset()
+  streamEvents = []
   options = { agentId: 'agent-1' }
   renderHookHarness()
 })
@@ -117,7 +134,7 @@ async function flush() {
 describe('useChat', () => {
   it('moves through loading and streaming before finalizing the conversation', async () => {
     const response = deferred<Response>()
-    const releaseStream = deferred<void>()
+    const releaseStream = deferred<StreamEvent>()
     const onConversationChange = mock()
     const onStreamStart = mock()
     const onStreamEnd = mock()
@@ -136,27 +153,20 @@ describe('useChat', () => {
     expect(result.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
     expect(result.messages[0].parts[0]).toMatchObject({ type: 'text', text: 'Hello' })
 
-    const encoder = new TextEncoder()
-    response.resolve(new Response(new ReadableStream({
-      async start(controller) {
-        await releaseStream.promise
-        for (const event of [
-          { event: 'message_start', data: { conversation_id: 'conversation-1', message_id: 'message-1' } },
-          { event: 'content_delta', data: { delta: 'Hi there' } },
-          { event: 'message_end', data: { version_number: 2, version_count: 3 } },
-        ]) {
-          controller.enqueue(encoder.encode(`event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`))
-        }
-        controller.close()
-      },
-    })))
+    streamEvents = [
+      { event: 'message_start', data: { conversation_id: 'conversation-1', message_id: 'message-1' } },
+      { event: 'content_delta', data: { delta: 'Hi there' } },
+      releaseStream.promise,
+      { event: 'message_end', data: { version_number: 2, version_count: 3 } },
+    ]
+    response.resolve(new Response())
     await flush()
 
     expect(result.status).toBe('streaming')
     expect(result.isStreaming).toBe(true)
     expect(onStreamStart).toHaveBeenCalledTimes(1)
 
-    releaseStream.resolve()
+    releaseStream.resolve({ event: 'message_end', data: { version_number: 2, version_count: 3 } })
     await sending
 
     expect(result.status).toBe('idle')
@@ -180,17 +190,11 @@ describe('useChat', () => {
     const onStreamEnd = mock()
     options = { agentId: 'agent-1', onStreamEnd }
     renderHookHarness()
-    chatStream.mockReturnValue({
-      stream: Promise.resolve(new Response(new ReadableStream({
-        async start(controller) {
-          const event = { event: 'content_delta', data: { delta: 'partial' } }
-          controller.enqueue(new TextEncoder().encode(`event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`))
-          await blocked.promise
-          controller.close()
-        },
-      }))),
-      abort,
-    })
+    streamEvents = [
+      { event: 'content_delta', data: { delta: 'partial' } },
+      blocked.promise.then(() => ({ event: 'message_end', data: {} })),
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort })
 
     const sending = result.sendMessage('question')
     await flush()
@@ -213,15 +217,8 @@ describe('useChat', () => {
     const abort = mock(() => blocked.reject(abortError))
     options = { agentId: 'agent-1', conversationId: 'conversation-1' }
     renderHookHarness()
-    chatStream.mockReturnValue({
-      stream: Promise.resolve(new Response(new ReadableStream({
-        async start(controller) {
-          await blocked.promise
-          controller.close()
-        },
-      }))),
-      abort,
-    })
+    streamEvents = [blocked.promise.then(() => ({ event: 'message_end', data: {} }))]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort })
 
     const sending = result.sendMessage('question')
     await flush()
@@ -260,5 +257,82 @@ describe('useChat', () => {
     expect(result.messages[1].parts).toEqual([
       { type: 'text', text: 'errors.unknown', state: 'done' },
     ])
+  })
+
+  it('keeps streamed progress when the agent reports an error', async () => {
+    const onError = mock()
+    options = { agentId: 'agent-1', onError }
+    renderHookHarness()
+    streamEvents = [
+      { event: 'content_delta', data: { delta: 'partial answer' } },
+      { event: 'error', data: { code: 6103, msg: 'quota exhausted', quota_type: 'output' } },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    expect(onError).toHaveBeenCalledWith({ code: 6103, message: 'quota exhausted', quotaType: 'output' })
+    expect(result.messages[1].metadata).toMatchObject({
+      isError: true,
+      errorMessage: 'errors.quotaExceeded',
+      preservedPartialProgress: true,
+    })
+    expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'partial answer', state: 'done' })
+    expect(result.messages[1].parts).toContainEqual({ type: 'task', taskType: 'generating', state: 'completed' })
+  })
+
+  it('renders structured user input requests split across stream chunks', async () => {
+    streamEvents = [
+      { event: 'content_delta', data: { delta: 'Before <user_input_request><question>Pick one</question>' } },
+      { event: 'content_delta', data: { delta: '<options><option>A</option><option>B</option></options></user_input_request> after' } },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'Before  after', state: 'done' })
+    expect(result.messages[1].parts).toContainEqual({
+      type: 'user-input-request',
+      question: 'Pick one',
+      options: ['A', 'B'],
+      state: 'pending',
+    })
+  })
+
+  it('finalizes a stream that closes without a terminal event', async () => {
+    streamEvents = [
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: {} } },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    expect(result.status).toBe('idle')
+    expect(result.messages[1].metadata).toMatchObject({ isLoading: false, isManuallyStopped: false })
+    expect(result.messages[1].parts).toContainEqual({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      toolName: 'search',
+      toolDisplayName: 'Search',
+      input: {},
+      state: 'done',
+    })
+  })
+
+  it('ignores blank messages and concurrent sends before invoking the API', async () => {
+    const pending = deferred<Response>()
+    chatStream.mockReturnValue({ stream: pending.promise, abort: mock() })
+
+    await result.sendMessage('   ')
+    expect(chatStream).not.toHaveBeenCalled()
+
+    const sending = result.sendMessage('first')
+    await flush()
+    await result.sendMessage('second')
+    expect(chatStream).toHaveBeenCalledTimes(1)
+
+    pending.reject(new Error('network unavailable'))
+    await sending
   })
 })
