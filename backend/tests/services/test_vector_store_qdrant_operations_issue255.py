@@ -323,3 +323,284 @@ async def test_update_chunk_vector_handles_missing_owner_and_embedding_failure(
         VectorStore, "embed_query", AsyncMock(side_effect=RuntimeError("provider down"))
     )
     assert await VectorStore().update_chunk_vector(chunk, KB_ID) is False
+
+
+@pytest.mark.asyncio
+async def test_kb_dimension_lifecycle_rejects_missing_and_mismatched_models(
+    monkeypatch,
+):
+    missing = AsyncMock(return_value=None)
+    monkeypatch.setattr(vector_store.KnowledgeBase, "get_or_none", missing)
+    assert await vector_store.get_kb_embedding_dimension(KB_ID) is None
+    assert await vector_store.set_kb_embedding_dimension(KB_ID, 3) is False
+
+    kb = SimpleNamespace(embedding_dimension=2, save=AsyncMock())
+    monkeypatch.setattr(
+        vector_store.KnowledgeBase, "get_or_none", AsyncMock(return_value=kb)
+    )
+    assert await vector_store.get_kb_embedding_dimension(KB_ID) == 2
+    assert await vector_store.set_kb_embedding_dimension(KB_ID, 2) is True
+    assert await vector_store.set_kb_embedding_dimension(KB_ID, 3) is False
+    with pytest.raises(DimensionMismatchError, match="KB uses 2"):
+        await vector_store._ensure_kb_dimension(KB_ID, 3)
+    assert await vector_store._ensure_kb_dimension(KB_ID, 2) == 2
+
+    kb.embedding_dimension = None
+    assert await vector_store.set_kb_embedding_dimension(KB_ID, 4) is True
+    kb.save.assert_awaited_once()
+
+    monkeypatch.setattr(
+        vector_store, "get_kb_embedding_dimension", AsyncMock(return_value=None)
+    )
+    set_dimension = AsyncMock(return_value=True)
+    monkeypatch.setattr(vector_store, "set_kb_embedding_dimension", set_dimension)
+    assert await vector_store._ensure_kb_dimension(KB_ID, 5) == 5
+    set_dimension.assert_awaited_once_with(KB_ID, 5)
+
+
+@pytest.mark.asyncio
+async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch):
+    kb = SimpleNamespace(
+        settings={
+            "rerank_enabled": False,
+            "rerank_candidate_k": 4,
+            "rerank_fail_open": False,
+            "rerank_score_threshold": "0.5",
+        },
+        rerank_model_id=uuid4(),
+    )
+    monkeypatch.setattr(
+        vector_store.KnowledgeBase, "get_or_none", AsyncMock(return_value=kb)
+    )
+    store = VectorStore()
+    config = await store._resolve_rerank_config(
+        KB_ID,
+        {
+            "rerank_enabled": True,
+            "rerank_candidate_k": 8,
+            "rerank_fail_open": True,
+            "rerank_score_threshold": None,
+        },
+    )
+    assert config == {
+        "model_id": str(kb.rerank_model_id),
+        "enabled": True,
+        "candidate_k": 8,
+        "fail_open": True,
+        "score_threshold": None,
+    }
+    assert await store._rerank_results("query", [], "model", True, None) == []
+
+    response = SimpleNamespace(
+        results=[
+            SimpleNamespace(index=1, score=0.9, reason="best"),
+            SimpleNamespace(index=0, score=0.4, reason=None),
+        ]
+    )
+    manager = SimpleNamespace(rerank=AsyncMock(return_value=response))
+    monkeypatch.setattr(vector_store, "_get_model_manager", Mock(return_value=manager))
+    results = await store._rerank_results(
+        "query",
+        [
+            {"content": "first", "score": 0.8, "search_type": "vector"},
+            {"content": "second", "score": 0.7},
+            {"content": "unranked", "score": 0.6},
+        ],
+        "model",
+        False,
+        0.5,
+    )
+    assert results == [
+        {
+            "content": "second",
+            "score": 0.9,
+            "original_score": 0.7,
+            "rerank_score": 0.9,
+            "search_type": "retrieval+rerank",
+            "rerank_reason": "best",
+        }
+    ]
+
+    manager.rerank.side_effect = RuntimeError("provider down")
+    recalled = [{"content": "original", "score": 0.5}]
+    assert (
+        await store._rerank_results("query", recalled, "model", True, None) is recalled
+    )
+    with pytest.raises(RuntimeError, match="provider down"):
+        await store._rerank_results("query", recalled, "model", False, None)
+
+
+@pytest.mark.asyncio
+async def test_team_rerank_and_search_apply_candidate_window(monkeypatch):
+    response = SimpleNamespace(
+        results=[SimpleNamespace(index=0, score=0.75, reason=None)]
+    )
+    manager = SimpleNamespace(team_rerank=AsyncMock(return_value=response))
+    monkeypatch.setattr(vector_store, "_get_model_manager", Mock(return_value=manager))
+    store = VectorStore(team_id="team", rerank_model_id="reranker")
+    monkeypatch.setattr(
+        vector_store.KnowledgeBase,
+        "get_or_none",
+        AsyncMock(return_value=SimpleNamespace(settings={}, rerank_model_id=None)),
+    )
+    monkeypatch.setattr(
+        vector_store, "get_kb_embedding_dimension", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        store,
+        "_vector_search",
+        AsyncMock(return_value=[{"content": "hit", "score": 0.6}]),
+    )
+
+    assert await store.search(KB_ID, "query", search_mode="vector", top_k=1) == [
+        {
+            "content": "hit",
+            "score": 0.75,
+            "original_score": 0.6,
+            "rerank_score": 0.75,
+            "search_type": "retrieval+rerank",
+        }
+    ]
+    assert store._vector_search.await_args.args[2] == 10
+    manager.team_rerank.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_store_chunks_batches_records_payloads_and_propagates_qdrant_failure(
+    monkeypatch,
+):
+    document = SimpleNamespace(id=uuid4(), knowledge_base_id=KB_ID)
+    created = []
+
+    async def create_chunk(**values):
+        chunk = SimpleNamespace(id=uuid4(), **values)
+        created.append(chunk)
+        return chunk
+
+    monkeypatch.setattr(vector_store.DocumentChunk, "create", create_chunk)
+    store = VectorStore()
+    monkeypatch.setattr(
+        store, "embed_texts", AsyncMock(return_value=[[0.1, 0.2], [0.3, 0.4]])
+    )
+    ensure_dimension = AsyncMock()
+    monkeypatch.setattr(vector_store, "_ensure_kb_dimension", ensure_dimension)
+    batch_store = AsyncMock()
+    monkeypatch.setattr(store, "_batch_store_embeddings", batch_store)
+    chunks = [
+        {"content": "one", "chunk_index": 0, "token_count": 2},
+        {"content": "two", "chunk_index": 1, "metadata": {"page": 2}},
+    ]
+
+    assert await store.store_chunks(document, []) == []
+    assert await store.store_chunks(document, chunks) == created
+    ensure_dimension.assert_awaited_once_with(KB_ID, 2)
+    assert [chunk.embedding_id for chunk in created] == [
+        f"doc_{document.id}_chunk_0",
+        f"doc_{document.id}_chunk_1",
+    ]
+    assert batch_store.await_args.args[:3] == (
+        [chunk.id for chunk in created],
+        [[0.1, 0.2], [0.3, 0.4]],
+        2,
+    )
+    assert batch_store.await_args.kwargs["payloads"] == [
+        {"kb_id": str(KB_ID), "document_id": str(document.id)},
+        {"kb_id": str(KB_ID), "document_id": str(document.id)},
+    ]
+
+    batch_store.side_effect = RuntimeError("qdrant down")
+    with pytest.raises(RuntimeError, match="qdrant down"):
+        await store.store_chunks(document, chunks[:1])
+
+
+@pytest.mark.asyncio
+async def test_fulltext_search_applies_document_filter_scores_and_limit(monkeypatch):
+    document_id = uuid4()
+    chunks = [
+        SimpleNamespace(
+            id=uuid4(),
+            document_id=document_id,
+            document=SimpleNamespace(id=document_id, name="Guide"),
+            content="Setup guide",
+            metadata={"page": 1},
+        ),
+        SimpleNamespace(
+            id=uuid4(),
+            document_id=document_id,
+            document=SimpleNamespace(id=document_id, name="Guide"),
+            content="Unrelated",
+            metadata=None,
+        ),
+    ]
+
+    class ChunkQuery:
+        def __init__(self):
+            self.filters = []
+            self.limit_value = None
+
+        def prefetch_related(self, *_args):
+            return self
+
+        def filter(self, *args, **kwargs):
+            self.filters.append((args, kwargs))
+            return self
+
+        def limit(self, value):
+            self.limit_value = value
+
+            async def resolve():
+                return chunks
+
+            return resolve()
+
+    query = ChunkQuery()
+    monkeypatch.setattr(vector_store.DocumentChunk, "filter", Mock(return_value=query))
+    store = VectorStore()
+    monkeypatch.setattr(store, "_extract_search_terms", Mock(return_value=["setup"]))
+
+    results = await store._fulltext_search(KB_ID, "setup", 2, [document_id])
+
+    assert results == [
+        {
+            "chunk_id": chunks[0].id,
+            "document_id": document_id,
+            "document_name": "Guide",
+            "content": "Setup guide",
+            "score": 1.0,
+            "metadata": {"page": 1},
+            "search_type": "fulltext",
+        }
+    ]
+    assert query.filters[0] == ((), {"document_id__in": [document_id]})
+    assert query.filters[1][0]
+    assert query.limit_value == 6
+
+
+@pytest.mark.asyncio
+async def test_deletion_skips_remote_calls_for_missing_dimensions_and_collections(
+    monkeypatch,
+):
+    query = SimpleNamespace(values_list=AsyncMock(return_value=[KB_ID]))
+    deleted = SimpleNamespace(delete=AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        vector_store.DocumentChunk,
+        "filter",
+        Mock(side_effect=[query, deleted]),
+    )
+    monkeypatch.setattr(
+        vector_store.Document,
+        "filter",
+        Mock(return_value=SimpleNamespace(values_list=AsyncMock(return_value=[]))),
+    )
+    monkeypatch.setattr(
+        vector_store, "get_kb_embedding_dimension", AsyncMock(return_value=None)
+    )
+    delete_points = AsyncMock()
+    monkeypatch.setattr(vector_store, "_delete_qdrant_points", delete_points)
+
+    assert await VectorStore().delete_chunk_vector(uuid4()) is True
+    delete_points.assert_not_awaited()
+
+    documents = SimpleNamespace(values_list=AsyncMock(return_value=[]))
+    monkeypatch.setattr(vector_store.Document, "filter", Mock(return_value=documents))
+    assert await VectorStore().delete_kb_vectors(KB_ID) == 0
