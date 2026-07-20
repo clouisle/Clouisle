@@ -38,7 +38,6 @@ mock.module('@/lib/api/admin/audit-logs', () => ({ auditLogsApi: api }))
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => [search, (value: string) => { search = value }],
 }))
-<<<<<<< HEAD
 mock.module('@/components/permission-guard', () => ({
   PermissionGuard: ({ children }: React.PropsWithChildren) => canExport ? React.createElement(React.Fragment, {}, children) : null,
 }))
