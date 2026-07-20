@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button'
 import { authApi, ApiError } from '@/lib/api'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 
+export function getVerifyEmailErrorMessage(err: unknown, t: (key: string) => string): string {
+  if (err instanceof ApiError) {
+    return err.message || t('verificationTokenInvalid')
+  }
+  return t('verificationTokenInvalid')
+}
+
 export default function VerifyPage() {
   const t = useTranslations('auth')
   const router = useRouter()
@@ -30,11 +37,7 @@ export default function VerifyPage() {
         setStatus('success')
       } catch (err) {
         setStatus('error')
-        if (err instanceof ApiError) {
-          setErrorMessage(err.message || t('verificationTokenInvalid'))
-        } else {
-          setErrorMessage(t('verificationTokenInvalid'))
-        }
+        setErrorMessage(getVerifyEmailErrorMessage(err, t))
       }
     }
 

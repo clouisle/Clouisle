@@ -23,7 +23,7 @@ type ClickChallenge = {
   created_at: number
 }
 
-function parseClickChallenge(challenge: string): ClickChallenge | null {
+export function parseClickChallenge(challenge: string): ClickChallenge | null {
   try {
     const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
     if (

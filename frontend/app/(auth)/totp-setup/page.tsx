@@ -7,6 +7,11 @@ import { toast } from 'sonner'
 import { authApi } from '@/lib/api'
 import { TOTPSetupWizardForced } from '@/components/totp-setup-wizard-forced'
 
+export function getTotpSetupRedirect(hasTempToken: boolean, setupSucceeded: boolean): string {
+  if (!hasTempToken) return '/login'
+  return setupSucceeded ? '/' : '/login'
+}
+
 export default function TOTPSetupPage() {
   const t = useTranslations('auth')
   const router = useRouter()
@@ -16,7 +21,7 @@ export default function TOTPSetupPage() {
     const token = localStorage.getItem('temp_token')
     if (!token) {
       toast.error(t('sessionExpired'))
-      router.push('/login')
+      router.push(getTotpSetupRedirect(false, false))
       return
     }
     setTempToken(token)
@@ -35,10 +40,10 @@ export default function TOTPSetupPage() {
       toast.success(t('setupStep5Description'))
 
       // Redirect to home
-      router.push('/')
+      router.push(getTotpSetupRedirect(true, true))
     } catch {
       toast.error(t('setupFailed'))
-      router.push('/login')
+      router.push(getTotpSetupRedirect(true, false))
     }
   }
 

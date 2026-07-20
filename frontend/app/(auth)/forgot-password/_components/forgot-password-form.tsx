@@ -22,6 +22,12 @@ import { Loader2, Mail, CheckCircle2, ArrowLeft, KeyRound, ChevronDown } from 'l
 
 type Step = 'email' | 'reset' | 'success'
 
+export function getForgotPasswordEmailError(email: string, t: (key: string) => string): string | null {
+  if (!email) return t('emailRequired')
+  if (!isValidEmail(email)) return t('invalidEmail')
+  return null
+}
+
 export function ForgotPasswordForm() {
   const t = useTranslations('auth')
   const router = useRouter()
@@ -63,13 +69,9 @@ export function ForgotPasswordForm() {
     e.preventDefault()
     setFieldErrors({})
 
-    if (!email) {
-      setFieldErrors({ email: t('emailRequired') })
-      return
-    }
-
-    if (!isValidEmail(email)) {
-      setFieldErrors({ email: t('invalidEmail') })
+    const emailError = getForgotPasswordEmailError(email, t)
+    if (emailError) {
+      setFieldErrors({ email: emailError })
       return
     }
 
