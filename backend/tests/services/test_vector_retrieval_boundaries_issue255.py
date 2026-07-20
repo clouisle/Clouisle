@@ -10,6 +10,25 @@ from app.services.vector_store import DimensionMismatchError, VectorStore
 vector_store_module = importlib.import_module("app.services.vector_store")
 
 
+class Model:
+    def __init__(self, **values):
+        self.__dict__.update(values)
+
+
+@pytest.fixture(autouse=True)
+def qdrant_models(monkeypatch):
+    monkeypatch.setattr(
+        vector_store_module,
+        "qmodels",
+        SimpleNamespace(
+            FieldCondition=Model,
+            Filter=Model,
+            MatchAny=Model,
+            MatchValue=Model,
+        ),
+    )
+
+
 class Query:
     def __init__(self, entities):
         self.entities = entities

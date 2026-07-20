@@ -1,4 +1,5 @@
 import importlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -10,6 +11,25 @@ vector_store = importlib.import_module("app.services.vector_store")
 KB_ID = UUID("00000000-0000-0000-0000-000000000001")
 DOCUMENT_ID = UUID("00000000-0000-0000-0000-000000000002")
 CHUNK_ID = UUID("00000000-0000-0000-0000-000000000003")
+
+
+class Model:
+    def __init__(self, **values):
+        self.__dict__.update(values)
+
+
+@pytest.fixture(autouse=True)
+def qdrant_models(monkeypatch):
+    monkeypatch.setattr(
+        vector_store,
+        "qmodels",
+        SimpleNamespace(
+            FieldCondition=Model,
+            Filter=Model,
+            MatchAny=Model,
+            MatchValue=Model,
+        ),
+    )
 
 
 class Query:
