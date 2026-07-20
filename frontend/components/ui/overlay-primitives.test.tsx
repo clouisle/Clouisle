@@ -36,7 +36,14 @@ mock.module('@base-ui/react/dialog', () => ({
   },
 }))
 
-const { Popover, PopoverContent, PopoverTrigger } = await import('./popover')
+const {
+  Popover,
+  PopoverArrow,
+  PopoverClose,
+  PopoverContent,
+  PopoverPortal,
+  PopoverTrigger,
+} = await import('./popover')
 const {
   Sheet,
   SheetClose,
@@ -57,7 +64,13 @@ describe('overlay UI primitives', () => {
       renderer = create(
         <Popover>
           <PopoverTrigger className="extra-trigger" onClick={onClick}>Open</PopoverTrigger>
-          <PopoverContent>Details</PopoverContent>
+          <PopoverPortal>
+            <PopoverContent className="extra-content">
+              Details
+              <PopoverArrow className="extra-arrow" />
+              <PopoverClose>Dismiss</PopoverClose>
+            </PopoverContent>
+          </PopoverPortal>
         </Popover>
       )
     })
@@ -70,7 +83,10 @@ describe('overlay UI primitives', () => {
 
     const positioner = renderer!.root.findByType('popover-positioner')
     expect(positioner.props).toMatchObject({ align: 'center', side: 'bottom', sideOffset: 4 })
-    expect(renderer!.root.findByType('popover-popup').children).toEqual(['Details'])
+    expect(renderer!.root.findByType('popover-popup').props.className).toContain('extra-content')
+    expect(renderer!.root.findByType('popover-arrow').props.className).toContain('extra-arrow')
+    expect(renderer!.root.findByType('popover-close').children).toEqual(['Dismiss'])
+    expect(renderer!.root.findAllByType('popover-portal')).toHaveLength(2)
   })
 
   test('uses the requested sheet side and can omit its built-in close control', () => {
