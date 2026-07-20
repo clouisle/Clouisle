@@ -300,6 +300,41 @@ describe('useChat', () => {
     })
   })
 
+  it('renders reasoning, RAG, compression, tools, media, truncation, and iteration markers', async () => {
+    streamEvents = [
+      { event: 'rag_start', data: {} },
+      { event: 'reasoning_start', data: {} },
+      { event: 'reasoning_delta', data: { delta: 'think' } },
+      { event: 'reasoning_end', data: {} },
+      { event: 'rag_context', data: { contexts: [{ document_id: 'doc-1', document_name: 'Doc', content: 'chunk', kb_id: 'kb-1', kb_name: 'KB', score: 0.8 }] } },
+      { event: 'compression_start', data: {} },
+      { event: 'compression_end', data: { before_tokens: 20, after_tokens: 10 } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: { q: 'coverage' } } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-2', tool_name: 'lookup', tool_display_name: 'Lookup', arguments: {} } },
+      { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', result: { ok: true }, is_error: false } },
+      { event: 'tool_result', data: { tool_call_id: 'tool-2', tool_name: 'lookup', tool_display_name: 'Lookup', result: 'failed', is_error: true } },
+      { event: 'media_result', data: { kind: 'image', url: '/cat.png' } },
+      { event: 'output_truncated', data: {} },
+      { event: 'iteration_cap_reached', data: { content: 'Reached limit' } },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    const parts = result.messages[1].parts
+    expect(parts.map((part) => part.type)).toContain('reasoning')
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc-1' }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'task', taskType: 'compression', state: 'completed' }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1', state: 'done' }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-2', state: 'error' }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-result', toolCallId: 'tool-2', isError: true }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
+    expect(parts).toContainEqual({ type: 'truncated' })
+    expect(parts).toContainEqual({ type: 'iteration-cap-reached' })
+    expect(parts).toContainEqual({ type: 'text', text: 'Reached limit', state: 'done' })
+  })
+
   it('finalizes a stream that closes without a terminal event', async () => {
     streamEvents = [
       { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: {} } },
