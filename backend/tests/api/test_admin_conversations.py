@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 from uuid import uuid4
 
 import pytest
@@ -517,3 +517,456 @@ def test_router_declares_pagination_and_uuid_validation():
     assert page_size.field_info.metadata[1].le == 100
     assert ids.field_info.is_required()
     assert ids.field_info.annotation == list[conversations.UUID]
+
+
+@pytest.mark.anyio
+async def test_team_access_and_agent_ids_cover_authorized_paths():
+    current_user = user()
+    team = SimpleNamespace(id=uuid4())
+    agent_ids = [uuid4(), uuid4()]
+
+    with (
+        patch.object(conversations.Team, "filter", return_value=Query(first=team)),
+        patch.object(
+            conversations.TeamMember,
+            "filter",
+            return_value=Query(first=SimpleNamespace()),
+        ),
+    ):
+        assert await conversations.check_team_access(team.id, current_user) is team
+
+    with (
+        patch.object(
+            conversations, "check_team_access", AsyncMock(return_value=team)
+        ) as access,
+        patch.object(
+            conversations.Agent,
+            "filter",
+            return_value=Query(values_list=[(agent_ids[0],), agent_ids[1]]),
+        ),
+    ):
+        assert (
+            await conversations.get_user_team_agent_ids(current_user, team.id)
+            == agent_ids
+        )
+    access.assert_awaited_once_with(team.id, current_user)
+
+    with patch.object(
+        conversations.Agent,
+        "all",
+        return_value=Query(values_list=[(agent_ids[0],), agent_ids[1]]),
+    ):
+        assert (
+            await conversations.get_user_team_agent_ids(user(superuser=True))
+            == agent_ids
+        )
+
+
+@pytest.mark.anyio
+async def test_list_conversations_handles_empty_access_and_team_admin_filters():
+    current_user = user(dashboard=True)
+    with patch.object(
+        conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+    ):
+        empty = await conversations.list_all_conversations(
+            team_id=None,
+            agent_id=None,
+            user_id=None,
+            search=None,
+            untitled_only=False,
+            page=3,
+            page_size=8,
+            current_user=current_user,
+        )
+    assert empty["data"] == {"items": [], "total": 0, "page": 3, "page_size": 8}
+
+    team_ids = [uuid4(), uuid4()]
+    accessible = [uuid4(), uuid4()]
+    owner_id = uuid4()
+    item = conversation(
+        agent_id=accessible[0],
+        user_id=None,
+        agent=None,
+        user=None,
+        title=None,
+    )
+    query = Query(result=[item], count=1)
+    with (
+        patch.object(conversations, "check_team_access", AsyncMock()) as access,
+        patch.object(
+            conversations.Agent,
+            "filter",
+            return_value=Query(values_list=[(accessible[0],), accessible[1]]),
+        ),
+        patch.object(conversations.Conversation, "filter", return_value=query),
+    ):
+        response = await conversations.list_all_conversations(
+            team_id=team_ids,
+            agent_id=None,
+            user_id=[owner_id],
+            search=None,
+            untitled_only=False,
+            page=1,
+            page_size=20,
+            current_user=current_user,
+        )
+
+    assert access.await_args_list == [call(value, current_user) for value in team_ids]
+    assert any(kwargs == {"user_id__in": [owner_id]} for _, kwargs in query.filters)
+    assert response["data"]["items"][0] | {
+        "created_at": None,
+        "updated_at": None,
+    } == {
+        "id": str(item.id),
+        "agent_id": str(item.agent_id),
+        "agent_name": None,
+        "agent_icon": None,
+        "title": None,
+        "message_count": 3,
+        "created_at": None,
+        "updated_at": None,
+        "user_id": None,
+        "user_name": None,
+    }
+
+
+@pytest.mark.anyio
+async def test_list_conversations_recognizes_wildcard_permission():
+    current_user = user()
+    current_user.roles = [
+        SimpleNamespace(permissions=[SimpleNamespace(code="ignored")]),
+        SimpleNamespace(permissions=[SimpleNamespace(code="*")]),
+    ]
+    query = Query(result=[], count=0)
+    with (
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[uuid4()])
+        ),
+        patch.object(conversations.Conversation, "filter", return_value=query),
+    ):
+        await conversations.list_all_conversations(
+            team_id=None,
+            agent_id=None,
+            user_id=None,
+            search=None,
+            untitled_only=False,
+            page=1,
+            page_size=20,
+            current_user=current_user,
+        )
+    assert not any("user_id" in kwargs for _, kwargs in query.filters)
+
+
+@pytest.mark.anyio
+async def test_stats_handles_empty_access_and_member_unknown_agent():
+    with patch.object(
+        conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+    ):
+        response = await conversations.get_conversation_stats(
+            team_id=None, current_user=user()
+        )
+    assert response["data"] == {
+        "total_conversations": 0,
+        "total_messages": 0,
+        "conversations_by_agent": [],
+    }
+
+    current_user = user()
+    agent_id = uuid4()
+    conv_query = Query(count=1, values_list=[uuid4()])
+    stats_query = Query(values=[{"agent_id": agent_id, "count": 1}])
+    with (
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[agent_id])
+        ),
+        patch.object(
+            conversations.Conversation,
+            "filter",
+            side_effect=[conv_query, stats_query],
+        ) as conversation_filter,
+        patch.object(conversations.Message, "filter", return_value=Query(count=2)),
+        patch.object(conversations.Agent, "filter", return_value=Query(values=[])),
+        patch.object(conversations, "t", return_value="Unknown"),
+    ):
+        response = await conversations.get_conversation_stats(
+            team_id=None, current_user=current_user
+        )
+
+    assert any(
+        kwargs.get("user_id") == current_user.id
+        for call in conversation_filter.call_args_list
+        for kwargs in [call.kwargs]
+    )
+    assert response["data"]["conversations_by_agent"] == [
+        {
+            "agent_id": str(agent_id),
+            "agent_name": "Unknown",
+            "agent_icon": None,
+            "count": 1,
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_trends_returns_30_empty_points_without_agents():
+    current = datetime(2026, 7, 21, 12, tzinfo=UTC)
+    with (
+        patch.object(conversations, "now", return_value=current),
+        patch.object(conversations, "to_utc", side_effect=lambda value: value),
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+        ),
+    ):
+        response = await conversations.get_conversation_trends(
+            team_id=None, period="30d", current_user=user()
+        )
+
+    assert response["data"]["period"] == "30d"
+    assert len(response["data"]["data"]) == 30
+    assert response["data"]["data"][0] == {
+        "date": "06/22",
+        "conversations": 0,
+        "messages": 0,
+        "tokens": 0,
+    }
+    assert response["data"]["data"][-1]["date"] == "07/21"
+
+
+@pytest.mark.anyio
+async def test_trends_scopes_member_and_skips_message_query_without_conversations():
+    current = datetime(2026, 7, 21, 12, tzinfo=UTC)
+    current_user = user()
+    conv_query = Query(values=[])
+    with (
+        patch.object(conversations, "now", return_value=current),
+        patch.object(conversations, "to_utc", side_effect=lambda value: value),
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[uuid4()])
+        ),
+        patch.object(conversations.Conversation, "filter", return_value=conv_query),
+        patch.object(conversations.Message, "filter") as message_filter,
+    ):
+        response = await conversations.get_conversation_trends(
+            team_id=None, period="unexpected", current_user=current_user
+        )
+
+    assert any(
+        kwargs == {"user_id": current_user.id} for _, kwargs in conv_query.filters
+    )
+    message_filter.assert_not_called()
+    assert response["data"]["period"] == "unexpected"
+    assert len(response["data"]["data"]) == 7
+
+
+@pytest.mark.anyio
+async def test_detail_admin_scope_empty_messages_and_nullable_relations():
+    current_user = user(dashboard=True)
+    accessible_agent = uuid4()
+    target = conversation(
+        agent_id=accessible_agent,
+        user_id=current_user.id,
+        agent=None,
+        user=None,
+    )
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(
+            conversations,
+            "get_user_team_agent_ids",
+            AsyncMock(return_value=[accessible_agent]),
+        ),
+        patch.object(
+            conversations,
+            "get_visible_conversation_messages",
+            AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            conversations,
+            "build_message_round_payloads",
+            AsyncMock(return_value=[]),
+        ),
+        patch.object(conversations.Message, "filter") as message_filter,
+    ):
+        response = await conversations.get_conversation_detail(target.id, current_user)
+
+    message_filter.assert_not_called()
+    assert response["data"]["messages"] == []
+    assert response["data"]["agent_name"] is None
+    assert response["data"]["agent_icon"] is None
+    assert response["data"]["user_name"] is None
+
+
+@pytest.mark.anyio
+async def test_detail_admin_rejects_foreign_agent_and_defaults_version_count():
+    current_user = user(dashboard=True)
+    target = conversation()
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+        ),
+        pytest.raises(BusinessError) as exc,
+    ):
+        await conversations.get_conversation_detail(target.id, current_user)
+    assert (exc.value.code, exc.value.status_code) == (
+        ResponseCode.PERMISSION_DENIED,
+        403,
+    )
+
+    root = SimpleNamespace(
+        id=uuid4(), parent_id=None, round_id=None, is_round_canonical=True
+    )
+    noncanonical = SimpleNamespace(
+        id=uuid4(), parent_id=None, round_id=uuid4(), is_round_canonical=False
+    )
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(
+            conversations,
+            "get_visible_conversation_messages",
+            AsyncMock(return_value=[root, noncanonical]),
+        ),
+        patch.object(conversations.Message, "filter", return_value=Query(values=[])),
+        patch.object(
+            conversations,
+            "build_message_round_payloads",
+            AsyncMock(return_value=[{"id": root.id}]),
+        ),
+    ):
+        response = await conversations.get_conversation_detail(
+            target.id, user(superuser=True)
+        )
+    assert response["data"]["messages"][0]["version_count"] == 1
+
+
+@pytest.mark.anyio
+async def test_single_delete_rejects_missing_foreign_member_and_foreign_admin():
+    target_id = uuid4()
+    with patch.object(
+        conversations.Conversation, "filter", return_value=Query(first=None)
+    ):
+        with pytest.raises(BusinessError) as exc:
+            await conversations.delete_conversation_admin(
+                target_id, user(superuser=True)
+            )
+    assert (exc.value.code, exc.value.status_code) == (
+        ResponseCode.CONVERSATION_NOT_FOUND,
+        404,
+    )
+
+    target = conversation()
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        pytest.raises(BusinessError) as exc,
+    ):
+        await conversations.delete_conversation_admin(target.id, user())
+    assert (exc.value.code, exc.value.status_code) == (
+        ResponseCode.PERMISSION_DENIED,
+        404,
+    )
+    target.delete.assert_not_awaited()
+
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+        ),
+        pytest.raises(BusinessError) as exc,
+    ):
+        await conversations.delete_conversation_admin(target.id, user(dashboard=True))
+    assert (exc.value.code, exc.value.status_code) == (
+        ResponseCode.PERMISSION_DENIED,
+        403,
+    )
+    target.delete.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_single_delete_allows_in_scope_admin():
+    current_user = user(dashboard=True)
+    target = conversation()
+    agent_query = Query()
+    agent_query.update = AsyncMock(return_value=1)
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(
+            conversations,
+            "get_user_team_agent_ids",
+            AsyncMock(return_value=[target.agent_id]),
+        ),
+        patch.object(conversations.Agent, "filter", return_value=agent_query),
+    ):
+        response = await conversations.delete_conversation_admin(
+            target.id, current_user
+        )
+
+    agent_query.update.assert_awaited_once()
+    target.delete.assert_awaited_once()
+    assert response["data"]["id"] == str(target.id)
+
+
+@pytest.mark.anyio
+async def test_batch_delete_authorization_and_persistence_boundaries():
+    foreign = conversation()
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(result=[foreign])
+        ),
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+        ),
+        pytest.raises(BusinessError) as exc,
+    ):
+        await conversations.batch_delete_conversations(
+            [foreign.id], user(dashboard=True)
+        )
+    assert (exc.value.code, exc.value.status_code) == (
+        ResponseCode.PERMISSION_DENIED,
+        403,
+    )
+
+    current_user = user()
+    owned = conversation(user_id=current_user.id)
+    delete_query = Query(delete=1)
+    with (
+        patch.object(
+            conversations.Conversation,
+            "filter",
+            side_effect=[Query(result=[owned]), delete_query],
+        ),
+        patch.object(conversations.Agent, "filter", return_value=Query()),
+    ):
+        response = await conversations.batch_delete_conversations(
+            [owned.id], current_user
+        )
+    assert response["data"]["deleted_count"] == 1
+
+    target = conversation()
+    agent_query = Query()
+    agent_query.update = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    delete_query = Query(delete=1)
+    with (
+        patch.object(
+            conversations.Conversation,
+            "filter",
+            side_effect=[Query(result=[target]), delete_query],
+        ) as conversation_filter,
+        patch.object(conversations.Agent, "filter", return_value=agent_query),
+        pytest.raises(RuntimeError, match="database unavailable"),
+    ):
+        await conversations.batch_delete_conversations(
+            [target.id], user(superuser=True)
+        )
+    assert conversation_filter.call_count == 1
