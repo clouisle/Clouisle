@@ -190,6 +190,42 @@ async def test_execute_tool_uses_team_credentials_and_reports_execution_errors()
 
 
 @pytest.mark.anyio
+async def test_execute_skill_tool_returns_results_and_safe_errors():
+    service = AgentService()
+    agent = SimpleNamespace(id="agent-1", team_id="team-1")
+    tool_call = ToolCall(
+        id="call-skill",
+        function=FunctionCall(name="skill_summarize", arguments='{"text": "docs"}'),
+    )
+    skill = SimpleNamespace(id="skill-1")
+    config = SimpleNamespace()
+
+    with (
+        patch(
+            "app.services.skill.SkillService.resolve_agent_skill_tool",
+            new=AsyncMock(side_effect=[(skill, config), RuntimeError("unavailable")]),
+        ),
+        patch(
+            "app.services.skill_executor.SkillExecutor.execute",
+            new=AsyncMock(
+                return_value=SimpleNamespace(to_dict=lambda: {"summary": "done"})
+            ),
+        ) as execute,
+    ):
+        success = await service._execute_tool(agent, tool_call)
+        failure = await service._execute_tool(agent, tool_call)
+
+    assert success == {"summary": "done"}
+    assert failure == {"error": "unavailable"}
+    execute.assert_awaited_once_with(
+        skill=skill,
+        arguments={"text": "docs"},
+        config=config,
+        tenant_id="team-1",
+    )
+
+
+@pytest.mark.anyio
 async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
     class Query:
         def prefetch_related(self, *_args):
