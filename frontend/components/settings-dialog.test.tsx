@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { ApiError } from '@/lib/api/client'
 
 const window = new Window()
 globalThis.window = window as unknown as Window & typeof globalThis
@@ -19,6 +20,9 @@ const getPasswordStatus = mock(() => Promise.resolve(null))
 const getTotpStatus = mock(() => Promise.resolve({ enabled: false, enabled_at: null, remaining_backup_codes: 0 }))
 const updateProfile = mock(() => Promise.resolve({}))
 const deleteAccount = mock(() => Promise.resolve())
+const successToast = mock<(message: string) => void>()
+let deletePasswordOnChange: React.ChangeEventHandler<HTMLInputElement> | undefined
+let deleteAccountOnClick: (() => Promise<void>) | undefined
 
 let siteSettings = { allow_account_deletion: false, email_verification: false }
 let user = {
@@ -46,7 +50,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
-mock.module('sonner', () => ({ toast: { info: mock(), success: mock(), warning: mock() } }))
+mock.module('sonner', () => ({ toast: { info: mock(), success: successToast, warning: mock() } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
   AlertCircle: Icon, Clock: Icon, Copy: Icon, Download: Icon, KeyRound: Icon, Link: Icon,
@@ -54,6 +58,7 @@ mock.module('lucide-react', () => ({
 }))
 mock.module('@/contexts/site-settings-context', () => ({ useSiteSettings: () => ({ settings: siteSettings }) }))
 mock.module('@/lib/api', () => ({
+  ApiError,
   authApi: { getCurrentUser, sendVerification: mock() },
   usersApi: { getPasswordStatus, updateProfile, changePassword: mock(), deleteAccount },
   ssoApi: { disconnectConnection: mock() },
@@ -89,7 +94,10 @@ mock.module('@/components/ui/card', () => ({
 mock.module('@/components/ui/alert', () => ({ Alert: passthrough, AlertDescription: passthrough }))
 mock.module('@/components/ui/alert-dialog', () => ({
   AlertDialog: passthrough,
-  AlertDialogAction: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
+  AlertDialogAction: ({ children, disabled, onClick, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+    if (className?.includes('bg-destructive')) deleteAccountOnClick = onClick as () => Promise<void>
+    return <button {...props} onClick={onClick} className={className} data-disabled={disabled} aria-disabled={disabled}>{children}</button>
+  },
   AlertDialogCancel: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
   AlertDialogContent: passthrough,
   AlertDialogDescription: passthrough,
@@ -102,7 +110,12 @@ mock.module('@/components/ui/alert-dialog', () => ({
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
 }))
-mock.module('@/components/ui/input', () => ({ Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} /> }))
+mock.module('@/components/ui/input', () => ({
+  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => {
+    if (props.id === 'delete-password') deletePasswordOnChange = props.onChange
+    return <input {...props} />
+  },
+}))
 mock.module('@/components/ui/label', () => ({ Label: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props}>{children}</label> }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: () => <div data-testid="skeleton" /> }))
 mock.module('@/components/ui/image-upload', () => ({ ImageUpload: () => <div data-testid="image-upload" /> }))
@@ -128,11 +141,16 @@ async function click(text: string, occurrence = 0) {
   await act(async () => buttons[occurrence]!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 }
 
+function enter(input: HTMLInputElement, value: string) {
+  input.value = value
+  deletePasswordOnChange!({ target: input } as React.ChangeEvent<HTMLInputElement>)
+}
+
 beforeEach(() => {
   siteSettings = { allow_account_deletion: false, email_verification: false }
   getCurrentUser.mockReset()
   getCurrentUser.mockImplementation(() => Promise.resolve(user))
-  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, deleteAccount, push]) fn.mockClear()
+  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, deleteAccount, successToast, push]) fn.mockClear()
   localStorage.setItem('access_token', 'token')
 })
 
@@ -178,5 +196,44 @@ describe('SettingsDialog', () => {
     expect(container.querySelector('#current')).toBeTruthy()
     expect(container.textContent).toContain('dangerZone')
     expect(container.querySelector('#delete-password')).toBeTruthy()
+  })
+
+  test('validates account deletion, clears an API error, and retries successfully', async () => {
+    siteSettings.allow_account_deletion = true
+    user = { ...user, auth_source: 'local', sso_connections: [] }
+    const onOpenChange = await render()
+    await click('account')
+
+    let password = container.querySelector('#delete-password') as HTMLInputElement
+    const confirmation = password.parentElement!.parentElement!.querySelector('button[data-disabled="true"]')!
+    expect(confirmation).toBeTruthy()
+
+    await act(async () => deleteAccountOnClick!())
+    password = container.querySelector('#delete-password') as HTMLInputElement
+    expect(deleteAccount).not.toHaveBeenCalled()
+    expect(password.getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).toContain('currentPasswordRequired')
+
+    await act(async () => enter(password, 'wrong-password'))
+    password = container.querySelector('#delete-password') as HTMLInputElement
+    expect(password.getAttribute('aria-invalid')).toBe('false')
+
+    deleteAccount.mockRejectedValueOnce(new ApiError(2003, 'incorrect password'))
+    await act(async () => deleteAccountOnClick!())
+    password = container.querySelector('#delete-password') as HTMLInputElement
+    expect(deleteAccount).toHaveBeenCalledWith('wrong-password', { silent: true })
+    expect(password.getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).toContain('incorrect password')
+
+    await act(async () => enter(password, 'correct-password'))
+    password = container.querySelector('#delete-password') as HTMLInputElement
+    expect(password.getAttribute('aria-invalid')).toBe('false')
+
+    await act(async () => deleteAccountOnClick!())
+    expect(deleteAccount).toHaveBeenLastCalledWith('correct-password', { silent: true })
+    expect(successToast).toHaveBeenCalledWith('accountDeleted')
+    expect(localStorage.getItem('access_token')).toBeNull()
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(push).toHaveBeenCalledWith('/login')
   })
 })
