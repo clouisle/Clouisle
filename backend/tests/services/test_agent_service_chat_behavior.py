@@ -129,6 +129,31 @@ async def test_build_messages_adds_context_history_and_rag_before_current_messag
 
 
 @pytest.mark.anyio
+async def test_execute_tool_rejects_invalid_arguments_and_unknown_tools():
+    service = AgentService()
+    agent = SimpleNamespace(id="agent-1", team_id=None)
+    invalid = ToolCall(
+        id="call-invalid",
+        function=FunctionCall(name="search", arguments="not-json"),
+    )
+    missing = ToolCall(
+        id="call-missing",
+        function=FunctionCall(name="missing", arguments="{}"),
+    )
+
+    invalid_result = await service._execute_tool(agent, invalid)
+    with patch("app.llm.tools.tool_registry.get_tool", return_value=None):
+        missing_result = await service._execute_tool(agent, missing)
+
+    assert invalid_result == {"error": "Invalid tool arguments"}
+    assert missing_result == {
+        "error": "Tool not found",
+        "tool_name": "missing",
+        "success": False,
+    }
+
+
+@pytest.mark.anyio
 async def test_agent_tools_include_available_builtin_media_and_agentic_search():
     agent = SimpleNamespace(
         tools_config=[
