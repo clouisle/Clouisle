@@ -400,6 +400,7 @@
 - Backend progress checkpoint (2026-07-21, commits through `576b7bb8`): 2,712 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 8,927 missed and 11,640 branches with 1,574 partial, for 72% aggregate coverage after notification endpoint filtering, authorization, persistence, provider-error redaction, and no-external-delivery boundaries. Final 95% line and branch gates remain inactive.
 
 ## Risks & Mitigation
+- Current blocker (2026-07-21): three reassessed settings-dialog deletion-test rounds exhausted their validation limits. The happy-path callback is reachable, but the test-local `TestApiError` constructor does not satisfy the component module's runtime `instanceof ApiError` check, leaving the rejection-state assertion failing. Preserve the test-only worktree while reassessing constructor identity; do not integrate it until focused tests and ESLint pass.
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
 - Risk: tests inflate numbers without confidence. Mitigation: require behavioral assertions and critical happy/error paths; reject import-only, snapshot-only, and assertion-free additions.
