@@ -266,6 +266,8 @@
 
 - Frontend progress checkpoint (2026-07-20, commit `91e0e00c`): 954 isolated tests passed with 3,979 assertions after workflow LLM-node selected/configured and default/unconfigured states, custom/default labels, selected-model display, model warning, and input/output-handle coverage. `bun run test:coverage` passes; Bun reports 91.01% lines and 86.21% functions for loaded sources. The honest source census reports 104 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commit `7da58b80`): 958 isolated tests passed with 3,996 assertions after workflow loop-container selected/default sizing, limits, output and resize/flow handles plus loop-start variable truncation/defaults and loop-exit label/handle coverage. `bun run test:coverage` passes; Bun reports 91.03% lines and 86.25% functions for loaded sources. The honest source census reports 103 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
