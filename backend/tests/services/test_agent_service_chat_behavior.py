@@ -57,6 +57,49 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
 
 
 @pytest.mark.anyio
+async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
+    agent = SimpleNamespace(team_id=None, model_id=None)
+    tool_call = ToolCall(
+        id="call-1",
+        function=FunctionCall(name="search", arguments="{}"),
+    )
+    usage = SimpleNamespace(model_dump=lambda: {"total_tokens": 5})
+    turns = [
+        [
+            SimpleNamespace(
+                delta=SimpleNamespace(content="Searching", tool_calls=[tool_call]),
+                usage=usage,
+            )
+        ],
+        [
+            SimpleNamespace(
+                delta=SimpleNamespace(content="Done", tool_calls=[]), usage=None
+            )
+        ],
+    ]
+
+    async def chat_stream(**kwargs):
+        for chunk in turns.pop(0):
+            yield chunk
+
+    service = AgentService()
+    service._build_messages = AsyncMock(return_value=[])
+    service._get_agent_tools = AsyncMock(return_value=[])
+    service._execute_tool = AsyncMock(return_value={"results": ["match"]})
+
+    with patch("app.services.agent.model_manager.chat_stream", new=chat_stream):
+        events = [event async for event in service.chat_stream(agent, "Find it")]
+
+    assert events == [
+        "Searching",
+        {"tool_call": tool_call.model_dump()},
+        {"usage": {"total_tokens": 5}},
+        "Done",
+    ]
+    service._execute_tool.assert_awaited_once_with(agent=agent, tool_call=tool_call)
+
+
+@pytest.mark.anyio
 async def test_build_messages_adds_context_history_and_rag_before_current_message():
     agent = SimpleNamespace(system_prompt="Be concise", rag_mode=RAGMode.AUTO)
     service = AgentService()
