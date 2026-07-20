@@ -377,6 +377,10 @@
 
 - Backend progress checkpoint (2026-07-21, commits through `419d56a5`): 2,591 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 10,048 missed and 11,640 branches with 1,450 partial, for 69% aggregate coverage after dashboard, roles/permissions, chat-stream failure, deeper admin-memory, and knowledge-embedding batches. The final independent 95% line and branch gates remain inactive.
 
+- Backend progress checkpoint (2026-07-21, commits through `3a63395a`): 2,609 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 9,981 missed and 11,640 branches with 1,452 partial, for 69% aggregate coverage after skill-import provider and chat edit/regenerate guard coverage. The final independent 95% line and branch gates remain inactive.
+
+- Frontend focused checkpoint (2026-07-21, commits `ebe9380a` and `55687ec0`): model-dialog tests pass with 78.70% focused functions and 85.57% lines; site-settings tests pass with 48.68% focused functions and 99.76% lines. These focused results are incremental evidence only; the latest complete frontend metrics remain below 95%, so final gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
