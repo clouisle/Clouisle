@@ -320,6 +320,28 @@ describe('useChat', () => {
     })
   })
 
+  it('sends image and file attachments in the request and user message', async () => {
+    streamEvents = [{ event: 'message_end', data: {} }]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage(
+      'with attachments',
+      [{ url: '/image.png' }],
+      [{ filename: 'notes.txt', url: '/notes.txt', size: 12, mimeType: 'text/plain' }]
+    )
+
+    expect(chatStream).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      message: 'with attachments',
+      images: [{ url: '/image.png' }],
+      file_urls: [{ filename: 'notes.txt', url: '/notes.txt', size: 12, mimeType: 'text/plain' }],
+    }))
+    expect(result.messages[0].parts).toEqual([
+      { type: 'text', text: 'with attachments' },
+      { type: 'image', url: '/image.png' },
+      { type: 'file', filename: 'notes.txt', size: 12 },
+    ])
+  })
+
   it('ignores blank messages and concurrent sends before invoking the API', async () => {
     const pending = deferred<Response>()
     chatStream.mockReturnValue({ stream: pending.promise, abort: mock() })
