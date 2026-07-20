@@ -256,6 +256,8 @@
   - Existing frontend Bun tests, lint, build, and generated i18n type policy.
   - CI license and existing quality checks remain unchanged.
 
+- Frontend progress checkpoint (2026-07-20, commit `12433dbd`): 944 isolated tests passed with 3,930 assertions after workflow media-generation image/video modes, selected/default labels, running/failed states, filtered image output, image/video preview actions, default configuration, and handle coverage. `bun run test:coverage` passes; Bun reports 90.91% lines and 86.06% functions for loaded sources. The honest source census reports 108 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
