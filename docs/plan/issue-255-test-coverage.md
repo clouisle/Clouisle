@@ -332,6 +332,10 @@
 
 - Frontend progress checkpoint (2026-07-20, commits through `ad845c6c`): 1,088 isolated tests passed with 4,741 assertions after activity-conversation, API-key reveal, site-branding, authentication-layout, document-chunks, and dashboard URL-import behavior coverage. `bun run test:coverage` passes; Bun reports 91.64% lines and 87.04% functions for loaded sources. The honest source census reports 64 eligible sources absent from LCOV and exits nonzero as intended. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commits through `0eacf08e`): 1,097 isolated tests passed with 4,781 assertions after chunk-editor load/edit/save/validation/error handling and knowledge-base dialog boundary coverage. `bun run test:coverage` passes; Bun reports 91.64% lines and 86.98% functions for loaded sources. The honest source census reports 62 eligible sources absent from LCOV and exits nonzero as intended. Final 95% metrics and the zero-absent-source gate remain inactive.
+
+- Backend focused checkpoint (2026-07-20, commit `9b617b54`): five team-model quota endpoint tests cover unauthenticated, missing-team, non-member, member, superuser, empty, unlimited, rounding, exact-limit, and over-limit paths. The focused `team_models` report is 32% overall with zero partial branches; lines 618–689 are fully exercised. Focused Ruff check and format check pass. The latest whole-application backend checkpoint remains 60%, so final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
