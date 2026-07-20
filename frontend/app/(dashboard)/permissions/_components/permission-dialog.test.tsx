@@ -28,12 +28,12 @@ mock.module('@/lib/validation', () => ({
   formatValidationSummaryMessage: (_field: string, message: string) => message,
 }))
 mock.module('@/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogDescription: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogFooter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogHeader: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Dialog: ({ children }: { children: React.ReactNode }) => children,
+  DialogContent: ({ children }: { children: React.ReactNode }) => children,
+  DialogDescription: ({ children }: { children: React.ReactNode }) => children,
+  DialogFooter: ({ children }: { children: React.ReactNode }) => children,
+  DialogHeader: ({ children }: { children: React.ReactNode }) => children,
+  DialogTitle: ({ children }: { children: React.ReactNode }) => children,
 }))
 mock.module('@/components/ui/button', () => ({
   Button: (props: React.ComponentProps<'button'>) => <button {...props} />,
