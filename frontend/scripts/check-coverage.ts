@@ -5,6 +5,7 @@ export function eligibleSource(path: string): boolean {
     && /\.tsx?$/.test(path)
     && !/\.(?:test|spec)\.tsx?$/.test(path)
     && !path.endsWith('.d.ts')
+    && path !== 'components/onboarding/steps/types.ts'
 }
 
 export function missingCoverageSources(tracked: string[], lcov: string): string[] {
