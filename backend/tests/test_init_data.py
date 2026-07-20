@@ -97,3 +97,55 @@ async def test_sync_role_permissions_ignores_missing_and_keeps_idempotent_role(
 
     role_permissions.add.assert_not_awaited()
     role_permissions.remove.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_workflow_tables_skip_creation_when_workflows_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(1, ["workflows"])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_workflow_tables()
+
+    conn.execute_query.assert_awaited_once()
+    assert "information_schema.tables" in conn.execute_query.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_workflow_tables_create_all_tables_and_indexes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_workflow_tables()
+
+    queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert len(queries) == 5
+    assert "CREATE TABLE IF NOT EXISTS workflows" in queries[1]
+    assert "CREATE TABLE IF NOT EXISTS workflow_runs" in queries[2]
+    assert "CREATE TABLE IF NOT EXISTS node_executions" in queries[3]
+    assert "CREATE INDEX IF NOT EXISTS idx_workflows_team_id" in queries[4]
+    assert "CREATE INDEX IF NOT EXISTS idx_node_executions_status" in queries[4]
+
+
+@pytest.mark.asyncio
+async def test_workflow_tables_stop_after_database_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error = RuntimeError("cannot create workflow runs")
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[(0, []), (0, []), error])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot create workflow runs") as exc_info:
+        await init_data.init_workflow_tables()
+
+    assert exc_info.value is error
+    assert conn.execute_query.await_count == 3
+    assert (
+        "CREATE TABLE IF NOT EXISTS workflow_runs"
+        in (conn.execute_query.await_args_list[-1].args[0])
+    )
