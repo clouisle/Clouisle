@@ -260,6 +260,8 @@
 
 - Frontend progress checkpoint (2026-07-20, commit `12b00da5`): 947 isolated tests passed with 3,949 assertions after workflow tool-node builtin/custom/MCP states, preset/custom icons, descriptions, required-parameter completion, MCP tool-selection warning, empty state, and handle coverage. `bun run test:coverage` passes; Bun reports 90.93% lines and 86.10% functions for loaded sources. The honest source census reports 107 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
 
+- Frontend progress checkpoint (2026-07-20, commit `7ed10940`): 949 isolated tests passed with 3,956 assertions after workflow agent-node selected/configured and default/unselected states, custom/default labels, selected-agent name, and input/output-handle coverage. `bun run test:coverage` passes; Bun reports 90.96% lines and 86.13% functions for loaded sources. The honest source census reports 106 eligible sources absent from LCOV. Final 95% metrics and the zero-absent-source gate remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
