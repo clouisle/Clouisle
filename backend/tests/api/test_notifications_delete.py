@@ -47,7 +47,13 @@ def notification_client():
 
 
 def test_delete_notification_requires_authentication():
-    with TestClient(_app()) as client:
+    app = _app()
+
+    async def reject_unauthenticated():
+        raise BusinessError(status_code=403)
+
+    app.dependency_overrides[deps.get_current_user] = reject_unauthenticated
+    with TestClient(app) as client:
         response = client.delete(f"/api/v1/admin/notifications/{uuid4()}")
 
     assert response.status_code == 403
