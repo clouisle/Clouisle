@@ -361,6 +361,10 @@
 
 - Frontend progress checkpoint (2026-07-21, commits through `8d741523`): 1,395 isolated tests passed with 6,237 assertions after dashboard/platform code-tool and chat mutation/recovery coverage. Complete LCOV aggregation reports 72.61% functions (`5,087/7,006`) and 80.95% lines (`73,919/91,319`); all 470 eligible tracked sources appear in LCOV. The honest source census passes, but final 95% line/function/statement gates remain inactive because measured coverage is below target.
 
+- Backend progress checkpoint (2026-07-21, commits through `c074f6ed`): 2,392 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,272 statements with 11,298 missed and 11,640 branches with 1,454 partial, for 65% aggregate coverage after package-resource, public-agent, admin-tool, and admin-user endpoint expansion. The final independent 95% line and branch gates remain inactive.
+
+- Frontend progress checkpoint (2026-07-21, commits through `902d8545`): 1,421 isolated tests passed with 6,386 assertions after public-chat, workflow-editor, and chat-message expansion. Complete LCOV aggregation reports 73.71% functions (`5,257/7,132`) and 82.89% lines (`75,396/90,963`); all 470 eligible tracked sources appear in LCOV. Bun's loaded-source table reports 85.23% functions and 91.98% lines, but it is not used as the acceptance denominator. The honest source census passes, while final 95% line/function/statement gates remain inactive because measured coverage is below target.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
