@@ -353,6 +353,101 @@ def test_rechunk_uses_requested_settings_and_reports_partial_failure():
     )
 
 
+def test_rechunk_file_success_persists_progress_and_cleans_metadata():
+    document = make_document()
+    document.metadata["rechunk_settings"] = {}
+    created = [chunk("embedded", 8)]
+    vector_store = MagicMock()
+    vector_store.delete_document_vectors = AsyncMock(return_value=2)
+
+    async def store_chunks(_document, _chunks, *, kb_id, progress_callback):
+        assert kb_id == document.knowledge_base.id
+        await progress_callback(1, 0, 1)
+        return created
+
+    vector_store.store_chunks_with_progress = AsyncMock(side_effect=store_chunks)
+
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        patch(
+            f"{MODULE}.document_processor.extract_text",
+            new=AsyncMock(return_value=("text", {})),
+        ) as extract,
+        patch(f"{MODULE}.document_processor.delete_media_assets") as delete_assets,
+        patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
+        patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+    ):
+        result = rechunk_document_task.run(str(document.id))
+
+    assert result["status"] == "success"
+    assert document.status == DocumentStatus.COMPLETED.value
+    assert document.chunk_count == 1
+    assert document.token_count == 8
+    assert document.metadata == {"task_id": None, "rechunk_settings": {}}
+    extract.assert_awaited_once_with(
+        document.file_path,
+        document.doc_type,
+        clean_text=True,
+        kb_id=document.knowledge_base.id,
+        document_id=document.id,
+    )
+    delete_assets.assert_called_once_with(document.knowledge_base.id, document.id)
+    assert any(
+        call.kwargs == {"update_fields": ["metadata"]}
+        for call in document.save.await_args_list
+    )
+    notify.assert_awaited_once()
+
+
+def test_rechunk_dimension_failure_cleans_task_metadata():
+    document = make_document(source="url")
+    vector_store = MagicMock()
+    vector_store.delete_document_vectors = AsyncMock(return_value=2)
+    vector_store.store_chunks_with_progress = AsyncMock(
+        side_effect=DimensionMismatchError("wrong dimension")
+    )
+
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        patch(
+            f"{MODULE}.document_processor.fetch_url_content",
+            new=AsyncMock(return_value=("text", {})),
+        ),
+        patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
+        patch(f"{MODULE}._send_doc_failed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+    ):
+        result = rechunk_document_task.run(str(document.id))
+
+    assert result["error_type"] == "dimension_mismatch"
+    assert document.status == DocumentStatus.ERROR.value
+    assert document.metadata == {"task_id": None}
+    assert document.chunk_count == document.token_count == 0
+    notify.assert_awaited_once()
+
+
+def test_reprocess_storage_failure_does_not_persist_counter_reset():
+    document = make_document()
+    vector_store = MagicMock()
+    vector_store.delete_document_vectors = AsyncMock(
+        side_effect=RuntimeError("storage unavailable")
+    )
+
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        pytest.raises(RuntimeError, match="storage unavailable"),
+    ):
+        reprocess_document_task.run(str(document.id))
+
+    assert document.chunk_count == 2
+    assert document.token_count == 20
+    document.save.assert_not_awaited()
+    document.knowledge_base.save.assert_not_awaited()
+
+
 def test_embed_entrypoint_passes_celery_task_id():
     expected = {"status": "success"}
     with (
@@ -383,6 +478,91 @@ def test_retry_failed_chunks_succeeds_when_nothing_needs_retry():
     assert result["status"] == "success"
     assert result["retried_count"] == 0
     assert document.status == DocumentStatus.COMPLETED.value
+
+
+@pytest.mark.parametrize("provider_fails", [False, True])
+def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails):
+    document = make_document(status=DocumentStatus.ERROR.value)
+    failed_chunk = chunk("failed", 7)
+    completed_document = SimpleNamespace(chunk_count=2, token_count=20)
+    vector_store = MagicMock()
+    vector_store.add_chunk_vector = AsyncMock(
+        side_effect=RuntimeError("provider down") if provider_fails else None
+    )
+
+    def filter_chunks(**kwargs):
+        if kwargs.get("status") == "failed":
+            return Query(items=[failed_chunk])
+        if kwargs.get("status") == "embedded":
+            return Query(count=1)
+        return Query(count=2)
+
+    def filter_documents(**kwargs):
+        if "status" in kwargs:
+            return Query(items=[completed_document])
+        return Query(first=document)
+
+    with (
+        patch(f"{MODULE}.Document.filter", side_effect=filter_documents),
+        patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
+        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as indexed,
+        patch(f"{MODULE}._send_doc_failed_notification", new=AsyncMock()) as failed,
+        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+    ):
+        result = retry_failed_chunks_task.run(str(document.id))
+
+    assert result["status"] == ("error" if provider_fails else "success")
+    assert document.status == (
+        DocumentStatus.ERROR.value if provider_fails else DocumentStatus.COMPLETED.value
+    )
+    assert document.metadata == {"task_id": None}
+    if provider_fails:
+        assert failed_chunk.status == "failed"
+        assert failed_chunk.error_message == "provider down"
+        failed.assert_awaited_once()
+        indexed.assert_not_awaited()
+    else:
+        assert failed_chunk.status == "embedded"
+        assert failed_chunk.error_message is None
+        assert document.knowledge_base.total_chunks == 2
+        assert document.knowledge_base.total_tokens == 20
+        indexed.assert_awaited_once()
+        failed.assert_not_awaited()
+
+
+def test_retry_failed_chunks_handles_progress_persistence_failure():
+    document = make_document(status=DocumentStatus.ERROR.value)
+    failed_chunk = chunk("failed")
+    vector_store = MagicMock()
+    vector_store.add_chunk_vector = AsyncMock()
+
+    async def save(**kwargs):
+        if kwargs == {"update_fields": ["metadata"]}:
+            raise RuntimeError("database unavailable")
+
+    document.save = AsyncMock(side_effect=save)
+
+    def filter_chunks(**kwargs):
+        if kwargs.get("status") == "failed":
+            return Query(items=[failed_chunk])
+        if kwargs.get("status") == "embedded":
+            return Query(count=0)
+        return Query(count=1)
+
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
+        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+    ):
+        result = retry_failed_chunks_task.run(str(document.id))
+
+    assert result["status"] == "error"
+    assert result["message"] == "document_processing_failed_generic"
+    assert document.status == DocumentStatus.ERROR.value
+    assert document.metadata == {"task_id": None}
+    assert document.save.await_count == 3
 
 
 def test_retry_one_chunk_rejects_missing_or_cross_document_chunk():
@@ -417,6 +597,51 @@ def test_retry_one_chunk_rejects_non_failed_chunk():
 
     assert result["status"] == "error"
     assert result["message"] == "chunk_not_failed"
+
+
+@pytest.mark.parametrize("remaining_failed", [0, 1])
+def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
+    document = make_document(status=DocumentStatus.ERROR.value)
+    failed_chunk = chunk("failed")
+    other_failed = chunk("failed")
+    vector_store = MagicMock()
+    vector_store.add_chunk_vector = AsyncMock()
+
+    def filter_chunks(**kwargs):
+        if "id" in kwargs:
+            return Query(first=failed_chunk)
+        if kwargs.get("status") == "failed":
+            return Query(first=other_failed, count=remaining_failed)
+        return Query(count=2)
+
+    def filter_documents(**kwargs):
+        if "status" in kwargs:
+            return Query(values=[{"sum_chunks": 4, "sum_tokens": 40}])
+        return Query(first=document)
+
+    with (
+        patch(f"{MODULE}.Document.filter", side_effect=filter_documents),
+        patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
+        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+    ):
+        result = retry_failed_chunk_task.run(str(document.id), str(failed_chunk.id))
+
+    assert result["status"] == ("partial_success" if remaining_failed else "success")
+    assert failed_chunk.status == "embedded"
+    assert failed_chunk.error_message is None
+    assert document.metadata == {"task_id": None}
+    if remaining_failed:
+        assert document.status == DocumentStatus.ERROR.value
+        assert result["remaining_failed"] == 1
+        assert document.error_message == "chunks_still_failed_after_retry"
+        notify.assert_not_awaited()
+    else:
+        assert document.status == DocumentStatus.COMPLETED.value
+        assert document.knowledge_base.total_chunks == 4
+        assert document.knowledge_base.total_tokens == 40
+        notify.assert_awaited_once()
 
 
 def test_retry_one_chunk_failure_restores_error_state():
