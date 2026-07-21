@@ -415,6 +415,8 @@
 
 - Backend focused checkpoint (2026-07-21, commit `80cb7ca8`): ten platform workflow endpoint tests pass. The branch-aware `workflows.py` report reaches 28% coverage (`157/468` statements; 12 partial branches), including duplicate-name rejection before persistence, existing publish-snapshot reuse, and webhook permission denial before mutation. This focused result does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
 
+- Frontend focused checkpoint (2026-07-21, commit `3c9c525b`): four Sub-workflow node configuration tests pass, reaching 78.05% functions and 95.52% lines. Loading, selection, constant/variable mappings, output-name validation, list/detail recovery, compatible mapping preservation, and stale-definition clearing are covered; the Agent UI automation guide is synchronized without claiming browser/E2E proof. This focused result does not replace the complete frontend checkpoint; final 95% gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
