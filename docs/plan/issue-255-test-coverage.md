@@ -405,6 +405,8 @@
 
 - Backend focused checkpoint (2026-07-21, commit `b8a88c94`): 65 direct chat tests passed. The branch-aware `chat.py` report reaches 33% coverage (`653/1,802` statements; 58 partial branches) after consuming regeneration SSE streams for success, version activation, usage/stat accounting, memory extraction, provider failure, idle timeout, rollback, and failed-version deletion. This focused report does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
 
+- Backend progress checkpoint (2026-07-21, commits through `b8a88c94`): 2,741 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 8,658 missed and 11,640 branches with 1,590 partial, for 73% aggregate coverage after chat regeneration-stream coverage. Final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
