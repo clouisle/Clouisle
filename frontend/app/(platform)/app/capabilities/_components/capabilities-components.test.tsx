@@ -312,4 +312,48 @@ describe('platform capability component smoke coverage', () => {
     expect(html).toContain('limit')
     expect(html).toContain('runTest')
   })
+
+  test('runs tool tests with typed parameters and validation recovery', async () => {
+    toolsApi.test
+      .mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { query: 'required' } }))
+      .mockResolvedValueOnce({ success: true, result: { ok: true }, duration_ms: 25, logs: ['done'] })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(
+        <ToolTestPanel
+          tool={{
+            ...baseTool,
+            parameters: [
+              { name: 'query', type: 'string', required: true, description: 'Search query' },
+              { name: 'limit', type: 'integer', required: false, default: 5 },
+              { name: 'enabled', type: 'boolean', required: false },
+              { name: 'tags', type: 'array', required: false },
+              { name: 'payload', type: 'object', required: false },
+            ],
+          } as never}
+          open
+          onOpenChange={() => undefined}
+          api={toolsApi as never}
+          teamId="team-1"
+        />
+      )
+    })
+    renderers.push(renderer!)
+
+    await act(async () => renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('runTest'))!.props.onClick())
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('required')
+
+    act(() => renderer!.root.findByProps({ id: 'query' }).props.onChange({ target: { value: 'cats' } }))
+    act(() => renderer!.root.findByProps({ id: 'limit' }).props.onChange({ target: { value: '3' } }))
+    act(() => renderer!.root.findByProps({ id: 'tags' }).props.onChange({ target: { value: '["a"]' } }))
+    act(() => renderer!.root.findByProps({ id: 'payload' }).props.onChange({ target: { value: '{"x":1}' } }))
+    act(() => renderer!.root.findAll((node) => node.props.onValueChange && node.props.value === '__empty__')[0].props.onValueChange('true'))
+    await act(async () => renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('runTest'))!.props.onClick())
+
+    expect(toolsApi.test).toHaveBeenLastCalledWith({
+      name: 'web_search',
+      arguments: { query: 'cats', limit: 3, enabled: true, tags: ['a'], payload: { x: 1 } },
+    }, 'team-1')
+    expect(nodeText(renderer!.toJSON())).toContain('done')
+  })
 })
