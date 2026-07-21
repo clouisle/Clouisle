@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const codeToHtml = mock(async (code: string, options: { theme: string }) =>
   `<pre data-theme="${options.theme}">${code}</pre>`,
@@ -24,24 +25,67 @@ mock.module('motion/react', () => ({
   }),
 }))
 
+let streamdownComponents: Record<string, unknown> | undefined
+mock.module('streamdown', () => ({
+  Streamdown: ({ children, components, className }: { children?: React.ReactNode, components?: Record<string, unknown>, className?: string }) => {
+    streamdownComponents = components
+    return createElement('div', { className }, children)
+  },
+}))
+
 let ChainOfThought: typeof import('./chain-of-thought').ChainOfThought
 let ChainOfThoughtContent: typeof import('./chain-of-thought').ChainOfThoughtContent
 let ChainOfThoughtHeader: typeof import('./chain-of-thought').ChainOfThoughtHeader
 let highlightCode: typeof import('./code-block').highlightCode
 let Message: typeof import('./message').Message
+let MessageAction: typeof import('./message').MessageAction
 let MessageAttachment: typeof import('./message').MessageAttachment
+let MessageBranch: typeof import('./message').MessageBranch
+let MessageBranchContent: typeof import('./message').MessageBranchContent
+let MessageBranchNext: typeof import('./message').MessageBranchNext
+let MessageBranchPage: typeof import('./message').MessageBranchPage
+let MessageBranchPrevious: typeof import('./message').MessageBranchPrevious
+let MessageBranchSelector: typeof import('./message').MessageBranchSelector
+let MessageContent: typeof import('./message').MessageContent
+let MessageResponse: typeof import('./message').MessageResponse
 let Shimmer: typeof import('./shimmer').Shimmer
 let Tool: typeof import('./tool').Tool
 let ToolContent: typeof import('./tool').ToolContent
 let ToolHeader: typeof import('./tool').ToolHeader
 let ToolOutput: typeof import('./tool').ToolOutput
 
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+const renderers: ReactTestRenderer[] = []
+
+function render(element: React.ReactNode) {
+  let renderer: ReactTestRenderer
+  act(() => { renderer = create(element) })
+  renderers.push(renderer!)
+  return renderer!
+}
+
 beforeAll(async () => {
   ({ ChainOfThought, ChainOfThoughtContent, ChainOfThoughtHeader } = await import('./chain-of-thought'));
   ({ highlightCode } = await import('./code-block'));
-  ({ Message, MessageAttachment } = await import('./message'));
+  ({
+    Message,
+    MessageAction,
+    MessageAttachment,
+    MessageBranch,
+    MessageBranchContent,
+    MessageBranchNext,
+    MessageBranchPage,
+    MessageBranchPrevious,
+    MessageBranchSelector,
+    MessageContent,
+    MessageResponse,
+  } = await import('./message'));
   ({ Shimmer } = await import('./shimmer'));
   ({ Tool, ToolContent, ToolHeader, ToolOutput } = await import('./tool'));
+})
+
+afterEach(() => {
+  for (const renderer of renderers.splice(0)) act(() => renderer.unmount())
 })
 
 describe('ai elements', () => {
@@ -121,6 +165,57 @@ describe('ai elements', () => {
     expect(errorOutput).toContain('connection failed')
     expect(elementOutput).toContain('<strong>ready</strong>')
     expect(renderToStaticMarkup(<ToolOutput output={undefined} errorText={undefined} />)).toBe('')
+  })
+
+  test('switches message branches with accessible controls', () => {
+    const changes = mock(() => {})
+    const renderer = render(
+      <MessageBranch onBranchChange={changes}>
+        <MessageBranchContent>
+          <span key="first">First answer</span>
+          <span key="second">Second answer</span>
+        </MessageBranchContent>
+        <MessageBranchSelector>
+          <MessageBranchPrevious />
+          <MessageBranchPage />
+          <MessageBranchNext />
+        </MessageBranchSelector>
+      </MessageBranch>,
+    )
+
+    const buttons = renderer.root.findAllByType('button')
+    expect(buttons.map(button => button.props['aria-label'])).toEqual([
+      'Previous branch',
+      'Next branch',
+    ])
+    expect(renderer.root.findByProps({ 'data-slot': 'button-group-text' }).children).toEqual(['1', ' of ', '2'])
+
+    act(() => buttons[1].props.onClick())
+    expect(renderer.root.findByProps({ 'data-slot': 'button-group-text' }).children).toEqual(['2', ' of ', '2'])
+    expect(changes).toHaveBeenLastCalledWith(1)
+
+    act(() => renderer.root.findAllByType('button')[1].props.onClick())
+    expect(changes).toHaveBeenLastCalledWith(0)
+    act(() => renderer.root.findAllByType('button')[0].props.onClick())
+    expect(changes).toHaveBeenLastCalledWith(1)
+  })
+
+  test('renders message content, actions, and markdown paragraph variants', () => {
+    streamdownComponents = undefined
+    const content = renderToStaticMarkup(<MessageContent className="custom">answer</MessageContent>)
+    const action = renderToStaticMarkup(<MessageAction label="Copy">copy</MessageAction>)
+    const tooltip = renderToStaticMarkup(<MessageAction tooltip="Retry">retry</MessageAction>)
+    const response = renderToStaticMarkup(createElement(MessageResponse, null, 'answer'))
+    const paragraph = streamdownComponents?.p as ((props: Record<string, unknown>) => React.ReactElement) | undefined
+
+    expect(content).toContain('custom')
+    expect(action).toContain('Copy')
+    expect(tooltip).toContain('Retry')
+    expect(response).toContain('answer')
+    expect(paragraph).toBeDefined()
+    expect(paragraph!({ children: 'plain' }).type).toBe('p')
+    expect(paragraph!({ children: <img alt="preview" />, node: { children: [] } }).type).toBe('div')
+    expect(paragraph!({ children: 'preview', node: { children: [{ tagName: 'img' }] } }).type).toBe('div')
   })
 
   test('distinguishes user messages and attachment media types', () => {
