@@ -9,6 +9,7 @@ const downloadDocument = mock()
 const push = mock()
 const toastSuccess = mock()
 const toastError = mock()
+const open = mock()
 let permissions = new Set<string>()
 
 mock.module('next-intl', () => ({
@@ -41,8 +42,13 @@ const ui = {
 for (const path of [
   '@/components/ui/button', '@/components/ui/input', '@/components/ui/badge',
   '@/components/ui/checkbox', '@/components/ui/table', '@/components/ui/select',
-  '@/components/ui/dropdown-menu', '@/components/ui/tooltip',
+  '@/components/ui/dropdown-menu',
 ]) mock.module(path, () => ui)
+mock.module('@/components/ui/tooltip', () => ({
+  ...ui,
+  TooltipTrigger: ({ render, children, ...props }: { render?: ReactElement; children?: ReactNode }) =>
+    render ? { ...render, props: { ...render.props, ...props } } : { type: 'tooltip-trigger', props: { ...props, children } },
+}))
 mock.module('@/components/ui/alert-dialog', () => ({
   ...ui,
   AlertDialog: ({ open, children }: { open: boolean; children?: ReactNode }) => open ? children : null,
@@ -117,7 +123,8 @@ beforeEach(() => {
   effects = []
   permissions = new Set()
   for (const fn of [getDocuments, deleteDocument, processDocument, retryFailedChunks, downloadDocument,
-    push, toastSuccess, toastError, onRefresh]) fn.mockReset()
+    push, toastSuccess, toastError, open, onRefresh]) fn.mockReset()
+  Object.assign(globalThis, { window: { open } })
   getDocuments.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 })
 })
 
@@ -140,10 +147,17 @@ async function flush() {
   return tree
 }
 
+function resolve(node: ReactNode): ReactNode {
+  if (!node || typeof node !== 'object' || !('type' in node)) return node
+  const element = node as ReactElement<Record<string, unknown>>
+  return typeof element.type === 'function' ? resolve(element.type(element.props)) : element
+}
+
 function elements(node: ReactNode): ReactElement[] {
   if (Array.isArray(node)) return node.flatMap(elements)
-  if (!node || typeof node !== 'object' || !('props' in node)) return []
-  const element = node as ReactElement<{ children?: ReactNode }>
+  const resolved = resolve(node)
+  if (!resolved || typeof resolved !== 'object' || !('props' in resolved)) return []
+  const element = resolved as ReactElement<{ children?: ReactNode }>
   return [element, ...elements(element.props.children)]
 }
 
@@ -229,5 +243,70 @@ describe('DocumentsTable', () => {
     expect(deleteDocument).toHaveBeenCalledWith('kb-1', 'doc-1')
     expect(toastSuccess).toHaveBeenCalledWith('documentDeleted')
     expect(onRefresh).toHaveBeenCalledTimes(1)
+  })
+
+  test('filters, paginates, retries, opens URL sources, and runs bulk actions', async () => {
+    permissions = new Set(['kb:update', 'kb:delete'])
+    const pending = { ...baseDocument, id: 'doc-pending', name: 'Todo.txt', doc_type: 'txt', status: 'pending', file_path: null, file_size: null }
+    const failed = { ...baseDocument, id: 'doc-error', name: 'Broken URL', doc_type: 'url', status: 'error', file_path: null, source_url: 'https://example.test/source', error_message: 'bad chunks' }
+    getDocuments.mockResolvedValue({ items: [pending, failed], total: 25, page: 1, page_size: 10 })
+    processDocument.mockResolvedValue({})
+    retryFailedChunks.mockResolvedValue({})
+    deleteDocument.mockResolvedValue({})
+
+    let tree = await flush()
+
+    elements(tree).find(item => item.type === 'input')!.props.onChange({ target: { value: 'broken' } })
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ search: 'broken' }))
+
+    const filters = elements(tree).filter(item => item.type === 'faceted-filter')
+    filters[0].props.onSelectionChange(new Set(['error']))
+    filters[1].props.onSelectionChange(new Set(['url']))
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ status: ['error'], doc_type: ['url'] }))
+
+    find(tree, 'button', 'reset').props.onClick()
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ page: 1, pageSize: 10 }))
+
+    find(tree, 'select').props.onValueChange('20')
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ pageSize: 20 }))
+
+    elements(tree).filter(item => item.type === 'button' && item.props.className === 'h-8 w-8')[2].props.onClick()
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ page: 2 }))
+
+    find(tree, 'dropdown-item', 'retryFailedChunks').props.onClick()
+    expect(retryFailedChunks).toHaveBeenCalledWith('kb-1', 'doc-error')
+    find(tree, 'dropdown-item', 'viewSourceUrl').props.onClick()
+    expect(open).toHaveBeenCalledWith('https://example.test/source', '_blank')
+    find(tree, 'dropdown-item', 'reprocess').props.onClick()
+    expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1/documents/preview?docs=doc-error')
+
+    find(tree, 'checkbox').props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('documentsSelected')
+    await elements(tree).find(item => item.type === 'button' && String(item.props.className).includes('text-primary'))!.props.onClick()
+    expect(processDocument).toHaveBeenCalledWith('kb-1', 'doc-pending')
+
+    tree = render()
+    find(tree, 'checkbox').props.onCheckedChange()
+    tree = render()
+    let destructiveBulkButtons = elements(tree).filter(item => item.type === 'button' && String(item.props.className).includes('h-8 w-8 text-destructive'))
+    await destructiveBulkButtons[0].props.onClick()
+    expect(retryFailedChunks).toHaveBeenCalledWith('kb-1', 'doc-error')
+
+    tree = render()
+    find(tree, 'checkbox').props.onCheckedChange()
+    tree = render()
+    destructiveBulkButtons = elements(tree).filter(item => item.type === 'button' && String(item.props.className).includes('h-8 w-8 text-destructive'))
+    destructiveBulkButtons[1].props.onClick()
+    tree = render()
+    expect(text(tree)).toContain('confirmBulkDocumentsDelete:2')
+    await find(tree, 'alert-action', 'delete').props.onClick()
+    expect(deleteDocument).toHaveBeenCalledWith('kb-1', 'doc-pending')
+    expect(deleteDocument).toHaveBeenCalledWith('kb-1', 'doc-error')
   })
 })
