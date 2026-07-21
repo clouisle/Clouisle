@@ -544,3 +544,49 @@ async def test_agent_visibility_normalization_propagates_failure(
 
     with pytest.raises(RuntimeError, match="cannot normalize"):
         await init_data.init_agent_visibility_values()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing", "expected_calls"),
+    [
+        (["clouisle_import_sessions"], 3),
+        ([], 5),
+    ],
+)
+async def test_clouisle_import_sessions_ensures_existing_or_creates_table(
+    monkeypatch: pytest.MonkeyPatch,
+    existing: list[str],
+    expected_calls: int,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(return_value=(len(existing), existing))
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_clouisle_import_sessions_table()
+
+    assert conn.execute_query.await_count == expected_calls
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    if existing:
+        assert "ADD COLUMN IF NOT EXISTS source" in statements[1]
+        assert "idx_clouisle_import_sessions_source_status" in statements[2]
+    else:
+        assert "CREATE TABLE IF NOT EXISTS clouisle_import_sessions" in statements[1]
+        assert "idx_clouisle_import_sessions_team_status" in statements[2]
+        assert "idx_clouisle_import_sessions_source_status" in statements[3]
+        assert "idx_clouisle_import_sessions_expires_at" in statements[4]
+
+
+@pytest.mark.asyncio
+async def test_clouisle_import_sessions_stops_after_schema_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("cannot create import table")
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=[(0, []), failure]))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot create import table"):
+        await init_data.init_clouisle_import_sessions_table()
+
+    assert conn.execute_query.await_count == 2
