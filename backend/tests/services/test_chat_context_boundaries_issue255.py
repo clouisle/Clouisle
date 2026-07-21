@@ -106,6 +106,42 @@ def test_file_content_trimming_and_tool_turn_summary_boundaries():
     )
 
 
+@pytest.mark.parametrize(
+    ("stored_content", "expected"),
+    [
+        ("plain text", "plain text"),
+        ('["not", "an", "object"]', '["not", "an", "object"]'),
+        (
+            '{"kind":"media.image","images":[{},{}],"model":"image-v1"}',
+            "Image generation succeeded. Generated 2 images using model image-v1.",
+        ),
+        (
+            '{"kind":"media.image","error":"quota exceeded"}',
+            "Image generation failed: quota exceeded",
+        ),
+        (
+            '{"kind":"media.video","status":"processing","task_id":"task-1"}',
+            "Video generation started. Task task-1 is processing.",
+        ),
+        (
+            '{"kind":"media.video","status":"failed"}',
+            "Video generation failed: unknown error",
+        ),
+        (
+            '{"kind":"media.video","status":"completed","model":"video-v1"}',
+            "Video generation succeeded using model video-v1.",
+        ),
+        (
+            '{"result":{"type":"skill_instructions","status":"loaded",'
+            '"skill":{"display_name":"Reports"}}}',
+            "Skill instructions for Reports were loaded.",
+        ),
+    ],
+)
+def test_tool_result_summaries_cover_structured_payloads(stored_content, expected):
+    assert chat_context.summarize_tool_result_for_llm(None, stored_content) == expected
+
+
 def test_macro_compaction_summarizes_only_unprotected_old_turns(monkeypatch):
     monkeypatch.setattr(
         chat_context,
