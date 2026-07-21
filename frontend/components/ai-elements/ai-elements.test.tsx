@@ -39,7 +39,9 @@ let ChainOfThoughtHeader: typeof import('./chain-of-thought').ChainOfThoughtHead
 let highlightCode: typeof import('./code-block').highlightCode
 let Message: typeof import('./message').Message
 let MessageAction: typeof import('./message').MessageAction
+let MessageActions: typeof import('./message').MessageActions
 let MessageAttachment: typeof import('./message').MessageAttachment
+let MessageAttachments: typeof import('./message').MessageAttachments
 let MessageBranch: typeof import('./message').MessageBranch
 let MessageBranchContent: typeof import('./message').MessageBranchContent
 let MessageBranchNext: typeof import('./message').MessageBranchNext
@@ -48,6 +50,7 @@ let MessageBranchPrevious: typeof import('./message').MessageBranchPrevious
 let MessageBranchSelector: typeof import('./message').MessageBranchSelector
 let MessageContent: typeof import('./message').MessageContent
 let MessageResponse: typeof import('./message').MessageResponse
+let MessageToolbar: typeof import('./message').MessageToolbar
 let Shimmer: typeof import('./shimmer').Shimmer
 let Tool: typeof import('./tool').Tool
 let ToolContent: typeof import('./tool').ToolContent
@@ -70,7 +73,9 @@ beforeAll(async () => {
   ({
     Message,
     MessageAction,
+    MessageActions,
     MessageAttachment,
+    MessageAttachments,
     MessageBranch,
     MessageBranchContent,
     MessageBranchNext,
@@ -79,6 +84,7 @@ beforeAll(async () => {
     MessageBranchSelector,
     MessageContent,
     MessageResponse,
+    MessageToolbar,
   } = await import('./message'));
   ({ Shimmer } = await import('./shimmer'));
   ({ Tool, ToolContent, ToolHeader, ToolOutput } = await import('./tool'));
@@ -216,6 +222,34 @@ describe('ai elements', () => {
     expect(paragraph!({ children: 'plain' }).type).toBe('p')
     expect(paragraph!({ children: <img alt="preview" />, node: { children: [] } }).type).toBe('div')
     expect(paragraph!({ children: 'preview', node: { children: [{ tagName: 'img' }] } }).type).toBe('div')
+  })
+
+  test('hides single-branch selector and wires message chrome callbacks', () => {
+    const removeImage = mock(() => {})
+    const removeDocument = mock(() => {})
+    const single = render(
+      <MessageBranch>
+        <MessageBranchContent><span key="only">Only answer</span></MessageBranchContent>
+        <MessageBranchSelector data-testid="selector"><MessageBranchPage /></MessageBranchSelector>
+      </MessageBranch>,
+    )
+    const image = MessageAttachment({ data: { filename: 'photo.png', mediaType: 'image/png', url: '/photo.png' } as never, onRemove: removeImage })
+    const document = MessageAttachment({ data: { filename: 'notes.pdf', mediaType: 'application/pdf', url: '/notes.pdf' } as never, onRemove: removeDocument })
+    const toolbar = renderToStaticMarkup(<MessageToolbar className="compact">tools</MessageToolbar>)
+    const actions = renderToStaticMarkup(<MessageActions className="stacked">copy</MessageActions>)
+
+    expect(single.root.findAllByProps({ 'data-slot': 'button-group' })).toHaveLength(0)
+    image.props.children[1].props.onClick({ stopPropagation: mock(() => {}) })
+    document.props.children[0].props.render.props.children[2].props.onClick({ preventDefault: mock(() => {}), stopPropagation: mock(() => {}) })
+    expect(removeImage).toHaveBeenCalledTimes(1)
+    expect(removeDocument).toHaveBeenCalledTimes(1)
+    expect(toolbar).toContain('compact')
+    expect(actions).toContain('stacked')
+
+    expect(renderToStaticMarkup(<MessageAttachments>{null}</MessageAttachments>)).toBe('')
+    const wrapped = renderToStaticMarkup(<MessageAttachments className="wrap"><span>file</span></MessageAttachments>)
+    expect(wrapped).toContain('wrap')
+    expect(wrapped).toContain('file')
   })
 
   test('distinguishes user messages and attachment media types', () => {
