@@ -413,6 +413,8 @@
 
 - Backend focused checkpoint (2026-07-21, commit `0c7f2aeb`): five knowledge-base permission tests pass. The branch-aware `knowledge_bases.py` report reaches 15% coverage (`138/742` statements; six partial branches) after admin stats authorization, authorized missing-document 404 behavior, and stats recalculation/persistence coverage. This focused result does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
 
+- Backend focused checkpoint (2026-07-21, commit `80cb7ca8`): ten platform workflow endpoint tests pass. The branch-aware `workflows.py` report reaches 28% coverage (`157/468` statements; 12 partial branches), including duplicate-name rejection before persistence, existing publish-snapshot reuse, and webhook permission denial before mutation. This focused result does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
