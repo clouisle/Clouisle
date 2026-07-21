@@ -941,3 +941,160 @@ async def test_message_branch_parent_migration_propagates_failure(
 
     with pytest.raises(RuntimeError, match="cannot add branch parent"):
         await init_data.init_message_branch_parent_field()
+
+
+@pytest.mark.asyncio
+async def test_agent_user_input_request_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    helper = AsyncMock(return_value=(0, []))
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", helper)
+
+    for tables, columns, expected_calls in [
+        ([], [], 0),
+        (["agents"], ["enable_user_input_request"], 0),
+        (["agents"], [], 1),
+    ]:
+        conn = SimpleNamespace(
+            execute_query=AsyncMock(
+                side_effect=[(len(tables), tables), (len(columns), columns)]
+            )
+        )
+        monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+        helper.reset_mock()
+
+        await init_data.init_agent_user_input_request()
+
+        assert helper.await_count == expected_calls
+
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[(1, ["agents"]), (0, [])])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    helper.side_effect = RuntimeError("cannot add user input flag")
+    with pytest.raises(RuntimeError, match="cannot add user input flag"):
+        await init_data.init_agent_user_input_request()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing", "expected_calls"),
+    [
+        (["sso_providers"], 1),
+        ([], 8),
+    ],
+)
+async def test_sso_tables_skip_existing_or_create_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    existing: list[str],
+    expected_calls: int,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(return_value=(len(existing), existing))
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_sso_tables()
+
+    assert conn.execute_query.await_count == expected_calls
+    if not existing:
+        statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+        assert "CREATE TABLE IF NOT EXISTS sso_providers" in statements[1]
+        assert "CREATE TABLE IF NOT EXISTS user_sso_connections" in statements[2]
+        assert "CREATE TABLE IF NOT EXISTS sso_sessions" in statements[3]
+        assert "idx_sso_sessions_expires_at" in statements[7]
+
+
+@pytest.mark.asyncio
+async def test_sso_tables_propagate_creation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(0, []), RuntimeError("cannot create sso")]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot create sso"):
+        await init_data.init_sso_tables()
+
+
+@pytest.mark.asyncio
+async def test_storage_settings_migrate_only_legacy_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.models.site_setting import SiteSetting
+
+    legacy = SimpleNamespace(category="audit", save=AsyncMock())
+    current = SimpleNamespace(category="storage", save=AsyncMock())
+    settings = {
+        "audit_log_retention_days": legacy,
+        "audit_log_archive_path": current,
+    }
+
+    def filter_setting(*, key: str) -> SimpleNamespace:
+        return SimpleNamespace(first=AsyncMock(return_value=settings[key]))
+
+    monkeypatch.setattr(SiteSetting, "filter", filter_setting)
+
+    await init_data.migrate_storage_settings_category()
+
+    assert legacy.category == "storage"
+    legacy.save.assert_awaited_once_with()
+    current.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_memory_tables_existing_schema_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for column_info, expected_calls in [
+        ([], 2),
+        ([{"data_type": "character varying"}], 2),
+        ([{"data_type": "uuid"}], 3),
+    ]:
+        conn = SimpleNamespace(
+            execute_query=AsyncMock(
+                side_effect=[
+                    (1, ["memory_entities"]),
+                    (len(column_info), column_info),
+                    (0, []),
+                ]
+            )
+        )
+        monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+        await init_data.init_memory_tables()
+
+        assert conn.execute_query.await_count == expected_calls
+        if expected_calls == 3:
+            assert (
+                "ALTER COLUMN embedding_model_id TYPE VARCHAR"
+                in conn.execute_query.await_args.args[0]
+            )
+
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(1, ["memory_entities"]), RuntimeError("cannot inspect")]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_memory_tables()
+
+
+@pytest.mark.asyncio
+async def test_memory_tables_create_entities_relations_and_indexes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_memory_tables()
+
+    assert conn.execute_query.await_count == 8
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert "CREATE TABLE IF NOT EXISTS memory_entities" in statements[1]
+    assert "idx_memory_entities_user_name" in statements[3]
+    assert "CREATE TABLE IF NOT EXISTS memory_relations" in statements[4]
+    assert "idx_memory_relations_user_type" in statements[7]
