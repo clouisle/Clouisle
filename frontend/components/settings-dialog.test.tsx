@@ -22,6 +22,7 @@ const updateProfile = mock(() => Promise.resolve({}))
 const changePassword = mock(() => Promise.resolve())
 const deleteAccount = mock(() => Promise.resolve())
 const sendVerification = mock(() => Promise.resolve())
+const infoToast = mock<(message: string) => void>()
 const successToast = mock<(message: string) => void>()
 const warningToast = mock<(message: string) => void>()
 const inputHandlers = new Map<string, React.ChangeEventHandler<HTMLInputElement> | undefined>()
@@ -53,7 +54,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
-mock.module('sonner', () => ({ toast: { info: mock(), success: successToast, warning: warningToast } }))
+mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, warning: warningToast } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
   AlertCircle: Icon, Clock: Icon, Copy: Icon, Download: Icon, KeyRound: Icon, Link: Icon,
@@ -160,7 +161,7 @@ beforeEach(() => {
   getCurrentUser.mockReset()
   getCurrentUser.mockImplementation(() => Promise.resolve(user))
   inputHandlers.clear()
-  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, successToast, warningToast, push]) fn.mockClear()
+  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, infoToast, successToast, warningToast, push]) fn.mockClear()
   localStorage.setItem('access_token', 'token')
 })
 
@@ -182,6 +183,38 @@ describe('SettingsDialog', () => {
     expect((container.querySelector('#username') as HTMLInputElement).value).toBe('alice')
     expect((container.querySelector('#email') as HTMLInputElement).value).toBe('alice@example.com')
     expect(container.textContent).not.toContain('connectedAccounts')
+  })
+
+  test('validates, skips unchanged, and saves changed profile fields', async () => {
+    await render()
+
+    await enterById('email', 'invalid')
+    await click('saveChanges')
+    expect(updateProfile).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('invalidEmail')
+
+    await enterById('email', 'alice@example.com')
+    await click('saveChanges')
+    expect(infoToast).toHaveBeenCalledWith('noChanges')
+
+    const updatedUser = { ...user, username: 'alice-updated' }
+    updateProfile.mockResolvedValueOnce(updatedUser)
+    await enterById('username', 'alice-updated')
+    await click('saveChanges')
+
+    expect(updateProfile).toHaveBeenCalledWith({ username: 'alice-updated' }, { silent: true })
+    expect(successToast).toHaveBeenCalledWith('profileUpdated')
+  })
+
+  test('requires verified email input before saving an email change', async () => {
+    siteSettings.email_verification = true
+    await render()
+    await enterById('email', 'updated@example.com')
+
+    await click('saveChanges')
+
+    expect(updateProfile).not.toHaveBeenCalled()
+    expect(warningToast).toHaveBeenCalledWith('emailVerificationRequired')
   })
 
   test('switches to account options appropriate for an SSO user and site policy', async () => {
