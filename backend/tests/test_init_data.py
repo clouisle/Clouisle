@@ -1213,3 +1213,128 @@ async def test_additional_column_migrations_propagate_failure(
 
     with pytest.raises(RuntimeError, match="cannot add field"):
         await migration()
+
+
+@pytest.mark.asyncio
+async def test_password_expiration_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_password_expiration()
+    conn.execute_query.assert_awaited_once()
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.side_effect = [
+        (1, ["users"]),
+        (0, []),
+        (0, []),
+        (0, []),
+        (0, []),
+        (0, []),
+        (0, []),
+    ]
+    await init_data.init_password_expiration()
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert len(statements) == 7
+    assert "ADD COLUMN password_changed_at" in statements[2]
+    assert "SET password_changed_at = created_at" in statements[3]
+    assert "CREATE TABLE IF NOT EXISTS password_history" in statements[5]
+    assert "idx_password_history_user_id" in statements[6]
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.side_effect = [
+        (1, ["users"]),
+        (1, ["password_changed_at"]),
+        (1, ["password_history"]),
+    ]
+    await init_data.init_password_expiration()
+    assert conn.execute_query.await_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_index", [2, 4])
+async def test_password_expiration_migration_propagates_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_index: int,
+) -> None:
+    results: list[object] = [
+        (1, ["users"]),
+        (0, []),
+        (0, []),
+        (0, []),
+        (0, []),
+    ]
+    results[failure_index] = RuntimeError("password migration failed")
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=results))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="password migration failed"):
+        await init_data.init_password_expiration()
+
+
+@pytest.mark.asyncio
+async def test_chunk_status_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_chunk_status()
+    conn.execute_query.assert_awaited_once()
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.side_effect = [
+        (1, ["document_chunks"]),
+        (0, []),
+        (0, []),
+        (0, []),
+        (0, []),
+        (0, []),
+    ]
+    await init_data.init_chunk_status()
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert len(statements) == 6
+    assert "ADD COLUMN IF NOT EXISTS status" in statements[2]
+    assert "ALTER COLUMN status SET DEFAULT 'pending'" in statements[3]
+    assert "ADD COLUMN IF NOT EXISTS error_message" in statements[5]
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.side_effect = [
+        (1, ["document_chunks"]),
+        (1, ["status"]),
+        (1, ["error_message"]),
+    ]
+    await init_data.init_chunk_status()
+    assert conn.execute_query.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_embed_config_migration_handles_missing_existing_and_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                (0, []),
+                (1, ["workflows"]),
+                (1, ["embed_config"]),
+            ]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_embed_config()
+    assert conn.execute_query.await_count == 3
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.side_effect = [
+        (1, ["agents"]),
+        (0, []),
+        (0, []),
+        (1, ["workflows"]),
+        (0, []),
+        (0, []),
+    ]
+    await init_data.init_embed_config()
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert any("ALTER TABLE agents" in statement for statement in statements)
+    assert any("ALTER TABLE workflows" in statement for statement in statements)
