@@ -1,6 +1,7 @@
 import React from 'react'
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { renderToString } from 'react-dom/server'
+import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const toolsApi = {
   listToolShares: mock(async () => ({ shares: [] })),
@@ -71,9 +72,16 @@ mock.module('@/components/ui/badge', () => ({ Badge: passthrough('span') }))
 mock.module('@/components/ui/card', () => ({ Card: passthrough(), CardContent: passthrough() }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: passthrough() }))
 mock.module('@/components/ui/separator', () => ({ Separator: () => <hr /> }))
+mock.module('lucide-react', () => ({
+  Eye: passthrough('svg'),
+  EyeOff: passthrough('svg'),
+  ExternalLink: passthrough('svg'),
+  Loader2: passthrough('svg'),
+}))
 
 import { HttpToolDialog } from './http-tool-dialog'
 import { McpToolDialog } from './mcp-tool-dialog'
+import { ApiError } from '@/lib/api/client'
 import { ToolConfigDialog } from './tool-config-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
 import { ToolTestPanel } from './tool-test-panel'
@@ -110,8 +118,17 @@ const mcpTool = {
   mcp_config: { server_url: 'https://mcp.example.com' },
 }
 
+const renderers: ReactTestRenderer[] = []
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
 beforeEach(() => {
   Object.values(toolsApi).forEach((fn) => fn.mockClear())
+})
+
+afterEach(() => {
+  for (const renderer of renderers) act(() => renderer.unmount())
+  renderers.length = 0
 })
 
 describe('platform capability component smoke coverage', () => {
@@ -129,6 +146,39 @@ describe('platform capability component smoke coverage', () => {
     expect(html).toContain('configDialog.title:Web Search')
     expect(html).toContain('TAVILY_API_KEY')
     expect(html).toContain('tvly-xxxxxxxxxx')
+  })
+
+  test('validates, reveals, saves, and reports config dialog API errors', async () => {
+    const onSave = mock(async () => undefined)
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(
+        <ToolConfigDialog
+          tool={baseTool as never}
+          open
+          onOpenChange={() => undefined}
+          onSave={onSave}
+          savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
+        />
+      )
+    })
+    renderers.push(renderer!)
+
+    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
+    expect(onSave).toHaveBeenCalledWith({ TAVILY_API_KEY: 'saved-key' })
+
+    const input = renderer!.root.findByProps({ id: 'TAVILY_API_KEY' })
+    act(() => input.props.onChange({ target: { value: '' } }))
+    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
+    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props['aria-invalid']).toBe(true)
+
+    act(() => renderer!.root.findAllByType('button').find((button) => button.props.type === 'button')!.props.onClick())
+    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.type).toBe('text')
+
+    act(() => renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.onChange({ target: { value: 'new-key' } }))
+    onSave.mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { TAVILY_API_KEY: 'bad key' } }))
+    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('bad key')
   })
 
   test('renders HTTP tool dialog in edit mode', () => {
