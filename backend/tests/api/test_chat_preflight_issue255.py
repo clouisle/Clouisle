@@ -52,7 +52,10 @@ def agent(*, visibility=AgentVisibility.TEAM, created_by=None):
     [
         (None, user(), False, "agent_not_found", 404),
         (
-            agent(visibility=AgentVisibility.PRIVATE, created_by=SimpleNamespace(id=uuid4())),
+            agent(
+                visibility=AgentVisibility.PRIVATE,
+                created_by=SimpleNamespace(id=uuid4()),
+            ),
             user(),
             False,
             "agent_access_denied",
@@ -92,7 +95,9 @@ async def test_chat_access_accepts_members_superusers_and_private_owner(
 ):
     current_user = user(superuser=access == "superuser")
     current_agent = agent(
-        visibility=AgentVisibility.PRIVATE if access == "owner" else AgentVisibility.TEAM,
+        visibility=AgentVisibility.PRIVATE
+        if access == "owner"
+        else AgentVisibility.TEAM,
         created_by=SimpleNamespace(id=current_user.id) if access == "owner" else None,
     )
     is_member = access == "member"
@@ -103,7 +108,10 @@ async def test_chat_access_accepts_members_superusers_and_private_owner(
         chat.TeamMember, "filter", lambda **_kwargs: Query(exists=is_member)
     )
 
-    assert await chat.check_agent_chat_access(current_agent.id, current_user) is current_agent
+    assert (
+        await chat.check_agent_chat_access(current_agent.id, current_user)
+        is current_agent
+    )
 
 
 @pytest.mark.anyio
@@ -131,9 +139,7 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     current_agent.enable_file_upload = True
     current_agent.file_upload_config = {"max_files": 2}
     current_agent.hide_tool_calls = False
-    monkeypatch.setattr(
-        chat, "get_public_agent", AsyncMock(return_value=current_agent)
-    )
+    monkeypatch.setattr(chat, "get_public_agent", AsyncMock(return_value=current_agent))
 
     result = await chat.get_public_agent_info(current_agent.id, user())
 
@@ -251,7 +257,7 @@ async def test_stream_setup_failure_returns_error_without_provider_call(monkeypa
     events = [event async for event in response.body_iterator]
 
     assert events == [
-        f"event: error\ndata: {{\"code\": {ResponseCode.UNKNOWN_ERROR}, \"msg\": \"unknown_error\"}}\n\n"
+        f'event: error\ndata: {{"code": {ResponseCode.UNKNOWN_ERROR}, "msg": "unknown_error"}}\n\n'
     ]
     provider.assert_not_called()
 
@@ -263,9 +269,7 @@ async def test_nonstream_attachment_failure_stops_before_context_and_provider(
     current_user = user()
     current_agent = agent()
     conversation = SimpleNamespace(id=uuid4())
-    user_message = SimpleNamespace(
-        id=uuid4(), role=MessageRole.USER, file_urls=None
-    )
+    user_message = SimpleNamespace(id=uuid4(), role=MessageRole.USER, file_urls=None)
     context = AsyncMock()
     provider = AsyncMock()
     monkeypatch.setattr(chat.deps, "check_api_key_agent_access", AsyncMock())
