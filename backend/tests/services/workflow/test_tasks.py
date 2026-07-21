@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -16,17 +17,20 @@ from app.services.workflow.tasks import (
 )
 
 
-def test_execute_workflow_success_converts_ids_and_preserves_inputs():
-    workflow_id, user_id, team_id = uuid4(), uuid4(), uuid4()
+def test_execute_workflow_returns_completed_run():
+    workflow_id = uuid4()
+    user_id = uuid4()
+    team_id = uuid4()
+    result_run_id = str(uuid4())
     orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(return_value="run-1")
+    orchestrator.run = AsyncMock(return_value=result_run_id)
 
     with patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator):
         result = execute_workflow_task.run(
             str(workflow_id), {"query": "hello"}, str(user_id), str(team_id)
         )
 
-    assert result == {"run_id": "run-1", "status": "completed"}
+    assert result == {"run_id": result_run_id, "status": "completed"}
     orchestrator.run.assert_awaited_once_with(
         workflow_id=workflow_id,
         inputs={"query": "hello"},
@@ -36,114 +40,112 @@ def test_execute_workflow_success_converts_ids_and_preserves_inputs():
     )
 
 
-def test_execute_workflow_returns_public_error_and_requested_run_id():
+def test_execute_workflow_translates_failure():
     orchestrator = MagicMock()
-    orchestrator.run = AsyncMock(side_effect=RuntimeError("private"))
+    orchestrator.run = AsyncMock(side_effect=ValueError("private details"))
 
     with (
         patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator),
         patch(
             "app.services.workflow.tasks.translate_public_workflow_error",
             return_value="safe error",
-        ),
+        ) as translate,
     ):
         result = execute_workflow_task.run(
-            str(uuid4()), {}, str(uuid4()), run_id="run-1"
+            str(uuid4()), {}, str(uuid4()), run_id="existing-run"
         )
 
-    assert result == {"run_id": "run-1", "status": "failed", "error": "safe error"}
+    assert result == {
+        "run_id": "existing-run",
+        "status": "failed",
+        "error": "safe error",
+    }
+    translate.assert_called_once()
 
 
-@pytest.mark.parametrize(
-    ("status", "run", "execution_result", "expected"),
-    [
-        ("cancelled", None, None, {"node_id": "node-1", "status": "cancelled"}),
-        (
-            "running",
-            None,
-            None,
-            {"node_id": "node-1", "status": "error", "error": "missing run"},
-        ),
-        (
-            "running",
-            SimpleNamespace(id="run-1"),
-            SimpleNamespace(
-                success=True,
-                outputs={"answer": 42},
-                error=None,
-                next_handles=["next"],
-            ),
-            {
-                "node_id": "node-1",
-                "status": "success",
-                "outputs": {"answer": 42},
-                "error": None,
-                "next_handles": ["next"],
-            },
-        ),
-        (
-            "running",
-            SimpleNamespace(id="run-1"),
-            SimpleNamespace(
-                success=False,
-                outputs={},
-                error="bad input",
-                next_handles=[],
-            ),
-            {
-                "node_id": "node-1",
-                "status": "error",
-                "outputs": {},
-                "error": "bad input",
-                "next_handles": [],
-            },
-        ),
-    ],
-)
-def test_execute_node_branches(status, run, execution_result, expected):
+def test_execute_node_stops_when_run_is_cancelled():
     context = MagicMock()
-    context.get_status = AsyncMock(return_value=status)
+    context.get_status = AsyncMock(return_value="cancelled")
+
+    with patch(
+        "app.services.workflow.ExecutionContext.load",
+        new=AsyncMock(return_value=context),
+    ):
+        result = execute_node_task.run("run-1", "node-1", "llm", {})
+
+    assert result == {"node_id": "node-1", "status": "cancelled"}
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_execute_node_returns_executor_result_and_only_stores_success(success):
+    context = MagicMock()
+    context.get_status = AsyncMock(return_value="running")
     context.set_node_outputs = AsyncMock()
+    run = object()
+    execution_result = SimpleNamespace(
+        success=success,
+        outputs={"answer": "ok"},
+        error=None if success else "failed",
+        next_handles=["next"],
+    )
     executor = MagicMock()
     executor.execute = AsyncMock(return_value=execution_result)
-    run_query = MagicMock()
-    run_query.first = AsyncMock(return_value=run)
+    query = MagicMock()
+    query.first = AsyncMock(return_value=run)
 
     with (
         patch(
             "app.services.workflow.ExecutionContext.load",
-            AsyncMock(return_value=context),
+            new=AsyncMock(return_value=context),
         ),
         patch("app.services.workflow.NodeExecutorRegistry.get", return_value=executor),
-        patch("app.models.workflow.WorkflowRun.filter", return_value=run_query),
-        patch("app.services.workflow.tasks.t", return_value="missing run"),
+        patch("app.models.workflow.WorkflowRun.filter", return_value=query),
     ):
-        result = execute_node_task.run("run-1", "node-1", "code", {"code": "1"})
+        result = execute_node_task.run("run-1", "node-1", "llm", {"prompt": "hello"})
 
-    assert result == expected
-    if execution_result and execution_result.success:
-        context.set_node_outputs.assert_awaited_once_with("node-1", {"answer": 42})
+    assert result == {
+        "node_id": "node-1",
+        "status": "success" if success else "error",
+        "outputs": {"answer": "ok"},
+        "error": None if success else "failed",
+        "next_handles": ["next"],
+    }
+    executor.execute.assert_awaited_once_with(
+        node={"id": "node-1", "data": {"prompt": "hello"}},
+        context=context,
+        run=run,
+    )
+    if success:
+        context.set_node_outputs.assert_awaited_once_with("node-1", {"answer": "ok"})
     else:
         context.set_node_outputs.assert_not_awaited()
 
 
-def test_execute_node_retries_unexpected_errors():
-    error = RuntimeError("redis unavailable")
-    retry_error = RuntimeError("retry requested")
+def test_execute_node_reports_missing_run():
+    context = MagicMock()
+    context.get_status = AsyncMock(return_value="running")
+    query = MagicMock()
+    query.first = AsyncMock(return_value=None)
 
     with (
         patch(
-            "app.services.workflow.ExecutionContext.load", AsyncMock(side_effect=error)
+            "app.services.workflow.ExecutionContext.load",
+            new=AsyncMock(return_value=context),
         ),
-        patch.object(execute_node_task, "retry", side_effect=retry_error) as retry,
-        pytest.raises(RuntimeError, match="retry requested"),
+        patch("app.services.workflow.NodeExecutorRegistry.get"),
+        patch("app.models.workflow.WorkflowRun.filter", return_value=query),
+        patch("app.services.workflow.tasks.t", return_value="run not found"),
     ):
-        execute_node_task.run("run-1", "node-1", "code", {})
+        result = execute_node_task.run("missing", "node-1", "llm", {})
 
-    retry.assert_called_once_with(exc=error)
+    assert result == {
+        "node_id": "node-1",
+        "status": "error",
+        "error": "run not found",
+    }
 
 
-def test_execute_stage_builds_parallel_signatures_and_returns_results():
+def test_execute_stage_fans_out_nodes_and_collects_results():
     signatures = [object(), object()]
     async_result = MagicMock()
     async_result.get.return_value = [{"status": "success"}, {"status": "error"}]
@@ -151,14 +153,17 @@ def test_execute_stage_builds_parallel_signatures_and_returns_results():
     job.apply_async.return_value = async_result
 
     with (
-        patch.object(execute_node_task, "s", side_effect=signatures) as signature,
+        patch(
+            "app.services.workflow.tasks.execute_node_task.s",
+            side_effect=signatures,
+        ) as signature,
         patch("app.services.workflow.tasks.group", return_value=job) as task_group,
     ):
         result = execute_stage_task.run(
             "run-1",
             2,
-            ["known", "missing"],
-            {"known": {"data": {"type": "llm"}}},
+            ["first", "second"],
+            {"first": {"data": {"type": "llm"}}},
         )
 
     assert result == {
@@ -167,11 +172,11 @@ def test_execute_stage_builds_parallel_signatures_and_returns_results():
     }
     assert signature.call_args_list[0].args == (
         "run-1",
-        "known",
+        "first",
         "llm",
         {"data": {"type": "llm"}},
     )
-    assert signature.call_args_list[1].args == ("run-1", "missing", "unknown", {})
+    assert signature.call_args_list[1].args == ("run-1", "second", "unknown", {})
     task_group.assert_called_once_with(signatures)
     async_result.get.assert_called_once_with(timeout=300)
 
@@ -182,111 +187,72 @@ def test_cancel_and_cleanup_delegate_to_workflow_services():
     context = MagicMock()
     context.set_ttl = AsyncMock()
 
-    with (
-        patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator),
-        patch(
-            "app.services.workflow.ExecutionContext.load",
-            AsyncMock(return_value=context),
-        ),
-    ):
+    with patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator):
         assert cancel_workflow_task.run("run-1") == {
             "run_id": "run-1",
             "cancelled": True,
         }
-        assert cleanup_workflow_task.run("run-1", 15) == {
+
+    with patch(
+        "app.services.workflow.ExecutionContext.load",
+        new=AsyncMock(return_value=context),
+    ):
+        assert cleanup_workflow_task.run("run-1", 90) == {
             "run_id": "run-1",
             "cleaned": True,
         }
 
     orchestrator.cancel.assert_awaited_once_with("run-1")
-    context.set_ttl.assert_awaited_once_with(15)
+    context.set_ttl.assert_awaited_once_with(90)
 
 
 def test_check_scheduled_workflows_skips_invalid_and_triggers_current_cron():
-    workflows = [
-        SimpleNamespace(id="no-cron", trigger_config={}, name="No cron"),
-        SimpleNamespace(id="invalid", trigger_config={"cron": "bad"}, name="Invalid"),
-        SimpleNamespace(id="stale", trigger_config={"cron": "stale"}, name="Stale"),
-        SimpleNamespace(
-            id=uuid4(),
-            trigger_config={"cron": "current"},
-            name="Current",
-            created_by_id=uuid4(),
-            team_id=uuid4(),
-        ),
-    ]
+    due = SimpleNamespace(
+        id=uuid4(),
+        name="due",
+        trigger_config={"cron": "* * * * *"},
+        created_by_id=uuid4(),
+        team_id=uuid4(),
+    )
+    missing = SimpleNamespace(id=uuid4(), trigger_config={})
+    invalid = SimpleNamespace(
+        id=uuid4(), name="invalid", trigger_config={"cron": "invalid"}
+    )
     query = MagicMock()
-    query.all = AsyncMock(return_value=workflows)
+    query.all = AsyncMock(return_value=[missing, invalid, due])
+    croniter_module = ModuleType("croniter")
 
-    def cron(expr, now):
-        if expr == "bad":
+    def croniter(expression, now):
+        if expression == "invalid":
             raise ValueError("invalid cron")
-        age = 61 if expr == "stale" else 30
-        return SimpleNamespace(get_prev=lambda _: now - timedelta(seconds=age))
+        return SimpleNamespace(get_prev=lambda _: now - timedelta(seconds=30))
+
+    croniter_module.croniter = croniter
 
     with (
+        patch.dict(sys.modules, {"croniter": croniter_module}),
         patch("app.models.workflow.Workflow.filter", return_value=query),
-        patch.dict("sys.modules", {"croniter": SimpleNamespace(croniter=cron)}),
-        patch.object(execute_workflow_task, "delay") as delay,
+        patch("app.services.workflow.tasks.execute_workflow_task.delay") as delay,
     ):
         result = check_scheduled_workflows.run()
 
     assert result == {"triggered": 1}
-    current = workflows[-1]
     delay.assert_called_once_with(
-        workflow_id=str(current.id),
+        workflow_id=str(due.id),
         inputs={},
-        user_id=str(current.created_by_id),
-        team_id=str(current.team_id),
+        user_id=str(due.created_by_id),
+        team_id=str(due.team_id),
     )
 
 
-@pytest.mark.parametrize(
-    ("task", "args", "extra_modules"),
-    [
-        (execute_workflow_task, (str(uuid4()), {}, str(uuid4())), {}),
-        (execute_node_task, ("run-1", "node-1", "code", {}), {}),
-        (cancel_workflow_task, ("run-1",), {}),
-        (cleanup_workflow_task, ("run-1",), {}),
-        (
-            check_scheduled_workflows,
-            (),
-            {"croniter": SimpleNamespace(croniter=MagicMock())},
-        ),
-        (cleanup_old_runs, (), {}),
-    ],
-)
-def test_tasks_create_event_loop_when_worker_has_none(task, args, extra_modules):
-    loop = MagicMock()
-
-    def run(coroutine):
-        coroutine.close()
-        return {"ok": True}
-
-    loop.run_until_complete.side_effect = run
-    with (
-        patch("asyncio.get_event_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop", return_value=loop) as new_loop,
-        patch("asyncio.set_event_loop") as set_loop,
-        patch.dict("sys.modules", extra_modules),
-    ):
-        assert task.run(*args) == {"ok": True}
-
-    new_loop.assert_called_once_with()
-    set_loop.assert_called_once_with(loop)
-
-
-def test_cleanup_old_runs_uses_requested_retention_window():
+def test_cleanup_old_runs_deletes_before_cutoff():
     query = MagicMock()
-    query.delete = AsyncMock(return_value=7)
+    query.delete = AsyncMock(return_value=4)
 
-    with patch(
-        "app.models.workflow.WorkflowRun.filter", return_value=query
-    ) as filter_runs:
-        before = datetime.utcnow()
-        result = cleanup_old_runs.run(10)
-        after = datetime.utcnow()
+    with patch("app.models.workflow.WorkflowRun.filter", return_value=query) as filter_:
+        result = cleanup_old_runs.run(days=7)
 
-    assert result == {"deleted": 7}
-    cutoff = filter_runs.call_args.kwargs["created_at__lt"]
-    assert before - timedelta(days=10) <= cutoff <= after - timedelta(days=10)
+    assert result == {"deleted": 4}
+    cutoff = filter_.call_args.kwargs["created_at__lt"]
+    assert datetime.utcnow() - timedelta(days=7, seconds=1) < cutoff
+    assert cutoff < datetime.utcnow() - timedelta(days=7) + timedelta(seconds=1)

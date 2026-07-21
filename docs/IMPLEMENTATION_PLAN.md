@@ -5,7 +5,7 @@
 - **issue-255-test-coverage** — In progress. Establish honest backend and frontend coverage measurement, cover critical happy/error paths, and enforce independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
   - [x] 1. Design docs and implementation index
   - [ ] 2. Backend and frontend coverage baselines
-  - [ ] 3. Backend critical-path coverage — focused SSO and chat helper batches pass; complete backend remains below 95% line/branch coverage
+  - [ ] 3. Backend critical-path coverage — focused command safety, password expiration, MCP, and workflow-task batches pass; complete backend remains below 95% line/branch coverage
   - [ ] 4. Frontend critical-path coverage — 1,649 isolated tests; 95.72% lines, 90.57% functions; source census passing
   - [ ] 5. Agent UI automation guide and reusable prompt
   - [ ] 6. CI reporting, final 95% gates, and documentation
