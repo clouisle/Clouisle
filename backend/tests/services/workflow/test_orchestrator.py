@@ -302,6 +302,111 @@ class TestWorkflowOrchestratorRun:
         stream.publish_workflow_error.assert_awaited_once()
 
 
+class TestWorkflowOrchestratorCompletion:
+    @pytest.fixture
+    def orchestrator(self):
+        return WorkflowOrchestrator(
+            enable_retry=False, enable_cache=False, enable_metrics=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_complete_run_updates_statistics_and_notifies_team(
+        self, orchestrator
+    ):
+        workflow_id = uuid4()
+        team_id = uuid4()
+        run = MagicMock(
+            id=uuid4(),
+            workflow_id=workflow_id,
+            is_debug=False,
+            total_token_usage={"prompt": 2, "completion": 3},
+            triggered_by_id=None,
+            save=AsyncMock(),
+        )
+        executions = [
+            MagicMock(status=NodeStatus.SUCCESS),
+            MagicMock(status=NodeStatus.FAILED),
+            MagicMock(status=NodeStatus.SKIPPED),
+        ]
+        workflow = MagicMock(id=workflow_id, team_id=team_id, name="Team Workflow")
+
+        with (
+            patch("app.services.workflow.orchestrator.NodeExecution") as node_model,
+            patch("app.services.workflow.orchestrator.Workflow") as workflow_model,
+            patch("app.services.workflow.orchestrator.Team") as team_model,
+            patch(
+                "app.services.workflow.orchestrator.get_default_language",
+                new=AsyncMock(return_value="en"),
+            ),
+            patch(
+                "app.services.workflow.orchestrator.AutoNotificationService.send_to_team",
+                new=AsyncMock(),
+            ) as notify,
+        ):
+            node_model.filter.return_value.all = AsyncMock(return_value=executions)
+            workflow_model.filter.return_value.first = AsyncMock(return_value=workflow)
+            workflow_model.filter.return_value.update = AsyncMock()
+            team_model.filter.return_value.update = AsyncMock()
+
+            await orchestrator._complete_run(run, {"answer": "done"}, 25)
+
+        assert run.status == RunStatus.SUCCESS
+        assert (
+            run.total_nodes,
+            run.executed_nodes,
+            run.failed_nodes,
+            run.skipped_nodes,
+        ) == (
+            3,
+            1,
+            1,
+            1,
+        )
+        assert run.outputs == {"answer": "done"}
+        run.save.assert_awaited_once()
+        workflow_model.filter.return_value.update.assert_awaited_once()
+        team_model.filter.return_value.update.assert_awaited_once()
+        notify.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_fail_run_updates_statistics_and_notifies_user(self, orchestrator):
+        workflow_id = uuid4()
+        user_id = uuid4()
+        user = MagicMock(locale="zh")
+        run = MagicMock(
+            id=uuid4(),
+            workflow_id=workflow_id,
+            total_token_usage=None,
+            triggered_by_id=user_id,
+            triggered_by=user,
+            fetch_related=AsyncMock(),
+            save=AsyncMock(),
+        )
+        workflow = MagicMock(id=workflow_id, team_id=uuid4(), name="Failed Workflow")
+
+        with (
+            patch("app.services.workflow.orchestrator.NodeExecution") as node_model,
+            patch("app.services.workflow.orchestrator.Workflow") as workflow_model,
+            patch(
+                "app.services.workflow.orchestrator.AutoNotificationService.send_to_user",
+                new=AsyncMock(),
+            ) as notify,
+        ):
+            node_model.filter.return_value.all = AsyncMock(return_value=[])
+            workflow_model.filter.return_value.first = AsyncMock(return_value=workflow)
+            workflow_model.filter.return_value.update = AsyncMock()
+
+            await orchestrator._fail_run(run, "provider unavailable", 40)
+
+        assert run.status == RunStatus.FAILED
+        assert run.error_message == "provider unavailable"
+        assert run.total_nodes == 0
+        run.save.assert_awaited_once()
+        run.fetch_related.assert_awaited_once_with("triggered_by")
+        workflow_model.filter.return_value.update.assert_awaited_once()
+        notify.assert_awaited_once()
+
+
 class TestWorkflowOrchestratorCancel:
     """Tests for WorkflowOrchestrator.cancel()."""
 
