@@ -6,7 +6,7 @@
   - [x] 1. Design docs and implementation index
   - [ ] 2. Backend and frontend coverage baselines
   - [ ] 3. Backend critical-path coverage — 3,028 tests; 80.51% lines, 64.52% branches; complete backend remains below 95%
-  - [ ] 4. Frontend critical-path coverage — 1,724 isolated tests; 96.42% lines, 91.85% functions; source census passing
+  - [ ] 4. Frontend critical-path coverage — 1,772 isolated tests; 96.64% lines, 92.34% functions; source census passing
   - [ ] 5. Agent UI automation guide and reusable prompt
   - [ ] 6. CI reporting, final 95% gates, and documentation
 
