@@ -2,10 +2,18 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
 const list = mock(() => Promise.resolve({ builtin: [], custom: [], mcp: [] }))
+const getById = mock()
+const createTool = mock()
+const updateTool = mock()
+const deleteTool = mock()
+const getConfig = mock()
+const createConfig = mock()
+const updateConfig = mock()
 const getMyTeams = mock(() => Promise.resolve([]))
 const replace = mock()
 const push = mock()
 const toastError = mock()
+const toastSuccess = mock()
 let searchParams = new URLSearchParams()
 let permissions = new Set(['tool:read', 'tool:create', 'tool:execute', 'skill:read'])
 let hooks: unknown[] = []
@@ -56,17 +64,17 @@ mock.module('next/navigation', () => ({
   useSearchParams: () => searchParams,
 }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
-mock.module('sonner', () => ({ toast: { error: toastError, success: mock() } }))
+mock.module('sonner', () => ({ toast: { error: toastError, success: toastSuccess } }))
 mock.module('@/lib/api', () => ({
   toolsApi: {
     list,
-    getById: mock(),
-    create: mock(),
-    update: mock(),
-    delete: mock(),
-    getConfig: mock(),
-    createConfig: mock(),
-    updateConfig: mock(),
+    getById,
+    create: createTool,
+    update: updateTool,
+    delete: deleteTool,
+    getConfig,
+    createConfig,
+    updateConfig,
   },
   teamsApi: { getMyTeams },
   isPresetToolCategory: () => false,
@@ -155,13 +163,22 @@ const mcp = { id: 'mcp-1', name: 'files', display_name: 'Files', description: 'F
 beforeEach(() => {
   list.mockReset()
   list.mockResolvedValue({ builtin: [builtin], custom: [custom], mcp: [mcp] })
+  getById.mockReset()
+  createTool.mockReset()
+  updateTool.mockReset()
+  deleteTool.mockReset()
+  getConfig.mockReset()
+  createConfig.mockReset()
+  updateConfig.mockReset()
   getMyTeams.mockReset()
   getMyTeams.mockResolvedValue([])
   replace.mockReset()
   push.mockReset()
   toastError.mockReset()
+  toastSuccess.mockReset()
   searchParams = new URLSearchParams()
   permissions = new Set(['tool:read', 'tool:create', 'tool:execute', 'skill:read'])
+  Object.defineProperty(globalThis, 'window', { value: { location: { pathname: '/app/capabilities' } }, configurable: true })
   hooks = []
 })
 
@@ -226,5 +243,89 @@ describe('CapabilitiesPage', () => {
     await (find(tree, (node) => node.type === 'share-dialog').props.onSuccess as () => Promise<void>)()
     expect(list).toHaveBeenCalledTimes(4)
     console.error = originalError
+  })
+
+  test('opens tool edit dialogs and saves or deletes tools', async () => {
+    getById.mockResolvedValue({ ...custom, http_config: { url: 'https://example.com', method: 'GET' } })
+    updateTool.mockResolvedValue({})
+    deleteTool.mockResolvedValue({})
+    render()
+    await settle()
+
+    let tree = render()
+    const weather = find(tree, (node) => node.type === 'article' && node.props.children === 'Weather')
+    await (weather.props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
+    tree = render()
+    await (find(tree, (node) => node.type === 'http-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ display_name: 'Weather API' })
+    expect(updateTool).toHaveBeenCalledWith('custom-1', { display_name: 'Weather API' })
+    expect(toastSuccess).toHaveBeenCalledWith('tools.toolUpdated')
+
+    ;(weather.props.onDelete as (tool: typeof custom) => void)(custom)
+    tree = render()
+    await (find(tree, (node) => node.type === 'button' && node.props.variant === 'destructive').props.onClick as () => Promise<void>)()
+    expect(deleteTool).toHaveBeenCalledWith('custom-1')
+  })
+
+  test('creates tools and handles builtin config and guarded actions', async () => {
+    const configurable = { ...builtin, requires_config: true, config_fields: ['API_KEY'] }
+    list.mockResolvedValue({ builtin: [configurable], custom: [], mcp: [] })
+    getConfig.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({})
+    createConfig.mockResolvedValue({})
+    updateConfig.mockResolvedValue({})
+    createTool.mockResolvedValue({})
+    searchParams = new URLSearchParams('action=create')
+
+    let tree = render()
+    await settle()
+    tree = render()
+    expect(replace).toHaveBeenCalledWith('/app/capabilities', { scroll: false })
+    await (find(tree, (node) => node.type === 'http-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'http' })
+    expect(createTool).toHaveBeenCalledWith('team-1', { name: 'http' })
+
+    const clock = find(render(), (node) => node.type === 'article' && node.props.children === 'Clock')
+    await (clock.props.onEdit as (tool: typeof configurable) => Promise<void>)(configurable)
+    tree = render()
+    await (find(tree, (node) => node.type === 'config-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ API_KEY: 'saved' })
+    expect(createConfig).toHaveBeenCalledWith('clock', { API_KEY: 'saved' }, 'team-1')
+
+    await (find(render(), (node) => node.type === 'config-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ API_KEY: 'updated' })
+    expect(updateConfig).toHaveBeenCalledWith('clock', { API_KEY: 'updated' }, 'team-1')
+
+    ;(clock.props.onDelete as (tool: typeof configurable) => void)(configurable)
+    ;(clock.props.onShare as (tool: typeof configurable) => void)(configurable)
+    expect(toastError).toHaveBeenCalledWith('tools.error.cannotDeleteBuiltin')
+    expect(toastError).toHaveBeenCalledWith('tools.error.cannotShareBuiltin')
+  })
+
+  test('routes tool actions through test, code, mcp, and unknown-detail flows', async () => {
+    getById
+      .mockResolvedValueOnce({ ...mcp })
+      .mockResolvedValueOnce({ ...custom, custom_type: 'code' })
+      .mockResolvedValueOnce({ ...custom, custom_type: 'unknown' })
+    createTool.mockResolvedValue({})
+    updateTool.mockResolvedValue({})
+    render()
+    await settle()
+
+    let tree = render()
+    const files = find(tree, (node) => node.type === 'article' && node.props.children === 'Files')
+    ;(files.props.onSelect as (tool: typeof mcp) => void)(mcp)
+    expect(find(render(), (node) => node.type === 'test-panel').props.tool).toBe(mcp)
+
+    await (files.props.onEdit as (tool: typeof mcp) => Promise<void>)(mcp)
+    tree = render()
+    await (find(tree, (node) => node.type === 'mcp-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'mcp' })
+    expect(updateTool).toHaveBeenCalledWith('mcp-1', { name: 'mcp' })
+
+    ;(findAll(tree, (node) => node.type === 'menuitem')[1].props.onClick as () => void)()
+    expect(push).toHaveBeenCalledWith('/app/capabilities/code')
+    ;(findAll(tree, (node) => node.type === 'menuitem')[2].props.onClick as () => void)()
+    await (find(render(), (node) => node.type === 'mcp-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'new-mcp' })
+    expect(createTool).toHaveBeenCalledWith('team-1', { name: 'new-mcp' })
+
+    await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
+    expect(push).toHaveBeenCalledWith('/app/capabilities/code?id=custom-1')
+    await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
+    expect(toastError).toHaveBeenCalledWith('tools.error.unknownToolType')
   })
 })
