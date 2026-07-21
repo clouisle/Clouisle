@@ -1,6 +1,8 @@
 """Tests for Redis-backed workflow execution context state."""
 
+import json
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -36,6 +38,9 @@ class FakeRedis:
 
     async def expire(self, key: str, seconds: int):
         self.expirations.append((key, seconds))
+
+    async def publish(self, key: str, value: str):
+        self.published = (key, value)
 
     async def delete(self, key: str):
         self.values.pop(key, None)
@@ -122,6 +127,52 @@ class TestExecutionContextNodeOutputs:
         assert await context.get_all_node_outputs() == {"node_1": {"value": 1}}
 
 
+class TestExecutionContextResolution:
+    @pytest.mark.asyncio
+    async def test_resolves_system_inputs_globals_nodes_and_templates(self, context):
+        context._system_variables = {"user_id": "user-1"}
+        await context.set_inputs({"query": "hello"})
+        await context.set_variable("topic", "billing")
+        await context.set_variable("conversation_name", "thread")
+        await context.set_node_outputs("node", {"result": {"ok": True}})
+
+        assert await context.resolve_variable_ref("{{sys_user_id}}") == "user-1"
+        assert await context.resolve_variable_ref("{{query}}") == "hello"
+        assert await context.resolve_variable_ref("{{topic}}") == "billing"
+        assert (
+            await context.resolve_variable_ref("{{conversation.conversation_name}}")
+            == "thread"
+        )
+        assert await context.resolve_variable_ref("{{node}}") == {
+            "result": {"ok": True}
+        }
+        assert await context.resolve_template("Result: {{node.result}}") == (
+            'Result: {"ok": true}'
+        )
+        assert await context.resolve_variable_ref(4) == 4
+        assert await context.resolve_template("") == ""
+
+    @pytest.mark.asyncio
+    async def test_lazy_node_output_executes_once_and_persists_metadata(self, context):
+        from app.services.workflow.lazy_stream import LazyStreamResult
+
+        lazy = LazyStreamResult("model", [], 0, None, 1, context=context)
+        lazy.execute = AsyncMock(return_value="complete")
+        lazy._reasoning = "reason"
+        lazy._usage = {"total_tokens": 2}
+        await context.set_node_outputs("llm", {"text": lazy})
+
+        assert (
+            await context.resolve_variable_ref("{{llm.text}}", "answer") == "complete"
+        )
+        lazy.execute.assert_awaited_once_with("answer")
+        assert await context.get_node_outputs("llm") == {
+            "text": "complete",
+            "reasoning": "reason",
+            "usage": {"total_tokens": 2},
+        }
+
+
 class TestExecutionContextStatus:
     @pytest.mark.asyncio
     async def test_status_round_trip(self, context):
@@ -166,6 +217,14 @@ class TestExecutionContextBranches:
 
 
 class TestExecutionContextLifecycle:
+    @pytest.mark.asyncio
+    async def test_publishes_unicode_event_to_run_channel(self, context, redis_client):
+        await context.publish_event({"message": "完成"})
+
+        channel, payload = redis_client.published
+        assert channel == context.get_stream_channel()
+        assert json.loads(payload) == {"message": "完成"}
+
     @pytest.mark.asyncio
     async def test_cleanup_removes_all_context_keys(self, context, redis_client):
         await context.set_inputs({"query": "test"})

@@ -225,9 +225,11 @@ class ExecutionContext:
             self.redis.hset(key, node_id, dumps_value(serializable_outputs))
         )
 
-        # Store lazy outputs in memory
+        # Store lazy outputs in memory and remove resolved placeholders.
         if lazy_outputs:
             self._memory_cache[node_id] = cast(dict[str, object], lazy_outputs)
+        else:
+            self._memory_cache.pop(node_id, None)
 
         logger.debug(f"Set outputs for node {node_id}: {list(outputs.keys())}")
 
