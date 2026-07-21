@@ -22,11 +22,15 @@ const updateProfile = mock(() => Promise.resolve({}))
 const changePassword = mock(() => Promise.resolve())
 const deleteAccount = mock(() => Promise.resolve())
 const sendVerification = mock(() => Promise.resolve())
+const disconnectConnection = mock(() => Promise.resolve())
+const disableTotp = mock(() => Promise.resolve())
+const regenerateBackupCodes = mock(() => Promise.resolve({ codes: ['code-one', 'code-two'] }))
 const infoToast = mock<(message: string) => void>()
 const successToast = mock<(message: string) => void>()
 const warningToast = mock<(message: string) => void>()
 const inputHandlers = new Map<string, React.ChangeEventHandler<HTMLInputElement> | undefined>()
 let deleteAccountOnClick: (() => Promise<void>) | undefined
+let otpOnChange: ((value: string) => void) | undefined
 
 let siteSettings = { allow_account_deletion: false, email_verification: false }
 let user = {
@@ -65,8 +69,8 @@ mock.module('@/lib/api', () => ({
   ApiError,
   authApi: { getCurrentUser, sendVerification },
   usersApi: { getPasswordStatus, updateProfile, changePassword, deleteAccount },
-  ssoApi: { disconnectConnection: mock() },
-  totpApi: { getStatus: getTotpStatus, disable: mock(), regenerateBackupCodes: mock() },
+  ssoApi: { disconnectConnection },
+  totpApi: { getStatus: getTotpStatus, disable: disableTotp, regenerateBackupCodes },
 }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) => open ? <div role="dialog">{children}</div> : null,
@@ -123,7 +127,14 @@ mock.module('@/components/ui/input', () => ({
 mock.module('@/components/ui/label', () => ({ Label: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props}>{children}</label> }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: () => <div data-testid="skeleton" /> }))
 mock.module('@/components/ui/image-upload', () => ({ ImageUpload: () => <div data-testid="image-upload" /> }))
-mock.module('@/components/ui/input-otp', () => ({ InputOTP: passthrough, InputOTPGroup: passthrough, InputOTPSlot: () => null }))
+mock.module('@/components/ui/input-otp', () => ({
+  InputOTP: ({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: React.ReactNode }) => {
+    otpOnChange = onChange
+    return <div><input aria-label="otp-input" value={value} readOnly />{children}</div>
+  },
+  InputOTPGroup: passthrough,
+  InputOTPSlot: () => null,
+}))
 mock.module('@/components/ui/field', () => ({ FieldError: ({ children }: { children?: React.ReactNode }) => children ? <p role="alert">{children}</p> : null }))
 mock.module('./totp-setup-wizard', () => ({ TOTPSetupWizard: () => null }))
 
@@ -161,7 +172,7 @@ beforeEach(() => {
   getCurrentUser.mockReset()
   getCurrentUser.mockImplementation(() => Promise.resolve(user))
   inputHandlers.clear()
-  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, infoToast, successToast, warningToast, push]) fn.mockClear()
+  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, disconnectConnection, disableTotp, regenerateBackupCodes, infoToast, successToast, warningToast, push]) fn.mockClear()
   localStorage.setItem('access_token', 'token')
 })
 
@@ -227,6 +238,49 @@ describe('SettingsDialog', () => {
     expect(container.textContent).toContain('setPassword')
     expect(container.querySelector('#current')).toBeNull()
     expect(container.textContent).not.toContain('dangerZone')
+  })
+
+  test('sets a password and disconnects an SSO account', async () => {
+    await render()
+    await click('account')
+    await click('disconnect', 1)
+    expect(disconnectConnection).toHaveBeenCalledWith('connection-1')
+    expect(successToast).toHaveBeenCalledWith('disconnectSuccess')
+
+    await click('account')
+    await enterById('new', 'longer-value')
+    await enterById('confirm', 'longer-value')
+    await click('setPassword')
+
+    expect(updateProfile).toHaveBeenCalledWith({ password: 'longer-value' }, { silent: true })
+    expect(successToast).toHaveBeenCalledWith('passwordUpdated')
+  })
+
+  test('disables TOTP after validating password and authenticator code', async () => {
+    getTotpStatus.mockResolvedValueOnce({ enabled: true, enabled_at: '2026-01-01T00:00:00Z', remaining_backup_codes: 6 })
+    await render()
+    await click('account')
+    await click('disableTwoFactor', 0)
+    await enterById('disable-password', 'current-value')
+    await click('useBackupCode')
+    await enterById('disable-code', 'ABCD-EFGH')
+    await click('disableTwoFactor', 1)
+
+    expect(disableTotp).toHaveBeenCalledWith('current-value', 'ABCDEFGH', true, { silent: true })
+    expect(successToast).toHaveBeenCalledWith('twoFactorDisabledSuccess')
+  })
+
+  test('regenerates TOTP backup codes from a valid authenticator code', async () => {
+    getTotpStatus.mockResolvedValueOnce({ enabled: true, enabled_at: null, remaining_backup_codes: 1 })
+    await render()
+    await click('account')
+    await click('regenerateBackupCodes', 0)
+    await act(async () => otpOnChange!('654321'))
+    await click('regenerateBackupCodes', 1)
+
+    expect(regenerateBackupCodes).toHaveBeenCalledWith('654321', { silent: true })
+    expect(container.textContent).toContain('code-one')
+    expect(successToast).toHaveBeenCalledWith('backupCodesRegeneratedSuccess')
   })
 
   test('shows account deletion only when policy allows it for a local user', async () => {
