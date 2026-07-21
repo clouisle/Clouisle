@@ -1,203 +1,372 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
-import type { ReactNode } from 'react'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
+import React from 'react'
+import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { ApiError } from '@/lib/api/client'
 
-type Tree = { type: unknown; props: Record<string, unknown> }
-type Setter<T> = (value: T | ((current: T) => T)) => void
+const createModel = mock(async () => ({}))
+const updateModel = mock(async () => ({}))
+const testModelConfig = mock(async () => ({ success: true, message: 'Connected', latency_ms: 12 }))
+const toastSuccess = mock(() => {})
+const toastError = mock(() => {})
 
-const jsx = (type: unknown, props: Record<string, unknown> | null) => ({ type, props: props ?? {} })
-const element = (name: string) => {
-  const Component = ({ children, ...props }: Record<string, unknown>) => jsx(name, { ...props, children })
-  Component.displayName = name
-  return Component
-}
-const ui = ({ children }: { children?: ReactNode }) => children
-
-let states: unknown[] = []
-let stateIndex = 0
-const effects: Array<() => void> = []
-const createModel = mock(() => Promise.resolve({}))
-const updateModel = mock(() => Promise.resolve({}))
-const testModelConfig = mock(() => Promise.resolve({ success: true, message: ' connected ', latency_ms: 12 }))
-const toastSuccess = mock(() => undefined)
-const toastError = mock(() => undefined)
-
-mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
-mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
-mock.module('react', () => ({
-  useState<T>(initial: T): [T, Setter<T>] {
-    const index = stateIndex++
-    if (states[index] === undefined) states[index] = initial
-    return [states[index] as T, (value) => {
-      states[index] = typeof value === 'function'
-        ? (value as (current: T) => T)(states[index] as T)
-        : value
-    }]
-  },
-  useCallback: <T,>(callback: T) => callback,
-  useMemo: <T,>(factory: () => T) => factory(),
-  useEffect: (effect: () => void) => effects.push(effect),
-}))
 mock.module('next-intl', () => ({
-  useTranslations: () => Object.assign(
-    (key: string) => key,
-    { has: (key: string) => !key.endsWith('.custom') },
-  ),
+  useTranslations: () => {
+    const translate = (key: string) => key
+    translate.has = () => true
+    return translate
+  },
 }))
-mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
-mock.module('lucide-react', () => ({
-  Eye: element('eye'), EyeOff: element('eye-off'), Loader2: element('loader'),
-  CheckCircle2: element('check-circle'), XCircle: element('x-circle'), Zap: element('zap'), Check: element('check'),
-}))
-mock.module('@/lib/api/admin/models', () => ({ modelsApi: { createModel, updateModel, testModelConfig } }))
-mock.module('@/lib/validation', () => ({
-  clearValidationError: (errors: Record<string, string>, field: string) => Object.fromEntries(Object.entries(errors).filter(([key]) => key !== field)),
-  getValidationSummaryEntries: (errors: Record<string, string>) => Object.entries(errors),
-  mapValidationErrors: (errors: Record<string, string>) => errors.model_id ? { modelId: errors.model_id } : errors,
-  normalizeValidationErrors: (error: unknown) => error instanceof Error && error.message === 'validation' ? { model_id: 'invalid' } : {},
-  formatValidationSummaryMessage: (field: string, message: string) => `${field}: ${message}`,
-}))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 
-for (const path of ['button', 'dialog', 'input', 'label', 'select', 'switch', 'textarea', 'tabs', 'popover', 'tooltip', 'field']) {
-  const exports: Record<string, unknown> = {}
-  const names: Record<string, string[]> = {
-    button: ['Button'], dialog: ['Dialog', 'DialogContent', 'DialogDescription', 'DialogFooter', 'DialogHeader', 'DialogTitle'],
-    input: ['Input'], label: ['Label'], select: ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'],
-    switch: ['Switch'], textarea: ['Textarea'], tabs: ['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'],
-    popover: ['Popover', 'PopoverContent', 'PopoverTrigger'], tooltip: ['Tooltip', 'TooltipContent', 'TooltipTrigger'], field: ['FieldError'],
-  }
-  for (const name of names[path]) exports[name] = name === 'Dialog' || name === 'Tabs' || name === 'Popover' || name === 'Tooltip' ? ui : element(name)
-  mock.module(`@/components/ui/${path}`, () => exports)
-}
+mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
+mock.module('@/lib/api/admin/models', () => ({
+  modelsApi: { createModel, updateModel, testModelConfig },
+}))
+mock.module('@/components/ui/dialog', () => ({
+  Dialog: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  DialogContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  DialogDescription: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  DialogFooter: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  DialogHeader: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  DialogTitle: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
+mock.module('@/components/ui/button', () => ({
+  Button: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <button {...props}>{children}</button>,
+}))
+mock.module('@/components/ui/input', () => ({ Input: (props: Record<string, unknown>) => <input {...props} /> }))
+mock.module('@/components/ui/label', () => ({ Label: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <label {...props}>{children}</label> }))
+mock.module('@/components/ui/textarea', () => ({ Textarea: (props: Record<string, unknown>) => <textarea {...props} /> }))
+mock.module('@/components/ui/field', () => ({ FieldError: ({ children }: React.PropsWithChildren) => children ? <span role="alert">{children}</span> : null }))
+mock.module('@/components/ui/select', () => ({
+  Select: ({ children, value, onValueChange, disabled }: React.PropsWithChildren<{ value: string; onValueChange: (value: string) => void; disabled?: boolean }>) => <select value={value} disabled={disabled} onChange={(event) => onValueChange(event.target.value)}>{children}</select>,
+  SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => <option value={value}>{children}</option>,
+  SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
+mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
+mock.module('@/components/ui/tabs', () => ({
+  Tabs: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TabsContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TabsList: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TabsTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
+mock.module('@/components/ui/popover', () => ({
+  Popover: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  PopoverContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  PopoverTrigger: ({ render }: { render: (props: Record<string, unknown>) => React.ReactNode }) => <>{render({})}</>,
+}))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipTrigger: ({ render }: { render: React.ReactNode | ((props: Record<string, unknown>) => React.ReactNode) }) => <>{typeof render === 'function' ? render({}) : render}</>,
+}))
 
 const { ModelDialog } = await import('./model-dialog')
 
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
 const providers = [
-  { code: 'openai', name: 'OpenAI', base_url: 'https://fake.invalid' },
-  { code: 'qwen', name: 'Qwen', base_url: null },
-  { code: 'ollama', name: 'Ollama', base_url: null },
-] as never
+  { code: 'openai', base_url: 'https://api.openai.test' },
+  { code: 'anthropic', base_url: 'https://api.anthropic.test' },
+  { code: 'google', base_url: 'https://api.google.test' },
+  { code: 'azure_openai', base_url: 'https://azure.test' },
+  { code: 'volcengine', base_url: 'https://volcengine.test' },
+  { code: 'stability', base_url: 'https://stability.test' },
+  { code: 'ollama', base_url: 'http://ollama.test' },
+] as React.ComponentProps<typeof ModelDialog>['providers']
 const modelTypes = [
-  { code: 'chat', name: 'Chat' },
-  { code: 'text_to_image', name: 'Image' },
-  { code: 'text_to_video', name: 'Video' },
-] as never
-const baseProps = { open: true, onOpenChange: mock(() => undefined), onSuccess: mock(() => undefined), providers, modelTypes }
+  { code: 'chat' },
+  { code: 'text_to_image' },
+  { code: 'text_to_video' },
+  { code: 'tts' },
+] as React.ComponentProps<typeof ModelDialog>['modelTypes']
+const renderers: ReactTestRenderer[] = []
 
-function render(overrides: Record<string, unknown> = {}) {
-  stateIndex = 0
-  effects.length = 0
-  return ModelDialog({ ...baseProps, ...overrides }) as Tree
-}
-
-function findAll(node: unknown, predicate: (tree: Tree) => boolean): Tree[] {
-  if (Array.isArray(node)) return node.flatMap((child) => findAll(child, predicate))
-  if (!node || typeof node !== 'object' || !('props' in node)) return []
-  const tree = node as Tree
-  return [...(predicate(tree) ? [tree] : []), ...findAll(tree.props.children, predicate)]
-}
-
-function validChatState() {
-  states = []
-  states[0] = 'Coverage model'
-  states[1] = 'openai'
-  states[2] = 'gpt-fake'
-  states[3] = 'chat'
-  states[4] = 'https://fake.invalid'
-  states[5] = 'fake-key'
-  states[11] = '0.7'
-  states[12] = '0.9'
-  states[13] = '0.1'
-  states[14] = '0.2'
-  states[15] = '500'
-  states[16] = true
-  states[17] = true
-  states[18] = false
-  states[19] = true
-  states[44] = 'high'
-  states[46] = '{"trace":true}'
-  states[47] = '{"custom":1}'
-  states[48] = '{"region":"test"}'
-}
-
-beforeEach(() => {
-  states = []
-  createModel.mockReset()
-  createModel.mockResolvedValue({})
-  updateModel.mockReset()
-  updateModel.mockResolvedValue({})
+afterEach(() => {
+  createModel.mockClear()
+  updateModel.mockClear()
   testModelConfig.mockReset()
-  testModelConfig.mockResolvedValue({ success: true, message: ' connected ', latency_ms: 12 })
+  testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
   toastSuccess.mockClear()
   toastError.mockClear()
-  baseProps.onOpenChange.mockClear()
-  baseProps.onSuccess.mockClear()
+  for (const renderer of renderers) act(() => renderer.unmount())
+  renderers.length = 0
 })
 
-describe('ModelDialog issue #255 callbacks', () => {
-  test('runs field, selector, toggle, provider, and cancel callbacks with fake values', () => {
-    validChatState()
-    const tree = render()
+function render(props: Partial<React.ComponentProps<typeof ModelDialog>> = {}) {
+  let renderer: ReactTestRenderer
+  act(() => {
+    renderer = create(<ModelDialog open onOpenChange={() => {}} onSuccess={() => {}} providers={providers} modelTypes={modelTypes} {...props} />)
+  })
+  renderers.push(renderer!)
+  return renderer!
+}
 
-    for (const node of findAll(tree, (item) => typeof item.props.onChange === 'function')) {
-      ;(node.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'changed' } })
-    }
-    for (const node of findAll(tree, (item) => typeof item.props.onCheckedChange === 'function')) {
-      ;(node.props.onCheckedChange as (value: boolean) => void)(true)
-    }
-    for (const node of findAll(tree, (item) => typeof item.props.onValueChange === 'function')) {
-      ;(node.props.onValueChange as (value: string) => void)('chat')
-    }
-    const clickers = findAll(tree, (item) => typeof item.props.onClick === 'function')
-    clickers.forEach((node) => (node.props.onClick as () => void)())
+function input(renderer: ReactTestRenderer, id: string) {
+  return renderer.root.findByProps({ id })
+}
 
-    expect(clickers).toHaveLength(3)
-    expect(states).toContain('changed')
-    expect(baseProps.onOpenChange).toHaveBeenCalledWith(false)
+function change(renderer: ReactTestRenderer, id: string, value: string) {
+  act(() => input(renderer, id).props.onChange({ target: { value } }))
+}
+
+function selects(renderer: ReactTestRenderer) {
+  return renderer.root.findAllByType('select')
+}
+
+function modelTypeSelect(renderer: ReactTestRenderer) {
+  return selects(renderer).find((select) => !select.props.disabled)!
+}
+
+function selectValue(renderer: ReactTestRenderer, value: string, occurrence = 0) {
+  const select = selects(renderer).filter((candidate) =>
+    candidate.findAllByType('option').some((option) => option.props.value === value),
+  )[occurrence]!
+  act(() => select.props.onChange({ target: { value } }))
+}
+
+function switchValue(renderer: ReactTestRenderer, index: number, checked: boolean) {
+  act(() => renderer.root.findAllByProps({ type: 'checkbox' })[index].props.onChange({ target: { checked } }))
+}
+
+function buttonWithText(renderer: ReactTestRenderer, text: string) {
+  return renderer.root.findAllByType('button').find((button) =>
+    button.findAll((node) => node.children.includes(text)).length > 0,
+  )!
+}
+
+function selectProvider(renderer: ReactTestRenderer, code: string) {
+  const button = renderer.root.findAllByType('button').find((candidate) =>
+    candidate.findAllByType('span').some((span) => span.children.includes(`providers.${code}`)),
+  )!
+  act(() => button.props.onClick())
+}
+
+describe('model management dialog', () => {
+  test('requires a model type before enabling provider selection, then applies the provider base URL', () => {
+    const renderer = render()
+    const provider = renderer.root.findByProps({ role: 'combobox' })
+
+    expect(provider.props.disabled).toBe(true)
+    expect(input(renderer, 'name').props['aria-invalid']).toBe(false)
+    expect(JSON.stringify(renderer.toJSON())).toContain('selectModelTypeFirst')
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    expect(renderer.root.findByProps({ role: 'combobox' }).props.disabled).toBe(false)
+
+    selectProvider(renderer, 'openai')
+    expect(input(renderer, 'baseUrl').props.value).toBe('https://api.openai.test')
   })
 
-  test('validates bad JSON, then creates and tests a fully configured fake model', async () => {
-    validChatState()
-    states[46] = '[]'
-    let tree = render()
-    const form = findAll(tree, (node) => typeof node.props.onSubmit === 'function')[0]
-    await (form.props.onSubmit as (event: { preventDefault: () => void }) => Promise<void>)({ preventDefault: () => undefined })
-    expect(states[50]).toEqual(expect.objectContaining({ extraBody: 'invalidJSON' }))
+  test('shows accessible validation errors without calling the create API', async () => {
+    const renderer = render()
+    const form = renderer.root.findByType('form')
+
+    await act(async () => form.props.onSubmit({ preventDefault() {} }))
+
     expect(createModel).not.toHaveBeenCalled()
+    expect(renderer.root.findAllByProps({ role: 'alert' }).map((node) => node.children.join(' '))).toContain('nameRequired')
+    expect(input(renderer, 'name').props['aria-invalid']).toBe(true)
+  })
 
-    validChatState()
-    tree = render()
-    await (findAll(tree, (node) => typeof node.props.onSubmit === 'function')[0].props.onSubmit as (event: { preventDefault: () => void }) => Promise<void>)({ preventDefault: () => undefined })
+  test('creates a selected enabled model and reports success', async () => {
+    const onOpenChange = mock(() => {})
+    const onSuccess = mock(() => {})
+    const renderer = render({ onOpenChange, onSuccess })
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', 'GPT test')
+    change(renderer, 'modelId', 'gpt-test')
+    change(renderer, 'apiKey', 'secret')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
     expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Coverage model', provider: 'openai', model_id: 'gpt-fake',
-      capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
-      default_params: expect.objectContaining({ temperature: 0.7, extra_body: { trace: true }, custom: 1 }),
-      config: { region: 'test' },
+      name: 'GPT test', provider: 'openai', model_id: 'gpt-test', model_type: 'chat',
+      base_url: 'https://api.openai.test', api_key: 'secret', is_enabled: true, is_default: false,
     }))
-    expect(baseProps.onSuccess).toHaveBeenCalled()
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
 
-    const testButton = findAll(tree, (node) => typeof node.props.onClick === 'function' && node.props.type === 'button')
-      .find((node) => JSON.stringify(node).includes('testConnection'))
-    await (testButton?.props.onClick as () => Promise<void>)()
-    expect(testModelConfig).toHaveBeenCalledWith(expect.objectContaining({ api_key: 'fake-key' }))
+  test('prefills edit fields, locks provider identity, and sends editable changes to update', async () => {
+    const onSuccess = mock(() => {})
+    const renderer = render({
+      onSuccess,
+      model: {
+        id: 'model-1', name: 'Existing', provider: 'openai', model_id: 'gpt-existing', model_type: 'chat',
+        base_url: 'https://old.test', is_enabled: false, is_default: true, has_api_key: true,
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    expect(renderer.root.findAllByType('select').find((select) => select.props.disabled)?.props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ role: 'combobox' }).props.disabled).toBe(true)
+    expect(input(renderer, 'modelId').props.disabled).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).toContain('apiKeyConfigured')
+
+    change(renderer, 'name', 'Renamed')
+    change(renderer, 'baseUrl', 'https://new.test')
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(updateModel).toHaveBeenCalledWith('model-1', expect.objectContaining({
+      name: 'Renamed', base_url: 'https://new.test', is_enabled: false, is_default: true,
+    }))
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
+
+  test('constructs a rich chat payload from parameters, capabilities, and extension JSON', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', '  Reasoning model  ')
+    change(renderer, 'modelId', '  reasoning-1  ')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'contextLength', '128000')
+    change(renderer, 'maxOutputTokens', '8192')
+    change(renderer, 'inputPrice', '1.25')
+    change(renderer, 'outputPrice', '5.5')
+    change(renderer, 'temperature', '0.2')
+    change(renderer, 'topP', '0.9')
+    change(renderer, 'frequencyPenalty', '-0.1')
+    change(renderer, 'presencePenalty', '0.3')
+    change(renderer, 'maxTokens', '4096')
+    change(renderer, 'extraBody', '{"metadata":{"tier":"gold"}}')
+    change(renderer, 'defaultParamsExtension', '{"seed":7,"temperature":1.8}')
+    change(renderer, 'configExtension', '{"region":"us-east"}')
+    selectValue(renderer, 'high')
+    switchValue(renderer, 0, false)
+    switchValue(renderer, 1, true)
+    switchValue(renderer, 2, true)
+    switchValue(renderer, 3, true)
+    switchValue(renderer, 4, false)
+    switchValue(renderer, 5, true)
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith({
+      name: 'Reasoning model', provider: 'openai', model_id: 'reasoning-1', model_type: 'chat',
+      base_url: 'https://api.openai.test', api_key: 'secret', context_length: 128000,
+      max_output_tokens: 8192, input_price: 1.25, output_price: 5.5,
+      default_params: {
+        seed: 7, temperature: 0.2, top_p: 0.9, frequency_penalty: -0.1,
+        presence_penalty: 0.3, max_tokens: 4096, reasoning_effort: 'high',
+        extra_body: { metadata: { tier: 'gold' } },
+      },
+      capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
+      config: { region: 'us-east' }, is_enabled: false, is_default: true,
+    })
+  })
+
+  test('blocks invalid extension JSON, clears the field error, and succeeds after correction', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', 'JSON recovery')
+    change(renderer, 'modelId', 'json-recovery')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'defaultParamsExtension', '[]')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    expect(createModel).not.toHaveBeenCalled()
+    expect(input(renderer, 'defaultParamsExtension').props['aria-invalid']).toBe(true)
+
+    change(renderer, 'defaultParamsExtension', '{"seed":42}')
+    expect(input(renderer, 'defaultParamsExtension').props['aria-invalid']).toBe(false)
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({ default_params: { seed: 42 } }))
+  })
+
+  test('recovers a failed connection test and reports the successful retry', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'modelId', 'connection-test')
+    change(renderer, 'apiKey', 'secret')
+    testModelConfig.mockRejectedValueOnce(new Error('Network unavailable'))
+
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+    expect(testModelConfig).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai', model_id: 'connection-test', api_key: 'secret',
+    }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('testFailed')
+
+    change(renderer, 'apiKey', 'replacement')
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+
+    expect(testModelConfig).toHaveBeenLastCalledWith(expect.objectContaining({ api_key: 'replacement' }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('Connected')
     expect(toastSuccess).toHaveBeenCalledWith('testSuccess')
   })
 
-  test('maps fake API validation failures without closing either workflow', async () => {
-    validChatState()
-    createModel.mockRejectedValue(new Error('validation'))
-    let tree = render()
-    await (findAll(tree, (node) => typeof node.props.onSubmit === 'function')[0].props.onSubmit as (event: { preventDefault: () => void }) => Promise<void>)({ preventDefault: () => undefined })
-    expect(states[50]).toEqual({ modelId: 'invalid' })
-    expect(baseProps.onSuccess).not.toHaveBeenCalled()
+  test('maps create API validation errors and clears them through field callbacks', async () => {
+    createModel.mockRejectedValueOnce(new ApiError(1001, 'Invalid', {
+      errors: { model_id: 'Already exists', base_url: 'Invalid URL' },
+    }))
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'ollama')
+    change(renderer, 'name', 'Duplicate')
+    change(renderer, 'modelId', 'duplicate')
 
-    validChatState()
-    testModelConfig.mockRejectedValue(new Error('validation'))
-    tree = render()
-    const testButton = findAll(tree, (node) => typeof node.props.onClick === 'function')
-      .find((node) => JSON.stringify(node).includes('testConnection'))
-    await (testButton?.props.onClick as () => Promise<void>)()
-    expect(states[52]).toEqual({ success: false, message: 'testFailed' })
-    expect(states[51]).toBe(false)
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(input(renderer, 'modelId').props['aria-invalid']).toBe(true)
+    expect(input(renderer, 'baseUrl').props['aria-invalid']).toBe(true)
+    change(renderer, 'modelId', 'unique')
+    change(renderer, 'baseUrl', 'http://local.test')
+    expect(input(renderer, 'modelId').props['aria-invalid']).toBe(false)
+    expect(input(renderer, 'baseUrl').props['aria-invalid']).toBe(false)
+  })
+
+  test('reports unsuccessful and validation-error connection responses', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'modelId', 'connection-test')
+    change(renderer, 'apiKey', 'secret')
+    testModelConfig.mockResolvedValueOnce({ success: false, message: '  Rejected  ' })
+
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+    expect(toastError).toHaveBeenCalledWith('Rejected')
+    expect(JSON.stringify(renderer.toJSON())).toContain('Rejected')
+
+    testModelConfig.mockRejectedValueOnce(new ApiError(1001, 'Invalid', {
+      errors: { api_key: 'Expired key' },
+    }))
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+    expect(input(renderer, 'apiKey').props['aria-invalid']).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).toContain('Expired key')
+  })
+
+  test('constructs Google image parameters and keeps image capabilities null', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'text_to_image' } }))
+    selectProvider(renderer, 'google')
+    change(renderer, 'name', 'Image model')
+    change(renderer, 'modelId', 'imagen-test')
+    change(renderer, 'apiKey', 'secret')
+    selectValue(renderer, '1024x1024')
+    selectValue(renderer, 'vivid')
+    selectValue(renderer, 'high')
+    selectValue(renderer, '16:9')
+    selectValue(renderer, '2K')
+    selectValue(renderer, 'ALLOW_ADULT')
+    selectValue(renderer, 'DONT_ALLOW', 1)
+    selectValue(renderer, 'image/jpeg')
+    change(renderer, 'googleOutputCompressionQuality', '88')
+    change(renderer, 'defaultParamsExtensionImage', '{"seed":9}')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'google', model_type: 'text_to_image', capabilities: null,
+      default_params: {
+        seed: 9, default_width: 1024, default_height: 1024, style: 'vivid', quality: 'high',
+        aspect_ratio: '16:9', image_size: '2K', person_generation: 'ALLOW_ADULT',
+        prominent_people: 'DONT_ALLOW', output_mime_type: 'image/jpeg', output_compression_quality: 88,
+      },
+    }))
   })
 })
