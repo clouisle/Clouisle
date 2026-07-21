@@ -201,6 +201,44 @@ describe('NodeConfigDrawer', () => {
     expect(descendants(render(baseNode('unknown'))).find(node => node.type === 'TabsContent' && node.props.value === 'settings')?.props.children).toBeNull()
   })
 
+  test('exposes typed outputs from every supported upstream producer', () => {
+    const current = baseNode('llm', {}, { id: 'current' })
+    const upstream = [
+      baseNode('iteration', { iterationConfig: { outputVariable: 'items' } }, { id: 'iteration' }),
+      baseNode('loop', { loopConfig: { outputVariable: 'rows', indexVariable: 'step', loopVariables: [{ name: 'record', type: 'object' }, { name: 'note', type: 'string' }] } }, { id: 'loop' }),
+      baseNode('media_generation', { mediaGenerationConfig: { mode: 'image', outputVariable: 'images' } }, { id: 'media' }),
+      baseNode('code', { codeConfig: { inputs: [], outputs: [{ name: 'payload', type: 'object' }, { name: '', type: 'string' }] } }, { id: 'code' }),
+      baseNode('template', { templateConfig: { outputVariable: 'text' } }, { id: 'template' }),
+      baseNode('file_to_url', { fileToUrlConfig: { inputs: [{ name: 'urls', sourceType: 'files' }] } }, { id: 'files' }),
+      baseNode('variable_aggregator', { variableAggregatorConfig: { mode: 'array', outputVariable: 'merged' } }, { id: 'aggregator' }),
+      baseNode('parameter_extractor', { parameterExtractorConfig: { parameters: [{ name: 'entities', type: 'array' }] } }, { id: 'extractor' }),
+      baseNode('tool', { toolConfig: { outputVariable: 'toolResult' } }, { id: 'tool' }),
+      baseNode('sub_workflow', { subWorkflowConfig: { outputVariable: 'workflowResult' } }, { id: 'sub-workflow' }),
+      baseNode('agent', { agentConfig: { outputVariable: 'reply' } }, { id: 'agent' }),
+      baseNode('knowledge_retrieval', { knowledgeRetrievalConfig: { outputVariable: 'documents' } }, { id: 'retrieval' }),
+    ]
+    const allNodes = [current, ...upstream]
+    const allEdges = upstream.map((node, index) => ({ id: String(index), source: node.id, target: current.id }))
+    const editor = descendants(render(current, { allNodes, allEdges })).find(node => node.type === 'LLMNodeConfig')!
+    const getAvailableVariables = editor.props.getAvailableVariables as (filter?: 'iterable' | 'all') => Array<{ id: string }>
+
+    const ids = getAvailableVariables().map(variable => variable.id)
+    expect(ids).toEqual(expect.arrayContaining([
+      'iteration.items', 'loop.rows', 'loop.step', 'loop.record', 'loop.note',
+      'media.result', 'media.images', 'code.payload', 'template.text', 'files.urls',
+      'aggregator.merged', 'extractor.entities', 'tool.toolResult',
+      'sub-workflow.workflowResult', 'agent.reply', 'retrieval.documents',
+      'retrieval.context', 'retrieval.totalFound', 'sys.query',
+    ]))
+    const iterableIds = getAvailableVariables('iterable').map(variable => variable.id)
+    expect(iterableIds).toEqual(expect.arrayContaining([
+      'iteration.items', 'loop.rows', 'loop.record', 'media.images', 'code.payload',
+      'files.urls', 'aggregator.merged', 'extractor.entities', 'tool.toolResult',
+      'sub-workflow.workflowResult', 'retrieval.documents',
+    ]))
+    expect(iterableIds).not.toEqual(expect.arrayContaining(['loop.step', 'loop.note', 'agent.reply', 'retrieval.context', 'sys.query']))
+  })
+
   test('renders comment editing without tabs and updates color and content', () => {
     const node = baseNode('comment', { content: 'Old note', color: 'blue' })
     render(node)
