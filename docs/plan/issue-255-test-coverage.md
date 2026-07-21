@@ -421,6 +421,8 @@
 
 - Frontend focused checkpoint (2026-07-21, commit `bd036eca`): three platform capabilities-page tests pass. The page reaches 53.57% functions and 68.60% lines while its co-located tool list reaches 100% functions/lines, covering loading, merged lists, filtering, tab routing, permission gates, failure recovery, and refresh/import/share reload callbacks. The Agent UI automation guide is synchronized without claiming browser/E2E proof. This focused result does not replace the complete frontend checkpoint; final 95% gates remain inactive.
 
+- Frontend focused checkpoint (2026-07-21, commit `9d9fc2d1`): five notification-creation dialog tests pass, reaching 80.95% functions and 93.93% lines. Required fields, team/user audiences, scheduling, link/internal channel payloads, sanitized failure recovery, and successful reset/close behavior are covered without triggering real external notifications. The Agent UI automation guide is synchronized without claiming browser/E2E proof. This focused result does not replace the complete frontend checkpoint; final 95% gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
