@@ -885,3 +885,59 @@ async def test_message_round_and_session_memory_migrations(
         "idx_conversation_session_memories_status_updated"
         in conn.execute_query.await_args.args[0]
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("dialect", "tables", "columns", "expected_calls"),
+    [
+        ("sqlite", [], [], 1),
+        ("postgres", [], [], 1),
+        ("sqlite", ["messages"], [{"name": "branch_parent_id"}], 6),
+        ("sqlite", ["messages"], [(0, "other")], 7),
+        ("postgres", ["messages"], [], 6),
+    ],
+)
+async def test_message_branch_parent_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    dialect: str,
+    tables: list[str],
+    columns: list[object],
+    expected_calls: int,
+) -> None:
+    query_results = [(len(tables), tables)]
+    if dialect == "sqlite" and tables:
+        query_results.append((len(columns), columns))
+    query_results.extend([(0, [])] * 5)
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect=dialect),
+        execute_query=AsyncMock(side_effect=query_results),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_message_branch_parent_field()
+
+    assert conn.execute_query.await_count == expected_calls
+    if expected_calls > 1:
+        statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+        assert any(
+            "idx_messages_conversation_branch_parent" in sql for sql in statements
+        )
+        assert any("WITH active_canonical" in sql for sql in statements)
+        assert any("WITH round_canonical" in sql for sql in statements)
+
+
+@pytest.mark.asyncio
+async def test_message_branch_parent_migration_propagates_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="postgres"),
+        execute_query=AsyncMock(
+            side_effect=[(1, ["messages"]), RuntimeError("cannot add branch parent")]
+        ),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot add branch parent"):
+        await init_data.init_message_branch_parent_field()
