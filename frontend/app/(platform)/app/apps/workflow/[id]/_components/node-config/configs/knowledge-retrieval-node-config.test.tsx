@@ -119,6 +119,45 @@ test('updates query, retrieval, and output settings for a selected knowledge bas
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ threshold: 0.7 }))
 })
 
+test('filters, clears, and edits constant query configuration', () => {
+  const kb = { id: 'kb-1', name: 'Product docs', description: 'Published docs' }
+  const other = { id: 'kb-2', name: 'Support articles', description: 'Troubleshooting' }
+  states = [true, true, true, [kb, other], false, true, 'support']
+  const onConfigChange = mock(() => {})
+  let tree = render({ knowledgeBaseId: undefined }, { onConfigChange })
+
+  expect(text(tree)).toContain('Support articles')
+  expect(text(tree)).not.toContain('Product docs')
+
+  states = [true, true, true, [kb], false, false, '']
+  tree = render({ knowledgeBaseId: 'kb-1', querySource: 'constant', queryConstantValue: 'release notes' }, { onConfigChange })
+  const constantInput = descendants(tree).find(node => node.type === component && node.props.value === 'release notes')!
+  ;(constantInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'security guide' } })
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ queryConstantValue: 'security guide' }))
+
+  descendants(tree).find(node => node.type === component && node.props.className === 'h-6 w-6 shrink-0')!.props.onClick!()
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ knowledgeBaseId: undefined, knowledgeBaseName: undefined }))
+})
+
+test('shows empty search and variable results and ignores unsupported modes', () => {
+  states = [true, true, true, [], false, true, 'missing']
+  expect(text(render({}))).toContain('configKnowledgeRetrieval.noMatchingKnowledgeBases')
+
+  const onConfigChange = mock(() => {})
+  const kb = { id: 'kb-1', name: 'Product docs' }
+  states = [true, true, true, [kb], false, false, '']
+  const tree = render({ knowledgeBaseId: 'kb-1' }, {
+    onConfigChange,
+    variableSearch: 'missing',
+    openVariablePopover: 'query-input',
+  })
+  expect(text(tree)).toContain('configCommon.noMatchingVariables')
+
+  const select = descendants(tree).find(node => node.type === component && typeof node.props.onValueChange === 'function')!
+  ;(select.props.onValueChange as (value: string) => void)('unsupported')
+  expect(onConfigChange).not.toHaveBeenCalled()
+})
+
 test('ignores a recoverable knowledge-base list failure', async () => {
   getKnowledgeBases.mockRejectedValue(new Error('temporary failure'))
   render({})
