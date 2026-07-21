@@ -118,7 +118,11 @@ mock.module('react', () => ({
   },
   useRef: <T,>(current: T) => {
     const index = refIndex++
-    return { current: (refValues[index] ?? current) as T }
+    if (refValues[index] === undefined) refValues[index] = current
+    return {
+      get current() { return refValues[index] as T },
+      set current(value: T) { refValues[index] = value },
+    }
   },
   useState: <T,>(initial: T): [T, StateSetter<T>] => {
     const index = stateIndex++
@@ -157,6 +161,9 @@ const { CodePreviewCanvas } = await import('./code-preview-canvas')
 beforeEach(() => {
   close.mockClear()
   writeText.mockClear()
+  mermaidApi.initialize.mockClear()
+  mermaidApi.render.mockClear()
+  mermaidApi.render.mockImplementation(async () => ({ svg: '<svg><text>ok</text></svg>' }))
   lastBlobParts = []
   createdUrl = 'blob:test-url'
   appendedLink = null
@@ -259,6 +266,43 @@ test('renders mermaid loading state without script iframe', () => {
 
 
 
+test('mermaid render effect initializes the renderer and stores rendered svg', async () => {
+  const tree = render({ id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' })
+  walk(tree)
+  const cleanup = effects[1]()
+  await Bun.sleep(0)
+
+  expect(mermaidApi.initialize).toHaveBeenCalledWith({ startOnLoad: false, securityLevel: 'strict', theme: 'dark' })
+  expect(mermaidApi.render).toHaveBeenCalledWith(expect.stringContaining('mermaid-preview-'), 'graph TD; A-->B;')
+  expect(stateValues[2]).toBe('<svg><text>ok</text></svg>')
+  expect(stateValues[4]).toBe(false)
+  expect(cleanup).toBeFunction()
+})
+
+test('mermaid render effect reports errors and ignores results after cleanup', async () => {
+  mermaidApi.render.mockImplementationOnce(async () => { throw new Error('bad chart') })
+  const errorTree = render({ id: 'bad', language: 'mermaid', kind: 'mermaid', code: 'invalid' })
+  walk(errorTree)
+  effects[1]()
+  await Bun.sleep(0)
+
+  expect(stateValues[3]).toBe('bad chart')
+  expect(stateValues[4]).toBe(false)
+
+  let finishRender: ((value: { svg: string }) => void) | undefined
+  mermaidApi.render.mockImplementationOnce(() => new Promise((resolve) => { finishRender = resolve }))
+  const slowTree = render({ id: 'slow', language: 'mermaid', kind: 'mermaid', code: 'graph TD' })
+  walk(slowTree)
+  const cleanup = effects[1]() as () => void
+  await Promise.resolve()
+  cleanup()
+  finishRender?.({ svg: '<svg>late</svg>' })
+  await Promise.resolve()
+
+  expect(stateValues[2]).toBe('')
+  expect(stateValues[4]).toBe(true)
+})
+
 test('mermaid controls zoom, fit, pan, and download svg', () => {
   const svgElement = { getBoundingClientRect: () => ({ width: 400, height: 200 }) }
   const diagram = {
@@ -271,10 +315,65 @@ test('mermaid controls zoom, fit, pan, and download svg', () => {
     [false, 'preview', '<svg><text>ok</text></svg>', null, false, 1, { x: 0, y: 0 }, false, '', ''],
     [undefined, viewport, diagram]
   )
-  const titles = walk(tree).map((node) => resolve(node.props.title)).filter(Boolean)
+  const nodes = walk(tree)
+  const viewportNode = nodes.find((node) => node.props.onPointerDown)
+  const control = (title: string) => nodes.find((node) => resolve(node.props.title) === title)
+  const pointerTarget = {
+    setPointerCapture: mock(() => {}),
+    releasePointerCapture: mock(() => {}),
+  }
 
-  expect(titles).toContain('mermaidFitToView')
-  expect(titles).toContain('mermaidZoomOut')
-  expect(titles).toContain('mermaidZoomIn')
-  expect(titles).toContain('mermaidDownload')
+  click(control('mermaidZoomIn'))
+  expect(stateValues[5]).toBe(1.1)
+  click(control('mermaidZoomOut'))
+  expect(stateValues[5]).toBe(1)
+  click(control('mermaidFitToView'))
+  expect(stateValues[5]).toBe(0.5)
+  expect(stateValues[6]).toEqual({ x: 0, y: 0 })
+
+  click(control('mermaidDownload'))
+  expect(lastBlobParts).toEqual(['<svg><text>ok</text></svg>'])
+  expect(appendedLink).toMatchObject({ download: 'diagram.svg', clicked: true })
+
+  ;(viewportNode?.props.onPointerDown as (event: Props) => void)({ clientX: 10, clientY: 20, pointerId: 7, currentTarget: pointerTarget })
+  expect(stateValues[7]).toBe(true)
+  expect(pointerTarget.setPointerCapture).toHaveBeenCalledWith(7)
+  expect(diagram.style.transition).toBe('none')
+
+  stateIndex = 0
+  memoIndex = 0
+  refIndex = 0
+  const draggingTree = CodePreviewCanvas({
+    preview: { id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' },
+    onClose: close,
+  })
+  const draggingViewport = walk(draggingTree).find((node) => node.props.onPointerMove)
+  ;(draggingViewport?.props.onPointerMove as (event: Props) => void)({ clientX: 40, clientY: 60 })
+  expect(diagram.style.transform).toBe('translate(30px, 40px) scale(0.5)')
+
+  ;(draggingViewport?.props.onPointerUp as (event: Props) => void)({ clientX: 40, clientY: 60, pointerId: 7, currentTarget: pointerTarget })
+  expect(stateValues[6]).toEqual({ x: 30, y: 40 })
+  expect(stateValues[7]).toBe(false)
+  expect(pointerTarget.releasePointerCapture).toHaveBeenCalledWith(7)
+  expect(diagram.style.transition).toBe('')
+
+  stateIndex = 0
+  memoIndex = 0
+  refIndex = 0
+  const settledTree = CodePreviewCanvas({
+    preview: { id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' },
+    onClose: close,
+  })
+  walk(settledTree)
+  effects.at(-1)?.()
+  expect(diagram.style.transform).toBe('translate(30px, 40px) scale(0.5)')
+})
+
+test('mermaid error state renders translated renderer message', () => {
+  const tree = render(
+    { id: 'bad', language: 'mermaid', kind: 'mermaid', code: 'invalid' },
+    [false, 'preview', '', 'syntax error', false]
+  )
+
+  expect(text(tree)).toContain('mermaidError:syntax error')
 })
