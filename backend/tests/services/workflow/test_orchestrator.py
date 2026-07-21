@@ -171,6 +171,136 @@ class TestWorkflowOrchestratorRun:
 
                         assert result == str(run_id)
 
+    @pytest.mark.asyncio
+    async def test_run_with_existing_run_records_stream_metrics_and_profile(
+        self, workflow_def
+    ):
+        workflow_id = uuid4()
+        user_id = uuid4()
+        run_id = uuid4()
+        orchestrator = WorkflowOrchestrator(
+            enable_cache=False, enable_metrics=False, enable_profiling=True
+        )
+        orchestrator._metrics = MagicMock(
+            record_workflow_start=AsyncMock(),
+            record_workflow_complete=AsyncMock(),
+        )
+        orchestrator._get_execution_plan = AsyncMock()
+        orchestrator._execute = AsyncMock(return_value=({"answer": "done"}, 2))
+        orchestrator._complete_run = AsyncMock()
+
+        workflow = MagicMock(
+            id=workflow_id,
+            name="Test Workflow",
+            definition=workflow_def,
+        )
+        run = MagicMock(id=run_id, save=AsyncMock())
+        plan = MagicMock()
+        plan.validate.return_value = []
+        orchestrator._get_execution_plan.return_value = plan
+        context = MagicMock(set_inputs=AsyncMock(), set_variable=AsyncMock())
+        stream = MagicMock(
+            publish_workflow_start=AsyncMock(),
+            publish_workflow_complete=AsyncMock(),
+        )
+        profiler = MagicMock()
+        profiler.to_dict.return_value = {"nodes": 2}
+
+        with (
+            patch.object(
+                orchestrator, "_load_workflow", AsyncMock(return_value=workflow)
+            ),
+            patch("app.services.workflow.orchestrator.WorkflowRun") as workflow_run_cls,
+            patch(
+                "app.services.workflow.orchestrator.ExecutionContext.create",
+                new=AsyncMock(return_value=context),
+            ),
+            patch(
+                "app.services.workflow.orchestrator.StreamManager",
+                return_value=stream,
+            ),
+            patch(
+                "app.services.workflow.orchestrator.ExecutionProfiler",
+                return_value=profiler,
+            ),
+        ):
+            workflow_run_cls.filter.return_value.first = AsyncMock(return_value=run)
+            result = await orchestrator.run_with_run_id(
+                run_id, workflow_id, {"query": "test"}, user_id
+            )
+
+        assert result == str(run_id)
+        assert run.status == RunStatus.RUNNING
+        run.save.assert_awaited_once()
+        context.set_inputs.assert_awaited_once_with({"query": "test"})
+        orchestrator._complete_run.assert_awaited_once()
+        orchestrator._metrics.record_workflow_complete.assert_awaited_once_with(
+            run_id=str(run_id),
+            workflow_id=str(workflow_id),
+            duration_ms=pytest.approx(0, abs=1000),
+            status="success",
+            node_count=2,
+        )
+        profiler.start.assert_called_once_with()
+        profiler.finish.assert_called_once_with()
+        context.set_variable.assert_awaited_once_with("_profile", {"nodes": 2})
+        stream.publish_workflow_start.assert_awaited_once()
+        stream.publish_workflow_complete.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_with_existing_run_reports_validation_failure(self, workflow_def):
+        workflow_id = uuid4()
+        run_id = uuid4()
+        orchestrator = WorkflowOrchestrator(
+            enable_cache=False, enable_metrics=False, enable_profiling=True
+        )
+        orchestrator._metrics = MagicMock(
+            record_workflow_start=AsyncMock(),
+            record_workflow_complete=AsyncMock(),
+        )
+        orchestrator._get_execution_plan = AsyncMock()
+        orchestrator._fail_run = AsyncMock()
+
+        workflow = MagicMock(
+            id=workflow_id,
+            name="Invalid Workflow",
+            definition=workflow_def,
+        )
+        run = MagicMock(id=run_id, save=AsyncMock())
+        plan = MagicMock()
+        plan.validate.return_value = ["missing start node"]
+        orchestrator._get_execution_plan.return_value = plan
+        context = MagicMock(set_inputs=AsyncMock())
+        stream = MagicMock(publish_workflow_error=AsyncMock())
+        profiler = MagicMock()
+
+        with (
+            patch.object(
+                orchestrator, "_load_workflow", AsyncMock(return_value=workflow)
+            ),
+            patch("app.services.workflow.orchestrator.WorkflowRun") as workflow_run_cls,
+            patch(
+                "app.services.workflow.orchestrator.ExecutionContext.create",
+                new=AsyncMock(return_value=context),
+            ),
+            patch(
+                "app.services.workflow.orchestrator.StreamManager",
+                return_value=stream,
+            ),
+            patch(
+                "app.services.workflow.orchestrator.ExecutionProfiler",
+                return_value=profiler,
+            ),
+        ):
+            workflow_run_cls.filter.return_value.first = AsyncMock(return_value=run)
+            with pytest.raises(WorkflowValidationError):
+                await orchestrator.run_with_run_id(run_id, workflow_id, {}, uuid4())
+
+        orchestrator._fail_run.assert_awaited_once()
+        orchestrator._metrics.record_workflow_complete.assert_awaited_once()
+        profiler.finish.assert_called_once_with()
+        stream.publish_workflow_error.assert_awaited_once()
+
 
 class TestWorkflowOrchestratorCancel:
     """Tests for WorkflowOrchestrator.cancel()."""
