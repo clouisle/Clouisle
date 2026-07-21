@@ -4,9 +4,11 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 const adminCreate = mock(() => Promise.resolve());
 const getTeams = mock(() => Promise.resolve({ items: [] }));
+const getUsers = mock(() => Promise.resolve({ items: [] }));
 const success = mock();
 const onOpenChange = mock();
 const onSuccess = mock();
+let validationErrors: Record<string, string> = {};
 
 mock.module("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -15,22 +17,21 @@ mock.module("@/lib/api/admin/notifications", () => ({
   notificationsApi: { adminCreate },
 }));
 mock.module("@/lib/api/admin/teams", () => ({ teamsApi: { getTeams } }));
-mock.module("@/lib/api/admin/users", () => ({
-  usersApi: { getUsers: mock() },
-}));
+mock.module("@/lib/api/admin/users", () => ({ usersApi: { getUsers } }));
 mock.module("@/hooks/use-debounce", () => ({
   useDebounce: (value: string) => value,
 }));
 mock.module("@/lib/validation", () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => {
-    const { [field]: _, ...remaining } = errors;
+    const remaining = { ...errors };
+    delete remaining[field];
     return remaining;
   },
   formatValidationSummaryMessage: (field: string, message: string) =>
     `${field}: ${message}`,
   getValidationSummaryEntries: (errors: Record<string, string>) =>
     Object.entries(errors),
-  normalizeValidationErrors: () => ({}),
+  normalizeValidationErrors: () => validationErrors,
 }));
 mock.module("sonner", () => ({ toast: { success } }));
 
@@ -100,7 +101,7 @@ mock.module("@/components/ui/combobox", () => ({
   ComboboxEmpty: element,
   ComboboxInput: element,
   ComboboxItem: element,
-  ComboboxList: element,
+  ComboboxList: () => <div />,
   ComboboxTrigger: element,
 }));
 
@@ -124,11 +125,14 @@ const render = async () => {
 };
 
 beforeEach(() => {
-  adminCreate.mockClear();
+  adminCreate.mockReset();
+  adminCreate.mockImplementation(() => Promise.resolve());
   getTeams.mockClear();
+  getUsers.mockClear();
   success.mockClear();
   onOpenChange.mockClear();
   onSuccess.mockClear();
+  validationErrors = {};
 });
 
 test("blocks notification creation until a title is supplied", async () => {
@@ -146,6 +150,91 @@ test("blocks notification creation until a title is supplied", async () => {
       .map((node) => node.children.join(""))
       .join(" "),
   ).toContain("requiredFields");
+  act(() => renderer.unmount());
+});
+
+test("validates required content and team audience", async () => {
+  const renderer = await render();
+  const [title] = renderer.root.findAllByType("input");
+  const scope = renderer.root.findAllByProps({ value: "global" })[0];
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Maintenance" } });
+  });
+  await act(async () => {
+    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+  });
+  expect(adminCreate).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("content: requiredFields");
+
+  await act(async () => {
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
+    scope.props.onValueChange("team");
+  });
+  await act(async () => {
+    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+  });
+  expect(adminCreate).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("team_id: requiredFields");
+
+  await act(async () => scope.props.onValueChange("user"));
+  await act(async () => {
+    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+  });
+  expect(adminCreate).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("user_id: requiredFields");
+  act(() => renderer.unmount());
+});
+
+test("creates a scheduled team notification", async () => {
+  getTeams.mockImplementation(() => Promise.resolve({ items: [{ id: "team-7", name: "Operations" }] }));
+  const renderer = await render();
+  const [title, link, expires] = renderer.root.findAllByType("input");
+  const scope = renderer.root.findAllByProps({ value: "global" })[0];
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Maintenance" } });
+    link.props.onChange({ target: { value: "https://example.test/status" } });
+    expires.props.onChange({ target: { value: "2030-04-05T09:30" } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
+    scope.props.onValueChange("team");
+  });
+  const team = renderer.root.findAllByProps({ value: "" }).find((node) => typeof node.props.onValueChange === "function")!;
+  await act(async () => team.props.onValueChange("team-7"));
+  await act(async () => {
+    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+  });
+
+  expect(adminCreate).toHaveBeenCalledWith(expect.objectContaining({
+    scope: "team",
+    team_id: "team-7",
+    user_id: null,
+    link_url: "https://example.test/status",
+    expires_at: new Date("2030-04-05T09:30").toISOString(),
+  }), { silent: true });
+  act(() => renderer.unmount());
+});
+
+test("shows a create failure and recovers when the title changes", async () => {
+  validationErrors = { title: "already exists" };
+  adminCreate.mockImplementation(() => Promise.reject(new Error("rejected")));
+  const renderer = await render();
+  const [title] = renderer.root.findAllByType("input");
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Maintenance" } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
+  });
+  await act(async () => {
+    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+  });
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("title: already exists");
+  expect(renderer.root.findAllByType("button").at(-1)!.props.disabled).toBe(false);
+
+  await act(async () => title.props.onChange({ target: { value: "Maintenance notice" } }));
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).not.toContain("already exists");
+  expect(onSuccess).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
   act(() => renderer.unmount());
 });
 
@@ -177,6 +266,9 @@ test("creates a global notification with the selected email channel", async () =
     { silent: true },
   );
   expect(success).toHaveBeenCalledWith("toast.created");
+  expect(renderer.root.findAllByType("input")[0].props.value).toBe("");
+  expect(renderer.root.findByType("textarea").props.value).toBe("");
+  expect(renderer.root.findAllByProps({ id: "channel-email" }).find((node) => typeof node.props.onChange === "function")!.props.checked).toBe(false);
   expect(onSuccess).toHaveBeenCalledTimes(1);
   expect(onOpenChange).toHaveBeenCalledWith(false);
   act(() => renderer.unmount());
