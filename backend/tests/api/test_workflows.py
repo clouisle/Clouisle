@@ -173,6 +173,33 @@ async def test_create_workflow_persists_default_definition_and_audits():
 
 
 @pytest.mark.anyio
+async def test_update_workflow_rejects_duplicate_name_before_persisting():
+    user = SimpleNamespace(id=uuid4())
+    workflow = _workflow()
+
+    with (
+        patch.object(
+            workflows, "check_workflow_access", new=AsyncMock(return_value=workflow)
+        ),
+        patch.object(
+            workflows.deps, "check_scoped_permission", new=AsyncMock()
+        ) as scoped,
+        patch.object(workflows.Workflow, "filter", return_value=_Query(object())),
+    ):
+        with pytest.raises(BusinessError) as error:
+            await workflows.update_workflow(
+                workflow_id=workflow.id,
+                workflow_in=WorkflowUpdate(name="Existing"),
+                request=MagicMock(),
+                current_user=user,
+            )
+
+    assert error.value.msg_key == "workflow_name_exists"
+    scoped.assert_awaited_once_with(user, "workflow:update", "team", workflow.team_id)
+    workflow.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_update_workflow_applies_fields_and_increments_version():
     user = SimpleNamespace(id=uuid4())
     workflow = _workflow()
@@ -235,6 +262,55 @@ async def test_publish_snapshots_once_and_transitions_status():
     assert workflow.status == WorkflowStatus.PUBLISHED
     workflow.save.assert_awaited_once()
     assert response["data"]["status"] == WorkflowStatus.PUBLISHED
+
+
+@pytest.mark.anyio
+async def test_publish_reuses_existing_snapshot():
+    workflow = _workflow()
+    create_version = AsyncMock()
+
+    with (
+        patch.object(
+            workflows, "check_workflow_access", new=AsyncMock(return_value=workflow)
+        ),
+        patch.object(
+            workflows.WorkflowVersion, "filter", return_value=_Query(object())
+        ),
+        patch.object(workflows.WorkflowVersion, "create", new=create_version),
+        patch.object(workflows.AuditLogService, "log", new=AsyncMock()),
+    ):
+        await workflows.publish_workflow(
+            workflow.id, MagicMock(), SimpleNamespace(id=uuid4())
+        )
+
+    create_version.assert_not_awaited()
+    assert workflow.status == WorkflowStatus.PUBLISHED
+    workflow.save.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_regenerate_webhook_token_checks_permission_before_persisting():
+    workflow = _workflow()
+    permission_error = BusinessError(msg_key="operation_not_permitted")
+
+    with (
+        patch.object(
+            workflows, "check_workflow_access", new=AsyncMock(return_value=workflow)
+        ),
+        patch.object(
+            workflows.deps,
+            "check_scoped_permission",
+            new=AsyncMock(side_effect=permission_error),
+        ),
+    ):
+        with pytest.raises(BusinessError) as error:
+            await workflows.regenerate_webhook_token(
+                workflow.id, MagicMock(), SimpleNamespace(id=uuid4())
+            )
+
+    assert error.value.msg_key == "operation_not_permitted"
+    assert workflow.webhook_token is None
+    workflow.save.assert_not_awaited()
 
 
 @pytest.mark.anyio
