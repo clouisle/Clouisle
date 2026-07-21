@@ -124,16 +124,20 @@ describe('SettingsDrawer', () => {
     expect(container.querySelector('[data-testid="settings-header-layout-section"]')).toBeNull()
     expect(container.querySelector('section')?.getAttribute('data-side')).toBe('right')
 
-    await click('light')
-    expect(setTheme).toHaveBeenCalledWith('light')
-    await click('sidebarFloating')
-    expect(setSidebarVariant).toHaveBeenCalledWith('floating')
-    await click('layoutCompact')
-    expect(setLayoutVariant).toHaveBeenCalledWith('compact')
-    await click('directionRTL')
-    expect(setDirection).toHaveBeenCalledWith('rtl')
-    await click('中文')
-    expect(changeLocale).toHaveBeenCalledWith('zh')
+    for (const theme of ['system', 'light', 'dark']) await click(theme)
+    expect(setTheme.mock.calls.map((call) => call[0])).toEqual(['system', 'light', 'dark'])
+
+    for (const variant of ['sidebarInset', 'sidebarFloating', 'sidebarDefault']) await click(variant)
+    expect(setSidebarVariant.mock.calls.map((call) => call[0])).toEqual(['inset', 'floating', 'sidebar'])
+
+    for (const variant of ['layoutDefault', 'layoutCompact', 'layoutFull']) await click(variant)
+    expect(setLayoutVariant.mock.calls.map((call) => call[0])).toEqual(['default', 'compact', 'full'])
+
+    for (const direction of ['directionLTR', 'directionRTL']) await click(direction)
+    expect(setDirection.mock.calls.map((call) => call[0])).toEqual(['ltr', 'rtl'])
+
+    for (const locale of ['English', '中文']) await click(locale)
+    expect(changeLocale.mock.calls.map((call) => call[0])).toEqual(['en', 'zh'])
 
     await click('reset')
     expect(setTheme).toHaveBeenLastCalledWith('system')
@@ -153,7 +157,7 @@ describe('SettingsDrawer', () => {
     expect(container.querySelector('[data-testid="settings-header-layout-section"]')).toBeTruthy()
     expect(container.querySelector('section')?.getAttribute('data-side')).toBe('left')
 
-    await click('headerCentered')
-    expect(setPlatformHeaderVariant).toHaveBeenCalledWith('centered')
+    for (const variant of ['headerDefault', 'headerCentered', 'headerMinimal']) await click(variant)
+    expect(setPlatformHeaderVariant.mock.calls.map((call) => call[0])).toEqual(['default', 'centered', 'minimal'])
   })
 })
