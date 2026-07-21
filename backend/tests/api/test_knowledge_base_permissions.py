@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -80,3 +81,112 @@ async def test_platform_kb_route_uses_team_membership_not_global_permission(
     result = await knowledge_bases.require_kb_read(request, user)
 
     assert result is user
+
+
+class _Query:
+    def __init__(self, *, first=None, items=()):
+        self.first_result = first
+        self.items = list(items)
+
+    def filter(self, **_kwargs):
+        return self
+
+    def prefetch_related(self, *_args):
+        return self
+
+    async def first(self):
+        return self.first_result
+
+    async def all(self):
+        return self.items
+
+
+def test_admin_kb_stats_requires_read_permission(kb_permission_client):
+    client, user = kb_permission_client
+    user.roles = [_Role("admin:knowledge-base:update")]
+
+    response = client.get(f"/api/v1/admin/knowledge-bases/{uuid4()}/stats")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == 3000
+
+
+def test_get_document_returns_not_found_within_authorized_kb(
+    kb_permission_client, monkeypatch
+):
+    client, user = kb_permission_client
+    user.is_superuser = True
+    kb_id = uuid4()
+    kb = SimpleNamespace(id=kb_id, team=SimpleNamespace(id=uuid4()), created_by=user)
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase,
+        "filter",
+        lambda **_kwargs: _Query(first=kb),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.Document,
+        "filter",
+        lambda **_kwargs: _Query(),
+    )
+
+    response = client.get(f"/api/v1/knowledge-bases/{kb_id}/documents/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == 6002
+
+
+def test_kb_stats_reconciles_and_persists_actual_document_totals(
+    kb_permission_client, monkeypatch
+):
+    client, user = kb_permission_client
+    user.is_superuser = True
+    kb_id = uuid4()
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="Team knowledge",
+        team=SimpleNamespace(id=uuid4()),
+        created_by=user,
+        document_count=99,
+        total_chunks=99,
+        total_tokens=99,
+        embedding_dimension=1536,
+        save=AsyncMock(),
+    )
+    documents = [
+        SimpleNamespace(
+            status="completed", doc_type="txt", chunk_count=2, token_count=8
+        ),
+        SimpleNamespace(status="error", doc_type="url", chunk_count=1, token_count=4),
+    ]
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase,
+        "filter",
+        lambda **_kwargs: _Query(first=kb),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.Document,
+        "filter",
+        lambda **_kwargs: _Query(items=documents),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.VectorStore,
+        "get_embedding_stats",
+        AsyncMock(return_value={"vectors_count": 3}),
+    )
+
+    response = client.get(f"/api/v1/knowledge-bases/{kb_id}/stats")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "id": str(kb_id),
+        "name": "Team knowledge",
+        "document_count": 2,
+        "total_chunks": 3,
+        "total_tokens": 12,
+        "documents_by_status": {"completed": 1, "error": 1},
+        "documents_by_type": {"txt": 1, "url": 1},
+        "embedding_dimension": 1536,
+        "embedding_stats": {"vectors_count": 3},
+    }
+    kb.save.assert_awaited_once()
+    assert (kb.document_count, kb.total_chunks, kb.total_tokens) == (2, 3, 12)
