@@ -127,6 +127,19 @@ function renderLogsPage() {
   return LogsPage()
 }
 
+async function flush() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+async function renderLoadedPage() {
+  renderLogsPage()
+  await flush()
+  renderLogsPage()
+  await flush()
+  return renderLogsPage()
+}
+
 beforeEach(() => {
   getAgent.mockClear()
   getAgentConversations.mockClear()
@@ -144,6 +157,80 @@ describe('platform agent logs page', () => {
 
     expect(getAgent).toHaveBeenCalledWith('agent-1')
     expect(find(page, (tree) => tree.type === 'skeleton')).toBeDefined()
+  })
+
+  test('loads conversations, opens a detail, and paginates', async () => {
+    getAgentConversations.mockResolvedValue({
+      items: [{
+        id: 'conversation-1',
+        title: '',
+        message_count: 3,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      }],
+      total: 41,
+      page: 1,
+      page_size: 20,
+    })
+    getConversation.mockResolvedValue({ id: 'conversation-1', messages: [] })
+
+    let page = await renderLoadedPage()
+    expect(getAgentConversations).toHaveBeenCalledWith('agent-1', {
+      page: 1,
+      pageSize: 20,
+      search: undefined,
+      createdAfter: undefined,
+      sortBy: 'created_at',
+    })
+    expect(find(page, (tree) => tree.type === 'td' && tree.props.children === 3)).toBeDefined()
+
+    await (find(page, (tree) => tree.type === 'tr' && tree.props.onClick).props.onClick as () => Promise<void>)()
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+
+    page = renderLogsPage()
+    const next = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'next')
+    await (next.props.onClick as () => Promise<void>)()
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+  })
+
+  test('applies search and select filters and clears the search', async () => {
+    let page = await renderLoadedPage()
+    const input = find(page, (tree) => tree.type === 'input')
+    ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: ' billing ' } })
+
+    page = renderLogsPage()
+    await flush()
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ search: 'billing' }))
+
+    const selects: Tree[] = []
+    const collect = (node: ReactNode) => {
+      const resolved = resolve(node)
+      if (!resolved || typeof resolved !== 'object' || !('type' in resolved)) return
+      const tree = resolved as Tree
+      if (tree.type === 'select') selects.push(tree)
+      const children = tree.props.children
+      for (const child of Array.isArray(children) ? children : [children]) collect(child as ReactNode)
+    }
+    collect(page)
+    ;(selects[0].props.onValueChange as (value: string) => void)('7d')
+    ;(selects[1].props.onValueChange as (value: string) => void)('message_count')
+    renderLogsPage()
+    await flush()
+    expect(getAgentConversations.mock.calls.at(-1)?.[1]).toMatchObject({ sortBy: 'message_count' })
+    expect(getAgentConversations.mock.calls.at(-1)?.[1]?.createdAfter).toBeString()
+
+    page = renderLogsPage()
+    ;(find(page, (tree) => tree.type === 'button' && !tree.props['aria-label']).props.onClick as () => void)()
+    renderLogsPage()
+    await flush()
+    expect(getAgentConversations.mock.calls.at(-1)?.[1]?.search).toBeUndefined()
+  })
+
+  test('routes away when the agent request fails', async () => {
+    getAgent.mockRejectedValueOnce(new Error('missing'))
+    renderLogsPage()
+    await flush()
+    expect(push).toHaveBeenCalledWith('/app/apps')
   })
 
   test('renders conversation drawer token totals and converted messages', () => {
