@@ -79,6 +79,33 @@ async def test_history_override_preserves_protected_round_and_valid_tool_results
     assert protected == {1, 2, 3}
 
 
+def test_file_content_trimming_and_tool_turn_summary_boundaries():
+    assert chat_context._trim_file_content(None) == (None, False)
+    content = "a" * 12000 + " middle " + "z" * 4000
+    trimmed, changed = chat_context._trim_file_content(content)
+    assert changed is True
+    assert trimmed.startswith("a" * 12000)
+    assert trimmed.endswith("z" * 4000)
+    assert "file content trimmed" in trimmed
+
+    call = chat_context.ToolCall(
+        id="call-1",
+        type="function",
+        function=chat_context.FunctionCall(name="lookup", arguments="{}"),
+    )
+    summary = chat_context._summarize_block(
+        [
+            Message(role=MessageRole.USER, content="question"),
+            Message(role=MessageRole.ASSISTANT, content="working", tool_calls=[call]),
+            Message(role=MessageRole.TOOL, content="answer", tool_call_id="call-1"),
+        ]
+    )
+    assert summary == (
+        "User asked: question ; Assistant responded: working ; "
+        "Tools involved: lookup, call-1 ; Tool outcomes: answer"
+    )
+
+
 def test_macro_compaction_summarizes_only_unprotected_old_turns(monkeypatch):
     monkeypatch.setattr(
         chat_context,
@@ -168,6 +195,43 @@ async def test_session_memory_failure_returns_deep_clones(monkeypatch):
     assert protected == {0}
     assert compacted == original
     assert compacted[0] is not original[0]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("snapshot_case", ["missing", "inactive", "short"])
+async def test_session_memory_compaction_noop_boundaries(monkeypatch, snapshot_case):
+    snapshot = None
+    if snapshot_case != "missing":
+        snapshot = SimpleNamespace(summary_text="summary", source_message_id=uuid4())
+
+    async def get_snapshot(_conversation_id):
+        return snapshot
+
+    async def active_branch(*args, **kwargs):
+        return snapshot_case != "inactive"
+
+    monkeypatch.setattr(
+        "app.services.session_memory.get_ready_session_memory", get_snapshot
+    )
+    monkeypatch.setattr(chat_context, "is_message_on_active_branch", active_branch)
+    messages = [
+        Message(role=MessageRole.USER, content="first"),
+        Message(role=MessageRole.ASSISTANT, content="answer"),
+    ]
+
+    compacted, changed, protected = await chat_context._apply_session_memory_compaction(
+        messages,
+        conversation=_conversation(),
+        model_id="test-model",
+        provider=None,
+        recent_raw_turns=2,
+        protected_indexes={0},
+    )
+
+    assert changed is False
+    assert protected == {0}
+    assert compacted == messages
+    assert compacted[0] is not messages[0]
 
 
 @pytest.mark.anyio
