@@ -441,3 +441,106 @@ async def test_scoped_role_assignments_backfills_supported_memberships(
     assert "'user-member', 'role-member'" in statements[4]
     assert all("user-viewer" not in statement for statement in statements)
     assert all("user-legacy" not in statement for statement in statements)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tables", "columns", "null_rows", "migration_count"),
+    [
+        ([], [], [], 0),
+        (["agents"], ["tools_credentials"], [], 1),
+        (["agents"], ["tools_credentials"], [{"null_count": 0}], 1),
+        (["agents"], [], [{"null_count": 2}], 3),
+    ],
+)
+async def test_agent_tools_credentials_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tables: list[str],
+    columns: list[str],
+    null_rows: list[dict[str, int]],
+    migration_count: int,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(len(tables), tables), (len(columns), columns)]
+        )
+    )
+    migration_results = [] if columns else [(0, [])]
+    migration_results.extend([(1, null_rows), (0, [])])
+    execute = AsyncMock(side_effect=migration_results)
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
+
+    await init_data.init_agent_tools_credentials()
+
+    assert execute.await_count == migration_count
+    if migration_count == 3:
+        statements = [awaited.args[1] for awaited in execute.await_args_list]
+        assert "ADD COLUMN tools_credentials" in statements[0]
+        assert "SELECT COUNT(*) AS null_count" in statements[1]
+        assert "UPDATE agents" in statements[2]
+
+
+@pytest.mark.asyncio
+async def test_agent_tools_credentials_propagates_add_failure_but_tolerates_backfill_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[(1, ["agents"]), (0, [])])
+    )
+    execute = AsyncMock(side_effect=RuntimeError("cannot alter"))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
+
+    with pytest.raises(RuntimeError, match="cannot alter"):
+        await init_data.init_agent_tools_credentials()
+
+    conn.execute_query.side_effect = [(1, ["agents"]), (1, ["tools_credentials"])]
+    execute.reset_mock()
+    execute.side_effect = RuntimeError("cannot count")
+    await init_data.init_agent_tools_credentials()
+    execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tables", "count_rows", "expected_calls"),
+    [
+        ([], [], 0),
+        (["agents"], [], 1),
+        (["agents"], [{"public_count": 0}], 1),
+        (["agents"], [{"public_count": 2}], 2),
+    ],
+)
+async def test_agent_visibility_normalization_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tables: list[str],
+    count_rows: list[dict[str, int]],
+    expected_calls: int,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(len(tables), tables)))
+    execute = AsyncMock(side_effect=[(1, count_rows), (0, [])])
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
+
+    await init_data.init_agent_visibility_values()
+
+    assert execute.await_count == expected_calls
+    if expected_calls == 2:
+        assert "SET visibility = 'team'" in execute.await_args_list[1].args[1]
+
+
+@pytest.mark.asyncio
+async def test_agent_visibility_normalization_propagates_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(1, ["agents"])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(
+        init_data,
+        "execute_startup_migration_query",
+        AsyncMock(side_effect=RuntimeError("cannot normalize")),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot normalize"):
+        await init_data.init_agent_visibility_values()
