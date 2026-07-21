@@ -722,3 +722,166 @@ async def test_cascade_policy_migration_tolerates_failure_and_resets_timeout(
 
     assert conn.execute_query.await_count == 3
     assert conn.execute_query.await_args.args[0] == "RESET lock_timeout"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("migration", "table", "column", "fragment", "uses_helper"),
+    [
+        (
+            init_data.init_workflow_visibility_field,
+            "workflows",
+            "visibility",
+            "ADD COLUMN visibility",
+            False,
+        ),
+        (
+            init_data.init_agent_streaming_config,
+            "agents",
+            "streaming_config",
+            "ADD COLUMN streaming_config",
+            True,
+        ),
+        (
+            init_data.init_agent_context_compression_config,
+            "agents",
+            "context_compression_config",
+            "ADD COLUMN context_compression_config",
+            True,
+        ),
+        (
+            init_data.init_message_manual_stop_field,
+            "messages",
+            "is_manually_stopped",
+            "ADD COLUMN is_manually_stopped",
+            False,
+        ),
+    ],
+)
+async def test_column_migrations_cover_absent_existing_and_create_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    migration,
+    table: str,
+    column: str,
+    fragment: str,
+    uses_helper: bool,
+) -> None:
+    for tables, columns, expected_direct_calls in [
+        ([], [], 1),
+        ([table], [column], 2),
+        ([table], [], 2 if uses_helper else 3),
+    ]:
+        conn = SimpleNamespace(
+            execute_query=AsyncMock(
+                side_effect=[(len(tables), tables), (len(columns), columns), (0, [])]
+            )
+        )
+        helper = AsyncMock(return_value=(0, []))
+        monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+        monkeypatch.setattr(init_data, "execute_startup_migration_query", helper)
+
+        await migration()
+
+        assert conn.execute_query.await_count == expected_direct_calls
+        if tables and not columns:
+            if uses_helper:
+                assert fragment in helper.await_args.args[1]
+            else:
+                assert fragment in conn.execute_query.await_args.args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "migration",
+    [
+        init_data.init_workflow_visibility_field,
+        init_data.init_agent_streaming_config,
+        init_data.init_agent_context_compression_config,
+        init_data.init_message_manual_stop_field,
+    ],
+)
+async def test_column_migrations_propagate_schema_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    migration,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(1, ["table"]), (0, []), RuntimeError("cannot add column")]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(
+        init_data,
+        "execute_startup_migration_query",
+        AsyncMock(side_effect=RuntimeError("cannot add column")),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot add column"):
+        await migration()
+
+
+@pytest.mark.asyncio
+async def test_message_first_token_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    helper = AsyncMock(return_value=(0, []))
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", helper)
+
+    for dialect, tables, columns, expected_calls in [
+        ("sqlite", [], [], 0),
+        ("postgres", [], [], 0),
+        ("postgres", ["messages"], ["first_token_ms"], 0),
+        ("postgres", ["messages"], [], 1),
+    ]:
+        conn = SimpleNamespace(
+            capabilities=SimpleNamespace(dialect=dialect),
+            execute_query=AsyncMock(
+                side_effect=[(len(tables), tables), (len(columns), columns)]
+            ),
+        )
+        monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+        helper.reset_mock()
+
+        await init_data.init_message_first_token_field()
+
+        assert helper.await_count == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_message_round_and_session_memory_migrations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_message_round_fields()
+    conn.execute_query.assert_awaited_once()
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.return_value = (1, ["messages"])
+    await init_data.init_message_round_fields()
+    assert conn.execute_query.await_count == 7
+    assert (
+        "ADD COLUMN IF NOT EXISTS round_id"
+        in conn.execute_query.await_args_list[1].args[0]
+    )
+    assert (
+        "ADD COLUMN IF NOT EXISTS round_status" in conn.execute_query.await_args.args[0]
+    )
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.return_value = (1, ["conversation_session_memories"])
+    await init_data.init_conversation_session_memory_table()
+    conn.execute_query.assert_awaited_once()
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.return_value = (0, [])
+    await init_data.init_conversation_session_memory_table()
+    assert conn.execute_query.await_count == 3
+    assert (
+        "CREATE TABLE IF NOT EXISTS conversation_session_memories"
+        in conn.execute_query.await_args_list[1].args[0]
+    )
+    assert (
+        "idx_conversation_session_memories_status_updated"
+        in conn.execute_query.await_args.args[0]
+    )
