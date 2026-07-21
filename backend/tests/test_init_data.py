@@ -378,3 +378,66 @@ async def test_model_unique_constraint_skips_or_runs_both_migrations(
     queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
     assert "UNIQUE (provider, model_id)" in queries[1]
     assert "UNIQUE (provider, model_id, model_type)" in queries[2]
+
+
+@pytest.mark.asyncio
+async def test_scoped_role_assignments_backfills_supported_memberships(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace()
+    execute = AsyncMock(return_value=(0, []))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
+
+    roles = {
+        "Admin": SimpleNamespace(id="role-admin"),
+        "Member": SimpleNamespace(id="role-member"),
+        "Viewer": None,
+    }
+
+    class RoleQuery:
+        async def first(self):
+            return roles[self.name]
+
+        def __init__(self, name: str):
+            self.name = name
+
+    monkeypatch.setattr(init_data.Role, "filter", lambda *, name: RoleQuery(name))
+    memberships = [
+        SimpleNamespace(
+            role="owner",
+            user=SimpleNamespace(id="user-owner"),
+            team=SimpleNamespace(id="team-1"),
+        ),
+        SimpleNamespace(
+            role="member",
+            user=SimpleNamespace(id="user-member"),
+            team=SimpleNamespace(id="team-1"),
+        ),
+        SimpleNamespace(
+            role="viewer",
+            user=SimpleNamespace(id="user-viewer"),
+            team=SimpleNamespace(id="team-1"),
+        ),
+        SimpleNamespace(
+            role="legacy",
+            user=SimpleNamespace(id="user-legacy"),
+            team=SimpleNamespace(id="team-1"),
+        ),
+    ]
+
+    class MembershipQuery:
+        async def prefetch_related(self, *_relations):
+            return memberships
+
+    monkeypatch.setattr(init_data.TeamMember, "all", lambda: MembershipQuery())
+
+    await init_data.init_scoped_role_assignments_table()
+
+    assert execute.await_count == 5
+    statements = [awaited.args[1] for awaited in execute.await_args_list]
+    assert "CREATE TABLE IF NOT EXISTS scoped_role_assignments" in statements[0]
+    assert "'user-owner', 'role-admin'" in statements[3]
+    assert "'user-member', 'role-member'" in statements[4]
+    assert all("user-viewer" not in statement for statement in statements)
+    assert all("user-legacy" not in statement for statement in statements)
