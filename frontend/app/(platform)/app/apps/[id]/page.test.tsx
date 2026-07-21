@@ -13,6 +13,8 @@ const getAgent = mock()
 const updateAgent = mock()
 const publishAgent = mock()
 const unpublishAgent = mock()
+let toolbarProps: Record<string, unknown> = {}
+let orchestrationProps: Record<string, unknown> = {}
 
 mock.module('react', () => ({
   ...ReactActual,
@@ -36,8 +38,8 @@ mock.module('@/lib/api/client', () => ({ ApiError: class ApiError extends Error 
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { className?: string }) => <div className={className}>skeleton</div> }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div> }))
 mock.module('./_components/agent-sidebar', () => ({ AgentSidebar: ({ agent, backHref, baseUrl }: { agent: { name: string }; backHref: string; baseUrl: string }) => <aside>{agent.name}<a href={backHref}>back</a><a href={baseUrl}>orchestration</a></aside> }))
-mock.module('./_components/agent-toolbar', () => ({ AgentToolbar: ({ canUpdate, canPublish, onSave, onPublish, onSettingsClick, onEmbedClick }: { canUpdate: boolean; canPublish: boolean; onSave: () => void; onPublish: () => void; onSettingsClick: () => void; onEmbedClick: () => void }) => <div><span>/chat/agent-1</span>{canUpdate && <><button data-testid="agent-save-button" onClick={onSave}>save</button><button data-testid="agent-settings-button" onClick={onSettingsClick}>settings</button><button data-testid="agent-embed-button" onClick={onEmbedClick}>embed</button></>}{canPublish && <button data-testid="agent-publish-button" onClick={onPublish}>publish</button>}</div> }))
-mock.module('./_components/agent-orchestration-form', () => ({ AgentOrchestrationForm: ({ agent, onUpdate }: { agent: { system_prompt: string }; onUpdate: (data: Record<string, unknown>) => void }) => <button onClick={() => onUpdate({ system_prompt: 'changed prompt' })}>{agent.system_prompt}</button> }))
+mock.module('./_components/agent-toolbar', () => ({ AgentToolbar: (props: Record<string, unknown>) => { toolbarProps = props; const { canUpdate, canPublish, onSave, onPublish, onSettingsClick, onEmbedClick } = props as { canUpdate: boolean; canPublish: boolean; onSave: () => void; onPublish: () => void; onSettingsClick: () => void; onEmbedClick: () => void }; return <div><span>/chat/agent-1</span>{canUpdate && <><button data-testid="agent-save-button" onClick={onSave}>save</button><button data-testid="agent-settings-button" onClick={onSettingsClick}>settings</button><button data-testid="agent-embed-button" onClick={onEmbedClick}>embed</button></>}{canPublish && <button data-testid="agent-publish-button" onClick={onPublish}>publish</button>}</div> } }))
+mock.module('./_components/agent-orchestration-form', () => ({ AgentOrchestrationForm: (props: Record<string, unknown>) => { orchestrationProps = props; const { agent, onUpdate } = props as { agent: { system_prompt: string }; onUpdate: (data: Record<string, unknown>) => void }; return <button onClick={() => onUpdate({ system_prompt: 'changed prompt' })}>{agent.system_prompt}</button> } }))
 mock.module('./_components/agent-preview-panel', () => ({ AgentPreviewPanel: ({ agent }: { agent: { name: string } }) => <section>preview {agent.name}</section> }))
 mock.module('./_components/agent-settings-drawer', () => ({ AgentSettingsDrawer: ({ open, name }: { open: boolean; name: string }) => open ? <div>settings {name}</div> : null }))
 mock.module('./_components/embed-config-dialog', () => ({ EmbedConfigDialog: ({ open }: { open: boolean }) => open ? <div>embed dialog</div> : null }))
@@ -91,6 +93,8 @@ beforeEach(() => {
   updateAgent.mockReset()
   publishAgent.mockReset()
   unpublishAgent.mockReset()
+  toolbarProps = {}
+  orchestrationProps = {}
 })
 
 describe('AgentEditor', () => {
@@ -123,6 +127,56 @@ describe('AgentEditor', () => {
     await Promise.resolve()
 
     expect(push).toHaveBeenCalledWith('/app/apps')
+  })
+
+  it('saves initialized values and publishes or unpublishes the agent', async () => {
+    stateValues = [agent, false, false, false]
+    updateAgent.mockResolvedValue(agent)
+    publishAgent.mockResolvedValue({ ...agent, status: 'published' })
+
+    renderEditor()
+    await (toolbarProps.onSave as () => Promise<void>)()
+    await (toolbarProps.onPublish as () => Promise<void>)()
+
+    expect(updateAgent).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      name: '',
+      memory_config: null,
+      file_upload_config: null,
+      image_generation_config: null,
+      video_generation_config: null,
+    }))
+    expect(publishAgent).toHaveBeenCalledWith('agent-1')
+
+    stateValues = [{ ...agent, status: 'published' }, false, false, false]
+    unpublishAgent.mockResolvedValue(agent)
+    renderEditor()
+    await (toolbarProps.onPublish as () => Promise<void>)()
+    expect(unpublishAgent).toHaveBeenCalledWith('agent-1')
+  })
+
+  it('applies every orchestration capability update', () => {
+    stateValues = [agent, false, false, false]
+    renderEditor()
+
+    ;(orchestrationProps.onUpdate as (data: Record<string, unknown>) => void)({
+      system_prompt: 'updated',
+      tools_config: [{ name: 'search' }],
+      variables: [{ name: 'topic' }],
+      knowledge_base_configs: [{ knowledge_base_id: 'kb-1' }],
+      rag_mode: 'auto',
+      enable_vision: true,
+      enable_file_upload: true,
+      enable_user_input_request: true,
+      enable_memory: true,
+      memory_config: { max_memories_per_retrieval: 3 },
+      enable_image_generation: true,
+      image_generation_config: { size: '1024x1024' },
+      enable_video_generation: true,
+      video_generation_config: { duration: 5 },
+      file_upload_config: { max_file_size: 1024 },
+    })
+
+    expect(setState).toHaveBeenCalledTimes(16)
   })
 
   it('exposes publish by permission and opens editor actions', () => {
