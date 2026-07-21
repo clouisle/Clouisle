@@ -8,6 +8,10 @@ const usersApi = {
   deactivateUser: mock(),
   activateUser: mock(),
   deleteUser: mock(),
+  forcePasswordChange: mock(),
+  resetPasswordExpiration: mock(),
+  exemptPasswordExpiration: mock(),
+  bulkForcePasswordChange: mock(),
 }
 const toast = { success: mock(() => {}) }
 const canPerform = mock(() => true)
@@ -44,11 +48,11 @@ mock.module('@/components/ui/table', () => ({
 mock.module('@/components/ui/select', () => ({ Select: ({ children, onValueChange }: React.PropsWithChildren<{ onValueChange: (value: string) => void }>) => <div data-select onClick={() => onValueChange('20')}>{children}</div>, SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectItem: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>, SelectValue: () => null }))
 mock.module('@/components/ui/dropdown-menu', () => ({ DropdownMenu: ({ children }: React.PropsWithChildren) => <>{children}</>, DropdownMenuContent: ({ children }: React.PropsWithChildren) => <>{children}</>, DropdownMenuItem: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>, DropdownMenuSeparator: () => null, DropdownMenuTrigger: ({ children }: React.PropsWithChildren) => <>{children}</> }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: ({ title, onSelectionChange }: { title: string, onSelectionChange: (values: Set<string>) => void }) => <button onClick={() => onSelectionChange(new Set([title === 'status' ? 'inactive' : 'admin']))}>{`filter-${title}`}</button> }))
-mock.module('@/components/ui/tooltip', () => ({ Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>, TooltipContent: ({ children }: React.PropsWithChildren) => <>{children}</>, TooltipTrigger: ({ children, render, ...props }: React.PropsWithChildren<{ render?: React.ReactElement }>) => render ? React.cloneElement(render, props) : <>{children}</> }))
-mock.module('@/components/ui/alert-dialog', () => ({ AlertDialog: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogAction: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>, AlertDialogCancel: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogContent: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogDescription: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogFooter: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogHeader: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogTitle: ({ children }: React.PropsWithChildren) => <>{children}</> }))
+mock.module('@/components/ui/tooltip', () => ({ Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>, TooltipContent: ({ children }: React.PropsWithChildren) => <>{children}</>, TooltipTrigger: ({ children, render, ...props }: React.PropsWithChildren<{ render?: React.ReactElement }>) => render ? React.cloneElement(render, props) : <button {...props}>{children}</button> }))
+mock.module('@/components/ui/alert-dialog', () => ({ AlertDialog: ({ open, children }: React.PropsWithChildren<{ open?: boolean }>) => open ? <>{children}</> : null, AlertDialogAction: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>, AlertDialogCancel: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogContent: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogDescription: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogFooter: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogHeader: ({ children }: React.PropsWithChildren) => <>{children}</>, AlertDialogTitle: ({ children }: React.PropsWithChildren) => <>{children}</> }))
 mock.module('./user-dialog', () => ({ UserDialog: ({ open, user, onSuccess }: { open: boolean, user: typeof user | null, onSuccess: () => void }) => open ? <button onClick={onSuccess}>{user ? `save-${user.username}` : 'save-new-user'}</button> : null }))
 mock.module('./delete-user-dialog', () => ({ DeleteUserDialog: ({ open, user, onSuccess }: { open: boolean, user: typeof user | null, onSuccess: () => void }) => open ? <button onClick={onSuccess}>{`confirm-delete-${user?.username}`}</button> : null }))
-mock.module('./send-notification-dialog', () => ({ SendNotificationDialog: () => null }))
+mock.module('./send-notification-dialog', () => ({ SendNotificationDialog: ({ open }: { open: boolean }) => <span>{open ? 'send-new-user' : 'send-closed'}</span> }))
 mock.module('lucide-react', () => new Proxy({}, { get: () => () => <span /> }))
 
 import { UsersClient } from './users-client'
@@ -78,6 +82,10 @@ beforeEach(() => {
   usersApi.deactivateUser.mockReset()
   usersApi.activateUser.mockReset()
   usersApi.deleteUser.mockReset()
+  usersApi.forcePasswordChange.mockReset()
+  usersApi.resetPasswordExpiration.mockReset()
+  usersApi.exemptPasswordExpiration.mockReset()
+  usersApi.bulkForcePasswordChange.mockReset()
   toast.success.mockClear()
 })
 
@@ -85,6 +93,18 @@ afterEach(() => {
   for (const renderer of renderers) act(() => renderer.unmount())
   renderers.length = 0
 })
+
+const inactiveUser = { ...user, id: 'user-2', username: 'Bo', email: 'bo@example.com', is_active: false, status: 'inactive', password_expiration_exempt: true }
+
+function bulkActionButtons(renderer: ReactTestRenderer, className = 'h-8 w-8') {
+  const toolbar = renderer.root.findAll(node => node.props.className?.includes('fixed bottom-8'))[0]
+  return toolbar.findAllByType('button').filter(node => node.props.className?.includes(className))
+}
+
+async function selectAllUsers(renderer: ReactTestRenderer) {
+  const checkbox = renderer.root.findAllByType('input').find(node => node.props.type === 'checkbox')!
+  await act(async () => checkbox.props.onChange())
+}
 
 describe('UsersClient', () => {
   test('shows loading before rendering the fetched user list', async () => {
@@ -186,7 +206,7 @@ describe('UsersClient', () => {
     for (const label of ['createUser', 'edit', 'deactivate']) {
       expect(renderer.root.findAllByType('button').some(node => node.children.includes(label))).toBe(false)
     }
-    expect(renderer.root.findAllByType('button').filter(node => node.children.includes('delete'))).toHaveLength(1)
+    expect(renderer.root.findAllByType('button').some(node => node.children.includes('delete'))).toBe(false)
     expect(canPerform).toHaveBeenCalledWith('admin:user:delete')
   })
 
@@ -196,14 +216,79 @@ describe('UsersClient', () => {
     const renderer = render()
     await act(async () => {})
 
-    const checkboxes = renderer.root.findAllByType('input').filter(node => node.props.type === 'checkbox')
-    await act(async () => checkboxes[1].props.onChange())
-    const deleteButtons = renderer.root.findAllByType('button').filter(node => node.children.includes('delete'))
-    await act(async () => deleteButtons.at(-1)!.props.onClick())
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer, 'text-destructive')[0].props.onClick())
+    expect(JSON.stringify(renderer.toJSON())).toContain('confirmBulkDelete:1')
+    await act(async () => renderer.root.findAllByType('button').filter(node => node.children.includes('delete')).at(-1)!.props.onClick())
 
     expect(usersApi.deleteUser).toHaveBeenCalledWith('user-1')
     expect(toast.success).toHaveBeenCalledWith('bulkDeleted:1')
     expect(usersApi.getUsers).toHaveBeenCalledTimes(2)
     expect(usersApi.getStats).toHaveBeenCalledTimes(2)
+  })
+
+  test('activates inactive users and runs password row actions', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [inactiveUser], total: 1 })
+    usersApi.activateUser.mockResolvedValue(undefined)
+    usersApi.forcePasswordChange.mockResolvedValue(undefined)
+    usersApi.resetPasswordExpiration.mockResolvedValue(undefined)
+    usersApi.exemptPasswordExpiration.mockResolvedValue(undefined)
+    const renderer = render()
+    await act(async () => {})
+
+    await act(async () => button(renderer, 'activate').props.onClick())
+    expect(usersApi.activateUser).toHaveBeenCalledWith('user-2')
+    expect(toast.success).toHaveBeenCalledWith('userActivated')
+
+    await act(async () => button(renderer, 'forcePasswordChange').props.onClick())
+    expect(usersApi.forcePasswordChange).toHaveBeenCalledWith('user-2')
+    await act(async () => button(renderer, 'resetPasswordExpiration').props.onClick())
+    expect(usersApi.resetPasswordExpiration).toHaveBeenCalledWith('user-2')
+    await act(async () => button(renderer, 'removePasswordExemption').props.onClick())
+    expect(usersApi.exemptPasswordExpiration).toHaveBeenCalledWith('user-2', false)
+  })
+
+  test('opens pending view and runs bulk notification, status, password, and delete actions', async () => {
+    usersApi.getStats.mockResolvedValue({ total: 2, active: 1, inactive: 1, pending: 1 })
+    usersApi.getUsers.mockResolvedValue({ items: [user, inactiveUser], total: 2 })
+    usersApi.activateUser.mockResolvedValue(undefined)
+    usersApi.deactivateUser.mockResolvedValue(undefined)
+    usersApi.deleteUser.mockResolvedValue(undefined)
+    usersApi.bulkForcePasswordChange.mockResolvedValue(undefined)
+    usersApi.exemptPasswordExpiration.mockResolvedValue(undefined)
+    const renderer = render()
+    await act(async () => {})
+
+    await act(async () => button(renderer, 'viewPending').props.onClick())
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith(expect.objectContaining({ status: ['pending'] }))
+
+    await selectAllUsers(renderer)
+    expect(JSON.stringify(renderer.toJSON())).toContain('usersSelected')
+
+    await act(async () => bulkActionButtons(renderer)[1].props.onClick())
+    expect(JSON.stringify(renderer.toJSON())).toContain('send-new-user')
+    await act(async () => bulkActionButtons(renderer)[2].props.onClick())
+    expect(usersApi.activateUser).toHaveBeenCalledWith('user-1')
+    expect(usersApi.activateUser).toHaveBeenCalledWith('user-2')
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer)[3].props.onClick())
+    expect(usersApi.deactivateUser).toHaveBeenCalledWith('user-1')
+    expect(usersApi.deactivateUser).toHaveBeenCalledWith('user-2')
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer)[5].props.onClick())
+    expect(usersApi.bulkForcePasswordChange).toHaveBeenCalledWith(['user-1', 'user-2'])
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer)[6].props.onClick())
+    expect(usersApi.exemptPasswordExpiration).toHaveBeenCalledWith('user-1', true)
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer)[7].props.onClick())
+    expect(usersApi.exemptPasswordExpiration).toHaveBeenCalledWith('user-1', false)
+
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer, 'text-destructive')[0].props.onClick())
+    expect(JSON.stringify(renderer.toJSON())).toContain('confirmBulkDelete:2')
+    await act(async () => renderer.root.findAllByType('button').filter(node => node.children.includes('delete')).at(-1)!.props.onClick())
+    expect(usersApi.deleteUser).toHaveBeenCalledWith('user-1')
+    expect(usersApi.deleteUser).toHaveBeenCalledWith('user-2')
   })
 })
