@@ -1,17 +1,12 @@
-import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
-markitdown = ModuleType("markitdown")
-markitdown.MarkItDown = object
-sys.modules["markitdown"] = markitdown
-
-from app.llm.tools import tool_registry  # noqa: E402
-from app.llm.tools.builtin import file_parser  # noqa: E402
+from app.llm.tools import tool_registry
+from app.llm.tools.builtin import file_parser
 
 
 def test_url_helpers_and_truncation_strategies():
