@@ -33,12 +33,45 @@ mock.module('streamdown', () => ({
   },
 }))
 
+mock.module('@/components/ui/hover-card', () => ({
+  HoverCard: ({ children }: { children?: React.ReactNode }) => createElement('div', { 'data-slot': 'hover-card' }, children),
+  HoverCardContent: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+    createElement('div', { 'data-slot': 'hover-card-content', ...props }, children),
+  HoverCardTrigger: ({ children, render: renderProp }: { children?: React.ReactNode, render: React.ReactElement }) =>
+    createElement('div', { 'data-slot': 'hover-card-trigger' }, renderProp ? createElement(renderProp.type, { ...renderProp.props }, children) : children),
+}))
+mock.module('@/components/ui/carousel', () => ({
+  Carousel: ({ children, ...props }: { children?: React.ReactNode, setApi?: unknown } & Record<string, unknown>) => {
+    const { setApi, ...divProps } = props
+    void setApi
+    return createElement('div', divProps, children)
+  },
+  CarouselContent: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+    createElement('div', props, children),
+  CarouselItem: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+    createElement('div', props, children),
+}))
+
 let ChainOfThought: typeof import('./chain-of-thought').ChainOfThought
 let ChainOfThoughtContent: typeof import('./chain-of-thought').ChainOfThoughtContent
 let ChainOfThoughtHeader: typeof import('./chain-of-thought').ChainOfThoughtHeader
 let CodeBlock: typeof import('./code-block').CodeBlock
 let CodeBlockCopyButton: typeof import('./code-block').CodeBlockCopyButton
 let highlightCode: typeof import('./code-block').highlightCode
+let InlineCitation: typeof import('./inline-citation').InlineCitation
+let InlineCitationCard: typeof import('./inline-citation').InlineCitationCard
+let InlineCitationCardBody: typeof import('./inline-citation').InlineCitationCardBody
+let InlineCitationCardTrigger: typeof import('./inline-citation').InlineCitationCardTrigger
+let InlineCitationCarousel: typeof import('./inline-citation').InlineCitationCarousel
+let InlineCitationCarouselContent: typeof import('./inline-citation').InlineCitationCarouselContent
+let InlineCitationCarouselHeader: typeof import('./inline-citation').InlineCitationCarouselHeader
+let InlineCitationCarouselIndex: typeof import('./inline-citation').InlineCitationCarouselIndex
+let InlineCitationCarouselItem: typeof import('./inline-citation').InlineCitationCarouselItem
+let InlineCitationCarouselNext: typeof import('./inline-citation').InlineCitationCarouselNext
+let InlineCitationCarouselPrev: typeof import('./inline-citation').InlineCitationCarouselPrev
+let InlineCitationSource: typeof import('./inline-citation').InlineCitationSource
+let InlineCitationText: typeof import('./inline-citation').InlineCitationText
+let InlineCitationQuote: typeof import('./inline-citation').InlineCitationQuote
 let Message: typeof import('./message').Message
 let MessageAction: typeof import('./message').MessageAction
 let MessageActions: typeof import('./message').MessageActions
@@ -72,6 +105,22 @@ function render(element: React.ReactNode) {
 beforeAll(async () => {
   ({ ChainOfThought, ChainOfThoughtContent, ChainOfThoughtHeader } = await import('./chain-of-thought'));
   ({ CodeBlock, CodeBlockCopyButton, highlightCode } = await import('./code-block'));
+  ;({
+    InlineCitation,
+    InlineCitationCard,
+    InlineCitationCardBody,
+    InlineCitationCardTrigger,
+    InlineCitationCarousel,
+    InlineCitationCarouselContent,
+    InlineCitationCarouselHeader,
+    InlineCitationCarouselIndex,
+    InlineCitationCarouselItem,
+    InlineCitationCarouselNext,
+    InlineCitationCarouselPrev,
+    InlineCitationSource,
+    InlineCitationText,
+    InlineCitationQuote,
+  } = await import('./inline-citation'));
   ({
     Message,
     MessageAction,
@@ -192,6 +241,77 @@ describe('ai elements', () => {
     node.scrollTop = 0
     wheelHandler?.({ deltaY: -1, stopPropagation })
     expect(stopPropagation).toHaveBeenCalledTimes(1)
+  })
+
+  test('renders inline citation wrappers and source card variations', () => {
+    const citation = renderToStaticMarkup(
+      <InlineCitation className="cite">
+        <InlineCitationText className="text">label</InlineCitationText>
+      </InlineCitation>,
+    )
+    expect(citation).toContain('cite')
+    expect(citation).toContain('text')
+    expect(citation).toContain('label')
+
+    const known = renderToStaticMarkup(
+      <InlineCitationCard>
+        <InlineCitationCardTrigger sources={['https://docs.example.com/path', 'https://other.example.com']} />
+      </InlineCitationCard>,
+    )
+    expect(known).toContain('docs.example.com')
+    expect(known).toContain('+1')
+
+    const single = renderToStaticMarkup(
+      <InlineCitationCard>
+        <InlineCitationCardTrigger sources={['https://docs.example.com']} />
+      </InlineCitationCard>,
+    )
+    expect(single).toContain('docs.example.com')
+    expect(single).not.toContain('+')
+
+    const unknown = renderToStaticMarkup(<InlineCitationCard><InlineCitationCardTrigger sources={[]} /></InlineCitationCard>)
+    expect(unknown).toContain('unknown')
+
+    const body = renderToStaticMarkup(<InlineCitationCardBody className="wide">body</InlineCitationCardBody>)
+    expect(body).toContain('wide')
+    expect(body).toContain('body')
+
+    const source = renderToStaticMarkup(
+      <InlineCitationSource title="Title" url="https://example.com" description="Snippet" className="src">
+        <span>extra</span>
+      </InlineCitationSource>,
+    )
+    expect(source).toContain('Title')
+    expect(source).toContain('https://example.com')
+    expect(source).toContain('Snippet')
+    expect(source).toContain('extra')
+
+    const quote = renderToStaticMarkup(<InlineCitationQuote className="q">quoted</InlineCitationQuote>)
+    expect(quote).toContain('quoted')
+    expect(quote).toContain('q')
+  })
+
+  test('renders inline citation carousel chrome and layout defaults', () => {
+    const carousel = renderToStaticMarkup(
+      <InlineCitationCarousel className="track">
+        <InlineCitationCarouselHeader className="head">header</InlineCitationCarouselHeader>
+        <InlineCitationCarouselContent className="content">
+          <InlineCitationCarouselItem className="item">item</InlineCitationCarouselItem>
+        </InlineCitationCarouselContent>
+        <InlineCitationCarouselPrev className="prev" />
+        <InlineCitationCarouselNext className="next" />
+        <InlineCitationCarouselIndex className="index" />
+      </InlineCitationCarousel>,
+    )
+
+    expect(carousel).toContain('track')
+    expect(carousel).toContain('head')
+    expect(carousel).toContain('header')
+    expect(carousel).toContain('content')
+    expect(carousel).toContain('item')
+    expect(carousel).toContain('aria-label="Previous"')
+    expect(carousel).toContain('aria-label="Next"')
+    expect(carousel).toContain('0/0')
   })
 
   test('uses shimmer animation properties derived from its text', () => {
