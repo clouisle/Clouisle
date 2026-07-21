@@ -4,9 +4,15 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const getModels = mock()
 const updateModel = mock(async () => ({}))
+const setDefault = mock(async () => ({}))
+const testConnection = mock(async () => ({ success: true }))
+const deleteModel = mock(async () => ({}))
 const getProviders = mock(async () => [])
 const getModelTypes = mock(async () => [])
 const success = mock()
+const loading = mock(() => 'toast-1')
+const error = mock()
+const dismiss = mock()
 
 mock.module('next-intl', () => ({
   useTranslations: () => {
@@ -15,14 +21,14 @@ mock.module('next-intl', () => ({
     return translate
   },
 }))
-mock.module('sonner', () => ({ toast: { success, loading: mock(), error: mock(), dismiss: mock() } }))
+mock.module('sonner', () => ({ toast: { success, loading, error, dismiss } }))
 mock.module('lucide-react', () => ({
   Plus: () => null, Search: () => null, MoreHorizontal: () => null, Pencil: () => null,
   Trash2: () => null, ChevronLeft: () => null, ChevronRight: () => null, ChevronsLeft: () => null,
   ChevronsRight: () => null, X: () => null, Star: () => null, Power: () => null,
   PowerOff: () => null, TestTube: () => null,
 }))
-mock.module('@/lib/api/admin/models', () => ({ modelsApi: { getModels, updateModel, setDefault: mock(), testConnection: mock(), deleteModel: mock() } }))
+mock.module('@/lib/api/admin/models', () => ({ modelsApi: { getModels, updateModel, setDefault, testConnection, deleteModel } }))
 mock.module('@/lib/api/models', () => ({ modelsApi: { getProviders, getModelTypes } }))
 mock.module('@/components/permission-guard', () => ({
   PermissionGuard: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -39,7 +45,7 @@ mock.module('@/components/ui/table', () => ({ Table: passthrough, TableBody: pas
 mock.module('@/components/ui/select', () => ({ Select: passthrough, SelectContent: passthrough, SelectItem: passthrough, SelectTrigger: passthrough, SelectValue: passthrough }))
 mock.module('@/components/ui/dropdown-menu', () => ({ DropdownMenu: passthrough, DropdownMenuContent: passthrough, DropdownMenuItem: ({ children, onClick }: React.PropsWithChildren<{ onClick?: () => void }>) => <button onClick={onClick}>{children}</button>, DropdownMenuSeparator: () => null, DropdownMenuTrigger: passthrough }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: () => null }))
-mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough, TooltipContent: passthrough, TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</> }))
+mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough, TooltipContent: passthrough, TooltipTrigger: ({ render, ...props }: { render: React.ReactElement } & Record<string, unknown>) => React.cloneElement(render, props) }))
 mock.module('@/components/ui/alert-dialog', () => ({ AlertDialog: passthrough, AlertDialogAction: ({ children, onClick }: React.PropsWithChildren<{ onClick?: () => void }>) => <button onClick={onClick}>{children}</button>, AlertDialogCancel: passthrough, AlertDialogContent: passthrough, AlertDialogDescription: passthrough, AlertDialogFooter: passthrough, AlertDialogHeader: passthrough, AlertDialogTitle: passthrough }))
 mock.module('./model-dialog', () => ({ ModelDialog: ({ open, onSuccess }: { open: boolean; onSuccess: () => void }) => open ? <button onClick={onSuccess}>save-model</button> : null }))
 mock.module('./delete-model-dialog', () => ({ DeleteModelDialog: () => null }))
@@ -59,9 +65,15 @@ let renderer: ReactTestRenderer
 beforeEach(() => {
   getModels.mockReset()
   updateModel.mockClear()
+  setDefault.mockClear()
+  testConnection.mockClear()
+  deleteModel.mockClear()
   getProviders.mockClear()
   getModelTypes.mockClear()
   success.mockClear()
+  loading.mockClear()
+  error.mockClear()
+  dismiss.mockClear()
 })
 afterEach(() => { if (renderer) act(() => renderer.unmount()) })
 
@@ -112,4 +124,45 @@ test('recovers from a failed list request on the next search', async () => {
   await act(async () => search.props.onChange({ target: { value: 'recovered' } }))
   expect(textCount('Recovered model')).toBeGreaterThan(0)
   expect(getModels).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, search: 'recovered' })
+})
+
+test('sets defaults, tests connections, paginates, and bulk deletes selected models', async () => {
+  getModels.mockResolvedValue(page([
+    model,
+    { ...model, id: 'model-2', name: 'Video Test', model_type: 'text_to_video', is_enabled: false, is_default: false },
+  ]))
+  testConnection.mockResolvedValueOnce({ success: true, latency_ms: 42 }).mockResolvedValueOnce({ success: false, message: 'no route ' })
+  const confirm = mock(() => false)
+  Object.defineProperty(globalThis, 'window', { value: { confirm }, configurable: true })
+  render()
+  await act(async () => {})
+
+  await act(async () => buttonsNamed('setDefault')[0].props.onClick())
+  expect(setDefault).toHaveBeenCalledWith('model-1')
+  expect(success).toHaveBeenCalledWith('modelSetDefault')
+
+  await act(async () => buttonsNamed('testConnection')[0].props.onClick())
+  expect(loading).toHaveBeenCalledWith('testing')
+  expect(testConnection).toHaveBeenCalledWith('model-1')
+  expect(success).toHaveBeenCalledWith('testSuccess (42ms)', { id: 'toast-1' })
+
+  await act(async () => buttonsNamed('testConnection')[1].props.onClick())
+  expect(confirm).toHaveBeenCalledWith('videoTestCostWarning')
+  expect(testConnection).toHaveBeenCalledTimes(1)
+  confirm.mockReturnValueOnce(true)
+  await act(async () => buttonsNamed('testConnection')[1].props.onClick())
+  expect(error).toHaveBeenCalledWith('no route', { id: 'toast-1' })
+
+  const checkboxes = renderer.root.findAllByType('input').filter((input) => input.props.type === 'checkbox')
+  act(() => checkboxes[0]!.props.onChange())
+  expect(textCount('2')).toBeGreaterThan(0)
+  await act(async () => renderer.root.findAllByType('button').find((button) => button.props.className?.includes('text-destructive'))!.props.onClick())
+  await act(async () => buttonsNamed('delete').at(-1)!.props.onClick())
+  await act(async () => {})
+  expect(deleteModel).toHaveBeenCalledWith('model-1')
+  expect(deleteModel).toHaveBeenCalledWith('model-2')
+
+  const selects = renderer.root.findAll((node) => node.props.onValueChange)
+  await act(async () => selects.at(-1)!.props.onValueChange('20'))
+  expect(getModels).toHaveBeenLastCalledWith({ page: 1, pageSize: 20 })
 })
