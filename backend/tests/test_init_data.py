@@ -662,3 +662,63 @@ async def test_tool_shares_stops_after_table_creation_failure(
         await init_data.init_tool_shares_table()
 
     assert conn.execute_query.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cascade_policy_migration_adds_missing_columns_and_resets_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                *[(0, [])] * 13,
+                *[(0, []), (0, [])] * 6,
+                (0, []),
+            ]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.fix_cascade_delete_policies()
+
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert len(statements) == 26
+    assert statements[0] == "SET lock_timeout = '2s'"
+    assert "ON DELETE SET NULL" in statements[2]
+    assert "ADD COLUMN is_deleted" in statements[14]
+    assert "ADD COLUMN total_conversations" in statements[24]
+    assert statements[-1] == "RESET lock_timeout"
+
+
+@pytest.mark.asyncio
+async def test_cascade_policy_migration_skips_existing_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[*[(0, [])] * 13, *[(1, ["existing"])] * 6, (0, [])]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.fix_cascade_delete_policies()
+
+    assert conn.execute_query.await_count == 20
+    assert conn.execute_query.await_args.args[0] == "RESET lock_timeout"
+
+
+@pytest.mark.asyncio
+async def test_cascade_policy_migration_tolerates_failure_and_resets_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(0, []), RuntimeError("cannot alter"), (0, [])]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.fix_cascade_delete_policies()
+
+    assert conn.execute_query.await_count == 3
+    assert conn.execute_query.await_args.args[0] == "RESET lock_timeout"
