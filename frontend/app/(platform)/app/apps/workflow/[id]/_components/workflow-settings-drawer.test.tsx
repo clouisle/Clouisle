@@ -3,6 +3,13 @@ import { beforeEach, expect, mock, test } from 'bun:test'
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
 const element = function Element() {}
 const toastSuccess = mock(() => {})
+const getWorkflowVersions = mock(() => Promise.resolve({ items: [] as Record<string, unknown>[] }))
+const restoreWorkflowVersion = mock(() => Promise.resolve(workflow))
+const regenerateWebhookToken = mock(() => Promise.resolve({ webhook_token: 'new-token' }))
+Object.assign(globalThis, {
+  window: { location: { origin: 'https://app.test' } },
+  navigator: { clipboard: { writeText: mock(() => Promise.resolve()) } },
+})
 
 let hooks: unknown[] = []
 let dependencies: (unknown[] | undefined)[] = []
@@ -47,9 +54,9 @@ mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api/workflows', () => ({ workflowsApi: {
   updateWorkflow: mock(() => {}),
-  getWorkflowVersions: mock(() => Promise.resolve({ items: [] })),
-  restoreWorkflowVersion: mock(() => {}),
-  regenerateWebhookToken: mock(() => {}),
+  getWorkflowVersions,
+  restoreWorkflowVersion,
+  regenerateWebhookToken,
 } }))
 
 mock.module('@/components/ui/button', () => ({ Button: element }))
@@ -111,6 +118,12 @@ beforeEach(() => {
   dependencies = []
   cursor = 0
   toastSuccess.mockClear()
+  getWorkflowVersions.mockReset()
+  getWorkflowVersions.mockResolvedValue({ items: [] })
+  restoreWorkflowVersion.mockReset()
+  restoreWorkflowVersion.mockResolvedValue(workflow)
+  regenerateWebhookToken.mockReset()
+  regenerateWebhookToken.mockResolvedValue({ webhook_token: 'new-token' })
 })
 
 test('returns no drawer without a workflow and enforces the read-only boundary', () => {
@@ -163,4 +176,67 @@ test('keeps edits retryable when saving fails', async () => {
   expect(control(tree, (node) => typeof node.props.onClick === 'function' && text(node.props.children) === 'settings.save').props.disabled).toBe(false)
   expect(onUpdate).not.toHaveBeenCalled()
   expect(toastSuccess).not.toHaveBeenCalled()
+})
+
+test('parses interval, daily, monthly, and custom schedules into save payloads', async () => {
+  const cases = [
+    ['*/15 * * * *', '*/15 * * * *'],
+    ['0 */2 * * *', '0 */2 * * *'],
+    ['5 7 * * *', '5 7 * * *'],
+    ['30 6 12 * *', '30 6 12 * *'],
+    ['1 2 3 4 5', '1 2 * * 5'],
+  ]
+
+  for (const [source, expected] of cases) {
+    hooks = []
+    dependencies = []
+    const updateWorkflow = mock(async (_id: string, data: unknown) => ({ ...workflow, ...(data as object) }))
+    const configured = { ...workflow, trigger_config: { cron_expression: source } }
+    let tree = settle({ workflow: configured, updateWorkflow })
+    ;(control(tree, (node) => node.props.value === 'Original').props.onChange as (event: unknown) => void)({ target: { value: 'Changed' } })
+    tree = settle({ workflow: configured, updateWorkflow })
+    await (control(tree, (node) => text(node.props.children) === 'settings.save').props.onClick as () => Promise<void>)()
+    expect(updateWorkflow.mock.calls[0][1]).toMatchObject({ trigger_config: { cron_expression: expected } })
+  }
+})
+
+test('loads version history and restores a selected non-current version', async () => {
+  const version = { id: 'version-2', version: 2, description: 'Previous', created_at: new Date().toISOString() }
+  getWorkflowVersions.mockResolvedValue({ items: [version] })
+  const onUpdate = mock(() => {})
+  let tree = settle({ onUpdate })
+
+  const history = control(tree, (node) => typeof node.props.onOpenChange === 'function' && text(node.props.children).includes('settings.versionHistory'))
+  ;(history.props.onOpenChange as (open: boolean) => void)(true)
+  tree = settle({ onUpdate })
+  await Promise.resolve()
+  tree = settle({ onUpdate })
+
+  expect(getWorkflowVersions).toHaveBeenCalledWith('workflow-1', { pageSize: 50 })
+  const restore = control(tree, (node) => typeof node.props.onClick === 'function' && text(node.props.children) === 'settings.restore')
+  ;(restore.props.onClick as () => void)()
+  tree = settle({ onUpdate })
+  await (control(tree, (node) => text(node.props.children) === 'settings.confirmRestore').props.onClick as () => Promise<void>)()
+
+  expect(restoreWorkflowVersion).toHaveBeenCalledWith('workflow-1', 2)
+  expect(onUpdate).toHaveBeenCalledWith(workflow)
+  expect(toastSuccess).toHaveBeenCalledWith('settings.restoredToVersion:2')
+})
+
+test('regenerates a webhook token and keeps failed regeneration retryable', async () => {
+  const webhook = { ...workflow, trigger_type: 'webhook', webhook_token: null }
+  let tree = settle({ workflow: webhook })
+  let regenerate = control(tree, (node) => typeof node.props.onClick === 'function' && text(node.props.children).includes('settings.regenerate'))
+  await (regenerate.props.onClick as () => Promise<void>)()
+  tree = settle({ workflow: webhook })
+
+  expect(regenerateWebhookToken).toHaveBeenCalledWith('workflow-1')
+  expect(findAll(tree, (node) => String(node.props.value).includes('new-token'))).toHaveLength(1)
+  expect(toastSuccess).toHaveBeenCalledWith('settings.webhookTokenRegenerated')
+
+  regenerateWebhookToken.mockRejectedValueOnce(new Error('temporary'))
+  regenerate = control(tree, (node) => typeof node.props.onClick === 'function' && text(node.props.children).includes('settings.regenerate'))
+  await (regenerate.props.onClick as () => Promise<void>)()
+  tree = settle({ workflow: webhook })
+  expect(control(tree, (node) => typeof node.props.onClick === 'function' && text(node.props.children).includes('settings.regenerate')).props.disabled).toBe(false)
 })
