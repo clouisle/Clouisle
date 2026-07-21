@@ -144,6 +144,13 @@ async function submit() {
   await (form.props.onSubmit as (event: { preventDefault(): void }) => Promise<void>)({ preventDefault() {} })
 }
 
+async function testConnection() {
+  const button = find(render(), (tree) =>
+    typeof tree.props.onClick === 'function' && String(tree.props.children).includes('testConnection')
+  )
+  await (button.props.onClick as () => Promise<void>)()
+}
+
 beforeEach(() => {
   state = []
   createModel.mockReset()
@@ -199,5 +206,34 @@ describe('ModelDialog', () => {
     expect(find(render(), (tree) => tree.props.children === 'Already exists')).toBeDefined()
     expect(onOpenChange).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  test('requires an API key before testing an OpenAI connection', async () => {
+    chooseModelType()
+    chooseProvider('openai')
+    change('modelId', 'gpt-test')
+
+    await testConnection()
+
+    expect(testModelConfig).not.toHaveBeenCalled()
+    expect(find(render(), (tree) => tree.props.children === 'apiKeyRequired')).toBeDefined()
+  })
+
+  test('recovers from a connection failure without exposing the thrown secret', async () => {
+    testModelConfig.mockRejectedValue(new Error('sk-live-secret'))
+    chooseModelType()
+    chooseProvider('ollama')
+    change('modelId', 'llama3.2')
+
+    await testConnection()
+
+    expect(find(render(), (tree) => tree.props.children === 'testFailed')).toBeDefined()
+    expect(findAll(render(), (tree) => String(tree.props.children).includes('sk-live-secret'))).toHaveLength(0)
+
+    testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+    await testConnection()
+
+    expect(testModelConfig).toHaveBeenCalledTimes(2)
+    expect(find(render(), (tree) => tree.props.children === 'Connected')).toBeDefined()
   })
 })
