@@ -417,6 +417,8 @@
 
 - Frontend focused checkpoint (2026-07-21, commit `3c9c525b`): four Sub-workflow node configuration tests pass, reaching 78.05% functions and 95.52% lines. Loading, selection, constant/variable mappings, output-name validation, list/detail recovery, compatible mapping preservation, and stale-definition clearing are covered; the Agent UI automation guide is synchronized without claiming browser/E2E proof. This focused result does not replace the complete frontend checkpoint; final 95% gates remain inactive.
 
+- Backend focused checkpoint (2026-07-21, commit `6d12968d`): ten admin model endpoint tests pass. The exact main-checkout branch-aware `admin/endpoints/models.py` report reaches 22% coverage (`92/354` statements; nine partial branches), covering list filters/pagination plus representative authorization and endpoint boundaries. This focused result does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
