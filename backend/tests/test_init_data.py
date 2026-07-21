@@ -590,3 +590,75 @@ async def test_clouisle_import_sessions_stops_after_schema_failure(
         await init_data.init_clouisle_import_sessions_table()
 
     assert conn.execute_query.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_skills_table_creates_schema_and_indexes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_skills_table()
+
+    assert conn.execute_query.await_count == 4
+    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert "CREATE TABLE IF NOT EXISTS skills" in statements[0]
+    assert "ALTER TABLE skills" in statements[1]
+    assert "CREATE TABLE IF NOT EXISTS skill_import_sessions" in statements[2]
+    assert "idx_skill_import_sessions_expires_at" in statements[3]
+
+
+@pytest.mark.asyncio
+async def test_skills_table_propagates_schema_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("cannot alter skills")
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=[(0, []), failure]))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot alter skills"):
+        await init_data.init_skills_table()
+
+    assert conn.execute_query.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing", "expected_calls"),
+    [
+        (["tool_shares"], 1),
+        ([], 3),
+    ],
+)
+async def test_tool_shares_skips_existing_or_creates_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    existing: list[str],
+    expected_calls: int,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(return_value=(len(existing), existing))
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_tool_shares_table()
+
+    assert conn.execute_query.await_count == expected_calls
+    if not existing:
+        statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+        assert "CREATE TABLE IF NOT EXISTS tool_shares" in statements[1]
+        assert "idx_tool_shares_shared_by" in statements[2]
+
+
+@pytest.mark.asyncio
+async def test_tool_shares_stops_after_table_creation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("cannot create tool shares")
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=[(0, []), failure]))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot create tool shares"):
+        await init_data.init_tool_shares_table()
+
+    assert conn.execute_query.await_count == 2
