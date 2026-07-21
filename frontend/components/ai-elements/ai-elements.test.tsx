@@ -121,6 +121,79 @@ describe('ai elements', () => {
     expect(closed).toContain(' hidden')
   })
 
+  test('toggles chain-of-thought state and renders streaming defaults', () => {
+    const changes = mock(() => {})
+    const renderer = render(
+      <ChainOfThought defaultOpen={false} isStreaming onOpenChange={changes}>
+        <ChainOfThoughtHeader />
+        <ChainOfThoughtContent>details</ChainOfThoughtContent>
+      </ChainOfThought>,
+    )
+
+    const button = renderer.root.findByType('button')
+    expect(button.props['aria-expanded']).toBe(false)
+    expect(JSON.stringify(renderer.toJSON())).toContain('thinkingDefault')
+
+    act(() => button.props.onClick())
+    expect(renderer.root.findByType('button').props['aria-expanded']).toBe(true)
+    expect(changes).toHaveBeenCalledWith(true)
+  })
+
+  test('auto-closes chain-of-thought once after streaming ends', () => {
+    const previousSetTimeout = globalThis.setTimeout
+    const previousClearTimeout = globalThis.clearTimeout
+    const changes = mock(() => {})
+
+    try {
+      globalThis.setTimeout = ((callback: () => void) => {
+        callback()
+        return 1 as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout
+      globalThis.clearTimeout = mock(() => {}) as unknown as typeof clearTimeout
+
+      render(
+        <ChainOfThought defaultOpen onOpenChange={changes}>
+          <ChainOfThoughtHeader title="Reasoning" />
+          <ChainOfThoughtContent>details</ChainOfThoughtContent>
+        </ChainOfThought>,
+      )
+
+      expect(changes).toHaveBeenCalledWith(false)
+    } finally {
+      globalThis.setTimeout = previousSetTimeout
+      globalThis.clearTimeout = previousClearTimeout
+    }
+  })
+
+  test('contains nested chain-of-thought wheel scrolling', () => {
+    let wheelHandler: ((event: { deltaY: number; stopPropagation: () => void }) => void) | undefined
+    const stopPropagation = mock(() => {})
+    const node = {
+      scrollTop: 4,
+      scrollHeight: 20,
+      clientHeight: 10,
+      addEventListener: mock((_type: string, handler: typeof wheelHandler) => { wheelHandler = handler }),
+      removeEventListener: mock(() => {}),
+    }
+    let renderer: ReactTestRenderer
+
+    act(() => {
+      renderer = create(
+        <ChainOfThought>
+          <ChainOfThoughtContent containScroll>details</ChainOfThoughtContent>
+        </ChainOfThought>,
+        { createNodeMock: () => node },
+      )
+    })
+    renderers.push(renderer!)
+
+    wheelHandler?.({ deltaY: 1, stopPropagation })
+    expect(stopPropagation).toHaveBeenCalledTimes(1)
+    node.scrollTop = 0
+    wheelHandler?.({ deltaY: -1, stopPropagation })
+    expect(stopPropagation).toHaveBeenCalledTimes(1)
+  })
+
   test('uses shimmer animation properties derived from its text', () => {
     const html = renderToStaticMarkup(<Shimmer as="span" duration={4} spread={3}>hello</Shimmer>)
 
