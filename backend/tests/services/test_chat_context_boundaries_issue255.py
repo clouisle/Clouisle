@@ -235,6 +235,49 @@ async def test_session_memory_compaction_noop_boundaries(monkeypatch, snapshot_c
 
 
 @pytest.mark.anyio
+async def test_session_memory_compacts_old_unprotected_turns(monkeypatch):
+    snapshot = SimpleNamespace(summary_text="stored summary", source_message_id=uuid4())
+
+    async def get_snapshot(_conversation_id):
+        return snapshot
+
+    async def active_branch(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(
+        "app.services.session_memory.get_ready_session_memory", get_snapshot
+    )
+    monkeypatch.setattr(chat_context, "is_message_on_active_branch", active_branch)
+    messages = [
+        Message(role=MessageRole.SYSTEM, content="system"),
+        Message(role=MessageRole.USER, content="old question"),
+        Message(role=MessageRole.ASSISTANT, content="old answer"),
+        Message(role=MessageRole.USER, content="protected question"),
+        Message(role=MessageRole.ASSISTANT, content="protected answer"),
+        Message(role=MessageRole.USER, content="recent question"),
+    ]
+
+    compacted, changed, protected = await chat_context._apply_session_memory_compaction(
+        messages,
+        conversation=_conversation(),
+        model_id="test-model",
+        provider=None,
+        recent_raw_turns=1,
+        protected_indexes={3},
+    )
+
+    assert changed is True
+    assert [message.content for message in compacted] == [
+        "system",
+        "stored summary",
+        "protected question",
+        "protected answer",
+        "recent question",
+    ]
+    assert protected == {2}
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("emergency_tokens", [10, 100])
 async def test_prepare_model_context_emergency_fallback_boundary(
     monkeypatch, emergency_tokens
