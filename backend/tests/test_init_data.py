@@ -282,3 +282,99 @@ async def test_init_db_continues_after_optional_migration_failures(
         "Member",
         "Viewer",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("migration", "existing_queries", "expected_count", "expected_fragment"),
+    [
+        (init_data.init_user_locale_field, [(0, [])], 1, None),
+        (init_data.init_user_locale_field, [(1, ["users"]), (1, ["locale"])], 2, None),
+        (
+            init_data.init_user_locale_field,
+            [(1, ["users"]), (0, [])],
+            3,
+            "ADD COLUMN locale",
+        ),
+        (init_data.init_permission_is_system_field, [(0, [])], 1, None),
+        (
+            init_data.init_permission_is_system_field,
+            [(1, ["permissions"]), (1, ["is_system"])],
+            2,
+            None,
+        ),
+        (
+            init_data.init_permission_is_system_field,
+            [(1, ["permissions"]), (0, [])],
+            3,
+            "ADD COLUMN is_system",
+        ),
+        (init_data.init_kb_rerank_fields, [(0, [])], 1, None),
+        (
+            init_data.init_kb_rerank_fields,
+            [(1, ["knowledge_bases"]), (1, ["rerank_model_id"])],
+            2,
+            None,
+        ),
+        (
+            init_data.init_kb_rerank_fields,
+            [(1, ["knowledge_bases"]), (0, [])],
+            3,
+            "ADD COLUMN IF NOT EXISTS rerank_model_id",
+        ),
+    ],
+)
+async def test_simple_startup_migrations_cover_absent_existing_and_create_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    migration,
+    existing_queries: list[tuple[int, list[str]]],
+    expected_count: int,
+    expected_fragment: str | None,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[*existing_queries, (0, [])])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await migration()
+
+    assert conn.execute_query.await_count == expected_count
+    if expected_fragment:
+        assert expected_fragment in conn.execute_query.await_args.args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "migration",
+    [init_data.init_user_locale_field, init_data.init_permission_is_system_field],
+)
+async def test_simple_startup_migrations_propagate_schema_change_failure(
+    monkeypatch: pytest.MonkeyPatch, migration
+) -> None:
+    failure = RuntimeError("schema change failed")
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[(1, ["table"]), (0, []), failure])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="schema change failed"):
+        await migration()
+
+
+@pytest.mark.asyncio
+async def test_model_unique_constraint_skips_or_runs_both_migrations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_model_type_unique_constraint()
+    conn.execute_query.assert_awaited_once()
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.side_effect = [(1, ["models"]), (0, []), (0, [])]
+    await init_data.init_model_type_unique_constraint()
+
+    assert conn.execute_query.await_count == 3
+    queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert "UNIQUE (provider, model_id)" in queries[1]
+    assert "UNIQUE (provider, model_id, model_type)" in queries[2]
