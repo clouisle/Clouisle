@@ -6,7 +6,7 @@
   - [x] 1. Design docs and implementation index
   - [ ] 2. Backend and frontend coverage baselines
   - [ ] 3. Backend critical-path coverage — focused SSO and chat helper batches pass; complete backend remains below 95% line/branch coverage
-  - [ ] 4. Frontend critical-path coverage — 1,640 isolated tests; 95.47% lines, 90.44% functions; source census passing
+  - [ ] 4. Frontend critical-path coverage — 1,640 isolated tests; 95.47% lines, 90.44% functions; KB detail focused test added; source census passing
   - [ ] 5. Agent UI automation guide and reusable prompt
   - [ ] 6. CI reporting, final 95% gates, and documentation
 
