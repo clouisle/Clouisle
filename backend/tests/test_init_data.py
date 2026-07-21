@@ -149,3 +149,136 @@ async def test_workflow_tables_stop_after_database_failure(
         "CREATE TABLE IF NOT EXISTS workflow_runs"
         in (conn.execute_query.await_args_list[-1].args[0])
     )
+
+
+@pytest.mark.asyncio
+async def test_init_db_initializes_roles_settings_and_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    migration_names = [
+        "init_user_locale_field",
+        "init_agent_tools_credentials",
+        "init_permission_is_system_field",
+        "init_model_type_unique_constraint",
+        "init_kb_rerank_fields",
+        "init_clouisle_import_sessions_table",
+        "init_scoped_role_assignments_table",
+        "init_default_settings",
+        "migrate_registration_settings_category",
+        "migrate_storage_settings_category",
+        "init_workflow_tables",
+        "init_notification_tables",
+        "init_tool_shares_table",
+        "init_skills_table",
+        "fix_cascade_delete_policies",
+        "init_sso_tables",
+        "init_memory_tables",
+        "init_agent_hide_tool_calls_field",
+        "init_agent_memory_fields",
+        "init_agent_media_generation_fields",
+    ]
+    migrations = {name: AsyncMock() for name in migration_names}
+    for name, migration in migrations.items():
+        monkeypatch.setattr(init_data, name, migration)
+
+    monkeypatch.setattr(
+        init_data.SystemPermissions,
+        "get_all_definitions",
+        lambda: [{"code": "*", "scope": "system", "description": "All"}],
+    )
+    monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
+    all_permission = SimpleNamespace(code="*")
+    monkeypatch.setattr(
+        init_data.Permission, "get", AsyncMock(return_value=all_permission)
+    )
+
+    roles = {}
+
+    async def get_or_create_role(*, name: str, defaults: dict) -> tuple[object, bool]:
+        role = SimpleNamespace(
+            id=f"role-{name.lower()}",
+            name=name,
+            defaults=defaults,
+            permissions=SimpleNamespace(add=AsyncMock()),
+        )
+        roles[name] = role
+        return role, True
+
+    monkeypatch.setattr(init_data.Role, "get_or_create", get_or_create_role)
+    sync_permissions = AsyncMock()
+    monkeypatch.setattr(init_data, "sync_role_permissions", sync_permissions)
+    from app.models.site_setting import SiteSetting
+
+    monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=""))
+    set_value = AsyncMock()
+    monkeypatch.setattr(SiteSetting, "set_value", set_value)
+
+    await init_data.init_db()
+
+    assert set(roles) == {init_data.SUPER_ADMIN_ROLE, "Admin", "Member", "Viewer"}
+    roles[init_data.SUPER_ADMIN_ROLE].permissions.add.assert_awaited_once_with(
+        all_permission
+    )
+    assert [awaited.args[2] for awaited in sync_permissions.await_args_list] == [
+        "Admin",
+        "Member",
+        "Viewer",
+    ]
+    set_value.assert_awaited_once_with(
+        key="default_role_id",
+        value="role-viewer",
+        value_type="string",
+        category="security",
+        description="Default role ID for new users",
+        is_public=False,
+    )
+    for migration in migrations.values():
+        assert migration.await_count >= 1
+    assert migrations["init_agent_tools_credentials"].await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_init_db_continues_after_optional_migration_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    optional_names = [
+        "init_user_locale_field",
+        "init_agent_tools_credentials",
+        "init_permission_is_system_field",
+        "init_model_type_unique_constraint",
+        "init_kb_rerank_fields",
+        "init_clouisle_import_sessions_table",
+    ]
+    for name in optional_names:
+        monkeypatch.setattr(
+            init_data, name, AsyncMock(side_effect=RuntimeError(f"{name} failed"))
+        )
+
+    monkeypatch.setattr(init_data.SystemPermissions, "get_all_definitions", lambda: [])
+    monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
+
+    roles = []
+
+    async def get_or_create_role(*, name: str, defaults: dict) -> tuple[object, bool]:
+        roles.append((name, defaults))
+        return SimpleNamespace(
+            id=name, permissions=SimpleNamespace(add=AsyncMock())
+        ), False
+
+    monkeypatch.setattr(init_data.Role, "get_or_create", get_or_create_role)
+    monkeypatch.setattr(init_data, "sync_role_permissions", AsyncMock())
+    monkeypatch.setattr(
+        init_data,
+        "init_scoped_role_assignments_table",
+        AsyncMock(side_effect=RuntimeError("required migration failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="required migration failed"):
+        await init_data.init_db()
+
+    assert [name for name, _ in roles] == [
+        init_data.SUPER_ADMIN_ROLE,
+        "Admin",
+        "Member",
+        "Viewer",
+    ]
