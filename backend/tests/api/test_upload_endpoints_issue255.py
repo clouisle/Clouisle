@@ -16,10 +16,22 @@ file_parser.file_parser_service = SimpleNamespace(
 file_parser.FileParseConfig = lambda **kwargs: SimpleNamespace(**kwargs)
 services = ModuleType("app.services")
 services.__path__ = [str(Path(__file__).parents[2] / "app" / "services")]
+original_services = sys.modules.get("app.services")
+original_file_parser = sys.modules.get("app.services.file_parser")
 sys.modules["app.services"] = services
 sys.modules["app.services.file_parser"] = file_parser
+try:
+    from app.api.v1.endpoints import upload  # noqa: E402
+finally:
+    if original_services is None:
+        sys.modules.pop("app.services", None)
+    else:
+        sys.modules["app.services"] = original_services
+    if original_file_parser is None:
+        sys.modules.pop("app.services.file_parser", None)
+    else:
+        sys.modules["app.services.file_parser"] = original_file_parser
 
-from app.api.v1.endpoints import upload  # noqa: E402
 from app.schemas.response import BusinessError  # noqa: E402
 
 
