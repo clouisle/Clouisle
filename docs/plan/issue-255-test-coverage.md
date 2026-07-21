@@ -429,6 +429,10 @@
 
 - Backend focused checkpoint (2026-07-21, commits `e8003c29` and `1732c4a7`): 15 chat preflight tests pass, covering missing/inaccessible agents, team/superuser/private-owner access, public response projection, conversation ownership/creation counters, inactive-user rejection, stream setup failure, and attachment failure before provider invocation. The isolated `chat.py` report is 8%; combined direct-chat coverage remains the relevant focused indicator, and neither replaces the complete backend checkpoint. Final 95% line and branch gates remain inactive.
 
+- Frontend progress checkpoint (2026-07-21, commits through `f86f6c09`): 1,519 isolated tests passed with 6,894 assertions. Complete LCOV aggregation reports 78.91% functions (`5,802/7,353`) and 87.68% lines (`79,412/90,570`); all 470 eligible tracked sources appear in LCOV. This is still below the independent 95% function/line/statement requirement, so final gates remain inactive.
+
+- Backend progress checkpoint (2026-07-21, commits through `1732c4a7`): 2,793 tests passed and 2 skipped. The whole-`app` branch-aware report measures 37,275 statements with 8,549 missed and 11,640 branches with 1,585 partial, for 73% aggregate coverage. This remains below the independent 95% line and branch requirement, so final gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
