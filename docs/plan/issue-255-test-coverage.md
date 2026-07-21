@@ -425,6 +425,10 @@
 
 - Backend focused checkpoint (2026-07-21, commit `24d0e322`): 31 admin model endpoint tests pass. The branch-aware `admin/endpoints/models.py` report rises to 43% coverage (`165/354` statements; nine partial branches), adding CRUD, connection, validation, sanitized provider-error, persistence, and authorization coverage. This focused result does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
 
+- Frontend focused checkpoint (2026-07-21, commits `dc9cc6c6`, `00eb6041`, and `7057306b`): chat variable-form tests pass at 84.78% functions/72.00% lines, login security-flow tests pass at 74.51% functions/89.74% lines, and workflow logs tests pass at 76.00% functions/93.66% lines. Covered behavior includes typed/required/file variables with mocked uploads; credential-safe login, CAPTCHA/MFA/SSO validation and retry; and workflow log loading/filtering/pagination/detail/error/retry/deletion-refresh behavior. These focused results do not replace the complete frontend checkpoint; final 95% gates remain inactive.
+
+- Backend focused checkpoint (2026-07-21, commits `e8003c29` and `1732c4a7`): 15 chat preflight tests pass, covering missing/inaccessible agents, team/superuser/private-owner access, public response projection, conversation ownership/creation counters, inactive-user rejection, stream setup failure, and attachment failure before provider invocation. The isolated `chat.py` report is 8%; combined direct-chat coverage remains the relevant focused indicator, and neither replaces the complete backend checkpoint. Final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
