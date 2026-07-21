@@ -1098,3 +1098,118 @@ async def test_memory_tables_create_entities_relations_and_indexes(
     assert "idx_memory_entities_user_name" in statements[3]
     assert "CREATE TABLE IF NOT EXISTS memory_relations" in statements[4]
     assert "idx_memory_relations_user_type" in statements[7]
+
+
+@pytest.mark.asyncio
+async def test_agent_memory_and_media_field_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    helper = AsyncMock(return_value=(0, []))
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", helper)
+
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    await init_data.init_agent_hide_tool_calls_field()
+    helper.assert_not_awaited()
+
+    conn.execute_query.return_value = (1, ["agents"])
+    await init_data.init_agent_hide_tool_calls_field()
+    assert "hide_tool_calls" in helper.await_args.args[1]
+
+    helper.reset_mock()
+    conn.execute_query.return_value = (1, ["enable_memory"])
+    await init_data.init_agent_memory_fields()
+    helper.assert_not_awaited()
+
+    conn.execute_query.return_value = (0, [])
+    await init_data.init_agent_memory_fields()
+    assert helper.await_count == 2
+    assert "enable_memory" in helper.await_args_list[0].args[1]
+    assert "memory_config" in helper.await_args_list[1].args[1]
+
+    helper.reset_mock()
+    conn.execute_query.return_value = (0, [])
+    await init_data.init_agent_media_generation_fields()
+    helper.assert_not_awaited()
+
+    conn.execute_query.return_value = (1, ["agents"])
+    await init_data.init_agent_media_generation_fields()
+    assert helper.await_count == 4
+    statements = [awaited.args[1] for awaited in helper.await_args_list]
+    assert "enable_image_generation" in statements[0]
+    assert "image_generation_config" in statements[1]
+    assert "enable_video_generation" in statements[2]
+    assert "video_generation_config" in statements[3]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("migration", "table", "column", "fragment"),
+    [
+        (
+            init_data.init_user_approval_status_field,
+            "users",
+            "approval_status",
+            "ADD COLUMN approval_status",
+        ),
+        (
+            init_data.init_totp_fields,
+            "users",
+            "totp_secret",
+            "ADD COLUMN totp_secret",
+        ),
+        (
+            init_data.init_agent_kb_search_mode,
+            "agent_knowledge_bases",
+            "search_mode",
+            "ADD COLUMN IF NOT EXISTS search_mode",
+        ),
+    ],
+)
+async def test_additional_column_migrations_cover_absent_existing_and_create(
+    monkeypatch: pytest.MonkeyPatch,
+    migration,
+    table: str,
+    column: str,
+    fragment: str,
+) -> None:
+    for tables, columns in [([], []), ([table], [column]), ([table], [])]:
+        conn = SimpleNamespace(
+            execute_query=AsyncMock(
+                side_effect=[
+                    (len(tables), tables),
+                    (len(columns), columns),
+                    (0, []),
+                    (0, []),
+                ]
+            )
+        )
+        monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+        await migration()
+
+        if tables and not columns:
+            assert any(
+                fragment in awaited.args[0]
+                for awaited in conn.execute_query.await_args_list
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "migration",
+    [init_data.init_user_approval_status_field, init_data.init_totp_fields],
+)
+async def test_additional_column_migrations_propagate_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    migration,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(1, ["table"]), (0, []), RuntimeError("cannot add field")]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot add field"):
+        await migration()
