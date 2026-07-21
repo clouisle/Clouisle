@@ -411,6 +411,8 @@
 
 - Frontend progress checkpoint (2026-07-21, commits through `b6007f35`): settings-dialog focused coverage reaches 53.03% functions and 71.82% lines across seven passing behavior tests. Password validation, mapped failure/retry, email-verification send/rate-limit handling, and account-deletion validation/recovery/success are covered. This focused result does not replace the complete frontend checkpoint; final 95% line/function/statement gates remain inactive.
 
+- Backend focused checkpoint (2026-07-21, commit `0c7f2aeb`): five knowledge-base permission tests pass. The branch-aware `knowledge_bases.py` report reaches 15% coverage (`138/742` statements; six partial branches) after admin stats authorization, authorized missing-document 404 behavior, and stats recalculation/persistence coverage. This focused result does not replace the complete backend checkpoint; final 95% line and branch gates remain inactive.
+
 ## Risks & Mitigation
 - Risk: an honest 95% target across hundreds of modules creates a large review. Mitigation: use small risk-ordered commits and split review only if branch size becomes unmanageable; tooling alone does not complete the issue.
 - Risk: Bun reports only loaded files. Mitigation: enforce a tracked-source-to-LCOV census instead of broad exclusions or mass imports.
