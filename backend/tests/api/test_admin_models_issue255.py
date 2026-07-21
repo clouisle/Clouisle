@@ -6,7 +6,13 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.admin.endpoints import models
-from app.schemas.model import ModelCreate, ModelProvider, ModelType, ModelUpdate
+from app.schemas.model import (
+    ModelCreate,
+    ModelProvider,
+    ModelTestRequest,
+    ModelType,
+    ModelUpdate,
+)
 from app.schemas.response import BusinessError, ResponseCode
 
 
@@ -256,3 +262,216 @@ async def test_delete_and_set_default_persist(monkeypatch):
     defaulted.save.assert_awaited_once()
     assert old_defaults.calls[-1] == ("update", (), {"is_default": False})
     assert default_response["data"].id == defaulted.id
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("model_type", "helper_name"),
+    [
+        (ModelType.CHAT, "_test_chat_model"),
+        (ModelType.EMBEDDING, "_test_embedding_model"),
+        (ModelType.RERANK, "_test_rerank_model"),
+        (ModelType.TEXT_TO_IMAGE, "_test_image_model"),
+        (ModelType.TEXT_TO_VIDEO, "_test_video_model"),
+        (ModelType.TTS, "_test_tts_model"),
+        (ModelType.AUDIO_GENERATION, "_test_audio_generation_model"),
+    ],
+)
+async def test_config_connection_dispatches_supported_types(
+    monkeypatch, model_type, helper_name
+):
+    helper = AsyncMock()
+    monkeypatch.setattr(models, helper_name, helper)
+
+    response = await models.test_model_config(
+        ModelTestRequest(
+            provider=ModelProvider.OPENAI,
+            model_id="test-model",
+            model_type=model_type,
+            api_key="sk-test",
+            default_params={"temperature": 0},
+            config={"region": "test"},
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    helper.assert_awaited_once()
+    assert response["data"].success is True
+    assert response["data"].latency_ms >= 0
+
+
+@pytest.mark.anyio
+async def test_config_connection_stt_validates_key_without_provider(monkeypatch):
+    validate = MagicMock()
+    monkeypatch.setattr(models, "_validate_api_key", validate)
+
+    response = await models.test_model_config(
+        ModelTestRequest(
+            provider=ModelProvider.OPENAI,
+            model_id="whisper-test",
+            model_type=ModelType.STT,
+            api_key="sk-test",
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    validate.assert_called_once_with(ModelProvider.OPENAI, "sk-test")
+    assert response["data"].success is True
+
+
+@pytest.mark.anyio
+async def test_stored_connection_rejects_missing_model_key_and_invalid_type(
+    monkeypatch,
+):
+    missing_id = uuid4()
+    no_key = model(api_key=None)
+    bad_type = model(model_type="unsupported")
+    monkeypatch.setattr(
+        models.Model,
+        "filter",
+        MagicMock(side_effect=[Query(None), Query(no_key), Query(bad_type)]),
+    )
+
+    for model_id, code in [
+        (missing_id, ResponseCode.NOT_FOUND),
+        (no_key.id, ResponseCode.VALIDATION_ERROR),
+        (bad_type.id, ResponseCode.VALIDATION_ERROR),
+    ]:
+        with pytest.raises(BusinessError) as caught:
+            await models.test_model_connection(model_id, current_user=SimpleNamespace())
+        assert caught.value.code == code
+
+
+@pytest.mark.anyio
+async def test_stored_connection_uses_persisted_config_and_translates_failure(
+    monkeypatch,
+):
+    item = model(
+        default_params={"temperature": 0},
+        config={"region": "test"},
+    )
+    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+    chat = AsyncMock()
+    monkeypatch.setattr(models, "_test_chat_model", chat)
+    monkeypatch.setattr(models, "t", MagicMock(side_effect=lambda key, **_: key))
+
+    response = await models.test_model_connection(
+        item.id, current_user=SimpleNamespace()
+    )
+
+    chat.assert_awaited_once_with(
+        ModelProvider.OPENAI,
+        item.model_id,
+        item.api_key,
+        item.base_url,
+        item.default_params,
+        item.config,
+    )
+    assert response["data"].success is True
+
+    chat.side_effect = RuntimeError("401 Unauthorized")
+    response = await models.test_model_connection(
+        item.id, current_user=SimpleNamespace()
+    )
+    assert response["data"].success is False
+    assert response["data"].message == "model_test_invalid_api_key"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("error", "expected_key", "expected_success"),
+    [
+        (RuntimeError("401 Unauthorized"), "model_test_invalid_api_key", False),
+        (RuntimeError("404 not found"), "model_test_model_not_accessible", False),
+        (RuntimeError("429 rate limit"), "model_test_rate_limit_but_valid", True),
+        (RuntimeError("request timeout"), "model_test_connection_timeout", False),
+        (
+            RuntimeError("connection refused"),
+            "model_test_connection_failed_check_base_url",
+            False,
+        ),
+        (RuntimeError("provider exploded"), "model_test_unexpected_error", False),
+    ],
+)
+async def test_config_connection_translates_provider_errors(
+    monkeypatch, error, expected_key, expected_success
+):
+    monkeypatch.setattr(models, "_test_chat_model", AsyncMock(side_effect=error))
+    translate = MagicMock(side_effect=lambda key, **_: key)
+    monkeypatch.setattr(models, "t", translate)
+
+    response = await models.test_model_config(
+        ModelTestRequest(
+            provider=ModelProvider.OPENAI,
+            model_id="test-model",
+            model_type=ModelType.CHAT,
+            api_key="sk-test",
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    assert response["data"].success is expected_success
+    assert response["data"].message == expected_key
+
+
+@pytest.mark.anyio
+async def test_video_rate_limit_is_failure_and_business_error_propagates(monkeypatch):
+    video = AsyncMock(side_effect=RuntimeError("429 rate limit"))
+    monkeypatch.setattr(models, "_test_video_model", video)
+    monkeypatch.setattr(models, "t", MagicMock(side_effect=lambda key, **_: key))
+    request = ModelTestRequest(
+        provider=ModelProvider.OPENAI,
+        model_id="video-test",
+        model_type=ModelType.TEXT_TO_VIDEO,
+        api_key="sk-test",
+    )
+
+    response = await models.test_model_config(request, current_user=SimpleNamespace())
+    assert response["data"].success is False
+    assert response["data"].message == "model_test_unexpected_error"
+
+    error = BusinessError(
+        code=ResponseCode.VALIDATION_ERROR, msg_key="model_test_empty_response"
+    )
+    video.side_effect = error
+    with pytest.raises(BusinessError) as caught:
+        await models.test_model_config(request, current_user=SimpleNamespace())
+    assert caught.value is error
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["create", "update", "delete", "set_default"])
+async def test_model_persistence_errors_propagate(monkeypatch, operation):
+    error = RuntimeError("database unavailable")
+    item = model()
+
+    if operation == "create":
+        monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(None)))
+        monkeypatch.setattr(models.Model, "create", AsyncMock(side_effect=error))
+        call = models.create_model(
+            model_in=ModelCreate(
+                name="Test",
+                provider=ModelProvider.OPENAI,
+                model_id="test-model",
+                model_type=ModelType.CHAT,
+            ),
+            current_user=SimpleNamespace(),
+        )
+    else:
+        monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+        if operation == "update":
+            item.save.side_effect = error
+            call = models.update_model(
+                item.id,
+                ModelUpdate(name="Updated"),
+                current_user=SimpleNamespace(),
+            )
+        elif operation == "delete":
+            item.delete.side_effect = error
+            call = models.delete_model(item.id, current_user=SimpleNamespace())
+        else:
+            item.save.side_effect = error
+            call = models.set_default_model(item.id, current_user=SimpleNamespace())
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await call
