@@ -19,9 +19,12 @@ const getCurrentUser = mock<() => Promise<typeof user>>()
 const getPasswordStatus = mock(() => Promise.resolve(null))
 const getTotpStatus = mock(() => Promise.resolve({ enabled: false, enabled_at: null, remaining_backup_codes: 0 }))
 const updateProfile = mock(() => Promise.resolve({}))
+const changePassword = mock(() => Promise.resolve())
 const deleteAccount = mock(() => Promise.resolve())
+const sendVerification = mock(() => Promise.resolve())
 const successToast = mock<(message: string) => void>()
-let deletePasswordOnChange: React.ChangeEventHandler<HTMLInputElement> | undefined
+const warningToast = mock<(message: string) => void>()
+const inputHandlers = new Map<string, React.ChangeEventHandler<HTMLInputElement> | undefined>()
 let deleteAccountOnClick: (() => Promise<void>) | undefined
 
 let siteSettings = { allow_account_deletion: false, email_verification: false }
@@ -50,7 +53,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
-mock.module('sonner', () => ({ toast: { info: mock(), success: successToast, warning: mock() } }))
+mock.module('sonner', () => ({ toast: { info: mock(), success: successToast, warning: warningToast } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
   AlertCircle: Icon, Clock: Icon, Copy: Icon, Download: Icon, KeyRound: Icon, Link: Icon,
@@ -59,8 +62,8 @@ mock.module('lucide-react', () => ({
 mock.module('@/contexts/site-settings-context', () => ({ useSiteSettings: () => ({ settings: siteSettings }) }))
 mock.module('@/lib/api', () => ({
   ApiError,
-  authApi: { getCurrentUser, sendVerification: mock() },
-  usersApi: { getPasswordStatus, updateProfile, changePassword: mock(), deleteAccount },
+  authApi: { getCurrentUser, sendVerification },
+  usersApi: { getPasswordStatus, updateProfile, changePassword, deleteAccount },
   ssoApi: { disconnectConnection: mock() },
   totpApi: { getStatus: getTotpStatus, disable: mock(), regenerateBackupCodes: mock() },
 }))
@@ -112,7 +115,7 @@ mock.module('@/components/ui/button', () => ({
 }))
 mock.module('@/components/ui/input', () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => {
-    if (props.id === 'delete-password') deletePasswordOnChange = props.onChange
+    if (props.id) inputHandlers.set(props.id, props.onChange)
     return <input {...props} />
   },
 }))
@@ -143,14 +146,21 @@ async function click(text: string, occurrence = 0) {
 
 function enter(input: HTMLInputElement, value: string) {
   input.value = value
-  deletePasswordOnChange!({ target: input } as React.ChangeEvent<HTMLInputElement>)
+  inputHandlers.get(input.id)!({ target: input } as React.ChangeEvent<HTMLInputElement>)
+}
+
+async function enterById(id: string, value: string) {
+  const input = container.querySelector(`#${id}`) as HTMLInputElement
+  expect(input).toBeTruthy()
+  await act(async () => enter(input, value))
 }
 
 beforeEach(() => {
   siteSettings = { allow_account_deletion: false, email_verification: false }
   getCurrentUser.mockReset()
   getCurrentUser.mockImplementation(() => Promise.resolve(user))
-  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, deleteAccount, successToast, push]) fn.mockClear()
+  inputHandlers.clear()
+  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, successToast, warningToast, push]) fn.mockClear()
   localStorage.setItem('access_token', 'token')
 })
 
@@ -196,6 +206,53 @@ describe('SettingsDialog', () => {
     expect(container.querySelector('#current')).toBeTruthy()
     expect(container.textContent).toContain('dangerZone')
     expect(container.querySelector('#delete-password')).toBeTruthy()
+  })
+
+  test('rejects a short local password before calling the API', async () => {
+    user = { ...user, auth_source: 'local', sso_connections: [] }
+    await render()
+    await click('account')
+    await enterById('current', 'current-value')
+    await enterById('new', 'short')
+    await enterById('confirm', 'short')
+    await click('updatePassword')
+
+    expect(changePassword).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('newPasswordTooShort')
+  })
+
+  test('changes a local password and maps an incorrect-current-password error', async () => {
+    user = { ...user, auth_source: 'local', sso_connections: [] }
+    await render()
+    await click('account')
+    await enterById('current', 'current-value')
+    await enterById('new', 'longer-value')
+    await enterById('confirm', 'longer-value')
+    changePassword.mockRejectedValueOnce(new ApiError(2003, 'incorrect current password'))
+    await click('updatePassword')
+
+    expect(changePassword).toHaveBeenCalledWith({ current_password: 'current-value', new_password: 'longer-value' }, { silent: true })
+    expect((container.querySelector('#current') as HTMLInputElement).getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).toContain('incorrect current password')
+
+    await enterById('current', 'updated-current-value')
+    await click('updatePassword')
+    expect(successToast).toHaveBeenCalledWith('passwordUpdated')
+    expect(getCurrentUser).toHaveBeenCalledTimes(2)
+  })
+
+  test('sends profile verification only for a changed valid email and handles a rate-limit cooldown', async () => {
+    siteSettings.email_verification = true
+    await render()
+    await enterById('email', 'updated@example.com')
+    await click('sendEmailVerification')
+    expect(sendVerification).toHaveBeenCalledWith('updated@example.com', 'profile_email')
+    expect(successToast).toHaveBeenCalledWith('emailVerificationSent')
+
+    sendVerification.mockRejectedValueOnce(new ApiError(5008, 'rate limited', { remaining_seconds: 12 }))
+    await enterById('email', 'another@example.com')
+    await click('sendEmailVerification')
+    expect(container.textContent).toContain('resendIn:12')
   })
 
   test('validates account deletion, clears an API error, and retries successfully', async () => {
