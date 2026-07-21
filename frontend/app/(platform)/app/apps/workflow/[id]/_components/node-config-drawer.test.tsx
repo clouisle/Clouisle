@@ -239,6 +239,43 @@ describe('NodeConfigDrawer', () => {
     expect(iterableIds).not.toEqual(expect.arrayContaining(['loop.step', 'loop.note', 'agent.reply', 'retrieval.context', 'sys.query']))
   })
 
+  test('exposes loop-local and writable conversation variables inside a subgraph', () => {
+    const current = baseNode('variable_assignment', { parentLoopId: 'loop-parent' }, { id: 'current' })
+    const parent = baseNode('loop', {
+      loopConfig: {
+        indexVariable: 'position',
+        outputVariable: 'results',
+        loopVariables: [
+          { name: 'records', type: 'array' },
+          { name: 'metadata', type: 'object' },
+          { name: 'label', type: 'string' },
+        ],
+      },
+    }, { id: 'loop-parent' })
+    const start = baseNode('start', {
+      parameters: [{ id: 'topic', name: 'topic', type: 'text', required: true }],
+    }, { id: 'start' })
+    const sibling = baseNode('code', {
+      parentLoopId: 'loop-parent',
+      codeConfig: { inputs: [], outputs: [{ name: 'rows', type: 'array' }] },
+    }, { id: 'sibling' })
+    const editor = descendants(render(current, {
+      allNodes: [current, parent, start, sibling],
+      allEdges: [
+        { id: 'a', source: 'start', target: 'loop-parent' },
+        { id: 'b', source: 'sibling', target: 'current' },
+      ],
+    })).find(node => node.type === 'VariableAssignmentNodeConfig')!
+
+    const variableIds = (editor.props.variables as Array<{ id: string }>).map(variable => variable.id)
+    expect(variableIds).toEqual(expect.arrayContaining([
+      'loop-parent.position', 'loop-parent.records', 'loop-parent.metadata',
+      'loop-parent.label', 'start.topic', 'sibling.rows',
+    ]))
+    const writableIds = (editor.props.conversationVariables as Array<{ id: string }>).map(variable => variable.id)
+    expect(writableIds).toEqual(['conversation.topic', 'loop-parent.results'])
+  })
+
   test('adds, edits, and removes start parameters through the shared dialog', () => {
     const parameter = { id: 'topic', name: 'topic', type: 'text', required: false }
     const node = baseNode('start', { parameters: [parameter] })
