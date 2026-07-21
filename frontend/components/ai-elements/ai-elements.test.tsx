@@ -36,6 +36,8 @@ mock.module('streamdown', () => ({
 let ChainOfThought: typeof import('./chain-of-thought').ChainOfThought
 let ChainOfThoughtContent: typeof import('./chain-of-thought').ChainOfThoughtContent
 let ChainOfThoughtHeader: typeof import('./chain-of-thought').ChainOfThoughtHeader
+let CodeBlock: typeof import('./code-block').CodeBlock
+let CodeBlockCopyButton: typeof import('./code-block').CodeBlockCopyButton
 let highlightCode: typeof import('./code-block').highlightCode
 let Message: typeof import('./message').Message
 let MessageAction: typeof import('./message').MessageAction
@@ -69,7 +71,7 @@ function render(element: React.ReactNode) {
 
 beforeAll(async () => {
   ({ ChainOfThought, ChainOfThoughtContent, ChainOfThoughtHeader } = await import('./chain-of-thought'));
-  ({ highlightCode } = await import('./code-block'));
+  ({ CodeBlock, CodeBlockCopyButton, highlightCode } = await import('./code-block'));
   ({
     Message,
     MessageAction,
@@ -146,6 +148,85 @@ describe('ai elements', () => {
       theme: 'one-dark-pro',
       transformers: [expect.any(Object)],
     })
+
+    const transformer = codeToHtml.mock.calls[0][1].transformers[0]
+    const line = { children: [] as unknown[] }
+    transformer.line(line, 7)
+    expect(line.children).toEqual([
+      {
+        type: 'element',
+        tagName: 'span',
+        properties: {
+          className: [
+            'inline-block',
+            'min-w-10',
+            'mr-4',
+            'text-right',
+            'select-none',
+            'text-muted-foreground',
+          ],
+        },
+        children: [{ type: 'text', value: '7' }],
+      },
+    ])
+  })
+
+  test('renders highlighted code and child copy controls', async () => {
+    let renderer: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(
+        <CodeBlock code="const value = 1" className="panel" language="ts">
+          <CodeBlockCopyButton aria-label="Copy code" />
+        </CodeBlock>,
+      )
+      await Promise.resolve()
+    })
+    renderers.push(renderer!)
+
+    const html = JSON.stringify(renderer!.toJSON())
+    expect(html).toContain('panel')
+    expect(html).toContain('one-light')
+    expect(html).toContain('one-dark-pro')
+    expect(renderer!.root.findByType('button').props['aria-label']).toBe('Copy code')
+  })
+
+  test('copies code and reports clipboard failures', async () => {
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+    const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+    const writeText = mock(async () => {})
+    const onCopy = mock(() => {})
+    const onError = mock(() => {})
+    let renderer: ReactTestRenderer
+
+    try {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: {} })
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText } } })
+
+      await act(async () => {
+        renderer = create(
+          <CodeBlock code="npm test" language="bash">
+            <CodeBlockCopyButton onCopy={onCopy} onError={onError}>copy</CodeBlockCopyButton>
+          </CodeBlock>,
+        )
+        await Promise.resolve()
+      })
+      renderers.push(renderer!)
+
+      await act(async () => { await renderer!.root.findByType('button').props.onClick() })
+      expect(writeText).toHaveBeenCalledWith('npm test')
+      expect(onCopy).toHaveBeenCalledTimes(1)
+      expect(onError).not.toHaveBeenCalled()
+
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} })
+      await act(async () => { await renderer!.root.findByType('button').props.onClick() })
+      expect(onError.mock.calls.at(-1)?.[0].message).toBe('Clipboard API not available')
+    } finally {
+      if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+      else delete (globalThis as typeof globalThis & { window?: unknown }).window
+      if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator)
+      else delete (globalThis as typeof globalThis & { navigator?: unknown }).navigator
+    }
   })
 
   test('maps tool states and conditionally renders tool content', () => {
