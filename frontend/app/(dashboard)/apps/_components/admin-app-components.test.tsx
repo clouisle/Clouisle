@@ -325,6 +325,72 @@ describe('admin app panels', () => {
     expect(toastSuccess).toHaveBeenCalledWith('actions.published')
   })
 
+  test('handles agent filters, pagination, dialogs, row actions, and bulk actions', async () => {
+    agentListPage.mockResolvedValue({
+      items: [
+        { id: 'agent-1', name: 'Support Bot', status: 'published', visibility: 'public', team: { name: 'Core' }, created_by: { username: 'ada' }, conversation_count: 2, message_count: 5, updated_at: '2026-01-01T00:00:00Z', icon: '🤖' },
+        { id: 'agent-2', name: 'Draft Bot', status: 'draft', visibility: 'team', team: null, created_by: null, conversation_count: 0, message_count: 1, updated_at: '2026-01-02T00:00:00Z', avatar_url: 'https://example.test/avatar.png' },
+      ],
+      total: 25,
+      page: 1,
+      page_size: 10,
+    })
+    agentFilterOptions.mockResolvedValue({
+      statuses: [{ value: 'published' }],
+      visibilities: [{ value: 'public' }],
+      teams: [{ value: 'team-1', label: 'Core' }],
+      creators: [{ value: 'ada', label: 'Ada' }],
+    })
+
+    let tree = await settledPanel(() => AdminAgentsPanel())
+
+    for (const title of ['status', 'columns.visibility', 'columns.team', 'columns.creator']) {
+      ;(find(tree, (node) => node.type === 'filter' && node.props.title === title).props.onClick as () => void)()
+      tree = await settledPanel(() => AdminAgentsPanel())
+    }
+    expect(agentListPage).toHaveBeenLastCalledWith(expect.objectContaining({ status: ['published'], visibility: ['public'], team_id: ['team-1'], creator: ['ada'] }))
+
+    ;(find(tree, (node) => node.type === 'button' && JSON.stringify(node).includes('actions.reset')).props.onClick as () => void)()
+    tree = await settledPanel(() => AdminAgentsPanel())
+    expect(agentListPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, status: undefined, visibility: undefined, team_id: undefined, creator: undefined }))
+
+    ;(find(tree, (node) => node.type === 'select').props.onValueChange as (value: string) => void)('20')
+    tree = await settledPanel(() => AdminAgentsPanel())
+    expect(agentListPage).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 20 }))
+
+    ;(findAll(tree, (node) => node.type === 'button' && JSON.stringify(node).includes('pagination.next')).at(-1)!.props.onClick as () => void)()
+    tree = await settledPanel(() => AdminAgentsPanel())
+    expect(agentListPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+
+    ;(find(tree, (node) => node.type === 'button' && JSON.stringify(node).includes('import')).props.onClick as () => void)()
+    expect(find(await settledPanel(() => AdminAgentsPanel()), (node) => node.type === 'import-dialog').props.open).toBe(true)
+
+    ;(find(tree, (node) => node.type === 'button' && JSON.stringify(node).includes('actions.create')).props.onClick as () => void)()
+    expect(find(await settledPanel(() => AdminAgentsPanel()), (node) => node.type === 'create-dialog').props.open).toBe(true)
+
+    const items = findAll(tree, (node) => node.type === 'dropdown-item')
+    await (items.find((node) => JSON.stringify(node).includes('actions.unpublish'))!.props.onClick as () => Promise<void>)()
+    expect(agentUnpublish).toHaveBeenCalledWith('agent-1')
+    await (items.find((node) => JSON.stringify(node).includes('actions.duplicate'))!.props.onClick as () => Promise<void>)()
+    expect(agentDuplicate).toHaveBeenCalledWith('agent-1')
+    await (items.find((node) => JSON.stringify(node).includes('actions.export'))!.props.onClick as () => Promise<void>)()
+    expect(packageExport).toHaveBeenCalledWith('agent', 'agent-1')
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'export.json')
+    await (items.find((node) => JSON.stringify(node).includes('actions.delete'))!.props.onClick as () => Promise<void>)()
+    expect(confirmMock).toHaveBeenCalledWith('agents.deleteConfirm:{"name":"Support Bot"}')
+    expect(agentDelete).toHaveBeenCalledWith('agent-1')
+
+    ;(find(tree, (node) => node.type === 'checkbox').props.onCheckedChange as () => void)()
+    tree = await renderPanel(() => AdminAgentsPanel())
+    const bulkButtons = findAll(tree, (node) => node.type === 'button' && node.props.className === 'h-8 w-8' && typeof node.props.onClick === 'function')
+    await (bulkButtons[1].props.onClick as () => Promise<void>)()
+    expect(agentPublish).toHaveBeenCalledWith('agent-2')
+    await (bulkButtons[2].props.onClick as () => Promise<void>)()
+    expect(agentUnpublish).toHaveBeenCalledWith('agent-2')
+    await (find(tree, (node) => node.type === 'button' && String(node.props.className).includes('text-destructive')).props.onClick as () => Promise<void>)()
+    expect(agentDelete).toHaveBeenCalledWith('agent-2')
+  })
+
   test('loads workflows, forwards trigger filters, and exports a workflow package', async () => {
     workflowListPage.mockResolvedValue({
       items: [{ id: 'workflow-1', name: 'Nightly Sync', status: 'published', visibility: 'public', trigger_type: 'manual', team_name: 'Core', created_by_name: 'ada', run_count: 3, success_count: 2, fail_count: 1, updated_at: '2026-01-01T00:00:00Z', icon: null }],
