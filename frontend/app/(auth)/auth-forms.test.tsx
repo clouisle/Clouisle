@@ -258,6 +258,117 @@ describe('auth forms', () => {
     act(() => renderer.unmount())
   })
 
+  test('completes registration captcha before submitting terms-protected signup', async () => {
+    spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
+      enable_captcha: true,
+      require_terms_acceptance_on_register: true,
+      terms_enabled: true,
+      terms_url: '',
+      terms_text: 'Terms text',
+      privacy_enabled: true,
+      privacy_url: '/privacy',
+      privacy_text: '',
+    } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
+    const getCaptcha = spyOn(authApi, 'getCaptcha').mockResolvedValue({
+      captcha_id: 'captcha-1', challenge: JSON.stringify({ type: 'click-choice', options: ['cat'], created_at: 1 }),
+      prompt: 'Click', expires_in: 60,
+    })
+    const completeCaptchaClick = spyOn(authApi, 'completeCaptchaClick').mockResolvedValue({ captcha_id: 'captcha-1', captcha_token: 'proof' })
+    const register = spyOn(authApi, 'register').mockResolvedValue({
+      is_superuser: false,
+      is_active: true,
+      email_verified: true,
+    } as Awaited<ReturnType<typeof authApi.register>>)
+
+    const renderer = render(<RegisterForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'email'), 'alice@example.com')
+    change(input(renderer.root, 'password'), 'secret')
+    change(input(renderer.root, 'confirmPassword'), 'secret')
+    act(() => renderer.root.findByProps({ id: 'termsAccepted' }).props.onCheckedChange(true))
+    await act(async () => Promise.resolve())
+
+    expect(getCaptcha).toHaveBeenCalled()
+    await clickButton(renderer.root, messages.captchaClickPrompt)
+    expect(completeCaptchaClick).toHaveBeenCalledWith(expect.objectContaining({ captcha_id: 'captcha-1', clicked_option: 'cat' }))
+    await submit(renderer.root)
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ terms_accepted: true, captcha_id: 'captcha-1', captcha_token: 'proof' }))
+    expect(text(renderer)).toContain(messages.registrationComplete)
+    act(() => renderer.unmount())
+  })
+
+  test('verifies pending registration email and can return to the form', async () => {
+    spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
+      enable_captcha: false,
+      require_terms_acceptance_on_register: false,
+    } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
+    spyOn(authApi, 'register').mockResolvedValue({
+      is_superuser: false,
+      is_active: false,
+      email_verified: false,
+    } as Awaited<ReturnType<typeof authApi.register>>)
+    const sendVerification = spyOn(authApi, 'sendVerification').mockResolvedValue(undefined)
+    const verifyEmail = spyOn(authApi, 'verifyEmail')
+      .mockRejectedValueOnce(new ApiError(5005, 'invalid code'))
+      .mockResolvedValueOnce(undefined)
+
+    const renderer = render(<RegisterForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'email'), 'alice@example.com')
+    change(input(renderer.root, 'password'), 'secret')
+    change(input(renderer.root, 'confirmPassword'), 'secret')
+    await submit(renderer.root)
+
+    expect(sendVerification).toHaveBeenCalledWith('alice@example.com', 'register')
+    expect(text(renderer)).toContain(messages.verifyYourEmail)
+    await clickButton(renderer.root, messages.orEnterCodeManually)
+    act(() => otp(renderer.root).props.onChange('123'))
+    await clickButton(renderer.root, messages.verifyEmail)
+    expect(verifyEmail).not.toHaveBeenCalled()
+
+    act(() => otp(renderer.root).props.onChange('123456'))
+    await clickButton(renderer.root, messages.verifyEmail)
+    expect(text(renderer)).toContain(messages.verificationCodeInvalid)
+    act(() => otp(renderer.root).props.onChange('654321'))
+    await clickButton(renderer.root, messages.verifyEmail)
+    expect(verifyEmail).toHaveBeenLastCalledWith('alice@example.com', '654321', 'register')
+    expect(text(renderer)).toContain(messages.registrationComplete)
+
+    act(() => renderer.root.findByType('button').props.onClick())
+    expect(router.push).toHaveBeenCalledWith('/login')
+    act(() => renderer.unmount())
+  })
+
+  test('returns from pending registration verification to a clean form', async () => {
+    spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
+      enable_captcha: false,
+      require_terms_acceptance_on_register: false,
+    } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
+    spyOn(authApi, 'register').mockResolvedValue({
+      is_superuser: false,
+      is_active: false,
+      email_verified: false,
+    } as Awaited<ReturnType<typeof authApi.register>>)
+    spyOn(authApi, 'sendVerification').mockRejectedValue(new Error('smtp unavailable'))
+
+    const renderer = render(<RegisterForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'email'), 'alice@example.com')
+    change(input(renderer.root, 'password'), 'secret')
+    change(input(renderer.root, 'confirmPassword'), 'secret')
+    await submit(renderer.root)
+
+    await clickButton(renderer.root, messages.orEnterCodeManually)
+    act(() => otp(renderer.root).props.onChange('123456'))
+    await clickButton(renderer.root, messages.backToRegister)
+    expect(input(renderer.root, 'username').props.value).toBe('alice')
+    expect(text(renderer)).not.toContain(messages.verificationCodeInvalid)
+    act(() => renderer.unmount())
+  })
+
   test('validates and completes the manual forgot-password reset', async () => {
     spyOn(authApi, 'forgotPassword').mockResolvedValue(undefined)
     const resetPassword = spyOn(authApi, 'resetPassword')
