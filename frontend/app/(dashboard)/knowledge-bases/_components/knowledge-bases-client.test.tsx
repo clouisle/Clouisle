@@ -52,7 +52,7 @@ mock.module('@/components/ui/table', () => ({
   TableHead: element('th'), TableHeader: element('thead'), TableRow: element('tr'),
 }))
 mock.module('@/components/ui/select', () => ({
-  Select: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  Select: element('select'),
   SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SelectItem: element('option'), SelectTrigger: element('span'), SelectValue: element('span'),
 }))
@@ -61,7 +61,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenuContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
   DropdownMenuItem: element('button'), DropdownMenuSeparator: element('hr'), DropdownMenuTrigger: element('button'),
 }))
-mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: element('div') }))
+mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: element('button') }))
 mock.module('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
   TooltipContent: element('span'),
@@ -105,7 +105,16 @@ function text() {
 }
 
 function button(label: string) {
-  return renderer!.root.findAllByType('button').find((node) => node.children.includes(label))!
+  return renderer!.root.findAllByType('button').find((node) => node.children.includes(label) || textNode(node).includes(label))!
+}
+
+function textNode(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textNode).join('')
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return textNode(node.props.children)
+  if (node && typeof node === 'object' && 'children' in node) return textNode((node as { children?: unknown }).children)
+  if (node && typeof node === 'object' && 'props' in node) return textNode((node as { props?: { children?: unknown } }).props?.children)
+  return ''
 }
 
 beforeEach(() => {
@@ -181,5 +190,57 @@ describe('KnowledgeBasesClient', () => {
     expect(updateKnowledgeBase).toHaveBeenCalledWith('kb-1', { status: 'archived' })
     expect(toastSuccess).toHaveBeenCalledWith('kbDeactivated')
     expect(getKnowledgeBases.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  test('filters, paginates, creates, imports, edits, and bulk exports', async () => {
+    permissions = new Set(['admin:knowledge-base:create', 'admin:knowledge-base:read', 'admin:knowledge-base:update'])
+    getTeams.mockResolvedValue({ items: [{ id: 'team-1', name: 'Platform' }] })
+    getKnowledgeBases.mockResolvedValue({ items: [knowledgeBase], total: 25 })
+    await renderClient()
+
+    act(() => button('edit').props.onClick())
+    expect(renderer!.root.findAllByType('aside').find((node) => node.props.knowledgeBase?.id === 'kb-1')?.props.open).toBe(true)
+
+    act(() => button('createKb').props.onClick())
+    expect(renderer!.root.findAllByType('aside').find((node) => node.props.knowledgeBase === null)?.props.open).toBe(true)
+
+    act(() => button('import').props.onClick())
+    expect(renderer!.root.findAllByType('aside').find((node) => node.props.expectedResourceType === 'knowledge_base')?.props.open).toBe(true)
+
+    const search = renderer!.root.findByProps({ placeholder: 'filterKbs' })
+    act(() => search.props.onChange({ target: { value: 'handbook' } }))
+    expect(text()).toContain('reset')
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'handbook' }))
+
+    const status = renderer!.root.findByProps({ title: 'status' })
+    act(() => status.props.onSelectionChange(new Set(['archived'])))
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ status: ['archived'] }))
+
+    act(() => renderer!.root.findByType('select').props.onValueChange('20'))
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 20 }))
+
+    act(() => button('reset').props.onClick())
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }))
+
+    act(() => renderer!.root.findAllByType('input').find((input) => input.props.type === 'checkbox')!.props.onChange())
+    await act(async () => renderer!.root.findAllByType('button').filter((node) => node.props.onClick && !node.props.className?.includes('text-destructive') && node.props.className?.includes('h-8 w-8')).at(-1)!.props.onClick())
+    expect(exportPackage).toHaveBeenCalledWith('knowledge_base', 'kb-1')
+  })
+
+  test('bulk deletes selected knowledge bases and reloads after dialog success', async () => {
+    permissions = new Set(['admin:knowledge-base:read', 'admin:knowledge-base:delete'])
+    getKnowledgeBases.mockResolvedValue({ items: [knowledgeBase, { ...knowledgeBase, id: 'kb-2', name: 'Archive' }], total: 2 })
+    await renderClient()
+
+    act(() => renderer!.root.findAllByType('input').find((input) => input.props.type === 'checkbox')!.props.onChange())
+    await act(async () => renderer!.root.findAllByType('button').find((node) => node.props.className?.includes('text-destructive'))!.props.onClick())
+    await act(async () => renderer!.root.findAllByType('button').filter((node) => textNode(node).includes('delete')).at(-1)!.props.onClick())
+
+    expect(deleteKnowledgeBase).toHaveBeenCalledWith('kb-1')
+    expect(deleteKnowledgeBase).toHaveBeenCalledWith('kb-2')
+    expect(toastSuccess).toHaveBeenCalledWith('bulkDeleted')
+
+    act(() => renderer!.root.findAllByType('aside').find((node) => node.props.knowledgeBase === null)?.props.onSuccess())
+    expect(getKnowledgeBases).toHaveBeenCalled()
   })
 })
