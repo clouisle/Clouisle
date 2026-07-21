@@ -4,8 +4,10 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const getAllWorkflowRuns = mock()
 const getWorkflows = mock(() => Promise.resolve({ items: [] }))
+const deleteWorkflowRun = mock(async () => {})
 const getTeams = mock(() => Promise.resolve({ items: [] }))
 const getUsers = mock(() => Promise.resolve({ items: [] }))
+const success = mock()
 
 const element = (tag: string) => {
   const Component = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) =>
@@ -14,17 +16,24 @@ const element = (tag: string) => {
   return Component
 }
 
+function text(value: React.ReactNode): string {
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (Array.isArray(value)) return value.map(text).join('')
+  if (React.isValidElement<{ children?: React.ReactNode }>(value)) return text(value.props.children)
+  return ''
+}
+
 mock.module('next-intl', () => ({
   useTranslations: (namespace: string) => (key: string, values?: Record<string, unknown>) =>
     values ? `${namespace}.${key}:${JSON.stringify(values)}` : `${namespace}.${key}`,
 }))
-mock.module('sonner', () => ({ toast: { success: mock() } }))
+mock.module('sonner', () => ({ toast: { success } }))
 mock.module('@/lib/api', () => ({
-  workflowsApi: { getAllWorkflowRuns, getWorkflows, deleteWorkflowRun: mock() },
+  workflowsApi: { getAllWorkflowRuns, getWorkflows, deleteWorkflowRun },
 }))
 mock.module('@/lib/api/admin/teams', () => ({ teamsApi: { getTeams } }))
 mock.module('@/lib/api/admin/users', () => ({ usersApi: { getUsers } }))
-mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => false }) }))
+mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => true }) }))
 mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => React.useState('') }))
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: <T,>(value: T) => value }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))
@@ -80,8 +89,10 @@ afterEach(() => {
   mock.restore()
   getAllWorkflowRuns.mockReset()
   getWorkflows.mockReset().mockResolvedValue({ items: [] })
+  deleteWorkflowRun.mockClear()
   getTeams.mockReset().mockResolvedValue({ items: [] })
   getUsers.mockReset().mockResolvedValue({ items: [] })
+  success.mockClear()
 })
 
 describe('WorkflowRunsTable', () => {
@@ -104,13 +115,50 @@ describe('WorkflowRunsTable', () => {
     expect(error).toHaveBeenCalledWith('Failed to load workflow runs:', expect.any(Error))
   })
 
-  test('filters data and opens the selected run drawer', async () => {
+  test('applies faceted filters, searches users, changes page size, and resets filters', async () => {
+    getAllWorkflowRuns.mockResolvedValue({ items: [], total: 40 })
+    getTeams.mockResolvedValue({ items: [{ id: 'team-1', name: 'Core' }] })
+    getWorkflows.mockResolvedValue({ items: [{ id: 'workflow-1', name: 'Daily report' }] })
+    getUsers.mockResolvedValue({ items: [{ id: 'user-1', username: 'Ada' }] })
+    const renderer = await render()
+
+    const filters = renderer.root.findAllByType('button').filter((button) => button.props.onSelectionChange)
+    await act(async () => filters.find((button) => button.props.title === 'common.team')!.props.onSelectionChange(new Set(['team-1'])))
+    await act(async () => filters.find((button) => button.props.title === 'activities.filters.workflow')!.props.onSelectionChange(new Set(['workflow-1'])))
+    await act(async () => filters.find((button) => button.props.title === 'activities.filters.status')!.props.onSelectionChange(new Set(['failed'])))
+    await act(async () => filters.find((button) => button.props.title === 'activities.filters.triggerType')!.props.onSelectionChange(new Set(['cron'])))
+    await act(async () => filters.find((button) => button.props.title === 'activities.filters.triggeredBy')!.props.onSearchChange('ada'))
+    expect(getUsers).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'ada' }))
+    await act(async () => filters.find((button) => button.props.title === 'activities.filters.triggeredBy')!.props.onSelectionChange(new Set(['user-1'])))
+
+    expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({
+      teamId: ['team-1'], workflowId: ['workflow-1'], status: ['failed'], triggerType: ['cron'], userId: ['user-1'],
+    }))
+
+    await act(async () => renderer.root.findByType('select').props.onValueChange('50'))
+    expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 50 }))
+
+    await act(async () => renderer.root.findAllByType('button').find((button) => text(button.props.children).includes('common.reset'))!.props.onClick())
+    expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1, pageSize: 50, teamId: undefined, workflowId: undefined, status: undefined, triggerType: undefined, userId: undefined,
+    }))
+  })
+
+  test('filters data, opens the selected run drawer, and deletes selected runs', async () => {
     getAllWorkflowRuns.mockResolvedValue({
-      items: [{
-        id: 'run-12345678', workflow_id: 'workflow-1', workflow_name: 'Daily report', status: 'success',
-        trigger_type: 'manual', created_at: '2026-01-01T10:00:00Z', total_duration_ms: 1200,
-        executed_nodes: 1, total_nodes: 1,
-      }], total: 1,
+      items: [
+        {
+          id: 'run-12345678', workflow_id: 'workflow-1', workflow_name: 'Daily report', status: 'success',
+          trigger_type: 'manual', created_at: '2026-01-01T10:00:00Z', total_duration_ms: 1200,
+          executed_nodes: 1, total_nodes: 1,
+        },
+        {
+          id: 'run-87654321', workflow_id: 'workflow-2', workflow_name: 'Nightly sync', status: 'failed',
+          trigger_type: 'cron', created_at: '2026-01-01T10:01:00Z', total_duration_ms: 61000,
+          executed_nodes: 1, total_nodes: 2, triggered_by_name: 'ops',
+        },
+      ],
+      total: 2,
     })
     const renderer = await render()
 
@@ -120,5 +168,14 @@ describe('WorkflowRunsTable', () => {
 
     act(() => renderer.root.findAllByType('tr')[1].props.onClick())
     expect(renderer.root.findByProps({ role: 'dialog' }).props['aria-label']).toBe('run-run-12345678')
+
+    const checkboxes = renderer.root.findAllByType('input').filter((node) => node.props.onCheckedChange)
+    act(() => checkboxes[0]!.props.onCheckedChange())
+    await act(async () => renderer.root.findAllByType('button').find((button) => text(button.props.children).includes('deleteSelected'))!.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').filter((button) => button.children.includes('common.delete')).at(-1)!.props.onClick())
+
+    expect(deleteWorkflowRun).toHaveBeenCalledWith('run-12345678')
+    expect(deleteWorkflowRun).toHaveBeenCalledWith('run-87654321')
+    expect(success).toHaveBeenCalledWith('activities.runDetail.deleteSuccess')
   })
 })
