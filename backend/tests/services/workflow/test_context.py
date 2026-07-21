@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.workflow.context import ExecutionContext
+from app.services.workflow.serialization import dumps_value
 
 
 class FakeRedis:
@@ -35,6 +36,10 @@ class FakeRedis:
 
     async def expire(self, key: str, seconds: int):
         self.expirations.append((key, seconds))
+
+    async def delete(self, key: str):
+        self.values.pop(key, None)
+        self.hashes.pop(key, None)
 
 
 @pytest.fixture
@@ -108,6 +113,14 @@ class TestExecutionContextNodeOutputs:
     async def test_missing_node_outputs(self, context):
         assert await context.get_node_outputs("missing_node") is None
 
+    @pytest.mark.asyncio
+    async def test_all_node_outputs_ignores_non_mapping_values(self, context):
+        await context.set_node_outputs("node_1", {"value": 1})
+        key = context.OUTPUTS_KEY.format(run_id=context.run_id)
+        context.redis.hashes[key]["invalid"] = dumps_value("not a mapping")
+
+        assert await context.get_all_node_outputs() == {"node_1": {"value": 1}}
+
 
 class TestExecutionContextStatus:
     @pytest.mark.asyncio
@@ -128,3 +141,41 @@ class TestExecutionContextBranches:
         await context.set_active_branches("node_1", ["case-1", "case-2"])
         assert await context.get_active_branches("node_1") == ["case-1", "case-2"]
         assert await context.get_active_branches("missing") is None
+
+    @pytest.mark.asyncio
+    async def test_should_execute_node_respects_outputs_and_active_handles(
+        self, context
+    ):
+        assert await context.should_execute_node("start", [])
+        assert not await context.should_execute_node(
+            "target", [{"source": None, "sourceHandle": "yes"}]
+        )
+
+        await context.set_node_outputs("plain", {"value": 1})
+        assert await context.should_execute_node(
+            "target", [{"source": "plain", "sourceHandle": None}]
+        )
+
+        await context.set_active_branches("condition", ["yes"])
+        assert await context.should_execute_node(
+            "target", [{"source": "condition", "sourceHandle": "yes"}]
+        )
+        assert not await context.should_execute_node(
+            "target", [{"source": "condition", "sourceHandle": "no"}]
+        )
+
+
+class TestExecutionContextLifecycle:
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_all_context_keys(self, context, redis_client):
+        await context.set_inputs({"query": "test"})
+        await context.set_status("running")
+        await context.set_branch("condition", "yes")
+        await redis_client.hset(
+            context.META_KEY.format(run_id=context.run_id), mapping={"workflow_id": "w"}
+        )
+
+        await context.cleanup()
+
+        assert redis_client.values == {}
+        assert redis_client.hashes == {}
