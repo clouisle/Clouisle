@@ -140,6 +140,29 @@ test('filters visible counts and handles selection deletion callbacks', async ()
   expect(states[0]).toEqual([expect.objectContaining({ id: 'entity-2' })])
   expect(states[1]).toEqual([])
 
+  ;(detail.props.onNavigateToEntity as (id: string) => void)('entity-2')
+  expect(states[2]).toEqual(expect.objectContaining({ id: 'entity-2' }))
+  ;(detail.props.onDeleteRelation as (id: string) => void)('relation-1')
+  expect(states[1]).toEqual([])
+  ;(detail.props.onClose as () => void)()
+  expect(states[2]).toBeNull()
+
   ;(detail.props.onDeleteEntity as (id: string) => void)('entity-2')
   expect(states[0]).toEqual([])
+})
+
+test('keeps selected entities when bulk deletion is rejected', async () => {
+  states = [
+    [entity('entity-1', 'Alice')], [], null, new Set(['entity-1']), true,
+    '', ['person'], [], false, true,
+  ]
+  deleteEntity.mockRejectedValueOnce(new Error('delete failed'))
+  const tree = render()
+  const toolbar = ((tree.props.children as Node[])[1].props.children as Node)
+
+  await (toolbar.props.onDeleteSelected as () => Promise<void>)()
+
+  expect(states[0]).toEqual([expect.objectContaining({ id: 'entity-1' })])
+  expect(states[3]).toEqual(new Set(['entity-1']))
+  expect(success).not.toHaveBeenCalled()
 })
