@@ -801,6 +801,97 @@ class TestWorkflowOrchestratorBehavior:
         ]
 
     @pytest.mark.asyncio
+    async def test_execute_streams_skipped_upstream_and_branch_nodes(
+        self, orchestrator
+    ):
+        condition = MagicMock(
+            node_type="condition",
+            upstream=set(),
+            handle_map={"yes": ["answer"], "no": ["unused"]},
+            node_data={"data": {"label": "Condition"}},
+        )
+        answer = MagicMock(
+            node_type="answer",
+            upstream=set(),
+            handle_map={},
+            node_data={"data": {"label": "Answer"}},
+        )
+        unused = MagicMock(
+            node_type="template",
+            upstream=set(),
+            handle_map={},
+            node_data={"data": {}},
+        )
+        descendant = MagicMock(
+            node_type="template",
+            upstream={"unused"},
+            handle_map={},
+            node_data={"data": {}},
+        )
+        nodes = {
+            "condition": condition,
+            "answer": answer,
+            "unused": unused,
+            "descendant": descendant,
+        }
+        plan = MagicMock(
+            stages=[
+                MagicMock(node_ids=["condition"]),
+                MagicMock(node_ids=["answer", "unused"]),
+                MagicMock(node_ids=["descendant"]),
+            ]
+        )
+        plan.get_node.side_effect = nodes.get
+        plan.get_all_downstream.return_value = []
+        context = MagicMock(get_status=AsyncMock(return_value="running"))
+        stream = MagicMock(publish_node_skip=AsyncMock())
+        orchestrator._execute_node = AsyncMock(
+            side_effect=[
+                ExecutionResult(next_handles=["yes"]),
+                ExecutionResult(outputs={"answer": "done"}),
+            ]
+        )
+
+        outputs, count = await orchestrator._execute(
+            plan, context, MagicMock(), stream, __import__("time").time()
+        )
+
+        assert outputs == {"answer": "done"}
+        assert count == 2
+        assert stream.publish_node_skip.await_count == 2
+        assert {
+            call.kwargs["reason"] for call in stream.publish_node_skip.await_args_list
+        } == {"branch_not_taken", "upstream_skipped"}
+
+    @pytest.mark.asyncio
+    async def test_execute_repeats_iteration_body_until_complete(self, orchestrator):
+        iteration = MagicMock(
+            node_type="iteration",
+            upstream=set(),
+            handle_map={},
+        )
+        plan = MagicMock(stages=[MagicMock(node_ids=["iteration", "child"])])
+        plan.get_node.return_value = iteration
+        context = MagicMock(get_status=AsyncMock(return_value="running"))
+        orchestrator._get_child_nodes = MagicMock(return_value=["child"])
+        orchestrator._execute_iteration_body = AsyncMock()
+        orchestrator._execute_node = AsyncMock(
+            side_effect=[
+                ExecutionResult(outputs={"_iteration_complete": False}),
+                ExecutionResult(outputs={"_iteration_complete": True}),
+            ]
+        )
+
+        outputs, count = await orchestrator._execute(
+            plan, context, MagicMock(), None, __import__("time").time()
+        )
+
+        assert outputs == {}
+        assert count == 1
+        orchestrator._execute_iteration_body.assert_awaited_once()
+        assert orchestrator._execute_node.await_count == 2
+
+    @pytest.mark.asyncio
     async def test_execute_node_success_serializes_boundary_outputs(self, orchestrator):
         node = MagicMock(
             node_type="template",
