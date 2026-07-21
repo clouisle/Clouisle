@@ -1,12 +1,17 @@
 """Behavioral coverage for orchestrator node lifecycle and retry routing."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from app.models.workflow import NodeStatus
-from app.services.workflow.errors import NodeExecutionError
+from app.services.workflow.errors import (
+    ExecutionCancelledError,
+    ExecutionTimeoutError,
+    NodeExecutionError,
+)
 from app.services.workflow.executor import ExecutionResult
 from app.services.workflow.orchestrator import WorkflowOrchestrator
 
@@ -152,3 +157,105 @@ async def test_execute_node_routes_enabled_retry_through_retryable_executor(
         run=workflow_run,
     )
     executor.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "run_status", "notification_method"),
+    [
+        ("_complete_run", NodeStatus.SUCCESS, "send_to_user"),
+        ("_fail_run", NodeStatus.FAILED, "send_to_team"),
+    ],
+)
+async def test_run_finalization_persists_statistics_tokens_and_notification(
+    method_name, run_status, notification_method
+):
+    orchestrator = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    workflow_id = uuid4()
+    team_id = uuid4()
+    executions = [
+        SimpleNamespace(status=NodeStatus.SUCCESS),
+        SimpleNamespace(status=NodeStatus.FAILED),
+        SimpleNamespace(status=NodeStatus.SKIPPED),
+    ]
+    triggered_by_id = uuid4() if method_name == "_complete_run" else None
+    run = MagicMock(
+        id=uuid4(),
+        workflow_id=workflow_id,
+        is_debug=False,
+        triggered_by_id=triggered_by_id,
+        total_token_usage={"prompt": 2, "completion": 3},
+        save=AsyncMock(),
+        fetch_related=AsyncMock(),
+    )
+    run.triggered_by = SimpleNamespace(locale="zh")
+    workflow = SimpleNamespace(id=workflow_id, team_id=team_id, name="Release workflow")
+
+    with (
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_model,
+        patch("app.services.workflow.orchestrator.Workflow") as workflow_model,
+        patch("app.services.workflow.orchestrator.Team") as team_model,
+        patch(
+            "app.services.workflow.orchestrator.AutoNotificationService"
+        ) as notifications,
+        patch(
+            "app.services.workflow.orchestrator.get_default_language",
+            new=AsyncMock(return_value="en"),
+        ),
+    ):
+        node_model.filter.return_value.all = AsyncMock(return_value=executions)
+        workflow_model.filter.return_value.first = AsyncMock(return_value=workflow)
+        workflow_model.filter.return_value.update = AsyncMock()
+        team_model.filter.return_value.update = AsyncMock()
+        notifications.send_to_user = AsyncMock()
+        notifications.send_to_team = AsyncMock()
+
+        if method_name == "_complete_run":
+            await orchestrator._complete_run(run, {"answer": "done"}, 42)
+            assert run.outputs == {"answer": "done"}
+        else:
+            await orchestrator._fail_run(run, "provider failed", 42)
+            assert run.error_message == "provider failed"
+
+    assert run.status == run_status
+    assert (
+        run.total_nodes,
+        run.executed_nodes,
+        run.failed_nodes,
+        run.skipped_nodes,
+    ) == (
+        3,
+        1,
+        1,
+        1,
+    )
+    run.save.assert_awaited_once()
+    workflow_model.filter.return_value.update.assert_awaited_once()
+    team_model.filter.return_value.update.assert_awaited_once()
+    getattr(notifications, notification_method).assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_iteration_body_enforces_timeout_and_cancellation():
+    orchestrator = WorkflowOrchestrator(
+        timeout=1, enable_cache=False, enable_metrics=False
+    )
+    context = MagicMock(get_status=AsyncMock(return_value="cancelled"))
+
+    with pytest.raises(ExecutionTimeoutError):
+        await orchestrator._execute_iteration_body(
+            "loop", ["child"], MagicMock(), context, MagicMock(), None, 0, set(), set()
+        )
+
+    with pytest.raises(ExecutionCancelledError):
+        await orchestrator._execute_iteration_body(
+            "loop",
+            ["child"],
+            MagicMock(),
+            context,
+            MagicMock(),
+            None,
+            __import__("time").time(),
+            set(),
+            set(),
+        )
