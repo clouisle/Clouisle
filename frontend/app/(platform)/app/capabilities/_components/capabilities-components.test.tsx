@@ -120,6 +120,13 @@ const mcpTool = {
 
 const renderers: ReactTestRenderer[] = []
 
+function nodeText(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join('')
+  if (!node || typeof node !== 'object') return ''
+  return nodeText((node as { children?: unknown }).children)
+}
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 beforeEach(() => {
@@ -232,6 +239,56 @@ describe('platform capability component smoke coverage', () => {
     expect(html).toContain('title')
     expect(html).toContain('Partner Team')
     expect(html).not.toContain('Current Team')
+  })
+
+  test('validates, shares, and unshares tools', async () => {
+    const share = {
+      id: 'share-1', shared_with_team_id: 'team-2', shared_with_team_name: 'Partner Team',
+      permission: 'read_execute', shared_by_name: 'Ada',
+    }
+    toolsApi.listToolShares.mockResolvedValue({ shares: [share] })
+    toolsApi.shareTool.mockResolvedValue(share)
+    toolsApi.unshareTool.mockResolvedValue(undefined)
+    const onSuccess = mock(() => undefined)
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(
+        <ToolShareDialog
+          tool={baseTool as never}
+          open
+          onOpenChange={() => undefined}
+          currentTeamId="team-1"
+          availableTeams={[
+            { id: 'team-1', name: 'Current Team', role: 'owner' },
+            { id: 'team-2', name: 'Partner Team', role: 'member' },
+            { id: 'team-3', name: 'Review Team', role: 'member' },
+          ] as never}
+          onSuccess={onSuccess}
+        />
+      )
+    })
+    renderers.push(renderer!)
+
+    await act(async () => Promise.resolve())
+    const shareButton = () => renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('shareButton'))!
+    await act(async () => shareButton().props.onClick())
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('selectTeam')
+
+    const selects = renderer!.root.findAll((node) => node.props.onValueChange)
+    const teamSelect = selects.find((node) => node.props.value === undefined)!
+    const permissionSelect = selects.find((node) => node.props.value === 'read_only')!
+    act(() => {
+      teamSelect.props.onValueChange('team-3')
+      permissionSelect.props.onValueChange('read_execute')
+    })
+    await act(async () => shareButton().props.onClick())
+    expect(toolsApi.shareTool).toHaveBeenCalledWith('tool-1', { team_id: 'team-3', permission: 'read_execute' })
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+
+    act(() => renderer!.root.findAllByType('button').find((button) => button.props.className?.includes('text-destructive'))!.props.onClick())
+    await act(async () => renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('unshareButton'))!.props.onClick())
+    expect(toolsApi.unshareTool).toHaveBeenCalledWith('tool-1', 'team-2')
+    expect(onSuccess).toHaveBeenCalledTimes(2)
   })
 
   test('renders test panel parameter inputs for non-MCP tools', () => {
