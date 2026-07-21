@@ -196,6 +196,95 @@ describe('auth forms', () => {
     act(() => renderer.unmount())
   })
 
+  test('routes login through forced password change and required TOTP setup', async () => {
+    spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
+      enable_captcha: false, sso_enabled: false, sso_allow_password_login: true,
+    } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
+    spyOn(authApi, 'getCurrentUser').mockResolvedValue({ locale: 'en' } as Awaited<ReturnType<typeof authApi.getCurrentUser>>)
+    const login = spyOn(authApi, 'login')
+      .mockResolvedValueOnce({ access_token: 'token', force_password_change: true, reason: 'expired' })
+      .mockResolvedValueOnce({ access_token: '', requires_totp_setup: true, temp_token: 'temporary' })
+    spyOn(toast, 'info').mockImplementation(() => '')
+
+    let renderer = render(<LoginForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'password'), 'secret')
+    await submit(renderer.root)
+    expect(login).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('access_token')).toBe('token')
+    expect(router.push).toHaveBeenCalledWith('/change-password?reason=expired')
+    act(() => renderer.unmount())
+
+    renderer = render(<LoginForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'password'), 'secret')
+    await submit(renderer.root)
+    expect(localStorage.getItem('temp_token')).toBe('temporary')
+    expect(router.push).toHaveBeenCalledWith('/totp-setup')
+    act(() => renderer.unmount())
+  })
+
+  test('handles unverified login email verification', async () => {
+    spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
+      enable_captcha: false, sso_enabled: false, sso_allow_password_login: true,
+    } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
+    spyOn(authApi, 'login').mockRejectedValue(new ApiError(5004, 'unverified', { email: 'alice@example.com' }))
+    const sendVerification = spyOn(authApi, 'sendVerification').mockResolvedValue(undefined)
+    const verifyEmail = spyOn(authApi, 'verifyEmail')
+      .mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { code: ['bad code'] } }))
+      .mockResolvedValueOnce(undefined)
+
+    const renderer = render(<LoginForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'password'), 'secret')
+    await submit(renderer.root)
+
+    expect(sendVerification).toHaveBeenCalledWith('alice@example.com', 'register')
+    expect(text(renderer)).toContain(messages.verifyYourEmail)
+    await clickButton(renderer.root, messages.orEnterCodeManually)
+    act(() => otp(renderer.root).props.onChange('123456'))
+    await clickButton(renderer.root, messages.verifyEmail)
+    expect(text(renderer)).toContain('bad code')
+
+    act(() => otp(renderer.root).props.onChange('654321'))
+    await clickButton(renderer.root, messages.verifyEmail)
+    expect(verifyEmail).toHaveBeenLastCalledWith('alice@example.com', '654321', 'register')
+    expect(input(renderer.root, 'username').props.value).toBe('alice')
+    act(() => renderer.unmount())
+  })
+
+  test('renders login validation errors and refreshes rejected captcha proof', async () => {
+    spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
+      enable_captcha: true, sso_enabled: false, sso_allow_password_login: true,
+    } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
+    const getCaptcha = spyOn(authApi, 'getCaptcha').mockResolvedValue({
+      captcha_id: 'captcha-1', challenge: JSON.stringify({ type: 'click-choice', options: ['cat'], created_at: 1 }),
+      prompt: 'Click', expires_in: 60,
+    })
+    spyOn(authApi, 'completeCaptchaClick').mockResolvedValue({ captcha_id: 'captcha-1', captcha_token: 'proof' })
+    const login = spyOn(authApi, 'login')
+      .mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { username: ['unknown user'] } }))
+      .mockRejectedValueOnce(new ApiError(5303, 'captcha invalid'))
+
+    const renderer = render(<LoginForm />)
+    await act(async () => Promise.resolve())
+    change(input(renderer.root, 'username'), 'alice')
+    change(input(renderer.root, 'password'), 'secret')
+    await act(async () => Promise.resolve())
+    await clickButton(renderer.root, messages.captchaClickPrompt)
+    await submit(renderer.root)
+    expect(login).toHaveBeenCalledTimes(1)
+    expect(text(renderer)).toContain('unknown user')
+
+    await submit(renderer.root)
+    expect(login).toHaveBeenCalledTimes(2)
+    expect(getCaptcha).toHaveBeenCalledTimes(2)
+    act(() => renderer.unmount())
+  })
+
   test('handles TOTP verification errors and accepts a backup code', async () => {
     spyOn(siteSettingsApi, 'getPublic').mockResolvedValue({
       enable_captcha: false, sso_enabled: false, sso_allow_password_login: true,
