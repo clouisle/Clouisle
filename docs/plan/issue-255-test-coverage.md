@@ -27,7 +27,7 @@
 - Canonical command: `uv run pytest` after coverage options are centralized in `backend/pyproject.toml`.
 
 ### Frontend
-- Metrics: lines, functions, and statements, each at least 95% at completion.
+- Metrics: lines and functions, each at least 95% at completion. Bun's LCOV does not emit a separately supported statement metric, so no statement percentage is claimed.
 - Source census: eligible `.ts`/`.tsx` under `frontend/app`, `frontend/components`, `frontend/contexts`, `frontend/hooks`, and `frontend/lib` must appear in LCOV.
 - Reports: terminal summary and `frontend/coverage/lcov.info`.
 - Canonical commands: `bun run test:coverage` and `bun run coverage:check`.
@@ -289,6 +289,9 @@
 - Frontend focused checkpoint (2026-07-22, current branch): ten code preview canvas tests pass with 31 assertions and focused ESLint. Focused coverage reaches 66.24% lines and 46.15% functions across iframe preview generation, markdown/source fallbacks, copy/download actions, SVG/CSS documents, active-tab reset, and Mermaid control rendering. Focused coverage does not replace complete LCOV aggregation.
 - Frontend complete checkpoint (2026-07-22, current branch): 1,798 isolated tests pass with 0 failures and 8,423 assertions across 454 files after notification administration, workflow logs/settings, email-dialog, platform notification, and activity conversation-table batches. Bun reports 96.73% lines and 92.62% functions; `bun run coverage:check` confirms all 470/470 eligible application sources appear in LCOV. Bun LCOV still has no separately supported statement metric. The final frontend function gate remains inactive because function coverage is below 95%.
 - Backend complete checkpoint (2026-07-22, current branch): 3,254 tests pass and 2 are skipped after workflow-plan, admin-team/skill, package, video-client, node-environment, sandbox-safety, upload-endpoint, and media-utility batches. Whole-`app` branch-aware coverage is 81.76% lines (`30,476/37,276`) and 86.53% branches (`10,072/11,640`). The upload endpoint test's temporary import-cycle stubs are restored immediately after import, and the complete suite confirms there is no collection-order leak. Final independent 95% gates remain inactive.
+- Backend complete checkpoint (2026-07-22, current branch): 3,363 tests pass and 2 are skipped. The authoritative complete `coverage.xml` reports 82.35% lines (`30,697/37,276`) and 67.46% branches (`7,852/11,640`). This supersedes the preceding branch percentage, which was not derived from the independent `branches-covered / branches-valid` XML fields. Final independent 95% gates remain inactive.
+- Frontend complete checkpoint (2026-07-22, current branch): 1,824 isolated tests pass with 0 failures and 8,538 assertions across 462 files. Bun reports 96.91% lines and 93.01% functions; `bun run coverage:check` confirms all 470/470 eligible application sources appear in LCOV. Bun LCOV has no separately supported statement metric. The final frontend function gate remains inactive because function coverage is below 95%.
+- Agent UI guide synchronization checkpoint (2026-07-22, current branch): the new email-verification, TOTP-setup, workflow-activity, and API-key-dialog tests were reviewed against the documented authentication, workflow, and administration journeys. These batches changed tests only and introduced no production/browser-visible behavior, route, or landmark change. The review is recorded in `docs/guide/testing/agent-ui-automation.md`; unit evidence remains explicitly separate from browser/E2E proof.
 
 ## Testing Strategy
 - Happy path tests:
