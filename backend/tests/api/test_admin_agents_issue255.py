@@ -6,6 +6,7 @@ import pytest
 
 from app.api.v1.admin.endpoints import agents
 from app.models.agent import AgentStatus, AgentVisibility
+from app.schemas.agent import AgentUpdate
 from app.schemas.response import BusinessError
 
 
@@ -246,6 +247,102 @@ async def test_duplicate_copies_safe_configuration_and_knowledge(monkeypatch):
     )
     create_association.assert_awaited_once()
     assert result["data"]["id"] == duplicate.id
+
+
+@pytest.mark.anyio
+async def test_update_agent_persists_remaining_fields(monkeypatch):
+    item = agent(
+        team=SimpleNamespace(id=uuid4()),
+        team_id=uuid4(),
+        visibility=AgentVisibility.TEAM,
+    )
+    updated = AgentUpdate(
+        name="Updated Agent",
+        description="Updated",
+        icon="robot",
+        avatar_url="https://example.test/avatar.png",
+        system_prompt="Updated prompt",
+        max_iterations=9,
+        hide_tool_calls=True,
+        opening_message="Hello",
+        suggested_questions=["Help?"],
+        visibility="private",
+        enable_vision=True,
+        enable_file_upload=True,
+        file_upload_config={"max_file_size": 1024},
+        enable_user_input_request=True,
+        enable_memory=True,
+        memory_config={"max_memories_per_retrieval": 4},
+        context_compression_config={"enabled": True},
+        enable_image_generation=True,
+        image_generation_config={"size": "1024x1024"},
+        enable_video_generation=True,
+        video_generation_config={"duration": 5},
+        rag_mode="auto",
+        variables=[{"name": "topic", "type": "string"}],
+        embed_config={"enabled": True},
+    )
+    monkeypatch.setattr(agents, "_get_agent", AsyncMock(return_value=item))
+    monkeypatch.setattr(agents.Agent, "filter", lambda **kwargs: Query(None))
+    monkeypatch.setattr(agents.Agent, "get", lambda **kwargs: Query(item))
+    monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
+    monkeypatch.setattr(
+        agents, "build_agent_out", AsyncMock(return_value={"id": item.id})
+    )
+
+    result = await agents.update_agent(
+        MagicMock(), item.id, updated, current_user=SimpleNamespace()
+    )
+
+    item.save.assert_awaited_once()
+    assert item.name == "Updated Agent"
+    assert item.visibility is AgentVisibility.PRIVATE
+    assert item.file_upload_config["max_file_size"] == 1024
+    assert item.memory_config["max_memories_per_retrieval"] == 4
+    assert item.rag_mode.value == "auto"
+    assert item.variables[0]["name"] == "topic"
+    assert result["data"]["id"] == item.id
+
+
+@pytest.mark.anyio
+async def test_update_agent_rejects_duplicate_model_and_kb(monkeypatch):
+    item = agent(team=SimpleNamespace(id=uuid4()), team_id=uuid4())
+    monkeypatch.setattr(agents, "_get_agent", AsyncMock(return_value=item))
+    monkeypatch.setattr(agents.Agent, "filter", lambda **kwargs: Query(agent()))
+
+    with pytest.raises(BusinessError):
+        await agents.update_agent(
+            MagicMock(),
+            item.id,
+            AgentUpdate(name="Duplicate"),
+            current_user=SimpleNamespace(),
+        )
+
+    model_id = uuid4()
+    monkeypatch.setattr(agents.Agent, "filter", lambda **kwargs: Query(None))
+    monkeypatch.setattr(agents.TeamModel, "filter", lambda **kwargs: Query(None))
+    with pytest.raises(BusinessError):
+        await agents.update_agent(
+            MagicMock(),
+            item.id,
+            AgentUpdate(model_id=model_id),
+            current_user=SimpleNamespace(),
+        )
+
+    monkeypatch.setattr(agents.TeamModel, "filter", lambda **kwargs: Query(object()))
+    monkeypatch.setattr(agents.Agent, "get", lambda **kwargs: Query(item))
+    monkeypatch.setattr(agents.KnowledgeBase, "filter", lambda **kwargs: Query(None))
+    with pytest.raises(BusinessError) as exc:
+        await agents.update_agent(
+            MagicMock(),
+            item.id,
+            AgentUpdate(
+                model_id=model_id,
+                knowledge_base_configs=[{"knowledge_base_id": uuid4()}],
+            ),
+            current_user=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 404
 
 
 @pytest.mark.anyio
