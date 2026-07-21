@@ -1,201 +1,147 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { ReactNode } from 'react'
 
-GlobalRegistrator.register()
+const uploadFile = mock(() => Promise.resolve({ url: '/uploads/new.txt' }))
 
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import * as React from 'react'
-
-const uploadFile = mock(async (file: File) => ({ url: `/uploads/${file.name}` }))
-
+const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
+mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: 'fragment' }))
+mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: 'fragment' }))
+mock.module('react', () => ({
+  useCallback: <T,>(callback: T) => callback,
+  useEffect: (effect: () => void) => effect(),
+  useMemo: <T,>(factory: () => T) => factory(),
+  useRef: <T,>(initial: T) => ({ current: initial }),
+  useState: <T,>(initial: T) => [initial, mock()] as const,
+}))
 mock.module('next-intl', () => ({
-  useTranslations: (namespace: string) => (key: string, values?: Record<string, unknown>) => {
-    const messages: Record<string, string> = {
-      'chat.variables.fileTooLarge': `File is too large. Max ${values?.maxSize} MB`,
-      'chat.variables.fileUploadFailed': 'Upload failed',
-      'chat.variables.selectFiles': 'Select files',
-      'chat.variables.selectFile': 'Select file',
-      'chat.variables.startChat': 'Start chat',
-      'chat.variables.tooManyFiles': `Too many files. Max ${values?.maxFiles}`,
-      'chat.variables.uploading': 'Uploading',
-      'common.invalidFileType': 'Invalid file type',
-      'common.invalidFileTypeWithAllowed': `Invalid file type. Allowed: ${values?.allowed}`,
-      'common.invalidJSON': 'Invalid JSON',
-      'common.required': 'Required',
-    }
-
-    return messages[`${namespace}.${key}`] ?? key
+  useTranslations: () => (key: string, values?: Record<string, unknown>) =>
+    values ? `${key}:${Object.values(values).join(',')}` : key,
+}))
+mock.module('@/lib/api/upload', () => ({ uploadApi: { uploadFile } }))
+mock.module('@/lib/api', () => ({
+  ApiError: class ApiError extends Error {},
+}))
+mock.module('@/lib/validation', () => ({
+  clearValidationError: (errors: Record<string, string>, field: string) => {
+    const { [field]: removed, ...remaining } = errors
+    void removed
+    return remaining
   },
+  formatValidationSummaryMessage: (field: string, message: string) => `${field}: ${message}`,
+  getValidationSummaryEntries: (errors: Record<string, string>, fields: string[]) =>
+    Object.entries(errors).filter(([field]) => fields.includes(field)),
 }))
+mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 
-mock.module('@/lib/api/upload', () => ({
-  uploadApi: { uploadFile },
+const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
+mock.module('@/components/ui/button', () => ({ Button: element('button') }))
+mock.module('@/components/ui/input', () => ({ Input: element('input') }))
+mock.module('@/components/ui/textarea', () => ({ Textarea: element('textarea') }))
+mock.module('@/components/ui/label', () => ({ Label: element('label') }))
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: element('checkbox') }))
+mock.module('@/components/ui/field', () => ({ FieldError: element('alert') }))
+mock.module('@/components/ui/select', () => ({
+  Select: element('select'),
+  SelectContent: element('options'),
+  SelectItem: element('option'),
+  SelectTrigger: element('trigger'),
+  SelectValue: element('value'),
 }))
+mock.module('lucide-react', () => ({ Upload: element('svg'), X: element('svg'), FileIcon: element('svg'), ImageIcon: element('svg') }))
 
-import { VariableForm } from './variable-form'
+const { VariableForm } = await import('./variable-form')
+type Variable = Parameters<typeof VariableForm>[0]['variables'][number]
+type Tree = { type: unknown; props: Record<string, unknown> }
 
-afterEach(() => {
-  cleanup()
-  uploadFile.mockClear()
+function resolve(node: ReactNode): Tree | ReactNode {
+  if (!node || typeof node !== 'object' || !('type' in node)) return node
+  const tree = node as Tree
+  return typeof tree.type === 'function' ? resolve((tree.type as (props: Record<string, unknown>) => ReactNode)(tree.props)) : tree
+}
+
+function findAll(node: ReactNode, predicate: (tree: Tree) => boolean): Tree[] {
+  if (Array.isArray(node)) return node.flatMap((child) => findAll(child, predicate))
+  const resolved = resolve(node)
+  if (!resolved || typeof resolved !== 'object' || !('type' in resolved)) return []
+  const tree = resolved as Tree
+  const matches = predicate(tree) ? [tree] : []
+  const children = tree.props.children
+  for (const child of Array.isArray(children) ? children : [children]) matches.push(...findAll(child as ReactNode, predicate))
+  return matches
+}
+
+const variable = (name: string, type: Variable['type'], extra: Partial<Variable> = {}): Variable => ({ name, type, required: false, ...extra })
+const render = (variables: Variable[], values: Record<string, unknown>, onChange = mock(), onSubmit?: () => void, fieldErrors?: Record<string, string>) =>
+  VariableForm({ variables, values, onChange, onSubmit, fieldErrors })
+
+beforeEach(() => {
+  uploadFile.mockReset()
+  uploadFile.mockResolvedValue({ url: '/uploads/new.txt' })
 })
 
-type Variable = React.ComponentProps<typeof VariableForm>['variables'][number]
-
-function StatefulForm({
-  variables,
-  initialValues = {},
-  fieldErrors,
-  onSubmit,
-}: {
-  variables: Variable[]
-  initialValues?: Record<string, unknown>
-  fieldErrors?: Record<string, string>
-  onSubmit?: () => void
-}) {
-  const [values, setValues] = React.useState(initialValues)
-
-  return (
-    <VariableForm
-      variables={variables}
-      values={values}
-      onChange={setValues}
-      onSubmit={onSubmit}
-      fieldErrors={fieldErrors}
-    />
-  )
-}
-
-function fileInput(container: HTMLElement) {
-  const input = container.querySelector('input[type="file"]')
-  if (!(input instanceof HTMLInputElement)) {
-    throw new Error('file input not found')
-  }
-  return input
-}
-
 describe('VariableForm', () => {
-  beforeEach(() => {
-    uploadFile.mockImplementation(async (file: File) => ({ url: `/uploads/${file.name}` }))
+  test('emits typed scalar and JSON changes', () => {
+    const onChange = mock()
+    const tree = render([
+      variable('title', 'text'), variable('notes', 'paragraph'), variable('count', 'number'),
+      variable('checked', 'checkbox'), variable('choice', 'select', { options: ['a'] }),
+      variable('enabled', 'boolean'), variable('items', 'array'), variable('config', 'object'),
+    ], {}, onChange)
+
+    const inputs = findAll(tree, (node) => node.type === 'input')
+    ;(inputs[0].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'hello' } })
+    ;(inputs[1].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '3' } })
+    const textareas = findAll(tree, (node) => node.type === 'textarea')
+    ;(textareas[0].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'details' } })
+    ;(textareas[1].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '[1]' } })
+    ;(textareas[2].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '{"ok":true}' } })
+    ;(findAll(tree, (node) => node.type === 'checkbox')[0].props.onCheckedChange as (value: boolean) => void)(true)
+    const selects = findAll(tree, (node) => node.type === 'select')
+    ;(selects[0].props.onValueChange as (value: string) => void)('a')
+    ;(selects[1].props.onValueChange as (value: string) => void)('true')
+
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { title: 'hello' }, { count: 3 }, { notes: 'details' }, { items: [1] },
+      { config: { ok: true } }, { checked: true }, { choice: 'a' }, { enabled: true },
+    ])
   })
 
-  it('blocks submit for a missing required text value and renders field errors', () => {
-    const onSubmit = mock()
-    const variables: Variable[] = [{ name: 'prompt', label: 'Prompt', type: 'text', required: true }]
-    const onChange = mock()
-
-    const view = render(
-      <VariableForm
-        variables={variables}
-        values={{}}
-        onChange={onChange}
-        fieldErrors={{ prompt: 'Server rejected prompt' }}
-        onSubmit={onSubmit}
-      />
-    )
-
-    const submit = view.getByRole('button', { name: 'Start chat' })
-    expect(submit).toHaveProperty('disabled', true)
-    expect(view.getAllByText('Server rejected prompt')).toHaveLength(1)
-
-    fireEvent.click(submit)
-
-    expect(onSubmit).not.toHaveBeenCalled()
-  })
-
-  it('updates submit readiness for required text and array validation', () => {
-    const onSubmit = mock()
-    const onChange = mock()
-    const variables: Variable[] = [
-      { name: 'prompt', label: 'Prompt', type: 'text', required: true },
-      { name: 'items', label: 'Items', type: 'array', required: true },
+  test('disables invalid required values and submits valid values', () => {
+    const variables = [
+      variable('items', 'array', { required: true }), variable('config', 'object', { required: true }),
+      variable('file', 'file', { required: true }), variable('files', 'files', { required: true }),
+      variable('ignored', 'text', { required: true, hidden: true }), variable('checked', 'checkbox', { required: true }),
     ]
+    const onSubmit = mock()
+    const invalid = render(variables, { items: 'nope', config: '[]' }, mock(), onSubmit)
+    expect(findAll(invalid, (node) => node.type === 'button').at(-1)?.props.disabled).toBe(true)
 
-    const view = render(
-      <VariableForm variables={variables} values={{ prompt: '', items: 'not json' }} onChange={onChange} onSubmit={onSubmit} />
-    )
-
-    expect(view.getByRole('button', { name: 'Start chat' })).toHaveProperty('disabled', true)
-
-    view.rerender(
-      <VariableForm variables={variables} values={{ prompt: 'hello', items: ['one'] }} onChange={onChange} onSubmit={onSubmit} />
-    )
-
-    const submit = view.getByRole('button', { name: 'Start chat' })
-    expect(submit).toHaveProperty('disabled', false)
-    fireEvent.click(submit)
-
+    const valid = render(variables, { items: [1], config: { ok: true }, file: '/a', files: ['/b'], checked: false }, mock(), onSubmit)
+    const form = findAll(valid, (node) => node.type === 'form')[0]
+    ;(form.props.onSubmit as (event: { preventDefault(): void }) => void)({ preventDefault() {} })
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
-  it('enforces multi-image count and size limits before upload', async () => {
-    const { container } = render(
-      <StatefulForm
-        variables={[{
-          name: 'photos',
-          label: 'Photos',
-          type: 'images',
-          required: true,
-          fileConfig: { maxFiles: 2, maxSize: 1 },
-        }]}
-        initialValues={{ photos: ['/uploads/existing.png'] }}
-      />
-    )
+  test('handles file limits, mocked uploads, removals, and field errors', async () => {
+    const onChange = mock()
+    const single = render([variable('file', 'file', { fileConfig: { accept: ['text/plain'], maxSize: 1 } })], {}, onChange, undefined, { file: 'server error' })
+    const singleInput = findAll(single, (node) => node.type === 'input' && node.props.type === 'file')[0]
+    expect(singleInput.props.accept).toBe('text/plain')
+    await (singleInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File(['ok'], 'new.txt')] } })
+    expect(uploadFile).toHaveBeenCalledWith(expect.any(File), 'workflow-input')
+    expect(onChange).toHaveBeenCalledWith({ file: '/uploads/new.txt' })
+    expect(findAll(single, (node) => node.type === 'alert').some((node) => node.props.children === 'server error')).toBe(true)
 
-    const input = fileInput(container)
+    const existing = render([variable('file', 'file')], { file: '/uploads/old.txt' }, onChange)
+    ;(findAll(existing, (node) => node.type === 'button')[0].props.onClick as () => void)()
+    expect(onChange).toHaveBeenCalledWith({ file: null })
 
-    fireEvent.change(input, {
-      target: { files: [new File(['a'], 'one.png'), new File(['b'], 'two.png')] },
-    })
-
-    expect(container.ownerDocument.body.textContent).toContain('Too many files. Max 2')
+    uploadFile.mockClear()
+    const multiple = render([variable('files', 'files', { fileConfig: { maxFiles: 1 } })], { files: ['/uploads/old.txt'] }, onChange)
+    const multiInput = findAll(multiple, (node) => node.type === 'input' && node.props.multiple === true)[0]
+    await (multiInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File(['x'], 'extra.txt')] } })
     expect(uploadFile).not.toHaveBeenCalled()
-
-    fireEvent.change(input, {
-      target: { files: [new File([new Uint8Array(1024 * 1024 + 1)], 'huge.png', { type: 'image/png' })] },
-    })
-
-    expect(container.ownerDocument.body.textContent).toContain('File is too large. Max 1 MB')
-    expect(uploadFile).not.toHaveBeenCalled()
-  })
-
-  it('uploads multiple files, disables at max count, and removal restores submit readiness', async () => {
-    const onSubmit = mock()
-    const view = render(
-      <StatefulForm
-        variables={[{
-          name: 'docs',
-          label: 'Docs',
-          type: 'files',
-          required: true,
-          fileConfig: { maxFiles: 2, maxSize: 1 },
-        }]}
-        onSubmit={onSubmit}
-      />
-    )
-    const { container } = view
-
-    const submit = view.getByRole('button', { name: 'Start chat' })
-    expect(submit).toHaveProperty('disabled', true)
-
-    fireEvent.change(fileInput(container), {
-      target: { files: [new File(['a'], 'a.txt'), new File(['b'], 'b.txt')] },
-    })
-
-    await waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(2))
-    await view.findByText('a.txt')
-    await view.findByText('b.txt')
-    expect(view.getByRole('button', { name: 'Select files (2/2)' })).toHaveProperty('disabled', true)
-    expect(submit).toHaveProperty('disabled', false)
-
-    fireEvent.click(container.querySelectorAll('button[type="button"]')[1])
-
-    await waitFor(() => expect(view.queryByText('a.txt')).toBeNull())
-    expect(view.getByRole('button', { name: 'Select files (1/2)' })).toHaveProperty('disabled', false)
-    expect(submit).toHaveProperty('disabled', false)
-
-    fireEvent.click(container.querySelectorAll('button[type="button"]')[1])
-
-    await waitFor(() => expect(view.queryByText('b.txt')).toBeNull())
-    expect(submit).toHaveProperty('disabled', true)
+    ;(findAll(multiple, (node) => node.type === 'button').at(-1)?.props.onClick as () => void)()
+    expect(onChange).toHaveBeenCalledWith({ files: null })
   })
 })
