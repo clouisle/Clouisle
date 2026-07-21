@@ -239,6 +239,51 @@ describe('NodeConfigDrawer', () => {
     expect(iterableIds).not.toEqual(expect.arrayContaining(['loop.step', 'loop.note', 'agent.reply', 'retrieval.context', 'sys.query']))
   })
 
+  test('adds, edits, and removes start parameters through the shared dialog', () => {
+    const parameter = { id: 'topic', name: 'topic', type: 'text', required: false }
+    const node = baseNode('start', { parameters: [parameter] })
+    render(node)
+    let nodes = descendants(render(node))
+    const config = nodes.find(item => item.type === 'StartNodeConfig')!
+
+    ;(config.props.onAddParameter as () => void)()
+    nodes = descendants(render(node))
+    let dialog = nodes.find(item => item.type === 'ParameterEditDialog')!
+    expect(dialog.props).toMatchObject({ open: true, editingParam: null })
+    ;(dialog.props.onSave as (value: Record<string, unknown>) => void)({ id: 'new', name: 'new', type: 'number' })
+
+    nodes = descendants(render(node))
+    expect((nodes.find(item => item.type === 'StartNodeConfig')!.props.parameters as unknown[])).toHaveLength(2)
+    ;(nodes.find(item => item.type === 'StartNodeConfig')!.props.onEditParameter as (value: unknown) => void)(parameter)
+    dialog = descendants(render(node)).find(item => item.type === 'ParameterEditDialog')!
+    ;(dialog.props.onSave as (value: Record<string, unknown>) => void)({ ...parameter, name: 'subject' })
+
+    nodes = descendants(render(node))
+    const updated = nodes.find(item => item.type === 'StartNodeConfig')!
+    expect(updated.props.parameters).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'topic', name: 'subject' })]))
+    ;(updated.props.onRemoveParameter as (id: string) => void)('topic')
+    expect((descendants(render(node)).find(item => item.type === 'StartNodeConfig')!.props.parameters as Array<{ id: string }>).some(item => item.id === 'topic')).toBe(false)
+  })
+
+  test('adds and edits code inputs through the shared dialog', () => {
+    const input = { id: 'source', name: 'source', type: 'string' }
+    const node = baseNode('code', { codeConfig: { inputs: [input], outputs: [] } })
+    render(node)
+    let nodes = descendants(render(node))
+    ;(nodes.find(item => item.type === 'CodeNodeConfig')!.props.onAddInput as () => void)()
+
+    nodes = descendants(render(node))
+    let dialog = nodes.find(item => item.type === 'CodeInputDialog')!
+    expect(dialog.props).toMatchObject({ open: true, editingInput: null })
+    ;(dialog.props.onSave as (value: Record<string, unknown>) => void)({ id: 'extra', name: 'extra', type: 'string' })
+    expect((descendants(render(node)).find(item => item.type === 'CodeInputDialog')!.props.existingInputs as unknown[])).toHaveLength(2)
+
+    state[27] = input
+    dialog = descendants(render(node)).find(item => item.type === 'CodeInputDialog')!
+    ;(dialog.props.onSave as (value: Record<string, unknown>) => void)({ ...input, name: 'payload' })
+    expect(descendants(render(node)).find(item => item.type === 'CodeInputDialog')!.props.existingInputs).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'source', name: 'payload' })]))
+  })
+
   test('renders comment editing without tabs and updates color and content', () => {
     const node = baseNode('comment', { content: 'Old note', color: 'blue' })
     render(node)
