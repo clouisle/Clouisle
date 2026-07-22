@@ -1,5 +1,6 @@
 import base64
 import json
+from types import SimpleNamespace
 from uuid import uuid4
 from unittest.mock import AsyncMock, patch
 
@@ -8,7 +9,8 @@ import pytest
 from app.models.skill import Skill, SkillCategory
 from app.schemas.response import BusinessError
 from app.services.skill import SkillService
-from app.services.skill_executor import SkillExecutor
+from app.services.sandbox.models import SandboxArtifact, SandboxTaskStatus
+from app.services.skill_executor import SkillExecutionResult, SkillExecutor
 
 
 def make_skill(**overrides) -> Skill:
@@ -200,3 +202,136 @@ def test_instruction_display_result_hides_full_instructions():
     assert "artifact_guidance" in llm_payload["result"]
     assert "artifact" in llm_payload["result"]["artifact_guidance"]
     assert "artifact_guidance" not in display_json
+
+
+def test_execution_result_serializes_artifacts_and_output_summaries():
+    artifact = SandboxArtifact(
+        path="/workspace/output/report.txt",
+        filename="report.txt",
+        file_type="file",
+        size=6,
+        content_type="text/plain",
+        storage_path="skills/report.txt",
+        url="https://example.test/report.txt",
+    )
+    result = SkillExecutionResult(
+        success=False,
+        result={"reason": "failed"},
+        error="boom",
+        stdout="x" * 2100,
+        stderr="y" * 2100,
+        artifacts=[artifact],
+        duration_ms=12,
+        status=SandboxTaskStatus.FAILED,
+    )
+
+    display = result.to_dict()
+    llm_payload = json.loads(result.to_llm_payload())
+    chat_payload = result.to_chat_payload()
+
+    assert display["artifacts"][0]["filename"] == "report.txt"
+    assert llm_payload["artifact_count"] == 1
+    assert llm_payload["stdout_summary"] == "x" * 2000
+    assert llm_payload["stderr_summary"] == "y" * 2000
+    assert chat_payload.display_result == display
+    assert json.loads(chat_payload.llm_result) == llm_payload
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "matches"),
+    [
+        ("text", "string", True),
+        (1, "integer", True),
+        (True, "integer", False),
+        (1.5, "number", True),
+        (True, "boolean", True),
+        ([], "array", True),
+        ({}, "object", True),
+        (None, ["string", "null"], True),
+        ("text", "boolean", False),
+    ],
+)
+def test_matches_json_types(value, expected, matches):
+    assert SkillExecutor._matches_json_type(value, expected) is matches
+
+
+def test_build_package_input_files_ignores_invalid_and_unsafe_entries():
+    encoded = base64.b64encode(b"ok").decode("ascii")
+    skill = make_skill(
+        skill_spec={
+            "package_files": [
+                "not-a-dict",
+                {"path": 1, "content_base64": encoded},
+                {"path": "/absolute", "content_base64": encoded},
+                {"path": "../escape", "content_base64": encoded},
+                {"path": "valid.txt", "content_base64": encoded, "mode": "644"},
+            ]
+        }
+    )
+
+    files = SkillExecutor.build_package_input_files(
+        skill=skill, workspace_root="/workspace/skill/test"
+    )
+
+    assert len(files) == 1
+    assert files[0].target_path == "/workspace/skill/test/valid.txt"
+    assert files[0].mode is None
+    assert (
+        SkillExecutor.build_package_input_files(
+            skill=make_skill(skill_spec={}), workspace_root="/workspace/skill/test"
+        )
+        == []
+    )
+
+
+def test_skill_workspace_root_falls_back_to_id():
+    skill = make_skill(name="...---")
+
+    assert SkillExecutor.skill_workspace_root(skill) == f"/workspace/skill/{skill.id}"
+
+
+@pytest.mark.anyio
+async def test_stage_package_resources_returns_when_workspace_is_missing():
+    with (
+        patch(
+            "app.services.skill_executor.sandbox_gateway.get_session_workspace",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.skill_executor.sandbox_gateway._get_workspace_manager"
+        ) as manager,
+    ):
+        await SkillExecutor.stage_package_resources(
+            skill=make_skill(),
+            workspace_root="/workspace/skill/test",
+            tenant_id=None,
+            session_id="session-1",
+        )
+
+    manager.assert_not_called()
+
+
+def test_from_sandbox_result_copies_fields():
+    source = SimpleNamespace(
+        success=True,
+        result={"ok": True},
+        error=None,
+        stdout="out",
+        stderr="err",
+        artifacts=[],
+        metadata=SimpleNamespace(duration_ms=9),
+        status=SandboxTaskStatus.COMPLETED,
+    )
+
+    result = SkillExecutor.from_sandbox_result(source)
+
+    assert result.to_dict() == {
+        "success": True,
+        "result": {"ok": True},
+        "error": None,
+        "stdout": "out",
+        "stderr": "err",
+        "artifacts": [],
+        "duration_ms": 9,
+        "status": "completed",
+    }

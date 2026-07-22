@@ -308,12 +308,16 @@ describe('PublicChatPage', () => {
 
     const image = { id: 'image', name: 'safe.png', size: 4, type: 'image/png', file: new File(['safe'], 'safe.png', { type: 'image/png' }), isDocument: false }
     const documentFile = { id: 'doc', name: 'safe.pdf', size: 4, type: 'application/pdf', file: new File(['safe'], 'safe.pdf', { type: 'application/pdf' }), isDocument: true }
-    await act(async () => (chatInputProps.onSubmit as (message: string, files: unknown[]) => Promise<void>)('with files', [image, documentFile]))
+    uploadFileWithProgress.mockImplementationOnce(async (_file, _category, onProgress) => {
+      onProgress({ percent: 50 })
+      return { url: 'https://files.example.test/safe.pdf' }
+    })
+    act(() => (chatInputProps.onFilesChange as (files: unknown[]) => void)([image, documentFile]))
+    await act(async () => (chatInputProps.onSubmit as (message: string) => Promise<void>)('with files'))
 
     expect(uploadFileWithProgress).toHaveBeenCalledTimes(1)
     expect(uploadFileWithProgress.mock.calls[0][0]).toBe(documentFile.file)
     expect(uploadFileWithProgress.mock.calls[0][1]).toBe('documents')
-    act(() => uploadFileWithProgress.mock.calls[0][2]({ percent: 50 }))
     expect(sendMessage).toHaveBeenCalledWith(
       'with files',
       [{ type: 'image_url', url: 'data:image/png;base64,c2FmZQ==' }],
@@ -353,6 +357,59 @@ describe('PublicChatPage', () => {
     await flush()
     expect(output()).toContain('loadError')
     expect(output()).not.toContain('private agent detail')
+    console.error = consoleError
+  })
+
+  test('suppresses URL reload after selecting and reports conversation action failures', async () => {
+    const consoleError = console.error
+    console.error = mock()
+    query = new URLSearchParams('conversation=conv-2')
+    getConversation
+      .mockResolvedValueOnce({ messages: [] })
+      .mockRejectedValueOnce(new Error('select failed'))
+    render()
+    await flush()
+
+    const firstChat = renderer!.root.findAllByType('div').find((node) => nodeText(node).includes('First chat') && node.props.onClick)!
+    await act(async () => firstChat.props.onClick())
+    expect(getConversation).toHaveBeenCalledWith('conv-1')
+    expect(console.error).toHaveBeenCalledWith('Failed to load conversation:', expect.any(Error))
+
+    getConversation.mockResolvedValueOnce({ messages: [] })
+    await act(async () => firstChat.props.onClick())
+    await flush()
+    expect(getConversation).toHaveBeenCalledTimes(3)
+
+    updateConversation.mockRejectedValueOnce(new Error('rename failed'))
+    await click('rename')
+    const titleInput = renderer!.root.findByProps({ id: 'title' })
+    act(() => titleInput.props.onChange({ target: { value: 'Failure' } }))
+    await act(async () => titleInput.props.onKeyDown({ key: 'Enter', nativeEvent: { isComposing: false }, preventDefault: mock() }))
+    expect(console.error).toHaveBeenCalledWith('Failed to rename conversation:', expect.any(Error))
+
+    deleteConversation.mockRejectedValueOnce(new Error('delete failed'))
+    await click('delete')
+    await click('confirmDeleteConversation')
+    expect(toastError).toHaveBeenCalledWith('deleteConversationFailed')
+    console.error = consoleError
+  })
+
+  test('cleans delete selection when the dialog closes and ignores invalid upload types without allowed values', async () => {
+    const consoleError = console.error
+    console.error = mock()
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_file_upload: true })
+    uploadFileWithProgress.mockRejectedValueOnce(new ApiError(1001))
+    render()
+    await flush()
+
+    await click('delete')
+    const deleteDialog = renderer!.root.findAll((node) => node.props.open === true && node.props.onOpenChange)[0]
+    act(() => deleteDialog.props.onOpenChange(false))
+    expect(buttons('confirmDeleteConversation')).toHaveLength(0)
+
+    const documentFile = { id: 'doc', name: 'bad.exe', size: 3, type: 'application/octet-stream', file: new File(['bad'], 'bad.exe'), isDocument: true }
+    await act(async () => (chatInputProps.onSubmit as (message: string, files: unknown[]) => Promise<void>)('upload', [documentFile]))
+    expect(toastError).toHaveBeenCalledWith('invalidFileType')
     console.error = consoleError
   })
 })
