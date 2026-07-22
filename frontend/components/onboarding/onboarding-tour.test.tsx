@@ -183,4 +183,148 @@ describe('OnboardingTour', () => {
     expect(nextStep).not.toHaveBeenCalled()
     restore()
   })
+
+  it('detects the first available target and cancels lifecycle timers on unmount', async () => {
+    const available = document.createElement('div')
+    available.className = 'available'
+    document.body.appendChild(available)
+    config = {
+      id: 'overview', title: 'Overview', description: '', autoStart: true,
+      steps: [
+        { target: '.missing', content: 'one' },
+        { target: '.available', content: 'two' },
+      ],
+    }
+    state = { completedTours: [], currentTour: 'overview', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="overview" />)
+
+    await waitFor(() => expect(goToStep).toHaveBeenCalledWith(1), { timeout: 600 })
+    state = { completedTours: [], currentTour: null, currentStep: 0, isRunning: false }
+    view.rerender(<OnboardingTour tourId="overview" />)
+    view.unmount()
+    await act(() => new Promise(resolve => setTimeout(resolve, 550)))
+    expect(startTour).not.toHaveBeenCalled()
+
+    available.remove()
+    restore()
+  })
+
+  it('guards automatic routing for navigation-only steps and matching routes', () => {
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [{
+        target: 'body', content: 'one', route: '/app/models',
+        advanceOnClick: true, waitForRouteChange: true,
+      }],
+    }
+    pathname = '/app'
+    state = { completedTours: [], currentTour: 'models', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="models" />)
+    expect(push).not.toHaveBeenCalled()
+
+    config = {
+      ...config,
+      steps: [{ target: 'body', content: 'one', route: '/app/models' }],
+    }
+    pathname = '/app/models'
+    view.rerender(<OnboardingTour tourId="models" />)
+    expect(push).not.toHaveBeenCalled()
+
+    pathname = '/app'
+    view.rerender(<OnboardingTour tourId="models" />)
+    expect(push).toHaveBeenCalledWith('/app/models')
+    restore()
+  })
+
+  it('handles keyboard navigation, focus guards, dismissal, and listener cleanup', () => {
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: 'body', content: 'one' },
+        { target: 'body', content: 'two' },
+      ],
+    }
+    state = { completedTours: [], currentTour: 'models', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="models" />)
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+    expect(nextStep).not.toHaveBeenCalled()
+    input.blur()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    expect(nextStep).toHaveBeenCalledTimes(1)
+
+    const Tooltip = joyrideProps?.tooltipComponent
+    expect(Tooltip).toBeDefined()
+    render(<Tooltip index={0} isLastStep={false} step={config.steps[0]} size={2} />)
+      .getByText('onboarding.skip').click()
+    expect(completeTour).toHaveBeenCalledWith('models')
+
+    view.unmount()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+    expect(nextStep).toHaveBeenCalledTimes(1)
+    input.remove()
+    restore()
+  })
+
+  it('advances from target clicks and inputs once, then removes their listeners', async () => {
+    const button = document.createElement('button')
+    button.className = 'advance-target'
+    const input = document.createElement('input')
+    input.className = 'advance-input'
+    document.body.append(button, input)
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: '.advance-target', content: 'click', advanceOnClick: true },
+        { target: '.advance-input', content: 'type', advanceOnInput: true },
+      ],
+    }
+    state = { completedTours: [], currentTour: 'models', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="models" />)
+
+    button.click()
+    button.click()
+    await waitFor(() => expect(nextStep).toHaveBeenCalledTimes(1), { timeout: 600 })
+
+    state = { ...state, currentStep: 1 }
+    view.rerender(<OnboardingTour tourId="models" />)
+    input.value = '  '
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(nextStep).toHaveBeenCalledTimes(1)
+    input.value = 'ready'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitFor(() => expect(completeTour).toHaveBeenCalledWith('models'), { timeout: 600 })
+
+    view.unmount()
+    input.value = 'again'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await act(() => new Promise(resolve => setTimeout(resolve, 350)))
+    expect(completeTour).toHaveBeenCalledTimes(1)
+    button.remove()
+    input.remove()
+    restore()
+  })
+
+  it('adds the dialog overlay class only while the dialog step is mounted', () => {
+    config = {
+      id: 'appCreate', title: 'Create app', description: '',
+      steps: [{ target: '.app-create-name-input', content: 'name' }],
+    }
+    state = { completedTours: [], currentTour: 'appCreate', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="appCreate" />)
+
+    expect(document.body.classList.contains('joyride-dialog-active')).toBe(true)
+    view.unmount()
+    expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
+    restore()
+  })
 })
