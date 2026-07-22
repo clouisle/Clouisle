@@ -1,0 +1,273 @@
+import sys
+from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+import pytest
+
+from app.api.v1.endpoints import chat
+from app.models.agent import (
+    AgentVisibility,
+    MessageRole,
+    MessageRoundRole,
+    MessageRoundStatus,
+)
+from app.schemas.response import BusinessError
+
+
+def _query_with_first(value):
+    query = MagicMock()
+    query.prefetch_related.return_value.first = AsyncMock(return_value=value)
+    return query
+
+
+def test_extracts_provider_error_and_preserves_malformed_payload():
+    provider_error = Exception(
+        "request failed - {'error': {'message': 'provider unavailable'}}"
+    )
+    malformed_error = Exception("request failed - not-a-payload")
+
+    assert chat._extract_llm_error_message(provider_error) == "provider unavailable"
+    assert chat._extract_llm_error_message(malformed_error) == str(malformed_error)
+
+
+def test_formats_empty_and_nonempty_llm_errors(monkeypatch):
+    translate = MagicMock(side_effect=lambda key, **kwargs: (key, kwargs))
+    monkeypatch.setattr(chat, "t", translate)
+
+    assert chat._format_llm_error_message(Exception()) == ("model_call_failed", {})
+    assert chat._format_llm_error_message(Exception("bad request")) == (
+        "model_service_request_failed",
+        {"message": "bad request"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_public_agent_requires_user_and_rejects_private_noncreator(
+    monkeypatch,
+):
+    with pytest.raises(BusinessError):
+        await chat.get_public_agent(uuid4())
+
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    agent = SimpleNamespace(
+        visibility=AgentVisibility.PRIVATE,
+        created_by=SimpleNamespace(id=uuid4()),
+        team_id=uuid4(),
+    )
+    monkeypatch.setattr(
+        chat.Agent, "filter", MagicMock(return_value=_query_with_first(agent))
+    )
+
+    with pytest.raises(BusinessError):
+        await chat.get_public_agent(uuid4(), user)
+
+
+@pytest.mark.asyncio
+async def test_get_public_agent_allows_team_member_for_ownerless_private_agent(
+    monkeypatch,
+):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    agent = SimpleNamespace(
+        visibility=AgentVisibility.PRIVATE,
+        created_by=None,
+        team_id=uuid4(),
+    )
+    monkeypatch.setattr(
+        chat.Agent, "filter", MagicMock(return_value=_query_with_first(agent))
+    )
+    member_query = MagicMock()
+    member_query.exists = AsyncMock(return_value=True)
+    monkeypatch.setattr(chat.TeamMember, "filter", MagicMock(return_value=member_query))
+
+    assert await chat.get_public_agent(uuid4(), user) is agent
+
+
+@pytest.mark.asyncio
+async def test_build_round_steps_map_groups_only_steps_with_round_ids(monkeypatch):
+    round_id = uuid4()
+    canonical = SimpleNamespace(
+        round_id=round_id,
+        is_round_canonical=True,
+        conversation_id=uuid4(),
+    )
+    step = SimpleNamespace(
+        id=uuid4(),
+        role=MessageRole.TOOL,
+        content="result",
+        tool_calls=None,
+        tool_call_id="call-1",
+        tool_name="search",
+        reasoning_content=None,
+        model_used=None,
+        token_usage=None,
+        duration_ms=4,
+        is_manually_stopped=False,
+        rag_context=None,
+        created_at=None,
+        round_id=round_id,
+        round_index=1,
+        round_role=MessageRoundRole.TOOL_RESULT,
+        is_round_canonical=False,
+        iteration_index=1,
+        round_status=None,
+    )
+    orphan = SimpleNamespace(**{**vars(step), "round_id": None})
+    query = MagicMock()
+    query.order_by.return_value.all = AsyncMock(return_value=[step, orphan])
+    monkeypatch.setattr(chat.Message, "filter", MagicMock(return_value=query))
+
+    grouped = await chat.build_round_steps_map([canonical])
+
+    assert grouped[round_id] == [
+        {
+            "id": step.id,
+            "role": "tool",
+            "content": "result",
+            "tool_calls": None,
+            "tool_call_id": "call-1",
+            "tool_name": "search",
+            "reasoning_content": None,
+            "model_used": None,
+            "token_usage": None,
+            "duration_ms": 4,
+            "is_manually_stopped": False,
+            "rag_context": None,
+            "created_at": None,
+            "round_id": round_id,
+            "round_index": 1,
+            "round_role": "tool_result",
+            "is_round_canonical": False,
+            "iteration_index": 1,
+            "round_status": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_round_steps_map_skips_query_without_canonical_rounds(monkeypatch):
+    message_filter = MagicMock()
+    monkeypatch.setattr(chat.Message, "filter", message_filter)
+
+    assert await chat.build_round_steps_map([]) == {}
+    message_filter.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_message_round_payloads_skips_steps_and_attaches_them(monkeypatch):
+    round_id = uuid4()
+    user_message = SimpleNamespace(
+        round_id=round_id,
+        round_role=MessageRoundRole.USER_INPUT,
+        is_round_canonical=True,
+    )
+    step_message = SimpleNamespace(round_id=round_id, is_round_canonical=False)
+    final_message = SimpleNamespace(
+        round_id=round_id,
+        round_role=MessageRoundRole.ASSISTANT_FINAL,
+        is_round_canonical=True,
+    )
+    monkeypatch.setattr(
+        chat,
+        "build_round_steps_map",
+        AsyncMock(return_value={round_id: [{"content": "tool result"}]}),
+    )
+    validated = MagicMock()
+    validated.model_dump.side_effect = [{"role": "user"}, {"role": "assistant"}]
+    monkeypatch.setattr(
+        chat.MessageOut, "model_validate", MagicMock(return_value=validated)
+    )
+
+    payloads = await chat.build_message_round_payloads(
+        [user_message, step_message, final_message]
+    )
+
+    assert payloads == [
+        {"role": "user"},
+        {"role": "assistant", "steps": [{"content": "tool result"}]},
+    ]
+
+
+def test_enqueue_session_memory_honors_config_and_logs_enqueue_failure(
+    monkeypatch,
+):
+    conversation = SimpleNamespace(id=uuid4())
+    message = SimpleNamespace(id=uuid4())
+    task = SimpleNamespace(delay=MagicMock(side_effect=RuntimeError("broker down")))
+    task_module = ModuleType("app.tasks.session_memory")
+    task_module.extract_session_memory_task = task
+    monkeypatch.setitem(sys.modules, "app.tasks.session_memory", task_module)
+    monkeypatch.setattr(
+        chat,
+        "get_context_compression_config",
+        MagicMock(return_value={"session_memory_enabled": False}),
+    )
+
+    chat.enqueue_session_memory_extraction(SimpleNamespace(), conversation, message)
+    task.delay.assert_not_called()
+
+    monkeypatch.setattr(
+        chat,
+        "get_context_compression_config",
+        MagicMock(
+            return_value={
+                "session_memory_enabled": True,
+                "session_memory_async_extract": True,
+            }
+        ),
+    )
+    warning = MagicMock()
+    monkeypatch.setattr(chat.logger, "warning", warning)
+
+    chat.enqueue_session_memory_extraction(SimpleNamespace(), conversation, message)
+
+    task.delay.assert_called_once_with(str(conversation.id), str(message.id))
+    warning.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_persist_partial_round_error_uses_fallback_and_saves(monkeypatch):
+    message = SimpleNamespace(
+        conversation_id=uuid4(),
+        round_id=uuid4(),
+        save=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        chat, "round_has_persisted_trace", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(chat, "now_utc", MagicMock(return_value="now"))
+    monkeypatch.setattr(chat.time, "time", MagicMock(return_value=12.0))
+
+    persisted = await chat.persist_partial_round_error(
+        message,
+        content="",
+        reasoning="reasoning",
+        model_id="model",
+        start_time=10.0,
+        first_token_time=10.5,
+        fallback_content="request failed",
+    )
+
+    assert persisted is True
+    assert message.content == "request failed"
+    assert message.reasoning_content == "reasoning"
+    assert message.duration_ms == 2000
+    assert message.first_token_ms == 500
+    assert message.round_status == MessageRoundStatus.ERROR
+    message.save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_persist_partial_round_error_skips_empty_untraced_round(monkeypatch):
+    message = SimpleNamespace(round_id=uuid4())
+    monkeypatch.setattr(
+        chat, "round_has_persisted_trace", AsyncMock(return_value=False)
+    )
+
+    assert not await chat.persist_partial_round_error(
+        message,
+        content="",
+        reasoning="",
+        model_id=None,
+        start_time=0,
+    )
