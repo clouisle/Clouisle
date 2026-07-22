@@ -3,9 +3,10 @@ import hmac
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
 import pytest
 
-from app.services.sandbox.artifacts import SandboxArtifactStore
+from app.services.sandbox.artifacts import SandboxArtifactStore, artifact_manifest
 from app.services.sandbox.models import SandboxArtifactLimits, SandboxArtifactSpec
 from app.services.sandbox.workspace import SandboxWorkspaceManager
 
@@ -139,6 +140,171 @@ async def test_collect_rejects_total_size_over_limit(tmp_path: Path):
                 max_size_mb=10, max_total_size_mb=0.0015
             ),
         )
+
+
+@pytest.mark.anyio
+async def test_collect_skips_optional_missing_and_rejects_required_missing(
+    tmp_path: Path,
+):
+    workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+    store = SandboxArtifactStore(workspace_manager)
+    workspace = workspace_manager.prepare("job-missing")
+    limits = SandboxArtifactLimits(max_size_mb=10, max_total_size_mb=10)
+
+    assert (
+        await store.collect(
+            job_id="job-missing",
+            artifacts=[SandboxArtifactSpec(path="missing.txt", optional=True)],
+            workspace=workspace,
+            artifact_limits=limits,
+        )
+        == []
+    )
+
+    with pytest.raises(FileNotFoundError, match="Required artifact not found"):
+        await store.collect(
+            job_id="job-missing",
+            artifacts=[SandboxArtifactSpec(path="missing.txt")],
+            workspace=workspace,
+            artifact_limits=limits,
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["../outside.txt", "/workspace/../../outside.txt"])
+async def test_collect_rejects_paths_outside_workspace(tmp_path: Path, path: str):
+    workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+    workspace = workspace_manager.prepare("job-path")
+
+    with pytest.raises(ValueError, match="escapes workspace"):
+        await SandboxArtifactStore(workspace_manager).collect(
+            job_id="job-path",
+            artifacts=[SandboxArtifactSpec(path=path)],
+            workspace=workspace,
+            artifact_limits=SandboxArtifactLimits(),
+        )
+
+
+@pytest.mark.anyio
+async def test_collect_rejects_symlink_artifact(tmp_path: Path):
+    workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+    workspace = workspace_manager.prepare("job-link")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    link = workspace.output_dir / "link.txt"
+    link.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="workspace|symlink"):
+        await SandboxArtifactStore(workspace_manager).collect(
+            job_id="job-link",
+            artifacts=[SandboxArtifactSpec(path="output/link.txt")],
+            workspace=workspace,
+            artifact_limits=SandboxArtifactLimits(),
+        )
+
+
+@pytest.mark.anyio
+async def test_collect_persists_directory_archive_and_removes_temporary_zip(
+    tmp_path: Path,
+):
+    workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+    store = SandboxArtifactStore(workspace_manager)
+    workspace = workspace_manager.prepare("job-dir")
+    artifact_dir = workspace.output_dir / "bundle"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "result.txt").write_text("result", encoding="utf-8")
+
+    async def fake_upload(*, content, content_type, filename):
+        assert content.startswith(b"PK")
+        assert content_type == "application/zip"
+        assert filename == "job-dir_bundle.zip"
+        return {
+            "path": "/uploads/bundle.zip",
+            "url": "/files/bundle.zip",
+            "filename": filename,
+        }
+
+    with patch.object(store, "_upload_artifact", side_effect=fake_upload):
+        artifacts = await store.collect(
+            job_id="job-dir",
+            artifacts=[
+                SandboxArtifactSpec(path="output/bundle", description="generated files")
+            ],
+            workspace=workspace,
+            artifact_limits=SandboxArtifactLimits(max_size_mb=10, max_total_size_mb=10),
+        )
+
+    artifact = artifacts[0]
+    assert artifact.file_type == "directory"
+    assert artifact.size == len(b"result")
+    assert artifact.description == "generated files"
+    assert artifact.storage_path == "/uploads/bundle.zip"
+    assert not (workspace.output_dir / "bundle__artifact.zip").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("response_data", "match"),
+    [
+        ({}, "missing response data"),
+        ({"path": "saved"}, "missing response fields"),
+    ],
+)
+async def test_upload_artifact_rejects_invalid_response(response_data, match):
+    async def fake_post(self, url, files=None, headers=None):
+        response = _FakeResponse(response_data)
+        if not response_data:
+            response.json = lambda: {"code": 0}
+        return response
+
+    with (
+        patch("httpx.AsyncClient.post", new=fake_post),
+        pytest.raises(ValueError, match=match),
+    ):
+        await SandboxArtifactStore()._upload_artifact(
+            content=b"data", content_type="text/plain", filename="result.txt"
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("error", "match"),
+    [
+        (
+            httpx.HTTPStatusError(
+                "bad status",
+                request=httpx.Request("POST", "http://backend/upload"),
+                response=httpx.Response(500, text="upload rejected"),
+            ),
+            "upload rejected",
+        ),
+        (
+            httpx.ConnectError(
+                "connection refused",
+                request=httpx.Request("POST", "http://backend/upload"),
+            ),
+            "connection refused",
+        ),
+    ],
+)
+async def test_upload_artifact_wraps_http_errors(error, match):
+    async def fake_post(self, url, files=None, headers=None):
+        raise error
+
+    with (
+        patch("httpx.AsyncClient.post", new=fake_post),
+        pytest.raises(ValueError, match=match),
+    ):
+        await SandboxArtifactStore()._upload_artifact(
+            content=b"data", content_type="text/plain", filename="result.txt"
+        )
+
+
+def test_artifact_manifest_builds_required_specs():
+    assert artifact_manifest(["a.txt", "output/b.txt"]) == [
+        SandboxArtifactSpec(path="a.txt"),
+        SandboxArtifactSpec(path="output/b.txt"),
+    ]
 
 
 def test_upload_base_url_prefers_explicit_env_override(tmp_path: Path):
