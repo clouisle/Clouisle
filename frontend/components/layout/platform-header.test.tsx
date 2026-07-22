@@ -78,10 +78,14 @@ mock.module('@/components/team-switcher', () => ({
   TeamSwitcher: () => <span>team-switcher</span>,
 }))
 mock.module('@/components/settings-drawer', () => ({
-  SettingsDrawer: ({ open }: { open: boolean }) => <span data-settings-open={open} />,
+  SettingsDrawer: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => (
+    <button data-settings-open={open} onClick={() => onOpenChange(false)} />
+  ),
 }))
 mock.module('@/components/settings-dialog', () => ({
-  SettingsDialog: ({ open }: { open: boolean }) => <span data-profile-open={open} />,
+  SettingsDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => (
+    <button data-profile-open={open} onClick={() => onOpenChange(false)} />
+  ),
 }))
 mock.module('@/components/ui/avatar', () => ({
   Avatar: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
@@ -207,6 +211,55 @@ describe('PlatformHeader', () => {
     expect(removeItem).toHaveBeenCalledWith('access_token')
     expect(toastSuccess).toHaveBeenCalledWith('logoutSuccess')
     expect(push).toHaveBeenCalledWith('/login')
+  })
+
+  test('opens and closes theme and profile settings', async () => {
+    const renderer = await renderHeader()
+
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'platform-theme-button' }).props.onClick())
+    const settingsDrawer = renderer.root.findByProps({ 'data-settings-open': true })
+    await act(async () => settingsDrawer.props.onClick())
+    expect(renderer.root.findByProps({ 'data-settings-open': false })).toBeTruthy()
+
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-settings' }).props.onClick())
+    const profileDialog = renderer.root.findByProps({ 'data-profile-open': true })
+    await act(async () => profileDialog.props.onClick())
+    expect(renderer.root.findByProps({ 'data-profile-open': false })).toBeTruthy()
+  })
+
+  test('runs user navigation callbacks', async () => {
+    const renderer = await renderHeader()
+
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-api-keys' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-memories' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-about' }).props.onClick())
+
+    expect(push).toHaveBeenNthCalledWith(1, '/app/api-keys')
+    expect(push).toHaveBeenNthCalledWith(2, '/app/memories')
+  })
+
+  test('toggles and closes mobile navigation', async () => {
+    const renderer = await renderHeader()
+    const toggle = renderer.root.findAllByType('button').find((node) => node.children.some((child) =>
+      typeof child === 'object' && child !== null && 'children' in child && child.children.includes('menu')
+    ))!
+
+    await act(async () => toggle.props.onClick())
+    const mobileNav = renderer.root.findAllByType('nav')[1]
+    expect(mobileNav).toBeTruthy()
+
+    await act(async () => mobileNav.findAllByType('a')[0].props.onClick())
+    expect(renderer.root.findAllByType('nav')).toHaveLength(1)
+  })
+
+  test('skips notification permission when the browser already decided', async () => {
+    Object.defineProperty(globalThis.Notification, 'permission', { configurable: true, value: 'denied' })
+    const renderer = await renderHeader()
+
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-notifications' }).props.onClick())
+
+    expect(requestPermission).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/app/notifications')
   })
 
   test('hides team navigation when no team is available', async () => {
