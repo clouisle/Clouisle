@@ -169,6 +169,78 @@ async def test_object_iteration_uses_custom_names_and_publishes_key():
     )
 
 
+def test_iteration_output_metadata_covers_array_and_object_modes():
+    executor = IterationNodeExecutor()
+
+    array_variables = executor.get_output_variables(
+        {"itemVariable": "entry", "indexVariable": "position"}
+    )
+    object_variables = executor.get_output_variables(
+        {"iteratorType": "object", "keyVariable": "name", "valueVariable": "amount"}
+    )
+    array_specs = executor.get_output_specs({})
+    object_specs = executor.get_output_specs({"iteratorType": "object"})
+
+    assert [variable["name"] for variable in array_variables] == [
+        "entry",
+        "position",
+        "total",
+        "results",
+    ]
+    assert [variable["name"] for variable in object_variables] == [
+        "name",
+        "amount",
+        "total",
+        "results",
+    ]
+    assert [(spec.name, spec.type.kind) for spec in array_specs] == [
+        ("item", "any"),
+        ("index", "number"),
+        ("total", "number"),
+        ("results", "array"),
+    ]
+    assert [(spec.name, spec.type.kind) for spec in object_specs] == [
+        ("key", "string"),
+        ("value", "any"),
+        ("total", "number"),
+        ("results", "array"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_object_iteration_completes_with_prior_results():
+    context = MagicMock(run_id="run-1")
+    context.resolve_variable_ref = AsyncMock(return_value={"first": 1})
+    context.get_variable = AsyncMock(return_value={"index": 0, "results": [1]})
+
+    result = await IterationNodeExecutor().execute(
+        {
+            "id": "iteration",
+            "data": {"iterationConfig": {"iteratorType": "object"}},
+        },
+        context,
+        MagicMock(),
+    )
+
+    assert result.outputs == {
+        "key": None,
+        "value": None,
+        "total": 1,
+        "results": [1],
+        "_iteration_complete": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_loop_start_without_parent_returns_empty_outputs():
+    context = MagicMock(get_node_outputs=AsyncMock())
+
+    result = await LoopStartNodeExecutor().execute({"data": {}}, context, MagicMock())
+
+    assert result.outputs == {}
+    context.get_node_outputs.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_loop_stops_at_limit_with_updated_results():
     context = MagicMock()
