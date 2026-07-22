@@ -170,3 +170,133 @@ async def test_dingtalk_notification_routes_app_only_with_recipients():
 
     app_sender.assert_awaited_once_with(["user-1"], "Title", "Content", None)
     webhook_sender.assert_awaited_once_with("Title", "Content", None)
+
+
+@pytest.mark.asyncio
+async def test_dingtalk_webhook_handles_provider_failure_and_exception():
+    client, context = _http_client(_Response({"errcode": 400, "errmsg": "bad"}))
+    config = {
+        "enabled": True,
+        "webhook_url": "https://hooks.dingtalk.test?access_token=value",
+        "secret": "",
+    }
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch("app.core.dingtalk.httpx.AsyncClient", return_value=context),
+    ):
+        assert await send_dingtalk_webhook("Title", "Content") is False
+
+    client.post.assert_awaited_once_with(
+        config["webhook_url"],
+        json={
+            "msgtype": "markdown",
+            "markdown": {"title": "Title", "text": "### Title\n\nContent"},
+        },
+    )
+
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch("app.core.dingtalk.httpx.AsyncClient", side_effect=RuntimeError("boom")),
+    ):
+        assert await send_dingtalk_webhook("Title", "Content") is False
+
+
+@pytest.mark.asyncio
+async def test_dingtalk_access_token_handles_provider_failure_and_exception():
+    client, context = _http_client(_Response({"errcode": 400, "errmsg": "bad"}))
+    config = {"app_key": "key", "app_secret": "secret"}
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch("app.core.dingtalk.httpx.AsyncClient", return_value=context),
+    ):
+        assert await get_dingtalk_access_token() is None
+
+    client.get.assert_awaited_once_with(
+        "https://oapi.dingtalk.com/gettoken",
+        params={"appkey": "key", "appsecret": "secret"},
+    )
+
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch("app.core.dingtalk.httpx.AsyncClient", side_effect=RuntimeError("boom")),
+    ):
+        assert await get_dingtalk_access_token() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("config", "token"),
+    [
+        ({"enabled": False, "agent_id": "42"}, "token"),
+        ({"enabled": True, "agent_id": ""}, "token"),
+        ({"enabled": True, "agent_id": "42"}, None),
+    ],
+)
+async def test_dingtalk_app_message_skips_missing_prerequisites(config, token):
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch(
+            "app.core.dingtalk.get_dingtalk_access_token",
+            new=AsyncMock(return_value=token),
+        ),
+    ):
+        assert await send_dingtalk_app_message(["user"], "Title", "Content") is False
+
+
+@pytest.mark.asyncio
+async def test_dingtalk_app_message_handles_provider_failure_and_exception():
+    config = {"enabled": True, "agent_id": "42"}
+    client, context = _http_client(_Response({"errcode": 400, "errmsg": "bad"}))
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch(
+            "app.core.dingtalk.get_dingtalk_access_token",
+            new=AsyncMock(return_value="token"),
+        ),
+        patch("app.core.dingtalk.httpx.AsyncClient", return_value=context),
+    ):
+        assert (
+            await send_dingtalk_app_message(
+                ["user"], "Title", "Content", "https://app.test/item"
+            )
+            is False
+        )
+
+    client.post.assert_awaited_once_with(
+        "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=token",
+        json={
+            "agent_id": "42",
+            "userid_list": "user",
+            "msg": {
+                "msgtype": "markdown",
+                "markdown": {
+                    "title": "Title",
+                    "text": "### Title\n\nContent\n\n[查看详情](https://app.test/item)",
+                },
+            },
+        },
+    )
+
+    with (
+        patch(
+            "app.core.dingtalk.get_dingtalk_config", new=AsyncMock(return_value=config)
+        ),
+        patch(
+            "app.core.dingtalk.get_dingtalk_access_token",
+            new=AsyncMock(return_value="token"),
+        ),
+        patch("app.core.dingtalk.httpx.AsyncClient", side_effect=RuntimeError("boom")),
+    ):
+        assert await send_dingtalk_app_message(["user"], "Title", "Content") is False
