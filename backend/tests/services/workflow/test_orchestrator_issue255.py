@@ -24,6 +24,56 @@ def make_orchestrator(**kwargs):
 
 
 @pytest.mark.asyncio
+async def test_workflow_definition_returns_cached_value():
+    orchestrator = make_orchestrator()
+    orchestrator._cache = MagicMock(
+        get_workflow=AsyncMock(return_value={"nodes": ["cached"]}),
+        set_workflow=AsyncMock(),
+    )
+    workflow = MagicMock(
+        id=uuid4(), definition={"nodes": ["database"]}, updated_at=None
+    )
+
+    assert await orchestrator._get_workflow_definition(workflow) == {
+        "nodes": ["cached"]
+    }
+    orchestrator._cache.get_workflow.assert_awaited_once_with(
+        str(workflow.id), version=None
+    )
+    orchestrator._cache.set_workflow.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_workflow_definition_caches_miss_without_version():
+    orchestrator = make_orchestrator()
+    orchestrator._cache = MagicMock(
+        get_workflow=AsyncMock(return_value=None),
+        set_workflow=AsyncMock(),
+    )
+    workflow = MagicMock(
+        id=uuid4(), definition={"nodes": ["database"]}, updated_at=None
+    )
+
+    assert await orchestrator._get_workflow_definition(workflow) == workflow.definition
+    orchestrator._cache.set_workflow.assert_awaited_once_with(
+        str(workflow.id), workflow.definition, version=None
+    )
+
+
+def test_get_child_nodes_follows_execution_order():
+    orchestrator = make_orchestrator()
+    plan = MagicMock()
+    plan.nodes = {
+        "child-b": MagicMock(node_data={"parentId": "loop"}),
+        "other": MagicMock(node_data={"parentId": "different-loop"}),
+        "child-a": MagicMock(node_data={"parentId": "loop"}),
+    }
+    plan.get_execution_order.return_value = ["child-a", "other", "child-b"]
+
+    assert orchestrator._get_child_nodes(plan, "loop") == ["child-a", "child-b"]
+
+
+@pytest.mark.asyncio
 async def test_execute_rejects_timed_out_run_before_reading_context():
     orchestrator = make_orchestrator(timeout=1)
     context = MagicMock(get_status=AsyncMock())
