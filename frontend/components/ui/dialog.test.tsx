@@ -1,108 +1,142 @@
-import { describe, expect, mock, test } from 'bun:test'
-import React from 'react'
-import { act, create } from 'react-test-renderer'
+import { beforeEach, describe, expect, mock, test } from "bun:test"
 
-function primitive(name: string) {
-  function Primitive({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) {
-    return React.createElement(name, props, children)
-  }
+type Props = Record<string, unknown>
+type Node = { type: unknown; props: Props }
+type Effect = () => void | (() => void)
 
-  Primitive.displayName = name
-  return Primitive
+const jsx = (type: unknown, props: Props = {}) => ({ type, props })
+const primitive = (name: string) => function Primitive() { return name }
+const Root = primitive("Root")
+const Trigger = primitive("Trigger")
+const Portal = primitive("Portal")
+const Close = primitive("Close")
+const Backdrop = primitive("Backdrop")
+const Popup = primitive("Popup")
+const Title = primitive("Title")
+const Description = primitive("Description")
+const Button = primitive("Button")
+const XIcon = primitive("XIcon")
+
+let states: unknown[] = []
+let stateIndex = 0
+let effects: Effect[] = []
+const rafCallbacks: FrameRequestCallback[] = []
+const timeoutCallbacks: TimerHandler[] = []
+const cancelAnimationFrameMock = mock(() => {})
+const clearTimeoutMock = mock(() => {})
+
+mock.module("react/jsx-runtime", () => ({ jsx, jsxs: jsx, Fragment: Symbol.for("react.fragment") }))
+mock.module("react/jsx-dev-runtime", () => ({ jsxDEV: jsx, Fragment: Symbol.for("react.fragment") }))
+mock.module("react", () => ({
+  useState: <T,>(initial: T) => {
+    const index = stateIndex++
+    states[index] ??= initial
+    return [states[index] as T, (value: T) => { states[index] = value }] as const
+  },
+  useEffect: (effect: Effect) => effects.push(effect),
+}))
+mock.module("@base-ui/react/dialog", () => ({
+  Dialog: { Root, Trigger, Portal, Close, Backdrop, Popup, Title, Description },
+}))
+mock.module("@/lib/utils", () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(" ") }))
+mock.module("@/components/ui/button", () => ({ Button }))
+mock.module("lucide-react", () => ({ XIcon }))
+
+const dialog = await import("./dialog")
+
+function renderContent(props: Props = {}): Node {
+  stateIndex = 0
+  effects = []
+  return dialog.DialogContent(props) as Node
 }
 
-mock.module('@base-ui/react/dialog', () => ({
-  Dialog: {
-    Root: primitive('dialog-root'),
-    Trigger: primitive('dialog-trigger'),
-    Portal: primitive('dialog-portal'),
-    Close({ render, children, ...props }: React.PropsWithChildren<Record<string, unknown>>) {
-      if (React.isValidElement(render)) {
-        return React.cloneElement(render, props, children)
-      }
-
-      return React.createElement('dialog-close', props, children)
+beforeEach(() => {
+  states = []
+  effects = []
+  rafCallbacks.length = 0
+  timeoutCallbacks.length = 0
+  cancelAnimationFrameMock.mockClear()
+  clearTimeoutMock.mockClear()
+  globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    rafCallbacks.push(callback)
+    return 7
+  }) as typeof requestAnimationFrame
+  globalThis.cancelAnimationFrame = cancelAnimationFrameMock
+  globalThis.window = {
+    setTimeout: (callback: TimerHandler) => {
+      timeoutCallbacks.push(callback)
+      return 9
     },
-    Backdrop: primitive('dialog-backdrop'),
-    Popup: primitive('dialog-popup'),
-    Title: primitive('dialog-title'),
-    Description: primitive('dialog-description'),
-  },
-}))
+    clearTimeout: clearTimeoutMock,
+  } as unknown as Window & typeof globalThis
+})
 
-const {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-  DialogTrigger,
-} = await import('./dialog')
-
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
-globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => setTimeout(callback, 0)
-globalThis.cancelAnimationFrame = (id: number) => clearTimeout(id)
-Object.assign(globalThis, { window: globalThis })
-
-describe('Dialog', () => {
-  test('renders an accessible trigger and labelled content slots', () => {
-    let renderer!: ReturnType<typeof create>
-    act(() => {
-      renderer = create(
-        <Dialog>
-          <DialogTrigger aria-label="Open settings">Open settings</DialogTrigger>
-          <DialogPortal>
-            <DialogOverlay className="custom-overlay" />
-            <DialogContent className="custom-content" overlayClassName="nested-overlay">
-              <DialogHeader className="custom-header">
-                <DialogTitle className="custom-title">Settings</DialogTitle>
-                <DialogDescription className="custom-description">Manage application preferences.</DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="custom-footer" showCloseButton>
-                <DialogClose>Cancel</DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </DialogPortal>
-        </Dialog>,
-      )
+describe("dialog wrappers", () => {
+  test("forwards slots, classes, and custom props", () => {
+    expect(dialog.Dialog({ open: true } as never)).toEqual(jsx(Root, { "data-slot": "dialog", open: true }))
+    expect(dialog.DialogTrigger({ className: "custom", disabled: true } as never)).toEqual(
+      jsx(Trigger, { "data-slot": "dialog-trigger", className: "cursor-pointer custom", disabled: true }),
+    )
+    expect(dialog.DialogPortal({ keepMounted: true } as never)).toEqual(jsx(Portal, { "data-slot": "dialog-portal", keepMounted: true }))
+    expect(dialog.DialogClose({ disabled: true } as never)).toEqual(jsx(Close, { "data-slot": "dialog-close", disabled: true }))
+    expect(dialog.DialogOverlay({ className: "custom" } as never).props).toMatchObject({
+      "data-slot": "dialog-overlay",
+      className: expect.stringContaining("custom"),
     })
-
-    const trigger = renderer.root.findByProps({ 'data-slot': 'dialog-trigger' })
-    expect(trigger.props['aria-label']).toBe('Open settings')
-    expect(trigger.props.className).toContain('cursor-pointer')
-    expect(renderer.root.findAllByType('dialog-portal')).toHaveLength(2)
-    expect(renderer.root.findAllByProps({ 'data-slot': 'dialog-overlay' }).some((node) => node.props.className.includes('custom-overlay'))).toBe(true)
-    expect(renderer.root.findAllByProps({ 'data-slot': 'dialog-overlay' }).some((node) => node.props.className.includes('nested-overlay'))).toBe(true)
-    expect(renderer.root.findByProps({ 'data-slot': 'dialog-content' }).props.className).toContain('custom-content')
-    expect(renderer.root.findByProps({ 'data-slot': 'dialog-header' }).props.className).toContain('custom-header')
-    expect(renderer.root.findByProps({ 'data-slot': 'dialog-title' }).props.className).toContain('custom-title')
-    expect(renderer.root.findByProps({ 'data-slot': 'dialog-description' }).props.className).toContain('custom-description')
-    expect(renderer.root.findByProps({ 'data-slot': 'dialog-footer' }).props.className).toContain('custom-footer')
-    expect(renderer.root.findAllByProps({ 'data-slot': 'dialog-close' }).length).toBeGreaterThan(0)
-    expect(renderer.root.findByType('dialog-title').children).toEqual(['Settings'])
-    expect(renderer.root.findByType('dialog-description').children).toEqual(['Manage application preferences.'])
-
-    act(() => renderer.unmount())
+    expect(dialog.DialogHeader({ className: "custom" }).props.className).toContain("custom")
+    expect(dialog.DialogTitle({ className: "custom" } as never).props.className).toContain("custom")
+    expect(dialog.DialogDescription({ className: "custom" } as never).props.className).toContain("custom")
   })
 
-  test('can hide overlay and built-in close button', () => {
-    let renderer!: ReturnType<typeof create>
-    act(() => {
-      renderer = create(
-        <DialogContent hideOverlay showCloseButton={false}>
-          Plain content
-        </DialogContent>,
-      )
-    })
+  test("renders optional content and footer close controls", () => {
+    const content = renderContent({ children: "body" })
+    const contentChildren = content.props.children as Node[]
+    expect(contentChildren[0].type).toBe(dialog.DialogOverlay)
+    expect((contentChildren[1].props.children as unknown[])[0]).toBe("body")
+    expect((contentChildren[1].props.children as Node[])[1].type).toBe(Close)
 
-    expect(renderer.root.findAllByProps({ 'data-slot': 'dialog-overlay' })).toHaveLength(0)
-    expect(renderer.root.findByProps({ 'data-slot': 'dialog-content' }).props.children).toEqual(['Plain content', false])
-    expect(renderer.root.findAllByProps({ 'data-slot': 'dialog-close' })).toHaveLength(0)
+    const bare = renderContent({ children: "body", hideOverlay: true, showCloseButton: false })
+    expect((bare.props.children as unknown[])[0]).toBe(false)
+    expect((bare.props.children as Node[])[1].props.children).toEqual(["body", false])
 
-    act(() => renderer.unmount())
+    const footer = dialog.DialogFooter({ children: "action", showCloseButton: true }) as Node
+    expect((footer.props.children as Node[])[1]).toMatchObject({ type: Close, props: { children: "Close" } })
+    expect((dialog.DialogFooter({ children: "action" }) as Node).props.children).toEqual(["action", false])
+  })
+})
+
+describe("animated overlay callbacks", () => {
+  test("shows on open, enables transitions on the next frame, and cancels the frame", () => {
+    renderContent({ open: true, disableOverlayAnimation: true })
+    const cleanup = effects[0]() as () => void
+    expect(states).toEqual([true, false])
+
+    rafCallbacks[0](0)
+    expect(states).toEqual([true, true])
+    cleanup()
+    expect(cancelAnimationFrameMock).toHaveBeenCalledWith(7)
+
+    const tree = renderContent({ open: true, disableOverlayAnimation: true, overlayClassName: "overlay" })
+    const overlay = (tree.props.children as Node[])[0]
+    expect(overlay.props.className).toContain("opacity-100")
+    expect(overlay.props.className).toContain("overlay")
+  })
+
+  test("delays hiding on close, clears the timer, and hides immediately when requested", () => {
+    states = [true, true]
+    renderContent({ open: false, disableOverlayAnimation: true })
+    const cleanup = effects[0]() as () => void
+    expect(timeoutCallbacks).toHaveLength(1)
+    cleanup()
+    expect(clearTimeoutMock).toHaveBeenCalledWith(9)
+
+    ;(timeoutCallbacks[0] as () => void)()
+    expect(states).toEqual([false, false])
+    expect((renderContent({ open: false, disableOverlayAnimation: true }).props.children as unknown[])[0]).toBe(false)
+
+    states = [true, true]
+    renderContent({ hideOverlay: true })
+    expect(effects[0]()).toBeUndefined()
+    expect(states).toEqual([false, true])
   })
 })

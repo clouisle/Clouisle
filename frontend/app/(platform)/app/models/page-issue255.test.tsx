@@ -84,6 +84,82 @@ beforeEach(() => {
 })
 
 describe('ModelsPage', () => {
+  test('searches, filters, clears, and opens a card from the flat view', async () => {
+    const chatModel = {
+      id: 'chat-model', priority: 1, is_enabled: true,
+      model: { name: 'GPT Test', model_id: 'gpt-test', provider: 'openai', model_type: 'chat' },
+    }
+    const higherPriorityChat = {
+      id: 'priority-chat', priority: 3, is_enabled: true,
+      model: { name: 'Claude', model_id: 'claude-3', provider: 'anthropic', model_type: 'chat' },
+    }
+    const embeddingModel = {
+      id: 'embedding-model', priority: 2, is_enabled: false,
+      model: { name: 'Embedder', model_id: 'embed-v1', provider: 'openai', model_type: 'embedding' },
+    }
+    getTeamModels.mockResolvedValue([chatModel, higherPriorityChat, embeddingModel])
+
+    let tree = await load()
+    expect(findAll(tree, components.ModelCard).map(card => card.props.teamModel)).toEqual([
+      higherPriorityChat, chatModel, embeddingModel,
+    ])
+
+    const input = findAll(tree, components.Input)[0]
+    ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'claude-3' } })
+    tree = render()
+    expect(findAll(tree, components.ModelCard).map(card => card.props.teamModel)).toEqual([higherPriorityChat])
+
+    ;(findAll(tree, components.Button)[0].props.onClick as () => void)()
+    expect(states.slice(2, 6)).toEqual(['', new Set(), new Set(), new Set()])
+
+    tree = render()
+    const filters = findAll(tree, components.DataTableFacetedFilter)
+    ;(filters[0].props.onSelectionChange as (values: Set<string>) => void)(new Set(['anthropic']))
+    tree = render()
+    expect(findAll(tree, components.ModelCard).map(card => card.props.teamModel)).toEqual([higherPriorityChat])
+
+    ;(findAll(tree, components.Button)[0].props.onClick as () => void)()
+    tree = render()
+    ;(findAll(tree, components.DataTableFacetedFilter)[1].props.onSelectionChange as (values: Set<string>) => void)(new Set(['embedding']))
+    tree = render()
+    const flatCard = findAll(tree, components.ModelCard)[0]
+    expect(flatCard.props.teamModel).toBe(embeddingModel)
+    ;(flatCard.props.onClick as () => void)()
+    expect(states.slice(6, 8)).toEqual([true, embeddingModel])
+
+    states[3] = new Set()
+    states[5] = new Set(['enabled'])
+    tree = render()
+    expect(findAll(tree, components.ModelCard).map(card => card.props.teamModel)).toEqual([higherPriorityChat, chatModel])
+    states[5] = new Set(['disabled'])
+    tree = render()
+    expect(findAll(tree, components.ModelCard).map(card => card.props.teamModel)).toEqual([embeddingModel])
+    states[5] = new Set(['enabled', 'disabled'])
+    tree = render()
+    expect(findAll(tree, components.ModelCard)).toHaveLength(0)
+
+    states[2] = 'missing'
+    states[5] = new Set()
+    tree = render()
+    expect(findAll(tree, components.ModelCard)).toHaveLength(0)
+    ;(findAll(tree, components.Button).find(button => button.props.variant === 'outline')!.props.onClick as () => void)()
+    expect(states.slice(2, 6)).toEqual(['', new Set(), new Set(), new Set()])
+  })
+
+  test('matches searches by model name and provider', async () => {
+    const teamModel = {
+      id: 'team-model', priority: 1, is_enabled: true,
+      model: { name: 'GPT Test', model_id: 'gpt-test', provider: 'openai', model_type: 'chat' },
+    }
+    getTeamModels.mockResolvedValue([teamModel])
+    await load()
+
+    states[2] = 'gpt test'
+    expect(findAll(render(), components.ModelCard)).toHaveLength(1)
+    states[2] = 'openai'
+    expect(findAll(render(), components.ModelCard)).toHaveLength(1)
+  })
+
   test('loads team models and wires card clicks to the detail dialog', async () => {
     const teamModel = {
       id: 'team-model-1',
