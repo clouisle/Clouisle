@@ -1,231 +1,329 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
 
-from app.api import deps
 from app.api.v1.admin.endpoints import audit_logs
-from app.schemas.response import BusinessError, ResponseCode, error
+from app.schemas.response import BusinessError, ResponseCode
 
 
-class Query:
-    def __init__(self, rows=None, *, count=0, first=None):
-        self.rows = [] if rows is None else rows
-        self.count_value = count
-        self.first_value = first
+class _Query:
+    def __init__(self, result=None, *, count=0):
+        self.result = result
+        self.total = count
         self.calls = []
 
-    def filter(self, *args, **kwargs):
-        self.calls.append(("filter", args, kwargs))
+    def _chain(self, name, *args, **kwargs):
+        self.calls.append((name, args, kwargs))
         return self
+
+    def filter(self, *args, **kwargs):
+        return self._chain("filter", *args, **kwargs)
 
     def order_by(self, *args):
-        self.calls.append(("order_by", args, {}))
-        return self
+        return self._chain("order_by", *args)
 
     def offset(self, value):
-        self.calls.append(("offset", (value,), {}))
-        return self
+        return self._chain("offset", value)
 
     def limit(self, value):
-        self.calls.append(("limit", (value,), {}))
-        return self
+        return self._chain("limit", value)
+
+    def distinct(self):
+        return self._chain("distinct")
+
+    def values_list(self, *args, **kwargs):
+        return self._chain("values_list", *args, **kwargs)
+
+    def annotate(self, **kwargs):
+        return self._chain("annotate", **kwargs)
+
+    def group_by(self, *args):
+        return self._chain("group_by", *args)
+
+    def values(self, *args):
+        return self._chain("values", *args)
 
     async def count(self):
-        return self.count_value
+        return self.total
 
     async def first(self):
-        return self.first_value
+        return self.result
 
     def __await__(self):
         async def resolve():
-            return self.rows
+            return self.result
 
         return resolve().__await__()
 
 
-class Permission:
-    def __init__(self, code):
-        self.code = code
+def _log(**overrides):
+    values = {
+        "id": uuid4(),
+        "user_id": uuid4(),
+        "username": "admin",
+        "team_id": uuid4(),
+        "ip_address": "127.0.0.1",
+        "user_agent": "pytest",
+        "action": "update_user",
+        "resource_type": "user",
+        "resource_id": uuid4(),
+        "resource_name": "member",
+        "operation": "update",
+        "status": "success",
+        "error_message": None,
+        "changes": None,
+        "metadata": None,
+        "auth_method": "jwt",
+        "api_key_id": None,
+        "created_at": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
-class Role:
-    def __init__(self, *codes):
-        self.permissions = [Permission(code) for code in codes]
-
-
-@pytest.fixture
-def audit_client():
-    app = FastAPI()
-    app.include_router(audit_logs.router, prefix="/api/v1/admin/audit-logs")
-
-    @app.exception_handler(BusinessError)
-    async def handle_business_error(_, exc):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=error(
-                code=exc.code,
-                msg=exc.msg,
-                msg_key=exc.msg_key,
-                data=exc.data,
-                **exc.kwargs,
-            ),
-        )
-
-    user = SimpleNamespace(is_active=True, is_superuser=False, roles=[])
-
-    async def current_user():
-        return user
-
-    app.dependency_overrides[deps.get_current_active_user] = current_user
-    try:
-        yield TestClient(app), user
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_actions_require_audit_read_permission(audit_client):
-    client, user = audit_client
-    user.roles = [Role("admin:unrelated")]
-
-    response = client.get("/api/v1/admin/audit-logs/actions")
-
-    assert response.status_code == 403
-    assert response.json()["code"] == ResponseCode.PERMISSION_DENIED
-
-
-def test_actions_return_options_for_authorized_user(audit_client):
-    client, user = audit_client
-    user.roles = [Role("audit:read")]
-
-    response = client.get("/api/v1/admin/audit-logs/actions")
-
-    assert response.status_code == 200
-    assert response.json()["data"][0]["value"] == "login_success"
-
-
-@pytest.mark.parametrize(
-    ("message", "translated", "safe", "expected"),
-    [
-        (None, False, False, None),
-        ("known_key", True, False, "translated"),
-        ("safe detail", False, True, "safe detail"),
-        ("secret detail", False, False, "unknown"),
-    ],
-)
-def test_serialize_audit_error_hides_unsafe_messages(
-    monkeypatch, message, translated, safe, expected
-):
-    monkeypatch.setattr(audit_logs, "has_translation", lambda value: translated)
-    monkeypatch.setattr(audit_logs, "is_safe_user_visible_error", lambda value: safe)
-    monkeypatch.setattr(
-        audit_logs,
-        "t",
-        lambda key: "translated" if key == "known_key" else "unknown",
+async def _body(response):
+    chunks = [chunk async for chunk in response.body_iterator]
+    return b"".join(
+        chunk if isinstance(chunk, bytes) else chunk.encode() for chunk in chunks
     )
 
-    assert audit_logs.serialize_audit_error(message) == expected
+
+def test_error_serialization_covers_empty_translated_safe_and_hidden(monkeypatch):
+    monkeypatch.setattr(audit_logs, "has_translation", lambda value: value == "known")
+    monkeypatch.setattr(audit_logs, "t", lambda value: f"translated:{value}")
+    monkeypatch.setattr(
+        audit_logs, "is_safe_user_visible_error", lambda value: value == "safe"
+    )
+
+    assert audit_logs.serialize_audit_error(None) is None
+    assert audit_logs.serialize_audit_error("known") == "translated:known"
+    assert audit_logs.serialize_audit_error("safe") == "safe"
+    assert audit_logs.serialize_audit_error("secret") == "translated:unknown_error"
 
 
 @pytest.mark.anyio
-async def test_list_audit_logs_applies_filters_and_pagination(monkeypatch):
-    log = SimpleNamespace(id=uuid4())
-    query = Query([log], count=21)
-    monkeypatch.setattr(audit_logs.AuditLog, "all", lambda: query)
-    monkeypatch.setattr(
-        audit_logs, "serialize_audit_log", lambda value: {"id": value.id}
-    )
+async def test_actions_and_route_permissions_are_exposed():
+    response = await audit_logs.get_audit_log_actions(current_user=MagicMock())
 
-    result = await audit_logs.list_audit_logs(
-        user_id=uuid4(),
-        team_id=uuid4(),
-        action=["login_failed"],
+    assert response["data"] is audit_logs.AUDIT_ACTION_OPTIONS
+    permissions = {
+        route.path: {
+            dependency.call.required_permission
+            for dependency in route.dependant.dependencies
+            if hasattr(dependency.call, "required_permission")
+        }
+        for route in audit_logs.router.routes
+    }
+    assert permissions["/actions"] == {"audit:read"}
+    assert permissions[""] == {"audit:read"}
+    assert permissions["/stats"] == {"audit:read"}
+    assert permissions["/stats/retention"] == {"audit:read"}
+    assert permissions["/archive"] == {"audit:export"}
+    assert permissions["/export"] == {"audit:export"}
+    assert permissions["/{log_id}"] == {"audit:read"}
+
+
+@pytest.mark.anyio
+async def test_list_applies_all_filters_paginates_and_serializes(monkeypatch):
+    log = _log(error_message="unsafe")
+    query = _Query([log], count=21)
+    monkeypatch.setattr(audit_logs.AuditLog, "all", MagicMock(return_value=query))
+    monkeypatch.setattr(audit_logs, "serialize_audit_error", lambda value: "hidden")
+    user_id, team_id, resource_id = uuid4(), uuid4(), uuid4()
+
+    response = await audit_logs.list_audit_logs(
+        user_id=user_id,
+        team_id=team_id,
+        action=["login_success"],
         resource_type="user",
-        resource_id=uuid4(),
+        resource_id=resource_id,
         status=["failed"],
         start_date="2026-01-01",
         end_date="2026-01-31",
-        search="127.0.0.1",
+        search="member",
         page=2,
         page_size=20,
-        current_user=object(),
+        current_user=MagicMock(),
     )
 
-    assert result["data"]["items"] == [{"id": log.id}]
-    assert result["data"]["total_pages"] == 2
-    assert [call[0] for call in query.calls] == [
-        "filter",
-        "filter",
-        "filter",
-        "filter",
-        "filter",
-        "filter",
-        "filter",
-        "filter",
-        "filter",
-        "order_by",
-        "offset",
-        "limit",
+    data = response["data"]
+    assert (data["total"], data["page"], data["total_pages"]) == (21, 2, 2)
+    assert data["items"][0].error_message == "hidden"
+    filter_kwargs = [call[2] for call in query.calls if call[0] == "filter"]
+    assert filter_kwargs[:-1] == [
+        {"user_id": user_id},
+        {"team_id": team_id},
+        {"action__in": ["login_success"]},
+        {"resource_type": "user"},
+        {"resource_id": resource_id},
+        {"status__in": ["failed"]},
+        {"created_at__gte": "2026-01-01"},
+        {"created_at__lte": "2026-01-31"},
     ]
-    assert query.calls[-2][1] == (20,)
+    assert filter_kwargs[-1] == {}
+    assert ("offset", (20,), {}) in query.calls
+    assert ("limit", (20,), {}) in query.calls
 
 
 @pytest.mark.anyio
-async def test_get_audit_log_rejects_missing_record(monkeypatch):
-    monkeypatch.setattr(
-        audit_logs.AuditLog, "get_or_none", AsyncMock(return_value=None)
+async def test_list_without_filters_returns_empty_page(monkeypatch):
+    query = _Query([], count=0)
+    monkeypatch.setattr(audit_logs.AuditLog, "all", MagicMock(return_value=query))
+
+    response = await audit_logs.list_audit_logs(
+        user_id=None,
+        team_id=None,
+        action=None,
+        resource_type=None,
+        resource_id=None,
+        status=None,
+        start_date=None,
+        end_date=None,
+        search=None,
+        page=1,
+        page_size=20,
+        current_user=MagicMock(),
     )
 
-    with pytest.raises(BusinessError) as exc:
-        await audit_logs.get_audit_log(uuid4(), current_user=object())
-
-    assert exc.value.code == ResponseCode.NOT_FOUND
+    assert response["data"] == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 20,
+        "total_pages": 0,
+    }
+    assert not [call for call in query.calls if call[0] == "filter"]
 
 
 @pytest.mark.anyio
-async def test_retention_stats_use_setting_and_oldest_log(monkeypatch):
-    oldest = SimpleNamespace(created_at=datetime(2025, 1, 2, tzinfo=UTC))
-    all_queries = iter([Query(count=8), Query(first=oldest)])
+async def test_stats_uses_aggregates_and_ignores_anonymous_active_users(monkeypatch):
+    active_id = uuid4()
+    all_queries = iter(
+        [
+            _Query(count=12),
+            _Query([{"action": "login", "count": 7}]),
+        ]
+    )
+    filter_queries = iter(
+        [
+            _Query(count=4),
+            _Query(count=2),
+            _Query([active_id, None]),
+            _Query([{"user_id": active_id, "username": "admin", "count": 5}]),
+        ]
+    )
     monkeypatch.setattr(audit_logs.AuditLog, "all", lambda: next(all_queries))
-    monkeypatch.setattr(audit_logs.AuditLog, "filter", lambda **kwargs: Query(count=3))
-    setting = AsyncMock(return_value=30)
-    monkeypatch.setattr(audit_logs.SiteSetting, "get_value", setting)
+    monkeypatch.setattr(
+        audit_logs.AuditLog, "filter", lambda **kwargs: next(filter_queries)
+    )
+    fixed_now = datetime(2026, 1, 10, 12, tzinfo=UTC)
+    monkeypatch.setattr(audit_logs, "now_utc", lambda: fixed_now)
 
-    result = await audit_logs.get_retention_stats(current_user=object())
+    response = await audit_logs.get_audit_log_stats(current_user=MagicMock())
 
-    assert result["data"].total_logs == 8
-    assert result["data"].logs_to_archive == 3
-    assert result["data"].oldest_log_date == oldest.created_at.isoformat()
-    setting.assert_awaited_once_with("audit_log_retention_days", 365)
+    stats = response["data"]
+    assert stats.model_dump() == {
+        "total_logs": 12,
+        "today_logs": 4,
+        "failed_logs": 2,
+        "active_users": 1,
+        "top_actions": [{"action": "login", "count": 7}],
+        "top_users": [{"user_id": active_id, "username": "admin", "count": 5}],
+    }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("oldest", [None, _log()])
+async def test_retention_stats_covers_missing_and_present_oldest(monkeypatch, oldest):
+    fixed_now = datetime(2026, 2, 1, 12, tzinfo=UTC)
+    all_queries = iter([_Query(count=30), _Query(oldest)])
+    monkeypatch.setattr(audit_logs, "now_utc", lambda: fixed_now)
+    monkeypatch.setattr(audit_logs.SiteSetting, "get_value", AsyncMock(return_value=90))
+    monkeypatch.setattr(audit_logs.AuditLog, "all", lambda: next(all_queries))
+    monkeypatch.setattr(
+        audit_logs.AuditLog, "filter", MagicMock(return_value=_Query(count=8))
+    )
+
+    response = await audit_logs.get_retention_stats(current_user=MagicMock())
+
+    stats = response["data"]
+    assert stats.total_logs == 30
+    assert stats.logs_to_archive == 8
+    assert stats.retention_days == 90
+    assert stats.oldest_log_date == (oldest.created_at.isoformat() if oldest else None)
+    assert stats.next_archive_date == "2026-02-02T03:00:00+00:00"
+
+
+@pytest.mark.anyio
+async def test_manual_archive_dispatches_task(monkeypatch):
+    task = SimpleNamespace(id=uuid4())
+    delay = MagicMock(return_value=task)
+    monkeypatch.setattr("app.tasks.audit_log.archive_old_audit_logs.delay", delay)
+
+    response = await audit_logs.trigger_manual_archive(current_user=MagicMock())
+
+    delay.assert_called_once_with()
+    assert response["data"] == {"task_id": str(task.id)}
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("format", ["csv", "json"])
-async def test_export_audit_logs_supports_csv_and_json(monkeypatch, format):
-    log = SimpleNamespace(
-        id=uuid4(),
-        created_at=datetime(2026, 1, 2, tzinfo=UTC),
-        username="admin",
-        action="login_success",
-        resource_type="session",
+async def test_export_applies_filters_and_emits_both_formats(monkeypatch, format):
+    log = _log(
+        username=None,
         resource_name=None,
-        operation="login",
-        status="success",
-        ip_address="127.0.0.1",
-        error_message=None,
+        ip_address=None,
+        error_message="safe",
+        created_at=None if format == "csv" else datetime(2026, 1, 2, tzinfo=UTC),
     )
-    query = Query([log])
-    monkeypatch.setattr(audit_logs.AuditLog, "all", lambda: query)
-    serialized = SimpleNamespace(model_dump=lambda **kwargs: {"action": log.action})
-    monkeypatch.setattr(audit_logs, "serialize_audit_log", lambda value: serialized)
+    query = _Query([log])
+    monkeypatch.setattr(audit_logs.AuditLog, "all", MagicMock(return_value=query))
+    monkeypatch.setattr(audit_logs, "serialize_audit_error", lambda value: value)
+    monkeypatch.setattr(
+        audit_logs,
+        "now_utc",
+        lambda: datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    )
+    user_id, team_id = uuid4(), uuid4()
 
     response = await audit_logs.export_audit_logs(
         format=format,
+        user_id=user_id,
+        team_id=team_id,
+        action=["update_user"],
+        resource_type="user",
+        status=["success"],
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        search="member",
+        current_user=MagicMock(),
+    )
+    body = await _body(response)
+
+    assert (
+        response.media_type
+        == f"{'text/csv' if format == 'csv' else 'application/json'}"
+    )
+    assert "audit-logs-20260102-030405" in response.headers["content-disposition"]
+    assert b"update_user" in body
+    assert ("limit", (10000,), {}) in query.calls
+    assert len([call for call in query.calls if call[0] == "filter"]) == 8
+    if format == "csv":
+        assert body.startswith(b"ID,Time,User,Action")
+    else:
+        assert b'"username": null' in body
+
+
+@pytest.mark.anyio
+async def test_export_without_filters_skips_filtering(monkeypatch):
+    query = _Query([])
+    monkeypatch.setattr(audit_logs.AuditLog, "all", MagicMock(return_value=query))
+
+    response = await audit_logs.export_audit_logs(
+        format="json",
         user_id=None,
         team_id=None,
         action=None,
@@ -234,16 +332,24 @@ async def test_export_audit_logs_supports_csv_and_json(monkeypatch, format):
         start_date=None,
         end_date=None,
         search=None,
-        current_user=object(),
-    )
-    chunks = [chunk async for chunk in response.body_iterator]
-    body = "".join(
-        chunk.decode() if isinstance(chunk, bytes) else chunk for chunk in chunks
+        current_user=MagicMock(),
     )
 
-    assert (
-        response.media_type
-        == f"{'text/csv' if format == 'csv' else 'application/json'}"
-    )
-    assert "login_success" in body
-    assert query.calls[-1] == ("limit", (10000,), {})
+    assert await _body(response) == b"[]"
+    assert not [call for call in query.calls if call[0] == "filter"]
+
+
+@pytest.mark.anyio
+async def test_detail_returns_log_and_rejects_missing(monkeypatch):
+    log = _log()
+    get_or_none = AsyncMock(side_effect=[log, None])
+    monkeypatch.setattr(audit_logs.AuditLog, "get_or_none", get_or_none)
+
+    response = await audit_logs.get_audit_log(log.id, current_user=MagicMock())
+    assert response["data"].id == log.id
+
+    with pytest.raises(BusinessError) as exc:
+        await audit_logs.get_audit_log(uuid4(), current_user=MagicMock())
+
+    assert exc.value.code == ResponseCode.NOT_FOUND
+    assert exc.value.msg_key == "audit_log_not_found"
