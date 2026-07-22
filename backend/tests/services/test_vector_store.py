@@ -189,6 +189,24 @@ async def test_store_embedding_creates_collection_indexes_and_upserts(
 
 
 @pytest.mark.asyncio
+async def test_qdrant_search_retries_with_legacy_query_vector(monkeypatch):
+    client = SimpleNamespace(
+        query_points=AsyncMock(
+            side_effect=[TypeError, SimpleNamespace(points=["legacy-hit"])]
+        )
+    )
+    monkeypatch.setattr(
+        vector_store_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+
+    result = await vector_store_module._qdrant_search("collection", [0.1], 2, "filter")
+
+    assert result == ["legacy-hit"]
+    assert client.query_points.await_args_list[0].kwargs["query"] == [0.1]
+    assert client.query_points.await_args_list[1].kwargs["query_vector"] == [0.1]
+
+
+@pytest.mark.asyncio
 async def test_add_chunk_vector_propagates_embedding_failure(monkeypatch):
     chunk = SimpleNamespace(content="content", save=AsyncMock())
     monkeypatch.setattr(
