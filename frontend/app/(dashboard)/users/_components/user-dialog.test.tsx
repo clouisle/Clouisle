@@ -4,8 +4,11 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const createUser = mock()
 const updateUser = mock()
+const getUser = mock()
+const adminDisconnectConnection = mock()
 const getRoles = mock(async () => ({ items: [{ id: 'role-1', name: 'admin', description: 'Administrator' }] }))
 const success = mock()
+let canManageSSO = false
 const onOpenChange = mock()
 const onSuccess = mock()
 
@@ -14,10 +17,10 @@ mock.module('next-intl', () => ({
     values?.length ? `${key}:${values.length}` : key,
 }))
 mock.module('sonner', () => ({ toast: { success } }))
-mock.module('@/lib/api/admin/users', () => ({ usersApi: { createUser, updateUser, getUser: mock() } }))
+mock.module('@/lib/api/admin/users', () => ({ usersApi: { createUser, updateUser, getUser } }))
 mock.module('@/lib/api/admin/roles', () => ({ rolesApi: { getRoles } }))
-mock.module('@/lib/api/admin/sso', () => ({ ssoApi: { adminDisconnectConnection: mock() } }))
-mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => false }) }))
+mock.module('@/lib/api/admin/sso', () => ({ ssoApi: { adminDisconnectConnection } }))
+mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => canManageSSO }) }))
 mock.module('@/lib/utils', () => ({ isValidEmail: (email: string) => email.includes('@') }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => {
@@ -65,6 +68,9 @@ const change = async (renderer: ReactTestRenderer, id: string, value: string) =>
 beforeEach(() => {
   createUser.mockReset()
   updateUser.mockReset()
+  getUser.mockReset()
+  adminDisconnectConnection.mockReset()
+  canManageSSO = false
   getRoles.mockClear()
   success.mockClear()
   onOpenChange.mockClear()
@@ -126,4 +132,62 @@ test('shows API validation errors and recovers on retry', async () => {
   expect(createUser).toHaveBeenCalledTimes(2)
   expect(onOpenChange).toHaveBeenCalledWith(false)
   act(() => renderer.unmount())
+})
+
+test('validates short and mismatched passwords', async () => {
+  const renderer = render()
+  await change(renderer, 'email', 'ada@example.test')
+  await change(renderer, 'password', 'short')
+  await submit(renderer)
+  expect(JSON.stringify(renderer.toJSON())).toContain('passwordTooShort')
+
+  await change(renderer, 'password', 'secret1')
+  await change(renderer, 'confirmPassword', 'different')
+  await submit(renderer)
+  expect(JSON.stringify(renderer.toJSON())).toContain('passwordMismatch')
+  expect(createUser).not.toHaveBeenCalled()
+  act(() => renderer.unmount())
+})
+
+test('includes a new password when editing and toggles fields', async () => {
+  updateUser.mockResolvedValue(user)
+  const renderer = render(true)
+  await act(async () => {})
+
+  await change(renderer, 'password', 'changed1')
+  await change(renderer, 'confirmPassword', 'changed1')
+  const checkboxes = renderer.root.findAllByType('input').filter((node) => node.props.type === 'checkbox')
+  await act(async () => checkboxes[1].props.onChange())
+  await submit(renderer)
+
+  expect(updateUser).toHaveBeenCalledWith('user-1', {
+    email: 'ada@example.test', is_active: false, roles: ['admin'], password: 'changed1',
+  })
+  act(() => renderer.unmount())
+})
+
+test('disconnects an SSO account and refreshes the user', async () => {
+  canManageSSO = true
+  const connectedUser = {
+    ...user,
+    sso_connections: [{
+      id: 'connection-1', provider_display_name: 'Corporate', provider_email: 'ada@example.test',
+      provider_icon_url: null,
+    }],
+  }
+  adminDisconnectConnection.mockResolvedValue(undefined)
+  getUser.mockResolvedValue(connectedUser)
+
+  let renderer: ReactTestRenderer
+  act(() => {
+    renderer = create(<UserDialog open onOpenChange={onOpenChange} user={connectedUser as never} onSuccess={onSuccess} />)
+  })
+  await act(async () => {})
+  const action = renderer!.root.findAllByType('div').find((node) => node.props.onClick)
+  await act(async () => action?.props.onClick())
+
+  expect(adminDisconnectConnection).toHaveBeenCalledWith('connection-1')
+  expect(getUser).toHaveBeenCalledWith('user-1')
+  expect(onSuccess).toHaveBeenCalledWith(connectedUser)
+  act(() => renderer!.unmount())
 })
