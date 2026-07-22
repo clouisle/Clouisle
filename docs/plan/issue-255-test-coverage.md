@@ -65,6 +65,8 @@
 - **Validation**: Run the full backend/frontend pre-commit checks, prove a temporary threshold above measured coverage fails, and inspect CI artifact paths.
 
 ## Baseline Results
+- Backend complete checkpoint (2026-07-22, current branch): 4,957 tests pass and 2 are skipped. The authoritative whole-`app` report measures 93.03% lines (`34,677/37,276`) and 85.30% branches (`9,929/11,640`) after chat-tool utility, adapter, sandbox, and CAPTCHA coverage. Both backend targets remain below 95%, so final gates remain inactive.
+- Agent UI automation synchronization review (2026-07-22, current branch): these changes remain backend-test-only. No production source, browser-visible behavior, route, selector, accessibility result, or stable landmark changed; the browser journeys require no revision.
 - Backend clean baseline (2026-07-19, commit `f45530d`): 43.22% line coverage (`16,100/37,249`) and 18.95% branch coverage (`2,204/11,630`) over all `app` source; 710 tests passed and 2 were skipped. The existing 99.56% report is invalid because it covers only `app/llm/types`.
 - Frontend provisional baseline (2026-07-19): Bun's loaded-file report is 75.77% lines and 94.44% functions across only three loaded source files; the census reports 467 eligible application files absent from LCOV. The loaded-file percentage is therefore not acceptance evidence.
 - Backend progress checkpoint (2026-07-19, commits through `0ac5be62`): 1,346 tests passed and 2 were skipped; whole-app combined coverage remains 49% (`37,272` statements, `17,026` missed; `11,640` branches, `1,107` partial) after workflow, knowledge-task, usage-reset, and audit-archive batches. The final independent 95% line and branch gates remain inactive.
