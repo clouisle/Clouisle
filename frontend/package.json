@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "bun test --isolate",
-    "test:coverage": "bun test --isolate --coverage --coverage-reporter=text --coverage-reporter=lcov",
+    "test:coverage": "bun scripts/run-coverage.ts",
     "coverage:check": "bun scripts/check-coverage.ts",
     "license:check": "node ./scripts/check-licenses.mjs",
     "i18n:gen-types": "node ./scripts/gen-i18n-types.ts",

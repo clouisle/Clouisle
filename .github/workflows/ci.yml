@@ -50,6 +50,9 @@ jobs:
     - name: Run tests with coverage
       run: uv run pytest
 
+    - name: Enforce independent backend coverage
+      run: uv run python scripts/check_coverage.py
+
     - name: Upload backend coverage XML
       if: always()
       uses: actions/upload-artifact@v4
