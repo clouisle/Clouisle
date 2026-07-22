@@ -301,3 +301,101 @@ async def test_batch_delete_dashboard_skips_agentless_conversations_and_rejects_
         "deleted_count": 1,
         "ids": [str(agentless.id)],
     }
+
+
+@pytest.mark.anyio
+async def test_stats_superuser_skips_dashboard_role_scan_residual_arc():
+    current_user = user(superuser=True)
+    current_user.roles = None
+
+    with patch.object(
+        conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+    ) as agent_ids:
+        response = await conversations.get_conversation_stats(None, current_user)
+
+    agent_ids.assert_awaited_once_with(current_user, None)
+    assert response["data"]["total_conversations"] == 0
+
+
+@pytest.mark.anyio
+async def test_trends_dashboard_permission_scans_multiple_permissions_residual_arcs():
+    current_user = user()
+    current_user.roles = [Role("ignored", "*")]
+
+    with (
+        patch.object(
+            conversations, "now", return_value=datetime(2026, 7, 21, tzinfo=UTC)
+        ),
+        patch.object(conversations, "to_utc", side_effect=lambda value: value),
+        patch.object(
+            conversations, "get_user_team_agent_ids", AsyncMock(return_value=[])
+        ),
+    ):
+        response = await conversations.get_conversation_trends(None, "7d", current_user)
+
+    assert len(response["data"]["data"]) == 7
+
+
+@pytest.mark.anyio
+async def test_detail_owned_member_scans_all_permissions_then_loads_messages_residual_arcs():
+    current_user = user(roles=[Role("ignored", "also-ignored")])
+    target = conversation(user_id=current_user.id)
+
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(
+            conversations,
+            "get_visible_conversation_messages",
+            AsyncMock(return_value=[]),
+        ) as visible_messages,
+        patch.object(
+            conversations, "build_message_round_payloads", AsyncMock(return_value=[])
+        ),
+        patch.object(conversations.Message, "filter") as message_filter,
+    ):
+        response = await conversations.get_conversation_detail(target.id, current_user)
+
+    visible_messages.assert_awaited_once_with(target.id)
+    message_filter.assert_not_called()
+    assert response["data"]["messages"] == []
+
+
+@pytest.mark.anyio
+async def test_single_delete_owned_member_scans_multiple_permissions_residual_arc():
+    current_user = user(roles=[Role("ignored", "also-ignored")])
+    target = conversation(user_id=current_user.id)
+
+    with (
+        patch.object(
+            conversations.Conversation, "filter", return_value=Query(first=target)
+        ),
+        patch.object(conversations.Agent, "filter", return_value=Query()),
+    ):
+        response = await conversations.delete_conversation_admin(
+            target.id, current_user
+        )
+
+    target.delete.assert_awaited_once_with()
+    assert response["data"]["id"] == str(target.id)
+
+
+@pytest.mark.anyio
+async def test_batch_delete_owned_member_scans_multiple_permissions_residual_arc():
+    current_user = user(roles=[Role("ignored", "also-ignored")])
+    target = conversation(user_id=current_user.id)
+
+    with (
+        patch.object(
+            conversations.Conversation,
+            "filter",
+            side_effect=[Query(result=[target]), Query(result=[target])],
+        ),
+        patch.object(conversations.Agent, "filter", return_value=Query()),
+    ):
+        response = await conversations.batch_delete_conversations(
+            [target.id], current_user
+        )
+
+    assert response["data"] == {"deleted_count": 1, "ids": [str(target.id)]}
