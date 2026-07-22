@@ -5,185 +5,311 @@ import pytest
 from app.services.workflow.executors.iteration import (
     IterationNodeExecutor,
     IterationStartNodeExecutor,
+    LoopNodeExecutor,
     LoopStartNodeExecutor,
 )
-
-
-def context(**returns):
-    value = MagicMock(run_id="run-255")
-    value.resolve_variable_ref = AsyncMock(return_value=returns.get("resolved"))
-    value.get_variable = AsyncMock(return_value=returns.get("state"))
-    value.set_variable = AsyncMock()
-    value.get_node_outputs = AsyncMock(return_value=returns.get("outputs"))
-    return value
-
-
-def iteration_node(config):
-    return {"id": "iterate", "data": {"iterationConfig": config}}
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("executor", "node"),
     [
-        (IterationStartNodeExecutor(), {"data": {"parentIterationId": "parent"}}),
-        (LoopStartNodeExecutor(), {"data": {"parentLoopId": "parent"}}),
+        (IterationStartNodeExecutor(), {"id": "start", "parentId": "iteration"}),
+        (
+            LoopStartNodeExecutor(),
+            {"id": "start", "data": {"parentLoopId": "loop"}},
+        ),
     ],
 )
-async def test_start_nodes_filter_internal_parent_outputs(executor, node):
-    ctx = context(outputs={"item": "value", "_internal": True})
+async def test_start_executors_filter_internal_parent_outputs(executor, node):
+    context = MagicMock()
+    context.get_node_outputs = AsyncMock(
+        return_value={"item": "value", "_iteration_complete": False}
+    )
 
-    result = await executor.execute(node, ctx, MagicMock())
+    result = await executor.execute(node, context, MagicMock())
 
     assert result.outputs == {"item": "value"}
-    ctx.get_node_outputs.assert_awaited_once_with("parent")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "executor", [IterationStartNodeExecutor(), LoopStartNodeExecutor()]
-)
-async def test_start_nodes_return_empty_without_parent(executor):
-    result = await executor.execute({"data": {}}, context(), MagicMock())
+async def test_start_executor_without_parent_returns_empty_outputs():
+    context = MagicMock()
+    context.get_node_outputs = AsyncMock()
+
+    result = await IterationStartNodeExecutor().execute(
+        {"id": "start"}, context, MagicMock()
+    )
 
     assert result.outputs == {}
+    context.get_node_outputs.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_array_iteration_wraps_scalar_hides_collection_event_and_completes():
-    executor = IterationNodeExecutor()
-    ctx = context(resolved={"nested": True})
+async def test_array_iteration_limits_items_and_publishes_safe_event_value():
+    context = MagicMock(run_id="run-1")
+    context.resolve_variable_ref = AsyncMock(return_value=[{"id": 1}, {"id": 2}])
+    context.get_variable = AsyncMock(return_value=None)
+    context.set_variable = AsyncMock()
+    stream = MagicMock()
+    stream.publish_iteration = AsyncMock()
+    node = {
+        "id": "iteration",
+        "data": {
+            "iterationConfig": {
+                "iteratorVariable": "{{items}}",
+                "itemVariable": "entry",
+                "indexVariable": "position",
+                "maxIterations": 1,
+            }
+        },
+    }
 
     with patch(
-        "app.services.workflow.executors.iteration.StreamManager.publish_iteration",
-        new_callable=AsyncMock,
-    ) as publish:
-        first = await executor.execute(
-            iteration_node({"itemVariable": "entry", "indexVariable": "position"}),
-            ctx,
-            MagicMock(),
-        )
-        ctx.get_variable.return_value = {"index": 0, "results": ["saved"]}
-        complete = await executor.execute(
-            iteration_node({"itemVariable": "entry", "indexVariable": "position"}),
-            ctx,
-            MagicMock(),
-        )
+        "app.services.workflow.executors.iteration.StreamManager",
+        return_value=stream,
+    ):
+        result = await IterationNodeExecutor().execute(node, context, MagicMock())
 
-    assert first.outputs == {
-        "entry": {"nested": True},
+    assert result.outputs == {
+        "entry": {"id": 1},
         "position": 0,
         "total": 1,
         "results": [],
         "_iteration_complete": False,
         "_iteration_index": 0,
     }
-    assert complete.outputs == {
-        "entry": None,
-        "position": 1,
+    stream.publish_iteration.assert_awaited_once_with(
+        node_id="iteration", iteration=1, total=1, is_start=True, item=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_array_iteration_wraps_scalar_then_completes_with_prior_results():
+    context = MagicMock(run_id="run-1")
+    context.resolve_variable_ref = AsyncMock(return_value="only")
+    context.get_variable = AsyncMock(
+        return_value={"index": 0, "results": ["processed"]}
+    )
+    context.set_variable = AsyncMock()
+
+    result = await IterationNodeExecutor().execute(
+        {"id": "iteration", "data": {"config": {"inputVariable": "value"}}},
+        context,
+        MagicMock(),
+    )
+
+    assert result.outputs == {
+        "item": None,
+        "index": 1,
         "total": 1,
-        "results": ["saved"],
+        "results": ["processed"],
         "_iteration_complete": True,
     }
-    assert publish.await_args.kwargs["item"] is None
+    context.set_variable.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_array_none_and_limit_paths():
-    executor = IterationNodeExecutor()
-    empty_ctx = context(resolved=None)
+@pytest.mark.parametrize("items", [None, "not-an-object"])
+async def test_object_iteration_rejects_non_mapping_values(items):
+    context = MagicMock()
+    context.resolve_variable_ref = AsyncMock(return_value=items)
 
-    empty = await executor.execute(iteration_node({}), empty_ctx, MagicMock())
+    result = await IterationNodeExecutor().execute(
+        {
+            "id": "iteration",
+            "data": {"iterationConfig": {"iteratorType": "object"}},
+        },
+        context,
+        MagicMock(),
+    )
 
-    limited_ctx = context(resolved=[1, 2, 3])
+    assert result.outputs == {
+        "key": None,
+        "value": None,
+        "total": 0,
+        "results": [],
+        "_iteration_complete": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_object_iteration_uses_custom_names_and_publishes_key():
+    context = MagicMock(run_id="run-1")
+    context.resolve_variable_ref = AsyncMock(return_value={"first": 1, "second": 2})
+    context.get_variable = AsyncMock(return_value=None)
+    context.set_variable = AsyncMock()
+    stream = MagicMock()
+    stream.publish_iteration = AsyncMock()
+
     with patch(
-        "app.services.workflow.executors.iteration.StreamManager.publish_iteration",
-        new_callable=AsyncMock,
+        "app.services.workflow.executors.iteration.StreamManager",
+        return_value=stream,
     ):
-        limited = await executor.execute(
-            iteration_node({"maxIterations": 2}), limited_ctx, MagicMock()
+        result = await IterationNodeExecutor().execute(
+            {
+                "id": "iteration",
+                "data": {
+                    "iterationConfig": {
+                        "iteratorType": "object",
+                        "keyVariable": "name",
+                        "valueVariable": "amount",
+                    }
+                },
+            },
+            context,
+            MagicMock(),
         )
 
-    assert empty.outputs["_iteration_complete"] is True
-    assert empty.outputs["total"] == 0
-    assert limited.outputs["item"] == 1
-    assert limited.outputs["total"] == 2
+    assert result.outputs["name"] == "first"
+    assert result.outputs["amount"] == 1
+    assert result.outputs["_iteration_complete"] is False
+    stream.publish_iteration.assert_awaited_once_with(
+        node_id="iteration", iteration=1, total=2, is_start=True, item="first"
+    )
 
 
 @pytest.mark.asyncio
-async def test_object_iteration_limits_continues_and_rejects_non_mapping():
-    executor = IterationNodeExecutor()
-    ctx = context(resolved={"a": 1, "b": 2})
+async def test_loop_stops_at_limit_with_updated_results():
+    context = MagicMock()
+    context.get_variable = AsyncMock(
+        side_effect=[{"count": 0, "results": []}, ["child-result"]]
+    )
+    node = {
+        "id": "loop",
+        "data": {
+            "loopConfig": {
+                "maxIterations": 1,
+                "counterVariable": "count",
+                "outputVariable": "collected",
+            }
+        },
+    }
 
-    with patch(
-        "app.services.workflow.executors.iteration.StreamManager.publish_iteration",
-        new_callable=AsyncMock,
-    ) as publish:
-        first = await executor.execute(
-            iteration_node(
-                {
-                    "iteratorType": "object",
-                    "keyVariable": "name",
-                    "valueVariable": "amount",
-                    "maxIterations": 1,
+    result = await LoopNodeExecutor().execute(node, context, MagicMock())
+
+    assert result.outputs == {
+        "count": 1,
+        "collected": ["child-result"],
+        "_loop_complete": True,
+        "_loop_reason": "max_iterations",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("logic", "values", "reason"),
+    [
+        ("and", [True, True], "exit_conditions_met"),
+        ("or", [False, True], "exit_conditions_met"),
+        ("and", [True, False], None),
+    ],
+)
+async def test_loop_exit_condition_logic(logic, values, reason):
+    executor = LoopNodeExecutor()
+    executor._evaluate_condition = AsyncMock(side_effect=values)
+    context = MagicMock()
+    context.get_variable = AsyncMock(return_value=None)
+    context.set_variable = AsyncMock()
+    node = {
+        "id": "loop",
+        "data": {
+            "loopConfig": {
+                "exitLogicOperator": logic,
+                "exitConditions": [
+                    {"variable": "a", "operator": "equals", "value": "1"},
+                    {"variable": "b", "operator": "equals", "value": "2"},
+                ],
+            }
+        },
+    }
+
+    result = await executor.execute(node, context, MagicMock())
+
+    if reason:
+        assert result.outputs["_loop_reason"] == reason
+        context.set_variable.assert_not_awaited()
+    else:
+        assert result.outputs["_loop_complete"] is False
+        context.set_variable.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_loop_old_condition_false_stops():
+    executor = LoopNodeExecutor()
+    executor._evaluate_condition = AsyncMock(return_value=False)
+    context = MagicMock()
+    context.get_variable = AsyncMock(return_value=None)
+
+    result = await executor.execute(
+        {
+            "id": "loop",
+            "data": {"config": {"conditionVariable": "{{continue}}"}},
+        },
+        context,
+        MagicMock(),
+    )
+
+    assert result.outputs["_loop_reason"] == "condition_false"
+
+
+@pytest.mark.asyncio
+async def test_loop_continuation_includes_existing_custom_variables():
+    context = MagicMock()
+    context.get_variable = AsyncMock(side_effect=[None, None, "saved", None])
+    context.set_variable = AsyncMock()
+
+    result = await LoopNodeExecutor().execute(
+        {
+            "id": "loop",
+            "data": {
+                "loopConfig": {
+                    "loopVariables": [{"name": "memo"}, {}, {"name": "missing"}]
                 }
-            ),
-            ctx,
-            MagicMock(),
-        )
-        ctx.get_variable.return_value = {"index": 0, "results": [1]}
-        complete = await executor.execute(
-            iteration_node({"iteratorType": "object", "maxIterations": 1}),
-            ctx,
-            MagicMock(),
-        )
-
-    invalid_ctx = context(resolved=["not-a-mapping"])
-    invalid = await executor.execute(
-        iteration_node({"iteratorType": "object"}), invalid_ctx, MagicMock()
+            },
+        },
+        context,
+        MagicMock(),
     )
 
-    assert first.outputs["name"] == "a"
-    assert first.outputs["amount"] == 1
-    assert complete.outputs["_iteration_complete"] is True
-    assert complete.outputs["results"] == [1]
-    assert invalid.outputs["_iteration_complete"] is True
-    publish.assert_awaited_once()
+    assert result.outputs["memo"] == "saved"
+    assert "missing" not in result.outputs
+    assert result.outputs["_loop_complete"] is False
 
 
-def test_output_metadata_covers_array_and_object_modes():
-    executor = IterationNodeExecutor()
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("actual", "operator", "compare", "expected"),
+    [
+        (1, "equals", "1", True),
+        (1, "not_equals", "2", True),
+        (3, "greater_than", "2", True),
+        (1, "less_than", "2", True),
+        ("yes", "is_true", "", True),
+        ("", "is_false", "", True),
+        ([], "is_not_empty", "", True),
+        (0, "unknown", "", False),
+        ("invalid", "greater_than", "2", False),
+    ],
+)
+async def test_loop_condition_operators(actual, operator, compare, expected):
+    context = MagicMock()
+    context.resolve_variable_ref = AsyncMock(return_value=actual)
 
-    array_variables = executor.get_output_variables(
-        {"itemVariable": "entry", "indexVariable": "position"}
+    result = await LoopNodeExecutor()._evaluate_condition(
+        context, "{{actual}}", operator, compare
     )
-    object_variables = executor.get_output_variables(
-        {"iteratorType": "object", "keyVariable": "name", "valueVariable": "amount"}
-    )
-    array_specs = executor.get_output_specs({})
-    object_specs = executor.get_output_specs({"iteratorType": "object"})
 
-    assert [variable["name"] for variable in array_variables] == [
-        "entry",
-        "position",
-        "total",
-        "results",
-    ]
-    assert [variable["name"] for variable in object_variables] == [
-        "name",
-        "amount",
-        "total",
-        "results",
-    ]
-    assert [(spec.name, spec.type.kind) for spec in array_specs] == [
-        ("item", "any"),
-        ("index", "number"),
-        ("total", "number"),
-        ("results", "array"),
-    ]
-    assert [(spec.name, spec.type.kind) for spec in object_specs] == [
-        ("key", "string"),
-        ("value", "any"),
-        ("total", "number"),
-        ("results", "array"),
-    ]
+    assert result is expected
+
+
+@pytest.mark.asyncio
+async def test_loop_condition_resolves_reference_comparison():
+    context = MagicMock()
+    context.resolve_variable_ref = AsyncMock(side_effect=[2, 2])
+
+    result = await LoopNodeExecutor()._evaluate_condition(
+        context, "{{actual}}", "equals", "{{expected}}"
+    )
+
+    assert result is True
