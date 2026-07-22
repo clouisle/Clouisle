@@ -52,9 +52,7 @@ async def test_cleanup_scaffold_completes():
 @pytest.mark.asyncio
 async def test_worker_runs_one_manager_iteration(monkeypatch):
     run_once = AsyncMock()
-    monkeypatch.setattr(
-        "app.services.sandbox.worker.SandboxManager.run_once", run_once
-    )
+    monkeypatch.setattr("app.services.sandbox.worker.SandboxManager.run_once", run_once)
 
     await run_sandbox_worker()
 

@@ -304,7 +304,9 @@ async def test_agent_tools_include_available_builtin_media_and_agentic_search():
         },
     )
     service = AgentService()
-    service._get_builtin_tool = lambda name: builtin if name in {"web_search", "generate_image"} else None
+    service._get_builtin_tool = lambda name: (
+        builtin if name in {"web_search", "generate_image"} else None
+    )
 
     tools = await service._get_agent_tools(agent)
 

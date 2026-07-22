@@ -30,6 +30,4 @@ def test_memory_graph_items_render_contextual_labels():
     relation.target_entity_id = target_id
 
     assert str(entity) == "Python (EntityType.SKILL)"
-    assert str(relation) == (
-        f"{source_id} --[RelationType.USES]--> {target_id}"
-    )
+    assert str(relation) == (f"{source_id} --[RelationType.USES]--> {target_id}")
