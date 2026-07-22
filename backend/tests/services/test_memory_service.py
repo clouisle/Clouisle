@@ -623,3 +623,170 @@ async def test_handle_search_memory_converts_unexpected_failure(monkeypatch):
         "success": False,
         "error": "safe error",
     }
+
+
+@pytest.mark.asyncio
+async def test_qdrant_client_is_created_once_and_cached(monkeypatch):
+    client = object()
+    constructor = MagicMock(return_value=client)
+    monkeypatch.setattr(memory_module, "_qdrant_client", None)
+    monkeypatch.setattr(memory_module, "AsyncQdrantClient", constructor)
+
+    assert await memory_module._get_qdrant_client() is client
+    assert await memory_module._get_qdrant_client() is client
+    constructor.assert_called_once_with(
+        url=memory_module.settings.QDRANT_URL,
+        api_key=memory_module.settings.QDRANT_API_KEY,
+        prefer_grpc=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_memory_collection_creates_and_caches_missing_collection(
+    monkeypatch,
+):
+    client = SimpleNamespace(
+        get_collection=AsyncMock(side_effect=RuntimeError("missing")),
+        create_collection=AsyncMock(),
+        create_payload_index=AsyncMock(),
+    )
+    models = SimpleNamespace(
+        VectorParams=lambda **kwargs: SimpleNamespace(**kwargs),
+        Distance=SimpleNamespace(COSINE="cosine"),
+        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword"),
+    )
+    monkeypatch.setattr(memory_module, "qmodels", models)
+    monkeypatch.setattr(memory_module, "_memory_collections", set())
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+
+    assert await memory_module._ensure_memory_collection(3) == "memory_entities_dim_3"
+    assert await memory_module._ensure_memory_collection(3) == "memory_entities_dim_3"
+    client.get_collection.assert_awaited_once_with("memory_entities_dim_3")
+    client.create_collection.assert_awaited_once()
+    client.create_payload_index.assert_awaited_once_with(
+        collection_name="memory_entities_dim_3",
+        field_name="user_id",
+        field_schema="keyword",
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_entity_embedding_uses_model_dimension(monkeypatch):
+    client = SimpleNamespace(delete=AsyncMock())
+    monkeypatch.setattr(
+        model_manager,
+        "_get_model_config",
+        AsyncMock(return_value=SimpleNamespace(dimensions=768)),
+    )
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+
+    await MemoryService._delete_entity_embedding("point-id", "model-id")
+
+    client.delete.assert_awaited_once()
+    assert (
+        client.delete.await_args.kwargs["collection_name"] == "memory_entities_dim_768"
+    )
+    assert client.delete.await_args.kwargs["points_selector"].points == ["point-id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler", "args"),
+    [
+        (MemoryService.handle_create_relation, ("source", "target", "related_to")),
+        (MemoryService.handle_update_entity, ("entity",)),
+    ],
+)
+async def test_memory_handlers_convert_unexpected_failure(monkeypatch, handler, args):
+    monkeypatch.setattr(
+        memory_module.User,
+        "get",
+        AsyncMock(side_effect=RuntimeError("database failed")),
+    )
+    monkeypatch.setattr(memory_module, "_memory_tool_error", lambda: "safe error")
+
+    assert await handler(uuid4(), *args) == {
+        "success": False,
+        "error": "safe error",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "expected"),
+    [
+        (MemoryService.delete_entity, "memory_entity_not_found"),
+        (MemoryService.create_relation, "memory_source_entity_not_found"),
+    ],
+)
+async def test_memory_crud_rejects_missing_source_records(
+    monkeypatch, operation, expected
+):
+    monkeypatch.setattr(
+        memory_module.MemoryEntity, "filter", MagicMock(return_value=_query())
+    )
+
+    with pytest.raises(ValueError, match=expected):
+        if operation is MemoryService.delete_entity:
+            await operation(uuid4(), uuid4())
+        else:
+            await operation(uuid4(), uuid4(), uuid4(), RelationType.RELATED_TO)
+
+
+@pytest.mark.asyncio
+async def test_update_entity_embedding_adds_when_no_old_point(monkeypatch):
+    entity = SimpleNamespace(embedding_id=None)
+    add = AsyncMock()
+    delete = AsyncMock()
+    monkeypatch.setattr(MemoryService, "_add_entity_embedding", add)
+    monkeypatch.setattr(MemoryService, "_delete_entity_embedding", delete)
+
+    await MemoryService._update_entity_embedding(entity)
+
+    delete.assert_not_awaited()
+    add.assert_awaited_once_with(entity)
+
+
+@pytest.mark.asyncio
+async def test_delete_entity_embedding_skips_missing_model_and_swallows_failure(
+    monkeypatch,
+):
+    get_config = AsyncMock(side_effect=RuntimeError("model unavailable"))
+    monkeypatch.setattr(model_manager, "_get_model_config", get_config)
+
+    await MemoryService._delete_entity_embedding("point-id", None)
+    get_config.assert_not_awaited()
+
+    await MemoryService._delete_entity_embedding("point-id", "model-id")
+    get_config.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["search", "add"])
+async def test_vector_operations_require_qdrant_models(monkeypatch, operation):
+    monkeypatch.setattr(memory_module, "qmodels", None)
+    monkeypatch.setattr(
+        model_manager,
+        "get_embedding",
+        AsyncMock(return_value={"embedding": [0.1], "model_id": "model"}),
+    )
+    monkeypatch.setattr(
+        memory_module, "_ensure_memory_collection", AsyncMock(return_value="collection")
+    )
+
+    with pytest.raises(RuntimeError, match="qdrant-client is not installed"):
+        if operation == "search":
+            await MemoryService.search_entities(uuid4(), "query")
+        else:
+            await MemoryService._add_entity_embedding(
+                SimpleNamespace(
+                    id=uuid4(),
+                    user_id=uuid4(),
+                    name="Python",
+                    description=None,
+                )
+            )

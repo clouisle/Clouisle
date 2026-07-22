@@ -25,10 +25,17 @@ Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configur
 
 import { ChatInput } from './chat-input'
 
+let fileInputNode = { value: '', click: mock(() => undefined) }
+
 function renderChatInput(props: React.ComponentProps<typeof ChatInput>) {
   let tree!: TestRenderer.ReactTestRenderer
+  fileInputNode = { value: '', click: mock(() => undefined) }
   act(() => {
-    tree = TestRenderer.create(<ChatInput {...props} />)
+    tree = TestRenderer.create(<ChatInput {...props} />, {
+      createNodeMock: (element) => element.type === 'input'
+        ? fileInputNode
+        : { contains: () => false },
+    })
   })
   return tree
 }
@@ -172,5 +179,151 @@ describe('ChatInput', () => {
 
     expect(fileInput(tree).props.disabled).toBe(true)
     expect(buttons(tree).find((button) => button.props.className.includes('h-9 w-9'))?.props.disabled).toBe(true)
+  })
+
+  test('selects files, resets the input, and clears internal attachments after submit', () => {
+    const image = new File(['img'], 'image.png', { type: 'image/png' })
+    const document = new File(['doc'], 'notes.md', { type: 'text/markdown' })
+    const onSubmit = mock(() => undefined)
+    const tree = renderChatInput({ value: '', enableFileUpload: true, onSubmit })
+    const input = fileInput(tree)
+    const target = { files: [image, document], value: 'selected' }
+
+    act(() => {
+      input.props.onChange({ target })
+    })
+
+    expect(fileInputNode.value).toBe('')
+    expect(createObjectURL).toHaveBeenCalledWith(image)
+    expect(tree.root.findByProps({ alt: 'image.png' })).toBeTruthy()
+    expect(tree.root.findAllByType('span').some((span) => span.children.includes('notes.md'))).toBe(true)
+
+    act(() => {
+      buttons(tree).at(-1)?.props.onClick()
+    })
+
+    expect(onSubmit.mock.calls[0][1]).toHaveLength(2)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+    expect(tree.root.findAllByProps({ alt: 'image.png' })).toHaveLength(0)
+  })
+
+  test('rejects oversized selections and selections beyond the remaining count', () => {
+    const tooLarge = new File(['x'], 'large.pdf', { type: 'application/pdf' })
+    Object.defineProperty(tooLarge, 'size', { value: 11 * 1024 * 1024 })
+    const onFilesChange = mock(() => undefined)
+    const tree = renderChatInput({
+      files: [fileFixture()],
+      onFilesChange,
+      enableFileUpload: true,
+      maxFiles: 1,
+      fileUploadConfig: {
+        max_file_size: 10 * 1024 * 1024,
+        max_files: 1,
+        max_content_length: 100,
+        truncate_strategy: 'end',
+        allowed_extensions: ['.pdf'],
+      },
+    })
+
+    act(() => {
+      fileInput(tree).props.onChange({ target: { files: [tooLarge], value: 'selected' } })
+    })
+    expect(onFilesChange).not.toHaveBeenCalled()
+
+    act(() => tree.update(<ChatInput enableFileUpload fileUploadConfig={{
+      max_file_size: 10 * 1024 * 1024,
+      max_files: 2,
+      max_content_length: 100,
+      truncate_strategy: 'end',
+      allowed_extensions: ['.pdf'],
+    }} onFilesChange={onFilesChange} />))
+    act(() => {
+      fileInput(tree).props.onChange({ target: { files: [tooLarge], value: 'selected' } })
+    })
+
+    expect(tree.root.findAllByType('p').some((p) => p.children.join('').includes('fileTooLarge'))).toBe(true)
+    expect(onFilesChange).not.toHaveBeenCalled()
+  })
+
+  test('removes controlled image and document attachments and revokes image previews', () => {
+    const image = fileFixture({
+      id: 'image',
+      name: 'image.png',
+      type: 'image/png',
+      isDocument: false,
+      previewUrl: 'blob:image',
+    })
+    const document = fileFixture({ id: 'document', name: 'document.pdf', type: 'application/pdf' })
+    const onFilesChange = mock(() => undefined)
+    const tree = renderChatInput({ files: [image, document], onFilesChange })
+    const removeButtons = buttons(tree).filter((button) => button.props.className.includes('absolute') || button.props.className.includes('ml-0.5'))
+
+    act(() => removeButtons[0].props.onClick())
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:image')
+    expect(onFilesChange).toHaveBeenLastCalledWith([document])
+
+    act(() => removeButtons[1].props.onClick())
+    expect(onFilesChange).toHaveBeenLastCalledWith([image])
+  })
+
+  test('handles drag state and ignores drops when attachments are disabled or types are unsupported', () => {
+    const preventDefault = mock(() => undefined)
+    const stopPropagation = mock(() => undefined)
+    const ignored = new File(['zip'], 'archive.zip', { type: 'application/zip' })
+    const onFilesChange = mock(() => undefined)
+    const tree = renderChatInput({ allowAttachments: false, enableFileUpload: false, onFilesChange })
+    const dropZone = tree.root.children[0]
+
+    act(() => dropZone.props.onDragEnter({ preventDefault, stopPropagation }))
+    expect(tree.root.findAllByType('p').some((p) => p.children.includes('dropFiles'))).toBe(false)
+
+    act(() => dropZone.props.onDragOver({ preventDefault, stopPropagation }))
+    act(() => dropZone.props.onDrop({ preventDefault, stopPropagation, dataTransfer: { files: [ignored] } }))
+    expect(onFilesChange).not.toHaveBeenCalled()
+
+    act(() => tree.update(<ChatInput allowAttachments onFilesChange={onFilesChange} />))
+    act(() => tree.root.children[0].props.onDragEnter({ preventDefault, stopPropagation }))
+    expect(tree.root.findAllByType('p').some((p) => p.children.includes('dropFiles'))).toBe(true)
+    act(() => tree.root.children[0].props.onDragLeave({ preventDefault, stopPropagation, relatedTarget: null }))
+    act(() => tree.root.children[0].props.onDrop({ preventDefault, stopPropagation, dataTransfer: { files: [ignored] } }))
+    expect(onFilesChange).not.toHaveBeenCalled()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(stopPropagation).toHaveBeenCalled()
+  })
+
+  test('pastes enabled image and document files while rejecting unsupported clipboard items', () => {
+    const image = new File(['img'], 'image.png', { type: 'image/png' })
+    Object.defineProperty(image, 'name', { value: '' })
+    const document = new File(['doc'], 'notes.txt', { type: 'text/plain' })
+    const ignored = new File(['zip'], 'archive.zip', { type: 'application/zip' })
+    const preventDefault = mock(() => undefined)
+    const onFilesChange = mock(() => undefined)
+    const tree = renderChatInput({ allowAttachments: true, enableFileUpload: true, maxFiles: 2, onFilesChange })
+
+    act(() => {
+      chatInput(tree).props.onPaste({
+        preventDefault,
+        clipboardData: {
+          items: [
+            { kind: 'string', getAsFile: () => null },
+            { kind: 'file', getAsFile: () => null },
+            { kind: 'file', getAsFile: () => ignored },
+            { kind: 'file', getAsFile: () => image },
+            { kind: 'file', getAsFile: () => document },
+          ],
+        },
+      })
+    })
+
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    const pasted = onFilesChange.mock.calls[0][0] as ChatInputFile[]
+    expect(pasted.map((file) => file.name)).toEqual([expect.stringContaining('pasted-image-'), 'notes.txt'])
+    expect(pasted[0].previewUrl).toBe('blob:preview')
+    expect(pasted[1].isDocument).toBe(true)
+
+    const disabledTree = renderChatInput({ allowAttachments: false, enableFileUpload: false, onFilesChange })
+    act(() => chatInput(disabledTree).props.onPaste({ preventDefault, clipboardData: { items: [] } }))
+    act(() => chatInput(disabledTree).props.onPaste({ preventDefault, clipboardData: undefined }))
+    expect(preventDefault).toHaveBeenCalledTimes(1)
   })
 })

@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
 const uploadFile = mock(() => Promise.resolve({ url: '/uploads/new.txt' }))
+const clearValidationError = mock((errors: Record<string, string>, name: string) => {
+  const next = { ...errors }
+  delete next[name]
+  return next
+})
 const stateSetters: ReturnType<typeof mock>[] = []
 
 class ApiError extends Error {
@@ -14,13 +19,16 @@ const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: 'fragment' }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: 'fragment' }))
 mock.module('react', () => ({
+  useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void) => effect(),
   useMemo: <T,>(factory: () => T) => factory(),
   useRef: <T,>(initial: T) => ({ current: initial }),
-  useState: <T,>(initial: T) => {
-    const setter = mock()
+  useState: <T,>(initial: T | (() => T)) => {
+    const setter = mock((next: T | ((previous: T) => T)) =>
+      typeof next === 'function' ? (next as (previous: T) => T)({ title: 'server error' } as T) : undefined
+    )
     stateSetters.push(setter)
-    return [initial, setter] as const
+    return [typeof initial === 'function' ? (initial as () => T)() : initial, setter] as const
   },
 }))
 mock.module('next-intl', () => ({
@@ -30,7 +38,7 @@ mock.module('next-intl', () => ({
 mock.module('@/lib/api/upload', () => ({ uploadApi: { uploadFile } }))
 mock.module('@/lib/api', () => ({ ApiError }))
 mock.module('@/lib/validation', () => ({
-  clearValidationError: (errors: Record<string, string>) => errors,
+  clearValidationError,
   formatValidationSummaryMessage: (field: string, message: string) => `${field}: ${message}`,
   getValidationSummaryEntries: (errors: Record<string, string>, fields: string[]) =>
     Object.entries(errors).filter(([field]) => fields.includes(field)),
@@ -50,7 +58,7 @@ mock.module('@/components/ui/select', () => ({
 }))
 mock.module('lucide-react', () => ({ Upload: element('svg'), X: element('svg'), FileIcon: element('svg'), ImageIcon: element('svg') }))
 
-const { VariableForm } = await import('./variable-form')
+const { VariableForm, useVariableForm } = await import('./variable-form')
 type Variable = Parameters<typeof VariableForm>[0]['variables'][number]
 type Tree = { type: unknown; props: Record<string, unknown> }
 
@@ -79,6 +87,7 @@ beforeEach(() => {
   uploadFile.mockReset()
   uploadFile.mockResolvedValue({ url: '/uploads/new.txt' })
   stateSetters.length = 0
+  clearValidationError.mockClear()
   spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -133,6 +142,31 @@ describe('VariableForm issue #255 coverage', () => {
     const form = findAll(valid, (node) => node.type === 'form')[0]
     ;(form.props.onSubmit as (event: { preventDefault(): void }) => void)({ preventDefault() {} })
     expect(onSubmit).toHaveBeenCalledTimes(1)
+
+    const blockedSubmit = mock()
+    const blocked = render([variable('required', 'text', { required: true })], {}, mock(), blockedSubmit)
+    ;(findAll(blocked, (node) => node.type === 'form')[0].props.onSubmit as (event: { preventDefault(): void }) => void)({ preventDefault() {} })
+    expect(blockedSubmit).not.toHaveBeenCalled()
+  })
+
+  test('validates and resets hook state while clearing changed server errors', () => {
+    const variables = [
+      variable('title', 'text', { required: true }),
+      variable('count', 'number', { default: '2' }),
+      variable('checked', 'checkbox', { default: 'true' }),
+      variable('hidden', 'text', { hidden: true, required: true }),
+    ]
+    const hook = useVariableForm(variables)
+    expect(hook.values).toEqual({ count: 2, checked: true })
+    expect(hook.needsInput).toBe(true)
+    expect(hook.isValid).toBe(false)
+    expect(hook.validate()).toBe(false)
+
+    hook.setValues({ title: 'ready', count: 2, checked: true })
+    expect(clearValidationError).toHaveBeenCalledWith(expect.any(Object), 'title')
+    hook.reset()
+    expect(stateSetters.at(-2)).toHaveBeenCalledWith({ count: 2, checked: true })
+    expect(stateSetters.at(-1)).toHaveBeenCalledWith({})
   })
 
   test('handles single-file limits, uploads, API errors, and removal', async () => {
@@ -140,6 +174,7 @@ describe('VariableForm issue #255 coverage', () => {
     const oversized = render([variable('file', 'file', { fileConfig: { accept: ['text/plain'], maxSize: 1 } })], {}, onChange)
     const oversizedInput = findAll(oversized, (node) => node.type === 'input' && node.props.type === 'file')[0]
     expect(oversizedInput.props.accept).toBe('text/plain')
+    await (oversizedInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [] } })
     await (oversizedInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File([new Uint8Array(1_048_577)], 'large.txt')] } })
     expect(uploadFile).not.toHaveBeenCalled()
 
@@ -167,7 +202,13 @@ describe('VariableForm issue #255 coverage', () => {
     const onChange = mock()
     const oversized = render([variable('files', 'files', { fileConfig: { maxSize: 1 } })], {}, onChange)
     const oversizedInput = findAll(oversized, (node) => node.type === 'input' && node.props.multiple === true)[0]
+    await (oversizedInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [] } })
     await (oversizedInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File([new Uint8Array(1_048_577)], 'large.txt')] } })
+    expect(uploadFile).not.toHaveBeenCalled()
+
+    const limited = render([variable('files', 'files', { fileConfig: { maxFiles: 1 } })], { files: ['/uploads/old.txt'] }, onChange)
+    const limitedInput = findAll(limited, (node) => node.type === 'input' && node.props.multiple === true)[0]
+    await (limitedInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File(['x'], 'extra.txt')] } })
     expect(uploadFile).not.toHaveBeenCalled()
 
     uploadFile.mockRejectedValueOnce(new ApiError(1001))
