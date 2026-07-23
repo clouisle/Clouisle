@@ -119,7 +119,8 @@ async def test_agent_service_retrieve_rag_context_sorts_and_skips_empty_kb(
         name="Docs",
         embedding_model_id=None,
         rerank_model_id=None,
-        team_id=None,
+        team_id=uuid4(),
+        status="active",
     )
     links = [
         SimpleNamespace(knowledge_base=None),
@@ -145,19 +146,24 @@ async def test_agent_service_retrieve_rag_context_sorts_and_skips_empty_kb(
         "app.services.agent.AgentKnowledgeBase.filter", lambda **_kwargs: Query()
     )
 
-    from app.services.vector_store import VectorStore
-
-    search = AsyncMock(
-        return_value=[
-            {"content": "low", "score": 0.1},
-            {"content": "high", "score": 0.9},
-        ]
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
+                {"kb_name": "Docs", "content": "high", "score": 0.9},
+                {"kb_name": "Docs", "content": "low", "score": 0.1},
+            )
+        )
     )
-    monkeypatch.setattr(VectorStore, "search", search)
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
 
     result = await service._retrieve_rag_context(_agent(), "query")
 
     assert result == "[Docs] high\n\n[Docs] low"
+    request = retrieve.await_args.args[0]
+    assert request.query == "query"
+    assert request.top_k == 10
+    assert request.targets[0].kb_id == knowledge_base.id
+    assert request.targets[0].score_threshold == 0.2
 
 
 @pytest.mark.anyio

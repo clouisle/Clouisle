@@ -170,15 +170,22 @@ async def test_search_maps_vector_failures_and_passes_explicit_rerank_overrides(
 ):
     kb_id = uuid4()
     kb = SimpleNamespace(
-        id=kb_id, embedding_model_id=uuid4(), rerank_model_id=uuid4(), team_id=uuid4()
+        id=kb_id,
+        name="kb",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=uuid4(),
+        embedding_dimension=None,
+        team_id=uuid4(),
     )
-    search = AsyncMock(
-        side_effect=[endpoint.DimensionMismatchError("bad dim"), ["hit"]]
+    retrieve = AsyncMock(
+        side_effect=[
+            endpoint.DimensionMismatchError("bad dim"),
+            SimpleNamespace(results=("hit",)),
+        ]
     )
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(
-        endpoint, "VectorStore", lambda **_kwargs: SimpleNamespace(search=search)
-    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
 
     with pytest.raises(BusinessError) as exc_info:
         await endpoint.search_knowledge_base(
@@ -192,5 +199,5 @@ async def test_search_maps_vector_failures_and_passes_explicit_rerank_overrides(
         SimpleNamespace(),
     )
 
-    assert response["data"]["results"] == ["hit"]
-    assert search.await_args.kwargs["rerank_overrides"] == {"rerank_enabled": False}
+    assert response["data"]["results"] == ("hit",)
+    assert retrieve.await_args.args[0].rerank_overrides == {"rerank_enabled": False}

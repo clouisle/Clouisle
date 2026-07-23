@@ -102,7 +102,8 @@ async def test_retrieve_rag_context_sorts_results_and_skips_missing_kb():
                 name="Docs",
                 embedding_model_id=None,
                 rerank_model_id=None,
-                team_id=None,
+                team_id="team-1",
+                status="active",
             ),
             search_mode="hybrid",
             retrieval_top_k=3,
@@ -112,19 +113,22 @@ async def test_retrieve_rag_context_sorts_results_and_skips_missing_kb():
     query = MagicMock()
     query.prefetch_related = AsyncMock(return_value=bindings)
 
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
+                {"kb_name": "Docs", "content": "high", "score": 0.9},
+                {"kb_name": "Docs", "content": "low", "score": 0.2},
+            )
+        )
+    )
     with (
         patch("app.services.agent.AgentKnowledgeBase.filter", return_value=query),
-        patch("app.services.vector_store.VectorStore") as vector_store,
+        patch("app.services.retrieval.retrieve", retrieve),
     ):
-        vector_store.return_value.search = AsyncMock(
-            return_value=[
-                {"content": "low", "score": 0.2},
-                {"content": "high", "score": 0.9},
-            ]
-        )
         result = await service._retrieve_rag_context(agent(), "query")
 
     assert result == "[Docs] high\n\n[Docs] low"
+    assert retrieve.await_args.args[0].targets[0].kb_id == "kb-1"
 
 
 @pytest.mark.anyio

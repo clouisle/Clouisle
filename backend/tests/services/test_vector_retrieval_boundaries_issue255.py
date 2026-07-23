@@ -164,9 +164,7 @@ async def test_vector_retrieval_returns_empty_for_embedding_failure_or_no_points
     ensure_collection = AsyncMock()
     monkeypatch.setattr(vector_store_module, "_ensure_collection", ensure_collection)
 
-    with pytest.raises(
-        VectorSearchUnavailableError, match="query_embedding_failed"
-    ):
+    with pytest.raises(VectorSearchUnavailableError, match="query_embedding_failed"):
         await store._vector_search(UUID(int=1), "query", 5)
     ensure_collection.assert_not_awaited()
 

@@ -321,21 +321,24 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_without_models_or_overrides(monkeypatch):
-    search = AsyncMock(return_value=[])
+    kb_id = uuid4()
+    retrieve = AsyncMock(return_value=SimpleNamespace(results=()))
     monkeypatch.setattr(
         knowledge_bases,
         "check_kb_access",
         AsyncMock(
             return_value=SimpleNamespace(
-                embedding_model_id=None, rerank_model_id=None, team_id=None
+                id=kb_id,
+                name="kb",
+                status="active",
+                embedding_model_id=None,
+                rerank_model_id=None,
+                embedding_dimension=None,
+                team_id=uuid4(),
             )
         ),
     )
-    monkeypatch.setattr(
-        knowledge_bases,
-        "VectorStore",
-        lambda **kwargs: SimpleNamespace(search=search, constructor_kwargs=kwargs),
-    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     search_in = SimpleNamespace(
         query="missing",
         search_mode="hybrid",
@@ -346,8 +349,8 @@ async def test_search_without_models_or_overrides(monkeypatch):
     )
 
     result = await knowledge_bases.search_knowledge_base(
-        uuid4(), search_in, SimpleNamespace()
+        kb_id, search_in, SimpleNamespace()
     )
 
     assert result["data"]["total"] == 0
-    assert search.await_args.kwargs["rerank_overrides"] is None
+    assert retrieve.await_args.args[0].rerank_overrides is None

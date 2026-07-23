@@ -1,4 +1,3 @@
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -61,64 +60,49 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
     ]
     query = MagicMock()
     query.prefetch_related = AsyncMock(return_value=associations)
-    lexical_store = SimpleNamespace(search=AsyncMock(return_value=[]))
-    successful_store = SimpleNamespace(
-        search=AsyncMock(
-            return_value=[
+    document_id = uuid4()
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
                 {
-                    "document_id": uuid4(),
+                    "kb_id": str(successful_kb.id),
+                    "kb_name": "Handbook",
+                    "document_id": document_id,
                     "document_name": "Guide",
                     "content": "Answer",
                     "score": 0.9,
-                }
-            ]
+                },
+            )
         )
     )
-    failed_store = SimpleNamespace(search=AsyncMock(side_effect=RuntimeError("down")))
 
     with (
         patch(
             "app.models.agent.AgentKnowledgeBase.filter", return_value=query
         ) as filter_mock,
-        patch(
-            "app.services.vector_store.VectorStore",
-            side_effect=[lexical_store, successful_store, failed_store],
-        ) as store_mock,
+        patch("app.api.v1.endpoints.chat_rag.retrieve", retrieve),
     ):
         results = await perform_rag_retrieval(agent, "question")
 
     filter_mock.assert_called_once_with(agent_id=agent.id)
     query.prefetch_related.assert_awaited_once_with("knowledge_base")
-    assert store_mock.call_args_list[0].kwargs == {
-        "embedding_model_id": None,
-        "rerank_model_id": None,
-        "team_id": str(lexical_kb.team_id),
-    }
-    lexical_store.search.assert_awaited_once_with(
-        kb_id=lexical_kb.id,
-        query="question",
-        search_mode="fulltext",
-        top_k=2,
-        score_threshold=0.9,
-    )
-    assert store_mock.call_args_list[1].kwargs == {
-        "embedding_model_id": str(successful_kb.embedding_model_id),
-        "rerank_model_id": str(successful_kb.rerank_model_id),
-        "team_id": str(successful_kb.team_id),
-    }
-    assert store_mock.call_args_list[2].kwargs["rerank_model_id"] is None
-    successful_store.search.assert_awaited_once_with(
-        kb_id=successful_kb.id,
-        query="question",
-        search_mode="hybrid",
-        top_k=3,
-        score_threshold=0.4,
-    )
+    request = retrieve.await_args.args[0]
+    assert request.query == "question"
+    assert request.top_k == 5
+    assert [target.kb_id for target in request.targets] == [
+        lexical_kb.id,
+        successful_kb.id,
+        failed_kb.id,
+    ]
+    assert request.targets[0].search_mode == "fulltext"
+    assert request.targets[0].embedding_model_id is None
+    assert request.targets[1].rerank_model_id == successful_kb.rerank_model_id
+    assert request.targets[2].score_threshold == 0.2
     assert results == [
         {
             "kb_id": str(successful_kb.id),
             "kb_name": "Handbook",
-            "document_id": str(successful_store.search.return_value[0]["document_id"]),
+            "document_id": str(document_id),
             "document_name": "Guide",
             "content": "Answer",
             "score": 0.9,
@@ -237,38 +221,37 @@ async def test_perform_rag_retrieval_is_bounded_skips_inactive_and_truncates_glo
     ]
     query = MagicMock()
     query.prefetch_related = AsyncMock(return_value=associations)
-    active_searches = 0
-    max_active_searches = 0
-
-    def make_store(**_kwargs):
-        async def search(**kwargs):
-            nonlocal active_searches, max_active_searches
-            active_searches += 1
-            max_active_searches = max(max_active_searches, active_searches)
-            await asyncio.sleep(0.01)
-            active_searches -= 1
-            index = next(
-                index for index, kb in enumerate(active_kbs) if kb.id == kwargs["kb_id"]
-            )
-            return [
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
                 {
-                    "document_id": f"doc-{index}",
-                    "document_name": f"Doc {index}",
-                    "content": f"Result {index}",
-                    "score": index / 10,
-                }
-            ]
-
-        return SimpleNamespace(search=search)
+                    "kb_id": str(active_kbs[9].id),
+                    "kb_name": "KB 9",
+                    "document_id": "doc-9",
+                    "document_name": "Doc 9",
+                    "content": "Result 9",
+                    "score": 0.9,
+                },
+                {
+                    "kb_id": str(active_kbs[8].id),
+                    "kb_name": "KB 8",
+                    "document_id": "doc-8",
+                    "document_name": "Doc 8",
+                    "content": "Result 8",
+                    "score": 0.8,
+                },
+            )
+        )
+    )
 
     with (
         patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query),
-        patch(
-            "app.services.vector_store.VectorStore", side_effect=make_store
-        ) as store_mock,
+        patch("app.api.v1.endpoints.chat_rag.retrieve", retrieve),
     ):
         results = await perform_rag_retrieval(agent, "question")
 
-    assert max_active_searches == 8
-    assert store_mock.call_count == 10
+    request = retrieve.await_args.args[0]
+    assert len(request.targets) == 11
+    assert request.targets[-1].status == "archived"
+    assert request.top_k == 2
     assert [result["content"] for result in results] == ["Result 9", "Result 8"]

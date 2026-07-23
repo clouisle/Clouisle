@@ -2068,15 +2068,6 @@ async def search_knowledge_base(
     """
     kb = await check_kb_access(kb_id, current_user)
 
-    # Get embedding model and team ID from KB for usage tracking
-    embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
-    team_id = str(kb.team_id) if kb.team_id else None
-    vector_store = VectorStore(
-        embedding_model_id=embedding_model_id,
-        rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
-        team_id=team_id,
-    )
-
     rerank_override_fields = {
         "rerank_enabled",
         "rerank_candidate_k",
@@ -2091,20 +2082,54 @@ async def search_knowledge_base(
 
     # Perform search
     try:
-        results = await vector_store.search(
-            kb_id=kb_id,
-            query=search_in.query,
-            search_mode=search_in.search_mode,
-            top_k=search_in.top_k,
-            score_threshold=search_in.score_threshold,
-            filter_doc_ids=search_in.filter_doc_ids,
-            rerank_overrides=rerank_overrides or None,
+        from app.services.retrieval import (
+            RetrievalError,
+            RetrievalRequest,
+            RetrievalTarget,
+            retrieve,
         )
-    except DimensionMismatchError as e:
-        logger.warning("Dimension mismatch during KB search: %s", e)
+
+        response = await retrieve(
+            RetrievalRequest(
+                query=search_in.query,
+                targets=(
+                    RetrievalTarget(
+                        kb_id=kb.id,
+                        kb_name=kb.name,
+                        team_id=kb.team_id,
+                        status=kb.status,
+                        embedding_model_id=kb.embedding_model_id,
+                        rerank_model_id=kb.rerank_model_id,
+                        embedding_dimension=kb.embedding_dimension,
+                        document_ids=(
+                            frozenset(search_in.filter_doc_ids)
+                            if search_in.filter_doc_ids
+                            else None
+                        ),
+                    ),
+                ),
+                search_mode=search_in.search_mode,
+                top_k=search_in.top_k,
+                score_threshold=search_in.score_threshold,
+                rerank_overrides=rerank_overrides or None,
+            )
+        )
+        results = response.results
+    except (DimensionMismatchError, RetrievalError) as e:
+        dimension_mismatch = isinstance(e, DimensionMismatchError) or any(
+            diagnostic.detail == DimensionMismatchError.__name__
+            for diagnostic in e.diagnostics
+        )
+        if dimension_mismatch:
+            logger.warning("Dimension mismatch during KB search")
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="kb_embedding_dimension_mismatch",
+            )
+        logger.exception("Vector search failed: %s", e)
         raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="kb_embedding_dimension_mismatch",
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="vector_search_failed",
         )
     except Exception as e:
         logger.exception("Vector search failed: %s", e)

@@ -6,7 +6,7 @@
   - [x] 1. Design docs and implementation index
   - [x] 2. Retrieval evaluation baseline — deterministic chunk/document Recall@K, MRR@K, nDCG@K, expected-empty accuracy, latency percentiles, and current `VectorStore.search` snapshot adapter; 6,246 backend tests passed with 97.82% lines/95.11% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
   - [x] 3. Correct current retrieval semantics — strict modes, stage-specific scores/ranks, dense-only thresholding, explicit dense failures, hybrid degradation, authoritative status filters, lexical-only AUTO RAG, and bounded global multi-KB ranking; 6,255 backend tests passed with 97.82% lines/95.09% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
-  - [ ] 4. Unified retrieval service
+  - [x] 4. Unified retrieval service — one authorization-safe request/response contract now owns bounded multi-KB concurrency, timeout/failure diagnostics, global deterministic ranking/truncation, and VectorStore delegation across API, AUTO, Agentic, AgentService, and workflow callers; 6,267 backend tests passed with 97.81% lines/95.07% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
   - [ ] 5. OpenSearch BM25 indexing and weighted fusion
   - [ ] 6. Global rerank and bounded context assembly
   - [ ] 7. Instant retrieval playground and A/B comparison

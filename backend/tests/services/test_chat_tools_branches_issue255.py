@@ -78,6 +78,7 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
         embedding_model_id="embedding-1",
         rerank_model_id=None,
         team_id="team-1",
+        status="active",
     )
     agent_kb = SimpleNamespace(
         knowledge_base=knowledge_base,
@@ -86,22 +87,25 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
     )
     query = MagicMock()
     query.prefetch_related = AsyncMock(return_value=[agent_kb])
-    search = AsyncMock(
-        return_value=[
-            {
-                "document_id": "doc-1",
-                "document_name": "Guide",
-                "content": "Answer",
-                "score": 0.9,
-            }
-        ]
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
+                {
+                    "kb_id": "kb-1",
+                    "kb_name": "Handbook",
+                    "document_id": "doc-1",
+                    "document_name": "Guide",
+                    "content": "Answer",
+                    "score": 0.9,
+                },
+            )
+        )
     )
 
     with (
         patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query),
-        patch("app.services.vector_store.VectorStore") as vector_store,
+        patch("app.services.retrieval.retrieve", retrieve),
     ):
-        vector_store.return_value.search = search
         result = await execute_tool_call(
             "knowledge_search",
             {"query": "policy", "top_k": 2},
@@ -120,13 +124,13 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
             }
         ]
     }
-    search.assert_awaited_once_with(
-        kb_id="kb-1",
-        query="policy",
-        search_mode="hybrid",
-        top_k=2,
-        score_threshold=0.4,
-    )
+    request = retrieve.await_args.args[0]
+    assert request.query == "policy"
+    assert request.top_k == 2
+    assert len(request.targets) == 1
+    assert request.targets[0].kb_id == "kb-1"
+    assert request.targets[0].search_mode == "hybrid"
+    assert request.targets[0].score_threshold == 0.4
 
     query.prefetch_related.side_effect = RuntimeError("provider unavailable")
     with patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query):

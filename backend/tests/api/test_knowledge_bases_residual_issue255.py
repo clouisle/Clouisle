@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -415,40 +416,27 @@ async def test_search_passes_rerank_overrides_and_maps_vector_errors(
 ):
     kb = kb_obj(team)
     allow_kb_access(monkeypatch, kb)
-    calls = []
-
-    class VectorStore:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        async def search(self, **kwargs):
-            calls.append(kwargs)
-            return [{"content": "hit", "score": 0.9}]
-
-    monkeypatch.setattr(kb_api, "VectorStore", VectorStore)
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(results=({"content": "hit", "score": 0.9},))
+    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     result = await kb_api.search_knowledge_base(
         kb.id,
         SearchRequest(query="q", rerank_enabled=False, rerank_score_threshold=None),
         user,
     )
     assert result["data"]["total"] == 1
-    assert calls[0]["rerank_overrides"] == {
+    assert retrieve.await_args.args[0].rerank_overrides == {
         "rerank_enabled": False,
         "rerank_score_threshold": None,
     }
 
-    async def dim_failure(self, **_kwargs):
-        raise kb_api.DimensionMismatchError("bad dim")
-
-    monkeypatch.setattr(VectorStore, "search", dim_failure)
+    retrieve.side_effect = kb_api.DimensionMismatchError("bad dim")
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.search_knowledge_base(kb.id, SearchRequest(query="q"), user)
     assert exc_info.value.msg_key == "kb_embedding_dimension_mismatch"
 
-    async def generic_failure(self, **_kwargs):
-        raise RuntimeError("qdrant down")
-
-    monkeypatch.setattr(VectorStore, "search", generic_failure)
+    retrieve.side_effect = RuntimeError("qdrant down")
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.search_knowledge_base(kb.id, SearchRequest(query="q"), user)
     assert exc_info.value.msg_key == "vector_search_failed"

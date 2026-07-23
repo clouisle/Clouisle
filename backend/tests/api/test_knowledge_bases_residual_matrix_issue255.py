@@ -162,17 +162,17 @@ async def test_issue255_update_rejects_duplicate_name_and_embedding_change(monke
 )
 async def test_issue255_search_translates_vector_failures(monkeypatch, error, msg_key):
     kb = SimpleNamespace(
+        id=uuid4(),
+        name="kb",
+        status="active",
         embedding_model_id=uuid4(),
         rerank_model_id=uuid4(),
+        embedding_dimension=None,
         team_id=uuid4(),
     )
-    search = AsyncMock(side_effect=error)
+    retrieve = AsyncMock(side_effect=error)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(
-        knowledge_bases,
-        "VectorStore",
-        lambda **_kwargs: SimpleNamespace(search=search),
-    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     search_in = SimpleNamespace(
         query="policy",
         search_mode="hybrid",
@@ -192,7 +192,7 @@ async def test_issue255_search_translates_vector_failures(monkeypatch, error, ms
         )
 
     assert exc.value.msg_key == msg_key
-    assert search.await_args.kwargs["rerank_overrides"] == {"rerank_enabled": True}
+    assert retrieve.await_args.args[0].rerank_overrides == {"rerank_enabled": True}
 
 
 @pytest.mark.asyncio

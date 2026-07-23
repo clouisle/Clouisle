@@ -269,27 +269,16 @@ async def test_search_maps_dimension_and_generic_vector_failures(monkeypatch):
         kb_endpoint, "check_kb_access", AsyncMock(return_value=existing_kb)
     )
 
-    class Store:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        async def search(self, **_kwargs):
-            raise kb_endpoint.DimensionMismatchError("bad dimension")
-
-    monkeypatch.setattr(kb_endpoint, "VectorStore", Store)
+    retrieve = AsyncMock(
+        side_effect=kb_endpoint.DimensionMismatchError("bad dimension")
+    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     search_in = SearchRequest(query="hello", rerank_enabled=True)
     with pytest.raises(BusinessError) as exc_info:
         await kb_endpoint.search_knowledge_base(existing_kb.id, search_in, user())
     assert exc_info.value.msg_key == "kb_embedding_dimension_mismatch"
 
-    class BrokenStore:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        async def search(self, **_kwargs):
-            raise RuntimeError
-
-    monkeypatch.setattr(kb_endpoint, "VectorStore", BrokenStore)
+    retrieve.side_effect = RuntimeError
     with pytest.raises(BusinessError) as exc_info:
         await kb_endpoint.search_knowledge_base(existing_kb.id, search_in, user())
     assert exc_info.value.msg_key == "vector_search_failed"

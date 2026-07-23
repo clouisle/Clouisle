@@ -242,6 +242,7 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
                             embedding_model_id=None,
                             rerank_model_id=None,
                             team_id="team-1",
+                            status="active",
                         ),
                         search_mode="hybrid",
                         retrieval_top_k=2,
@@ -251,30 +252,29 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
 
             return resolve().__await__()
 
-    search = AsyncMock(
-        return_value=[
-            {"content": "Lower", "score": 0.6},
-            {"content": "Higher", "score": 0.9},
-        ]
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
+                {"kb_name": "Guides", "content": "Higher", "score": 0.9},
+                {"kb_name": "Guides", "content": "Lower", "score": 0.6},
+            )
+        )
     )
-    store = SimpleNamespace(search=search)
     service = AgentService()
     agent = SimpleNamespace(id="agent-1")
 
     with (
         patch("app.services.agent.AgentKnowledgeBase.filter", return_value=Query()),
-        patch("app.services.vector_store.VectorStore", return_value=store),
+        patch("app.services.retrieval.retrieve", retrieve),
     ):
         result = await service._retrieve_rag_context(agent, "setup")
 
     assert result == "[Guides] Higher\n\n[Guides] Lower"
-    search.assert_awaited_once_with(
-        kb_id="kb-1",
-        query="setup",
-        search_mode="hybrid",
-        top_k=2,
-        score_threshold=0.5,
-    )
+    request = retrieve.await_args.args[0]
+    assert request.query == "setup"
+    assert request.targets[0].search_mode == "hybrid"
+    assert request.targets[0].top_k == 2
+    assert request.targets[0].score_threshold == 0.5
 
     with patch(
         "app.services.agent.AgentKnowledgeBase.filter",

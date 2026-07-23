@@ -197,13 +197,17 @@ async def test_preview_document_chunks_rejects_missing_source(monkeypatch):
 )
 async def test_search_maps_vector_store_errors(monkeypatch, failure, expected_code):
     kb = SimpleNamespace(
+        id=uuid4(),
+        name="kb",
+        status="active",
         embedding_model_id=None,
         rerank_model_id=None,
-        team_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
     )
-    store = SimpleNamespace(search=AsyncMock(side_effect=failure))
+    retrieve = AsyncMock(side_effect=failure)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: store)
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     search = SimpleNamespace(
         query="query",
         search_mode="hybrid",
@@ -222,13 +226,17 @@ async def test_search_maps_vector_store_errors(monkeypatch, failure, expected_co
 async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     kb_id = uuid4()
     kb = SimpleNamespace(
+        id=kb_id,
+        name="kb",
+        status="active",
         embedding_model_id=uuid4(),
         rerank_model_id=uuid4(),
+        embedding_dimension=None,
         team_id=uuid4(),
     )
-    store = SimpleNamespace(search=AsyncMock(return_value=[{"content": "match"}]))
+    retrieve = AsyncMock(return_value=SimpleNamespace(results=({"content": "match"},)))
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: store)
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     search = SimpleNamespace(
         query="query",
         search_mode="hybrid",
@@ -247,6 +255,4 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     )
 
     assert response["data"]["total"] == 1
-    assert store.search.await_args.kwargs["rerank_overrides"] == {
-        "rerank_enabled": True
-    }
+    assert retrieve.await_args.args[0].rerank_overrides == {"rerank_enabled": True}

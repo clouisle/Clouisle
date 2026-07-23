@@ -120,8 +120,9 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Pending/error documents and chunks never appear.
   - Multiple KBs produce one deterministic global top K.
 
-### Stage 3: Unified Retrieval Service
+### Stage 3: Unified Retrieval Service ✅
 
+- **Completed validation**: unified authorization-safe retrieval contracts, bounded concurrency and target timeouts, structured diagnostics and failure isolation, deterministic global ranking/truncation, caller migration, document-scope narrowing, and workflow team scoping added; 6,267 backend tests passed at 97.81% line/95.07% branch coverage; 1,998 frontend tests passed at 97.77% line/95.04% function coverage; frontend 470/470 source census and production build passed.
 - **Files modified**: new backend retrieval service/contracts; `chat_rag.py`, `chat_tools.py`, `services/agent.py`, workflow knowledge executor, knowledge-base search endpoint, and tests.
 - **Specific logic**:
   - Introduce one retrieval request/response contract.

@@ -7,6 +7,7 @@ import pytest
 from app.api.v1.endpoints import knowledge_bases
 from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError, ResponseCode
+from app.services.retrieval import RetrievalError
 from app.services.vector_store import DimensionMismatchError
 
 
@@ -143,12 +144,17 @@ async def test_download_document_uses_storage_backend_and_rejects_missing_object
 async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     kb_id = uuid4()
     kb = SimpleNamespace(
-        embedding_model_id=uuid4(), rerank_model_id=uuid4(), team_id=uuid4()
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=uuid4(),
+        embedding_dimension=None,
+        team_id=uuid4(),
     )
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    store = SimpleNamespace(search=AsyncMock(return_value=[{"score": 0.9}]))
-    vector_store = MagicMock(return_value=store)
-    monkeypatch.setattr(knowledge_bases, "VectorStore", vector_store)
+    retrieve = AsyncMock(return_value=SimpleNamespace(results=({"score": 0.9},)))
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     search_in = SearchRequest(query="policy", rerank_enabled=False, top_k=3)
 
     result = await knowledge_bases.search_knowledge_base(
@@ -156,15 +162,13 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     )
 
     assert result["data"]["total"] == 1
-    store.search.assert_awaited_once_with(
-        kb_id=kb_id,
-        query="policy",
-        search_mode="hybrid",
-        top_k=3,
-        score_threshold=0.0,
-        filter_doc_ids=None,
-        rerank_overrides={"rerank_enabled": False},
-    )
+    request = retrieve.await_args.args[0]
+    assert request.query == "policy"
+    assert request.search_mode == "hybrid"
+    assert request.top_k == 3
+    assert request.score_threshold == 0.0
+    assert request.rerank_overrides == {"rerank_enabled": False}
+    assert request.targets[0].document_ids is None
 
 
 @pytest.mark.anyio
@@ -177,7 +181,7 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
             "kb_embedding_dimension_mismatch",
         ),
         (
-            RuntimeError("search unavailable"),
+            RetrievalError("all retrieval targets failed", ()),
             ResponseCode.UNKNOWN_ERROR,
             "vector_search_failed",
         ),
@@ -186,10 +190,19 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
 async def test_search_translates_vector_store_failures(
     monkeypatch, failure, code, msg_key
 ):
-    kb = SimpleNamespace(embedding_model_id=None, rerank_model_id=None, team_id=None)
+    kb = SimpleNamespace(
+        id=uuid4(),
+        name="Docs",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
+    )
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    store = SimpleNamespace(search=AsyncMock(side_effect=failure))
-    monkeypatch.setattr(knowledge_bases, "VectorStore", MagicMock(return_value=store))
+    monkeypatch.setattr(
+        "app.services.retrieval.retrieve", AsyncMock(side_effect=failure)
+    )
 
     with pytest.raises(BusinessError) as exc_info:
         await knowledge_bases.search_knowledge_base(
