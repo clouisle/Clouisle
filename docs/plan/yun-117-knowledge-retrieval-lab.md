@@ -154,9 +154,10 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - OpenSearch outage degrades hybrid to dense; Qdrant outage degrades hybrid to lexical.
   - Alias rollback restores the prior index without database mutation.
 
-### Stage 5: Global Rerank and Bounded Context Assembly
+### Stage 5: Global Rerank and Bounded Context Assembly ✅
 
-- **Files modified**: retrieval service, RAG context builder, schemas/config, and tests.
+- **Completed validation**: one cross-KB rerank pass, fail-open/fail-closed and rerank-threshold behavior, authorization-safe adjacent expansion, document aggregation with chunk-level provenance, and document/chunk/token budgets completed. Backend gates passed with 6,305 tests, 97.71% line coverage, and 95.02% branch coverage. Frontend gates passed with 1,998 tests, 97.77% line coverage, 95.04% function coverage, 470/470 source census, lint, license check, and production build.
+- **Files modified**: retrieval service and focused service tests.
 - **Specific logic**:
   - Rerank the global fused candidate set once rather than reranking independently per KB.
   - Optionally expand one adjacent chunk on each side after ranking; adjacent chunks do not acquire artificial ranking scores.

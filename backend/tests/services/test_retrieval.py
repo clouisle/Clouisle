@@ -33,11 +33,34 @@ def request(*targets, **overrides):
     return retrieval.RetrievalRequest(**values)
 
 
-def install_store(monkeypatch, search, lexical_hits=None):
+def install_store(
+    monkeypatch,
+    search,
+    lexical_hits=None,
+    *,
+    rerank_config=None,
+    rerank_results=None,
+):
     stores = []
 
     def factory(**kwargs):
-        store = SimpleNamespace(search=search, kwargs=kwargs)
+        store = SimpleNamespace(
+            search=search,
+            kwargs=kwargs,
+            _resolve_rerank_config=AsyncMock(
+                return_value=rerank_config
+                or {
+                    "enabled": False,
+                    "model_id": None,
+                    "candidate_k": 10,
+                    "fail_open": True,
+                    "score_threshold": None,
+                }
+            ),
+            _rerank_results=AsyncMock(
+                side_effect=rerank_results or (lambda **values: values["results"])
+            ),
+        )
         stores.append(store)
         return store
 
@@ -89,7 +112,10 @@ async def test_success_preserves_raw_fields_and_forwards_target_configuration(
         "kb_name": selected.kb_name,
     }
     assert response.diagnostics == ()
-    assert stores[0].kwargs == {
+    dense_store = next(
+        store for store in stores if store.kwargs.get("embedding_model_id")
+    )
+    assert dense_store.kwargs == {
         "embedding_model_id": str(MODEL_ID),
         "rerank_model_id": str(MODEL_ID),
         "team_id": str(TEAM_ID),
@@ -392,3 +418,337 @@ async def test_hybrid_dual_failure_and_fulltext_failure_are_explicit(monkeypatch
     with pytest.raises(retrieval.RetrievalError) as fulltext_error:
         await retrieval.retrieve(request(search_mode="fulltext"))
     assert fulltext_error.value.diagnostics[0].detail == "opensearch down"
+
+
+@pytest.mark.asyncio
+async def test_global_rerank_runs_once_after_cross_kb_ranking(monkeypatch):
+    async def search(**kwargs):
+        return [
+            {
+                "chunk_id": f"chunk-{kwargs['kb_id']}",
+                "document_id": str(DOC_1),
+                "content": str(kwargs["kb_id"]),
+                "score": 0.8 if kwargs["kb_id"] == KB_1 else 0.9,
+            }
+        ]
+
+    async def rerank(**values):
+        assert [item["kb_id"] for item in values["results"]] == [
+            str(KB_2),
+            str(KB_1),
+        ]
+        reranked = list(reversed(values["results"]))
+        for rank, item in enumerate(reranked, 1):
+            item.update(
+                score=1 / rank,
+                rerank_score=1 / rank,
+                rerank_rank=rank,
+                final_score_stage="rerank",
+            )
+        return reranked
+
+    stores = install_store(
+        monkeypatch,
+        search,
+        rerank_config={
+            "enabled": True,
+            "model_id": str(MODEL_ID),
+            "candidate_k": 20,
+            "fail_open": True,
+            "score_threshold": None,
+        },
+        rerank_results=rerank,
+    )
+
+    response = await retrieval.retrieve(
+        request(
+            target(KB_1, rerank_model_id=MODEL_ID),
+            target(KB_2, rerank_model_id=MODEL_ID),
+            search_mode="vector",
+        )
+    )
+
+    assert [item["kb_id"] for item in response.results] == [str(KB_1), str(KB_2)]
+    rerank_stores = [
+        store
+        for store in stores
+        if store.kwargs.get("rerank_model_id")
+        and not store.kwargs.get("embedding_model_id")
+    ]
+    assert len(rerank_stores) == 1
+    rerank_stores[0]._rerank_results.assert_awaited_once()
+    rerank_call = rerank_stores[0]._rerank_results.await_args.kwargs
+    assert [item["kb_id"] for item in rerank_call["results"]] == [
+        str(KB_2),
+        str(KB_1),
+    ]
+    assert rerank_call["fail_open"] is True
+    assert rerank_call["rerank_score_threshold"] is None
+
+
+@pytest.mark.asyncio
+async def test_global_rerank_respects_fail_closed(monkeypatch):
+    search = AsyncMock(
+        return_value=[
+            {
+                "chunk_id": "chunk-1",
+                "document_id": str(DOC_1),
+                "content": "content",
+                "score": 0.8,
+            }
+        ]
+    )
+    install_store(
+        monkeypatch,
+        search,
+        rerank_config={
+            "enabled": True,
+            "model_id": str(MODEL_ID),
+            "candidate_k": 10,
+            "fail_open": False,
+            "score_threshold": 0.5,
+        },
+        rerank_results=RuntimeError("reranker down"),
+    )
+
+    with pytest.raises(RuntimeError, match="reranker down"):
+        await retrieval.retrieve(
+            request(target(rerank_model_id=MODEL_ID), search_mode="vector")
+        )
+
+
+class ChunkQuery:
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    def prefetch_related(self, *_relations):
+        return self
+
+    def __await__(self):
+        async def result():
+            return self.chunks
+
+        return result().__await__()
+
+
+@pytest.mark.asyncio
+async def test_context_expansion_enforces_scope_document_and_token_budgets(
+    monkeypatch,
+):
+    document = SimpleNamespace(id=DOC_1, knowledge_base_id=KB_1)
+    chunks = {
+        "seed": SimpleNamespace(
+            id="seed",
+            document_id=DOC_1,
+            document=document,
+            chunk_index=1,
+            content="seed",
+            token_count=2,
+        ),
+        "left": SimpleNamespace(
+            id="left",
+            document_id=DOC_1,
+            document=document,
+            chunk_index=0,
+            content="left",
+            token_count=2,
+        ),
+        "right": SimpleNamespace(
+            id="right",
+            document_id=DOC_1,
+            document=document,
+            chunk_index=2,
+            content="right",
+            token_count=2,
+        ),
+    }
+
+    def filter_chunks(**filters):
+        if "id__in" in filters:
+            return ChunkQuery([chunks[value] for value in filters["id__in"]])
+        return ChunkQuery([chunks["left"], chunks["right"]])
+
+    monkeypatch.setattr(retrieval.DocumentChunk, "filter", filter_chunks)
+    search = AsyncMock(
+        return_value=[
+            {
+                "chunk_id": "seed",
+                "document_id": str(DOC_1),
+                "content": "seed",
+                "score": 0.8,
+            }
+        ]
+    )
+    install_store(monkeypatch, search)
+
+    response = await retrieval.retrieve(
+        request(
+            target(allowed_document_ids=frozenset({DOC_1})),
+            search_mode="vector",
+            expand_adjacent=True,
+            max_documents=1,
+            max_chunks_per_document=2,
+            context_token_budget=4,
+        )
+    )
+
+    result = response.results[0]
+    assert result["content"] == "seed\n\nleft"
+    assert result["citation_chunk_ids"] == ["seed", "left"]
+    assert [chunk["chunk_index"] for chunk in result["context_chunks"]] == [1, 0]
+    assert "rerank_score" not in result["context_chunks"][0]
+
+
+@pytest.mark.asyncio
+async def test_context_aggregates_ranked_chunks_by_document_and_skips_extra_documents(
+    monkeypatch,
+):
+    first_document = SimpleNamespace(id=DOC_1, knowledge_base_id=KB_1)
+    second_document = SimpleNamespace(id=DOC_2, knowledge_base_id=KB_1)
+    chunks = [
+        SimpleNamespace(
+            id="first",
+            document_id=DOC_1,
+            document=first_document,
+            chunk_index=0,
+            content="first",
+            token_count=1,
+        ),
+        SimpleNamespace(
+            id="second",
+            document_id=DOC_1,
+            document=first_document,
+            chunk_index=1,
+            content="second",
+            token_count=1,
+        ),
+        SimpleNamespace(
+            id="other-document",
+            document_id=DOC_2,
+            document=second_document,
+            chunk_index=0,
+            content="other",
+            token_count=1,
+        ),
+    ]
+    monkeypatch.setattr(
+        retrieval.DocumentChunk, "filter", lambda **_filters: ChunkQuery(chunks)
+    )
+    results = [
+        {
+            "chunk_id": chunk_id,
+            "kb_id": str(KB_1),
+            "document_id": str(DOC_1),
+            "score": score,
+        }
+        for chunk_id, score in (("missing", 1.0), ("first", 0.9), ("second", 0.8))
+    ]
+    results.append(
+        {
+            "chunk_id": "other-document",
+            "kb_id": str(KB_1),
+            "document_id": str(DOC_2),
+            "score": 0.7,
+        }
+    )
+
+    assembled = await retrieval._assemble_context(results, request(max_documents=1))
+
+    assert len(assembled) == 1
+    assert assembled[0]["content"] == "first\n\nsecond"
+    assert assembled[0]["citation_chunk_ids"] == ["first", "second"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "selected_target",
+    [
+        target(KB_2),
+        target(document_ids=frozenset({DOC_2})),
+        target(allowed_document_ids=frozenset({DOC_2})),
+    ],
+)
+async def test_context_revalidates_target_and_document_scope(
+    monkeypatch, selected_target
+):
+    document = SimpleNamespace(id=DOC_1, knowledge_base_id=KB_1)
+    chunk = SimpleNamespace(
+        id="seed",
+        document_id=DOC_1,
+        document=document,
+        chunk_index=0,
+        content="seed",
+        token_count=1,
+    )
+    monkeypatch.setattr(
+        retrieval.DocumentChunk, "filter", lambda **_filters: ChunkQuery([chunk])
+    )
+
+    assembled = await retrieval._assemble_context(
+        [
+            {
+                "chunk_id": "seed",
+                "kb_id": str(selected_target.kb_id),
+                "document_id": str(DOC_1),
+                "score": 1.0,
+            }
+        ],
+        request(selected_target, max_documents=1),
+    )
+
+    assert assembled == []
+
+
+@pytest.mark.asyncio
+async def test_context_budget_rejects_seed_instead_of_citing_only_neighbor(monkeypatch):
+    document = SimpleNamespace(id=DOC_1, knowledge_base_id=KB_1)
+    seed = SimpleNamespace(
+        id="seed",
+        document_id=DOC_1,
+        document=document,
+        chunk_index=1,
+        content="seed",
+        token_count=5,
+    )
+    neighbor = SimpleNamespace(
+        id="neighbor",
+        document_id=DOC_1,
+        document=document,
+        chunk_index=2,
+        content="neighbor",
+        token_count=1,
+    )
+
+    def filter_chunks(**filters):
+        return ChunkQuery([seed] if "id__in" in filters else [neighbor])
+
+    monkeypatch.setattr(retrieval.DocumentChunk, "filter", filter_chunks)
+    assembled = await retrieval._assemble_context(
+        [
+            {
+                "chunk_id": "seed",
+                "kb_id": str(KB_1),
+                "document_id": str(DOC_1),
+                "score": 1.0,
+            }
+        ],
+        request(expand_adjacent=True, context_token_budget=1),
+    )
+
+    assert assembled == []
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"max_documents": 0}, "max_documents must be positive"),
+        (
+            {"max_chunks_per_document": 0},
+            "max_chunks_per_document must be positive",
+        ),
+        ({"context_token_budget": 0}, "context_token_budget must be positive"),
+    ],
+)
+def test_rejects_invalid_context_limits(overrides, message):
+    with pytest.raises(ValueError, match=message):
+        request(**overrides)

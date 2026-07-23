@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
-from app.models.knowledge_base import KnowledgeBaseStatus
+from app.llm.token_counter import count_tokens
+from app.models.knowledge_base import DocumentChunk, DocumentStatus, KnowledgeBaseStatus
 from app.services.lexical_store import LexicalStore, SearchHit
 from app.services.vector_store import VectorStore
 
@@ -68,6 +69,10 @@ class RetrievalRequest:
     dense_weight: float = 1.0
     lexical_weight: float = 1.0
     rrf_k: int = 60
+    expand_adjacent: bool = False
+    max_documents: int | None = None
+    max_chunks_per_document: int | None = None
+    context_token_budget: int | None = None
 
     def __post_init__(self) -> None:
         if not self.query.strip():
@@ -93,6 +98,15 @@ class RetrievalRequest:
             )
         if self.rrf_k <= 0:
             raise ValueError("rrf_k must be positive")
+        if self.max_documents is not None and self.max_documents < 1:
+            raise ValueError("max_documents must be positive")
+        if (
+            self.max_chunks_per_document is not None
+            and self.max_chunks_per_document < 1
+        ):
+            raise ValueError("max_chunks_per_document must be positive")
+        if self.context_token_budget is not None and self.context_token_budget < 1:
+            raise ValueError("context_token_budget must be positive")
 
 
 @dataclass(frozen=True)
@@ -183,8 +197,176 @@ def _weighted_rrf(
     return results
 
 
+async def _resolve_global_rerank(
+    request: RetrievalRequest,
+) -> tuple[VectorStore | None, dict[str, Any] | None]:
+    target = next(
+        (target for target in request.targets if target.rerank_model_id is not None),
+        None,
+    )
+    if target is None:
+        return None, None
+
+    store = VectorStore(
+        rerank_model_id=str(target.rerank_model_id),
+        team_id=str(target.team_id),
+    )
+    config = await store._resolve_rerank_config(  # noqa: SLF001
+        target.kb_id, request.rerank_overrides
+    )
+    if not config["enabled"] or not config["model_id"]:
+        return None, None
+    return store, config
+
+
+async def _assemble_context(
+    results: list[dict[str, Any]], request: RetrievalRequest
+) -> list[dict[str, Any]]:
+    if not results or not any(
+        (
+            request.expand_adjacent,
+            request.max_documents,
+            request.max_chunks_per_document,
+            request.context_token_budget,
+        )
+    ):
+        return results[: request.top_k]
+
+    target_map = {str(target.kb_id): target for target in request.targets}
+    chunk_ids = [result.get("chunk_id") for result in results if result.get("chunk_id")]
+    chunks = await DocumentChunk.filter(
+        id__in=chunk_ids,
+        document__status=DocumentStatus.COMPLETED.value,
+        document__knowledge_base__status=KnowledgeBaseStatus.ACTIVE.value,
+    ).prefetch_related("document")
+    seeds = {str(chunk.id): chunk for chunk in chunks}
+
+    adjacent: dict[tuple[str, int], DocumentChunk] = {}
+    if request.expand_adjacent and seeds:
+        filters = [
+            DocumentChunk.filter(
+                document_id=chunk.document_id,
+                chunk_index__in=[chunk.chunk_index - 1, chunk.chunk_index + 1],
+                document__status=DocumentStatus.COMPLETED.value,
+                document__knowledge_base__status=KnowledgeBaseStatus.ACTIVE.value,
+            )
+            for chunk in seeds.values()
+        ]
+        neighbor_batches = await asyncio.gather(*filters)
+        adjacent = {
+            (str(chunk.document_id), chunk.chunk_index): chunk
+            for batch in neighbor_batches
+            for chunk in batch
+        }
+
+    assembled: list[dict[str, Any]] = []
+    document_results: dict[str, dict[str, Any]] = {}
+    chunks_per_document: dict[str, int] = {}
+    used_chunks: set[str] = set()
+    used_tokens = 0
+
+    for result in results:
+        seed = seeds.get(str(result.get("chunk_id")))
+        if seed is None:
+            continue
+        target = target_map.get(str(result.get("kb_id")))
+        if target is None or seed.document.knowledge_base_id != target.kb_id:
+            continue
+        if (
+            target.document_ids is not None
+            and seed.document_id not in target.document_ids
+        ):
+            continue
+        if (
+            target.allowed_document_ids is not None
+            and seed.document_id not in target.allowed_document_ids
+        ):
+            continue
+
+        document_id = str(seed.document_id)
+        if document_id not in document_results and (
+            len(document_results) >= request.top_k
+            or (
+                request.max_documents is not None
+                and len(document_results) >= request.max_documents
+            )
+        ):
+            continue
+
+        candidates = [seed]
+        if request.expand_adjacent:
+            candidates.extend(
+                [
+                    adjacent.get((document_id, seed.chunk_index - 1)),
+                    adjacent.get((document_id, seed.chunk_index + 1)),
+                ]
+            )
+
+        context_chunks: list[dict[str, Any]] = []
+        for chunk in candidates:
+            if chunk is None or str(chunk.id) in used_chunks:
+                continue
+            if (
+                request.max_chunks_per_document is not None
+                and chunks_per_document.get(document_id, 0)
+                >= request.max_chunks_per_document
+            ):
+                break
+            token_count = chunk.token_count or count_tokens(chunk.content)
+            if (
+                request.context_token_budget is not None
+                and used_tokens + token_count > request.context_token_budget
+            ):
+                if chunk is seed:
+                    context_chunks = []
+                    break
+                continue
+            context_chunks.append(
+                {
+                    "chunk_id": str(chunk.id),
+                    "chunk_index": chunk.chunk_index,
+                    "content": chunk.content,
+                    "token_count": token_count,
+                }
+            )
+            used_chunks.add(str(chunk.id))
+            used_tokens += token_count
+            chunks_per_document[document_id] = (
+                chunks_per_document.get(document_id, 0) + 1
+            )
+
+        if not context_chunks:
+            continue
+        existing = document_results.get(document_id)
+        if existing is not None:
+            existing["context_chunks"].extend(context_chunks)
+            existing["citation_chunk_ids"].extend(
+                chunk["chunk_id"] for chunk in context_chunks
+            )
+            existing["content"] = "\n\n".join(
+                chunk["content"] for chunk in existing["context_chunks"]
+            )
+            continue
+
+        item = {
+            **result,
+            "content": "\n\n".join(chunk["content"] for chunk in context_chunks),
+            "context_chunks": context_chunks,
+            "citation_chunk_ids": [chunk["chunk_id"] for chunk in context_chunks],
+        }
+        document_results[document_id] = item
+        assembled.append(item)
+
+    return assembled
+
+
 async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
     """Search targets concurrently, then rank and truncate results globally."""
+    rerank_store, rerank_config = await _resolve_global_rerank(request)
+    candidate_k = max(
+        request.top_k,
+        int(rerank_config["candidate_k"]) if rerank_config is not None else 0,
+    )
     semaphore = asyncio.Semaphore(min(_MAX_CONCURRENCY, max(1, len(request.targets))))
 
     async def search_target(
@@ -192,6 +374,8 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
     ) -> tuple[list[dict[str, Any]], RetrievalDiagnostic | None]:
         search_mode = target.search_mode or request.search_mode
         top_k = target.top_k or request.top_k
+        if rerank_config is not None:
+            top_k = max(top_k, candidate_k)
         score_threshold = (
             target.score_threshold
             if target.score_threshold is not None
@@ -317,4 +501,14 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
             str(result.get("chunk_id") or ""),
         )
     )
-    return RetrievalResponse(tuple(results[: request.top_k]), diagnostics)
+    results = results[:candidate_k]
+    if rerank_store is not None and rerank_config is not None and results:
+        results = await rerank_store._rerank_results(  # noqa: SLF001
+            query=request.query,
+            results=results,
+            model_id=rerank_config["model_id"],
+            fail_open=bool(rerank_config["fail_open"]),
+            rerank_score_threshold=rerank_config["score_threshold"],
+        )
+    results = await _assemble_context(results, request)
+    return RetrievalResponse(tuple(results), diagnostics)
