@@ -3,6 +3,7 @@ Knowledge Base schemas for API request/response.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional, List
 from uuid import UUID
 
@@ -378,20 +379,20 @@ class ChunkPreviewResponse(BaseModel):
 # ============ Search Schemas ============
 
 
-class SearchMode:
-    """Search mode constants"""
+class SearchMode(str, Enum):
+    """Supported search modes."""
 
-    VECTOR = "vector"  # Vector/semantic search
-    FULLTEXT = "fulltext"  # Full-text search
-    HYBRID = "hybrid"  # Hybrid (vector + fulltext)
+    VECTOR = "vector"
+    FULLTEXT = "fulltext"
+    HYBRID = "hybrid"
 
 
 class SearchRequest(BaseModel):
     """Search request for knowledge base"""
 
     query: str = Field(..., min_length=1, max_length=1000, description="Search query")
-    search_mode: str = Field(
-        default="hybrid", description="Search mode: vector, fulltext, hybrid"
+    search_mode: SearchMode = Field(
+        default=SearchMode.HYBRID, description="Search mode: vector, fulltext, hybrid"
     )
     top_k: int = Field(default=5, ge=1, le=20, description="Number of results")
     score_threshold: float = Field(
@@ -427,9 +428,18 @@ class SearchResult(BaseModel):
     score: float
     metadata: Optional[dict] = None
     search_type: Optional[str] = None
+    dense_score: Optional[float] = None
+    dense_rank: Optional[int] = None
+    lexical_score: Optional[float] = None
+    lexical_rank: Optional[int] = None
+    fusion_score: Optional[float] = None
+    fusion_rank: Optional[int] = None
     original_score: Optional[float] = None
     rerank_score: Optional[float] = None
+    rerank_rank: Optional[int] = None
     rerank_reason: Optional[str] = None
+    final_score_stage: Optional[str] = None
+    degradation_reasons: Optional[List[str]] = None
 
 
 class SearchResponse(BaseModel):

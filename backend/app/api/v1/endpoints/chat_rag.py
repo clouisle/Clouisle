@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
+
+from app.models.knowledge_base import KnowledgeBaseStatus
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
 
 logger = logging.getLogger(__name__)
+MAX_CONCURRENT_KB_RETRIEVALS = 8
 
 
 async def perform_rag_retrieval(agent: "Agent", query: str) -> list[dict[str, Any]]:
@@ -24,50 +28,62 @@ async def perform_rag_retrieval(agent: "Agent", query: str) -> list[dict[str, An
     from app.models.agent import AgentKnowledgeBase
     from app.services.vector_store import VectorStore
 
-    rag_contexts: list[dict[str, Any]] = []
-
-    # Get knowledge base associations
     kb_associations = await AgentKnowledgeBase.filter(
         agent_id=agent.id
     ).prefetch_related("knowledge_base")
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_KB_RETRIEVALS)
 
-    for akb in kb_associations:
+    async def retrieve(akb: Any) -> list[dict[str, Any]]:
         kb = akb.knowledge_base
-
-        # Skip if KB has no embedding model
-        if not kb.embedding_model_id:
-            continue
-
+        if kb.status != KnowledgeBaseStatus.ACTIVE.value:
+            return []
+        if akb.search_mode == "vector" and not kb.embedding_model_id:
+            return []
         try:
-            vector_store = VectorStore(
-                embedding_model_id=str(kb.embedding_model_id),
-                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
-                team_id=str(kb.team_id),
-            )
-
-            results = await vector_store.search(
-                kb_id=kb.id,
-                query=query,
-                search_mode=akb.search_mode,
-                top_k=akb.retrieval_top_k,
-                score_threshold=akb.score_threshold,
-            )
-
-            for result in results:
-                rag_contexts.append(
-                    {
-                        "kb_id": str(kb.id),
-                        "kb_name": kb.name,
-                        "document_id": str(result.get("document_id")),
-                        "document_name": result.get("document_name"),
-                        "content": result.get("content"),
-                        "score": result.get("score"),
-                    }
+            async with semaphore:
+                results = await VectorStore(
+                    embedding_model_id=(
+                        str(kb.embedding_model_id) if kb.embedding_model_id else None
+                    ),
+                    rerank_model_id=(
+                        str(kb.rerank_model_id) if kb.rerank_model_id else None
+                    ),
+                    team_id=str(kb.team_id),
+                ).search(
+                    kb_id=kb.id,
+                    query=query,
+                    search_mode=akb.search_mode,
+                    top_k=akb.retrieval_top_k,
+                    score_threshold=akb.score_threshold,
                 )
-        except Exception as e:
-            logger.warning(f"RAG retrieval failed for KB {kb.id}: {e}")
+            return [
+                {
+                    "kb_id": str(kb.id),
+                    "kb_name": kb.name,
+                    "document_id": str(result.get("document_id")),
+                    "document_name": result.get("document_name"),
+                    "content": result.get("content"),
+                    "score": result.get("score"),
+                }
+                for result in results
+            ]
+        except Exception as exc:
+            logger.warning(f"RAG retrieval failed for KB {kb.id}: {exc}")
+            return []
 
-    return rag_contexts
+    batches = await asyncio.gather(*(retrieve(akb) for akb in kb_associations))
+    rag_contexts = [context for batch in batches for context in batch]
+    rag_contexts.sort(
+        key=lambda context: (
+            -float(context.get("score") or 0),
+            context["kb_id"],
+            context["document_id"],
+        )
+    )
+    global_top_k = max(
+        (association.retrieval_top_k for association in kb_associations), default=0
+    )
+    return rag_contexts[:global_top_k]
 
 
 def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:

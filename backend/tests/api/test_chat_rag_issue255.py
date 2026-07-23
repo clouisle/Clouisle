@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -12,15 +13,23 @@ from app.api.v1.endpoints.chat_rag import (
 
 
 @pytest.mark.asyncio
-async def test_perform_rag_retrieval_skips_unconfigured_kb_and_isolates_failures():
+async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures():
     agent = SimpleNamespace(id=uuid4())
-    skipped_kb = SimpleNamespace(id=uuid4(), embedding_model_id=None)
+    lexical_kb = SimpleNamespace(
+        id=uuid4(),
+        name="Lexical",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        team_id=uuid4(),
+    )
     successful_kb = SimpleNamespace(
         id=uuid4(),
         name="Handbook",
         embedding_model_id=uuid4(),
         rerank_model_id=uuid4(),
         team_id=uuid4(),
+        status="active",
     )
     failed_kb = SimpleNamespace(
         id=uuid4(),
@@ -28,9 +37,15 @@ async def test_perform_rag_retrieval_skips_unconfigured_kb_and_isolates_failures
         embedding_model_id=uuid4(),
         rerank_model_id=None,
         team_id=uuid4(),
+        status="active",
     )
     associations = [
-        SimpleNamespace(knowledge_base=skipped_kb),
+        SimpleNamespace(
+            knowledge_base=lexical_kb,
+            search_mode="fulltext",
+            retrieval_top_k=2,
+            score_threshold=0.9,
+        ),
         SimpleNamespace(
             knowledge_base=successful_kb,
             search_mode="hybrid",
@@ -46,6 +61,7 @@ async def test_perform_rag_retrieval_skips_unconfigured_kb_and_isolates_failures
     ]
     query = MagicMock()
     query.prefetch_related = AsyncMock(return_value=associations)
+    lexical_store = SimpleNamespace(search=AsyncMock(return_value=[]))
     successful_store = SimpleNamespace(
         search=AsyncMock(
             return_value=[
@@ -66,7 +82,7 @@ async def test_perform_rag_retrieval_skips_unconfigured_kb_and_isolates_failures
         ) as filter_mock,
         patch(
             "app.services.vector_store.VectorStore",
-            side_effect=[successful_store, failed_store],
+            side_effect=[lexical_store, successful_store, failed_store],
         ) as store_mock,
     ):
         results = await perform_rag_retrieval(agent, "question")
@@ -74,11 +90,23 @@ async def test_perform_rag_retrieval_skips_unconfigured_kb_and_isolates_failures
     filter_mock.assert_called_once_with(agent_id=agent.id)
     query.prefetch_related.assert_awaited_once_with("knowledge_base")
     assert store_mock.call_args_list[0].kwargs == {
+        "embedding_model_id": None,
+        "rerank_model_id": None,
+        "team_id": str(lexical_kb.team_id),
+    }
+    lexical_store.search.assert_awaited_once_with(
+        kb_id=lexical_kb.id,
+        query="question",
+        search_mode="fulltext",
+        top_k=2,
+        score_threshold=0.9,
+    )
+    assert store_mock.call_args_list[1].kwargs == {
         "embedding_model_id": str(successful_kb.embedding_model_id),
         "rerank_model_id": str(successful_kb.rerank_model_id),
         "team_id": str(successful_kb.team_id),
     }
-    assert store_mock.call_args_list[1].kwargs["rerank_model_id"] is None
+    assert store_mock.call_args_list[2].kwargs["rerank_model_id"] is None
     successful_store.search.assert_awaited_once_with(
         kb_id=successful_kb.id,
         query="question",
@@ -174,3 +202,73 @@ def test_build_rag_prompt_numbers_aggregated_references():
     assert "[[ref:2]]" not in prompt
     assert "Use ONLY [[cite:N]]" in prompt
     assert "User question: How much leave?" in prompt
+
+
+@pytest.mark.asyncio
+async def test_perform_rag_retrieval_is_bounded_skips_inactive_and_truncates_globally():
+    agent = SimpleNamespace(id=uuid4())
+    active_kbs = [
+        SimpleNamespace(
+            id=uuid4(),
+            name=f"KB {index}",
+            status="active",
+            embedding_model_id=uuid4(),
+            rerank_model_id=None,
+            team_id=uuid4(),
+        )
+        for index in range(10)
+    ]
+    inactive_kb = SimpleNamespace(
+        id=uuid4(),
+        name="Archived",
+        status="archived",
+        embedding_model_id=uuid4(),
+        rerank_model_id=None,
+        team_id=uuid4(),
+    )
+    associations = [
+        SimpleNamespace(
+            knowledge_base=kb,
+            search_mode="vector",
+            retrieval_top_k=2,
+            score_threshold=0.0,
+        )
+        for kb in [*active_kbs, inactive_kb]
+    ]
+    query = MagicMock()
+    query.prefetch_related = AsyncMock(return_value=associations)
+    active_searches = 0
+    max_active_searches = 0
+
+    def make_store(**_kwargs):
+        async def search(**kwargs):
+            nonlocal active_searches, max_active_searches
+            active_searches += 1
+            max_active_searches = max(max_active_searches, active_searches)
+            await asyncio.sleep(0.01)
+            active_searches -= 1
+            index = next(
+                index for index, kb in enumerate(active_kbs) if kb.id == kwargs["kb_id"]
+            )
+            return [
+                {
+                    "document_id": f"doc-{index}",
+                    "document_name": f"Doc {index}",
+                    "content": f"Result {index}",
+                    "score": index / 10,
+                }
+            ]
+
+        return SimpleNamespace(search=search)
+
+    with (
+        patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query),
+        patch(
+            "app.services.vector_store.VectorStore", side_effect=make_store
+        ) as store_mock,
+    ):
+        results = await perform_rag_retrieval(agent, "question")
+
+    assert max_active_searches == 8
+    assert store_mock.call_count == 10
+    assert [result["content"] for result in results] == ["Result 9", "Result 8"]

@@ -5,7 +5,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.services.vector_store import DimensionMismatchError, VectorStore
+from app.services.vector_store import (
+    DimensionMismatchError,
+    VectorSearchUnavailableError,
+    VectorStore,
+)
 
 vector_store = importlib.import_module("app.services.vector_store")
 KB_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -240,7 +244,10 @@ async def test_vector_search_resolves_missing_dimension_and_skips_unknown_points
     get_dimension = AsyncMock(side_effect=[None, 2])
     monkeypatch.setattr(vector_store, "get_kb_embedding_dimension", get_dimension)
 
-    assert await store._vector_search(KB_ID, "query", 1) == []
+    with pytest.raises(
+        VectorSearchUnavailableError, match="embedding_dimension_unavailable"
+    ):
+        await store._vector_search(KB_ID, "query", 1)
 
     monkeypatch.setattr(store, "embed_query", AsyncMock(return_value=[0.1, 0.2]))
     monkeypatch.setattr(
@@ -276,25 +283,39 @@ async def test_search_modes_apply_threshold_limit_and_dimension_fallback(monkeyp
     )
     monkeypatch.setattr(store, "_resolve_rerank_config", AsyncMock(return_value=config))
     vector_results = [
-        {"chunk_id": "high", "score": 0.9},
-        {"chunk_id": "low", "score": 0.1},
+        {"chunk_id": "high", "score": 0.9, "dense_score": 0.9},
+        {"chunk_id": "low", "score": 0.1, "dense_score": 0.1},
+    ]
+    lexical_results = [
+        {"chunk_id": "high", "score": 0.9, "lexical_score": 0.9},
+        {"chunk_id": "low", "score": 0.1, "lexical_score": 0.1},
     ]
     monkeypatch.setattr(store, "_vector_search", AsyncMock(return_value=vector_results))
     monkeypatch.setattr(
-        store, "_fulltext_search", AsyncMock(return_value=vector_results)
+        store, "_fulltext_search", AsyncMock(return_value=lexical_results)
     )
 
     assert await store.search(
         KB_ID, "query", search_mode="vector", top_k=1, score_threshold=0.5
-    ) == [{"chunk_id": "high", "score": 0.9}]
+    ) == [{"chunk_id": "high", "score": 0.9, "dense_score": 0.9}]
     assert store.embedding_dimension == 2
     assert await store.search(KB_ID, "query", search_mode="fulltext", top_k=1) == [
-        {"chunk_id": "high", "score": 0.9}
+        {"chunk_id": "high", "score": 0.9, "lexical_score": 0.9}
     ]
 
     store._vector_search.side_effect = DimensionMismatchError("wrong dimension")
     assert await store.search(KB_ID, "query", search_mode="hybrid", top_k=1) == [
-        {"chunk_id": "high", "score": 0.5, "search_type": "hybrid"}
+        {
+            "chunk_id": "high",
+            "score": 1 / 61,
+            "lexical_score": 0.9,
+            "lexical_rank": 1,
+            "search_type": "hybrid",
+            "fusion_score": 1 / 61,
+            "fusion_rank": 1,
+            "final_score_stage": "fusion",
+            "degradation_reasons": ["vector_unavailable"],
+        }
     ]
 
 
@@ -418,6 +439,8 @@ async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch)
             "rerank_score": 0.9,
             "search_type": "retrieval+rerank",
             "rerank_reason": "best",
+            "rerank_rank": 1,
+            "final_score_stage": "rerank",
         }
     ]
 
@@ -473,6 +496,8 @@ async def test_team_rerank_and_search_apply_candidate_window(monkeypatch):
             "original_score": 0.6,
             "rerank_score": 0.75,
             "search_type": "retrieval+rerank",
+            "rerank_rank": 1,
+            "final_score_stage": "rerank",
         }
     ]
     assert store._vector_search.await_args.args[2] == 10
@@ -583,6 +608,9 @@ async def test_fulltext_search_applies_document_filter_scores_and_limit(monkeypa
             "score": 1.0,
             "metadata": {"page": 1},
             "search_type": "fulltext",
+            "lexical_score": 1.0,
+            "lexical_rank": 1,
+            "final_score_stage": "lexical",
         }
     ]
     assert query.filters[0] == ((), {"document_id__in": [document_id]})

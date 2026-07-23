@@ -102,8 +102,9 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Empty labels, duplicate retrieved IDs, fewer than K hits, and expected-empty negative tests.
   - Capture the current implementation's baseline before Stage 3 changes.
 
-### Stage 2: Correct Current Retrieval Semantics
+### Stage 2: Correct Current Retrieval Semantics ✅
 
+- **Completed validation**: strict mode and score-stage contracts, corrected threshold/failure/state semantics, and bounded global AUTO RAG added; 6,255 backend tests passed at 97.82% line/95.09% branch coverage; 1,998 frontend tests passed at 97.77% line/95.04% function coverage; frontend source census and production build passed.
 - **Files modified**: `backend/app/schemas/knowledge_base.py`, `backend/app/services/vector_store.py`, current RAG entry points, focused tests, and affected API types.
 - **Specific logic**:
   - Validate search mode as a strict enum while accepting the existing API values.

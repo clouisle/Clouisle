@@ -19,7 +19,13 @@ import jieba
 from tortoise import Tortoise
 
 from app.core.config import settings
-from app.models.knowledge_base import DocumentChunk, Document, KnowledgeBase
+from app.models.knowledge_base import (
+    Document,
+    DocumentChunk,
+    DocumentStatus,
+    KnowledgeBase,
+    KnowledgeBaseStatus,
+)
 from app.services.usage_tracker import QuotaExceededError
 
 try:
@@ -42,6 +48,10 @@ EMBEDDING_REQUEST_TIMEOUT_SECONDS = 120.0
 
 class EmbeddingRequestTimeoutError(Exception):
     pass
+
+
+class VectorSearchUnavailableError(Exception):
+    """Dense retrieval could not execute."""
 
 
 # Initialize jieba (disable verbose output)
@@ -452,6 +462,9 @@ class VectorStore:
             reranked_results.append(updated)
 
         reranked_results.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+        for rank, result in enumerate(reranked_results, 1):
+            result["rerank_rank"] = rank
+            result["final_score_stage"] = "rerank"
 
         if rerank_score_threshold is not None:
             reranked_results = [
@@ -833,6 +846,9 @@ class VectorStore:
         Returns:
             List of search results with chunk info and scores
         """
+        if search_mode not in {"vector", "fulltext", "hybrid"}:
+            raise ValueError(f"Unsupported search mode: {search_mode}")
+
         # Get KB dimension if not provided
         if embedding_dimension is None:
             embedding_dimension = await get_kb_embedding_dimension(kb_id)
@@ -855,12 +871,18 @@ class VectorStore:
             results = await self._vector_search(
                 kb_id, query, recall_limit, filter_doc_ids, embedding_dimension
             )
+            if score_threshold > 0:
+                results = [
+                    result
+                    for result in results
+                    if result.get("dense_score", 0) >= score_threshold
+                ]
         elif search_mode == "fulltext":
             results = await self._fulltext_search(
                 kb_id, query, recall_limit, filter_doc_ids
             )
-        else:  # hybrid
-            # Get results from both methods
+        elif search_mode == "hybrid":
+            degradation_reasons: list[str] = []
             try:
                 vector_results = await self._vector_search(
                     kb_id,
@@ -869,36 +891,35 @@ class VectorStore:
                     filter_doc_ids,
                     embedding_dimension,
                 )
-            except DimensionMismatchError as e:
-                logger.warning(f"Vector search dimension mismatch for KB {kb_id}: {e}")
+                if score_threshold > 0:
+                    vector_results = [
+                        result
+                        for result in vector_results
+                        if result.get("dense_score", 0) >= score_threshold
+                    ]
+            except Exception as exc:
+                logger.warning(f"Vector search failed for KB {kb_id}: {exc}")
                 vector_results = []
-            except Exception as e:
-                logger.warning(f"Vector search failed for KB {kb_id}: {e}")
-                vector_results = []
-            fulltext_results = await self._fulltext_search(
-                kb_id, query, rerank_candidate_k, filter_doc_ids
-            )
+                degradation_reasons.append("vector_unavailable")
+            try:
+                fulltext_results = await self._fulltext_search(
+                    kb_id, query, rerank_candidate_k, filter_doc_ids
+                )
+            except Exception as exc:
+                logger.warning(f"Fulltext search failed for KB {kb_id}: {exc}")
+                fulltext_results = []
+                degradation_reasons.append("fulltext_unavailable")
+            if len(degradation_reasons) == 2:
+                raise RuntimeError("all_retrievers_unavailable")
 
-            # Merge results using RRF (Reciprocal Rank Fusion)
             results = self._merge_results_rrf(vector_results, fulltext_results)
+            if degradation_reasons:
+                for result in results:
+                    result["degradation_reasons"] = degradation_reasons
             logger.debug(
                 f"Hybrid search: vector={len(vector_results)}, fulltext={len(fulltext_results)}, "
                 f"merged={len(results)}"
             )
-
-        # Log scores before filtering
-        if results:
-            scores = [r.get("score", 0) for r in results]
-            logger.debug(
-                f"Search scores before filter: min={min(scores):.4f}, max={max(scores):.4f}, "
-                f"threshold={score_threshold}"
-            )
-
-        # Filter by score threshold
-        pre_filter_count = len(results)
-        if score_threshold > 0:
-            results = [r for r in results if r.get("score", 0) >= score_threshold]
-            logger.debug(f"Score filter: {pre_filter_count} -> {len(results)} results")
 
         if rerank_config["enabled"] and rerank_config["model_id"] and results:
             results = await self._rerank_results(
@@ -941,17 +962,12 @@ class VectorStore:
             dim = await get_kb_embedding_dimension(kb_id)
 
         if not dim:
-            logger.warning(
-                f"No embedding dimension for KB {kb_id}, vector search disabled"
-            )
-            return []
+            raise VectorSearchUnavailableError("embedding_dimension_unavailable")
 
         try:
-            # Generate query embedding
             query_embedding = await self.embed_query(query)
-        except Exception as e:
-            logger.warning(f"Failed to generate embedding for vector search: {e}")
-            return []
+        except Exception as exc:
+            raise VectorSearchUnavailableError("query_embedding_failed") from exc
 
         # Validate dimension match
         if len(query_embedding) != dim:
@@ -986,9 +1002,12 @@ class VectorStore:
             return []
 
         chunk_ids = [str(point.id) for point in points]
-        chunks = await DocumentChunk.filter(id__in=chunk_ids).prefetch_related(
-            "document"
-        )
+        chunks = await DocumentChunk.filter(
+            id__in=chunk_ids,
+            status="embedded",
+            document__status=DocumentStatus.COMPLETED.value,
+            document__knowledge_base__status=KnowledgeBaseStatus.ACTIVE.value,
+        ).prefetch_related("document")
         chunk_map = {str(chunk.id): chunk for chunk in chunks}
 
         results = []
@@ -1021,6 +1040,10 @@ class VectorStore:
                 }
             )
 
+        for rank, result in enumerate(results, 1):
+            result["dense_score"] = result["score"]
+            result["dense_rank"] = rank
+            result["final_score_stage"] = "dense"
         return results
 
     async def _fulltext_search(
@@ -1040,7 +1063,9 @@ class VectorStore:
         from tortoise.expressions import Q
 
         query_filter = DocumentChunk.filter(
-            document__knowledge_base_id=kb_id
+            document__knowledge_base_id=kb_id,
+            document__status=DocumentStatus.COMPLETED.value,
+            document__knowledge_base__status=KnowledgeBaseStatus.ACTIVE.value,
         ).prefetch_related("document")
 
         if filter_doc_ids:
@@ -1082,7 +1107,12 @@ class VectorStore:
             key=lambda x: float(cast(Any, x.get("score") or 0.0)),
             reverse=True,
         )
-        return results[:limit]
+        results = results[:limit]
+        for rank, result in enumerate(results, 1):
+            result["lexical_score"] = result["score"]
+            result["lexical_rank"] = rank
+            result["final_score_stage"] = "lexical"
+        return results
 
     def _extract_search_terms(self, query: str) -> list[str]:
         """
@@ -1260,31 +1290,29 @@ class VectorStore:
         scores: dict[str, float] = {}
         result_map: dict[str, dict] = {}
 
-        # Process vector results
-        for rank, result in enumerate(vector_results):
+        for rank, result in enumerate(vector_results, 1):
             chunk_id = str(result["chunk_id"])
-            rrf_score = 1.0 / (k + rank + 1)
-            scores[chunk_id] = scores.get(chunk_id, 0) + rrf_score
-            if chunk_id not in result_map:
-                result_map[chunk_id] = result
+            scores[chunk_id] = scores.get(chunk_id, 0) + 1.0 / (k + rank)
+            stored = result_map.setdefault(chunk_id, result.copy())
+            stored["dense_score"] = result.get("dense_score", result.get("score"))
+            stored["dense_rank"] = rank
 
-        # Process fulltext results
-        for rank, result in enumerate(fulltext_results):
+        for rank, result in enumerate(fulltext_results, 1):
             chunk_id = str(result["chunk_id"])
-            rrf_score = 1.0 / (k + rank + 1)
-            scores[chunk_id] = scores.get(chunk_id, 0) + rrf_score
-            if chunk_id not in result_map:
-                result_map[chunk_id] = result
+            scores[chunk_id] = scores.get(chunk_id, 0) + 1.0 / (k + rank)
+            stored = result_map.setdefault(chunk_id, result.copy())
+            stored["lexical_score"] = result.get("lexical_score", result.get("score"))
+            stored["lexical_rank"] = rank
 
-        # Sort by RRF score and update result scores
-        sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
+        sorted_ids = sorted(scores, key=lambda chunk_id: (-scores[chunk_id], chunk_id))
 
         merged_results = []
-        for chunk_id in sorted_ids:
+        for rank, chunk_id in enumerate(sorted_ids, 1):
             result = result_map[chunk_id].copy()
-            # Normalize RRF score to 0-1 range
-            max_rrf = 2.0 / (k + 1)  # Max possible RRF score (rank 0 in both)
-            result["score"] = round(min(1.0, scores[chunk_id] / max_rrf), 4)
+            result["fusion_score"] = scores[chunk_id]
+            result["fusion_rank"] = rank
+            result["score"] = scores[chunk_id]
+            result["final_score_stage"] = "fusion"
             result["search_type"] = "hybrid"
             merged_results.append(result)
 
