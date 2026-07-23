@@ -2,6 +2,19 @@
 
 ## Active
 
+- **yun-117-knowledge-retrieval-lab** — In progress. Replace heuristic keyword matching with an evaluated Dense + BM25 hybrid pipeline and upgrade the existing search test into a retrieval evaluation lab. See `docs/plan/yun-117-knowledge-retrieval-lab.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Retrieval evaluation baseline
+  - [ ] 3. Correct current retrieval semantics
+  - [ ] 4. Unified retrieval service
+  - [ ] 5. OpenSearch BM25 indexing and weighted fusion
+  - [ ] 6. Global rerank and bounded context assembly
+  - [ ] 7. Instant retrieval playground and A/B comparison
+  - [ ] 8. Batch evaluation datasets and runs
+  - [ ] 9. Query contextualization experiment
+  - [ ] 10. Learned Sparse evaluation gate
+  - [ ] 11. Rollout, observability, documentation, and validation
+
 - **issue-255-test-coverage** — Complete. Established honest backend and frontend coverage measurement, covered critical happy/error paths, and enforced independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend and frontend coverage baselines
