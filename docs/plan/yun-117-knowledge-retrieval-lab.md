@@ -88,8 +88,9 @@ These are evaluation baselines, not permanent hard-coded product limits.
 
 ## Implementation Plan
 
-### Stage 1: Retrieval Evaluation Baseline
+### Stage 1: Retrieval Evaluation Baseline ✅
 
+- **Completed validation**: deterministic metric and snapshot contracts added; 6,246 backend tests passed at 97.82% line/95.11% branch coverage; 1,998 frontend tests passed at 97.77% line/95.04% function coverage; frontend source census and production build passed.
 - **Files modified**: new backend evaluation metric module and focused tests; test fixture/data format under backend tests or a documented developer fixture location.
 - **Specific logic**:
   - Define query cases with graded document/chunk relevance and expected-empty cases.
