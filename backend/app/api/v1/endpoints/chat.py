@@ -1057,7 +1057,11 @@ async def chat(
 
     if agent.rag_mode == RAGMode.AUTO:
         # Traditional RAG: automatically retrieve on every message
-        rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
+        rag_contexts = await perform_rag_retrieval(
+            agent,
+            chat_in.message,
+            await get_visible_conversation_messages(conversation.id),
+        )
         rag_contexts = aggregate_rag_contexts(rag_contexts)
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
@@ -1635,7 +1639,11 @@ async def chat_stream(
                             yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
                             last_event_time = time.time()
                             rag_contexts = await perform_rag_retrieval(
-                                agent, chat_in.message
+                                agent,
+                                chat_in.message,
+                                await get_visible_conversation_messages(
+                                    conversation.id
+                                ),
                             )
                             if rag_contexts:
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)
@@ -2986,7 +2994,9 @@ async def edit_user_message_stream(
                             yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
                             last_event_time = time.time()
                             rag_contexts = await perform_rag_retrieval(
-                                agent, edited_content
+                                agent,
+                                edited_content,
+                                await get_prefix_path_before(message),
                             )
                             if rag_contexts:
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)
@@ -3972,7 +3982,9 @@ async def regenerate_message(
                             yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
                             last_event_time = time.time()
                             rag_contexts = await perform_rag_retrieval(
-                                agent, user_message.content
+                                agent,
+                                user_message.content,
+                                await get_prefix_path_before(user_message),
                             )
                             if rag_contexts:
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)

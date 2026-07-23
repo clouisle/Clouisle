@@ -200,8 +200,9 @@ These are evaluation baselines, not permanent hard-coded product limits.
 - **Validation**:
   - Dataset CRUD authorization, import validation, cancel/failure/retry states, metric correctness, retention/deletion behavior, and KB cascade cleanup.
 
-### Stage 8: Query Contextualization Experiment
+### Stage 8: Query Contextualization Experiment ✅
 
+- **Completed validation**: default-off query contextualization is limited to short referential AUTO RAG queries and uses the six most recent user/assistant messages from the active branch. It reuses the agent's authorized chat model with a two-second timeout, accepts only a structured rewrite grounded by an exact history substring, uses the result for retrieval only, and falls back without exposing query or exception content. Non-stream, stream, edit, and regenerate paths preserve the original answer question; Agentic tool queries remain unchanged. Backend gates passed with 6,357 tests, 97.70% line coverage, and 95.03% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, 471/471 source census, lint, license check, and production build.
 - **Files modified**: retrieval request preparation, optional model prompt/config, diagnostics, evaluation cases, and tests.
 - **Specific logic**:
   - Trigger only for AUTO RAG queries that are short, referential, or depend on previous entities.

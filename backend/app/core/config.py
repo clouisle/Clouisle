@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     OPENSEARCH_API_KEY: str | None = None
     OPENSEARCH_INDEX_PREFIX: str = "clouisle_chunks"
     OPENSEARCH_TIMEOUT_SECONDS: float = 10.0
+    RAG_QUERY_CONTEXTUALIZATION_ENABLED: bool = False
+    RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS: float = 2.0
 
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [

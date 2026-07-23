@@ -7,8 +7,247 @@ import pytest
 from app.api.v1.endpoints.chat_rag import (
     aggregate_rag_contexts,
     build_rag_prompt,
+    contextualize_retrieval_query,
     perform_rag_retrieval,
+    should_contextualize_query,
 )
+
+
+def test_contextualization_trigger_is_conservative():
+    assert should_contextualize_query("What about its retention period?")
+    assert should_contextualize_query("它的保留期限呢？")
+    assert not should_contextualize_query("Annual leave retention period")
+    assert not should_contextualize_query("  ")
+
+
+@pytest.mark.asyncio
+async def test_contextualization_disabled_and_standalone_skip_model(monkeypatch):
+    agent = SimpleNamespace(team_id=uuid4(), model_id=uuid4())
+    history = [SimpleNamespace(role="user", content="annual leave")]
+    team_chat = AsyncMock()
+    with patch("app.llm.model_manager.team_chat", team_chat):
+        disabled = await contextualize_retrieval_query(agent, "What about it?", history)
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+            True,
+        )
+        standalone = await contextualize_retrieval_query(
+            agent, "Annual leave retention period", history
+        )
+
+    assert disabled.status == "disabled"
+    assert standalone.status == "not_needed"
+    team_chat.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_contextualize_retrieval_query_uses_agent_model_and_branch_history(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+        True,
+    )
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4(), model_id=uuid4())
+    history = [
+        SimpleNamespace(role="user", content="Tell me about the leave policy"),
+        SimpleNamespace(role="assistant", content="It covers annual leave."),
+        SimpleNamespace(role="tool", content="ignored"),
+    ]
+    response = SimpleNamespace(
+        content='{"query":"annual leave What about its limit?",'
+        '"evidence":"annual leave"}'
+    )
+    model_id = uuid4()
+    team_model_query = MagicMock()
+    team_model_query.prefetch_related.return_value = team_model_query
+    team_model_query.first = AsyncMock(
+        return_value=SimpleNamespace(model=SimpleNamespace(id=model_id))
+    )
+
+    with (
+        patch("app.models.model.TeamModel.filter", return_value=team_model_query),
+        patch(
+            "app.llm.model_manager.team_chat", AsyncMock(return_value=response)
+        ) as team_chat,
+    ):
+        result = await contextualize_retrieval_query(
+            agent, "What about its limit?", history
+        )
+
+    assert result.query == "annual leave What about its limit?"
+    assert result.status == "rewritten"
+    call = team_chat.await_args.kwargs
+    assert call["team_id"] == str(agent.team_id)
+    assert call["model_id"] == str(model_id)
+    assert call["messages"][-1] == {
+        "role": "user",
+        "content": "What about its limit?",
+    }
+    assert {message["role"] for message in call["messages"]} == {
+        "system",
+        "user",
+        "assistant",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", [None, "   "])
+async def test_contextualize_retrieval_query_falls_back_on_empty_response(
+    content, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+        True,
+    )
+    agent = SimpleNamespace(team_id=uuid4(), model_id=uuid4())
+    history = [SimpleNamespace(role="user", content="Tell me about policy A")]
+    team_model_query = MagicMock()
+    team_model_query.prefetch_related.return_value = team_model_query
+    team_model_query.first = AsyncMock(
+        return_value=SimpleNamespace(model=SimpleNamespace(id=uuid4()))
+    )
+    with (
+        patch("app.models.model.TeamModel.filter", return_value=team_model_query),
+        patch(
+            "app.llm.model_manager.team_chat",
+            AsyncMock(return_value=SimpleNamespace(content=content)),
+        ),
+    ):
+        assert (
+            await contextualize_retrieval_query(agent, "And its limit?", history)
+        ).query == "And its limit?"
+
+
+@pytest.mark.asyncio
+async def test_contextualize_retrieval_query_rejects_unsupported_additions(monkeypatch):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+        True,
+    )
+    agent = SimpleNamespace(team_id=uuid4(), model_id=uuid4())
+    history = [SimpleNamespace(role="user", content="Tell me about policy A")]
+    team_model_query = MagicMock()
+    team_model_query.prefetch_related.return_value = team_model_query
+    team_model_query.first = AsyncMock(
+        return_value=SimpleNamespace(model=SimpleNamespace(id=uuid4()))
+    )
+    response = SimpleNamespace(
+        content='{"query":"policy A has a 30-day limit", "evidence":"policy A"}'
+    )
+    with (
+        patch("app.models.model.TeamModel.filter", return_value=team_model_query),
+        patch("app.llm.model_manager.team_chat", AsyncMock(return_value=response)),
+    ):
+        result = await contextualize_retrieval_query(
+            agent, "What about its limit?", history
+        )
+
+    assert result.query == "What about its limit?"
+    assert result.status == "fallback"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [RuntimeError("provider"), TimeoutError()])
+async def test_contextualize_retrieval_query_falls_back_on_model_failure(
+    failure, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+        True,
+    )
+    agent = SimpleNamespace(team_id=uuid4(), model_id=uuid4())
+    history = [SimpleNamespace(role="user", content="Tell me about policy A")]
+    team_model_query = MagicMock()
+    team_model_query.prefetch_related.return_value = team_model_query
+    team_model_query.first = AsyncMock(
+        return_value=SimpleNamespace(model=SimpleNamespace(id=uuid4()))
+    )
+    with (
+        patch("app.models.model.TeamModel.filter", return_value=team_model_query),
+        patch("app.llm.model_manager.team_chat", AsyncMock(side_effect=failure)),
+    ):
+        result = await contextualize_retrieval_query(agent, "And its limit?", history)
+
+    assert result.query == "And its limit?"
+    assert result.status == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_contextualize_retrieval_query_handles_unusable_context_and_model(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+        True,
+    )
+    query = "What about it?"
+    assert (
+        await contextualize_retrieval_query(
+            SimpleNamespace(team_id=None, model_id=None), query, []
+        )
+    ).status == "not_needed"
+    assert (
+        await contextualize_retrieval_query(
+            SimpleNamespace(team_id=None, model_id=None),
+            query,
+            [SimpleNamespace(role="user", content="policy")],
+        )
+    ).status == "fallback"
+    assert (
+        await contextualize_retrieval_query(
+            SimpleNamespace(team_id=uuid4(), model_id=uuid4()),
+            query,
+            [SimpleNamespace(role="tool", content="ignored")],
+        )
+    ).status == "not_needed"
+
+    team_model_query = MagicMock()
+    team_model_query.prefetch_related.return_value = team_model_query
+    team_model_query.first = AsyncMock(return_value=None)
+    with patch("app.models.model.TeamModel.filter", return_value=team_model_query):
+        result = await contextualize_retrieval_query(
+            SimpleNamespace(team_id=uuid4(), model_id=uuid4()),
+            query,
+            [SimpleNamespace(role="user", content="policy")],
+        )
+    assert result.status == "fallback"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"query":"policy What about it?","evidence":"missing"}',
+        '{"query":"policy What about it?","evidence":"policy","extra":"x"}',
+        '{"query":1,"evidence":"policy"}',
+    ],
+)
+async def test_contextualize_retrieval_query_rejects_malformed_output(
+    content, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED",
+        True,
+    )
+    team_model_query = MagicMock()
+    team_model_query.prefetch_related.return_value = team_model_query
+    team_model_query.first = AsyncMock(
+        return_value=SimpleNamespace(model=SimpleNamespace(id=uuid4()))
+    )
+    with (
+        patch("app.models.model.TeamModel.filter", return_value=team_model_query),
+        patch(
+            "app.llm.model_manager.team_chat",
+            AsyncMock(return_value=SimpleNamespace(content=content)),
+        ),
+    ):
+        result = await contextualize_retrieval_query(
+            SimpleNamespace(team_id=uuid4(), model_id=uuid4()),
+            "What about it?",
+            [SimpleNamespace(role="user", content="policy")],
+        )
+    assert result.status == "fallback"
 
 
 @pytest.mark.asyncio
