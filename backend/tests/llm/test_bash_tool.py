@@ -1,9 +1,19 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.llm.tools.bash import BashSandboxTool
+
+
+@pytest.fixture(autouse=True)
+def mock_session_workspace():
+    with patch(
+        "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
+        new=AsyncMock(return_value=SimpleNamespace(root=Path("."))),
+    ):
+        yield
 
 
 @pytest.mark.anyio
@@ -75,7 +85,7 @@ async def test_bash_tool_maps_workspace_paths_from_nested_cwd():
 
     job = mock_submit.await_args.args[0]
     assert job.cwd == "/workspace/skill/demo"
-    assert job.command == ["bash", "-c", "ls ../../output"]
+    assert job.command == ["bash", "-c", "ls ./output"]
 
 
 @pytest.mark.anyio

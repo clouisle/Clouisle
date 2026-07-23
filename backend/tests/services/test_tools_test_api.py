@@ -6,10 +6,15 @@ import pytest
 
 from app.api.v1.endpoints.tools import test_tool as execute_test_tool
 from app.models.tool import CustomToolType, ToolType
-from app.schemas.tool import CodeConfigSchema, ToolExecuteRequest
+from app.schemas.tool import (
+    CodeConfigSchema,
+    ToolCreateInput,
+    ToolExecuteRequest,
+    ToolUpdateInput,
+)
 from app.services.sandbox.compiler import normalize_code_config
 from app.services.sandbox.models import (
-    SandboxArtifactSpec,
+    SandboxArtifact,
     SandboxExecutionMetadata,
     SandboxJobSource,
 )
@@ -69,10 +74,17 @@ async def test_test_tool_routes_saved_code_tools_through_sandbox_gateway():
         error=None,
         stdout="done",
         artifacts=[
-            SandboxArtifactSpec(
+            SandboxArtifact(
                 path="/workspace/output/result.json",
                 optional=False,
                 description="result file",
+                file_type="file",
+                size=12,
+                checksum="abc123",
+                content_type="application/json",
+                storage_path="sandbox/job/result.json",
+                url="/api/v1/files/sandbox/job/result.json",
+                filename="result.json",
             )
         ],
         metadata=SandboxExecutionMetadata(duration_ms=777, total_ms=777),
@@ -157,3 +169,27 @@ def test_code_config_schema_maps_legacy_dependencies_for_readback():
     assert code_config.js_packages == []
     assert code_config.python_package_index_url == "https://mirror.example.com/simple"
     assert code_config.node_package_registry_url == "https://registry.example.com/npm"
+
+
+def test_code_config_schema_maps_javascript_dependencies():
+    code_config = CodeConfigSchema(
+        language="javascript",
+        code="return 1",
+        dependencies=["lodash"],
+    )
+
+    assert code_config.python_packages == []
+    assert code_config.js_packages == ["lodash"]
+
+
+def test_tool_names_accept_identifiers_and_reject_invalid_values():
+    assert ToolCreateInput(name="weather_api", display_name="Weather").name == (
+        "weather_api"
+    )
+    assert ToolUpdateInput(name=None).name is None
+
+    with pytest.raises(ValueError, match="tool_name_invalid_format"):
+        ToolCreateInput(name="2-weather", display_name="Weather")
+
+    with pytest.raises(ValueError, match="tool_name_invalid_format"):
+        ToolUpdateInput(name="weather-api")

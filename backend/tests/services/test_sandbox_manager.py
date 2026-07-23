@@ -2,6 +2,8 @@ import base64
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -563,3 +565,181 @@ class TestSandboxManager:
 
         with pytest.raises(ValueError, match="per-file limit"):
             await manager.execute(job)
+
+    async def test_execute_rejects_missing_and_wrong_owner_sessions(
+        self, tmp_path: Path, monkeypatch
+    ):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        get_session = AsyncMock(return_value=None)
+        monkeypatch.setattr(
+            "app.services.sandbox.manager.sandbox_session_store.get", get_session
+        )
+        job = SandboxJob(command=["python3"])
+
+        with pytest.raises(ValueError, match="not found or expired"):
+            await manager.execute(job, session_id="missing")
+
+        get_session.return_value = SimpleNamespace(agent_id="agent-1", team_id="team-1")
+        with pytest.raises(ValueError, match="not found or expired"):
+            await manager.execute(
+                job, session_id="session-1", session_agent_id="agent-2"
+            )
+        with pytest.raises(ValueError, match="not found or expired"):
+            await manager.execute(job, session_id="session-1", session_team_id="team-2")
+
+    async def test_execute_session_touches_usage_without_cleanup(
+        self, tmp_path: Path, monkeypatch
+    ):
+        launcher = FakeProcessLauncher(stdout="ok")
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            process_launcher=launcher,
+            result_store=InMemoryResultStore(),
+        )
+        store = SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(agent_id=None, team_id=None)),
+            touch=AsyncMock(),
+        )
+        cleanup = MagicMock(wraps=workspace_manager.cleanup)
+        monkeypatch.setattr("app.services.sandbox.manager.sandbox_session_store", store)
+        monkeypatch.setattr(workspace_manager, "cleanup", cleanup)
+
+        result = await manager.execute(
+            SandboxJob(command=["python3"]), session_id="session-1"
+        )
+
+        assert result.success is True
+        store.touch.assert_awaited_once()
+        cleanup.assert_not_called()
+
+    async def test_run_job_handles_timeout_and_failed_command(self, tmp_path: Path):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        metadata = SandboxResult(job_id="job-1").metadata
+        launcher = MagicMock()
+        launcher.launch = AsyncMock(
+            return_value=ProcessLaunchResult(exit_code=1, stderr="boom")
+        )
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            process_launcher=launcher,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        failed = await manager._run_job(
+            SandboxJob(job_id="job-1", command=["python3"]), workspace, metadata
+        )
+
+        assert failed.success is False
+        assert failed.error == "boom"
+
+        launcher.launch.return_value = ProcessLaunchResult(exit_code=1, timed_out=True)
+        timed_out = await manager._run_job(
+            SandboxJob(job_id="job-1", command=["python3"]), workspace, metadata
+        )
+        assert timed_out.success is False
+        assert timed_out.error
+
+    def test_stage_input_files_rejects_existing_target(self, tmp_path: Path):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        target = workspace.root / "input.txt"
+        target.write_text("existing", encoding="utf-8")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        job = SandboxJob(
+            command=["python3"],
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input.txt",
+                    content_base64=base64.b64encode(b"new").decode("ascii"),
+                )
+            ],
+        )
+
+        with pytest.raises(FileExistsError, match="already exists"):
+            manager._stage_input_files(job, workspace)
+
+    def test_parse_snippet_result_handles_timeout_and_plain_output(
+        self, tmp_path: Path
+    ):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        script = tmp_path / "snippet.py"
+
+        timed_out = manager._parse_snippet_result(
+            ProcessLaunchResult(exit_code=1, stdout="partial", timed_out=True), script
+        )
+        plain = manager._parse_snippet_result(
+            ProcessLaunchResult(exit_code=0, stdout="value\n"), script
+        )
+
+        assert timed_out.success is False
+        assert timed_out.error
+        assert plain.success is True
+        assert plain.result == "value"
+
+    def test_link_node_modules_guards_and_links(self, tmp_path: Path):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+
+        manager._link_node_modules_into_workspace(workspace, {})
+        manager._link_node_modules_into_workspace(
+            workspace, {"NODE_PATH": str(tmp_path / "missing")}
+        )
+        source = tmp_path / "modules"
+        source.mkdir()
+        manager._link_node_modules_into_workspace(workspace, {"NODE_PATH": str(source)})
+        manager._link_node_modules_into_workspace(workspace, {"NODE_PATH": str(source)})
+
+        assert (workspace.root / "node_modules").is_symlink()
+
+    def test_command_and_python_resolution_fallbacks(self, tmp_path: Path, monkeypatch):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        monkeypatch.setattr(
+            "app.services.sandbox.manager.shutil.which", lambda *a, **k: None
+        )
+        monkeypatch.setattr(
+            "app.services.sandbox.manager.Path.exists", lambda self: False
+        )
+
+        assert manager._resolve_command([], {}) == []
+        assert manager._resolve_command(["/bin/python3"], {}) == ["/bin/python3"]
+        assert manager._resolve_command(["missing"], {}) == ["missing"]
+        assert manager._python_executable({"PATH": "/bin"}) == "python3"
+
+    async def test_metadata_and_snapshot_store_fallbacks(self, tmp_path: Path):
+        store = SimpleNamespace(update_status=AsyncMock())
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=store,
+        )
+
+        metadata = await manager._load_or_create_metadata("job-1")
+        result = SandboxResult(job_id="job-1")
+        await manager._save_result_snapshot(result)
+
+        assert metadata.started_at is None
+        store.update_status.assert_awaited_once()
+        assert await manager.run_once() is None

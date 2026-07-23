@@ -14,9 +14,10 @@ import logging
 import random
 
 from .errors import translate_public_workflow_error
+from .executor import ExecutionResult
 
 if TYPE_CHECKING:
-    from .executor import ExecutionResult, NodeExecutor
+    from .executor import NodeExecutor
     from .context import ExecutionContext
     from app.models.workflow import WorkflowRun
 

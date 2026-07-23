@@ -25,7 +25,7 @@ export function DynamicFavicon() {
     const iconHref = `${baseHref}?v=${Date.now()}`
 
     // 移除旧的 favicon 并创建新的
-    const existingLinks = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']")
+    const existingLinks = Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']"))
     existingLinks.forEach(link => link.remove())
 
     const link = document.createElement('link')
@@ -33,6 +33,11 @@ export function DynamicFavicon() {
     link.href = iconHref
     link.type = baseHref.endsWith('.svg') ? 'image/svg+xml' : 'image/x-icon'
     document.head.appendChild(link)
+
+    return () => {
+      link.remove()
+      existingLinks.forEach(existingLink => document.head.appendChild(existingLink))
+    }
   }, [settings.site_icon, resolvedTheme, mounted])
 
   return null

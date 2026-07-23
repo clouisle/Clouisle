@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -101,3 +101,63 @@ async def test_get_upload_storage_backend_merges_storage_defaults(tmp_path: Path
     ):
         with pytest.raises(RuntimeError, match="object_storage_endpoint"):
             await upload_storage.get_upload_storage_backend(tmp_path)
+
+
+@pytest.mark.anyio
+async def test_storage_methods_delegate_to_backend(tmp_path: Path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "uploads" / "documents"))
+    storage = AsyncMock()
+    storage.read.return_value = b"stored"
+    storage.exists.side_effect = [True, False]
+
+    with patch(
+        "app.services.document_processor.get_upload_storage_backend",
+        AsyncMock(return_value=storage),
+    ):
+        assert await processor.save_file(b"content", "documents/file.txt") == 7
+        assert await processor.read_file("documents/file.txt") == b"stored"
+        assert await processor.delete_file("documents/file.txt") is True
+        assert await processor.delete_file("documents/missing.txt") is False
+
+    storage.save.assert_awaited_once_with("documents/file.txt", b"content")
+    storage.delete.assert_awaited_once_with("documents/file.txt")
+
+
+@pytest.mark.anyio
+async def test_extract_text_wraps_parser_errors(tmp_path: Path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "uploads" / "documents"))
+
+    with (
+        patch.object(processor, "read_file", AsyncMock(return_value=b"not-json")),
+        pytest.raises(ValueError, match="document_processing_failed_generic"),
+    ):
+        await processor.extract_text("documents/bad.json", DocumentType.JSON.value)
+
+
+@pytest.mark.anyio
+async def test_extract_text_uses_document_parser_and_cleans_output(tmp_path: Path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "uploads" / "documents"))
+    parser = Mock(
+        return_value=(
+            "  title\r\n\r\nbody\x00  ",
+            {"format": "markdown", "title": "Parsed"},
+        )
+    )
+
+    with (
+        patch.object(processor, "read_file", AsyncMock(return_value=b"pdf")),
+        patch.object(processor, "_extract_with_markitdown", parser),
+    ):
+        text, metadata = await processor.extract_text(
+            "documents/sample.pdf", DocumentType.PDF.value
+        )
+
+    assert text == "title\nbody"
+    assert metadata == {
+        "file_size": 3,
+        "doc_type": DocumentType.PDF.value,
+        "format": "markdown",
+        "title": "Parsed",
+        "char_count": 10,
+    }
+    parser.assert_called_once()

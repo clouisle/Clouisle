@@ -79,9 +79,23 @@ class TestNormalization:
 
 
 class TestFraming:
+    @pytest.mark.parametrize(
+        "data",
+        [
+            '{"legacy": ["value"]}',
+            b'{"legacy": ["value"]}',
+        ],
+    )
+    def test_loads_legacy_json_frame(self, data):
+        assert loads_value(data) == {"legacy": ["value"]}
+
     def test_missing_prefix_raises(self):
         with pytest.raises(ValueError):
             loads_value("not-a-valid-frame")
+
+    def test_non_ascii_bytes_raise(self):
+        with pytest.raises(UnicodeDecodeError):
+            loads_value(b"\xff")
 
     def test_corrupted_payload_raises(self):
         with pytest.raises(Exception):

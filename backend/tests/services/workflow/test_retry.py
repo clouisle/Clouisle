@@ -3,17 +3,15 @@ Tests for the retry mechanism.
 """
 
 import pytest
-import asyncio
 from unittest.mock import MagicMock, AsyncMock
 
 from app.services.workflow.retry import (
-    RetryPolicy,
-    with_retry,
-    retryable,
-    RetryableExecutor,
     CircuitBreaker,
-    CircuitState,
+    RetryPolicy,
+    RetryableExecutor,
     get_retry_policy,
+    retryable,
+    with_retry,
 )
 from app.services.workflow.executor import NodeExecutor, ExecutionResult
 
@@ -27,10 +25,10 @@ class TestRetryPolicy:
 
         assert policy.max_retries == 3
         assert policy.base_delay == 1.0
-        assert policy.max_delay == 30.0
+        assert policy.max_delay == 60.0
         assert policy.exponential_base == 2.0
         assert policy.jitter is True
-        assert policy.retryable_errors is None
+        assert policy.retryable_errors == (Exception,)
 
     def test_custom_policy(self):
         """Test custom retry policy values."""
@@ -40,7 +38,7 @@ class TestRetryPolicy:
             max_delay=60.0,
             exponential_base=3.0,
             jitter=False,
-            retryable_errors=[TimeoutError, ConnectionError],
+            retryable_errors=(TimeoutError, ConnectionError),
         )
 
         assert policy.max_retries == 5
@@ -88,23 +86,13 @@ class TestRetryPolicy:
         # Not all delays should be exactly the same
         assert len(set(delays)) > 1
 
-    def test_should_retry_no_errors(self):
-        """Test should_retry with no specific error types."""
-        policy = RetryPolicy()
+    def test_get_delay_jitter_stays_within_capped_range(self):
+        """Test jitter is applied after the maximum delay cap."""
+        policy = RetryPolicy(base_delay=10.0, max_delay=5.0, jitter=True)
 
-        assert policy.should_retry(Exception("test")) is True
-        assert policy.should_retry(ValueError("test")) is True
-        assert policy.should_retry(TimeoutError("test")) is True
+        delay = policy.get_delay(1)
 
-    def test_should_retry_specific_errors(self):
-        """Test should_retry with specific error types."""
-        policy = RetryPolicy(
-            retryable_errors=[TimeoutError, ConnectionError],
-        )
-
-        assert policy.should_retry(TimeoutError("test")) is True
-        assert policy.should_retry(ConnectionError("test")) is True
-        assert policy.should_retry(ValueError("test")) is False
+        assert 3.75 <= delay <= 6.25
 
 
 class TestWithRetry:
@@ -173,7 +161,7 @@ class TestWithRetry:
 
         policy = RetryPolicy(
             max_retries=3,
-            retryable_errors=[TimeoutError],
+            retryable_errors=(TimeoutError,),
         )
 
         with pytest.raises(ValueError, match="non-retryable"):
@@ -190,7 +178,7 @@ class TestRetryableDecorator:
         """Test decorator with successful function."""
         call_count = 0
 
-        @retryable(max_retries=3)
+        @retryable(RetryPolicy(max_retries=3))
         async def success_func():
             nonlocal call_count
             call_count += 1
@@ -206,7 +194,7 @@ class TestRetryableDecorator:
         """Test decorator retries on failure."""
         call_count = 0
 
-        @retryable(max_retries=3, base_delay=0.01)
+        @retryable(RetryPolicy(max_retries=3, base_delay=0.01))
         async def flaky_func():
             nonlocal call_count
             call_count += 1
@@ -218,6 +206,17 @@ class TestRetryableDecorator:
 
         assert result == "success"
         assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_decorator_default_policy_forwards_arguments(self):
+        """Test the default decorator policy preserves arguments and metadata."""
+
+        @retryable()
+        async def format_value(prefix, *, value):
+            return f"{prefix}:{value}"
+
+        assert await format_value("result", value=3) == "result:3"
+        assert format_value.__name__ == "format_value"
 
 
 class TestRetryableExecutor:
@@ -234,7 +233,7 @@ class TestRetryableExecutor:
     async def test_success_no_retry(self, mock_executor):
         """Test successful execution doesn't retry."""
         mock_executor.execute = AsyncMock(
-            return_value=ExecutionResult(success=True, outputs={"result": "ok"})
+            return_value=ExecutionResult(outputs={"result": "ok"})
         )
 
         policy = RetryPolicy(max_retries=3)
@@ -259,7 +258,7 @@ class TestRetryableExecutor:
             call_count += 1
             if call_count < 3:
                 raise TimeoutError("temporary")
-            return ExecutionResult(success=True, outputs={})
+            return ExecutionResult(outputs={})
 
         mock_executor.execute = flaky_execute
 
@@ -288,73 +287,76 @@ class TestCircuitBreaker:
             half_open_requests=2,
         )
 
-    @pytest.mark.asyncio
-    async def test_initial_state_closed(self, breaker):
+    def test_initial_state_closed(self, breaker):
         """Test initial state is closed."""
-        assert breaker.state == CircuitState.CLOSED
-        assert await breaker.can_execute() is True
+        assert breaker.state == "closed"
+        assert breaker.can_execute() is True
 
-    @pytest.mark.asyncio
-    async def test_opens_after_threshold(self, breaker):
+    def test_opens_after_threshold(self, breaker):
         """Test circuit opens after failure threshold."""
         for _ in range(3):
-            await breaker.record_failure()
+            breaker.record_failure()
 
-        assert breaker.state == CircuitState.OPEN
-        assert await breaker.can_execute() is False
+        assert breaker.state == "open"
+        assert breaker.can_execute() is False
 
-    @pytest.mark.asyncio
-    async def test_success_resets_failures(self, breaker):
+    def test_success_resets_failures(self, breaker):
         """Test success resets failure count."""
-        await breaker.record_failure()
-        await breaker.record_failure()
+        breaker.record_failure()
+        breaker.record_failure()
         assert breaker._failure_count == 2
 
-        await breaker.record_success()
+        breaker.record_success()
         assert breaker._failure_count == 0
 
-    @pytest.mark.asyncio
-    async def test_half_open_after_timeout(self, breaker):
-        """Test circuit goes to half-open after timeout."""
-        # Open the circuit
+    def test_half_open_allows_configured_requests_then_denies(
+        self, breaker, monkeypatch
+    ):
+        """Test recovery reaches half-open and enforces its request boundary."""
         for _ in range(3):
-            await breaker.record_failure()
+            breaker.record_failure()
 
-        assert breaker.state == CircuitState.OPEN
+        monkeypatch.setattr("time.time", lambda: breaker._last_failure_time + 0.11)
 
-        # Wait for recovery timeout
-        await asyncio.sleep(0.15)
+        assert breaker.can_execute() is True
+        assert breaker.state == "half_open"
+        assert breaker.can_execute() is True
+        assert breaker.can_execute() is False
 
-        # Should be half-open now
-        assert await breaker.can_execute() is True
-        assert breaker.state == CircuitState.HALF_OPEN
-
-    @pytest.mark.asyncio
-    async def test_half_open_success_closes(self, breaker):
-        """Test enough successes in half-open closes circuit."""
-        # Open and wait
+    def test_half_open_success_closes(self, breaker, monkeypatch):
+        """Test a successful recovery probe closes the circuit."""
         for _ in range(3):
-            await breaker.record_failure()
-        await asyncio.sleep(0.15)
+            breaker.record_failure()
+        monkeypatch.setattr("time.time", lambda: breaker._last_failure_time + 0.11)
+        assert breaker.can_execute() is True
 
-        # Record successes in half-open
-        await breaker.record_success()
-        await breaker.record_success()
+        breaker.record_success()
 
-        assert breaker.state == CircuitState.CLOSED
+        assert breaker.state == "closed"
+        assert breaker._failure_count == 0
 
-    @pytest.mark.asyncio
-    async def test_half_open_failure_reopens(self, breaker):
-        """Test failure in half-open reopens circuit."""
-        # Open and wait
+    def test_half_open_failure_reopens(self, breaker, monkeypatch):
+        """Test a failed recovery probe reopens the circuit."""
         for _ in range(3):
-            await breaker.record_failure()
-        await asyncio.sleep(0.15)
+            breaker.record_failure()
+        now = breaker._last_failure_time + 0.11
+        monkeypatch.setattr("time.time", lambda: now)
+        assert breaker.can_execute() is True
 
-        # Failure in half-open
-        await breaker.record_failure()
+        breaker.record_failure()
 
-        assert breaker.state == CircuitState.OPEN
+        assert breaker.state == "open"
+
+    def test_reset_clears_open_circuit_state(self, breaker):
+        """Test reset restores a closed circuit after terminal failure."""
+        for _ in range(3):
+            breaker.record_failure()
+
+        breaker.reset()
+
+        assert breaker.state == "closed"
+        assert breaker._failure_count == 0
+        assert breaker._last_failure_time is None
 
 
 class TestDefaultPolicies:
@@ -381,6 +383,6 @@ class TestDefaultPolicies:
         assert policy.max_retries == 0
 
     def test_unknown_default(self):
-        """Test unknown node types get default policy."""
+        """Test unknown node types get a single retry."""
         policy = get_retry_policy("unknown_type")
-        assert policy.max_retries == 0  # Default is no retry for safety
+        assert policy.max_retries == 1

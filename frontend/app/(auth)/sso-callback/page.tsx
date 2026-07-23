@@ -7,6 +7,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { authApi, usersApi } from '@/lib/api'
 
+export function isInactiveSsoCallbackError(error: string | null): boolean {
+  return error === 'inactive' || error === 'pending_approval'
+}
+
+export function getSsoCallbackRedirect(redirect: string | null): string {
+  return redirect || '/app'
+}
+
 export default function SSOCallbackPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -16,7 +24,7 @@ export default function SSOCallbackPage() {
 
   useEffect(() => {
     const token = searchParams.get('token')
-    const redirect = searchParams.get('redirect') || '/app'
+    const redirect = getSsoCallbackRedirect(searchParams.get('redirect'))
 
     if (error) {
       return
@@ -52,12 +60,12 @@ export default function SSOCallbackPage() {
         {error ? (
           <>
             <p className="mb-2 text-lg font-medium">
-              {error === 'inactive' || error === 'pending_approval'
+              {isInactiveSsoCallbackError(error)
                 ? t('ssoCallbackInactiveTitle')
                 : t('ssoCallbackFailedTitle')}
             </p>
             <p className="mb-6 text-sm text-muted-foreground">
-              {error === 'inactive' || error === 'pending_approval'
+              {isInactiveSsoCallbackError(error)
                 ? t('ssoCallbackInactiveDescription')
                 : t('ssoCallbackFailedDescription')}
             </p>

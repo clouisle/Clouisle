@@ -32,6 +32,10 @@ Internal engineering documentation lives here.
 ### Compliance
 - [Dependency license compliance](dependency-license-compliance.md)
 
+### Coverage reports
+- Backend: run `cd backend && uv run pytest`; reports are written to `backend/coverage.xml` and `backend/htmlcov/`.
+- Frontend: run `cd frontend && bun run test:coverage && bun run coverage:check`; LCOV is written to `frontend/coverage/lcov.info`.
+
 ### Status
 - [Section index](status/README.md)
 - [Agent development progress](status/AGENT_DEVELOPMENT_PROGRESS.md)

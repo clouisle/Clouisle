@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from app.models.workflow import Workflow
 from app.services.workflow.schema_inference import (
     infer_run_schemas,
     merge_into_definition,
+    merge_run_into_workflow,
 )
 
 
@@ -69,6 +75,37 @@ class TestInferRunSchemas:
         result = infer_run_schemas(execs)
         assert set(result.keys()) == {"b"}
 
+    def test_skips_missing_node_id_and_preserves_output_keys(self):
+        execs = [
+            SimpleNamespace(node_id=None, outputs={"x": 1}),
+            _FakeExecution("valid", {1: "one", "_private": True}),
+        ]
+
+        result = infer_run_schemas(execs)
+
+        assert set(result) == {"valid"}
+        assert result["valid"][1].kind == "string"
+
+    def test_infers_primitives_empty_array_and_unknown_values(self):
+        result = infer_run_schemas(
+            [
+                _FakeExecution(
+                    "node-1",
+                    {
+                        "flag": True,
+                        "nothing": None,
+                        "items": [],
+                        "unknown": object(),
+                    },
+                )
+            ]
+        )
+        specs = result["node-1"]
+        assert specs["flag"].kind == "boolean"
+        assert specs["nothing"].kind == "null" and specs["nothing"].nullable
+        assert specs["items"].kind == "array" and specs["items"].item is None
+        assert specs["unknown"].kind == "any"
+
 
 class TestMergeIntoDefinition:
     def _def(self, *nodes: dict) -> dict:
@@ -127,6 +164,85 @@ class TestMergeIntoDefinition:
         defn = self._def({"id": "c", "data": {}})
         out = merge_into_definition(defn, {"other": {"v": _spec("number")}})
         assert "inferredSchema" not in out["nodes"][0]["data"]
+
+    @pytest.mark.parametrize("definition", [None, [], {"nodes": {}}])
+    def test_invalid_definition_shapes_are_returned_unchanged(self, definition):
+        assert merge_into_definition(definition, {}) is definition
+
+    def test_preserves_non_dict_nodes_and_replaces_invalid_stored_specs(self):
+        defn = self._def(
+            "separator",
+            {
+                "id": "c",
+                "data": {"inferredSchema": {"v": {"kind": "invalid"}}},
+            },
+        )
+
+        out = merge_into_definition(defn, {"c": {"v": _spec("number")}})
+
+        assert out["nodes"][0] == "separator"
+        assert out["nodes"][1]["data"]["inferredSchema"]["v"]["kind"] == "number"
+
+
+class TestMergeRunIntoWorkflow:
+    @pytest.mark.asyncio
+    async def test_skips_lookup_when_nothing_is_inferred(self, monkeypatch):
+        workflow_filter = MagicMock()
+        monkeypatch.setattr(Workflow, "filter", workflow_filter)
+
+        await merge_run_into_workflow("workflow-id", [])
+
+        workflow_filter.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_workflow_is_ignored(self, monkeypatch):
+        query = MagicMock()
+        query.first = AsyncMock(return_value=None)
+        monkeypatch.setattr(Workflow, "filter", MagicMock(return_value=query))
+
+        await merge_run_into_workflow(
+            "workflow-id", [_FakeExecution("code", {"answer": 42})]
+        )
+
+        query.first.assert_awaited_once_with()
+
+    @pytest.mark.asyncio
+    async def test_merges_and_saves_definition(self, monkeypatch):
+        workflow = SimpleNamespace(
+            definition={"nodes": [{"id": "code", "data": {}}]},
+            save=AsyncMock(),
+        )
+        query = MagicMock()
+        query.first = AsyncMock(return_value=workflow)
+        monkeypatch.setattr(Workflow, "filter", MagicMock(return_value=query))
+
+        await merge_run_into_workflow(
+            "workflow-id", [_FakeExecution("code", {"answer": 42})]
+        )
+
+        assert (
+            workflow.definition["nodes"][0]["data"]["inferredSchema"]["answer"]["kind"]
+            == "number"
+        )
+        workflow.save.assert_awaited_once_with(
+            update_fields=["definition", "updated_at"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_persistence_failure_is_suppressed(self, monkeypatch):
+        query = MagicMock()
+        query.first = AsyncMock(side_effect=RuntimeError("database unavailable"))
+        monkeypatch.setattr(Workflow, "filter", MagicMock(return_value=query))
+
+        await merge_run_into_workflow(
+            "workflow-id", [_FakeExecution("code", {"answer": 42})]
+        )
+
+
+def _spec(kind: str):
+    from app.services.workflow.types import TypeSpec
+
+    return TypeSpec(kind=kind)  # type: ignore[arg-type]
 
 
 def _spec(kind: str):

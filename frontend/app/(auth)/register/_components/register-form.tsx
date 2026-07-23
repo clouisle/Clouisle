@@ -33,7 +33,7 @@ type ClickChallenge = {
   created_at: number
 }
 
-function parseClickChallenge(challenge: string): ClickChallenge | null {
+export function parseClickChallenge(challenge: string): ClickChallenge | null {
   try {
     const parsed = JSON.parse(challenge) as Partial<ClickChallenge>
     if (
@@ -52,7 +52,7 @@ function parseClickChallenge(challenge: string): ClickChallenge | null {
 /**
  * 解析带参数的错误 key，如 "password_min_length:8" -> { key: "password_min_length", params: { length: "8" } }
  */
-function parseErrorKey(errorKey: string): { key: string; params: Record<string, string> } {
+export function parseErrorKey(errorKey: string): { key: string; params: Record<string, string> } {
   const parts = errorKey.split(':')
   const key = parts[0]
   const params: Record<string, string> = {}

@@ -37,6 +37,22 @@ THEME_COLOR_SETTING_KEYS = {
     for key in DEFAULT_SETTINGS
     if key.startswith("theme_") and key.endswith("_color")
 }
+SENSITIVE_SETTING_KEYS = {
+    "dingtalk_app_secret",
+    "dingtalk_secret",
+    "dingtalk_webhook_url",
+    "feishu_app_secret",
+    "feishu_secret",
+    "feishu_webhook_url",
+    "object_storage_access_key",
+    "object_storage_secret_key",
+    "slack_webhook_url",
+    "smtp_password",
+    "wechat_secret",
+    "wechat_webhook_url",
+    "webhook_secret",
+    "webhook_url",
+}
 
 
 async def _validate_setting_value(key: str, value: object) -> None:
@@ -369,6 +385,8 @@ async def update_setting(
             is_public=setting.is_public,
         )
 
+    audit_old_value = "***" if key in SENSITIVE_SETTING_KEYS else old_value
+    audit_new_value = "***" if key in SENSITIVE_SETTING_KEYS else data.value
     await AuditLogService.log(
         user=current_user,
         action="update_site_setting",
@@ -379,8 +397,8 @@ async def update_setting(
         status="success",
         request=request,
         changes={
-            "before": {"value": old_value},
-            "after": {"value": data.value},
+            "before": {"value": audit_old_value},
+            "after": {"value": audit_new_value},
         },
         metadata={"category": setting.category},
     )

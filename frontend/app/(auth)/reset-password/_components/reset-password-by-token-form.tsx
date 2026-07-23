@@ -21,6 +21,53 @@ interface ResetPasswordByTokenFormProps {
   token: string
 }
 
+interface ResetPasswordByTokenInput {
+  token: string
+  newPassword: string
+  confirmPassword: string
+}
+
+type SubmitResult = { ok: true } | { ok: false; fieldErrors: Record<string, string> }
+
+function renamePasswordErrors(rawErrors: Record<string, string[]>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(rawErrors).map(([field, messages]) => [field === 'password' ? 'newPassword' : field, messages.join('; ')])
+  )
+}
+
+export function getResetPasswordByTokenLoginRedirect(): string {
+  return '/login'
+}
+
+export async function submitResetPasswordByToken(
+  input: ResetPasswordByTokenInput,
+  t: (key: string) => string,
+  resetPasswordByToken: typeof authApi.resetPasswordByToken = authApi.resetPasswordByToken
+): Promise<SubmitResult> {
+  if (input.newPassword.length < 6) {
+    return { ok: false, fieldErrors: { newPassword: t('passwordTooShort') } }
+  }
+
+  if (input.newPassword !== input.confirmPassword) {
+    return { ok: false, fieldErrors: { confirmPassword: t('passwordMismatch') } }
+  }
+
+  try {
+    await resetPasswordByToken(input.token, input.newPassword)
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err.isValidationError()) {
+        return { ok: false, fieldErrors: renamePasswordErrors(normalizeValidationErrorsRaw(err)) }
+      }
+      if (err.code === 5005) {
+        return { ok: false, fieldErrors: { token: t('verificationTokenInvalid') } }
+      }
+    }
+    return { ok: false, fieldErrors: {} }
+  }
+}
+
 export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProps) {
   const t = useTranslations('auth')
   const router = useRouter()
@@ -48,33 +95,18 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
     e.preventDefault()
     setFieldErrors({})
 
-    if (newPassword.length < 6) {
-      setFieldErrors({ newPassword: t('passwordTooShort') })
-      return
-    }
-
-    if (newPassword !== confirmPassword) {
-      setFieldErrors({ confirmPassword: t('passwordMismatch') })
-      return
-    }
-
     setLoading(true)
 
     try {
-      await authApi.resetPasswordByToken(token, newPassword)
-      toast.success(t('passwordResetSuccess'))
-      setSuccess(true)
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.isValidationError()) {
-          const rawErrors = normalizeValidationErrorsRaw(err)
-          const renamedErrors = Object.fromEntries(
-            Object.entries(rawErrors).map(([field, messages]) => [field === 'password' ? 'newPassword' : field, messages.join('; ')])
-          )
-          setFieldErrors(renamedErrors)
-        } else if (err.code === 5005) {
-          setFieldErrors({ token: t('verificationTokenInvalid') })
-        }
+      const result = await submitResetPasswordByToken(
+        { token, newPassword, confirmPassword },
+        t
+      )
+      if (result.ok) {
+        toast.success(t('passwordResetSuccess'))
+        setSuccess(true)
+      } else if (Object.keys(result.fieldErrors).length > 0) {
+        setFieldErrors(result.fieldErrors)
       }
     } finally {
       setLoading(false)
@@ -93,7 +125,7 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
             {t('passwordResetSuccessMessage')}
           </p>
         </div>
-        <Button onClick={() => router.push('/login')} className="w-full">
+        <Button onClick={() => router.push(getResetPasswordByTokenLoginRedirect())} className="w-full">
           <KeyRound className="mr-2 h-4 w-4" />
           {t('goToLogin')}
         </Button>

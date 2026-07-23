@@ -2,6 +2,14 @@
 
 ## Active
 
+- **issue-255-test-coverage** — Complete. Established honest backend and frontend coverage measurement, covered critical happy/error paths, and enforced independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend and frontend coverage baselines
+  - [x] 3. Backend critical-path coverage — 6,240 tests passed and 3 skipped; 97.81% lines and 95.11% branches
+  - [x] 4. Frontend critical-path coverage — 1,998 isolated tests; 97.77% lines, 95.04% functions; 470/470 source census passing
+  - [x] 5. Agent UI automation guide and reusable prompt
+  - [x] 6. CI reporting, final 95% gates, and documentation
+
 - **admin-video-model-generation-test** — Complete. Replace constructor-only video model tests with a confirmed, billable real generation and completion check. See `docs/plan/admin-video-model-generation-test.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Real generation and polling test

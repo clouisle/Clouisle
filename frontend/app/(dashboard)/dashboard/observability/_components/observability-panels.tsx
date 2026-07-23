@@ -55,17 +55,29 @@ import {
 } from '@/lib/api/admin/observability'
 import type { TimeRange } from '@/components/dashboard/time-range-selector'
 
-type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput' | 'tokens' | 'workers' | 'slow-queries'
-type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info'
-type ObservabilityTranslator = ReturnType<typeof useTranslations>
+import {
+  TONE_STYLES,
+  abnormalReason,
+  formatBucket,
+  formatCompactNumber,
+  formatDuration,
+  formatNumber,
+  formatPercent,
+  getRiskLevel,
+  percentOf,
+  readNumber,
+  readString,
+  sourceLabel,
+  statusLabel,
+  timeoutTypeLabel,
+  toneBarClass,
+  toneDotClass,
+  toneForStatus,
+  toneTextClass,
+  type Tone,
+} from './observability-helpers'
 
-const TONE_STYLES: Record<Tone, string> = {
-  neutral: 'bg-muted text-muted-foreground border-border',
-  success: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-300',
-  warning: 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300',
-  danger: 'bg-destructive/10 text-destructive border-destructive/20',
-  info: 'bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300',
-}
+type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput' | 'tokens' | 'workers' | 'slow-queries'
 const CHART_AXIS_PROPS = {
   tick: { fill: CHART_AXIS_COLOR },
   axisLine: false,
@@ -948,121 +960,4 @@ function workerHealthData(worker: WorkerResponse): Record<string, unknown> {
     scheduled_tasks: worker.scheduled_tasks,
     error: worker.error,
   }
-}
-
-function getRiskLevel(timeoutRate: number, successRate: number, p95: number | null, ttftP95: number | null): { key: 'healthy' | 'warning' | 'critical'; summaryKey: 'healthSummaryHealthy' | 'healthSummaryWarning' | 'healthSummaryCritical'; tone: Tone } {
-  if (timeoutRate >= 5 || successRate < 95 || (ttftP95 != null ? ttftP95 >= 10000 : (p95 ?? 0) >= 30000)) {
-    return { key: 'critical', summaryKey: 'healthSummaryCritical', tone: 'danger' }
-  }
-  if (timeoutRate >= 1 || successRate < 99 || (ttftP95 != null ? ttftP95 >= 3000 : (p95 ?? 0) >= 10000)) {
-    return { key: 'warning', summaryKey: 'healthSummaryWarning', tone: 'warning' }
-  }
-  return { key: 'healthy', summaryKey: 'healthSummaryHealthy', tone: 'success' }
-}
-
-function toneForStatus(status: string): Tone {
-  if (status === 'danger' || status === 'unhealthy' || status === 'failed' || status === 'error') return 'danger'
-  if (status === 'warning' || status === 'unknown' || status === 'timeout') return 'warning'
-  if (status === 'healthy' || status === 'success') return 'success'
-  if (status === 'running') return 'info'
-  return 'neutral'
-}
-
-function statusLabel(status: string | null | undefined, t: ObservabilityTranslator) {
-  const normalized = status || 'unknown'
-  const keys = new Set(['healthy', 'warning', 'danger', 'unhealthy', 'unknown', 'success', 'failed', 'running', 'pending', 'cancelled', 'timeout', 'error'])
-  return keys.has(normalized) ? t(`status.${normalized}`) : normalized
-}
-
-function sourceLabel(source: string | null | undefined, t: ObservabilityTranslator) {
-  if (source === 'agent' || source === 'workflow' || source === 'system') return t(`sources.${source}`)
-  return t('sources.unknown')
-}
-
-function timeoutTypeLabel(type: string | null | undefined, t: ObservabilityTranslator) {
-  const normalized = type || 'unknown'
-  const keys = new Set(['unknown', 'idle', 'global', 'workflow', 'agent'])
-  return keys.has(normalized) ? t(`timeoutTypes.${normalized}`) : normalized
-}
-
-function abnormalReason(row: Record<string, unknown>) {
-  return readString(row, ['reason', 'message', 'detail', 'error'])
-}
-
-function readNumber(row: Record<string, unknown>, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = row[key]
-    if (typeof value === 'number' && Number.isFinite(value)) return value
-    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
-  }
-  return null
-}
-
-function readString(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key]
-    if (typeof value === 'string' && value.trim()) return value
-  }
-  return '-'
-}
-
-function formatNumber(value: number | null | undefined) {
-  if (value == null) return '-'
-  return new Intl.NumberFormat().format(value)
-}
-
-function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value)
-}
-
-function formatPercent(value: number) {
-  return `${value.toFixed(1)}%`
-}
-
-function formatDuration(value: number | null | undefined) {
-  if (value == null) return '-'
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}s`
-  return `${Math.round(value)}ms`
-}
-
-function formatBucket(value: string | null | undefined) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
-function percentOf(value: number, total: number) {
-  if (!total) return 0
-  return Math.round((value / total) * 1000) / 10
-}
-
-function toneDotClass(tone: Tone) {
-  return {
-    neutral: 'bg-muted-foreground',
-    success: 'bg-emerald-500',
-    warning: 'bg-amber-500',
-    danger: 'bg-destructive',
-    info: 'bg-sky-500',
-  }[tone]
-}
-
-function toneBarClass(tone: Tone) {
-  return {
-    neutral: 'bg-muted-foreground/50',
-    success: 'bg-emerald-500',
-    warning: 'bg-amber-500',
-    danger: 'bg-destructive',
-    info: 'bg-sky-500',
-  }[tone]
-}
-
-function toneTextClass(tone: Tone) {
-  return {
-    neutral: 'text-foreground',
-    success: 'text-emerald-700 dark:text-emerald-300',
-    warning: 'text-amber-700 dark:text-amber-300',
-    danger: 'text-destructive',
-    info: 'text-sky-700 dark:text-sky-300',
-  }[tone]
 }

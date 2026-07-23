@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from app.services.workflow.types import (
+    NodeInputMapping,
+    NodeOutputDecl,
     TypeSpec,
     infer_type_spec,
+    legacy_type_to_spec,
     merge_type_spec,
     to_text,
 )
@@ -67,10 +71,21 @@ class TestMergeTypeSpec:
         merged = merge_type_spec(a, b)
         assert merged.kind == "string"
 
-    def test_merge_with_null_marks_nullable(self):
-        a = TypeSpec(kind="string", source="inferred")
-        b = TypeSpec(kind="null", source="inferred", nullable=True)
-        merged = merge_type_spec(a, b)
+    @pytest.mark.parametrize(
+        ("left", "right"),
+        [
+            (
+                TypeSpec(kind="string", source="inferred"),
+                TypeSpec(kind="null", source="inferred", nullable=True),
+            ),
+            (
+                TypeSpec(kind="null", source="inferred", nullable=True),
+                TypeSpec(kind="string", source="inferred"),
+            ),
+        ],
+    )
+    def test_merge_with_null_marks_nullable(self, left, right):
+        merged = merge_type_spec(left, right)
         assert merged.kind == "string"
         assert merged.nullable is True
 
@@ -116,6 +131,32 @@ class TestMergeTypeSpec:
         assert merge_type_spec(a, b).source == "declared"
         c = TypeSpec(kind="string", source="inferred")
         assert merge_type_spec(a, c).source == "inferred"
+
+
+class TestPublicModels:
+    def test_node_input_mapping_defaults_and_preserves_constant(self):
+        mapping = NodeInputMapping(name="query", constantValue={"locale": "zh"})
+
+        assert mapping.source == "variable"
+        assert mapping.variableRef is None
+        assert mapping.constantValue == {"locale": "zh"}
+
+    def test_public_models_reject_invalid_fields(self):
+        with pytest.raises(ValidationError):
+            TypeSpec(kind="unknown")
+        with pytest.raises(ValidationError):
+            NodeInputMapping(name="query", unexpected=True)
+        with pytest.raises(ValidationError):
+            NodeOutputDecl(name="result", type={"kind": "string"}, unexpected=True)
+
+
+class TestLegacyTypeToSpec:
+    @pytest.mark.parametrize(
+        ("type_str", "expected"),
+        [("TEXT", "string"), ("list", "array"), (None, "any"), ("unknown", "any")],
+    )
+    def test_aliases_and_unknown_values_fallback_to_any(self, type_str, expected):
+        assert legacy_type_to_spec(type_str).kind == expected
 
 
 class TestToText:

@@ -19,6 +19,37 @@ import { Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { FieldError } from '@/components/ui/field'
 
+interface ChangePasswordInput {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
+}
+
+export function getChangePasswordRedirect(searchParams: Pick<URLSearchParams, 'get'>): string {
+  return searchParams.get('redirect') || '/app'
+}
+
+export async function submitChangePassword(
+  input: ChangePasswordInput,
+  t: (key: string) => string,
+  changePassword: typeof usersApi.changePassword = usersApi.changePassword
+): Promise<{ ok: true } | { ok: false; fieldErrors: Record<string, string> }> {
+  if (input.newPassword !== input.confirmPassword) {
+    return { ok: false, fieldErrors: { confirmPassword: t('passwordMismatch') } }
+  }
+
+  try {
+    await changePassword({
+      current_password: input.currentPassword,
+      new_password: input.newPassword,
+    })
+    return { ok: true }
+  } catch (err) {
+    const fieldErrors = normalizeValidationErrors(err)
+    return { ok: false, fieldErrors }
+  }
+}
+
 export default function ChangePasswordPage() {
   const t = useTranslations('auth')
   const router = useRouter()
@@ -47,30 +78,19 @@ export default function ChangePasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFieldErrors({})
-
-    // Validate passwords match
-    if (newPassword !== confirmPassword) {
-      setFieldErrors({ confirmPassword: t('passwordMismatch') })
-      return
-    }
-
     setLoading(true)
 
     try {
-      await usersApi.changePassword({
-        current_password: currentPassword,
-        new_password: newPassword,
-      })
+      const result = await submitChangePassword(
+        { currentPassword, newPassword, confirmPassword },
+        t
+      )
 
-      toast.success(t('password_changed'))
-
-      // Redirect to app after successful change
-      const redirect = searchParams.get('redirect')
-      router.push(redirect || '/app')
-    } catch (err) {
-      const errors = normalizeValidationErrors(err)
-      if (Object.keys(errors).length > 0) {
-        setFieldErrors(errors)
+      if (result.ok) {
+        toast.success(t('password_changed'))
+        router.push(getChangePasswordRedirect(searchParams))
+      } else if (Object.keys(result.fieldErrors).length > 0) {
+        setFieldErrors(result.fieldErrors)
       }
     } finally {
       setLoading(false)

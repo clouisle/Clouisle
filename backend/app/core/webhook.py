@@ -50,7 +50,9 @@ def _render_template(template: str, variables: dict) -> str:
             escaped_value = json.dumps(value)[1:-1]  # 去掉首尾引号
         else:
             escaped_value = str(value) if value is not None else ""
-        result = re.sub(r"\{\{\s*" + key + r"\s*\}\}", escaped_value, result)
+        result = re.sub(
+            r"\{\{\s*" + key + r"\s*\}\}", lambda _match: escaped_value, result
+        )
     return result
 
 

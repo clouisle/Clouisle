@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi.responses import JSONResponse
 
+import app.services  # noqa: F401  # Initialize service exports before the upload endpoint.
+
 from app.api import deps
 from app.api.v1.endpoints import upload
 from app.schemas.response import BusinessError, error
@@ -149,3 +151,38 @@ def test_upload_sandbox_artifact_allows_internal_signature_without_auth_header(
         )
 
     assert response.status_code == 200
+
+
+def test_get_public_file_delegates_to_upload_storage(upload_test_client):
+    storage = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        response=AsyncMock(return_value=JSONResponse({"file": "delegated"})),
+    )
+    with patch(
+        "app.api.v1.endpoints.upload._upload_storage",
+        new=AsyncMock(return_value=storage),
+    ):
+        response = upload_test_client.get(
+            "/api/v1/upload/files/public/2026/07/public-delegation-9c2e.txt"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"file": "delegated"}
+    storage.exists.assert_awaited_once_with("public/2026/07/public-delegation-9c2e.txt")
+    storage.response.assert_awaited_once_with(
+        "public/2026/07/public-delegation-9c2e.txt"
+    )
+
+
+def test_get_public_file_returns_not_found_when_storage_is_missing(upload_test_client):
+    storage = SimpleNamespace(exists=AsyncMock(return_value=False))
+    with patch(
+        "app.api.v1.endpoints.upload._upload_storage",
+        new=AsyncMock(return_value=storage),
+    ):
+        response = upload_test_client.get(
+            "/api/v1/upload/files/public/2026/07/public-missing-9c2e.txt"
+        )
+
+    assert response.status_code == 404
+    storage.exists.assert_awaited_once_with("public/2026/07/public-missing-9c2e.txt")

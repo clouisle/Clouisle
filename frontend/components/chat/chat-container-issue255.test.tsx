@@ -1,0 +1,250 @@
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { ReactNode } from 'react'
+import type { ChatMessage } from './types'
+
+let states: unknown[] = []
+let refs: Array<{ current: unknown }> = []
+let stateIndex = 0
+let refIndex = 0
+let effects: Array<() => void | (() => void)> = []
+let memoCompare: ((previous: Record<string, unknown>, next: Record<string, unknown>) => boolean) | undefined
+
+const useState = (initial: unknown) => {
+  const index = stateIndex++
+  if (states.length <= index) states[index] = initial
+  return [states[index], (value: unknown) => {
+    states[index] = typeof value === 'function'
+      ? (value as (previous: unknown) => unknown)(states[index])
+      : value
+  }]
+}
+const useRef = (initial: unknown) => {
+  const index = refIndex++
+  if (!refs[index]) refs[index] = { current: initial }
+  return refs[index]
+}
+const useEffect = (effect: () => void | (() => void)) => effects.push(effect)
+
+mock.module('react', () => ({
+  memo: (component: unknown, compare: typeof memoCompare) => {
+    memoCompare = compare
+    return component
+  },
+  useCallback: (callback: unknown) => callback,
+  useEffect,
+  useLayoutEffect: useEffect,
+  useMemo: (factory: () => unknown) => factory(),
+  useRef,
+  useState,
+}))
+
+const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
+mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
+mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
+mock.module('next-intl', () => ({
+  useTranslations: () => (key: string, values?: Record<string, unknown>) => `${key}:${values?.count ?? ''}`,
+}))
+mock.module('lucide-react', () => ({ ArrowDown: (props: Record<string, unknown>) => jsx('arrow-down', props) }))
+mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/ui/button', () => ({ Button: (props: Record<string, unknown>) => jsx('button', props) }))
+mock.module('./message', () => ({ Message: (props: Record<string, unknown>) => jsx('message', props) }))
+
+const { ChatContainer } = await import('./chat-container')
+type Props = Parameters<typeof ChatContainer>[0]
+type Tree = { type: unknown; props: Record<string, unknown> }
+
+function resolve(node: ReactNode): Tree | ReactNode {
+  if (!node || typeof node !== 'object' || !('type' in node)) return node
+  const tree = node as Tree
+  if (typeof tree.type === 'function') {
+    return resolve((tree.type as (props: Record<string, unknown>) => ReactNode)(tree.props))
+  }
+  if (tree.type && typeof tree.type === 'object' && 'type' in tree.type) {
+    return resolve(((tree.type as { type: (props: Record<string, unknown>) => ReactNode }).type)(tree.props))
+  }
+  return tree
+}
+
+function findAll(node: ReactNode, type: unknown): Tree[] {
+  if (Array.isArray(node)) return node.flatMap((child) => findAll(child, type))
+  const tree = resolve(node)
+  if (!tree || typeof tree !== 'object' || !('type' in tree)) return []
+  const children = (tree as Tree).props.children
+  return [
+    ...((tree as Tree).type === type ? [tree as Tree] : []),
+    ...(Array.isArray(children) ? children : [children]).flatMap((child) => findAll(child as ReactNode, type)),
+  ]
+}
+
+function render(props: Props, runEffects = false) {
+  stateIndex = 0
+  refIndex = 0
+  effects = []
+  const tree = ChatContainer(props)
+  if (runEffects) effects.forEach((effect) => effect())
+  return tree
+}
+
+const message = (id: string, role: 'user' | 'assistant' = 'assistant', text = id): ChatMessage => ({
+  id,
+  role,
+  parts: [{ type: 'text', text }],
+})
+
+beforeEach(() => {
+  states = []
+  refs = []
+  stateIndex = 0
+  refIndex = 0
+  effects = []
+})
+
+describe('ChatContainer issue #255 coverage', () => {
+  test('renders the custom empty state and class without mounting messages', () => {
+    const tree = render({ messages: [], className: 'custom', emptyState: jsx('empty', {}) })
+
+    expect((tree as Tree).props.className).toContain('custom')
+    expect(findAll(tree, 'empty')).toHaveLength(1)
+    expect(findAll(tree, 'message')).toHaveLength(0)
+  })
+
+  test('pages older messages and labels the remaining batch', () => {
+    const messages = Array.from({ length: 45 }, (_, index) => message(`m-${index}`))
+    let tree = render({ messages })
+
+    expect(findAll(tree, 'message').map((item) => (item.props.message as ChatMessage).id)).toEqual(
+      messages.slice(25).map(({ id }) => id),
+    )
+    const loadButton = findAll(tree, 'button')[0]
+    expect(loadButton.props.children).toBe('message.loadOlderMessages:20')
+    ;(loadButton.props.onClick as () => void)()
+
+    tree = render({ messages })
+    expect(findAll(tree, 'message')).toHaveLength(40)
+    expect(findAll(tree, 'button')[0].props.children).toBe('message.loadOlderMessages:5')
+    ;(findAll(tree, 'button')[0].props.onClick as () => void)()
+    expect(findAll(render({ messages }), 'message')).toHaveLength(45)
+  })
+
+  test('delegates message actions and optional content callbacks', async () => {
+    const onRegenerate = mock()
+    const onEditMessage = mock(async () => {})
+    const onSwitchVersion = mock()
+    const onSelectOption = mock()
+    const onOpenCodePreview = mock()
+    const renderPart = mock()
+    const messages = [message('user-1', 'user'), message('assistant-1')]
+    let tree = render({
+      messages,
+      onRegenerate,
+      onEditMessage,
+      onSwitchVersion,
+      onSelectOption,
+      onOpenCodePreview,
+      renderPart,
+      hideToolCalls: true,
+      isStreaming: true,
+    }, true)
+    tree = render({ messages, onRegenerate, onEditMessage, onSwitchVersion, onSelectOption, onOpenCodePreview, renderPart, hideToolCalls: true, isStreaming: true })
+    const [user, assistant] = findAll(tree, 'message')
+
+    expect(user.props).toMatchObject({ isStreaming: false, hideToolCalls: true, onRegenerate: undefined })
+    expect(assistant.props).toMatchObject({ isStreaming: true, onEditMessage: undefined, chainOfThoughtOpen: true })
+    await (user.props.onEditMessage as (content: string) => Promise<void>)('edited')
+    ;(assistant.props.onRegenerate as () => void)()
+    ;(assistant.props.onSwitchVersion as (index: number) => void)(2)
+    ;(assistant.props.onSelectOption as (option: string) => void)('Yes')
+    ;(assistant.props.onOpenCodePreview as (payload: unknown) => void)({ code: 'x' })
+    ;(assistant.props.onChainOfThoughtOpenChange as (open: boolean) => void)(false)
+
+    expect(onEditMessage).toHaveBeenCalledWith('user-1', 'edited')
+    expect(onRegenerate).toHaveBeenCalledWith('assistant-1')
+    expect(onSwitchVersion).toHaveBeenCalledWith('assistant-1', 2)
+    expect(onSelectOption).toHaveBeenCalledWith('Yes')
+    expect(onOpenCodePreview).toHaveBeenCalledWith({ code: 'x' })
+    expect(findAll(render({ messages }), 'message')[1].props.chainOfThoughtOpen).toBe(false)
+  })
+
+  test('tracks scrolling, reveals the bottom control, and navigates to messages', () => {
+    const scrollTo = mock()
+    const scroller = { scrollHeight: 500, scrollTop: 0, clientHeight: 100, scrollTo }
+    const target = { offsetTop: 123 }
+    let tree = render({ messages: [message('a')] })
+    const divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs.find((div) => typeof div.props.ref === 'function')?.props.ref as (value: unknown) => void)(target)
+    ;(divs[1].props.onScroll as () => void)()
+
+    tree = render({ messages: [message('a')] })
+    const bottomButton = findAll(tree, 'button')[0]
+    expect(findAll(bottomButton.props.children as ReactNode, 'arrow-down')).toHaveLength(1)
+    ;(bottomButton.props.onClick as () => void)()
+    expect(scrollTo).toHaveBeenCalledWith({ top: 501, behavior: 'smooth' })
+
+    const renderedMessage = findAll(tree, 'message')[0]
+    ;(renderedMessage.props.onRequestScrollIntoView as () => void)()
+    expect(scrollTo).toHaveBeenCalledWith({ top: 123, behavior: 'smooth' })
+  })
+
+  test('auto-follows growth and content resize, then cleans up observers', () => {
+    const scrollTo = mock()
+    const observe = mock()
+    const disconnect = mock()
+    const cancel = mock()
+    let resize: (() => void) | undefined
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) { resize = callback }
+      observe = observe
+      disconnect = disconnect
+      unobserve() {}
+    }
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(1)
+      return 9
+    }) as typeof requestAnimationFrame
+    globalThis.cancelAnimationFrame = cancel
+
+    const tree = render({ messages: [message('a'), message('b')] })
+    const divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = { scrollHeight: 200, scrollTop: 100, clientHeight: 100, scrollTo }
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    const cleanups = effects.map((effect) => effect()).filter(Boolean) as Array<() => void>
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 201, behavior: 'auto' })
+    expect(observe).toHaveBeenCalledTimes(1)
+    resize?.()
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+    cleanups.forEach((cleanup) => cleanup())
+    expect(cancel).toHaveBeenCalledWith(9)
+    expect(disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not snap while streaming an open fence or when auto-scroll is disabled', () => {
+    const scrollTo = mock()
+    const openFence = message('code', 'assistant', '```ts\nconst x = 1')
+    let tree = render({ messages: [openFence], isStreaming: true })
+    let divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = { scrollHeight: 200, scrollTop: 0, clientHeight: 100, scrollTo }
+    effects.forEach((effect) => effect())
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    tree = render({ messages: [message('closed', 'assistant', '~~~\nx\n~~~')], autoScroll: false })
+    divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = { scrollHeight: 200, scrollTop: 0, clientHeight: 100, scrollTo }
+    effects.forEach((effect) => effect())
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  test('memo comparison notices each delegated prop change', () => {
+    const shared = {
+      message: message('a'), isCurrentStreaming: false, renderPart: mock(), onRegenerate: mock(),
+      onEditMessage: mock(), onSwitchVersion: mock(), onSelectOption: mock(), onOpenCodePreview: mock(),
+      hideToolCalls: false, chainOfThoughtOpen: false, onChainOfThoughtOpenChange: mock(),
+      onRequestScrollIntoView: mock(), setMessageElement: mock(),
+    }
+    expect(memoCompare?.(shared, shared)).toBe(true)
+    for (const key of Object.keys(shared)) {
+      expect(memoCompare?.(shared, { ...shared, [key]: key === 'hideToolCalls' ? true : mock() })).toBe(false)
+    }
+  })
+})
