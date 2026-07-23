@@ -25,6 +25,17 @@ class Query:
         return self.value
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in (
+        "delete_lexical_kb",
+        "delete_lexical_document",
+        "delete_lexical_chunk",
+        "index_lexical_chunk",
+    ):
+        monkeypatch.setattr(knowledge_bases, name, AsyncMock())
+
+
 @pytest.mark.anyio
 async def test_access_helpers_cover_missing_and_privileged_paths(monkeypatch):
     user = SimpleNamespace(id=uuid4(), is_superuser=False)

@@ -1,6 +1,6 @@
 services:
   qdrant_node1:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     command: ["./qdrant", "--uri", "http://qdrant_node1:6335"]
     ports:
       - "6333:6333"
@@ -9,14 +9,14 @@ services:
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: "6335"
-      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     volumes:
       - qdrant_node1_data:/qdrant/storage
     networks:
       - qdrant_cluster
 
   qdrant_node2:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     command:
       [
         "./qdrant",
@@ -28,14 +28,14 @@ services:
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: "6335"
-      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     volumes:
       - qdrant_node2_data:/qdrant/storage
     networks:
       - qdrant_cluster
 
   qdrant_node3:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     command:
       [
         "./qdrant",
@@ -47,7 +47,7 @@ services:
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: "6335"
-      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     volumes:
       - qdrant_node3_data:/qdrant/storage
     networks:

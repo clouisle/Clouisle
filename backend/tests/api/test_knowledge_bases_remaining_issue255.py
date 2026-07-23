@@ -42,6 +42,17 @@ class Query:
         return result().__await__()
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in (
+        "delete_lexical_kb",
+        "delete_lexical_document",
+        "delete_lexical_chunk",
+        "index_lexical_chunk",
+    ):
+        monkeypatch.setattr(knowledge_bases, name, AsyncMock())
+
+
 @pytest.mark.asyncio
 async def test_model_info_and_team_model_authorization_branches(monkeypatch):
     model_id = uuid4()
@@ -267,6 +278,7 @@ async def test_delete_chunk_updates_stats_and_bulk_reindexes(monkeypatch):
     kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
+        team_id=uuid4(),
         embedding_model_id=None,
         total_chunks=0,
         total_tokens=2,

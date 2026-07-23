@@ -216,7 +216,7 @@ services:
 
   # Qdrant Vector Database
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     container_name: clouisle-qdrant
     volumes:
       - qdrant_data:/qdrant/storage
@@ -365,7 +365,7 @@ services:
       - redis_dev_data:/data
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     ports:
       - "6333:6333"
     volumes:

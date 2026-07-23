@@ -134,9 +134,10 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Authorization scope cannot be widened by caller-supplied KB or document IDs.
   - Timeout and dual-retriever failure paths are explicit.
 
-### Stage 4: OpenSearch BM25 Indexing and Weighted Fusion
+### Stage 4: OpenSearch BM25 Indexing and Weighted Fusion ✅
 
-- **Files modified**: backend dependencies/config, a lexical-store service, document processing/rechunk/delete tasks, deployment manifests/Helm values, migrations if index state is persisted, and tests.
+- **Completed validation**: OpenSearch lexical store, versioned aliases, BM25 search, bulk indexing, scoped deletes, lifecycle dual writes/deletes, resumable backfill/reconciliation, weighted RRF, and deployment support completed. Backend gates passed with 6,294 tests, 97.71% line coverage, and 95.02% branch coverage. Frontend gates passed with 97.77% line coverage, 95.04% function coverage, 470/470 source census, lint, license check, and production build. Deployment static validation passed for Compose, qdrant cluster Compose, raw Kubernetes YAML/dry-run, pinned Qdrant 1.18.3, and OpenSearch 3.7.0; Helm CLI was unavailable, so Helm lint/template remains unexecuted.
+- **Files modified**: backend config, lexical-store service, document processing/rechunk/delete tasks, deployment manifests/Helm values, environment examples, deployment docs, and tests.
 - **Specific logic**:
   - Pin verified OpenSearch and Qdrant image versions rather than `latest`.
   - Create a versioned OpenSearch index and stable read/write aliases.

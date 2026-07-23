@@ -7,7 +7,7 @@ This chart deploys Clouisle on Kubernetes with the current service model:
 - `sandbox-worker`
 - `beat`
 - `frontend`
-- optional built-in `postgres`, `redis`, and `qdrant`
+- optional built-in `postgres`, `redis`, `qdrant`, and `opensearch`
 
 ## Quick Start
 
@@ -37,7 +37,8 @@ kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
   --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
-  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
+  --from-literal=OPENSEARCH_PASSWORD='replace-with-a-strong-opensearch-password'
 ```
 
 Install with production values:
@@ -51,7 +52,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 ## External Infrastructure
 
-Disable built-in PostgreSQL, Redis, and Qdrant when using managed services:
+Disable built-in PostgreSQL, Redis, Qdrant, and OpenSearch when using managed services. The existing Secret must still contain `OPENSEARCH_PASSWORD` for authenticated OpenSearch:
 
 ```bash
 helm upgrade --install clouisle deploy/helm/clouisle \
@@ -64,7 +65,10 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   --set redis.enabled=false \
   --set redis.external.host=redis.example.internal \
   --set qdrant.enabled=false \
-  --set qdrant.external.url=https://qdrant.example.internal
+  --set qdrant.external.url=https://qdrant.example.internal \
+  --set opensearch.enabled=false \
+  --set opensearch.external.url=https://opensearch.example.internal:9200 \
+  --set config.OPENSEARCH_USERNAME=clouisle
 ```
 
 ## Important Values
@@ -81,7 +85,9 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 | `uploads.accessModes` | `ReadWriteMany` | Shared uploads PVC mode |
 | `postgresql.enabled` | `true` | Deploy built-in PostgreSQL |
 | `redis.enabled` | `true` | Deploy built-in Redis |
-| `qdrant.enabled` | `true` | Deploy built-in Qdrant |
+| `qdrant.enabled` | `true` | Deploy built-in Qdrant 1.18.3 |
+| `opensearch.enabled` | `true` | Deploy built-in single-node OpenSearch 3.7.0 |
+| `opensearch.external.url` | empty | Required OpenSearch URL when built-in mode is disabled |
 
 ## Storage
 

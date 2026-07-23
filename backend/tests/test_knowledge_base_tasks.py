@@ -16,7 +16,9 @@ from app.tasks.knowledge_base import (
     _get_embedding_error,
     _is_finished_task,
     _is_stale_task,
+    backfill_lexical_index_task,
     embed_document_chunks_task,
+    index_document_lexically_task,
     process_document_task,
     process_url_document_task,
     rechunk_document_task,
@@ -238,6 +240,7 @@ def test_process_document_happy_path_updates_document_and_kb():
             "app.services.document_processor.chunk_text", return_value=["a", "b"]
         ) as split,
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}._dispatch_lexical_index") as lexical,
     ):
         result = process_document_task.run(str(document.id))
 
@@ -256,6 +259,7 @@ def test_process_document_happy_path_updates_document_and_kb():
         "text", chunk_size=1000, chunk_overlap=100, separators=None
     )
     notify.assert_awaited_once()
+    lexical.assert_called_once_with(document.id)
 
 
 @pytest.mark.parametrize(
@@ -377,6 +381,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
         patch(f"{MODULE}.document_processor.delete_media_assets") as delete_assets,
         patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}._dispatch_lexical_index") as lexical,
     ):
         result = rechunk_document_task.run(str(document.id))
 
@@ -398,6 +403,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
         for call in document.save.await_args_list
     )
     notify.assert_awaited_once()
+    lexical.assert_called_once_with(document.id)
 
 
 def test_rechunk_dimension_failure_cleans_task_metadata():
@@ -624,6 +630,7 @@ def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
         patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}._dispatch_lexical_index") as lexical,
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
     ):
         result = retry_failed_chunk_task.run(str(document.id), str(failed_chunk.id))
@@ -642,6 +649,7 @@ def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
         assert document.knowledge_base.total_chunks == 4
         assert document.knowledge_base.total_tokens == 40
         notify.assert_awaited_once()
+        lexical.assert_called_once_with(document.id)
 
 
 def test_retry_one_chunk_failure_restores_error_state():
@@ -669,3 +677,45 @@ def test_retry_one_chunk_failure_restores_error_state():
     assert failed_chunk.error_message == "provider down"
     assert document.status == DocumentStatus.ERROR.value
     notify.assert_awaited_once()
+
+
+def test_lexical_index_task_preserves_document_status_contract():
+    with patch(f"{MODULE}.index_document", new=AsyncMock(return_value=3)) as index:
+        result = index_document_lexically_task.run("doc-id")
+
+    assert result == {"status": "success", "document_id": "doc-id", "indexed": 3}
+    index.assert_awaited_once_with("doc-id")
+
+
+def test_lexical_backfill_resumes_and_reconciles():
+    checkpoint = uuid4()
+    item = SimpleNamespace(
+        id=uuid4(),
+        document=SimpleNamespace(),
+    )
+    query = Query(items=[item], count=4)
+    query.limit = MagicMock(return_value=query)
+    store = AsyncMock()
+    store.__aenter__.return_value = store
+    store.backfill_batch.return_value = SimpleNamespace(
+        indexed=1, checkpoint=str(item.id)
+    )
+    store.reconcile.return_value = SimpleNamespace(expected=4, actual=4, matches=True)
+
+    with (
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=query) as chunks,
+        patch(f"{MODULE}.chunk_document", return_value={"chunk_id": str(item.id)}),
+        patch(f"{MODULE}.LexicalStore", return_value=store),
+    ):
+        result = backfill_lexical_index_task.run(str(checkpoint), 2, True)
+
+    assert result == {
+        "status": "success",
+        "indexed": 1,
+        "checkpoint": str(item.id),
+        "complete": True,
+        "reconciliation": {"expected": 4, "actual": 4, "matches": True},
+    }
+    assert chunks.call_args_list[0].kwargs["id__gt"] == checkpoint
+    assert "id__gt" not in chunks.call_args_list[1].kwargs
+    store.reconcile.assert_awaited_once_with(4)

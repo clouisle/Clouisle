@@ -94,6 +94,17 @@ async def assert_error(awaitable, msg_key):
     assert exc_info.value.msg_key == msg_key
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in (
+        "delete_lexical_kb",
+        "delete_lexical_document",
+        "delete_lexical_chunk",
+        "index_lexical_chunk",
+    ):
+        monkeypatch.setattr(endpoint, name, AsyncMock())
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("current_user", "kwargs", "expected_filters"),
@@ -203,6 +214,7 @@ async def test_update_document_without_name_skips_save(monkeypatch):
 async def test_delete_document_without_task_or_file(monkeypatch, status):
     kb = SimpleNamespace(
         id=uuid4(),
+        team_id=uuid4(),
         name="Docs",
         document_count=1,
         total_chunks=2,
@@ -380,7 +392,9 @@ async def test_create_chunk_appends_when_after_index_omitted(monkeypatch):
         save=AsyncMock(),
     )
     doc = document(chunk_count=0, token_count=0)
-    chunk = SimpleNamespace(id=uuid4(), chunk_index=0)
+    chunk = SimpleNamespace(
+        id=uuid4(), chunk_index=0, status="pending", save=AsyncMock()
+    )
     vector_store = SimpleNamespace(add_chunk_vector=AsyncMock())
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(first=doc))

@@ -185,6 +185,17 @@ def allow_kb_access(monkeypatch, kb):
     monkeypatch.setattr(kb_api, "check_kb_access", fake_check_kb_access)
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in (
+        "delete_lexical_kb",
+        "delete_lexical_document",
+        "delete_lexical_chunk",
+        "index_lexical_chunk",
+    ):
+        monkeypatch.setattr(kb_api, name, AsyncMock())
+
+
 @pytest.mark.anyio
 async def test_admin_dependency_enforces_actions_only_on_admin_routes(user):
     request = SimpleNamespace(url=SimpleNamespace(path="/api/v1/admin/knowledge-bases"))

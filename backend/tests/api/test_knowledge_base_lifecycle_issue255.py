@@ -9,6 +9,18 @@ from app.models.knowledge_base import DocumentStatus
 from app.schemas.knowledge_base import DocumentUpdate, KnowledgeBaseUpdate
 
 
+@pytest.fixture(autouse=True)
+def lexical_store_calls(monkeypatch):
+    calls = SimpleNamespace(
+        chunk=AsyncMock(), document=AsyncMock(), kb=AsyncMock(), index=AsyncMock()
+    )
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_chunk", calls.chunk)
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_document", calls.document)
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_kb", calls.kb)
+    monkeypatch.setattr(knowledge_bases, "index_lexical_chunk", calls.index)
+    return calls
+
+
 class Query:
     def __init__(self, items=(), total=None, first=None):
         self.items = list(items)
@@ -109,7 +121,9 @@ async def test_list_knowledge_bases_filters_and_hydrates_models():
 
 
 @pytest.mark.anyio
-async def test_knowledge_base_detail_update_and_delete_lifecycle():
+async def test_knowledge_base_detail_update_and_delete_lifecycle(
+    lexical_store_calls,
+):
     kb_id = uuid4()
     team = SimpleNamespace(id=uuid4())
     kb = SimpleNamespace(
@@ -118,6 +132,7 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle():
         description="old description",
         icon="old",
         team=team,
+        team_id=team.id,
         embedding_model_id=uuid4(),
         rerank_model_id=None,
         settings={},
@@ -170,6 +185,7 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle():
     )
     authorize.assert_awaited_once()
     kb.save.assert_awaited_once()
+    lexical_store_calls.kb.assert_awaited_once_with(kb.id, kb.team_id)
     kb.delete.assert_awaited_once()
     assert updated["msg_key"] == "kb_updated"
     assert deleted["data"] == {"id": str(kb_id)}
@@ -233,10 +249,13 @@ async def test_document_list_detail_and_update_branches():
 
 
 @pytest.mark.anyio
-async def test_delete_document_cleans_task_vectors_media_file_and_stats():
+async def test_delete_document_cleans_task_vectors_media_file_and_stats(
+    lexical_store_calls,
+):
     kb_id, doc_id = uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
+        team_id=uuid4(),
         document_count=1,
         total_chunks=2,
         total_tokens=6,
@@ -272,6 +291,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats():
         )
 
     celery_app.control.revoke.assert_called_once_with("task-1", terminate=True)
+    lexical_store_calls.document.assert_awaited_once_with(doc_id, kb.team_id)
     vector_store.delete_document_vectors.assert_awaited_once_with(doc_id)
     media_delete.assert_awaited_once()
     file_delete.assert_awaited_once_with("uploads/report.pdf")

@@ -49,6 +49,12 @@ data:
   {{ end }}
   QDRANT_COLLECTION_PREFIX: {{ .Values.config.QDRANT_COLLECTION_PREFIX | quote }}
   QDRANT_DISTANCE: {{ .Values.config.QDRANT_DISTANCE | quote }}
+  {{ if .Values.opensearch.enabled }}
+  OPENSEARCH_URL: "https://opensearch:9200"
+  {{ else }}
+  OPENSEARCH_URL: {{ required "opensearch.external.url is required when opensearch.enabled=false" .Values.opensearch.external.url | quote }}
+  {{ end }}
+  OPENSEARCH_USERNAME: {{ .Values.config.OPENSEARCH_USERNAME | quote }}
   SANDBOX_RUNTIME_ENABLED: {{ .Values.config.SANDBOX_RUNTIME_ENABLED | quote }}
   SANDBOX_LEGACY_FALLBACK_ENABLED: {{ .Values.config.SANDBOX_LEGACY_FALLBACK_ENABLED | quote }}
   SANDBOX_WORKER_CONCURRENCY: {{ .Values.config.SANDBOX_WORKER_CONCURRENCY | quote }}

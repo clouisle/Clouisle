@@ -44,7 +44,7 @@ services:
       retries: 5
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     restart: unless-stopped
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
@@ -57,6 +57,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  opensearch:
+    image: opensearchproject/opensearch:3.7.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_PASSWORD:?OPENSEARCH_PASSWORD is required}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS -u admin:$${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health?wait_for_status=yellow >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   # ---------------------------------------------------------------------------
   # Application
@@ -75,6 +97,7 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
+      OPENSEARCH_URL: https://opensearch:9200
     ports:
       - "8000:8000"
     volumes:
@@ -85,6 +108,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      opensearch:
         condition: service_healthy
 
   worker:
@@ -101,6 +126,7 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
+      OPENSEARCH_URL: https://opensearch:9200
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -109,6 +135,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      opensearch:
         condition: service_healthy
       api:
         condition: service_started
@@ -127,6 +155,7 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
+      OPENSEARCH_URL: https://opensearch:9200
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -135,6 +164,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      opensearch:
         condition: service_healthy
       api:
         condition: service_started
@@ -153,6 +184,7 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
+      OPENSEARCH_URL: https://opensearch:9200
     depends_on:
       db:
         condition: service_healthy
@@ -183,4 +215,5 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  opensearch_data:
   uploads_data:

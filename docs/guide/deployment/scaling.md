@@ -737,7 +737,7 @@ client.create_collection(
 # docker-compose.yml
 services:
   qdrant-1:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335
@@ -746,7 +746,7 @@ services:
       - "6335:6335"
 
   qdrant-2:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335

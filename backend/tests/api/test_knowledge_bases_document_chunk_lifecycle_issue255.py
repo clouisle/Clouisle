@@ -11,6 +11,18 @@ from app.schemas.response import BusinessError
 from app.services.vector_store import DimensionMismatchError
 
 
+@pytest.fixture(autouse=True)
+def lexical_store_calls(monkeypatch):
+    calls = SimpleNamespace(
+        chunk=AsyncMock(), document=AsyncMock(), kb=AsyncMock(), index=AsyncMock()
+    )
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_chunk", calls.chunk)
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_document", calls.document)
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_kb", calls.kb)
+    monkeypatch.setattr(knowledge_bases, "index_lexical_chunk", calls.index)
+    return calls
+
+
 class Query:
     def __init__(self, value=None, items=None, count=0):
         self.value = value
@@ -47,12 +59,15 @@ class Query:
 
 
 @pytest.mark.asyncio
-async def test_delete_document_cleans_task_vectors_media_file_and_stats(monkeypatch):
+async def test_delete_document_cleans_task_vectors_media_file_and_stats(
+    monkeypatch, lexical_store_calls
+):
     from app.core.celery import celery_app
 
     kb_id, doc_id = uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
+        team_id=uuid4(),
         name="kb",
         document_count=1,
         total_chunks=2,
@@ -90,6 +105,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(monkeypa
     )
 
     celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
+    lexical_store_calls.document.assert_awaited_once_with(doc_id, kb.team_id)
     vectors.delete_document_vectors.assert_awaited_once_with(doc_id)
     knowledge_bases.document_processor.delete_media_assets.assert_called_once_with(
         kb_id, doc_id
@@ -205,7 +221,9 @@ async def test_batch_processing_validation_and_dispatch_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
+async def test_chunk_create_and_update_cover_vector_paths(
+    monkeypatch, lexical_store_calls
+):
     kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
@@ -215,7 +233,12 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
         total_tokens=4,
         save=AsyncMock(),
     )
-    doc = SimpleNamespace(chunk_count=1, token_count=4, save=AsyncMock())
+    doc = SimpleNamespace(
+        status=DocumentStatus.COMPLETED.value,
+        chunk_count=1,
+        token_count=4,
+        save=AsyncMock(),
+    )
     existing = SimpleNamespace(chunk_index=1, save=AsyncMock())
     created = SimpleNamespace(
         id=chunk_id,
@@ -225,7 +248,7 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
         save=AsyncMock(),
     )
     vectors = SimpleNamespace(
-        add_chunk_vector=AsyncMock(), update_chunk_vector=AsyncMock()
+        add_chunk_vector=AsyncMock(), update_chunk_vector=AsyncMock(return_value=True)
     )
 
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
@@ -256,6 +279,7 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
     )
     assert existing.chunk_index == 2
     vectors.add_chunk_vector.assert_awaited_once_with(kb_id, created)
+    lexical_store_calls.index.assert_awaited_once_with(chunk_id)
     assert result["data"] == {"id": chunk_id}
 
     vectors.update_chunk_vector.side_effect = DimensionMismatchError("changed")
@@ -273,10 +297,13 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
+async def test_reprocess_and_rechunk_lifecycle_dispatch(
+    monkeypatch, lexical_store_calls
+):
     from app.core.celery import celery_app
 
     kb_id, doc_id = uuid4(), uuid4()
+    kb = SimpleNamespace(team_id=uuid4())
     doc = SimpleNamespace(
         id=doc_id,
         name="doc",
@@ -285,7 +312,7 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
         error_message="old",
         save=AsyncMock(),
     )
-    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr(
         knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
     )
@@ -303,6 +330,7 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
     )
     celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
     assert doc.status == DocumentStatus.PENDING.value
+    lexical_store_calls.document.assert_awaited_once_with(doc.id, kb.team_id)
 
     await knowledge_bases.rechunk_document(
         kb_id=kb_id,

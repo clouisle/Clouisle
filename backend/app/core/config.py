@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     QDRANT_COLLECTION_PREFIX: str = "kb_dim"
     QDRANT_DISTANCE: str = "Cosine"
 
+    # Lexical search (OpenSearch)
+    OPENSEARCH_URL: str = "http://localhost:9200"
+    OPENSEARCH_USERNAME: str | None = None
+    OPENSEARCH_PASSWORD: str | None = None
+    OPENSEARCH_API_KEY: str | None = None
+    OPENSEARCH_INDEX_PREFIX: str = "clouisle_chunks"
+    OPENSEARCH_TIMEOUT_SECONDS: float = 10.0
+
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # Next.js dev server

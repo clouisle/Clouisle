@@ -148,6 +148,17 @@ def chunk(**overrides):
     return SimpleNamespace(**data)
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in (
+        "delete_lexical_kb",
+        "delete_lexical_document",
+        "delete_lexical_chunk",
+        "index_lexical_chunk",
+    ):
+        monkeypatch.setattr(kb_endpoint, name, AsyncMock())
+
+
 @pytest.mark.asyncio
 async def test_upload_document_rejects_missing_filename_before_storage(monkeypatch):
     save_file = AsyncMock()
@@ -321,7 +332,7 @@ async def test_update_delete_create_chunk_vector_error_branches(monkeypatch):
             raise RuntimeError
 
         async def add_chunk_vector(self, *_args, **_kwargs):
-            raise RuntimeError
+            return True
 
     monkeypatch.setattr(kb_endpoint, "VectorStore", lambda **_kwargs: Store())
 

@@ -524,7 +524,7 @@ slave = sentinel.slave_for('mymaster', socket_timeout=0.1, password='your-redis-
 # docker-compose.yml
 services:
   qdrant1:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335
@@ -536,7 +536,7 @@ services:
       - "6335:6335"
 
   qdrant2:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335
@@ -550,7 +550,7 @@ services:
       - qdrant1
 
   qdrant3:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335

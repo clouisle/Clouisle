@@ -10,7 +10,7 @@ Clouisle uses **3 Docker images** that run as **5 application services**:
 | `clouisle-sandbox-worker` | `sandbox-worker` | Sandbox task execution and artifact collection |
 | `clouisle-frontend` | `frontend` | Next.js standalone server running with `node server.js` |
 
-Infrastructure dependencies: **PostgreSQL 16**, **Redis 7**, **Qdrant**.
+Infrastructure dependencies: **PostgreSQL 16**, **Redis 7**, **Qdrant 1.18.3**, and **OpenSearch 3.7.0**.
 
 The API service is named `api` in deployment files. Older docs and scripts may refer to it as `backend`; update those commands to use `api`.
 
@@ -65,7 +65,8 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, and QDRANT_API_KEY.
+# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD,
+# QDRANT_API_KEY, and OPENSEARCH_PASSWORD.
 
 docker compose up -d --build
 ```
@@ -88,7 +89,8 @@ IMAGE_TAG=0.1.0
 | `beat` | — | Celery beat scheduler; keep exactly one replica |
 | `db` | 5432 | PostgreSQL 16 |
 | `redis` | 6379 | Redis 7 |
-| `qdrant` | 6333 | Qdrant vector database |
+| `qdrant` | 6333 | Qdrant 1.18.3 vector database |
+| `opensearch` | 9200 | OpenSearch 3.7.0 lexical index |
 
 ### Important Internal URLs
 
@@ -98,6 +100,8 @@ Containerized services should use internal service names:
 POSTGRES_SERVER=db
 REDIS_HOST=redis
 QDRANT_URL=http://qdrant:6333
+OPENSEARCH_URL=https://opensearch:9200
+OPENSEARCH_USERNAME=admin
 API_BASE_URL=http://api:8000
 SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 ```
@@ -111,6 +115,7 @@ SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 | `postgres_data` | PostgreSQL data |
 | `redis_data` | Redis persistence |
 | `qdrant_data` | Qdrant vector storage |
+| `opensearch_data` | OpenSearch lexical indexes |
 | `uploads_data` | User uploads and sandbox artifacts |
 
 ### Common Operations
@@ -167,7 +172,8 @@ kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
   --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
-  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
+  --from-literal=OPENSEARCH_PASSWORD='replace-with-a-strong-opensearch-password'
 
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
@@ -175,7 +181,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   -f deploy/helm/clouisle/values-production.yaml
 ```
 
-See `deploy/helm/clouisle/README.md` for external PostgreSQL/Redis/Qdrant examples.
+See `deploy/helm/clouisle/README.md` for external PostgreSQL, Redis, Qdrant, and OpenSearch examples.
 
 ### Option B: Single-file manifest
 
@@ -192,6 +198,7 @@ kubectl apply -f deploy/k8s/clouisle.yaml
 kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=opensearch --timeout=180s
 ```
 
 ### Manifest Sections
@@ -204,13 +211,14 @@ kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
 | 4 | PostgreSQL | StatefulSet + headless Service + PVC |
 | 5 | Redis | Deployment + Service |
 | 6 | Qdrant | StatefulSet + headless Service + PVC |
-| 7 | Uploads | Shared `uploads-data` PVC |
-| 8 | API | Deployment + Service :8000 |
-| 9 | Worker | Deployment, no Service |
-| 10 | Sandbox Worker | Deployment, no Service |
-| 11 | Beat | Deployment, 1 replica, Recreate |
-| 12 | Frontend | Deployment + Service :3000 |
-| 13 | Ingress | `/api` → `api`, `/` → `frontend` |
+| 7 | OpenSearch | Single-node StatefulSet + headless Service + PVC |
+| 8 | Uploads | Shared `uploads-data` PVC |
+| 9 | API | Deployment + Service :8000 |
+| 10 | Worker | Deployment, no Service |
+| 11 | Sandbox Worker | Deployment, no Service |
+| 12 | Beat | Deployment, 1 replica, Recreate |
+| 13 | Frontend | Deployment + Service :3000 |
+| 14 | Ingress | `/api` → `api`, `/` → `frontend` |
 
 ### Scaling
 
@@ -251,6 +259,10 @@ kubectl -n clouisle logs -f deployment/frontend
 | `REDIS_PASSWORD` | Recommended | empty | Redis password |
 | `QDRANT_URL` | Yes | `http://qdrant:6333` | Qdrant URL |
 | `QDRANT_API_KEY` | Recommended | empty | Qdrant API key |
+| `OPENSEARCH_URL` | Yes | `https://opensearch:9200` | OpenSearch endpoint |
+| `OPENSEARCH_USERNAME` | Yes | `admin` | OpenSearch user |
+| `OPENSEARCH_PASSWORD` | Yes | documented placeholder | OpenSearch password; replace before deployment |
+| `OPENSEARCH_JAVA_OPTS` | No | `-Xms512m -Xmx512m` | Built-in single-node heap settings |
 | `SANDBOX_WORKER_CONCURRENCY` | No | `1` | Sandbox worker concurrency |
 | `SANDBOX_WORKSPACE_ROOT` | No | `/tmp/clouisle-sandbox/jobs` | Sandbox workspace root |
 | `NEXT_PUBLIC_API_URL` | Yes for frontend build | `/api/v1` | Browser-visible API base path |

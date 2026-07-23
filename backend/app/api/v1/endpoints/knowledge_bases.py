@@ -63,6 +63,12 @@ from app.schemas.response import (
     success,
 )
 from app.services.document_processor import document_processor
+from app.services.lexical_store import (
+    delete_chunk as delete_lexical_chunk,
+    delete_document as delete_lexical_document,
+    delete_kb as delete_lexical_kb,
+    index_chunk as index_lexical_chunk,
+)
 from app.services.upload_storage import get_upload_storage_backend
 from app.services.error_messages import is_safe_user_visible_error
 from app.services.audit_log import AuditLogService
@@ -70,6 +76,17 @@ from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _retry_lexical_document(document_id: UUID) -> None:
+    try:
+        from app.tasks.knowledge_base import index_document_lexically_task
+
+        index_document_lexically_task.delay(str(document_id))
+    except Exception:
+        logger.exception(
+            "Failed to dispatch lexical repair for document %s", document_id
+        )
 
 
 async def _dispatch_document_task(doc: Document, task_func: Any, *args: str) -> str:
@@ -614,6 +631,9 @@ async def delete_knowledge_base(
     )
     kb_name = kb.name
 
+    # External indexes must be deleted before PostgreSQL removes their scope.
+    await delete_lexical_kb(kb.id, kb.team_id)
+
     # Delete all documents and chunks (cascades)
     await kb.delete()
 
@@ -972,6 +992,9 @@ async def delete_document(
             except Exception as e:
                 logger.warning(f"Failed to revoke Celery task {task_id}: {e}")
 
+    # External indexes must be deleted before PostgreSQL removes their scope.
+    await delete_lexical_document(doc_id, kb.team_id)
+
     # Delete vectors
     vector_store = VectorStore()
     await vector_store.delete_document_vectors(doc_id)
@@ -1203,7 +1226,7 @@ async def process_document_with_chunks(
     This bypasses the server-side chunking process, allowing users to have full
     control over how their documents are segmented.
     """
-    await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -1231,8 +1254,9 @@ async def process_document_with_chunks(
         except Exception:
             pass
 
-    # Delete existing vectors for reprocessing (if document was completed)
+    # Delete existing external index records before replacing authoritative chunks.
     if doc.status == DocumentStatus.COMPLETED.value:
+        await delete_lexical_document(doc.id, kb.team_id)
         try:
             from app.services.vector_store import vector_store
 
@@ -1442,7 +1466,7 @@ async def reprocess_document(
     """
     Reprocess a document (re-chunk and re-embed).
     """
-    await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -1464,6 +1488,9 @@ async def reprocess_document(
             celery_app.control.revoke(old_task_id, terminate=True)
         except Exception as e:
             logger.warning(f"Failed to revoke old task {old_task_id}: {e}")
+
+    # Remove old lexical data before asynchronous reprocessing replaces chunks.
+    await delete_lexical_document(doc.id, kb.team_id)
 
     # Reset status
     doc.status = DocumentStatus.PENDING.value
@@ -1756,7 +1783,8 @@ async def update_document_chunk(
             embedding_model_id=embedding_model_id,
             team_id=team_id,
         )
-        await vector_store.update_chunk_vector(chunk, kb_id=kb.id)
+        if not await vector_store.update_chunk_vector(chunk, kb_id=kb.id):
+            raise RuntimeError("Vector update failed")
     except DimensionMismatchError as e:
         logger.warning("Dimension mismatch for chunk %s: %s", chunk_id, e)
         raise BusinessError(
@@ -1772,6 +1800,12 @@ async def update_document_chunk(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_update_failed",
         )
+
+    try:
+        await index_lexical_chunk(chunk.id)
+    except Exception:
+        _retry_lexical_document(doc.id)
+        raise
 
     await AuditLogService.log(
         user=current_user,
@@ -1822,6 +1856,9 @@ async def delete_document_chunk(
 
     chunk_index = chunk.chunk_index
     chunk_token_count = chunk.token_count
+
+    # Delete lexical data before the vector helper deletes the PostgreSQL chunk.
+    await delete_lexical_chunk(chunk_id, kb.team_id)
 
     # Delete vector
     try:
@@ -1941,10 +1978,22 @@ async def create_document_chunk(
             team_id=team_id,
         )
         await vector_store.add_chunk_vector(kb_id, chunk)
+        chunk.status = "embedded"
+        chunk.error_message = None
+        await chunk.save(update_fields=["status", "error_message"])
     except Exception as e:
-        import logging
+        logger.exception("Failed to embed new chunk %s", chunk.id)
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="vector_update_failed",
+        ) from e
 
-        logging.warning(f"Failed to create vector embedding: {e}")
+    if doc.status == DocumentStatus.COMPLETED.value:
+        try:
+            await index_lexical_chunk(chunk.id)
+        except Exception:
+            _retry_lexical_document(doc.id)
+            raise
 
     await AuditLogService.log(
         user=current_user,
@@ -1977,7 +2026,7 @@ async def rechunk_document(
     Re-chunk a document with new chunking settings.
     This will delete all existing chunks and create new ones.
     """
-    await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -2002,6 +2051,9 @@ async def rechunk_document(
             celery_app.control.revoke(old_task_id, terminate=True)
         except Exception:
             pass
+
+    # Remove old lexical data before asynchronous rechunking replaces chunks.
+    await delete_lexical_document(doc.id, kb.team_id)
 
     # Store the rechunk settings in document metadata
     if not doc.metadata:

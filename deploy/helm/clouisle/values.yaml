@@ -36,6 +36,7 @@ config:
   VECTOR_BACKEND: qdrant
   QDRANT_COLLECTION_PREFIX: kb_dim
   QDRANT_DISTANCE: Cosine
+  OPENSEARCH_USERNAME: admin
   SANDBOX_RUNTIME_ENABLED: "true"
   SANDBOX_LEGACY_FALLBACK_ENABLED: "true"
   SANDBOX_WORKER_CONCURRENCY: "1"
@@ -57,6 +58,7 @@ secrets:
     POSTGRES_PASSWORD: changeme
     REDIS_PASSWORD: changeme
     QDRANT_API_KEY: changeme
+    OPENSEARCH_PASSWORD: replace-with-a-strong-opensearch-password
     TAVILY_API_KEY: ""
     SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""
 
@@ -243,7 +245,7 @@ qdrant:
     url: ""
   image:
     repository: qdrant/qdrant
-    tag: latest
+    tag: v1.18.3
     pullPolicy: IfNotPresent
   persistence:
     enabled: true
@@ -256,6 +258,30 @@ qdrant:
     requests:
       cpu: 250m
       memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+opensearch:
+  enabled: true
+  external:
+    url: ""
+  image:
+    repository: opensearchproject/opensearch
+    tag: 3.7.0
+    pullPolicy: IfNotPresent
+  javaOpts: -Xms512m -Xmx512m
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
     limits:
       cpu: "1"
       memory: 2Gi

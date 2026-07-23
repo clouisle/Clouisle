@@ -19,6 +19,7 @@ from app.models.knowledge_base import (
 from app.models.notification import AutoNotificationType
 from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
+from app.services.lexical_store import LexicalStore, chunk_document, index_document
 from app.services.vector_store import (
     VectorStore,
     DimensionMismatchError,
@@ -26,6 +27,75 @@ from app.services.vector_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _dispatch_lexical_index(document_id: UUID | str) -> None:
+    try:
+        index_document_lexically_task.delay(str(document_id))
+    except Exception:
+        logger.exception(
+            "Failed to dispatch lexical indexing for document %s", document_id
+        )
+
+
+@shared_task(
+    bind=True, autoretry_for=(Exception,), max_retries=3, default_retry_delay=60
+)
+def index_document_lexically_task(self, document_id: str) -> dict[str, Any]:
+    """Retry lexical indexing independently without changing PostgreSQL status."""
+    import asyncio
+
+    indexed = asyncio.run(index_document(document_id))
+    return {"status": "success", "document_id": document_id, "indexed": indexed}
+
+
+@shared_task(
+    bind=True, autoretry_for=(Exception,), max_retries=3, default_retry_delay=60
+)
+def backfill_lexical_index_task(
+    self,
+    checkpoint: str | None = None,
+    batch_size: int = 500,
+    reconcile: bool = False,
+) -> dict[str, Any]:
+    """Backfill one resumable authoritative chunk batch and optionally reconcile."""
+    import asyncio
+
+    async def _backfill() -> dict[str, Any]:
+        authoritative_filters: dict[str, Any] = {
+            "document__status": DocumentStatus.COMPLETED.value,
+            "document__knowledge_base__status": "active",
+        }
+        batch_filters = dict(authoritative_filters)
+        if checkpoint:
+            batch_filters["id__gt"] = UUID(checkpoint)
+        chunks = await (
+            DocumentChunk.filter(**batch_filters)
+            .prefetch_related("document__knowledge_base")
+            .order_by("id")
+            .limit(batch_size)
+        )
+        payloads = [chunk_document(chunk, chunk.document) for chunk in chunks]
+        async with LexicalStore() as store:
+            await store.ensure_index()
+            result = await store.backfill_batch(payloads)
+            response: dict[str, Any] = {
+                "status": "success",
+                "indexed": result.indexed,
+                "checkpoint": result.checkpoint,
+                "complete": len(chunks) < batch_size,
+            }
+            if reconcile:
+                expected = await DocumentChunk.filter(**authoritative_filters).count()
+                counts = await store.reconcile(expected)
+                response["reconciliation"] = {
+                    "expected": counts.expected,
+                    "actual": counts.actual,
+                    "matches": counts.matches,
+                }
+            return response
+
+    return asyncio.run(_backfill())
 
 
 def _get_document_error_lang(document: Document, user_locale: str = "en") -> str:
@@ -412,6 +482,8 @@ def process_document_task(self, document_id: str) -> dict:
             document.token_count = total_tokens
             document.processed_at = datetime.now(timezone.utc)
             await document.save()
+            if document.status == DocumentStatus.COMPLETED.value:
+                _dispatch_lexical_index(document.id)
             logger.info(
                 f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
             )
@@ -764,6 +836,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
             document.token_count = total_tokens
             document.processed_at = datetime.now(timezone.utc)
             await document.save()
+            if document.status == DocumentStatus.COMPLETED.value:
+                _dispatch_lexical_index(document.id)
 
             # Update KB statistics
             kb.total_chunks += len(created_chunks)
@@ -1040,6 +1114,7 @@ async def _embed_existing_document_chunks(
         document.processed_at = datetime.now(timezone.utc)
         document.error_message = None
         await document.save()
+        _dispatch_lexical_index(document.id)
         logger.info(
             f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
         )
@@ -1178,6 +1253,7 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                 document.status = DocumentStatus.COMPLETED.value
                 document.error_message = None
                 await document.save()
+                _dispatch_lexical_index(document.id)
                 return {
                     "status": "success",
                     "document_id": document_id,
@@ -1268,6 +1344,8 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             _clear_task_metadata(document)
             await document.save()
+            if document.status == DocumentStatus.COMPLETED.value:
+                _dispatch_lexical_index(document.id)
 
             # Refresh KB stats
             docs = await Document.filter(
@@ -1443,6 +1521,7 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             _clear_task_metadata(document)
             await document.save()
+            _dispatch_lexical_index(document.id)
 
             stats = (
                 await Document.filter(

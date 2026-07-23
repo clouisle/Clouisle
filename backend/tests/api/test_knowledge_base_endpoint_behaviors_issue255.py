@@ -105,6 +105,17 @@ def _kb(*, user=None, team=None):
     )
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in (
+        "delete_lexical_kb",
+        "delete_lexical_document",
+        "delete_lexical_chunk",
+        "index_lexical_chunk",
+    ):
+        monkeypatch.setattr(knowledge_bases, name, AsyncMock())
+
+
 @pytest.mark.parametrize(
     ("user", "permission", "expected"),
     [
