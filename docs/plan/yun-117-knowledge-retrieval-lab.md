@@ -168,8 +168,9 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Expansion does not cross unauthorized documents and does not exceed token budget.
   - Citations map to the content actually supplied to the answer model.
 
-### Stage 6: Instant Retrieval Playground and A/B Comparison
+### Stage 6: Instant Retrieval Playground and A/B Comparison ✅
 
+- **Completed validation**: shared production-faithful Retrieval Lab, route-specific `kb:test` permissions, raw stage scores/ranks, backend timings and diagnostics, independently attributable A/B calls, local relevance grades and named presets, and confirmed authorized production apply completed. Backend gates passed with 6,311 tests, 97.72% line coverage, and 95.02% branch coverage. Frontend gates passed with 2,001 tests, 97.80% line coverage, 95.14% function coverage, 470/470 source census, lint, translation and license checks, and production build.
 - **Files modified**: existing platform/dashboard search-test clients, shared frontend API types, backend diagnostic response, English/Chinese translations and generated i18n types, and tests.
 - **Specific logic**:
   - Rename/reframe the existing search test as Retrieval Lab without creating a separate search implementation.

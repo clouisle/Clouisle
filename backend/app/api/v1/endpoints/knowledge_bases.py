@@ -200,6 +200,15 @@ async def require_kb_read(
     return user
 
 
+async def require_kb_test(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> User:
+    user = await require_kb_permission(request, current_user)
+    _require_kb_action(user, "test")
+    return user
+
+
 async def require_kb_create(
     request: Request,
     current_user: User = Depends(deps.get_current_active_user),
@@ -2106,7 +2115,7 @@ async def rechunk_document(
 async def search_knowledge_base(
     kb_id: UUID,
     search_in: SearchRequest,
-    current_user: User = Depends(require_kb_read),
+    current_user: User = Depends(require_kb_test),
 ) -> Any:
     """
     Search the knowledge base.
@@ -2163,10 +2172,15 @@ async def search_knowledge_base(
                 search_mode=search_in.search_mode,
                 top_k=search_in.top_k,
                 score_threshold=search_in.score_threshold,
+                dense_weight=getattr(search_in, "dense_weight", 1.0),
+                lexical_weight=getattr(search_in, "lexical_weight", 1.0),
+                rrf_k=getattr(search_in, "rrf_k", 60),
                 rerank_overrides=rerank_overrides or None,
             )
         )
         results = response.results
+        diagnostics = getattr(response, "diagnostics", ())
+        timings = getattr(response, "timings", ())
     except (DimensionMismatchError, RetrievalError) as e:
         dimension_mismatch = isinstance(e, DimensionMismatchError) or any(
             diagnostic.detail == DimensionMismatchError.__name__
@@ -2195,6 +2209,8 @@ async def search_knowledge_base(
             "query": search_in.query,
             "results": results,
             "total": len(results),
+            "diagnostics": diagnostics,
+            "timings": timings,
         },
         msg_key="search_completed",
     )

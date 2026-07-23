@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.034Z
+// GENERATED — 2026-07-23T20:55:54.446Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -202,6 +202,32 @@ export type KnowledgeBasesMessages = {
     cancel: string
     save: string
     searchTest: string
+    retrievalLab: string
+    retrievalLabHint: string
+    compareAB: string
+    overlap: string
+    diagnostics: string
+    stageTimings: string
+    fallbackReasons: string
+    unknownChannel: string
+    denseStage: string
+    lexicalStage: string
+    fusionStage: string
+    rerankStage: string
+    finalStage: string
+    relevance: string
+    relevant: string
+    partial: string
+    irrelevant: string
+    presetName: string
+    presets: string
+    savePreset: string
+    applyToProduction: string
+    applyPresetConfirm: string
+    searchError: string
+    searchPartialError: string
+    searchSideError: string
+    presetUpdateError: string
     searchTestHint: string
     searchTestDescription: string
     searching: string
@@ -222,6 +248,9 @@ export type KnowledgeBasesMessages = {
     topKHint: string
     threshold: string
     thresholdHint: string
+    denseWeight: string
+    lexicalWeight: string
+    rrfK: string
     search: string
     embeddingProgress: string
     embeddedCount: string

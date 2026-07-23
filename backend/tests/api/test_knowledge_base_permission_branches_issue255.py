@@ -32,3 +32,18 @@ async def test_kb_dependencies_only_enforce_actions_on_admin_routes(
         require_action.assert_called_once_with(user, action)
     else:
         require_action.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("admin", [False, True])
+async def test_kb_test_dependency_enforces_route_specific_permission(
+    monkeypatch, admin
+):
+    require_action = Mock()
+    monkeypatch.setattr(knowledge_bases, "_require_kb_action", require_action)
+    prefix = "/api/v1/admin" if admin else "/api/v1"
+    request = SimpleNamespace(url=SimpleNamespace(path=f"{prefix}/knowledge-bases"))
+    user = SimpleNamespace()
+
+    assert await knowledge_bases.require_kb_test(request, user) is user
+    require_action.assert_called_once_with(user, "test")

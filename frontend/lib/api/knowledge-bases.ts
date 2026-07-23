@@ -162,6 +162,19 @@ export interface DocumentQueryParams {
   search?: string
 }
 
+export interface RetrievalReason {
+  channel: string
+  error: string
+}
+
+export interface RetrievalDiagnostic {
+  kb_id: string
+  code: 'inactive' | 'missing_embedding_model' | 'timeout' | 'failed'
+  detail?: string
+  stage?: string
+  latency_ms?: number
+}
+
 export interface SearchResult {
   chunk_id: string
   document_id: string
@@ -170,9 +183,18 @@ export interface SearchResult {
   score: number
   metadata: Record<string, unknown> | null
   search_type?: string
+  dense_score?: number
+  dense_rank?: number
+  lexical_score?: number
+  lexical_rank?: number
+  fusion_score?: number
+  fusion_rank?: number
   original_score?: number
   rerank_score?: number
+  rerank_rank?: number
   rerank_reason?: string
+  final_score_stage?: string
+  degradation_reasons?: RetrievalReason[]
 }
 
 export type SearchMode = 'vector' | 'fulltext' | 'hybrid'
@@ -182,16 +204,26 @@ export interface SearchParams {
   search_mode?: SearchMode
   top_k?: number
   threshold?: number
+  dense_weight?: number
+  lexical_weight?: number
+  rrf_k?: number
   rerank_enabled?: boolean
   rerank_candidate_k?: number
   rerank_fail_open?: boolean
   rerank_score_threshold?: number | null
 }
 
+export interface RetrievalTiming {
+  stage: 'recall' | 'rerank' | 'context' | 'total'
+  latency_ms: number
+}
+
 export interface SearchResponse {
   query: string
   results: SearchResult[]
   total: number
+  diagnostics: RetrievalDiagnostic[]
+  timings: RetrievalTiming[]
 }
 
 // ============ Chunk Preview Types ============
@@ -282,6 +314,9 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
       search_mode: params.search_mode || 'hybrid',
       top_k: params.top_k || 5,
       score_threshold: params.threshold || 0,
+      dense_weight: params.dense_weight,
+      lexical_weight: params.lexical_weight,
+      rrf_k: params.rrf_k,
       rerank_enabled: params.rerank_enabled,
       rerank_candidate_k: params.rerank_candidate_k,
       rerank_fail_open: params.rerank_fail_open,

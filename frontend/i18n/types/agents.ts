@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.029Z
+// GENERATED — 2026-07-23T20:55:54.443Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {

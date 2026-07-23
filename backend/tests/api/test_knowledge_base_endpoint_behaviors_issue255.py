@@ -474,8 +474,14 @@ async def test_search_forwards_kb_models_filters_and_rerank_overrides(monkeypatc
     record.embedding_model_id = uuid4()
     record.rerank_model_id = uuid4()
     record.team_id = uuid4()
+    diagnostic = SimpleNamespace(kb_id=kb_id, code="timeout", detail=None)
+    timing = SimpleNamespace(stage="recall", latency_ms=12.5)
     retrieve = AsyncMock(
-        return_value=SimpleNamespace(results=({"content": "answer", "score": 0.9},))
+        return_value=SimpleNamespace(
+            results=({"content": "answer", "score": 0.9},),
+            diagnostics=(diagnostic,),
+            timings=(timing,),
+        )
     )
     monkeypatch.setattr(
         knowledge_bases, "check_kb_access", AsyncMock(return_value=record)
@@ -489,6 +495,9 @@ async def test_search_forwards_kb_models_filters_and_rerank_overrides(monkeypatc
             search_mode="vector",
             top_k=3,
             score_threshold=0.4,
+            dense_weight=1.5,
+            lexical_weight=0.5,
+            rrf_k=80,
             filter_doc_ids=[doc_id],
             rerank_enabled=False,
         ),
@@ -500,11 +509,16 @@ async def test_search_forwards_kb_models_filters_and_rerank_overrides(monkeypatc
     assert request.search_mode == "vector"
     assert request.top_k == 3
     assert request.score_threshold == 0.4
+    assert request.dense_weight == 1.5
+    assert request.lexical_weight == 0.5
+    assert request.rrf_k == 80
     assert request.rerank_overrides == {"rerank_enabled": False}
     assert request.targets[0].kb_id == record.id
     assert request.targets[0].document_ids == frozenset({doc_id})
     assert request.targets[0].embedding_model_id == record.embedding_model_id
     assert result["data"]["total"] == 1
+    assert result["data"]["diagnostics"] == (diagnostic,)
+    assert result["data"]["timings"] == (timing,)
 
 
 @pytest.mark.asyncio

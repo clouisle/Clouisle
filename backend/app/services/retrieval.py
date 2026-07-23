@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Literal
 from uuid import UUID
 
@@ -117,9 +118,16 @@ class RetrievalDiagnostic:
 
 
 @dataclass(frozen=True)
+class RetrievalTiming:
+    stage: Literal["recall", "rerank", "context", "total"]
+    latency_ms: float
+
+
+@dataclass(frozen=True)
 class RetrievalResponse:
     results: tuple[dict[str, Any], ...]
     diagnostics: tuple[RetrievalDiagnostic, ...]
+    timings: tuple[RetrievalTiming, ...] = ()
 
 
 def _result_order(result: dict[str, Any], score_field: str) -> tuple[Any, ...]:
@@ -362,6 +370,7 @@ async def _assemble_context(
 
 async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
     """Search targets concurrently, then rank and truncate results globally."""
+    started_at = perf_counter()
     rerank_store, rerank_config = await _resolve_global_rerank(request)
     candidate_k = max(
         request.top_k,
@@ -485,9 +494,11 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
             for result in results
         ], None
 
+    recall_started_at = perf_counter()
     batches = await asyncio.gather(
         *(search_target(target) for target in request.targets)
     )
+    recall_ms = (perf_counter() - recall_started_at) * 1000
     results = [result for batch, _ in batches for result in batch]
     diagnostics = tuple(diagnostic for _, diagnostic in batches if diagnostic)
     if request.targets and len(diagnostics) == len(request.targets):
@@ -502,7 +513,9 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
         )
     )
     results = results[:candidate_k]
+    rerank_ms = 0.0
     if rerank_store is not None and rerank_config is not None and results:
+        rerank_started_at = perf_counter()
         results = await rerank_store._rerank_results(  # noqa: SLF001
             query=request.query,
             results=results,
@@ -510,5 +523,14 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
             fail_open=bool(rerank_config["fail_open"]),
             rerank_score_threshold=rerank_config["score_threshold"],
         )
+        rerank_ms = (perf_counter() - rerank_started_at) * 1000
+    context_started_at = perf_counter()
     results = await _assemble_context(results, request)
-    return RetrievalResponse(tuple(results), diagnostics)
+    context_ms = (perf_counter() - context_started_at) * 1000
+    timings = (
+        RetrievalTiming("recall", recall_ms),
+        RetrievalTiming("rerank", rerank_ms),
+        RetrievalTiming("context", context_ms),
+        RetrievalTiming("total", (perf_counter() - started_at) * 1000),
+    )
+    return RetrievalResponse(tuple(results), diagnostics, timings)

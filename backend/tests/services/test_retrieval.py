@@ -112,6 +112,13 @@ async def test_success_preserves_raw_fields_and_forwards_target_configuration(
         "kb_name": selected.kb_name,
     }
     assert response.diagnostics == ()
+    assert [timing.stage for timing in response.timings] == [
+        "recall",
+        "rerank",
+        "context",
+        "total",
+    ]
+    assert all(timing.latency_ms >= 0 for timing in response.timings)
     dense_store = next(
         store for store in stores if store.kwargs.get("embedding_model_id")
     )

@@ -4,10 +4,10 @@ Knowledge Base schemas for API request/response.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List
+from typing import List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============ Enums (mirroring model enums for API) ============
@@ -396,8 +396,11 @@ class SearchRequest(BaseModel):
     )
     top_k: int = Field(default=5, ge=1, le=20, description="Number of results")
     score_threshold: float = Field(
-        default=0.0, ge=0, le=1, description="Minimum similarity score"
+        default=0.0, ge=0, le=1, description="Minimum dense similarity score"
     )
+    dense_weight: float = Field(default=1.0, ge=0, description="Dense RRF weight")
+    lexical_weight: float = Field(default=1.0, ge=0, description="Lexical RRF weight")
+    rrf_k: int = Field(default=60, ge=1, le=1000, description="RRF rank constant")
     filter_doc_ids: Optional[List[UUID]] = Field(
         None, description="Filter by document IDs"
     )
@@ -416,6 +419,16 @@ class SearchRequest(BaseModel):
         le=1,
         description="Override rerank score threshold, null disables threshold",
     )
+
+    @model_validator(mode="after")
+    def validate_hybrid_weights(self):
+        if (
+            self.search_mode == SearchMode.HYBRID
+            and self.dense_weight == 0
+            and self.lexical_weight == 0
+        ):
+            raise ValueError("at least one retrieval weight must be positive")
+        return self
 
 
 class SearchResult(BaseModel):
@@ -439,7 +452,22 @@ class SearchResult(BaseModel):
     rerank_rank: Optional[int] = None
     rerank_reason: Optional[str] = None
     final_score_stage: Optional[str] = None
-    degradation_reasons: Optional[List[str]] = None
+    degradation_reasons: Optional[List[dict[str, str]]] = None
+
+
+class RetrievalDiagnostic(BaseModel):
+    """Retrieval target diagnostic."""
+
+    kb_id: UUID
+    code: Literal["inactive", "missing_embedding_model", "timeout", "failed"]
+    detail: Optional[str] = None
+
+
+class RetrievalTiming(BaseModel):
+    """Observed retrieval stage latency."""
+
+    stage: Literal["recall", "rerank", "context", "total"]
+    latency_ms: float
 
 
 class SearchResponse(BaseModel):
@@ -448,6 +476,8 @@ class SearchResponse(BaseModel):
     query: str
     results: List[SearchResult]
     total: int
+    diagnostics: List[RetrievalDiagnostic] = Field(default_factory=list)
+    timings: List[RetrievalTiming] = Field(default_factory=list)
 
 
 # ============ Statistics Schemas ============
