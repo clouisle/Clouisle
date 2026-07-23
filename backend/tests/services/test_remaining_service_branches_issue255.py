@@ -72,7 +72,7 @@ def qmodels(monkeypatch):
 
 
 def team_model(**overrides):
-    current = datetime(2026, 7, 22, 12, tzinfo=timezone.utc)
+    current = datetime.now(timezone.utc)
     values = {
         "team_id": "team",
         "is_enabled": True,

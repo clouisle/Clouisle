@@ -10,7 +10,7 @@ from app.services.usage_tracker import QuotaExceededError, UsageTracker
 
 
 usage_module = import_module("app.services.usage_tracker")
-NOW = datetime(2026, 7, 22, 12, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def team_model(**overrides):
