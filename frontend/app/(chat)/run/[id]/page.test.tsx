@@ -94,7 +94,7 @@ test('shows a loading indicator until run metadata and route parameters resolve'
   }
 
   expect(tree.props.className).toContain('h-screen')
-  expect((tree.props.children as { type: Function }).type.name).toBe('Loader2')
+  expect((tree.props.children as { type: { name?: string } }).type.name).toBe('Loader2')
 })
 
 test('shows a failure state and returns to the home page', () => {
@@ -106,7 +106,7 @@ test('shows a failure state and returns to the home page', () => {
 
   backButton.props.onClick()
 
-  expect((alert.type as Function).name).toBe('Alert')
+  expect((alert.type as { name?: string }).name).toBe('Alert')
   expect(JSON.stringify(alert.props.children)).toContain('loadError')
   expect(push).toHaveBeenCalledWith('/')
 })

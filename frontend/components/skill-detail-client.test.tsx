@@ -64,7 +64,7 @@ test('shows a loading indicator while the skill is unavailable', () => {
   }
 
   expect(tree.props.className).toContain('h-64')
-  expect((tree.props.children as { type: Function }).type.name).toBe('Loader2')
+  expect((tree.props.children as { type: { name?: string } }).type.name).toBe('Loader2')
 })
 
 test('renders detailed skill metadata, parameter names, and navigation', () => {
@@ -101,7 +101,7 @@ test('renders detailed skill metadata, parameter names, and navigation', () => {
   expect(content).toContain('system')
   expect(content).toContain('city, unit')
   expect(content).toContain('Use forecast data.')
-  expect((backButton.props.children as { type: Function }).type.name).toBe('ArrowLeft')
+  expect((backButton.props.children as { type: { name?: string } }).type.name).toBe('ArrowLeft')
   expect(adminGet).toHaveBeenCalledWith('skill-1')
   expect(push).toHaveBeenCalledWith('/skills')
 })

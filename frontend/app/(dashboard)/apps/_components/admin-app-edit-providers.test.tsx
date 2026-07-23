@@ -16,6 +16,6 @@ const { AdminAppEditProviders } = await import('./admin-app-edit-providers')
 test('provides team state to the admin app editor children', () => {
   const tree = AdminAppEditProviders({ children: 'editor' }) as { props: Record<string, unknown> }
 
-  expect((tree.type as Function).name).toBe('TeamProvider')
+  expect((tree.type as { name?: string }).name).toBe('TeamProvider')
   expect(tree.props.children).toBe('editor')
 })

@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { ReactNode } from "react";
 
 const jsx = (type: unknown, props: Record<string, unknown>) => ({
   type,

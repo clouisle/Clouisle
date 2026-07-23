@@ -137,7 +137,7 @@ test('composes inputs, popups, and chips with optional controls', () => {
 
   expect(input.props.className).toContain('w-auto')
   expect((baseInput.props.render as { props: Record<string, unknown> }).props.disabled).toBe(false)
-  expect((trigger.type as Function).name).toBe('InputGroupButton')
+  expect((trigger.type as { name?: string }).name).toBe('InputGroupButton')
   expect((configuredAddon.props.children as unknown[])[0]).toBe(false)
   expect(JSON.stringify(configuredAddon.props.children)).toContain('combobox-clear')
   expect(JSON.stringify(configuredAddon.props.children)).toContain('icon-xs')

@@ -48,11 +48,11 @@ test('defaults to agents and renders both guarded app panels', () => {
     props: Record<string, unknown>
   }>
 
-  expect((tree.type as Function).name).toBe('RoutePermissionGuard')
-  expect((header.type as Function).name).toBe('Header')
+  expect((tree.type as { name?: string }).name).toBe('RoutePermissionGuard')
+  expect((header.type as { name?: string }).name).toBe('Header')
   expect(tabs.props.value).toBe('agents')
-  expect((agentsPanel.props.children as { type: Function }).type.name).toBe('AdminAgentsPanel')
-  expect((workflowsPanel.props.children as { type: Function }).type.name).toBe(
+  expect((agentsPanel.props.children as { type: { name?: string } }).type.name).toBe('AdminAgentsPanel')
+  expect((workflowsPanel.props.children as { type: { name?: string } }).type.name).toBe(
     'AdminWorkflowsPanel',
   )
 })

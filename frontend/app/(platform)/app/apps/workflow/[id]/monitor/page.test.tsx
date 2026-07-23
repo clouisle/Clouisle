@@ -28,7 +28,7 @@ mock.module("next-intl", () => ({
   useTranslations: (namespace: string) => (key: string) => `${namespace}:${key}`,
 }));
 mock.module("next/image", () => ({
-  default: (props: React.ComponentProps<"img">) => <img {...props} />,
+  default: (props: React.ComponentProps<"img">) => <img {...props} alt={props.alt ?? ""} />,
 }));
 mock.module("@/lib/api/workflows", () => ({
   workflowsApi: { getWorkflow, getWorkflowStats, getWorkflowTrends, getWorkflowRuns },

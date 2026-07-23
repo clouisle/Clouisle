@@ -20,10 +20,10 @@ test('renders the selected admin skill with a return route to the skills tab', a
     props: Record<string, unknown>
   }
   const [header, content] = tree.props.children as Array<{ props: Record<string, unknown> }>
-  const detail = content.props.children as { type: Function; props: Record<string, unknown> }
+  const detail = content.props.children as { type: { name?: string }; props: Record<string, unknown> }
 
   expect(tree.props.className).toBe('flex h-full flex-col')
-  expect((header.type as Function).name).toBe('Header')
+  expect((header.type as { name?: string }).name).toBe('Header')
   expect(content.props.className).toBe('flex-1 overflow-auto p-4')
   expect(detail.type.name).toBe('SkillDetailClient')
   expect(detail.props).toMatchObject({

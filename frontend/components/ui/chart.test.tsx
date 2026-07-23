@@ -58,7 +58,7 @@ test('creates themed chart styles and a named container', () => {
   expect(emptyStyle).toBeNull()
   expect(style.props.dangerouslySetInnerHTML.__html).toContain('--color-sales: #123456;')
   expect(style.props.dangerouslySetInnerHTML.__html).toContain('.dark [data-chart=chart-sales]')
-  expect((container.type as Function).name).toBe('Provider')
+  expect((container.type as { name?: string }).name).toBe('Provider')
   expect(content.props['data-chart']).toBe('chart-sales')
   expect(content.props.className).toContain('report')
   expect(content.props.children).toHaveLength(2)

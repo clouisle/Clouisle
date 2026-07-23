@@ -66,7 +66,7 @@ test('configures a carousel and maps keyboard navigation to its API', () => {
   carousel.props.onKeyDownCapture({ key: 'ArrowRight', preventDefault: mock(() => {}) })
   carousel.props.onKeyDownCapture(ignored)
 
-  expect((tree.type as Function).name).toBe('Provider')
+  expect((tree.type as { name?: string }).name).toBe('Provider')
   expect(tree.props.value.orientation).toBe('vertical')
   expect(tree.props.value.opts).toEqual({ loop: true })
   expect(carousel.props.className).toBe('relative gallery')

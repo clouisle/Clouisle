@@ -35,9 +35,9 @@ test('nests application providers and renders the dynamic favicon', () => {
   const site = settings.props.children as Tree
   const [favicon, content] = site.props.children as [Tree, string]
 
-  expect((tree.type as Function).name).toBe('ThemeProvider')
-  expect((settings.type as Function).name).toBe('SettingsProvider')
-  expect((site.type as Function).name).toBe('SiteSettingsProvider')
-  expect((favicon.type as Function).name).toBe('DynamicFavicon')
+  expect((tree.type as { name?: string }).name).toBe('ThemeProvider')
+  expect((settings.type as { name?: string }).name).toBe('SettingsProvider')
+  expect((site.type as { name?: string }).name).toBe('SiteSettingsProvider')
+  expect((favicon.type as { name?: string }).name).toBe('DynamicFavicon')
   expect(content).toBe('content')
 })

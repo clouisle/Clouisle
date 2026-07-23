@@ -2,9 +2,13 @@ import { afterEach, expect, mock, test } from "bun:test";
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-const chart = (name: string) => (props: Record<string, unknown>) => (
-  <div data-chart={name} data-props={JSON.stringify(props)} />
-);
+const chart = (name: string) => {
+  const Component = (props: Record<string, unknown>) => (
+    <div data-chart={name} data-props={JSON.stringify(props)} />
+  );
+  Component.displayName = name;
+  return Component;
+};
 
 Object.assign(globalThis, {
   window: { matchMedia: () => ({ matches: true }) },

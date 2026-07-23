@@ -36,7 +36,7 @@ mock.module("next/navigation", () => ({
 const translate = (key: string) => key;
 mock.module("next-intl", () => ({ useTranslations: () => translate }));
 mock.module("next/image", () => ({
-  default: (props: React.ComponentProps<"img">) => <img {...props} />,
+  default: (props: React.ComponentProps<"img">) => <img {...props} alt={props.alt ?? ""} />,
 }));
 mock.module("@/lib/api/embed", () => ({
   embedApi: { getWorkflowInfo, runWorkflow, streamWorkflowRun },

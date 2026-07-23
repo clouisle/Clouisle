@@ -14,10 +14,8 @@ mock.module("@/lib/api/admin/notifications", () => ({
 }));
 mock.module("sonner", () => ({ toast: { success } }));
 mock.module("@/lib/validation", () => ({
-  clearValidationError: (errors: Record<string, string>, field: string) => {
-    const { [field]: _, ...remaining } = errors;
-    return remaining;
-  },
+  clearValidationError: (errors: Record<string, string>, field: string) =>
+    Object.fromEntries(Object.entries(errors).filter(([key]) => key !== field)),
   formatValidationSummaryMessage: (field: string, message: string) =>
     `${field}: ${message}`,
   getValidationSummaryEntries: (errors: Record<string, string>) =>

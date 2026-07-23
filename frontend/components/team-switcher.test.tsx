@@ -44,7 +44,7 @@ test('renders loading and no-current-team states', () => {
   teamState = { isLoading: true }
   const loading = TeamSwitcher() as { props: Record<string, unknown> }
 
-  expect((loading.type as Function).name).toBe('Button')
+  expect((loading.type as { name?: string }).name).toBe('Button')
   expect(loading.props.disabled).toBe(true)
   expect(JSON.stringify(loading.props.children)).toContain('animate-pulse')
 
@@ -72,19 +72,19 @@ test('renders teams, initials, selection, and team-switch behavior', () => {
   const [, items, separator, manage] = content.props.children as Array<unknown>
   const [alphaItem, betaItem] = items as Array<{ props: Record<string, unknown> }>
 
-  expect((tree.type as Function).name).toBe('DropdownMenu')
+  expect((tree.type as { name?: string }).name).toBe('DropdownMenu')
   expect(triggerButton.props.className).toContain('cursor-pointer')
   expect(JSON.stringify(triggerButton.props.children)).toContain('Alpha Team')
   expect(JSON.stringify(triggerButton.props.children)).toContain('AT')
   expect(content.props.align).toBe('start')
-  expect(((alphaItem.props.children as unknown[])[2] as { type: Function }).type.name).toBe('Check')
+  expect(((alphaItem.props.children as unknown[])[2] as { type: { name?: string } }).type.name).toBe('Check')
   expect((betaItem.props.children as unknown[])[2]).toBe(false)
   expect(JSON.stringify(betaItem.props.children)).toContain('/beta.png')
   alphaItem.props.onClick()
   betaItem.props.onClick()
   expect(setCurrentTeam).toHaveBeenNthCalledWith(1, alpha)
   expect(setCurrentTeam).toHaveBeenNthCalledWith(2, beta)
-  expect((separator as { type: Function }).type.name).toBe('DropdownMenuSeparator')
+  expect((separator as { type: { name?: string } }).type.name).toBe('DropdownMenuSeparator')
   expect((manage as { type: string }).type).toBe('a')
   expect((manage as { props: Record<string, unknown> }).props.href).toBe('/teams')
 })

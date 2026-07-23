@@ -41,8 +41,8 @@ test('renders a scroll area with viewport, scrollbar, and corner', () => {
 
   expect(content).toContain('scroll-area-viewport')
   expect(content).toContain('content')
-  expect((scrollbar.type as Function).name).toBe('ScrollBar')
-  expect((corner.type as Function).name).toBe('Corner')
+  expect((scrollbar.type as { name?: string }).name).toBe('ScrollBar')
+  expect((corner.type as { name?: string }).name).toBe('Corner')
 })
 
 test('uses horizontal scrollbar orientation and forwards props', () => {

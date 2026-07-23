@@ -86,8 +86,8 @@ test('composes sized content and action controls with defaults', () => {
     props: Record<string, unknown>
   }
 
-  expect((content.type as Function).name).toBe('AlertDialogPortal')
-  expect((overlay.type as Function).name).toBe('AlertDialogOverlay')
+  expect((content.type as { name?: string }).name).toBe('AlertDialogPortal')
+  expect((overlay.type as { name?: string }).name).toBe('AlertDialogOverlay')
   expect(overlay.props.className).toBe('soft')
   expect(popup.props['data-size']).toBe('sm')
   expect(popup.props.className).toContain('warning')

@@ -48,11 +48,11 @@ test('defaults to tools and renders both guarded capability panels', () => {
     props: Record<string, unknown>
   }>
 
-  expect((tree.type as Function).name).toBe('RoutePermissionGuard')
-  expect((header.type as Function).name).toBe('Header')
+  expect((tree.type as { name?: string }).name).toBe('RoutePermissionGuard')
+  expect((header.type as { name?: string }).name).toBe('Header')
   expect(tabs.props.value).toBe('tools')
-  expect((toolsPanel.props.children as { type: Function }).type.name).toBe('ToolsClient')
-  expect((skillsPanel.props.children as { type: Function }).type.name).toBe('AdminSkillsPanel')
+  expect((toolsPanel.props.children as { type: { name?: string } }).type.name).toBe('ToolsClient')
+  expect((skillsPanel.props.children as { type: { name?: string } }).type.name).toBe('AdminSkillsPanel')
 })
 
 test('selects the skills tab from the URL and updates its shallow route', () => {

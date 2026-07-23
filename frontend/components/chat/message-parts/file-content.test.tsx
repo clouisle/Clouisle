@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ReactNode } from "react";
 
-let state: unknown[] = [];
+const state: unknown[] = [];
 let stateIndex = 0;
 const jsx = (type: unknown, props: Record<string, unknown>) => ({
   type,

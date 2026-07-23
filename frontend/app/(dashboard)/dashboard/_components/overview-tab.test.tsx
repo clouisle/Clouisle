@@ -2,14 +2,13 @@ import { expect, mock, test } from "bun:test";
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-const element =
-  (name: string) =>
-  ({
-    children,
-    ...props
-  }: React.PropsWithChildren<Record<string, unknown>>) => (
+const element = (name: string) => {
+  const Component = ({ children }: React.PropsWithChildren) => (
     <div data-chart={name}>{children}</div>
   );
+  Component.displayName = name;
+  return Component;
+};
 
 Object.assign(globalThis, {
   window: { matchMedia: () => ({ matches: true }) },

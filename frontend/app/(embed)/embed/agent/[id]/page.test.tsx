@@ -19,14 +19,10 @@ const sendMessage = mock(() => Promise.resolve());
 const reset = mock(() => {});
 const stop = mock(() => {});
 const postMessage = mock(() => {});
-let messageHandler: ((event: MessageEvent) => void) | undefined;
-
 Object.assign(globalThis, {
   window: {
     parent: { postMessage },
-    addEventListener: (_name: string, handler: (event: MessageEvent) => void) => {
-      messageHandler = handler;
-    },
+    addEventListener: () => {},
     removeEventListener: () => {},
   },
 });
@@ -40,7 +36,7 @@ mock.module("next-intl", () => ({
   useTranslations: () => translate,
 }));
 mock.module("next/image", () => ({
-  default: (props: React.ComponentProps<"img">) => <img {...props} />,
+  default: (props: React.ComponentProps<"img">) => <img {...props} alt={props.alt ?? ""} />,
 }));
 mock.module("@/lib/api/embed", () => ({
   embedApi: { getAgentInfo, uploadFile: mock(() => Promise.resolve({ url: "file-url" })) },
@@ -92,7 +88,6 @@ afterEach(() => {
   sendMessage.mockClear();
   reset.mockClear();
   postMessage.mockClear();
-  messageHandler = undefined;
 });
 
 async function render() {

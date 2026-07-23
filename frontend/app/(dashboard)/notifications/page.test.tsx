@@ -22,11 +22,11 @@ test('renders notification management inside the permission-protected dashboard 
   const page = tree.props.children as { props: Record<string, unknown> }
   const [header, content] = page.props.children as Array<{ props: Record<string, unknown> }>
 
-  expect((tree.type as Function).name).toBe('RoutePermissionGuard')
+  expect((tree.type as { name?: string }).name).toBe('RoutePermissionGuard')
   expect(page.props.className).toBe('flex h-full flex-col')
-  expect((header.type as Function).name).toBe('Header')
+  expect((header.type as { name?: string }).name).toBe('Header')
   expect(content.props.className).toBe('flex flex-1 flex-col gap-4 overflow-auto p-4')
-  expect(((content.props.children as { type: Function }).type as Function).name).toBe(
+  expect(((content.props.children as { type: { name?: string } }).type as { name?: string }).name).toBe(
     'NotificationsAdminClient',
   )
 })

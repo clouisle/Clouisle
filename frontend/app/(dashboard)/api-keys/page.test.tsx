@@ -20,9 +20,9 @@ test('renders the API keys client inside the dashboard layout', () => {
   const [header, content] = tree.props.children as Array<{ props: Record<string, unknown> }>
 
   expect(tree.props.className).toBe('flex h-full flex-col')
-  expect((header.type as Function).name).toBe('Header')
+  expect((header.type as { name?: string }).name).toBe('Header')
   expect(content.props.className).toBe('flex flex-1 flex-col gap-4 overflow-auto p-4')
-  expect(((content.props.children as { type: Function }).type as Function).name).toBe(
+  expect(((content.props.children as { type: { name?: string } }).type as { name?: string }).name).toBe(
     'APIKeysClient',
   )
 })
