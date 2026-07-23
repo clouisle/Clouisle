@@ -926,6 +926,63 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Embedding model cannot be changed after knowledge base creation",
         "zh": "知识库创建后不可修改嵌入模型",
     },
+    "evaluation_dataset_created": {
+        "en": "Evaluation dataset created",
+        "zh": "评测数据集已创建",
+    },
+    "evaluation_dataset_deleted": {
+        "en": "Evaluation dataset deleted",
+        "zh": "评测数据集已删除",
+    },
+    "evaluation_dataset_empty": {
+        "en": "The evaluation dataset has no cases",
+        "zh": "评测数据集没有测试用例",
+    },
+    "evaluation_dataset_has_active_runs": {
+        "en": "The evaluation dataset has active runs",
+        "zh": "评测数据集存在运行中的任务",
+    },
+    "evaluation_dataset_imported": {
+        "en": "Evaluation dataset imported",
+        "zh": "评测数据集已导入",
+    },
+    "evaluation_dataset_name_exists": {
+        "en": "An evaluation dataset with this name already exists",
+        "zh": "同名评测数据集已存在",
+    },
+    "evaluation_dataset_not_found": {
+        "en": "Evaluation dataset not found",
+        "zh": "未找到评测数据集",
+    },
+    "evaluation_dataset_updated": {
+        "en": "Evaluation dataset updated",
+        "zh": "评测数据集已更新",
+    },
+    "evaluation_dispatch_failed": {
+        "en": "Failed to dispatch the evaluation run",
+        "zh": "评测运行调度失败",
+    },
+    "evaluation_import_invalid": {
+        "en": "The evaluation import is invalid or exceeds the allowed limits",
+        "zh": "评测导入无效或超过允许限制",
+    },
+    "evaluation_label_outside_kb": {
+        "en": "A relevance label does not belong to this knowledge base",
+        "zh": "相关性标注不属于此知识库",
+    },
+    "evaluation_run_canceled": {
+        "en": "Evaluation run canceled",
+        "zh": "评测运行已取消",
+    },
+    "evaluation_run_created": {"en": "Evaluation run created", "zh": "评测运行已创建"},
+    "evaluation_run_not_cancelable": {
+        "en": "The evaluation run cannot be canceled",
+        "zh": "此评测运行无法取消",
+    },
+    "evaluation_run_not_found": {
+        "en": "Evaluation run not found",
+        "zh": "未找到评测运行",
+    },
     "feishu_not_configured": {
         "en": "Feishu service is not configured",
         "zh": "飞书服务未配置",

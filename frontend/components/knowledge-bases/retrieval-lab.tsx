@@ -6,6 +6,10 @@ import { useTranslations } from 'next-intl'
 import { useTheme } from 'next-themes'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Loader2, Search, Send, Settings2 } from 'lucide-react'
 import type {
+  EvaluationCaseInput,
+  EvaluationDataset,
+  EvaluationRun,
+  EvaluationRunConfig,
   KnowledgeBase,
   KnowledgeBaseSettings,
   SearchMode,
@@ -26,6 +30,14 @@ type RetrievalApi = {
   getKnowledgeBase(id: string): Promise<KnowledgeBase>
   search(id: string, params: SearchParams): Promise<SearchResponse>
   updateKnowledgeBase(id: string, data: { settings: KnowledgeBaseSettings }): Promise<KnowledgeBase>
+  listEvaluationDatasets(kbId: string): Promise<EvaluationDataset[]>
+  createEvaluationDataset(kbId: string, data: { name: string; description?: string | null; cases?: EvaluationCaseInput[] }): Promise<EvaluationDataset>
+  updateEvaluationDataset(kbId: string, datasetId: string, data: { cases: EvaluationCaseInput[] }): Promise<EvaluationDataset>
+  importEvaluationDataset(kbId: string, datasetId: string, file: File): Promise<EvaluationDataset>
+  startEvaluationRun(kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun>
+  listEvaluationRuns(kbId: string, datasetId: string): Promise<EvaluationRun[]>
+  getEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
+  cancelEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
 }
 
 type Config = {
@@ -119,21 +131,148 @@ function raw(value?: number) {
   return value === undefined ? '—' : String(value)
 }
 
-function configParams(query: string, config: Config, hasRerankModel: boolean): SearchParams {
+function runConfig(config: Config, hasRerankModel: boolean): EvaluationRunConfig {
   const rerank = hasRerankModel && config.rerank_enabled
   return {
-    query,
     search_mode: config.search_mode,
     top_k: config.top_k,
-    threshold: config.threshold,
+    score_threshold: config.threshold,
     dense_weight: config.dense_weight,
     lexical_weight: config.lexical_weight,
     rrf_k: config.rrf_k,
     rerank_enabled: rerank,
-    rerank_candidate_k: rerank ? Math.max(config.top_k, config.rerank_candidate_k) : undefined,
-    rerank_fail_open: rerank ? config.rerank_fail_open : undefined,
-    rerank_score_threshold: rerank ? config.rerank_score_threshold : undefined,
+    rerank_candidate_k: rerank ? Math.max(config.top_k, config.rerank_candidate_k) : config.top_k,
+    rerank_fail_open: config.rerank_fail_open,
+    rerank_score_threshold: rerank ? config.rerank_score_threshold : null,
   }
+}
+
+function configParams(query: string, config: Config, hasRerankModel: boolean): SearchParams {
+  const snapshot = runConfig(config, hasRerankModel)
+  return {
+    query,
+    ...snapshot,
+    threshold: snapshot.score_threshold,
+  }
+}
+
+type CaseDraft = { query: string; chunkRelevance: string; documentRelevance: string; expectedEmpty: boolean }
+const EMPTY_CASE: CaseDraft = { query: '', chunkRelevance: '{}', documentRelevance: '{}', expectedEmpty: false }
+
+export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }: {
+  knowledgeBaseId: string
+  api: RetrievalApi
+  config: Config
+  hasRerankModel: boolean
+}) {
+  const t = useTranslations('knowledgeBases')
+  const [datasets, setDatasets] = React.useState<EvaluationDataset[]>([])
+  const [datasetId, setDatasetId] = React.useState('')
+  const [datasetName, setDatasetName] = React.useState('')
+  const [datasetDescription, setDatasetDescription] = React.useState('')
+  const [cases, setCases] = React.useState<CaseDraft[]>([])
+  const [runs, setRuns] = React.useState<EvaluationRun[]>([])
+  const [selectedRun, setSelectedRun] = React.useState<EvaluationRun | null>(null)
+  const [failedOnly, setFailedOnly] = React.useState(false)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState('')
+  const loadError = t('batchLoadError')
+
+  const selectDataset = React.useCallback((id: string, available: EvaluationDataset[]) => {
+    const dataset = available.find(item => item.id === id)
+    setDatasetId(id)
+    setCases(dataset?.cases.map(item => ({
+      query: item.query,
+      chunkRelevance: JSON.stringify(item.chunk_relevance),
+      documentRelevance: JSON.stringify(item.document_relevance),
+      expectedEmpty: item.expected_empty,
+    })) ?? [])
+    setSelectedRun(null)
+    setRuns([])
+    if (id) api.listEvaluationRuns(knowledgeBaseId, id).then(setRuns).catch(() => setError(loadError))
+  }, [api, knowledgeBaseId, loadError])
+
+  React.useEffect(() => {
+    api.listEvaluationDatasets(knowledgeBaseId).then(items => {
+      setDatasets(items)
+      if (items[0]) selectDataset(items[0].id, items)
+    }).catch(() => setError(loadError))
+  }, [api, knowledgeBaseId, loadError, selectDataset])
+
+  React.useEffect(() => {
+    if (!selectedRun || !['pending', 'running'].includes(selectedRun.status)) return
+    const timer = window.setInterval(() => {
+      api.getEvaluationRun(knowledgeBaseId, selectedRun.dataset_id, selectedRun.id).then(run => {
+        setSelectedRun(run)
+        setRuns(current => current.map(item => item.id === run.id ? run : item))
+      }).catch(() => setError(loadError))
+    }, 2000)
+    return () => window.clearInterval(timer)
+  }, [api, knowledgeBaseId, loadError, selectedRun])
+
+  const createDataset = async () => {
+    const name = datasetName.trim()
+    if (!name) return
+    setBusy(true); setError('')
+    try {
+      const dataset = await api.createEvaluationDataset(knowledgeBaseId, { name, description: datasetDescription.trim() || null })
+      const next = [dataset, ...datasets]
+      setDatasets(next); setDatasetName(''); setDatasetDescription(''); selectDataset(dataset.id, next)
+    } catch { setError(t('batchSaveError')) } finally { setBusy(false) }
+  }
+
+  const saveCases = async () => {
+    if (!datasetId) return
+    setBusy(true); setError('')
+    try {
+      const parseRelevance = (value: string) => {
+        const parsed = JSON.parse(value) as unknown
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object' || Object.values(parsed).some(grade => !Number.isInteger(grade) || Number(grade) < 0 || Number(grade) > 3)) throw new Error('invalid relevance')
+        return parsed as Record<string, number>
+      }
+      const payload = cases.map(item => ({
+        query: item.query.trim(),
+        chunk_relevance: parseRelevance(item.chunkRelevance),
+        document_relevance: parseRelevance(item.documentRelevance),
+        expected_empty: item.expectedEmpty,
+      }))
+      if (payload.some(item => !item.query || (item.expected_empty && (Object.keys(item.chunk_relevance).length > 0 || Object.keys(item.document_relevance).length > 0)))) throw new Error('invalid case')
+      const dataset = await api.updateEvaluationDataset(knowledgeBaseId, datasetId, { cases: payload })
+      setDatasets(current => current.map(item => item.id === dataset.id ? dataset : item))
+    } catch { setError(t('batchCaseError')) } finally { setBusy(false) }
+  }
+
+  const startRun = async () => {
+    if (!datasetId || !cases.length) return
+    setBusy(true); setError('')
+    try {
+      const run = await api.startEvaluationRun(knowledgeBaseId, datasetId, runConfig(config, hasRerankModel))
+      setRuns(current => [run, ...current]); setSelectedRun(run)
+    } catch { setError(t('batchRunError')) } finally { setBusy(false) }
+  }
+
+  const active = selectedRun && ['pending', 'running'].includes(selectedRun.status)
+  const results = selectedRun?.case_results.filter(result => !failedOnly || Boolean(result.error_message)) ?? []
+  const selectedDataset = datasets.find(dataset => dataset.id === datasetId)
+  const caseQueries = new Map(selectedDataset?.cases.map(item => [item.id, item.query]))
+  const formatMetric = (value: unknown) => typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
+
+  return <section className="min-h-0 flex-1 space-y-3 overflow-auto" aria-labelledby="batch-evaluation-heading">
+    <h2 id="batch-evaluation-heading" className="font-medium">{t('batchEvaluation')}</h2>
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    <Card><CardContent className="space-y-3 p-3">
+      <div className="grid gap-2 md:grid-cols-2"><Label>{t('datasetName')}<Input value={datasetName} onChange={event => setDatasetName(event.target.value)} /></Label><Label>{t('datasetDescription')}<Input value={datasetDescription} onChange={event => setDatasetDescription(event.target.value)} /></Label></div>
+      <Button onClick={() => void createDataset()} disabled={!datasetName.trim() || busy}>{t('createDataset')}</Button>
+      <Label>{t('datasets')}<select className="mt-1 h-9 w-full rounded border bg-background px-2" value={datasetId} onChange={event => selectDataset(event.target.value, datasets)}><option value="">{t('selectDataset')}</option>{datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></Label>
+      {datasetId && <Label>{t('importDataset')}<Input type="file" accept=".json,.csv,application/json,text/csv" onChange={event => { const file = event.target.files?.[0]; if (!file) return; setBusy(true); api.importEvaluationDataset(knowledgeBaseId, datasetId, file).then(dataset => { setDatasets(current => current.map(item => item.id === dataset.id ? dataset : item)); selectDataset(dataset.id, datasets.map(item => item.id === dataset.id ? dataset : item)) }).catch(() => setError(t('batchImportError'))).finally(() => setBusy(false)) }} /></Label>}
+    </CardContent></Card>
+    {datasetId && <Card><CardContent className="space-y-3 p-3">
+      <div className="flex items-center justify-between"><strong>{t('evaluationCases')}</strong><Button variant="outline" size="sm" onClick={() => setCases(current => [...current, { ...EMPTY_CASE }])}>{t('addCase')}</Button></div>
+      {cases.map((item, index) => <fieldset key={index} className="space-y-2 rounded border p-3"><legend className="px-1 text-sm">{t('caseNumber', { number: index + 1 })}</legend><Label>{t('caseQuery')}<Input value={item.query} onChange={event => setCases(current => current.map((value, currentIndex) => currentIndex === index ? { ...value, query: event.target.value } : value))} /></Label><div className="grid gap-2 md:grid-cols-2"><Label>{t('chunkRelevance')}<textarea className="mt-1 min-h-20 w-full rounded border bg-background p-2 font-mono text-xs" value={item.chunkRelevance} onChange={event => setCases(current => current.map((value, currentIndex) => currentIndex === index ? { ...value, chunkRelevance: event.target.value } : value))} /></Label><Label>{t('documentRelevance')}<textarea className="mt-1 min-h-20 w-full rounded border bg-background p-2 font-mono text-xs" value={item.documentRelevance} onChange={event => setCases(current => current.map((value, currentIndex) => currentIndex === index ? { ...value, documentRelevance: event.target.value } : value))} /></Label></div><div className="flex items-center justify-between"><Label className="flex items-center gap-2"><input type="checkbox" checked={item.expectedEmpty} onChange={event => setCases(current => current.map((value, currentIndex) => currentIndex === index ? { ...value, expectedEmpty: event.target.checked } : value))} />{t('expectedEmpty')}</Label><Button variant="ghost" size="sm" onClick={() => setCases(current => current.filter((_, currentIndex) => currentIndex !== index))}>{t('removeCase')}</Button></div></fieldset>)}
+      <Button onClick={() => void saveCases()} disabled={busy}>{t('saveCases')}</Button>
+    </CardContent></Card>}
+    {datasetId && <Card><CardContent className="space-y-3 p-3"><strong>{t('evaluationRuns')}</strong><pre className="overflow-auto rounded bg-muted p-2 text-xs" aria-label={t('runConfig')}>{JSON.stringify(runConfig(config, hasRerankModel), null, 2)}</pre><Button onClick={() => void startRun()} disabled={busy || !cases.length}>{t('startRun')}</Button><select aria-label={t('evaluationRuns')} className="h-9 w-full rounded border bg-background px-2" value={selectedRun?.id ?? ''} onChange={event => setSelectedRun(runs.find(run => run.id === event.target.value) ?? null)}><option value="">{t('selectRun')}</option>{runs.map(run => <option key={run.id} value={run.id}>{run.status} · {new Date(run.created_at).toLocaleString()}</option>)}</select>{selectedRun && <><div className="flex flex-wrap items-center gap-2"><Badge>{selectedRun.status}</Badge>{active && <Button variant="outline" size="sm" onClick={() => void api.cancelEvaluationRun(knowledgeBaseId, datasetId, selectedRun.id).then(setSelectedRun).catch(() => setError(t('batchRunError')))}>{t('cancelRun')}</Button>}</div><div className="grid gap-2 sm:grid-cols-3">{Object.entries(selectedRun.summary_metrics ?? {}).map(([name, value]) => <div key={name} className="rounded border p-2"><div className="text-xs text-muted-foreground">{name}</div><strong>{formatMetric(value)}</strong></div>)}</div><Label className="flex items-center gap-2"><input type="checkbox" checked={failedOnly} onChange={event => setFailedOnly(event.target.checked)} />{t('failedCasesOnly')}</Label>{results.map(result => <div key={result.id} className="rounded border p-2 text-sm"><strong>{result.case_snapshot?.query ?? caseQueries.get(result.case_id) ?? result.case_id}</strong>{result.error_message && <p className="text-destructive">{result.error_message}</p>}<p className="text-xs text-muted-foreground">{Object.entries(result.metrics).map(([name, value]) => `${name}: ${formatMetric(value)}`).join(' · ')} · {result.latency_ms}ms</p></div>)}</>}</CardContent></Card>}
+  </section>
 }
 
 export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
@@ -156,6 +295,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
   const [presets, setPresets] = React.useState<Preset[]>([])
   const [presetName, setPresetName] = React.useState('')
   const [selectedPreset, setSelectedPreset] = React.useState('')
+  const [batchMode, setBatchMode] = React.useState(false)
 
   const storageKey = `retrieval-lab:${knowledgeBaseId}`
   React.useEffect(() => {
@@ -320,6 +460,8 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
 
   return <div className="flex h-full flex-col gap-3 p-4">
     <header className="flex items-center gap-3"><Button render={<a href={backHref} />} variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-lg font-semibold">{t('retrievalLab')}</h1><p className="text-xs text-muted-foreground">{knowledgeBase?.name}</p></div></header>
+    <div role="tablist" aria-label={t('retrievalLab')} className="flex gap-2"><Button role="tab" aria-selected={!batchMode} variant={!batchMode ? 'default' : 'outline'} onClick={() => setBatchMode(false)}>{t('interactiveSearch')}</Button><Button role="tab" aria-selected={batchMode} variant={batchMode ? 'default' : 'outline'} onClick={() => setBatchMode(true)}>{t('batchEvaluation')}</Button></div>
+    {batchMode ? <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} /> : <>
     <Card><CardContent className="space-y-3 p-3">
       <div className="flex items-center justify-between"><strong className="text-sm">A</strong><Button variant="ghost" size="sm" onClick={() => setAdvanced(value => !value)}><Settings2 className="mr-1 h-4 w-4" />{t('advancedSettings')}</Button></div>
       {controls(configA, setConfigA, 'A')}
@@ -331,6 +473,6 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
     <div className="flex gap-2"><div className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={query} onChange={event => setQuery(event.target.value)} onKeyDown={handleKeyDown} placeholder={t('searchPlaceholder')} className="pl-9" /></div><Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!query.trim() || searching}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button></div>
     <main className="min-h-0 flex-1 overflow-auto">
       {!searched ? <div className="grid h-full place-content-center text-sm text-muted-foreground">{t('retrievalLabHint')}</div> : searching ? <div className="grid h-full place-content-center"><Loader2 className="animate-spin" /></div> : !responses.a && !responses.b ? <div className="grid h-full place-content-center text-sm text-destructive">{t('searchError')}</div> : responses.a?.results.length === 0 && !responses.b?.results.length ? <div className="grid h-full place-content-center text-sm text-muted-foreground">{t('noResults')}</div> : <>{error && <p className="mb-2 text-xs text-destructive">{t('searchPartialError')}</p>}{compare && responses.a && responses.b && <p className="mb-2 text-xs text-muted-foreground">{t('overlap', { count: overlap, total: Math.max(responses.a.results.length, responses.b.results.length) })}</p>}<div className={cn('grid gap-3', compare && 'lg:grid-cols-2')}><section><h2 className="mb-2 font-medium">A</h2>{responses.a ? renderResults(responses.a, 'a') : <p className="text-xs text-destructive">{t('searchSideError')}</p>}</section>{compare && <section><h2 className="mb-2 font-medium">B</h2>{responses.b ? renderResults(responses.b, 'b') : <p className="text-xs text-destructive">{t('searchSideError')}</p>}</section>}</div></>}
-    </main>
+    </main></>}
   </div>
 }

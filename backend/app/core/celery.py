@@ -33,6 +33,7 @@ celery_app = Celery(
         "app.tasks.password_expiration",
         "app.tasks.session_memory",
         "app.tasks.sandbox",
+        "app.tasks.retrieval_evaluation",
     ],
 )
 
@@ -75,6 +76,7 @@ celery_app.conf.task_routes = {
     "app.tasks.password_expiration.*": {"queue": "default"},
     "app.tasks.session_memory.*": {"queue": "default"},
     "app.tasks.sandbox.*": {"queue": "sandbox"},
+    "app.tasks.retrieval_evaluation.*": {"queue": "default"},
     "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
     "tasks.archive_old_audit_logs": {"queue": "default"},
     "tasks.check_api_key_expiration": {"queue": "default"},

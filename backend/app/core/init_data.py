@@ -2225,6 +2225,112 @@ async def init_clouisle_import_sessions_table():
     logger.info("Clouisle import sessions table initialization complete")
 
 
+async def init_retrieval_evaluation_tables():
+    """Create persistent retrieval evaluation tables idempotently."""
+    conn = Tortoise.get_connection("default")
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_datasets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            description VARCHAR(500),
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT evaluation_datasets_kb_name_unique UNIQUE (knowledge_base_id, name)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_cases (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            dataset_id UUID NOT NULL REFERENCES evaluation_datasets(id) ON DELETE CASCADE,
+            query TEXT NOT NULL,
+            chunk_relevance JSONB NOT NULL DEFAULT '{}',
+            document_relevance JSONB NOT NULL DEFAULT '{}',
+            expected_empty BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_runs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            dataset_id UUID NOT NULL REFERENCES evaluation_datasets(id) ON DELETE CASCADE,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            config_snapshot JSONB NOT NULL,
+            version_snapshot JSONB NOT NULL DEFAULT '{}',
+            summary_metrics JSONB,
+            task_id VARCHAR(100),
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_case_results (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            run_id UUID NOT NULL REFERENCES evaluation_runs(id) ON DELETE CASCADE,
+            case_id UUID REFERENCES evaluation_cases(id) ON DELETE SET NULL,
+            case_snapshot JSONB NOT NULL DEFAULT '{}',
+            candidates JSONB NOT NULL DEFAULT '[]',
+            metrics JSONB NOT NULL DEFAULT '{}',
+            latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT evaluation_case_results_run_case_unique UNIQUE (run_id, case_id)
+        )
+        """,
+        "ALTER TABLE evaluation_case_results ADD COLUMN IF NOT EXISTS case_snapshot JSONB NOT NULL DEFAULT '{}'",
+        "ALTER TABLE evaluation_case_results ALTER COLUMN case_id DROP NOT NULL",
+        """
+        UPDATE evaluation_case_results result
+        SET case_snapshot = jsonb_build_object(
+            'id', case_row.id,
+            'query', case_row.query,
+            'chunk_relevance', case_row.chunk_relevance,
+            'document_relevance', case_row.document_relevance,
+            'expected_empty', case_row.expected_empty
+        )
+        FROM evaluation_cases case_row
+        WHERE result.case_id = case_row.id AND result.case_snapshot = '{}'
+        """,
+        """
+        DO $$
+        DECLARE
+            constraint_name TEXT;
+            current_delete_rule TEXT;
+        BEGIN
+            SELECT tc.constraint_name, rc.delete_rule
+            INTO constraint_name, current_delete_rule
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu
+              ON ccu.constraint_name = tc.constraint_name
+            JOIN information_schema.referential_constraints rc
+              ON rc.constraint_name = tc.constraint_name
+            WHERE tc.table_name = 'evaluation_case_results'
+              AND tc.constraint_type = 'FOREIGN KEY'
+              AND ccu.table_name = 'evaluation_cases'
+            LIMIT 1;
+            IF current_delete_rule IS DISTINCT FROM 'SET NULL' THEN
+                IF constraint_name IS NOT NULL THEN
+                    EXECUTE format('ALTER TABLE evaluation_case_results DROP CONSTRAINT %I', constraint_name);
+                END IF;
+                ALTER TABLE evaluation_case_results
+                ADD CONSTRAINT evaluation_case_results_case_id_fkey
+                FOREIGN KEY (case_id) REFERENCES evaluation_cases(id) ON DELETE SET NULL;
+            END IF;
+        END $$
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_evaluation_datasets_kb ON evaluation_datasets(knowledge_base_id)",
+        "CREATE INDEX IF NOT EXISTS idx_evaluation_runs_dataset_status ON evaluation_runs(dataset_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_evaluation_case_results_run ON evaluation_case_results(run_id)",
+    ]
+    for statement in statements:
+        await execute_startup_migration_query(conn, statement)
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -2267,6 +2373,11 @@ async def init_db():
         logger.warning(
             f"Clouisle import sessions migration failed (may be first run): {e}"
         )
+
+    try:
+        await init_retrieval_evaluation_tables()
+    except Exception as e:
+        logger.warning(f"Retrieval evaluation migration failed (may be first run): {e}")
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")
@@ -2329,6 +2440,7 @@ async def init_db():
         "admin:app:duplicate",
         "admin:knowledge-base:read",
         "admin:knowledge-base:test",
+        "admin:knowledge-base:evaluate",
         "admin:knowledge-base:create",
         "admin:knowledge-base:update",
         "admin:knowledge-base:delete",
@@ -2362,6 +2474,7 @@ async def init_db():
         "workflow:execute",
         "kb:read",
         "kb:test",
+        "kb:evaluate",
         "kb:create",
         "kb:update",
         "kb:delete",
@@ -2408,6 +2521,7 @@ async def init_db():
         "workflow:run",
         "kb:read",
         "kb:test",
+        "kb:evaluate",
         "kb:create",
         "kb:update",
         "kb:delete",
@@ -2450,6 +2564,7 @@ async def init_db():
         "workflow:run",
         "kb:read",
         "kb:test",
+        "kb:evaluate",
         "tool:read",
         "tool:execute",
         "skill:read",

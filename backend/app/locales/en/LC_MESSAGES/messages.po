@@ -2745,3 +2745,48 @@ msgstr "Node {node_id} has no upstream connections"
 
 msgid "workflow_validation_failed_with_errors"
 msgstr "Workflow validation failed: {errors}"
+
+msgid "evaluation_import_invalid"
+msgstr "The evaluation import is invalid or exceeds the allowed limits"
+
+msgid "evaluation_label_outside_kb"
+msgstr "A relevance label does not belong to this knowledge base"
+
+msgid "evaluation_dispatch_failed"
+msgstr "Failed to dispatch the evaluation run"
+
+msgid "evaluation_dataset_not_found"
+msgstr "Evaluation dataset not found"
+
+msgid "evaluation_dataset_name_exists"
+msgstr "An evaluation dataset with this name already exists"
+
+msgid "evaluation_dataset_created"
+msgstr "Evaluation dataset created"
+
+msgid "evaluation_dataset_updated"
+msgstr "Evaluation dataset updated"
+
+msgid "evaluation_dataset_has_active_runs"
+msgstr "The evaluation dataset has active runs"
+
+msgid "evaluation_dataset_deleted"
+msgstr "Evaluation dataset deleted"
+
+msgid "evaluation_dataset_imported"
+msgstr "Evaluation dataset imported"
+
+msgid "evaluation_dataset_empty"
+msgstr "The evaluation dataset has no cases"
+
+msgid "evaluation_run_created"
+msgstr "Evaluation run created"
+
+msgid "evaluation_run_not_found"
+msgstr "Evaluation run not found"
+
+msgid "evaluation_run_not_cancelable"
+msgstr "The evaluation run cannot be canceled"
+
+msgid "evaluation_run_canceled"
+msgstr "Evaluation run canceled"

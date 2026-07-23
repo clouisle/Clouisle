@@ -226,6 +226,62 @@ export interface SearchResponse {
   timings: RetrievalTiming[]
 }
 
+export interface EvaluationCaseInput {
+  query: string
+  chunk_relevance: Record<string, number>
+  document_relevance: Record<string, number>
+  expected_empty: boolean
+}
+
+export interface EvaluationCase extends EvaluationCaseInput {
+  id: string
+}
+
+export interface EvaluationDataset {
+  id: string
+  knowledge_base_id: string
+  name: string
+  description: string | null
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+  cases: EvaluationCase[]
+}
+
+export interface EvaluationDatasetInput {
+  name: string
+  description?: string | null
+  cases?: EvaluationCaseInput[]
+}
+
+export type EvaluationRunConfig = Omit<SearchParams, 'query' | 'threshold'> & { score_threshold: number }
+export type EvaluationRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'canceled'
+
+export interface EvaluationCaseResult {
+  id: string
+  case_id: string
+  case_snapshot: EvaluationCaseInput
+  candidates: Array<Record<string, unknown>>
+  metrics: Record<string, unknown>
+  latency_ms: number
+  error_message: string | null
+}
+
+export interface EvaluationRun {
+  id: string
+  dataset_id: string
+  created_by_id: string | null
+  status: EvaluationRunStatus
+  config_snapshot: EvaluationRunConfig
+  version_snapshot: Record<string, unknown>
+  summary_metrics: Record<string, unknown> | null
+  error_message: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  case_results: EvaluationCaseResult[]
+}
+
 // ============ Chunk Preview Types ============
 
 export interface ChunkPreviewInput {
@@ -324,6 +380,38 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
     }
     return api.post<SearchResponse>(`${prefix}/${id}/search`, requestBody)
   },
+
+  listEvaluationDatasets: (kbId: string): Promise<EvaluationDataset[]> =>
+    api.get(`${prefix}/${kbId}/evaluation-datasets`),
+
+  createEvaluationDataset: (kbId: string, data: EvaluationDatasetInput): Promise<EvaluationDataset> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets`, data),
+
+  getEvaluationDataset: (kbId: string, datasetId: string): Promise<EvaluationDataset> =>
+    api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}`),
+
+  updateEvaluationDataset: (kbId: string, datasetId: string, data: Partial<EvaluationDatasetInput>): Promise<EvaluationDataset> =>
+    api.put(`${prefix}/${kbId}/evaluation-datasets/${datasetId}`, data),
+
+  importEvaluationDataset: (kbId: string, datasetId: string, file: File): Promise<EvaluationDataset> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/import`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  startEvaluationRun: (kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`, config),
+
+  listEvaluationRuns: (kbId: string, datasetId: string): Promise<EvaluationRun[]> =>
+    api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`),
+
+  getEvaluationRun: (kbId: string, datasetId: string, runId: string): Promise<EvaluationRun> =>
+    api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs/${runId}`),
+
+  cancelEvaluationRun: (kbId: string, datasetId: string, runId: string): Promise<EvaluationRun> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs/${runId}/cancel`),
 
   // ============ Document API ============
 

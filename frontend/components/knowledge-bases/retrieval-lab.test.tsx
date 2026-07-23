@@ -6,7 +6,10 @@ const getItem = mock((key: string) => local.get(key) ?? null)
 const setItem = mock((key: string, value: string) => local.set(key, value))
 const removeItem = mock((key: string) => local.delete(key))
 const confirm = mock(() => true)
-Object.assign(globalThis, { localStorage: { getItem, setItem, removeItem }, window: { confirm } })
+let intervalCallback: (() => void) | undefined
+const setInterval = mock((callback: () => void) => { intervalCallback = callback; return 1 })
+const clearInterval = mock(() => { intervalCallback = undefined })
+Object.assign(globalThis, { localStorage: { getItem, setItem, removeItem }, window: { confirm, setInterval, clearInterval } })
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
@@ -22,6 +25,7 @@ const slots: Slot[] = []
 let cursor = 0
 let effects: Array<() => void> = []
 let RetrievalLab: typeof import('./retrieval-lab').RetrievalLab
+let BatchEvaluation: typeof import('./retrieval-lab').BatchEvaluation
 
 function sameDeps(a?: readonly unknown[], b?: readonly unknown[]) {
   return !!a && !!b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]))
@@ -44,14 +48,27 @@ beforeAll(async () => {
         effects.push(() => { const cleanup = effect(); if (cleanup) slots[index].cleanup = cleanup })
       }
     },
+    useCallback(callback: unknown, deps?: readonly unknown[]) {
+      const index = cursor++
+      if (!sameDeps(slots[index]?.deps, deps)) slots[index] = { value: callback, deps }
+      return slots[index].value
+    },
   }))
-  ;({ RetrievalLab } = await import('./retrieval-lab'))
+  ;({ RetrievalLab, BatchEvaluation } = await import('./retrieval-lab'))
 })
 
 const getKnowledgeBase = mock()
 const search = mock()
 const updateKnowledgeBase = mock()
-const api = { getKnowledgeBase, search, updateKnowledgeBase }
+const listEvaluationDatasets = mock()
+const createEvaluationDataset = mock()
+const updateEvaluationDataset = mock()
+const importEvaluationDataset = mock()
+const startEvaluationRun = mock()
+const listEvaluationRuns = mock()
+const getEvaluationRun = mock()
+const cancelEvaluationRun = mock()
+const api = { getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun }
 const kb = { id: 'kb-1', name: 'Handbook', settings: { rerank_candidate_k: 12 }, rerank_model: { name: 'Reranker' } }
 const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
   query: 'policy', total: 1, diagnostics, timings: [{ stage: 'recall', latency_ms: 12 }, { stage: 'total', latency_ms: 20 }],
@@ -60,8 +77,11 @@ const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
 
 beforeEach(() => {
   slots.splice(0); effects = []; local.clear()
-  for (const fn of [getKnowledgeBase, search, updateKnowledgeBase, getItem, setItem, removeItem, confirm]) fn.mockClear()
+  intervalCallback = undefined
+  for (const fn of [getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun, getItem, setItem, removeItem, confirm, setInterval, clearInterval]) fn.mockClear()
   getKnowledgeBase.mockResolvedValue(kb)
+  listEvaluationDatasets.mockResolvedValue([])
+  listEvaluationRuns.mockResolvedValue([])
   confirm.mockReturnValue(true)
 })
 afterEach(() => slots.forEach(slot => slot.cleanup?.()))
@@ -69,6 +89,18 @@ afterEach(() => slots.forEach(slot => slot.cleanup?.()))
 function render(props: Partial<Parameters<typeof RetrievalLab>[0]> = {}) {
   cursor = 0
   return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canUpdate: true, ...props })
+}
+function renderBatch() {
+  cursor = 0
+  return BatchEvaluation({ knowledgeBaseId: 'kb-1', api, config: { search_mode: 'hybrid', top_k: 5, threshold: 0, dense_weight: 1, lexical_weight: 1, rrf_k: 60, rerank_enabled: true, rerank_candidate_k: 10, rerank_fail_open: true, rerank_score_threshold: null }, hasRerankModel: true })
+}
+async function flushBatch(tree = renderBatch()) {
+  while (effects.length) {
+    effects.splice(0).forEach(effect => effect())
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+    tree = renderBatch()
+  }
+  return tree
 }
 async function flush(tree = render()) {
   while (effects.length) {
@@ -214,6 +246,100 @@ describe('RetrievalLab', () => {
     tree = render({ canUpdate: false })
     await button(tree, 'applyToProduction').props.onClick()
     expect(updateKnowledgeBase).toHaveBeenCalledTimes(calls)
+  })
+
+  test('exposes an accessible batch evaluation tab without changing interactive defaults', async () => {
+    const tree = await flush()
+    expect(find(tree, 'button', props => props.role === 'tab' && props['aria-selected'] === true)).toBeTruthy()
+    expect(text(tree)).toContain('batchEvaluation')
+    expect(listEvaluationDatasets).not.toHaveBeenCalled()
+  })
+
+  test('creates and imports a dataset through the injected API', async () => {
+    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: 'Nightly', created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [] }
+    createEvaluationDataset.mockResolvedValue(dataset)
+    importEvaluationDataset.mockResolvedValue(dataset)
+    let tree = await flushBatch()
+    const inputs = elements(tree).filter(element => element.type === 'input')
+    inputs[0].props.onChange({ target: { value: ' Regression ' } })
+    inputs[1].props.onChange({ target: { value: ' Nightly ' } })
+    tree = renderBatch()
+    await button(tree, 'createDataset').props.onClick()
+    expect(createEvaluationDataset).toHaveBeenCalledWith('kb-1', { name: 'Regression', description: 'Nightly' })
+    tree = await flushBatch(renderBatch())
+    const file = new File(['query\npolicy'], 'cases.csv', { type: 'text/csv' })
+    await find(tree, 'input', props => props.type === 'file').props.onChange({ target: { files: [file] } })
+    expect(importEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', file)
+  })
+
+  test('validates and saves manually edited cases', async () => {
+    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [] }
+    listEvaluationDatasets.mockResolvedValue([dataset])
+    updateEvaluationDataset.mockResolvedValue({ ...dataset, cases: [] })
+    let tree = await flushBatch()
+    button(tree, 'addCase').props.onClick()
+    tree = renderBatch()
+    find(tree, 'input', props => props.value === '').props.onChange({ target: { value: 'policy' } })
+    const areas = elements(renderBatch()).filter(element => element.type === 'textarea')
+    areas[0].props.onChange({ target: { value: '{bad' } })
+    tree = renderBatch()
+    await button(tree, 'saveCases').props.onClick()
+    expect(text(renderBatch())).toContain('batchCaseError')
+    expect(updateEvaluationDataset).not.toHaveBeenCalled()
+
+    slots.splice(0); effects = []
+    listEvaluationDatasets.mockResolvedValue([{ ...dataset, cases: [{ id: 'case-1', query: 'policy', chunk_relevance: { 'chunk-1': 3 }, document_relevance: {}, expected_empty: false }] }])
+    tree = await flushBatch()
+    await button(tree, 'saveCases').props.onClick()
+    expect(updateEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', { cases: [{ query: 'policy', chunk_relevance: { 'chunk-1': 3 }, document_relevance: {}, expected_empty: false }] })
+  })
+
+  test('lists, starts, polls, cancels, renders nested metrics, maps case ids, and filters failures', async () => {
+    const cases = [
+      { id: 'case-a', query: 'edited first query', chunk_relevance: {}, document_relevance: {}, expected_empty: false },
+      { id: 'case-b', query: 'edited failed query', chunk_relevance: {}, document_relevance: {}, expected_empty: false },
+    ]
+    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases }
+    const running = { id: 'run-1', dataset_id: 'dataset-1', created_by_id: null, status: 'running', config_snapshot: {}, version_snapshot: {}, summary_metrics: { precision: { mean: 0.75, count: 2 } }, error_message: null, created_at: '2026-01-01', started_at: null, finished_at: null, case_results: [
+      { id: 'result-b', case_id: 'case-b', case_snapshot: { query: 'historical failed query', chunk_relevance: {}, document_relevance: {}, expected_empty: false }, candidates: [], metrics: { recall: { at_5: 0 } }, latency_ms: 20, error_message: 'timeout' },
+      { id: 'result-a', case_id: 'case-a', case_snapshot: { query: 'historical first query', chunk_relevance: {}, document_relevance: {}, expected_empty: false }, candidates: [], metrics: { recall: 1 }, latency_ms: 10, error_message: null },
+    ] }
+    listEvaluationDatasets.mockResolvedValue([dataset])
+    listEvaluationRuns.mockResolvedValue([running])
+    startEvaluationRun.mockResolvedValue(running)
+    getEvaluationRun.mockResolvedValue({ ...running, status: 'completed' })
+    cancelEvaluationRun.mockResolvedValue({ ...running, status: 'canceled' })
+    let tree = await flushBatch()
+    expect(listEvaluationRuns).toHaveBeenCalledWith('kb-1', 'dataset-1')
+    await button(tree, 'startRun').props.onClick()
+    expect(startEvaluationRun.mock.calls[0][2]).toMatchObject({ search_mode: 'hybrid', top_k: 5, score_threshold: 0, rerank_candidate_k: 10 })
+    tree = await flushBatch(renderBatch())
+    expect(setInterval).toHaveBeenCalled()
+    await intervalCallback?.()
+    expect(getEvaluationRun).toHaveBeenCalledWith('kb-1', 'dataset-1', 'run-1')
+    expect(text(tree)).toContain('{"mean":0.75,"count":2}')
+    expect(text(tree)).toContain('recall: {"at_5":0}')
+    expect(text(tree)).toContain('historical failed query')
+    expect(text(tree)).not.toContain('edited failed query')
+    expect(text(tree)).toContain('historical first query')
+    await button(tree, 'cancelRun').props.onClick()
+    expect(cancelEvaluationRun).toHaveBeenCalledWith('kb-1', 'dataset-1', 'run-1')
+    elements(tree).filter(element => element.type === 'input' && element.props.type === 'checkbox').at(-1)!.props.onChange({ target: { checked: true } })
+    tree = renderBatch()
+    expect(text(tree)).toContain('historical failed query')
+    expect(text(tree)).not.toContain('historical first query')
+  })
+
+  test('reports dataset load, create, import, run, polling, and cancel failures', async () => {
+    listEvaluationDatasets.mockRejectedValueOnce(new Error('offline'))
+    expect(text(await flushBatch())).toContain('batchLoadError')
+
+    slots.splice(0); effects = []
+    createEvaluationDataset.mockRejectedValueOnce(new Error('create'))
+    const tree = await flushBatch()
+    find(tree, 'input', props => props.value === '').props.onChange({ target: { value: 'Broken' } })
+    await button(renderBatch(), 'createDataset').props.onClick()
+    expect(text(renderBatch())).toContain('batchSaveError')
   })
 
   test('authenticated markdown image uses bearer token and rejects unsafe sources', async () => {

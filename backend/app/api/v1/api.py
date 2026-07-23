@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     upload,
     models,
     knowledge_bases,
+    retrieval_evaluations,
     agents,
     conversations,
     agent_stats,
@@ -41,6 +42,11 @@ api_router.include_router(upload.router, prefix="/upload", tags=["upload"])
 api_router.include_router(models.router, prefix="/models", tags=["models"])
 api_router.include_router(
     knowledge_bases.router, prefix="/knowledge-bases", tags=["knowledge-bases"]
+)
+api_router.include_router(
+    retrieval_evaluations.router,
+    prefix="/knowledge-bases",
+    tags=["knowledge-base-evaluations"],
 )
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(

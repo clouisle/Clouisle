@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-23T20:55:54.446Z
+// GENERATED — 2026-07-23T21:53:13.682Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -228,6 +228,34 @@ export type KnowledgeBasesMessages = {
     searchPartialError: string
     searchSideError: string
     presetUpdateError: string
+    interactiveSearch: string
+    batchEvaluation: string
+    datasets: string
+    selectDataset: string
+    datasetName: string
+    datasetDescription: string
+    createDataset: string
+    importDataset: string
+    evaluationCases: string
+    addCase: string
+    removeCase: string
+    caseNumber: string
+    caseQuery: string
+    chunkRelevance: string
+    documentRelevance: string
+    expectedEmpty: string
+    saveCases: string
+    evaluationRuns: string
+    runConfig: string
+    startRun: string
+    selectRun: string
+    cancelRun: string
+    failedCasesOnly: string
+    batchLoadError: string
+    batchSaveError: string
+    batchCaseError: string
+    batchImportError: string
+    batchRunError: string
     searchTestHint: string
     searchTestDescription: string
     searching: string

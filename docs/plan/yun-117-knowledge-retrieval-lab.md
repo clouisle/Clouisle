@@ -186,8 +186,9 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Chinese IME Enter behavior and authenticated markdown media remain intact.
   - Frontend lint, build, and focused component/API tests pass.
 
-### Stage 7: Evaluation Datasets and Batch Runs
+### Stage 7: Evaluation Datasets and Batch Runs ✅
 
+- **Completed validation**: persistent datasets and immutable case/configuration/version snapshots, bounded JSON/CSV imports, historical result retention, transaction-before-dispatch, stable dispatch/provider failures, redelivery-safe Celery execution, cancellation and active-run mutation guards, aggregate metrics, failure filtering, and shared dashboard/platform UI completed. Backend gates passed with 6,345 tests, 97.69% line coverage, and 95.02% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, source census, lint, strict translation validation, license check, and production build.
 - **Files modified**: new evaluation models/migration/schemas/API/service/Celery task; frontend Retrieval Lab batch tab; permissions/i18n; tests.
 - **Specific logic**:
   - Persist datasets, graded cases, immutable run configuration/version snapshots, and per-case result IDs/ranks/scores/metrics.

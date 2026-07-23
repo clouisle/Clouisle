@@ -23,6 +23,7 @@ from app.api.v1.admin.endpoints import (
 )
 
 from app.api.v1.endpoints import knowledge_bases as platform_knowledge_bases
+from app.api.v1.endpoints import retrieval_evaluations
 
 admin_router = APIRouter()
 
@@ -69,4 +70,9 @@ admin_router.include_router(
     platform_knowledge_bases.router,
     prefix="/knowledge-bases",
     tags=["admin-knowledge-bases"],
+)
+admin_router.include_router(
+    retrieval_evaluations.router,
+    prefix="/knowledge-bases",
+    tags=["admin-knowledge-base-evaluations"],
 )
