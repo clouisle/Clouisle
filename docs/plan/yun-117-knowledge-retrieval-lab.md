@@ -213,15 +213,18 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Referential multi-turn cases improve without regressing standalone queries.
   - Failures have no effect on answer availability.
 
-### Stage 9: Learned Sparse Evaluation Gate
+### Stage 9: Learned Sparse Evaluation Gate ✅
 
-- **Files modified**: evaluation-only adapter/config and benchmark documentation unless the production gate is met.
+- **Completed validation**: the offline deterministic adapter compares Dense + BM25, Dense + learned sparse, and three-way observations across Chinese, English, mixed-language, and identifier cohorts. It reports aggregate/cohort Recall and nDCG plus P95 latency, mean inference cost, index size, and rebuild time under a deterministic fingerprint. Mathematical eligibility requires at least 5% improvement in both Recall and nDCG, no cohort regression, and no operational regression. Because the adapter contains precomputed ID-only fixtures rather than measurements from a real learned-sparse provider, the persisted-safe report records `measured=false`, `decision=no_go`, and `decision_reason=no_measured_learned_sparse_provider`; it selects no production strategy and keeps production sparse indexing disabled. Backend gates passed with 6,365 tests, 97.70% line coverage, and 95.02% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, 471/471 source census, lint, license check, and production build.
+- **Files modified**: evaluation-only adapter, deterministic tests, and benchmark documentation; no production retrieval/indexing code or dependency was added.
 - **Specific logic**:
-  - Compare Dense + BM25, Dense + learned sparse, and three-way retrieval on Chinese, English, and mixed cases.
-  - Measure quality, P95, index size, rebuild time, and inference cost.
-  - Do not add production indexing unless Recall/nDCG improves by at least 5% without language regression and operational limits are acceptable.
+  - Compare Dense + BM25, Dense + learned sparse, and three-way retrieval on Chinese, English, mixed-language, and identifier cohorts.
+  - Reuse the existing ranking and latency metric helpers while exposing only aggregates and a fingerprint, never raw queries, chunks, case IDs, or ranked IDs.
+  - Require Recall and nDCG to improve by at least 5%, reject every cohort regression, and reject P95 latency, inference cost, index size, or rebuild-time regression.
+  - Keep mathematical eligibility diagnostic-only until a real measured provider and production indexing implementation exist.
 - **Validation**:
-  - Reproducible benchmark report and explicit go/no-go decision.
+  - Eight focused happy/error-path tests cover deterministic eligibility, privacy-safe reporting, cohort and operational regressions, zero baselines, invalid configuration/measurements, incomplete cohorts/indexes, duplicate cases, and missing observations; focused line/branch coverage is 97%.
+  - Explicit no-go recorded: no measured learned-sparse provider satisfies the production gate.
 
 ### Stage 10: Rollout, Observability, and Documentation
 
