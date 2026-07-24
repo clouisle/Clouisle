@@ -263,6 +263,8 @@ kubectl -n clouisle logs -f deployment/frontend
 | `OPENSEARCH_USERNAME` | Yes | `admin` | OpenSearch user |
 | `OPENSEARCH_PASSWORD` | Yes | documented placeholder | OpenSearch password; replace before deployment |
 | `OPENSEARCH_JAVA_OPTS` | No | `-Xms512m -Xmx512m` | Built-in single-node heap settings |
+| `RETRIEVAL_HYBRID_KILL_SWITCH` | No | `false` | Emergency environment override that forces vector-only retrieval |
+| `RETRIEVAL_SHADOW_ENABLED` | No | `false` | Run hybrid retrieval in shadow for rollout-excluded teams; stores IDs, ranks, versions, and latency only |
 | `SANDBOX_WORKER_CONCURRENCY` | No | `1` | Sandbox worker concurrency |
 | `SANDBOX_WORKSPACE_ROOT` | No | `/tmp/clouisle-sandbox/jobs` | Sandbox workspace root |
 | `NEXT_PUBLIC_API_URL` | Yes for frontend build | `/api/v1` | Browser-visible API base path |

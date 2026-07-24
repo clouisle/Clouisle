@@ -46,6 +46,8 @@ data:
   QDRANT_DISTANCE: "Cosine"
   OPENSEARCH_URL: "https://opensearch:9200"
   OPENSEARCH_USERNAME: "admin"
+  RETRIEVAL_HYBRID_KILL_SWITCH: "false"
+  RETRIEVAL_SHADOW_ENABLED: "false"
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
 
 # ===========================================================================

@@ -2,7 +2,7 @@
 
 ## Active
 
-- **yun-117-knowledge-retrieval-lab** — In progress. Replace heuristic keyword matching with an evaluated Dense + BM25 hybrid pipeline and upgrade the existing search test into a retrieval evaluation lab. See `docs/plan/yun-117-knowledge-retrieval-lab.md`
+- **yun-117-knowledge-retrieval-lab** — Complete. Replace heuristic keyword matching with an evaluated Dense + BM25 hybrid pipeline and upgrade the existing search test into a retrieval evaluation lab. See `docs/plan/yun-117-knowledge-retrieval-lab.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Retrieval evaluation baseline — deterministic chunk/document Recall@K, MRR@K, nDCG@K, expected-empty accuracy, latency percentiles, and current `VectorStore.search` snapshot adapter; 6,246 backend tests passed with 97.82% lines/95.11% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
   - [x] 3. Correct current retrieval semantics — strict modes, stage-specific scores/ranks, dense-only thresholding, explicit dense failures, hybrid degradation, authoritative status filters, lexical-only AUTO RAG, and bounded global multi-KB ranking; 6,255 backend tests passed with 97.82% lines/95.09% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
@@ -13,7 +13,7 @@
   - [x] 8. Batch evaluation datasets and runs — persistent datasets/case snapshots, bounded JSON/CSV import, immutable versioned runs, redelivery-safe Celery execution, durable failure/cancellation, active-run mutation guards, aggregate metrics, and shared dashboard/platform UI; 6,345 backend tests passed with 97.69% lines/95.02% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions
   - [x] 9. Query contextualization experiment — default-off, AUTO-only retrieval query rewriting uses bounded active-branch history, the agent chat model, a strict timeout, grounded structured output, retrieval-only rewrites, and privacy-safe disabled/not-needed/rewritten/fallback diagnostics; 6,357 backend tests passed with 97.70% lines/95.03% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions and 471/471 source census
   - [x] 10. Learned Sparse evaluation gate — deterministic evaluation-only comparison of Dense+BM25, Dense+learned-sparse, and three-way retrieval across Chinese, English, mixed-language, and identifier cohorts; aggregate Recall/nDCG and operational gates remain an explicit no-go without a measured provider, and production sparse indexing stays disabled; 6,365 backend tests passed with 97.70% lines/95.02% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions and 471/471 source census
-  - [ ] 11. Rollout, observability, documentation, and validation
+  - [x] 11. Rollout, observability, documentation, and validation — environment kill switch plus mutable global/team/percentage rollout, deterministic hashing, answer-isolated privacy-safe shadow execution, and fail-open Redis metrics; 6,371 backend tests passed with 97.70% lines/95.03% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions and 471/471 source census
 
 - **issue-255-test-coverage** — Complete. Established honest backend and frontend coverage measurement, covered critical happy/error paths, and enforced independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
   - [x] 1. Design docs and implementation index

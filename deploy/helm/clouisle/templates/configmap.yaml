@@ -55,6 +55,8 @@ data:
   OPENSEARCH_URL: {{ required "opensearch.external.url is required when opensearch.enabled=false" .Values.opensearch.external.url | quote }}
   {{ end }}
   OPENSEARCH_USERNAME: {{ .Values.config.OPENSEARCH_USERNAME | quote }}
+  RETRIEVAL_HYBRID_KILL_SWITCH: {{ .Values.config.RETRIEVAL_HYBRID_KILL_SWITCH | quote }}
+  RETRIEVAL_SHADOW_ENABLED: {{ .Values.config.RETRIEVAL_SHADOW_ENABLED | quote }}
   SANDBOX_RUNTIME_ENABLED: {{ .Values.config.SANDBOX_RUNTIME_ENABLED | quote }}
   SANDBOX_LEGACY_FALLBACK_ENABLED: {{ .Values.config.SANDBOX_LEGACY_FALLBACK_ENABLED | quote }}
   SANDBOX_WORKER_CONCURRENCY: {{ .Values.config.SANDBOX_WORKER_CONCURRENCY | quote }}

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Any, Literal
 from uuid import UUID
 
 from app.llm.token_counter import count_tokens
+from app.core.config import settings
 from app.models.knowledge_base import DocumentChunk, DocumentStatus, KnowledgeBaseStatus
-from app.services.lexical_store import LexicalStore, SearchHit
+from app.services.lexical_store import INDEX_VERSION, LexicalStore, SearchHit
+from app.services.retrieval_rollout import hybrid_enabled, record_metrics, record_shadow
 from app.services.vector_store import VectorStore
 
 SearchMode = Literal["vector", "fulltext", "hybrid"]
@@ -368,7 +370,7 @@ async def _assemble_context(
     return assembled
 
 
-async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
+async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
     """Search targets concurrently, then rank and truncate results globally."""
     started_at = perf_counter()
     rerank_store, rerank_config = await _resolve_global_rerank(request)
@@ -534,3 +536,61 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
         RetrievalTiming("total", (perf_counter() - started_at) * 1000),
     )
     return RetrievalResponse(tuple(results), diagnostics, timings)
+
+
+def _vector_fallback(request: RetrievalRequest) -> RetrievalRequest:
+    return replace(
+        request,
+        search_mode="vector",
+        targets=tuple(
+            replace(target, search_mode="vector")
+            if target.search_mode == "hybrid"
+            else target
+            for target in request.targets
+        ),
+    )
+
+
+async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
+    """Apply hybrid rollout policy without allowing telemetry to affect answers."""
+    team_ids = tuple(str(target.team_id) for target in request.targets)
+    uses_hybrid = request.search_mode == "hybrid" or any(
+        target.search_mode == "hybrid" for target in request.targets
+    )
+    enabled = not uses_hybrid or await hybrid_enabled(team_ids)
+    primary_request = request if enabled else _vector_fallback(request)
+
+    try:
+        response = await _retrieve_once(primary_request)
+    except RetrievalError as exc:
+        await record_metrics(
+            candidate_count=0,
+            timings=(),
+            fallback_count=int(uses_hybrid and not enabled),
+            error_count=len(exc.diagnostics),
+            index_version=INDEX_VERSION,
+        )
+        raise
+    fallback_count = sum(
+        bool(result.get("degradation_reasons")) for result in response.results
+    ) + int(uses_hybrid and not enabled)
+    await record_metrics(
+        candidate_count=len(response.results),
+        timings=tuple((timing.stage, timing.latency_ms) for timing in response.timings),
+        fallback_count=fallback_count,
+        error_count=len(response.diagnostics),
+        index_version=INDEX_VERSION,
+    )
+
+    if uses_hybrid and not enabled and settings.RETRIEVAL_SHADOW_ENABLED:
+        shadow_started_at = perf_counter()
+        try:
+            shadow = await _retrieve_once(request)
+            await record_shadow(
+                shadow.results,
+                latency_ms=(perf_counter() - shadow_started_at) * 1000,
+                index_version=INDEX_VERSION,
+            )
+        except Exception:
+            pass
+    return response

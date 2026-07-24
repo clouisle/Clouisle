@@ -226,18 +226,20 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Eight focused happy/error-path tests cover deterministic eligibility, privacy-safe reporting, cohort and operational regressions, zero baselines, invalid configuration/measurements, incomplete cohorts/indexes, duplicate cases, and missing observations; focused line/branch coverage is 97%.
   - Explicit no-go recorded: no measured learned-sparse provider satisfies the production gate.
 
-### Stage 10: Rollout, Observability, and Documentation
+### Stage 10: Rollout, Observability, and Documentation ✅
 
-- **Files modified**: feature flags/config, metrics/logging, deployment docs, operator docs, and relevant design docs.
+- **Files modified**: retrieval environment config, private `SiteSetting` defaults, the shared retrieval entry point, a retrieval-specific Redis collector, deployment examples/manifests, operator docs, and focused tests.
 - **Specific logic**:
-  - Feature flags for Retrieval V2, OpenSearch lexical retrieval, weighted fusion, global rerank, and query contextualization.
-  - Shadow execution records IDs/ranks/latency only and does not alter answers.
-  - Structured metrics cover candidate counts, stage latency, fallbacks, empty results, model/index versions, and failures.
-  - Roll out internal -> 5% -> 25% -> 50% -> 100% with documented rollback gates.
+  - `RETRIEVAL_HYBRID_KILL_SWITCH=true` has highest precedence and immediately forces vector-only retrieval. Mutable private settings then select `enabled`, `disabled`, or `rollout`; explicit team inclusion precedes deterministic SHA-256 percentage assignment.
+  - Shadow execution runs only for rollout-excluded hybrid requests, never replaces or mutates the primary vector answer, and retains a bounded Redis list containing only chunk IDs, ranks, retrieval/index versions, and latency.
+  - Fail-open Redis metrics use the existing seven-day retention and latency histogram buckets for candidates, recall/rerank/context/total latency, fallbacks, empty results, diagnostics/errors, and lexical index version signals.
+  - Roll out internal -> 5% -> 25% -> 50% -> 100%. Advance only when evaluation quality has no cohort regression, retrieval error/fallback rates do not regress, and P95 total latency remains within the approved service objective.
+- **Rollback**:
+  - Set `RETRIEVAL_HYBRID_KILL_SWITCH=true` for immediate environment rollback, or set private `retrieval_hybrid_mode=disabled` for mutable rollback. Disable `RETRIEVAL_SHADOW_ENABLED` independently.
+  - For lexical index rollback, call the existing atomic `LexicalStore.cutover(previous_version)`; retained versioned indexes let both read and write aliases move back together.
 - **Validation**:
-  - Turning off Retrieval V2 restores the old path.
-  - OpenSearch alias and feature-flag rollback are exercised in staging.
-  - Full backend and frontend pre-commit checks pass.
+  - Focused tests cover deterministic assignment and precedence, setting-store failure, privacy-safe bounded telemetry, metric failure isolation, vector-primary shadow isolation, and shadow failure isolation.
+  - OpenSearch alias cutover/rollback remains covered by the existing atomic alias tests. Backend gates passed with 6,371 tests, 97.70% line coverage, and 95.03% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, 471/471 source census, lint, license check, and production build. Compose validation requires a local `deploy/.env`; Helm and `kubectl` rendering were skipped because those CLIs are not installed in this environment.
 
 ## Testing Strategy
 

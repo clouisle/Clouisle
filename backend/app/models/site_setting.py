@@ -127,6 +127,28 @@ KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB = 1024
 
 # Default settings definitions
 DEFAULT_SETTINGS: dict[str, SettingConfig] = {
+    # Retrieval rollout (private, mutable operator controls)
+    "retrieval_hybrid_mode": {
+        "value": "rollout",
+        "type": "string",
+        "category": "retrieval",
+        "public": False,
+        "desc": "Hybrid retrieval mode: rollout, enabled, or disabled",
+    },
+    "retrieval_hybrid_team_ids": {
+        "value": [],
+        "type": "json",
+        "category": "retrieval",
+        "public": False,
+        "desc": "Team IDs explicitly included in hybrid retrieval rollout",
+    },
+    "retrieval_hybrid_percentage": {
+        "value": 100,
+        "type": "int",
+        "category": "retrieval",
+        "public": False,
+        "desc": "Deterministic hybrid retrieval rollout percentage",
+    },
     # General
     "site_name": {
         "value": "Clouisle",
