@@ -9,7 +9,7 @@
 - **团队隔离**：知识库归属于团队，实现数据隔离
 - **格式丰富**：支持多种文档格式
 - **智能处理**：自动文本提取、分块和向量化
-- **高效检索**：基于向量的语义搜索
+- **高效检索**：基于 Qdrant Dense 与 OpenSearch BM25 的混合检索、全局重排和受限上下文组装
 
 ### 1.2 技术选型
 
@@ -17,9 +17,11 @@
 |------|----------|------|
 | 文档解析 | MarkItDown | 微软开源，统一转换为 Markdown |
 | 文本分块 | 自研 TextChunker | 语义感知分块 |
-| 向量存储 | pgvector | PostgreSQL 扩展 |
-| 向量生成 | LangChain Embeddings | 复用 LLM 模块 |
-| 异步处理 | Celery | 大文档异步处理 |
+| 权威数据 | PostgreSQL | 保存知识库、文档、分块及索引状态 |
+| Dense 索引 | Qdrant | 保存向量并执行语义召回 |
+| Lexical 索引 | OpenSearch | 版本化 BM25 索引，通过读写别名切换 |
+| 向量与重排模型 | ModelManager | 复用团队模型配置 |
+| 异步处理 | Celery | 文档处理、索引回填和批量评估 |
 
 ---
 
@@ -129,7 +131,8 @@ class DocumentChunk(Model):
     content: str               # 文本内容
     chunk_index: int           # 分块序号
     token_count: int           # Token 数量
-    embedding: list[float]     # 向量 (pgvector)
+    embedding_id: str             # Qdrant 向量点引用
+    status: str                   # pending / embedded / failed
     metadata: dict             # 元数据
     created_at: datetime
 ```
@@ -265,150 +268,206 @@ chunks = chunker.chunk_text(text)
 
 > **注意**：分块大小是目标值，实际大小会在分隔符边界处变化，以保持语义完整性。
 
-### 5.4 向量生成与存储
+### 5.4 向量与 Lexical 索引
 
-```python
-from app.llm import model_manager
+文档分块首先写入 PostgreSQL，随后分别写入两个可重建索引：
 
-# 生成向量
-embeddings = await model_manager.embed(
-    texts=[chunk["content"] for chunk in chunks],
-    model_id=kb.embedding_model_id,
-)
-
-# 存储到 pgvector
-for chunk, embedding in zip(chunks, embeddings):
-    await DocumentChunk.create(
-        document_id=doc.id,
-        content=chunk["content"],
-        chunk_index=chunk["chunk_index"],
-        token_count=chunk["token_count"],
-        embedding=embedding,
-    )
-```
+1. 通过团队 Embedding 模型生成向量并写入 Qdrant，`DocumentChunk.embedding_id` 保存向量点引用。
+2. 将 Chunk 内容、标题、路径、文档及团队标识、状态和索引版本写入 OpenSearch。
+3. 只有成功生成向量的 Chunk 才参与 Dense 召回；已完成文档的 Chunk 可独立参与 BM25 召回。
+4. 索引写入失败保留明确状态，并由幂等重试、回填和对账任务修复；PostgreSQL 内容始终是权威来源。
+5. OpenSearch 使用版本化索引与读写别名，重建完成后原子切换，并保留旧版本用于回滚。
 
 ---
 
-## 6. 搜索功能
+## 6. 检索架构与执行逻辑
 
-### 6.1 搜索模式
+### 6.1 组件职责
 
-系统支持三种搜索模式：
+PostgreSQL 是知识库、文档和分块的权威数据源。检索索引可重建，不反向覆盖权威数据。
 
-| 模式 | 说明 | 适用场景 |
-|------|------|----------|
-| `vector` | 纯向量语义搜索 | 语义理解，同义词匹配 |
-| `fulltext` | 全文关键词搜索 (jieba 分词) | 精确关键词匹配 |
-| `hybrid` | 混合搜索 (RRF 融合) | 综合效果最佳，默认推荐 |
+| 组件 | 职责 |
+|------|------|
+| 统一检索服务（`services/retrieval.py`） | 统一请求校验、目标并发、降级、融合、全局重排、上下文组装和诊断 |
+| `VectorStore` | Qdrant Dense 索引写入与语义召回 |
+| `LexicalStore` | OpenSearch BM25 版本化索引、别名切换与关键词召回 |
+| PostgreSQL | 权威知识库、文档、分块、授权范围和索引状态 |
+| Retrieval Lab | 即时 A/B、持久评估数据集、批量运行和指标对比 |
 
-### 6.2 相似度计算
+API 搜索、AUTO RAG、Agentic 知识库工具、Agent 服务、Workflow 知识节点和批量评估均使用同一个 `retrieve()` 入口。调用方只保留授权、错误翻译和结果展示职责。
 
-#### 6.2.1 向量相似度
+### 6.2 请求与授权边界
 
-使用 pgvector 的余弦距离 (`<=>`) 进行相似度计算：
+检索请求使用不可变的 `RetrievalRequest` 和 `RetrievalTarget`。请求支持以下严格模式：
 
-```sql
--- pgvector 余弦距离范围: [0, 2]
--- 余弦距离 = 1 - 余弦相似度
--- 所以: 余弦相似度 = 1 - 余弦距离
+| 模式 | 召回通道 | 阈值语义 |
+|------|----------|----------|
+| `vector` | Qdrant Dense | `score_threshold` 仅过滤 Dense 相似度 |
+| `fulltext` | OpenSearch BM25 | 不套用 Dense 相似度阈值 |
+| `hybrid` | Dense 与 BM25 并行 | 通过加权 RRF 融合，不把融合分数当作概率 |
 
-SELECT 
-    GREATEST(0, 1 - (embedding <=> query_vector)) as similarity
-FROM document_chunks
-ORDER BY embedding <=> query_vector
-LIMIT 10;
+调用方必须先解析用户已授权的知识库和文档范围，再构造 `RetrievalTarget`：
+
+- 知识库必须处于 `active` 状态。
+- 文档必须处于 `completed` 状态。
+- `allowed_document_ids` 表示已授权上限。
+- 请求指定的 `document_ids` 只能缩小 `allowed_document_ids`，不能扩大权限。
+- Dense 候选要求知识库具有可用的 Embedding 模型和有效向量状态。
+- BM25 可独立检索没有 Embedding 模型的知识库。
+- 空查询、非法模式、非正数 Top K/超时/RRF 参数及无效上下文限制会在执行前失败。
+
+### 6.3 AUTO RAG 查询上下文化
+
+查询上下文化只用于对话型 AUTO RAG，不默认改写显式 Agentic 工具查询。
+
+```text
+原始用户问题
+    -> 检查环境开关
+    -> 检查是否为短且含指代的后续问题
+    -> 使用最近最多 6 条对话生成独立检索查询
+    -> 严格验证 JSON、证据来源和输出格式
+    -> 仅将改写结果用于检索
 ```
 
-**距离与相似度对照**：
+约束如下：
 
-| 余弦距离 | 余弦相似度 | 含义 |
-|----------|------------|------|
-| 0 | 1.0 | 完全相同 |
-| 0.5 | 0.5 | 中等相关 |
-| 1.0 | 0.0 | 正交/无关 |
-| 2.0 | -1.0 | 完全相反 |
+- 只处理长度不超过 160 且含中英文指代词的查询。
+- `evidence` 必须是历史对话中的非空原文片段。
+- 改写结果必须严格为 `evidence + 空格 + 原始问题`，防止引入新事实。
+- 模型缺失、超时、异常、无效 JSON 或不合规输出全部回退原查询。
+- 原始问题继续用于最终回答，改写查询不会替换用户问题。
+- 日志只记录 `disabled`、`not_needed`、`rewritten` 或 `fallback`，不记录查询内容或异常正文。
 
-> **注意**：使用 `GREATEST(0, 1 - distance)` 将相似度限制在 `[0, 1]` 范围内。
+### 6.4 并发召回与失败策略
 
-#### 6.2.2 相似度阈值
+多个知识库并发检索，服务级并发上限为 8，每个目标受 `timeout_seconds` 约束。
 
-| 参数 | 默认值 | 范围 | 说明 |
-|------|--------|------|------|
-| `score_threshold` | 0.3 | 0.0 - 1.0 | 最低相似度，低于此值的结果被过滤 |
-
-**阈值建议**：
-- `0.0` - 返回所有结果（不过滤）
-- `0.2 - 0.3` - 宽松匹配，召回率高
-- `0.4 - 0.5` - 中等匹配，平衡召回与精准
-- `0.6+` - 严格匹配，精准率高但可能漏掉相关结果
-
-### 6.3 混合搜索 (RRF)
-
-使用 Reciprocal Rank Fusion (倒数排名融合) 算法合并向量搜索和全文搜索结果：
-
-```python
-def merge_results_rrf(vector_results, fulltext_results, k=60):
-    """
-    RRF 公式: score(d) = Σ 1/(k + rank(d))
-    k=60 是论文推荐值，用于平滑排名差异
-    """
-    scores = {}
-    
-    for rank, result in enumerate(vector_results):
-        chunk_id = result["chunk_id"]
-        scores[chunk_id] = scores.get(chunk_id, 0) + 1.0 / (k + rank + 1)
-    
-    for rank, result in enumerate(fulltext_results):
-        chunk_id = result["chunk_id"]
-        scores[chunk_id] = scores.get(chunk_id, 0) + 1.0 / (k + rank + 1)
-    
-    # 归一化到 [0, 1]
-    max_rrf = 2.0 / (k + 1)  # 最大可能分数 (两个列表都排第一)
-    normalized_scores = {k: min(1.0, v / max_rrf) for k, v in scores.items()}
-    
-    return sorted(normalized_scores.items(), key=lambda x: x[1], reverse=True)
+```text
+每个授权知识库
+    +-> Qdrant Dense 召回
+    +-> OpenSearch BM25 召回
+              |
+              v
+       加权 RRF（Hybrid）
+              |
+              v
+       跨知识库全局候选池
 ```
 
-### 6.4 全文搜索
+各模式的失败行为：
 
-使用 jieba 进行中文分词，支持中英文混合查询：
+- `vector`：Embedding 或 Qdrant 失败时，该目标返回明确诊断，不静默伪造结果。
+- `fulltext`：OpenSearch 失败时，该目标返回明确诊断。
+- `hybrid`：单通道失败时使用另一通道继续，并在结果中附加结构化 `degradation_reasons`；双通道失败时该目标失败。
+- 某些目标失败不影响其他知识库的有效结果；仅当全部目标失败时抛出 `RetrievalError`。
+- 诊断区分 `inactive`、`missing_embedding_model`、`timeout` 和 `failed`。
 
-```python
-import jieba
+### 6.5 加权 RRF 融合
 
-def extract_search_terms(query: str) -> list[str]:
-    """提取搜索关键词"""
-    words = jieba.lcut(query)
-    
-    # 过滤规则:
-    # - 保留长度 >= 2 的词
-    # - 单字仅保留中文字符
-    # - 移除纯标点符号
-    terms = [w for w in words if len(w) >= 2 or is_chinese(w)]
-    
-    return list(dict.fromkeys(terms))  # 去重保序
+Dense 相似度和 BM25 分数的量纲不同，Hybrid 使用排名而不是原始分数融合：
+
+```text
+fusion_score(chunk)
+  = dense_weight   / (rrf_k + dense_rank)
+  + lexical_weight / (rrf_k + lexical_rank)
 ```
 
-### 6.5 语义搜索示例
+默认 `dense_weight = 1.0`、`lexical_weight = 1.0`、`rrf_k = 60`。同一 Chunk 在两条通道命中时累计贡献，只命中一条时仍可进入候选池。
 
-```python
-from app.services.vector_store import VectorStore
+结果保留各阶段信息：
 
-vector_store = VectorStore(
-    embedding_model_id="xxx-xxx",
-    team_id="xxx-xxx",
-)
+- `dense_score`、`dense_rank`
+- `lexical_score`、`lexical_rank`
+- `fusion_score`、`fusion_rank`
+- `rerank_score`、`rerank_rank`（启用重排时）
+- `final_score_stage`
 
-results = await vector_store.search(
-    kb_id=kb.id,
-    query="2025年度总结和规划",
-    search_mode="hybrid",      # 推荐使用混合搜索
-    top_k=5,                   # 返回前5条
-    score_threshold=0.3,       # 相似度阈值
-)
+RRF 分数只用于排序，不归一化或展示为相关概率。相同分数按知识库、文档和 Chunk ID 稳定排序，保证评估可复现。
 
-for r in results:
-    print(f"[{r['score']:.2f}] {r['document_name']}: {r['content'][:100]}...")
+### 6.6 全局排序与重排
+
+所有知识库的结果先汇总成一个全局候选池，再统一截取 `candidate_k`。如果启用 Rerank：
+
+1. 选择全局候选，而不是分别重排各知识库。
+2. 使用同一模型对候选内容执行一次重排。
+3. 保留 Dense、BM25 和 Fusion 的原始分数与排名。
+4. 只使用 `rerank_score_threshold` 过滤重排分数。
+5. `rerank_fail_open=true` 时，重排失败继续使用召回排序；否则按失败配置终止。
+
+最终 Top K 在全局排序和可选重排后应用，避免多个知识库分别截断后简单拼接造成偏差。
+
+### 6.7 上下文组装
+
+全局排序后可执行受限上下文组装：
+
+- 每个命中 Chunk 最多扩展前后各一个相邻 Chunk。
+- 相邻 Chunk 必须仍属于同一授权文档，并满足知识库 `active`、文档 `completed` 条件。
+- 按文档聚合内容，同时保留 `context_chunks` 和 `citation_chunk_ids`，确保引用能追溯到实际提供给模型的内容。
+- 可限制 `top_k`、`max_documents`、`max_chunks_per_document` 和全局 `context_token_budget`。
+- 超出 Token 预算时跳过不能完整放入的 Chunk，不截断文本制造不可追溯引用。
+- 未启用扩展或预算限制时，直接返回全局 Top K，避免额外数据库读取。
+
+### 6.8 灰度、Shadow 与回滚
+
+Hybrid 主链路按以下优先级决定：
+
+1. `RETRIEVAL_HYBRID_KILL_SWITCH=true`：最高优先级，立即强制 Vector。
+2. 私有 `SiteSetting`：`retrieval_hybrid_mode=enabled|disabled|rollout`。
+3. `retrieval_hybrid_team_ids`：显式纳入团队。
+4. `retrieval_hybrid_percentage`：按团队 ID 的 SHA-256 稳定哈希分桶。
+
+推荐发布顺序：
+
+```text
+internal -> 5% -> 25% -> 50% -> 100%
+```
+
+未进入 Hybrid 灰度的请求以不可变副本转换为 Vector 主请求。启用 `RETRIEVAL_SHADOW_ENABLED` 后可额外执行 Hybrid Shadow，但 Shadow 的成功、失败和耗时都不能改变主响应。
+
+Shadow 只保存以下数据，最多 1,000 条并保留 7 天：
+
+- Chunk ID 与排名
+- 检索版本与 Lexical 索引版本
+- 总耗时
+
+Shadow 不保存原始查询、Chunk 内容、凭据或异常正文。OpenSearch 回滚通过将读写别名原子切回上一版本索引完成。
+
+### 6.9 可观测性
+
+检索指标以 Redis 聚合数据记录，保留 7 天：
+
+- 请求数、候选数和空结果数
+- 降级次数和错误数
+- Lexical 索引版本
+- `recall`、`rerank`、`context`、`total` 阶段耗时
+- 各阶段延迟计数、总和和直方图桶
+
+指标与 Shadow 写入均为 fail-open：Redis 或遥测故障不能中断检索，也不能改变返回答案。
+
+### 6.10 端到端执行流程
+
+```text
+调用方完成授权并构造 RetrievalTarget
+        ↓
+仅 AUTO RAG：按需上下文化检索查询
+        ↓
+Kill Switch / 全局 / 团队 / 百分比灰度判断
+        ↓
+在授权文档范围内并发检索（上限 8）
+        ↓
+Qdrant Dense + OpenSearch BM25
+        ↓
+按知识库执行加权 RRF；单通道失败可降级
+        ↓
+跨知识库汇总并全局排序
+        ↓
+可选：对全局候选池执行 Rerank
+        ↓
+可选：邻接扩展、文档聚合和 Token/数量限制
+        ↓
+返回结果、结构化诊断和各阶段耗时
+        ↓
+旁路记录聚合指标；Shadow 永不影响答案
 ```
 
 ---
@@ -425,7 +484,10 @@ backend/app/
 │   └── knowledge_bases.py     # API 端点
 ├── services/
 │   ├── document_processor.py  # 文档处理 + 分块
-│   └── vector_store.py        # 向量存储服务
+│   ├── vector_store.py        # Qdrant Dense 索引与召回
+│   ├── lexical_store.py       # OpenSearch BM25 索引与召回
+│   ├── retrieval.py           # 统一检索、融合、重排与上下文组装
+│   └── retrieval_rollout.py   # 灰度、Shadow 与聚合指标
 └── tasks/
     └── knowledge_base.py      # Celery 异步任务
 ```
@@ -457,14 +519,16 @@ dependencies = [
 | 文本分块 | ✅ 完成 | 支持 chunk_size, chunk_overlap, separator 配置 |
 | Celery 异步任务 | ✅ 完成 | 后台处理大文档 |
 | 向量生成 | ✅ 完成 | 通过 embedding_model 配置 |
-| pgvector 存储 | ✅ 完成 | 动态维度列支持 (embedding_768, embedding_1536 等) |
-| 语义搜索 | ✅ 完成 | pgvector 余弦距离搜索 |
-| 混合搜索 | ✅ 完成 | RRF 融合算法 (向量 + jieba 全文) |
-| 动态维度支持 | ✅ 完成 | 按需创建维度列，KB 级别维度绑定 |
+| Dense 索引与语义召回 | ✅ 完成 | Qdrant 向量索引、状态过滤和授权范围过滤 |
+| BM25 关键词召回 | ✅ 完成 | OpenSearch 版本化索引、读写别名和回填对账 |
+| 混合检索 | ✅ 完成 | Dense + BM25 加权 RRF，保留各阶段分数与排名 |
+| 全局重排与上下文 | ✅ 完成 | 跨知识库 Rerank、邻接扩展、文档/Chunk/Token 上限 |
+| 查询上下文化 | ✅ 完成 | 仅 AUTO RAG 按需改写，严格验证并回退原查询 |
+| Retrieval Lab | ✅ 完成 | 即时 A/B、标注预设、持久数据集和批量评估 |
+| 灰度与可观测性 | ✅ 完成 | Kill Switch、团队/比例灰度、隐私安全 Shadow 和 Redis 指标 |
 | 文档下载 | ✅ 完成 | Authorization Bearer Token 鉴权 |
 | 前端 UI (后台) | ✅ 完成 | 完整的知识库管理界面 |
 | 前端 UI (中台) | ✅ 完成 | 平台级知识库管理 |
-| 搜索测试页面 | ✅ 完成 | 圆角胶囊式搜索栏，Popover 高级设置 |
 
 ---
 
@@ -517,52 +581,17 @@ downloadDocument: async (kbId: string, docId: string, filename: string) => {
 }
 ```
 
-### 10.3 搜索测试 UI
+### 10.3 Retrieval Lab UI
 
-搜索测试页面采用现代 AI 聊天应用风格：
+后台与中台共用 Retrieval Lab 组件，但保持各自路由和 API 权限边界。即时检索支持：
 
-**布局结构**：
-```
-┌────────────────────────────────┐
-│  ← 命中测试                    │  页头 (无分割线)
-│    知识库名称                  │
-├────────────────────────────────┤
-│                                │
-│       搜索结果区域             │  flex-1 可滚动
-│       (可折叠卡片)             │
-│                                │
-├────────────────────────────────┤
-│ ╭──────────────────────────╮   │  底部搜索栏 (sticky)
-│ │ 🔍 输入搜索内容...  ⚙️ ➤ │   │  圆角胶囊样式
-│ ╰──────────────────────────╯   │
-└────────────────────────────────┘
-```
-
-**高级设置 Popover**：
-- 检索方式: 混合检索 / 向量检索 / 全文检索 (ToggleGroup)
-- 最大结果数: 1-20 (number input)
-- 相似度阈值: 0-1 (text input with decimal support)
-
-**关键实现**：
-```tsx
-// 中文 IME 组合状态检测，避免回车误触发
-const handleKeyDown = (e: React.KeyboardEvent) => {
-  if (e.nativeEvent.isComposing) return
-  if (e.key === 'Enter') handleSearch()
-}
-
-// 小数输入支持
-const [thresholdInput, setThresholdInput] = useState('0')
-onChange={(e) => {
-  const val = e.target.value
-  if (val === '' || /^\d*\.?\d*$/.test(val)) {
-    setThresholdInput(val)
-  }
-}}
-
-// 中台高度计算 (平台 Header 64px)
-<div style={{ height: 'calc(100vh - 64px)' }}>
-```
+- Simple 参数：检索模式、最终 Top K、是否启用 Rerank。
+- Advanced 参数：各通道候选数、Dense/Lexical 权重、RRF 参数和阶段专属阈值。
+- 结果诊断：Dense、Lexical、Fusion、Rerank 分数与排名、排名变化、通道、耗时和降级原因。
+- A/B：发起两个相互独立的统一检索请求，并展示结果重合及排名移动。
+- 评估：Chunk 级分级相关性标注、命名预设、持久数据集、批量运行和失败案例筛选。
+- 应用预设需要确认和 `kb:update`；即时测试与批量评估分别受 `kb:test` 和 `kb:evaluate` 控制。
+- 输入框保留中文 IME 组合状态检测，避免拼音输入过程中按 Enter 误触发检索。
 
 ### 10.4 文件存储路径
 
@@ -578,132 +607,20 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 uploads_dir = project_root / "uploads" / "documents"
 ```
 
-### 10.5 动态 Embedding 维度支持
+### 10.5 Embedding 维度与外部索引
 
-#### 10.5.1 设计背景
+不同 Embedding 模型会输出不同维度的向量。知识库通过 `embedding_dimension` 记录首次成功处理时确定的维度；后续写入必须保持一致，切换到不同维度的模型前需重新建立该知识库的 Dense 索引。
 
-不同的 Embedding 模型输出不同维度的向量：
-- text-embedding-3-small: 1536 维
-- text-embedding-3-large: 3072 维
-- nomic-embed-text: 768 维
-- 其他模型: 可能是 512, 1024 等维度
+向量正文不保存在 PostgreSQL：
 
-系统需要支持不同知识库使用不同维度的 Embedding 模型。
+- PostgreSQL 的 `DocumentChunk` 保存权威文本、顺序、Token 数、元数据、Embedding 状态和 `embedding_id`。
+- Qdrant 保存向量点，并使用知识库、文档、Chunk 和状态字段进行过滤。
+- OpenSearch 保存可重建的 BM25 文档，并通过版本化索引及读写别名管理切换。
+- 文档重处理、Chunk 删除、文档删除和知识库删除必须同步更新两个索引；失败操作由幂等任务重试。
+- Dense 与 Lexical 索引都不是权威数据源，发生漂移时以 PostgreSQL 为准执行回填与数量对账。
 
-#### 10.5.2 数据库设计
+维度不匹配必须在写入 Qdrant 前失败，并保留明确的索引错误状态，不能把不兼容向量写入现有集合。
 
-采用多维度列方案，在 `documentchunk` 表中创建多个向量列：
+#### 10.5.1 索引重建与回滚
 
-```sql
--- 预创建常用维度列
-ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_768 vector(768);
-ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_1024 vector(1024);
-ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_1536 vector(1536);
-ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_3072 vector(3072);
-
--- 为每个维度列创建 HNSW 索引
-CREATE INDEX IF NOT EXISTS idx_chunk_embedding_768
-ON documentchunk USING hnsw (embedding_768 vector_cosine_ops)
-WITH (m = 16, ef_construction = 64);
-
--- ... 其他维度类似
-```
-
-#### 10.5.3 知识库维度绑定
-
-每个知识库绑定到一个特定的 Embedding 维度，确保同一知识库内所有文档使用相同维度：
-
-```python
-class KnowledgeBase(Model):
-    # ... 其他字段
-    embedding_dimension = fields.IntField(null=True)  # 首次处理时自动设置
-```
-
-**绑定规则**：
-- 首次处理文档时，根据 Embedding 模型输出的维度自动设置
-- 一旦设置后不可更改（除非清空所有文档）
-- 切换 Embedding 模型时检查维度兼容性
-
-#### 10.5.4 核心实现
-
-**存储流程** (backend/app/services/vector_store.py):
-
-```python
-class VectorStore:
-    async def store_chunks(self, chunks, kb_id):
-        # 1. 检测向量维度
-        dimension = len(chunks[0].embedding)
-        
-        # 2. 获取知识库已有维度
-        kb_dimension = await get_kb_embedding_dimension(kb_id)
-        
-        # 3. 维度一致性检查
-        if kb_dimension and kb_dimension != dimension:
-            raise DimensionMismatchError(
-                f"知识库已绑定 {kb_dimension} 维度, "
-                f"当前模型输出 {dimension} 维度"
-            )
-        
-        # 4. 首次处理时设置维度
-        if not kb_dimension:
-            await set_kb_embedding_dimension(kb_id, dimension)
-        
-        # 5. 确保对应维度列存在
-        await ensure_embedding_column(dimension)
-        
-        # 6. 存储到对应列
-        column_name = f"embedding_{dimension}"
-        # ... 执行存储
-```
-
-**搜索流程**:
-
-```python
-async def search(self, query, query_embedding, kb_id):
-    # 1. 获取知识库的维度
-    dimension = await get_kb_embedding_dimension(kb_id)
-    
-    # 2. 使用对应的维度列进行搜索
-    column_name = f"embedding_{dimension}"
-    
-    # 3. pgvector 余弦距离搜索
-    results = await self._vector_search(
-        column_name, query_embedding, kb_id, top_k
-    )
-```
-
-#### 10.5.5 错误处理
-
-当维度不匹配时，返回特定错误类型：
-
-```python
-class DimensionMismatchError(Exception):
-    """Embedding 维度不匹配异常"""
-    pass
-```
-
-前端展示友好错误信息：
-```typescript
-// tasks/knowledge_base.py 返回
-{
-    "success": false,
-    "error": "dimension_mismatch",
-    "message": "知识库已绑定 768 维度, 当前模型输出 1536 维度..."
-}
-```
-
-#### 10.5.6 迁移脚本
-
-现有数据迁移脚本 (backend/app/scripts/migrate_embeddings.py):
-
-```bash
-# 检测现有向量维度并迁移到新列
-cd backend
-python -m app.scripts.migrate_embeddings
-```
-
-功能：
-1. 检测现有 `embedding` 列的向量维度
-2. 创建对应的新维度列（如 `embedding_768`）
-3. 将数据从旧列迁移到新列
-4. 更新知识库的 `embedding_dimension` 字段
+索引重建不修改 PostgreSQL 权威数据。Dense 索引通过重新写入 Qdrant 点完成；Lexical 索引通过新版本 OpenSearch 索引回填完成，验证通过后切换读别名。若新版本异常，运维可把读别名切回上一版本，并继续使用 PostgreSQL 数据重新回填。
