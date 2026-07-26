@@ -31,7 +31,7 @@ export type RetrievalApi = {
   upsertEvaluationCaseByQuery(kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
   exportEvaluationDataset(kbId: string, datasetId: string, format: EvaluationExportFormat): Promise<EvaluationDatasetExport>
   startEvaluationRun(kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun>
-  listEvaluationRuns(kbId: string, datasetId: string): Promise<EvaluationRun[]>
+  listEvaluationRuns(kbId: string, datasetId: string, sweepId?: string): Promise<EvaluationRun[]>
   getEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
   cancelEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
   compareEvaluationRuns(kbId: string, datasetId: string, baselineId: string, candidateId: string): Promise<RunComparison>

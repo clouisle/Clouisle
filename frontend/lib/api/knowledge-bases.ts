@@ -292,6 +292,13 @@ export interface EvaluationRun {
   started_at: string | null
   finished_at: string | null
   case_results: EvaluationCaseResult[]
+  // Sweep integration fields
+  sweep_id?: string | null
+  stage?: string | null
+  candidate_key?: string | null
+  label?: string | null
+  dataset_revision?: number | null
+  dataset_snapshot_hash?: string | null
 }
 
 export interface RunComparison {
@@ -499,8 +506,12 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
   startEvaluationRun: (kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun> =>
     api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`, config),
 
-  listEvaluationRuns: (kbId: string, datasetId: string): Promise<EvaluationRun[]> =>
-    api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`),
+  listEvaluationRuns: (kbId: string, datasetId: string, sweepId?: string): Promise<EvaluationRun[]> => {
+    const url = sweepId
+      ? `${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs?sweep_id=${sweepId}`
+      : `${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`
+    return api.get(url)
+  },
 
   getEvaluationRun: (kbId: string, datasetId: string, runId: string): Promise<EvaluationRun> =>
     api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs/${runId}`),

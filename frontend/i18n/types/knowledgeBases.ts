@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T18:59:23.826Z
+// GENERATED — 2026-07-26T21:42:17.087Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -418,5 +418,28 @@ export type KnowledgeBasesMessages = {
     sweepStartError: string
     sweepCancelError: string
     sweepApplyError: string
+    sweepRunsLoadError: string
+    parameterName: string
+    values: string
+    addValue: string
+    addParameter: string
+    totalConfigs: string
+    estimatedDuration: string
+    sweepResults: string
+    config: string
+    objectiveMetric: string
+    errors: string
+    guardStatus: string
+    violated: string
+    passed: string
+    evidence: string
+    metricImprovement: string
+    casesImproved: string
+    casesRegressed: string
+    verified: string
+    confirmApply: string
+    confirmApplyDescription: string
+    parameterDiff: string
+    confirm: string
   }
 }
