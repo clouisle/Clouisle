@@ -145,3 +145,52 @@ class RunComparisonResponse(BaseModel):
     unpaired_cases: int
     case_deltas: list[dict]
     config_diff: dict
+
+
+class EvaluationSweepCreate(BaseModel):
+    objective: Literal["chunk_recall", "chunk_mrr", "chunk_ndcg", "document_recall", "document_mrr", "document_ndcg"] = "chunk_ndcg"
+    metric_k: int = Field(default=10, ge=1, le=100)
+    serving_top_k: int = Field(default=10, ge=1, le=100)
+    space: dict = Field(default_factory=dict)
+    guards: dict = Field(default_factory=dict)
+    baseline_config: dict | None = None
+
+    @model_validator(mode="after")
+    def validate_metric_k(self):
+        if self.serving_top_k < self.metric_k:
+            raise ValueError("serving_top_k must be >= metric_k")
+        return self
+
+
+class EvaluationSweepResponse(BaseModel):
+    id: UUID
+    dataset_id: UUID
+    created_by_id: UUID | None
+    status: str
+    objective: str
+    metric_k: int
+    serving_top_k: int
+    space: dict
+    guards: dict
+    baseline_config: dict
+    baseline_config_fingerprint: str | None
+    dataset_revision: int
+    dataset_snapshot_hash: str
+    version_snapshot: dict
+    recommendation: dict | None
+    best_run_id: UUID | None
+    verification_run_id: UUID | None
+    stage: str | None
+    progress: dict
+    heartbeat_at: datetime | None
+    error_message: str | None
+    applied: bool
+    applied_at: datetime | None
+    applied_by_id: UUID | None
+    applied_diff: dict | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
