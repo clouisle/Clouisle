@@ -39,6 +39,60 @@ async def test_replace_cases_validates_and_replaces_inside_transaction():
 
 
 @pytest.mark.anyio
+async def test_update_case_keeps_case_id_while_replace_cases_rebuilds_it():
+    """Regression: editing one case must not reset case ids, because historical
+    ``EvaluationCaseResult.case_id`` links are nulled when rows are recreated."""
+    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4())
+    case_id = uuid4()
+    row = SimpleNamespace(
+        id=case_id,
+        query="whats our refund policy",
+        chunk_relevance={},
+        document_relevance={},
+        expected_empty=False,
+        save=AsyncMock(),
+    )
+    edit = EvaluationCaseInput(query="What is our refund policy?")
+
+    @asynccontextmanager
+    async def transaction():
+        yield
+
+    with (
+        patch.object(store, "in_transaction", transaction),
+        patch.object(store, "validate_case_labels", AsyncMock()),
+    ):
+        updated = await store.update_case(dataset, row, edit)
+
+    assert updated.id == case_id
+    assert updated.query == "What is our refund policy?"
+    row.save.assert_awaited_once_with(
+        update_fields=[
+            "query",
+            "chunk_relevance",
+            "document_relevance",
+            "expected_empty",
+        ]
+    )
+
+    delete = AsyncMock()
+    bulk_create = AsyncMock()
+    with (
+        patch.object(store, "in_transaction", transaction),
+        patch.object(store, "validate_case_labels", AsyncMock()),
+        patch.object(
+            store.EvaluationCase, "filter", return_value=MagicMock(delete=delete)
+        ),
+        patch.object(store.EvaluationCase, "bulk_create", bulk_create),
+    ):
+        await store.replace_cases(dataset, [edit])
+
+    delete.assert_awaited_once()
+    rebuilt = bulk_create.await_args.args[0]
+    assert [item.id for item in rebuilt] != [case_id]
+
+
+@pytest.mark.anyio
 async def test_create_run_marks_dispatch_failure_finished_without_raw_error():
     run = SimpleNamespace(
         id=uuid4(),
