@@ -316,6 +316,14 @@ describe('RetrievalLab', () => {
     await button(tree, 'applyToProduction').props.onClick()
     tree = render()
     expect(confirm).toHaveBeenCalled()
+    expect(updateKnowledgeBase).toHaveBeenCalledWith('kb-1', {
+      settings: expect.objectContaining({
+        search_mode: 'hybrid', top_k: 5, score_threshold: 0,
+        dense_weight: 1, lexical_weight: 1, rrf_k: 60,
+        rerank_enabled: true, rerank_candidate_k: 12,
+        rerank_score_threshold: null,
+      }),
+    })
     expect(text(tree)).toContain('presetUpdateError')
 
     const calls = updateKnowledgeBase.mock.calls.length

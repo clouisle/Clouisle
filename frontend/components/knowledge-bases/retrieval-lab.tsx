@@ -634,10 +634,15 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
     api.getKnowledgeBase(knowledgeBaseId).then(kb => {
       setKnowledgeBase(kb)
       setConfigA({
-        ...DEFAULT_CONFIG,
-        rerank_enabled: kb.settings?.rerank_enabled ?? true,
-        rerank_candidate_k: kb.settings?.rerank_candidate_k ?? 10,
-        rerank_score_threshold: kb.settings?.rerank_score_threshold ?? null,
+        search_mode: kb.settings?.search_mode ?? DEFAULT_CONFIG.search_mode,
+        top_k: kb.settings?.top_k ?? DEFAULT_CONFIG.top_k,
+        threshold: kb.settings?.score_threshold ?? DEFAULT_CONFIG.threshold,
+        dense_weight: kb.settings?.dense_weight ?? DEFAULT_CONFIG.dense_weight,
+        lexical_weight: kb.settings?.lexical_weight ?? DEFAULT_CONFIG.lexical_weight,
+        rrf_k: kb.settings?.rrf_k ?? DEFAULT_CONFIG.rrf_k,
+        rerank_enabled: kb.settings?.rerank_enabled ?? DEFAULT_CONFIG.rerank_enabled,
+        rerank_candidate_k: kb.settings?.rerank_candidate_k ?? DEFAULT_CONFIG.rerank_candidate_k,
+        rerank_score_threshold: kb.settings?.rerank_score_threshold ?? DEFAULT_CONFIG.rerank_score_threshold,
       })
       try {
         const local = JSON.parse(localStorage.getItem(storageKey) || '{}') as { presets?: Preset[]; grades?: Record<string, Grade> }
@@ -715,6 +720,12 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
       await api.updateKnowledgeBase(knowledgeBaseId, {
         settings: {
           ...knowledgeBase?.settings,
+          search_mode: preset.config.search_mode,
+          top_k: preset.config.top_k,
+          score_threshold: preset.config.threshold,
+          dense_weight: preset.config.dense_weight,
+          lexical_weight: preset.config.lexical_weight,
+          rrf_k: preset.config.rrf_k,
           rerank_enabled: preset.config.rerank_enabled,
           rerank_candidate_k: preset.config.rerank_candidate_k,
           rerank_score_threshold: preset.config.rerank_score_threshold,
