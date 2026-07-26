@@ -7,14 +7,14 @@
   - [x] 2. Metric correctness — exclude ungraded cases from ranking means
   - [x] 3. Stage 1: Retrieval Lab API contract and independent permissions — canEvaluate/canUpdate props wired through dashboard and platform routes
   - [x] 4. Stage 2: Dataset revision tracking and query fingerprinting — atomic mutations with optimistic locking, query-based upsert, and comprehensive tests
-  - [ ] 5. Knowledge base retrieval defaults so tuned parameters can land in production
-  - [ ] 6. Labeling workbench — query-scoped grades, candidate pooling, add-to-dataset
-  - [ ] 7. Dataset quality panel
-  - [ ] 8. Tuning backend — sweep model, API, staged coordinate search, budget guards
-  - [ ] 9. Tuning executor — replay and live modes with production-path verification
-  - [ ] 10. Tuning frontend — parameter space editor, comparison table, recommendation and apply
-  - [ ] 11. Optional LLM label suggestions (default off)
-  - [ ] 12. i18n, generated types, documentation, and validation
+  - [x] 5. Stage 3: Query-scoped visual labeling — query isolation prevents cross-query label pollution, versioned storage envelope with migration, and comprehensive test coverage
+  - [ ] 6. Knowledge base retrieval defaults so tuned parameters can land in production
+  - [ ] 7. Stage 4: Multi-strategy candidate pooling and dataset upsert
+  - [ ] 8. Stage 5: Dataset quality panel and run comparison
+  - [ ] 9. Stage 6: Tuning backend — sweep model, API, staged coordinate search, budget guards
+  - [ ] 10. Stage 7: Tuning executor — Celery orchestration with cancel/recover and live verification
+  - [ ] 11. Stage 8: Tuning frontend — parameter space editor, comparison table, recommendation and apply
+  - [ ] 12. Stage 9: i18n, generated types, documentation, and full loop validation
 
 - **retrieval-failure-handling** — In progress. Make first-use lexical retrieval safe, preserve sanitized per-channel diagnostics, return actionable localized retrieval guidance without exposing infrastructure details, remove rerank fail-open degradation, and add stage-aware error reporting. See `docs/plan/retrieval-failure-handling.md`
   - [x] 1. Design docs and implementation index
