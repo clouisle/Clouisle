@@ -2,12 +2,12 @@
 
 ## Active
 
-- **retrieval-tuning-and-dataset-authoring** — Planned. Turn batch evaluation into dataset-driven parameter search: fix metric pollution from ungraded cases, make tuned parameters persistable to production, build evaluation datasets by grading retrieval results instead of hand-writing chunk UUIDs, and add bounded staged coordinate search with production-path verification. See `docs/plan/retrieval-tuning-and-dataset-authoring.md`
+- **retrieval-tuning-and-dataset-authoring** — In progress. Turn batch evaluation into dataset-driven parameter search: fix metric pollution from ungraded cases, make tuned parameters persistable to production, build evaluation datasets by grading retrieval results instead of hand-writing chunk UUIDs, and add bounded staged coordinate search with production-path verification. See `docs/plan/retrieval-tuning-and-dataset-authoring.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Metric correctness — exclude ungraded cases from ranking means
   - [ ] 3. Knowledge base retrieval defaults so tuned parameters can land in production
   - [x] 4. Incremental case CRUD and dataset export
-  - [ ] 5. Retrieval Lab component split (behavior preserving)
+  - [x] 5. Retrieval Lab component split (behavior preserving)
   - [ ] 6. Labeling workbench — query-scoped grades, candidate pooling, add-to-dataset
   - [ ] 7. Dataset quality panel
   - [ ] 8. Tuning backend — sweep model, API, staged coordinate search, budget guards

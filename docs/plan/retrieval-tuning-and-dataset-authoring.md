@@ -177,6 +177,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 
 - **修改文件**：`docs/plan/retrieval-tuning-and-dataset-authoring.md`（本文档）、`docs/IMPLEMENTATION_PLAN.md`
 - **验证**：文档链接可达，索引条目与阶段一致。
+- **状态**：已完成。
 
 ### 阶段 2：指标正确性 —— 排除无标注用例污染均值 ✅
 
@@ -187,8 +188,9 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - `summary_metrics` 新增 `graded_chunk_case_count` / `graded_document_case_count` / `expected_empty_count`。
   - 历史运行的 `summary_metrics` 是不可变快照，**不回填**；前端对缺失新字段做兼容渲染。
 - **验证**：新增测试——(a) 纯 `expected_empty` 数据集的 chunk/document 指标为 `null` 而非 0；(b) 混合数据集中加入 expected-empty 用例后，chunk nDCG **不变**（回归当前缺陷）；(c) 只标 document 的用例不拉低 chunk 均值。
+- **状态**：已完成（commit 3b8da4d7）。
 
-### 阶段 3：KB 检索默认参数落地（让调优结果有去处）
+### 阶段 3：KB 检索默认参数落地（让调优结果有去处） ⏳
 
 - **修改文件**：`backend/app/schemas/knowledge_base.py`、`backend/app/services/retrieval.py`、`backend/app/core/init_data.py`、`backend/app/api/v1/endpoints/knowledge_bases.py`、`frontend/lib/api/knowledge-bases.ts`
 - **具体逻辑**：
@@ -199,6 +201,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - `settings` 为 `dict` 存储，无需 DDL。
   - 前端 `KnowledgeBaseSettings` 接口同步；顺带移除已随「retrieval-failure-handling 阶段 10」下线的 `rerank_fail_open`（前端接口仍留有该字段）。
 - **验证**：(a) 未设置 KB 默认值时，所有现有检索路径行为逐字节不变（回归现有 `test_retrieval.py`）；(b) 设置 KB 默认 `search_mode=fulltext` 后，AUTO/workflow 检索确实走 fulltext；(c) 调用方显式传参时**覆盖** KB 默认（优先级测试）。
+- **状态**：YUN-117 Stage 2 已完成参数解析核心逻辑（commit f7d8b1a5），本阶段聚焦直接搜索显式配置与评测路径全显式。
 
 ### 阶段 4：用例增量 CRUD 与导出 ✅
 
@@ -209,14 +212,16 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - 新增 `GET .../export?format=json|csv`，输出与导入完全同构（可直接回灌）。
   - 沿用 `_ensure_no_active_runs` 守卫；扩展为同时检查活跃 sweep。
 - **验证**：(a) 修改一个用例后，历史 `EvaluationCaseResult.case_id` 仍指向原用例（回归当前缺陷）；(b) 导出→导入往返后用例集合等价；(c) 活跃运行/调优期间增删改用例被 400 拒绝。
+- **状态**：已完成（commit 3d8da4d7 增量 CRUD，commit f7d8b1a5 导出）。
 
-### 阶段 5：Retrieval Lab 组件拆分（无行为变更）
+### 阶段 5：Retrieval Lab 组件拆分（无行为变更） ✅
 
 - **修改文件**：`frontend/components/knowledge-bases/retrieval-lab.tsx`（当前 1021 行）拆为 `retrieval-lab/index.tsx`、`retrieval-lab/types.ts`、`retrieval-lab/config.ts`、`retrieval-lab/result-list.tsx`、`retrieval-lab/config-panel.tsx`、`retrieval-lab/markdown-content.tsx`、`retrieval-lab/batch-evaluation.tsx`
 - **具体逻辑**：先做纯搬迁 + 导出，不改任何行为；小缺陷和 API 接线分别提交。后续功能进入独立文件，避免单文件继续膨胀到 2000+ 行。
 - **验证**：保留现有 `retrieval-lab.test.tsx` 的全部行为断言（允许仅为模块/API mock 适配做机械调整）；`bun run lint`、`bun run build` 通过。独立修复两个已发现缺陷：
   - 首条结果自动展开失效——`runSearch` 存入的是裸 `chunk_id`，渲染侧判断 `${side}:${chunk_id}`，键不匹配；
   - `downloadTemplate('csv')` 无 UI 入口（阶段 4 已用"导出"替代，此处删除死分支）。
+- **状态**：已完成（commit 21346440 拆分，commit e163ef3d 首条展开修复）。
 
 ### 阶段 6：标注工作台（前端）
 
