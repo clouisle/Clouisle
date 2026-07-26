@@ -407,10 +407,9 @@ async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch)
         "model_id": str(kb.rerank_model_id),
         "enabled": True,
         "candidate_k": 8,
-        "fail_open": True,
         "score_threshold": None,
     }
-    assert await store._rerank_results("query", [], "model", True, None) == []
+    assert await store._rerank_results("query", [], "model", None) == []
 
     response = SimpleNamespace(
         results=[
@@ -428,7 +427,6 @@ async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch)
             {"content": "unranked", "score": 0.6},
         ],
         "model",
-        False,
         0.5,
     )
     assert results == [
@@ -446,11 +444,8 @@ async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch)
 
     manager.rerank.side_effect = RuntimeError("provider down")
     recalled = [{"content": "original", "score": 0.5}]
-    assert (
-        await store._rerank_results("query", recalled, "model", True, None) is recalled
-    )
     with pytest.raises(RuntimeError, match="provider down"):
-        await store._rerank_results("query", recalled, "model", False, None)
+        await store._rerank_results("query", recalled, "model", None)
 
     team_manager = SimpleNamespace(
         team_rerank=AsyncMock(side_effect=RuntimeError("team provider down"))
@@ -459,12 +454,8 @@ async def test_rerank_configuration_overrides_and_result_boundaries(monkeypatch)
         vector_store, "_get_model_manager", Mock(return_value=team_manager)
     )
     team_store = VectorStore(team_id="team")
-    assert (
-        await team_store._rerank_results("query", recalled, "model", True, None)
-        is recalled
-    )
     with pytest.raises(RuntimeError, match="team provider down"):
-        await team_store._rerank_results("query", recalled, "model", False, None)
+        await team_store._rerank_results("query", recalled, "model", None)
 
 
 @pytest.mark.asyncio

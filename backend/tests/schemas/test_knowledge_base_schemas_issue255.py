@@ -77,7 +77,6 @@ def test_constants_and_request_defaults():
         "separator": None,
         "rerank_enabled": True,
         "rerank_candidate_k": 10,
-        "rerank_fail_open": True,
         "rerank_score_threshold": None,
     }
     assert RechunkRequest().model_dump() == {

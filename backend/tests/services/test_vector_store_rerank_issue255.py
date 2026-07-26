@@ -37,7 +37,6 @@ async def test_rerank_config_applies_all_overrides(monkeypatch):
         "model_id": str(kb.rerank_model_id),
         "enabled": False,
         "candidate_k": 5,
-        "fail_open": False,
         "score_threshold": None,
     }
 
@@ -56,21 +55,17 @@ async def test_rerank_config_ignores_null_candidate_override(monkeypatch):
         "model_id": "reranker",
         "enabled": True,
         "candidate_k": 10,
-        "fail_open": True,
         "score_threshold": 0.8,
     }
 
 
 @pytest.mark.asyncio
-async def test_rerank_failure_can_fail_open_or_propagate(monkeypatch):
+async def test_rerank_failure_propagates(monkeypatch):
     manager = SimpleNamespace(rerank=AsyncMock(side_effect=RuntimeError("offline")))
     monkeypatch.setattr(vector_store, "_get_model_manager", lambda: manager)
     results = [{"content": "first", "score": 0.5}]
     store = VectorStore()
 
-    assert await store._rerank_results("query", [], "reranker", True, None) == []
-    assert (
-        await store._rerank_results("query", results, "reranker", True, None) is results
-    )
+    assert await store._rerank_results("query", [], "reranker", None) == []
     with pytest.raises(RuntimeError, match="offline"):
-        await store._rerank_results("query", results, "reranker", False, None)
+        await store._rerank_results("query", results, "reranker", None)

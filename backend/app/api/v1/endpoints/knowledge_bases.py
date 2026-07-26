@@ -2111,6 +2111,53 @@ async def rechunk_document(
 # ============ Search ============
 
 
+_RETRIEVAL_ERROR_CATEGORIES = {
+    "AuthenticationError": "provider_authentication",
+    "RateLimitError": "quota_or_rate_limit",
+    "InsufficientQuotaError": "quota_or_rate_limit",
+    "QuotaExceededError": "quota_or_rate_limit",
+    "ModelNotFoundError": "model_configuration",
+    "ModelDisabledError": "model_configuration",
+    "InvalidRequestError": "model_configuration",
+    "UnsupportedOperationError": "model_configuration",
+    "LexicalStoreError": "lexical_unavailable",
+    "BulkIndexError": "lexical_unavailable",
+    "ProviderError": "provider_unavailable",
+    "VectorSearchUnavailableError": "provider_unavailable",
+    "TimeoutError": "provider_unavailable",
+}
+
+
+def _retrieval_exception_tokens(diagnostics: tuple[Any, ...]) -> tuple[str, ...]:
+    tokens = []
+    for diagnostic in diagnostics:
+        if not diagnostic.detail:
+            continue
+        for value in diagnostic.detail.split("; "):
+            _, separator, classified = value.partition("=")
+            tokens.append(classified if separator else value)
+    return tuple(tokens)
+
+
+def _retrieval_error_category(tokens: tuple[str, ...]) -> str:
+    categories = {_RETRIEVAL_ERROR_CATEGORIES.get(token) for token in tokens}
+    if len(categories) != 1 or None in categories:
+        return "unknown"
+    return categories.pop() or "unknown"
+
+
+def _retrieval_response_code(category: str, tokens: tuple[str, ...]) -> ResponseCode:
+    if category == "provider_authentication":
+        return ResponseCode.MODEL_NOT_AUTHORIZED
+    if category == "quota_or_rate_limit":
+        if set(tokens) == {"RateLimitError"}:
+            return ResponseCode.RATE_LIMITED
+        return ResponseCode.MODEL_QUOTA_EXCEEDED
+    if category == "model_configuration" and set(tokens) == {"ModelNotFoundError"}:
+        return ResponseCode.MODEL_NOT_FOUND
+    return ResponseCode.UNKNOWN_ERROR
+
+
 @router.post("/{kb_id}/search", response_model=Response[SearchResponse])
 async def search_knowledge_base(
     kb_id: UUID,
@@ -2132,7 +2179,6 @@ async def search_knowledge_base(
     rerank_override_fields = {
         "rerank_enabled",
         "rerank_candidate_k",
-        "rerank_fail_open",
         "rerank_score_threshold",
     }
     rerank_overrides = {
@@ -2182,23 +2228,49 @@ async def search_knowledge_base(
         diagnostics = getattr(response, "diagnostics", ())
         timings = getattr(response, "timings", ())
     except (DimensionMismatchError, RetrievalError) as e:
-        dimension_mismatch = isinstance(e, DimensionMismatchError) or any(
-            diagnostic.detail == DimensionMismatchError.__name__
-            for diagnostic in e.diagnostics
+        diagnostics = e.diagnostics if isinstance(e, RetrievalError) else ()
+        exception_tokens = _retrieval_exception_tokens(diagnostics)
+        dimension_mismatch = (
+            isinstance(e, DimensionMismatchError)
+            or DimensionMismatchError.__name__ in exception_tokens
         )
         if dimension_mismatch:
             logger.warning("Dimension mismatch during KB search")
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="kb_embedding_dimension_mismatch",
+                data={"retrieval_error_category": "configuration_mismatch"},
             )
-        logger.exception("Vector search failed: %s", e)
+        diagnostic_values = [
+            {
+                "kb_id": str(diagnostic.kb_id),
+                "code": diagnostic.code,
+                "detail": diagnostic.detail,
+                "stage": diagnostic.stage,
+            }
+            for diagnostic in diagnostics
+        ]
+        logger.exception(
+            "Knowledge retrieval failed: kb_id=%s diagnostics=%s",
+            kb_id,
+            diagnostic_values,
+        )
+        category = _retrieval_error_category(exception_tokens)
+        stage = diagnostics[0].stage if diagnostics else None
         raise BusinessError(
-            code=ResponseCode.UNKNOWN_ERROR,
+            code=_retrieval_response_code(category, exception_tokens),
             msg_key="vector_search_failed",
+            data={
+                "retrieval_error_category": category,
+                "stage": stage,
+            },
         )
     except Exception as e:
-        logger.exception("Vector search failed: %s", e)
+        logger.exception(
+            "Knowledge retrieval failed: kb_id=%s error=%s",
+            kb_id,
+            type(e).__name__,
+        )
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_search_failed",

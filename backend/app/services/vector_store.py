@@ -386,7 +386,6 @@ class VectorStore:
             "model_id": model_id,
             "enabled": settings_dict.get("rerank_enabled", True),
             "candidate_k": int(candidate_k),
-            "fail_open": settings_dict.get("rerank_fail_open", True),
             "score_threshold": score_threshold,
         }
 
@@ -398,8 +397,6 @@ class VectorStore:
                 and overrides["rerank_candidate_k"] is not None
             ):
                 config["candidate_k"] = int(overrides["rerank_candidate_k"])
-            if "rerank_fail_open" in overrides:
-                config["fail_open"] = bool(overrides["rerank_fail_open"])
             if "rerank_score_threshold" in overrides:
                 threshold_override = overrides["rerank_score_threshold"]
                 config["score_threshold"] = (
@@ -415,7 +412,6 @@ class VectorStore:
         query: str,
         results: list[dict[str, Any]],
         model_id: str,
-        fail_open: bool,
         rerank_score_threshold: float | None,
     ) -> list[dict[str, Any]]:
         """Apply second-stage reranking to retrieved results."""
@@ -424,27 +420,21 @@ class VectorStore:
 
         documents = [str(result.get("content", "")) for result in results]
 
-        try:
-            if self.team_id:
-                rerank_response = await _get_model_manager().team_rerank(
-                    team_id=self.team_id,
-                    query=query,
-                    documents=documents,
-                    model_id=model_id,
-                    top_n=len(documents),
-                )
-            else:
-                rerank_response = await _get_model_manager().rerank(
-                    query=query,
-                    documents=documents,
-                    model_id=model_id,
-                    top_n=len(documents),
-                )
-        except Exception as e:
-            if fail_open:
-                logger.warning(f"Rerank failed, using recall results instead: {e}")
-                return results
-            raise
+        if self.team_id:
+            rerank_response = await _get_model_manager().team_rerank(
+                team_id=self.team_id,
+                query=query,
+                documents=documents,
+                model_id=model_id,
+                top_n=len(documents),
+            )
+        else:
+            rerank_response = await _get_model_manager().rerank(
+                query=query,
+                documents=documents,
+                model_id=model_id,
+                top_n=len(documents),
+            )
 
         rerank_map = {item.index: item for item in rerank_response.results}
         reranked_results: list[dict[str, Any]] = []
@@ -926,7 +916,6 @@ class VectorStore:
                 query=query,
                 results=results[:rerank_candidate_k],
                 model_id=rerank_config["model_id"],
-                fail_open=bool(rerank_config["fail_open"]),
                 rerank_score_threshold=rerank_config["score_threshold"],
             )
 

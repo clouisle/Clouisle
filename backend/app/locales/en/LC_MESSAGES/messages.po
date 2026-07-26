@@ -2465,7 +2465,7 @@ msgid "workflow_media_prompt_required"
 msgstr "Enter a prompt in the media generation node before running the workflow"
 
 msgid "vector_search_failed"
-msgstr "Vector search failed: {error}"
+msgstr "Knowledge retrieval failed. Please try again."
 
 msgid "vector_update_failed"
 msgstr "Failed to update vector store"

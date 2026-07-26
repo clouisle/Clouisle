@@ -66,10 +66,6 @@ class KnowledgeBaseSettings(BaseModel):
     rerank_candidate_k: int = Field(
         default=10, ge=1, le=100, description="Candidate pool size before reranking"
     )
-    rerank_fail_open: bool = Field(
-        default=True,
-        description="Whether to fall back to recall results when reranking fails",
-    )
     rerank_score_threshold: Optional[float] = Field(
         default=None,
         ge=0,
@@ -409,9 +405,6 @@ class SearchRequest(BaseModel):
     )
     rerank_candidate_k: Optional[int] = Field(
         default=None, ge=1, le=100, description="Override rerank candidate pool size"
-    )
-    rerank_fail_open: Optional[bool] = Field(
-        default=None, description="Override rerank fail-open behavior"
     )
     rerank_score_threshold: Optional[float] = Field(
         default=None,

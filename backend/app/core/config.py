@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     OPENSEARCH_USERNAME: str | None = None
     OPENSEARCH_PASSWORD: str | None = None
     OPENSEARCH_API_KEY: str | None = None
+    OPENSEARCH_VERIFY_SSL: bool = True
     OPENSEARCH_INDEX_PREFIX: str = "clouisle_chunks"
     OPENSEARCH_TIMEOUT_SECONDS: float = 10.0
     RETRIEVAL_HYBRID_KILL_SWITCH: bool = False

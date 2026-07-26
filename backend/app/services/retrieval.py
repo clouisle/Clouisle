@@ -30,6 +30,14 @@ class RetrievalError(RuntimeError):
         super().__init__(message)
 
 
+class _HybridChannelsFailed(RuntimeError):
+    """Carry sanitized failure classifications for both hybrid channels."""
+
+    def __init__(self, reasons: tuple[tuple[str, str], ...]) -> None:
+        self.reasons = reasons
+        super().__init__("both retrieval channels failed")
+
+
 @dataclass(frozen=True)
 class RetrievalTarget:
     """An already-authorized knowledge base and its allowed document scope."""
@@ -117,6 +125,7 @@ class RetrievalDiagnostic:
     kb_id: UUID
     code: Literal["inactive", "missing_embedding_model", "timeout", "failed"]
     detail: str | None = None
+    stage: str | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +154,7 @@ def _lexical_results(hits: list[SearchHit]) -> list[dict[str, Any]]:
         {
             **hit.source,
             "chunk_id": hit.chunk_id,
+            "document_name": hit.source.get("name"),
             "score": hit.score,
             "lexical_score": hit.score,
             "search_type": "fulltext",
@@ -463,12 +473,12 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
                 dense_call, lexical_search(), return_exceptions=True
             )
             reasons = [
-                {"channel": channel, "error": type(value).__name__}
+                (channel, type(value).__name__)
                 for channel, value in (("dense", dense), ("lexical", lexical))
                 if isinstance(value, BaseException)
             ]
             if len(reasons) == 2:
-                raise RuntimeError(f"both retrieval channels failed: {reasons}")
+                raise _HybridChannelsFailed(tuple(reasons))
             results = _weighted_rrf(
                 [] if isinstance(dense, BaseException) else dense,
                 [] if isinstance(lexical, BaseException) else lexical,
@@ -477,8 +487,11 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
                 k=request.rrf_k,
             )
             if reasons:
+                degradation_reasons = [
+                    {"channel": channel, "error": error} for channel, error in reasons
+                ]
                 for result in results:
-                    result["degradation_reasons"] = reasons
+                    result["degradation_reasons"] = degradation_reasons
             return results
 
         try:
@@ -487,9 +500,20 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
                     search(), timeout=request.timeout_seconds
                 )
         except TimeoutError:
-            return [], RetrievalDiagnostic(target.kb_id, "timeout")
+            return [], RetrievalDiagnostic(target.kb_id, "timeout", stage="recall")
+        except _HybridChannelsFailed as exc:
+            detail = "; ".join(f"{channel}={error}" for channel, error in exc.reasons)
+            return [], RetrievalDiagnostic(
+                target.kb_id, "failed", detail, stage="fusion"
+            )
         except Exception as exc:
-            return [], RetrievalDiagnostic(target.kb_id, "failed", str(exc))
+            stage = "lexical_recall" if search_mode == "fulltext" else "dense_recall"
+            return [], RetrievalDiagnostic(
+                target.kb_id,
+                "failed",
+                type(exc).__name__,
+                stage=stage,
+            )
 
         return [
             {**result, "kb_id": str(target.kb_id), "kb_name": target.kb_name}
@@ -518,13 +542,22 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
     rerank_ms = 0.0
     if rerank_store is not None and rerank_config is not None and results:
         rerank_started_at = perf_counter()
-        results = await rerank_store._rerank_results(  # noqa: SLF001
-            query=request.query,
-            results=results,
-            model_id=rerank_config["model_id"],
-            fail_open=bool(rerank_config["fail_open"]),
-            rerank_score_threshold=rerank_config["score_threshold"],
-        )
+        try:
+            results = await rerank_store._rerank_results(  # noqa: SLF001
+                query=request.query,
+                results=results,
+                model_id=rerank_config["model_id"],
+                rerank_score_threshold=rerank_config["score_threshold"],
+            )
+        except Exception as exc:
+            # Rerank failure propagates as a retrieval error with stage context
+            rerank_diagnostic = RetrievalDiagnostic(
+                request.targets[0].kb_id if request.targets else UUID(int=0),
+                "failed",
+                type(exc).__name__,
+                stage="rerank",
+            )
+            raise RetrievalError("rerank failed", (rerank_diagnostic,)) from exc
         rerank_ms = (perf_counter() - rerank_started_at) * 1000
     context_started_at = perf_counter()
     results = await _assemble_context(results, request)

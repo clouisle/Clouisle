@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import knowledge_bases
-from app.schemas.knowledge_base import SearchRequest
-from app.schemas.response import BusinessError, ResponseCode
-from app.services.retrieval import RetrievalError
+from app.schemas.knowledge_base import SearchRequest, SearchResponse
+from app.schemas.response import BusinessError, Response, ResponseCode
+from app.services.retrieval import RetrievalDiagnostic, RetrievalError
 from app.services.vector_store import DimensionMismatchError
 
 
@@ -172,23 +172,103 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_search_fulltext_result_matches_response_model(monkeypatch):
+    kb_id = uuid4()
+    document_id = uuid4()
+    chunk_id = uuid4()
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
+    )
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        "app.services.retrieval.retrieve",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                results=(
+                    {
+                        "chunk_id": str(chunk_id),
+                        "document_id": str(document_id),
+                        "document_name": "Policy.pdf",
+                        "content": "match",
+                        "score": 12.5,
+                        "metadata": {},
+                        "search_type": "fulltext",
+                        "lexical_score": 12.5,
+                        "lexical_rank": 1,
+                        "final_score_stage": "lexical",
+                    },
+                ),
+                diagnostics=(),
+                timings=(),
+            )
+        ),
+    )
+
+    result = await knowledge_bases.search_knowledge_base(
+        kb_id,
+        SearchRequest(query="policy", search_mode="fulltext"),
+        SimpleNamespace(),
+    )
+
+    response = Response[SearchResponse].model_validate(result)
+    assert response.data is not None
+    assert response.data.results[0].document_name == "Policy.pdf"
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("failure", "code", "msg_key"),
+    ("failure", "code", "msg_key", "data"),
     [
         (
             DimensionMismatchError("expected 3, got 4"),
             ResponseCode.VALIDATION_ERROR,
             "kb_embedding_dimension_mismatch",
+            {"retrieval_error_category": "configuration_mismatch"},
+        ),
+        (
+            RetrievalError(
+                "all retrieval targets failed",
+                (
+                    RetrievalDiagnostic(
+                        uuid4(), "failed", DimensionMismatchError.__name__
+                    ),
+                ),
+            ),
+            ResponseCode.VALIDATION_ERROR,
+            "kb_embedding_dimension_mismatch",
+            {"retrieval_error_category": "configuration_mismatch"},
+        ),
+        (
+            RetrievalError(
+                "all retrieval targets failed",
+                (
+                    RetrievalDiagnostic(
+                        uuid4(),
+                        "failed",
+                        "dense=DimensionMismatchError; lexical=LexicalStoreError",
+                    ),
+                ),
+            ),
+            ResponseCode.VALIDATION_ERROR,
+            "kb_embedding_dimension_mismatch",
+            {"retrieval_error_category": "configuration_mismatch"},
         ),
         (
             RetrievalError("all retrieval targets failed", ()),
             ResponseCode.UNKNOWN_ERROR,
             "vector_search_failed",
+            {"retrieval_error_category": "unknown", "stage": None},
         ),
     ],
 )
 async def test_search_translates_vector_store_failures(
-    monkeypatch, failure, code, msg_key
+    monkeypatch, failure, code, msg_key, data
 ):
     kb = SimpleNamespace(
         id=uuid4(),
@@ -211,6 +291,156 @@ async def test_search_translates_vector_store_failures(
 
     assert exc_info.value.code == code
     assert exc_info.value.msg_key == msg_key
+    assert exc_info.value.data == data
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("detail", "code", "category"),
+    [
+        (
+            "AuthenticationError",
+            ResponseCode.MODEL_NOT_AUTHORIZED,
+            "provider_authentication",
+        ),
+        ("RateLimitError", ResponseCode.RATE_LIMITED, "quota_or_rate_limit"),
+        (
+            "InsufficientQuotaError",
+            ResponseCode.MODEL_QUOTA_EXCEEDED,
+            "quota_or_rate_limit",
+        ),
+        ("ModelNotFoundError", ResponseCode.MODEL_NOT_FOUND, "model_configuration"),
+        ("ModelDisabledError", ResponseCode.UNKNOWN_ERROR, "model_configuration"),
+        ("LexicalStoreError", ResponseCode.UNKNOWN_ERROR, "lexical_unavailable"),
+        (
+            "VectorSearchUnavailableError",
+            ResponseCode.UNKNOWN_ERROR,
+            "provider_unavailable",
+        ),
+        (
+            "dense=ProviderError; lexical=ProviderError",
+            ResponseCode.UNKNOWN_ERROR,
+            "provider_unavailable",
+        ),
+        (
+            "dense=AuthenticationError; lexical=LexicalStoreError",
+            ResponseCode.UNKNOWN_ERROR,
+            "unknown",
+        ),
+        ("UnexpectedProviderBody", ResponseCode.UNKNOWN_ERROR, "unknown"),
+    ],
+)
+async def test_search_returns_safe_retrieval_error_categories(
+    monkeypatch, detail, code, category
+):
+    kb_id = uuid4()
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
+    )
+    failure = RetrievalError(
+        "all retrieval targets failed",
+        (RetrievalDiagnostic(kb_id, "failed", detail),),
+    )
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        "app.services.retrieval.retrieve", AsyncMock(side_effect=failure)
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.search_knowledge_base(
+            kb_id, SearchRequest(query="policy"), SimpleNamespace()
+        )
+
+    assert exc_info.value.code == code
+    assert exc_info.value.data == {
+        "retrieval_error_category": category,
+        "stage": None,
+    }
+    assert detail not in str(exc_info.value.data)
+
+
+@pytest.mark.anyio
+async def test_search_error_category_never_returns_raw_diagnostics(monkeypatch):
+    kb_id = uuid4()
+    raw_detail = "https://internal.invalid secret-token provider response"
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
+    )
+    failure = RetrievalError(
+        "all retrieval targets failed",
+        (RetrievalDiagnostic(kb_id, "failed", raw_detail),),
+    )
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        "app.services.retrieval.retrieve", AsyncMock(side_effect=failure)
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.search_knowledge_base(
+            kb_id, SearchRequest(query="policy"), SimpleNamespace()
+        )
+
+    assert exc_info.value.data == {
+        "retrieval_error_category": "unknown",
+        "stage": None,
+    }
+    assert raw_detail not in str(exc_info.value.data)
+
+
+@pytest.mark.anyio
+async def test_search_logs_sanitized_retrieval_diagnostics(monkeypatch):
+    kb_id = uuid4()
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
+    )
+    diagnostic_detail = "dense=VectorSearchUnavailableError; lexical=LexicalStoreError"
+    failure = RetrievalError(
+        "all retrieval targets failed",
+        (RetrievalDiagnostic(kb_id, "failed", diagnostic_detail),),
+    )
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        "app.services.retrieval.retrieve", AsyncMock(side_effect=failure)
+    )
+    log_exception = MagicMock()
+    monkeypatch.setattr(knowledge_bases.logger, "exception", log_exception)
+
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.search_knowledge_base(
+            kb_id, SearchRequest(query="policy"), SimpleNamespace()
+        )
+
+    assert exc_info.value.msg_key == "vector_search_failed"
+    log_exception.assert_called_once_with(
+        "Knowledge retrieval failed: kb_id=%s diagnostics=%s",
+        kb_id,
+        [
+            {
+                "kb_id": str(kb_id),
+                "code": "failed",
+                "detail": diagnostic_detail,
+                "stage": None,
+            }
+        ],
+    )
 
 
 def test_upload_size_and_error_serialization_boundaries(monkeypatch):

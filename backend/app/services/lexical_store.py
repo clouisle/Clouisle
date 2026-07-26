@@ -188,6 +188,7 @@ class LexicalStore:
             headers=headers,
             auth=auth,
             timeout=timeout or settings.OPENSEARCH_TIMEOUT_SECONDS,
+            verify=settings.OPENSEARCH_VERIFY_SSL,
         )
 
     @property
@@ -327,6 +328,7 @@ class LexicalStore:
         limit: int = 10,
         offset: int = 0,
     ) -> list[SearchHit]:
+        await self.ensure_index()
         filters: list[dict[str, Any]] = [{"term": {"team_id": str(team_id)}}]
         if kb_ids:
             filters.append({"terms": {"kb_id": [str(value) for value in kb_ids]}})

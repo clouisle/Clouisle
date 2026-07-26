@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 import pytest
 
+from app.core.config import settings
 from app.services.lexical_store import (
     INDEX_MAPPINGS,
     BulkIndexError,
@@ -44,6 +45,7 @@ async def test_default_client_configures_api_key_and_timeout(monkeypatch):
             captured.update(kwargs)
 
     monkeypatch.setattr(httpx, "AsyncClient", Client)
+    monkeypatch.setattr(settings, "OPENSEARCH_VERIFY_SSL", False)
     LexicalStore(
         base_url="https://search.example/",
         api_key="secret",
@@ -55,6 +57,7 @@ async def test_default_client_configures_api_key_and_timeout(monkeypatch):
     assert captured["headers"]["Authorization"] == "ApiKey secret"
     assert captured["auth"] is None
     assert captured["timeout"] == 4.5
+    assert captured["verify"] is False
 
 
 @pytest.mark.asyncio
@@ -211,7 +214,8 @@ async def test_search_builds_bm25_scopes_and_parses_hits():
             ]
         }
     }
-    stub = OpenSearchStub([(200, response)])
+    aliases = {"chunks-v1": {"aliases": {"chunks-read": {}, "chunks-write": {}}}}
+    stub = OpenSearchStub([(200, ""), (200, aliases), (200, response)])
     store = LexicalStore(client=client_for(stub), index_prefix="chunks")
 
     hits = await store.search(
@@ -224,7 +228,7 @@ async def test_search_builds_bm25_scopes_and_parses_hits():
     )
 
     assert [(hit.chunk_id, hit.score) for hit in hits] == [("c1", 3.25), ("c2", 0)]
-    query = body(stub.requests[0])
+    query = body(stub.requests[2])
     assert query["from"] == 10
     assert query["size"] == 5
     assert query["query"]["bool"]["must"][0]["multi_match"]["query"] == "answer"
@@ -305,9 +309,35 @@ async def test_cutover_handles_missing_aliases_and_skips_target_removal():
 
 
 @pytest.mark.asyncio
-async def test_search_and_count_allow_global_optional_scopes():
+async def test_first_search_initializes_missing_index_and_aliases():
     stub = OpenSearchStub(
         [
+            (404, ""),
+            (201, {}),
+            (404, {}),
+            (200, {}),
+            (200, {"hits": {"hits": []}}),
+        ]
+    )
+    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
+
+    assert await store.search("answer", team_id="team") == []
+    assert [(request.method, request.url.path) for request in stub.requests] == [
+        ("HEAD", "/chunks-v1"),
+        ("PUT", "/chunks-v1"),
+        ("GET", "/_alias/chunks-read,chunks-write"),
+        ("POST", "/_aliases"),
+        ("POST", "/chunks-read/_search"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_and_count_allow_global_optional_scopes():
+    aliases = {"chunks-v1": {"aliases": {"chunks-read": {}, "chunks-write": {}}}}
+    stub = OpenSearchStub(
+        [
+            (200, ""),
+            (200, aliases),
             (200, {"hits": {"hits": []}}),
             (200, {"count": 3}),
         ]
@@ -315,9 +345,9 @@ async def test_search_and_count_allow_global_optional_scopes():
     store = LexicalStore(client=client_for(stub), index_prefix="chunks")
 
     assert await store.search("answer", team_id="team") == []
-    assert body(stub.requests[0])["query"]["bool"]["filter"] == [
+    assert body(stub.requests[2])["query"]["bool"]["filter"] == [
         {"term": {"team_id": "team"}}
     ]
 
     assert await store.count() == 3
-    assert body(stub.requests[1])["query"]["bool"]["filter"] == []
+    assert body(stub.requests[3])["query"]["bool"]["filter"] == []

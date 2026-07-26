@@ -53,7 +53,6 @@ def install_store(
                     "enabled": False,
                     "model_id": None,
                     "candidate_k": 10,
-                    "fail_open": True,
                     "score_threshold": None,
                 }
             ),
@@ -198,7 +197,7 @@ async def test_timeout_has_explicit_diagnostic_and_fails_single_target(monkeypat
         await retrieval.retrieve(request(timeout_seconds=0.001))
 
     assert exc_info.value.diagnostics == (
-        retrieval.RetrievalDiagnostic(KB_1, "timeout"),
+        retrieval.RetrievalDiagnostic(KB_1, "timeout", stage="recall"),
     )
 
 
@@ -216,8 +215,9 @@ async def test_one_target_failure_isolated_but_dual_failure_raises(monkeypatch):
 
     assert [item["chunk_id"] for item in response.results] == ["ok"]
     assert response.diagnostics == (
-        retrieval.RetrievalDiagnostic(KB_1, "failed", "provider unavailable"),
+        retrieval.RetrievalDiagnostic(KB_1, "failed", "RuntimeError", "dense_recall"),
     )
+    assert "provider unavailable" not in response.diagnostics[0].detail
 
     async def fail(**_kwargs):
         raise RuntimeError("provider unavailable")
@@ -235,7 +235,11 @@ async def test_fulltext_returns_raw_bm25_and_applies_all_scopes(monkeypatch):
     hit = retrieval.SearchHit(
         chunk_id="chunk-1",
         score=12.5,
-        source={"document_id": str(DOC_1), "content": "match"},
+        source={
+            "document_id": str(DOC_1),
+            "name": "Policy.pdf",
+            "content": "match",
+        },
     )
     install_store(monkeypatch, search, [hit])
     selected = target(
@@ -247,6 +251,7 @@ async def test_fulltext_returns_raw_bm25_and_applies_all_scopes(monkeypatch):
     response = await retrieval.retrieve(request(selected, search_mode="fulltext"))
 
     assert response.results[0]["score"] == 12.5
+    assert response.results[0]["document_name"] == "Policy.pdf"
     assert response.results[0]["lexical_score"] == 12.5
     assert response.results[0]["lexical_rank"] == 1
     assert response.results[0]["final_score_stage"] == "lexical"
@@ -413,18 +418,24 @@ async def test_hybrid_degrades_to_healthy_channel(
 
 @pytest.mark.asyncio
 async def test_hybrid_dual_failure_and_fulltext_failure_are_explicit(monkeypatch):
-    dense = AsyncMock(side_effect=RuntimeError("qdrant down"))
+    dense = AsyncMock(side_effect=RuntimeError("qdrant secret response"))
     install_store(monkeypatch, dense)
     lexical = retrieval.LexicalStore()
-    lexical.search.side_effect = RuntimeError("opensearch down")
+    lexical.search.side_effect = ValueError("opensearch secret response")
 
     with pytest.raises(retrieval.RetrievalError) as hybrid_error:
         await retrieval.retrieve(request())
-    assert "both retrieval channels failed" in hybrid_error.value.diagnostics[0].detail
+    hybrid_detail = hybrid_error.value.diagnostics[0].detail
+    assert hybrid_detail == "dense=RuntimeError; lexical=ValueError"
+    assert "qdrant secret response" not in hybrid_detail
+    assert "opensearch secret response" not in hybrid_detail
 
     with pytest.raises(retrieval.RetrievalError) as fulltext_error:
         await retrieval.retrieve(request(search_mode="fulltext"))
-    assert fulltext_error.value.diagnostics[0].detail == "opensearch down"
+    assert fulltext_error.value.diagnostics[0].detail == "ValueError"
+    assert (
+        "opensearch secret response" not in fulltext_error.value.diagnostics[0].detail
+    )
 
 
 @pytest.mark.asyncio
@@ -461,7 +472,6 @@ async def test_global_rerank_runs_once_after_cross_kb_ranking(monkeypatch):
             "enabled": True,
             "model_id": str(MODEL_ID),
             "candidate_k": 20,
-            "fail_open": True,
             "score_threshold": None,
         },
         rerank_results=rerank,
@@ -489,12 +499,11 @@ async def test_global_rerank_runs_once_after_cross_kb_ranking(monkeypatch):
         str(KB_2),
         str(KB_1),
     ]
-    assert rerank_call["fail_open"] is True
     assert rerank_call["rerank_score_threshold"] is None
 
 
 @pytest.mark.asyncio
-async def test_global_rerank_respects_fail_closed(monkeypatch):
+async def test_global_rerank_failure_fails_closed_with_stage_diagnostic(monkeypatch):
     search = AsyncMock(
         return_value=[
             {
@@ -512,16 +521,20 @@ async def test_global_rerank_respects_fail_closed(monkeypatch):
             "enabled": True,
             "model_id": str(MODEL_ID),
             "candidate_k": 10,
-            "fail_open": False,
             "score_threshold": 0.5,
         },
         rerank_results=RuntimeError("reranker down"),
     )
 
-    with pytest.raises(RuntimeError, match="reranker down"):
+    with pytest.raises(retrieval.RetrievalError, match="rerank failed") as exc_info:
         await retrieval.retrieve(
             request(target(rerank_model_id=MODEL_ID), search_mode="vector")
         )
+
+    assert exc_info.value.diagnostics == (
+        retrieval.RetrievalDiagnostic(KB_1, "failed", "RuntimeError", "rerank"),
+    )
+    assert "reranker down" not in str(exc_info.value.diagnostics)
 
 
 class ChunkQuery:
