@@ -96,3 +96,92 @@ def test_schema_validation_branches():
         EvaluationCaseInput(query="q", chunk_relevance={uuid4(): 4})
     with pytest.raises(ValidationError):
         EvaluationRunCreate(search_mode="hybrid", dense_weight=0, lexical_weight=0)
+
+
+def test_run_config_drops_retired_rerank_fail_open():
+    assert "rerank_fail_open" not in EvaluationRunCreate().model_dump()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("kind", ["chunk", "document"])
+async def test_single_case_writes_reject_labels_outside_kb(kind):
+    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4())
+    item_id = uuid4()
+    case = EvaluationCaseInput(
+        query="q",
+        chunk_relevance={item_id: 3} if kind == "chunk" else {},
+        document_relevance={item_id: 3} if kind == "document" else {},
+    )
+    model = store.DocumentChunk if kind == "chunk" else store.Document
+    existing = SimpleNamespace(query="old", save=AsyncMock())
+    create = AsyncMock()
+
+    @asynccontextmanager
+    async def transaction():
+        yield
+
+    with (
+        patch.object(store, "in_transaction", transaction),
+        patch.object(model, "filter", return_value=Values([])),
+        patch.object(
+            store.EvaluationCase,
+            "filter",
+            return_value=MagicMock(count=AsyncMock(return_value=0)),
+        ),
+        patch.object(store.EvaluationCase, "create", create),
+    ):
+        with pytest.raises(BusinessError) as created:
+            await store.create_case(dataset, case)
+        with pytest.raises(BusinessError) as updated:
+            await store.update_case(dataset, existing, case)
+
+    assert created.value.msg_key == "evaluation_label_outside_kb"
+    assert updated.value.msg_key == "evaluation_label_outside_kb"
+    create.assert_not_awaited()
+    existing.save.assert_not_awaited()
+    assert existing.query == "old"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("case_count", "expected"), [(store.MAX_CASES - 1, True), (store.MAX_CASES, False)]
+)
+async def test_create_case_enforces_dataset_case_ceiling(case_count, expected):
+    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4())
+    chunk_id = uuid4()
+    case = EvaluationCaseInput(query="q", chunk_relevance={chunk_id: 3})
+    create = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+    validate = AsyncMock()
+
+    @asynccontextmanager
+    async def transaction():
+        yield
+
+    with (
+        patch.object(store, "in_transaction", transaction),
+        patch.object(store, "validate_case_labels", validate),
+        patch.object(
+            store.EvaluationCase,
+            "filter",
+            return_value=MagicMock(count=AsyncMock(return_value=case_count)),
+        ),
+        patch.object(store.EvaluationCase, "create", create),
+    ):
+        if expected:
+            await store.create_case(dataset, case)
+        else:
+            with pytest.raises(BusinessError) as error:
+                await store.create_case(dataset, case)
+            assert error.value.msg_key == "evaluation_dataset_case_limit"
+
+    if expected:
+        assert create.await_args.kwargs["chunk_relevance"] == {str(chunk_id): 3}
+    else:
+        create.assert_not_awaited()
+        validate.assert_not_awaited()
+
+
+def test_serialize_cases_rejects_unknown_format():
+    with pytest.raises(BusinessError) as error:
+        store.serialize_cases([], "xml")
+    assert error.value.msg_key == "evaluation_export_format_invalid"

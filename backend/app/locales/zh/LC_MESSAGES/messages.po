@@ -2779,6 +2779,24 @@ msgstr "评测数据集已导入"
 msgid "evaluation_dataset_empty"
 msgstr "评测数据集没有测试用例"
 
+msgid "evaluation_dataset_case_limit"
+msgstr "评测数据集的用例数量已达上限"
+
+msgid "evaluation_export_format_invalid"
+msgstr "导出格式必须为 json 或 csv"
+
+msgid "evaluation_case_not_found"
+msgstr "未找到评测用例"
+
+msgid "evaluation_case_created"
+msgstr "评测用例已创建"
+
+msgid "evaluation_case_updated"
+msgstr "评测用例已更新"
+
+msgid "evaluation_case_deleted"
+msgstr "评测用例已删除"
+
 msgid "evaluation_run_created"
 msgstr "评测运行已创建"
 

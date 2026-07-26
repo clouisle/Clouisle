@@ -116,7 +116,7 @@ describe('knowledge base APIs', () => {
 
     test(`${name} routes construct persistent evaluation requests`, async () => {
       const cases = [{ query: 'renewal', chunk_relevance: {}, document_relevance: {}, expected_empty: false }]
-      const config = { search_mode: 'hybrid' as const, top_k: 5, score_threshold: 0, dense_weight: 1, lexical_weight: 1, rrf_k: 60, rerank_enabled: false, rerank_candidate_k: 5, rerank_fail_open: true, rerank_score_threshold: null }
+      const config = { search_mode: 'hybrid' as const, top_k: 5, score_threshold: 0, dense_weight: 1, lexical_weight: 1, rrf_k: 60, rerank_enabled: false, rerank_candidate_k: 5, rerank_score_threshold: null }
       const file = new File(['query\nrenewal'], 'cases.csv', { type: 'text/csv' })
       await knowledgeBasesApi.listEvaluationDatasets('kb-1')
       await knowledgeBasesApi.createEvaluationDataset('kb-1', { name: 'Regression', cases })
@@ -127,6 +127,11 @@ describe('knowledge base APIs', () => {
       await knowledgeBasesApi.listEvaluationRuns('kb-1', 'dataset-1')
       await knowledgeBasesApi.getEvaluationRun('kb-1', 'dataset-1', 'run-1')
       await knowledgeBasesApi.cancelEvaluationRun('kb-1', 'dataset-1', 'run-1')
+      await knowledgeBasesApi.createEvaluationCase('kb-1', 'dataset-1', cases[0])
+      await knowledgeBasesApi.updateEvaluationCase('kb-1', 'dataset-1', 'case-1', cases[0])
+      await knowledgeBasesApi.deleteEvaluationCase('kb-1', 'dataset-1', 'case-1')
+      await knowledgeBasesApi.exportEvaluationDataset('kb-1', 'dataset-1')
+      await knowledgeBasesApi.exportEvaluationDataset('kb-1', 'dataset-1', 'csv')
 
       const base = `${prefix}/kb-1/evaluation-datasets`
       expect(get).toHaveBeenNthCalledWith(1, base)
@@ -139,6 +144,11 @@ describe('knowledge base APIs', () => {
       expect(get).toHaveBeenNthCalledWith(3, `${base}/dataset-1/runs`)
       expect(get).toHaveBeenNthCalledWith(4, `${base}/dataset-1/runs/run-1`)
       expect(post).toHaveBeenNthCalledWith(4, `${base}/dataset-1/runs/run-1/cancel`)
+      expect(post).toHaveBeenNthCalledWith(5, `${base}/dataset-1/cases`, cases[0])
+      expect(put).toHaveBeenCalledWith(`${base}/dataset-1/cases/case-1`, cases[0])
+      expect(remove).toHaveBeenCalledWith(`${base}/dataset-1/cases/case-1`)
+      expect(get).toHaveBeenNthCalledWith(5, `${base}/dataset-1/export?format=json`)
+      expect(get).toHaveBeenNthCalledWith(6, `${base}/dataset-1/export?format=csv`)
     })
 
     test(`${name} routes construct document and chunk requests`, async () => {

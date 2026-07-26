@@ -1,17 +1,38 @@
+import inspect
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.api.v1.endpoints import retrieval_evaluations as api
+from app.core import i18n
 from app.schemas.response import BusinessError
 from app.schemas.retrieval_evaluation import (
+    EvaluationCaseInput,
     EvaluationDatasetCreate,
     EvaluationDatasetUpdate,
     EvaluationRunCreate,
 )
+from app.services.retrieval_evaluation_store import parse_cases
+
+
+class _Rows:
+    """Mimics ``filter(...).order_by(...)`` resolving to an awaitable queryset."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def order_by(self, *_fields):
+        return self
+
+    def __await__(self):
+        async def resolve():
+            return self.rows
+
+        return resolve().__await__()
 
 
 @pytest.mark.anyio
@@ -122,6 +143,203 @@ async def test_case_update_is_blocked_by_active_run_but_metadata_update_is_allow
     guard.assert_awaited_once_with(dataset.id)
     replace.assert_not_awaited()
     assert dataset.description == "new"
+
+
+@pytest.mark.anyio
+async def test_case_crud_preserves_case_id_and_returns_case_payloads():
+    dataset = SimpleNamespace(id=uuid4())
+    case_id = uuid4()
+    stored = SimpleNamespace(
+        id=case_id,
+        query="whats our refund policy",
+        chunk_relevance={},
+        document_relevance={},
+        expected_empty=False,
+        delete=AsyncMock(),
+    )
+    edit = EvaluationCaseInput(query="What is our refund policy?")
+    edited = SimpleNamespace(
+        id=case_id,
+        query=edit.query,
+        chunk_relevance={},
+        document_relevance={},
+        expected_empty=False,
+    )
+    with (
+        patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
+        patch.object(api, "_ensure_no_active_runs", AsyncMock()),
+        patch.object(api, "create_case", AsyncMock(return_value=stored)) as create,
+        patch.object(api, "_case", AsyncMock(return_value=stored)) as lookup,
+        patch.object(api, "update_case", AsyncMock(return_value=edited)) as update,
+    ):
+        created = await api.create_dataset_case(
+            uuid4(), dataset.id, edit, SimpleNamespace()
+        )
+        updated = await api.update_dataset_case(
+            uuid4(), dataset.id, case_id, edit, SimpleNamespace()
+        )
+        deleted = await api.delete_dataset_case(
+            uuid4(), dataset.id, case_id, SimpleNamespace()
+        )
+
+    create.assert_awaited_once_with(dataset, edit)
+    update.assert_awaited_once_with(dataset, stored, edit)
+    assert lookup.await_count == 2
+    assert all(call.args == (dataset.id, case_id) for call in lookup.await_args_list)
+    assert created["data"]["id"] == case_id
+    assert updated["data"] == {
+        "id": case_id,
+        "query": edit.query,
+        "chunk_relevance": {},
+        "document_relevance": {},
+        "expected_empty": False,
+    }
+    assert deleted["data"] is None
+    stored.delete.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_case_lookup_is_scoped_to_dataset():
+    query = MagicMock(first=AsyncMock(return_value=None))
+    with patch.object(api.EvaluationCase, "filter", return_value=query) as filtered:
+        with pytest.raises(BusinessError) as error:
+            await api._case(uuid4(), uuid4())
+    assert error.value.status_code == 404
+    assert error.value.msg_key == "evaluation_case_not_found"
+    assert "dataset_id" in filtered.call_args.kwargs
+
+
+@pytest.mark.anyio
+async def test_case_mutations_are_blocked_while_a_run_is_active():
+    dataset = SimpleNamespace(id=uuid4())
+    case = EvaluationCaseInput(query="q")
+    guard = AsyncMock(
+        side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
+    )
+    with (
+        patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
+        patch.object(api, "_ensure_no_active_runs", guard),
+        patch.object(api, "create_case", AsyncMock()) as create,
+        patch.object(api, "update_case", AsyncMock()) as update,
+        patch.object(api, "_case", AsyncMock()) as lookup,
+    ):
+        calls = (
+            lambda: api.create_dataset_case(
+                uuid4(), dataset.id, case, SimpleNamespace()
+            ),
+            lambda: api.update_dataset_case(
+                uuid4(), dataset.id, uuid4(), case, SimpleNamespace()
+            ),
+            lambda: api.delete_dataset_case(
+                uuid4(), dataset.id, uuid4(), SimpleNamespace()
+            ),
+        )
+        for call in calls:
+            with pytest.raises(BusinessError) as error:
+                await call()
+            assert error.value.msg_key == "evaluation_dataset_has_active_runs"
+
+    assert guard.await_count == 3
+    create.assert_not_awaited()
+    update.assert_not_awaited()
+    lookup.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"chunk_relevance": {uuid4(): 4}},
+        {"document_relevance": {uuid4(): -1}},
+        {"chunk_relevance": {uuid4(): 1.5}},
+        {"expected_empty": True, "chunk_relevance": {uuid4(): 3}},
+    ],
+)
+def test_single_case_endpoints_reject_invalid_grades_and_expected_empty(payload):
+    for endpoint in (api.create_dataset_case, api.update_dataset_case):
+        annotation = inspect.signature(endpoint).parameters["data"].annotation
+        assert annotation is EvaluationCaseInput
+    with pytest.raises(ValidationError):
+        EvaluationCaseInput(query="q", **payload)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("export_format", ["json", "csv"])
+async def test_export_round_trips_through_the_import_parser(export_format):
+    dataset = SimpleNamespace(id=uuid4())
+    chunk_id, document_id = uuid4(), uuid4()
+    cases = [
+        EvaluationCaseInput(
+            query='"Quoted", comma\nand a newline',
+            chunk_relevance={chunk_id: 3},
+            document_relevance={document_id: 2},
+        ),
+        EvaluationCaseInput(query="退款政策在哪里？", expected_empty=True),
+    ]
+    rows = [
+        SimpleNamespace(
+            query=case.query,
+            chunk_relevance={
+                str(key): value for key, value in case.chunk_relevance.items()
+            },
+            document_relevance={
+                str(key): value for key, value in case.document_relevance.items()
+            },
+            expected_empty=case.expected_empty,
+        )
+        for case in cases
+    ]
+    with (
+        patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
+        patch.object(api.EvaluationCase, "filter", return_value=_Rows(rows)),
+    ):
+        response = await api.export_dataset(
+            uuid4(), dataset.id, export_format, SimpleNamespace()
+        )
+
+    assert response["data"]["format"] == export_format
+    reimported = parse_cases(
+        response["data"]["content"].encode(), f"cases.{export_format}"
+    )
+    assert reimported == cases
+
+
+@pytest.mark.anyio
+async def test_export_defaults_to_json_and_rejects_unknown_formats():
+    dataset = SimpleNamespace(id=uuid4())
+    rows = [
+        SimpleNamespace(
+            query="q", chunk_relevance={}, document_relevance={}, expected_empty=False
+        )
+    ]
+    assert inspect.signature(api.export_dataset).parameters["format"].default == "json"
+    with (
+        patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
+        patch.object(api.EvaluationCase, "filter", return_value=_Rows(rows)),
+    ):
+        default = await api.export_dataset(
+            uuid4(), dataset.id, current_user=SimpleNamespace()
+        )
+        with pytest.raises(BusinessError) as error:
+            await api.export_dataset(uuid4(), dataset.id, "xml", SimpleNamespace())
+
+    assert default["data"]["format"] == "json"
+    assert parse_cases(default["data"]["content"].encode(), "cases.json") == [
+        EvaluationCaseInput(query="q")
+    ]
+    assert error.value.msg_key == "evaluation_export_format_invalid"
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_new_case_and_export_messages_are_translated(language):
+    for key in (
+        "evaluation_case_not_found",
+        "evaluation_case_created",
+        "evaluation_case_updated",
+        "evaluation_case_deleted",
+        "evaluation_dataset_case_limit",
+        "evaluation_export_format_invalid",
+    ):
+        assert i18n.t(key, lang=language) != key
 
 
 @pytest.mark.anyio

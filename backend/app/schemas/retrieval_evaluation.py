@@ -68,7 +68,6 @@ class EvaluationRunCreate(BaseModel):
     rrf_k: int = Field(default=60, ge=1, le=1000)
     rerank_enabled: bool = False
     rerank_candidate_k: int = Field(default=20, ge=1, le=100)
-    rerank_fail_open: bool = True
     rerank_score_threshold: float | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
