@@ -27,11 +27,13 @@ const caseDraft = (item?: EvaluationCase): CaseDraft => ({
   expectedEmpty: item?.expected_empty ?? false,
 })
 
-export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }: {
+export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel, canEvaluate, canUpdate }: {
   knowledgeBaseId: string
   api: RetrievalApi
   config: Config
   hasRerankModel: boolean
+  canEvaluate: boolean
+  canUpdate: boolean
 }) {
   const t = useTranslations('knowledgeBases')
   const [datasets, setDatasets] = React.useState<EvaluationDataset[]>([])
@@ -74,6 +76,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
   }, [api, knowledgeBaseId, loadError, selectedRun])
 
   const createDataset = async () => {
+    if (!canEvaluate) return
     const name = datasetName.trim()
     if (!name) return
     setBusy(true); setError('')
@@ -85,7 +88,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
   }
 
   const saveCases = async () => {
-    if (!datasetId) return
+    if (!canEvaluate || !datasetId) return
     setBusy(true); setError('')
     try {
       const parseRelevance = (value: string) => {
@@ -123,6 +126,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
   }
 
   const removeCase = async (draft: CaseDraft) => {
+    if (!canEvaluate) return
     if (!draft.id) {
       setCases(current => current.filter(item => item.key !== draft.key))
       return
@@ -138,7 +142,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
   }
 
   const startRun = async () => {
-    if (!datasetId || !cases.length) return
+    if (!canEvaluate || !datasetId || !cases.length) return
     setBusy(true); setError('')
     try {
       const run = await api.startEvaluationRun(knowledgeBaseId, datasetId, runConfig(config, hasRerankModel))
@@ -198,7 +202,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
             <Input value={datasetDescription} onChange={event => setDatasetDescription(event.target.value)} placeholder={t('datasetDescription')} />
           </div>
         </div>
-        <Button onClick={() => void createDataset()} disabled={!datasetName.trim() || busy} size="sm">{t('createDataset')}</Button>
+        <Button onClick={() => void createDataset()} disabled={!canEvaluate || !datasetName.trim() || busy} size="sm">{t('createDataset')}</Button>
 
         <div className="space-y-2">
           <Label className="text-xs">{t('datasets')}</Label>
@@ -256,6 +260,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
             <Input
               type="file"
               accept=".json,.csv,application/json,text/csv"
+              disabled={!canEvaluate}
               onChange={event => {
                 const file = event.target.files?.[0]
                 if (!file) return
@@ -283,7 +288,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
               <span className="text-xs text-muted-foreground">
                 {t('datasetStats', { cases: cases.length, date: '' }).split('·')[0].trim()}
               </span>
-              <Button variant="outline" size="sm" onClick={() => setCases(current => [...current, caseDraft()])}>
+              <Button variant="outline" size="sm" onClick={() => setCases(current => [...current, caseDraft()])} disabled={!canEvaluate}>
                 {t('addCase')}
               </Button>
             </div>
@@ -341,7 +346,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={busy}
+                    disabled={!canEvaluate || busy}
                     onClick={() => void removeCase(item)}
                   >
                     {t('removeCase')}
@@ -350,7 +355,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
               </fieldset>
             ))
           )}
-          <Button onClick={() => void saveCases()} disabled={busy || cases.length === 0} size="sm">
+          <Button onClick={() => void saveCases()} disabled={!canEvaluate || busy || cases.length === 0} size="sm">
             {t('saveCases')}
           </Button>
         </CardContent>
@@ -368,7 +373,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
             <pre className="overflow-auto text-xs">{JSON.stringify(runConfig(config, hasRerankModel), null, 2)}</pre>
           </div>
 
-          <Button onClick={() => void startRun()} disabled={busy || !cases.length} size="sm">
+          <Button onClick={() => void startRun()} disabled={!canEvaluate || busy || !cases.length} size="sm">
             {t('startRun')}
           </Button>
 
@@ -401,7 +406,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge>{selectedRun.status}</Badge>
-                {active && (
+                {active && canEvaluate && (
                   <Button
                     variant="outline"
                     size="sm"

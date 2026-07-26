@@ -75,6 +75,7 @@ interface RetrievalLabProps {
   knowledgeBaseId: string
   api: RetrievalApi
   backHref: string
+  canEvaluate: boolean
   canUpdate: boolean
   authenticatedMarkdown?: boolean
   onLoadError?: () => void
@@ -177,7 +178,7 @@ function configParams(query: string, config: Config, hasRerankModel: boolean): S
   }
 }
 
-export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
+export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
   const t = useTranslations('knowledgeBases')
   const { resolvedTheme } = useTheme()
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
@@ -476,7 +477,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
 
     {batchMode ? (
       <div className="flex-1 min-h-0 overflow-auto">
-        <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} />
+        <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} canEvaluate={canEvaluate} canUpdate={canUpdate} />
       </div>
     ) : (
       <main className="flex-1 min-h-0 overflow-auto p-4">

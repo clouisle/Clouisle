@@ -110,11 +110,11 @@ afterEach(() => slots.forEach(slot => slot.cleanup?.()))
 
 function render(props: Partial<Parameters<typeof RetrievalLab>[0]> = {}) {
   cursor = 0
-  return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canUpdate: true, ...props })
+  return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canEvaluate: true, canUpdate: true, ...props })
 }
 function renderBatch() {
   cursor = 0
-  return BatchEvaluation({ knowledgeBaseId: 'kb-1', api, config: { search_mode: 'hybrid', top_k: 5, threshold: 0, dense_weight: 1, lexical_weight: 1, rrf_k: 60, rerank_enabled: true, rerank_candidate_k: 10, rerank_score_threshold: null }, hasRerankModel: true })
+  return BatchEvaluation({ knowledgeBaseId: 'kb-1', api, config: { search_mode: 'hybrid', top_k: 5, threshold: 0, dense_weight: 1, lexical_weight: 1, rrf_k: 60, rerank_enabled: true, rerank_candidate_k: 10, rerank_score_threshold: null }, hasRerankModel: true, canEvaluate: true })
 }
 async function flushBatch(tree = renderBatch()) {
   while (effects.length) {

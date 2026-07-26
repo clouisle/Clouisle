@@ -18,6 +18,7 @@ export type RetrievalApi = {
   search(id: string, params: SearchParams): Promise<SearchResponse>
   updateKnowledgeBase(id: string, data: { settings: KnowledgeBaseSettings }): Promise<KnowledgeBase>
   listEvaluationDatasets(kbId: string): Promise<EvaluationDataset[]>
+  getEvaluationDataset(kbId: string, datasetId: string): Promise<EvaluationDataset>
   createEvaluationDataset(kbId: string, data: { name: string; description?: string | null; cases?: EvaluationCaseInput[] }): Promise<EvaluationDataset>
   updateEvaluationDataset(kbId: string, datasetId: string, data: { cases: EvaluationCaseInput[] }): Promise<EvaluationDataset>
   importEvaluationDataset(kbId: string, datasetId: string, file: File): Promise<EvaluationDataset>

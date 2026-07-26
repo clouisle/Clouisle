@@ -13,6 +13,7 @@ export function SearchTestClient({ knowledgeBaseId }: { knowledgeBaseId: string 
       knowledgeBaseId={knowledgeBaseId}
       api={knowledgeBasesApi}
       backHref={`/app/kb/${knowledgeBaseId}`}
+      canEvaluate={hasPermission('kb:evaluate')}
       canUpdate={hasPermission('kb:update')}
       onLoadError={() => router.push('/app/kb')}
       authenticatedMarkdown
