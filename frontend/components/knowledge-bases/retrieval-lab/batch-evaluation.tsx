@@ -27,13 +27,12 @@ const caseDraft = (item?: EvaluationCase): CaseDraft => ({
   expectedEmpty: item?.expected_empty ?? false,
 })
 
-export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel, canEvaluate, canUpdate }: {
+export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel, canEvaluate }: {
   knowledgeBaseId: string
   api: RetrievalApi
   config: Config
   hasRerankModel: boolean
   canEvaluate: boolean
-  canUpdate: boolean
 }) {
   const t = useTranslations('knowledgeBases')
   const [datasets, setDatasets] = React.useState<EvaluationDataset[]>([])

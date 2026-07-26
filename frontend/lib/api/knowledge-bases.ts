@@ -15,6 +15,7 @@ export interface KnowledgeBaseSettings {
   separator?: string | null
   rerank_enabled?: boolean
   rerank_candidate_k?: number
+  rerank_fail_open?: boolean
   rerank_score_threshold?: number | null
   search_mode?: SearchMode | null
   top_k?: number | null

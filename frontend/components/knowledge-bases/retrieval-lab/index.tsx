@@ -20,13 +20,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn, formatDuration } from '@/lib/utils'
 import { BatchEvaluation } from './batch-evaluation'
 import { type Config, type RetrievalApi, runConfig } from './shared'
+import { type Grade, type StorageEnvelope, getDraft, migrateStorage, setGrade as setGradeInDraft } from './labeling'
 
 export { BatchEvaluation } from './batch-evaluation'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
-
-type Preset = { name: string; config: Config }
-type Grade = 'relevant' | 'partial' | 'irrelevant'
 type RetrievalFailure =
   | 'request'
   | 'configuration_mismatch'
@@ -194,11 +192,11 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
   const [showConfig, setShowConfig] = React.useState(false)
   const [advanced, setAdvanced] = React.useState(false)
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
-  const [grades, setGrades] = React.useState<Record<string, Grade>>({})
-  const [presets, setPresets] = React.useState<Preset[]>([])
+  const [storage, setStorage] = React.useState<StorageEnvelope>({ version: 2, presets: [], drafts: {} })
   const [presetName, setPresetName] = React.useState('')
   const [selectedPreset, setSelectedPreset] = React.useState('')
   const [batchMode, setBatchMode] = React.useState(false)
+  const [submittedQuery, setSubmittedQuery] = React.useState('')
 
   const storageKey = `retrieval-lab:${knowledgeBaseId}`
   React.useEffect(() => {
@@ -216,17 +214,24 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
         rerank_score_threshold: kb.settings?.rerank_score_threshold ?? DEFAULT_CONFIG.rerank_score_threshold,
       })
       try {
-        const local = JSON.parse(localStorage.getItem(storageKey) || '{}') as { presets?: Preset[]; grades?: Record<string, Grade> }
-        setPresets(local.presets ?? [])
-        setGrades(local.grades ?? {})
+        const local = JSON.parse(localStorage.getItem(storageKey) || '{}')
+        const migrated = migrateStorage(local)
+        setStorage(migrated ?? { version: 2, presets: [], drafts: {} })
       } catch {
         localStorage.removeItem(storageKey)
       }
     }).catch(() => onLoadError?.()).finally(() => setLoading(false))
   }, [api, knowledgeBaseId, onLoadError, storageKey])
 
-  const persist = (nextPresets = presets, nextGrades = grades) =>
-    localStorage.setItem(storageKey, JSON.stringify({ presets: nextPresets, grades: nextGrades }))
+  const persist = (nextStorage: StorageEnvelope) => {
+    setStorage(nextStorage)
+    localStorage.setItem(storageKey, JSON.stringify(nextStorage))
+  }
+
+  // Current draft for the submitted query (not the live input text)
+  const currentDraft = getDraft(storage, submittedQuery)
+  const grades = currentDraft.grades
+  const presets = storage.presets
 
   const runSearch = async () => {
     const trimmed = query.trim()
@@ -234,6 +239,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     setSearching(true)
     setSearched(true)
     setResponses({})
+    setSubmittedQuery(trimmed) // Capture submitted query for labeling isolation
     try {
       const [a, b] = await Promise.allSettled([
         api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model))),
@@ -283,11 +289,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
   const savePreset = () => {
     const name = presetName.trim()
     if (!name) return
-    const next = [...presets.filter(preset => preset.name !== name), { name, config: configA }]
-    setPresets(next)
+    const nextPresets = [...presets.filter(preset => preset.name !== name), { name, config: configA }]
     setSelectedPreset(name)
     setPresetName('')
-    persist(next)
+    persist({ ...storage, presets: nextPresets })
   }
 
   const applyPreset = async () => {
@@ -295,32 +300,32 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     if (!preset || !canUpdate || !window.confirm(t('applyPresetConfirm', { name: preset.name }))) return
     setUpdateError(false)
     try {
+      const cfg = preset.config as Config
       await api.updateKnowledgeBase(knowledgeBaseId, {
         settings: {
-          ...knowledgeBase?.settings,
-          search_mode: preset.config.search_mode,
-          top_k: preset.config.top_k,
-          score_threshold: preset.config.threshold,
-          dense_weight: preset.config.dense_weight,
-          lexical_weight: preset.config.lexical_weight,
-          rrf_k: preset.config.rrf_k,
-          rerank_enabled: preset.config.rerank_enabled,
-          rerank_candidate_k: preset.config.rerank_candidate_k,
-          rerank_score_threshold: preset.config.rerank_score_threshold,
+          search_mode: cfg.search_mode,
+          top_k: cfg.top_k,
+          score_threshold: cfg.threshold,
+          dense_weight: cfg.dense_weight,
+          lexical_weight: cfg.lexical_weight,
+          rrf_k: cfg.rrf_k,
+          rerank_enabled: cfg.rerank_enabled,
+          rerank_candidate_k: cfg.rerank_candidate_k,
+          rerank_score_threshold: cfg.rerank_score_threshold,
         },
       })
+      toast.success(t('applyPresetSuccess'))
     } catch {
       setUpdateError(true)
     }
   }
 
   const setGrade = (chunkId: string, grade: Grade) => {
-    const next = { ...grades, [chunkId]: grade }
-    setGrades(next)
-    persist(presets, next)
+    if (!submittedQuery) return
+    persist(setGradeInDraft(storage, submittedQuery, chunkId, grade))
   }
 
-  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
 
   const aRanks = new Map(responses.a?.results.map((result, index) => [result.chunk_id, index + 1]))
   const bRanks = new Map(responses.b?.results.map((result, index) => [result.chunk_id, index + 1]))
@@ -351,7 +356,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
               <span className="flex min-w-0 items-center gap-2"><Badge variant="outline">#{index + 1}</Badge><FileText className="h-3.5 w-3.5" /><strong className="truncate">{result.document_name}</strong></span>
               <span className="flex items-center gap-2"><Badge>{translateSearchType(result.search_type, t) || translateFinalScoreStage(result.final_score_stage, t) || t('unknownChannel')}</Badge>{movement && <span>{movement - (index + 1) > 0 ? '↑' : movement - (index + 1) < 0 ? '↓' : '→'} {Math.abs(movement - (index + 1))}</span>}{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
             </div>
-            {!open && <p className="line-clamp-2 text-xs text-muted-foreground"><Highlight text={result.content} query={query} /></p>}
+            {!open && <p className="line-clamp-2 text-xs text-muted-foreground"><Highlight text={result.content} query={submittedQuery} /></p>}
           </CardHeader>
           {open && <CardContent className="space-y-3 px-3 pb-3">
             <div className="grid grid-cols-2 gap-1 text-[11px] md:grid-cols-5">
@@ -397,7 +402,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
                   <MDPreview source={result.content} components={{ img: ({ src, alt }) => <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} /> }} />
                 </div>
               ) : (
-                <p className="whitespace-pre-wrap text-xs"><Highlight text={result.content} query={query} /></p>
+                <p className="whitespace-pre-wrap text-xs"><Highlight text={result.content} query={submittedQuery} /></p>
               )}
             </div>
             {(result.degradation_reasons?.length || result.rerank_reason) && <p className="text-xs text-amber-700 dark:text-amber-300">{t('fallbackReasons')}: {[...(result.degradation_reasons ?? []).map(reason => `${reason.channel}: ${reason.error}`), result.rerank_reason].filter(Boolean).join('; ')}</p>}
@@ -477,7 +482,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
 
     {batchMode ? (
       <div className="flex-1 min-h-0 overflow-auto">
-        <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} canEvaluate={canEvaluate} canUpdate={canUpdate} />
+        <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} canEvaluate={canEvaluate} />
       </div>
     ) : (
       <main className="flex-1 min-h-0 overflow-auto p-4">
@@ -585,7 +590,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
                       <Button variant="outline" size="sm" onClick={savePreset}>{t('savePreset')}</Button>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Select aria-label={t('presets')} value={selectedPreset || '__none__'} onValueChange={value => { const name = !value || value === '__none__' ? '' : value; setSelectedPreset(name); const preset = presets.find(item => item.name === name); if (preset) setConfigA(preset.config) }}>
+                      <Select aria-label={t('presets')} value={selectedPreset || '__none__'} onValueChange={value => { const name = !value || value === '__none__' ? '' : value; setSelectedPreset(name); const preset = presets.find(item => item.name === name); if (preset) setConfigA(preset.config as Config) }}>
                         <SelectTrigger className="flex-1"><SelectValue>{selectedPreset || t('presets')}</SelectValue></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">{t('presets')}</SelectItem>
