@@ -49,20 +49,44 @@ def _candidate(result: dict[str, Any], rank: int) -> dict[str, Any]:
 
 
 async def execute_evaluation_run(run_id: UUID) -> dict[str, Any]:
+    """Execute a single evaluation run.
+
+    Idempotent: safe to call multiple times. Returns early if already terminal.
+    Checks for cancellation before starting and periodically during execution.
+
+    Args:
+        run_id: UUID of the evaluation run to execute.
+
+    Returns:
+        Status dict with status, run_id, and optional summary_metrics.
+    """
     run = await EvaluationRun.filter(id=run_id).prefetch_related("dataset").first()
     if not run:
         return {"status": "missing", "run_id": str(run_id)}
-    if run.status == EvaluationRunStatus.CANCELED.value:
-        return {"status": "canceled", "run_id": str(run_id)}
-    if run.status not in {
-        EvaluationRunStatus.PENDING.value,
-        EvaluationRunStatus.RUNNING.value,
-    }:
-        return {"status": run.status, "run_id": str(run_id)}
 
-    run.status = EvaluationRunStatus.RUNNING.value
-    run.started_at = run.started_at or datetime.now(timezone.utc)
-    await run.save(update_fields=["status", "started_at"])
+    # Terminal state protection: don't re-execute completed/failed/canceled runs
+    if run.status in (
+        EvaluationRunStatus.COMPLETED.value,
+        EvaluationRunStatus.FAILED.value,
+        EvaluationRunStatus.CANCELED.value,
+    ):
+        return {
+            "status": run.status,
+            "run_id": str(run_id),
+            "summary_metrics": run.summary_metrics,
+        }
+
+    # Idempotent transition to RUNNING
+    if run.status == EvaluationRunStatus.PENDING.value:
+        run.status = EvaluationRunStatus.RUNNING.value
+        run.started_at = datetime.now(timezone.utc)
+        await run.save(update_fields=["status", "started_at"])
+    elif run.status == EvaluationRunStatus.RUNNING.value:
+        # Already running (redelivery or recovery) - continue from where we left off
+        pass
+    else:
+        # Unknown status
+        return {"status": run.status, "run_id": str(run_id)}
     config = run.config_snapshot
     dataset = run.dataset
     try:

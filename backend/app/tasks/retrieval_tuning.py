@@ -3,10 +3,8 @@
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any, Literal, cast
+from typing import cast
 from uuid import UUID
-
-from tortoise.transactions import in_transaction
 
 from app.core.celery_app import celery_app
 from app.models import EvaluationDataset, EvaluationRun, EvaluationSweep
@@ -19,6 +17,83 @@ from app.services.retrieval_tuning import (
     select_recommendation,
 )
 from app.tasks.retrieval_evaluation import execute_evaluation_run
+
+
+@celery_app.task(bind=True, name="retrieval_tuning.cancel_sweep")
+async def cancel_sweep(self, sweep_id: str) -> dict:
+    """Cancel a running sweep.
+
+    Marks the sweep as canceled. The orchestrator will check status
+    before each stage and stop gracefully.
+
+    Returns:
+        Status dict with success flag.
+    """
+    sweep_uuid = UUID(sweep_id)
+
+    sweep = await EvaluationSweep.get(id=sweep_uuid)
+
+    # Only cancel if not already terminal
+    if sweep.status in (
+        EvaluationSweepStatus.COMPLETED.value,
+        EvaluationSweepStatus.FAILED.value,
+        EvaluationSweepStatus.CANCELED.value,
+    ):
+        return {
+            "success": False,
+            "message": f"Sweep already in terminal state: {sweep.status}",
+        }
+
+    sweep.status = EvaluationSweepStatus.CANCELED.value
+    sweep.finished_at = datetime.now(timezone.utc)
+    await sweep.save()
+
+    # Revoke Celery task if it's running
+    if sweep.task_id:
+        celery_app.control.revoke(sweep.task_id, terminate=True, signal="SIGTERM")
+
+    return {
+        "success": True,
+        "message": "Sweep marked as canceled",
+    }
+
+
+@celery_app.task(name="retrieval_tuning.recover_stale_sweeps")
+async def recover_stale_sweeps() -> dict:
+    """Recover sweeps with stale heartbeats.
+
+    Should be called periodically (e.g., every 5 minutes via Celery beat).
+    Finds sweeps in RUNNING state with heartbeat older than 10 minutes
+    and marks them as FAILED for manual recovery.
+
+    Returns:
+        Recovery summary with count.
+    """
+    from datetime import timedelta
+
+    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+    stale_sweeps = await EvaluationSweep.filter(
+        status=EvaluationSweepStatus.RUNNING.value,
+        heartbeat_at__lt=stale_threshold,
+    ).all()
+
+    recovered_count = 0
+    for sweep in stale_sweeps:
+        sweep.status = EvaluationSweepStatus.FAILED.value
+        heartbeat_time = sweep.heartbeat_at.isoformat() if sweep.heartbeat_at else "unknown"
+        sweep.error_message = (
+            f"Heartbeat stale since {heartbeat_time}. "
+            "Task may have crashed or been killed."
+        )
+        sweep.finished_at = datetime.now(timezone.utc)
+        await sweep.save()
+        recovered_count += 1
+
+    return {
+        "recovered_count": recovered_count,
+        "stale_threshold": stale_threshold.isoformat(),
+    }
 
 
 def dataset_snapshot_hash(cases: list[dict]) -> str:
@@ -37,54 +112,53 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
     sweep_uuid = UUID(sweep_id)
 
     try:
-        async with in_transaction() as conn:
-            sweep = await EvaluationSweep.get(id=sweep_uuid)
+        sweep = await EvaluationSweep.get(id=sweep_uuid)
 
-            # Check if already terminal
-            if sweep.status in (
-                EvaluationSweepStatus.COMPLETED.value,
-                EvaluationSweepStatus.FAILED.value,
-                EvaluationSweepStatus.CANCELED.value,
-            ):
-                return {
-                    "status": sweep.status,
-                    "recommendation": sweep.recommendation,
-                    "best_run_id": str(sweep.best_run_id) if sweep.best_run_id else None,
-                    "error_message": sweep.error_message,
-                }
+        # Check if already terminal
+        if sweep.status in (
+            EvaluationSweepStatus.COMPLETED.value,
+            EvaluationSweepStatus.FAILED.value,
+            EvaluationSweepStatus.CANCELED.value,
+        ):
+            return {
+                "status": sweep.status,
+                "recommendation": sweep.recommendation,
+                "best_run_id": str(sweep.best_run_id) if sweep.best_run_id else None,
+                "error_message": sweep.error_message,
+            }
 
-            # Mark as running
-            sweep.status = EvaluationSweepStatus.RUNNING.value
-            sweep.started_at = datetime.now(timezone.utc)
-            sweep.heartbeat_at = datetime.now(timezone.utc)
-            sweep.task_id = self.request.id
+        # Mark as running
+        sweep.status = EvaluationSweepStatus.RUNNING.value
+        sweep.started_at = datetime.now(timezone.utc)
+        sweep.heartbeat_at = datetime.now(timezone.utc)
+        sweep.task_id = self.request.id
+        await sweep.save()
+
+        # Load dataset and freeze snapshot
+        dataset = await EvaluationDataset.get(id=sweep.dataset_id).prefetch_related("cases")
+        cases = [
+            {
+                "id": str(case.id),
+                "query": case.query,
+                "chunk_relevance": case.chunk_relevance,
+                "document_relevance": case.document_relevance,
+                "expected_empty": case.expected_empty,
+            }
+            for case in dataset.cases
+        ]
+
+        snapshot_hash = dataset_snapshot_hash(cases)
+
+        # Verify dataset revision and snapshot haven't drifted
+        if sweep.dataset_revision != dataset.revision or sweep.dataset_snapshot_hash != snapshot_hash:
+            sweep.status = EvaluationSweepStatus.FAILED.value
+            sweep.error_message = "Dataset has changed since sweep was created"
+            sweep.finished_at = datetime.now(timezone.utc)
             await sweep.save()
-
-            # Load dataset and freeze snapshot
-            dataset = await EvaluationDataset.get(id=sweep.dataset_id).prefetch_related("cases")
-            cases = [
-                {
-                    "id": str(case.id),
-                    "query": case.query,
-                    "chunk_relevance": case.chunk_relevance,
-                    "document_relevance": case.document_relevance,
-                    "expected_empty": case.expected_empty,
-                }
-                for case in dataset.cases
-            ]
-
-            snapshot_hash = dataset_snapshot_hash(cases)
-
-            # Verify dataset revision and snapshot haven't drifted
-            if sweep.dataset_revision != dataset.revision or sweep.dataset_snapshot_hash != snapshot_hash:
-                sweep.status = EvaluationSweepStatus.FAILED.value
-                sweep.error_message = "Dataset has changed since sweep was created"
-                sweep.finished_at = datetime.now(timezone.utc)
-                await sweep.save()
-                return {
-                    "status": sweep.status,
-                    "error_message": sweep.error_message,
-                }
+            return {
+                "status": sweep.status,
+                "error_message": sweep.error_message,
+            }
 
         # Expand parameter space
         baseline_config = sweep.baseline_config.copy()
@@ -97,51 +171,48 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
         case_count = len(cases)
         run_count = len(all_candidates)
         if run_count > 32:
-            async with in_transaction() as conn:
-                sweep = await EvaluationSweep.get(id=sweep_uuid)
-                sweep.status = EvaluationSweepStatus.FAILED.value
-                sweep.error_message = f"Parameter space too large: {run_count} runs exceeds limit of 32"
-                sweep.finished_at = datetime.now(timezone.utc)
-                await sweep.save()
+            sweep = await EvaluationSweep.get(id=sweep_uuid)
+            sweep.status = EvaluationSweepStatus.FAILED.value
+            sweep.error_message = f"Parameter space too large: {run_count} runs exceeds limit of 32"
+            sweep.finished_at = datetime.now(timezone.utc)
+            await sweep.save()
 
-                return {
-                    "status": sweep.status,
-                    "error_message": sweep.error_message,
-                }
+            return {
+                "status": sweep.status,
+                "error_message": sweep.error_message,
+            }
 
         if case_count * run_count > 5000:
-            async with in_transaction() as conn:
-                sweep = await EvaluationSweep.get(id=sweep_uuid)
-                sweep.status = EvaluationSweepStatus.FAILED.value
-                sweep.error_message = f"Total workload {case_count} cases × {run_count} runs = {case_count * run_count} exceeds limit of 5000"
-                sweep.finished_at = datetime.now(timezone.utc)
-                await sweep.save()
+            sweep = await EvaluationSweep.get(id=sweep_uuid)
+            sweep.status = EvaluationSweepStatus.FAILED.value
+            sweep.error_message = f"Total workload {case_count} cases × {run_count} runs = {case_count * run_count} exceeds limit of 5000"
+            sweep.finished_at = datetime.now(timezone.utc)
+            await sweep.save()
 
-                return {
-                    "status": sweep.status,
-                    "error_message": sweep.error_message,
-                }
+            return {
+                "status": sweep.status,
+                "error_message": sweep.error_message,
+            }
 
         # Execute all child runs serially by stage
         stages: dict[str, list[tuple[str, dict, dict]]] = {}
 
         for stage_name, candidate_key, label, config in all_candidates:
             # Check if canceled
-            async with in_transaction() as conn:
-                sweep = await EvaluationSweep.get(id=sweep_uuid)
-                if sweep.status == EvaluationSweepStatus.CANCELED.value:
-                    return {
-                        "status": sweep.status,
-                        "error_message": "Sweep was canceled",
-                    }
+            sweep = await EvaluationSweep.get(id=sweep_uuid)
+            if sweep.status == EvaluationSweepStatus.CANCELED.value:
+                return {
+                    "status": sweep.status,
+                    "error_message": "Sweep was canceled",
+                }
 
-                # Update heartbeat and stage
-                sweep.stage = stage_name
-                sweep.heartbeat_at = datetime.now(timezone.utc)
-                if stage_name not in sweep.progress:
-                    sweep.progress[stage_name] = {"total": 0, "completed": 0}
-                sweep.progress[stage_name]["total"] += 1
-                await sweep.save()
+            # Update heartbeat and stage
+            sweep.stage = stage_name
+            sweep.heartbeat_at = datetime.now(timezone.utc)
+            if stage_name not in sweep.progress:
+                sweep.progress[stage_name] = {"total": 0, "completed": 0}
+            sweep.progress[stage_name]["total"] += 1
+            await sweep.save()
 
             # Check if child run already exists (idempotent redelivery)
             existing_run = await EvaluationRun.filter(
@@ -151,10 +222,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
 
             if existing_run and existing_run.status == EvaluationRunStatus.COMPLETED.value:
                 # Already completed, skip
-                async with in_transaction() as conn:
-                    sweep = await EvaluationSweep.get(id=sweep_uuid)
-                    sweep.progress[stage_name]["completed"] += 1
-                    await sweep.save()
+                sweep = await EvaluationSweep.get(id=sweep_uuid)
+                sweep.progress[stage_name]["completed"] += 1
+                await sweep.save()
                 continue
 
             # Create or reuse child run
@@ -182,12 +252,11 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 await execute_evaluation_run(run_id)
             except Exception as e:
                 # Child run failed, mark sweep as failed
-                async with in_transaction() as conn:
-                    sweep = await EvaluationSweep.get(id=sweep_uuid)
-                    sweep.status = EvaluationSweepStatus.FAILED.value
-                    sweep.error_message = f"Child run {candidate_key} failed: {str(e)}"
-                    sweep.finished_at = datetime.now(timezone.utc)
-                    await sweep.save()
+                sweep = await EvaluationSweep.get(id=sweep_uuid)
+                sweep.status = EvaluationSweepStatus.FAILED.value
+                sweep.error_message = f"Child run {candidate_key} failed: {str(e)}"
+                sweep.finished_at = datetime.now(timezone.utc)
+                await sweep.save()
 
                 return {
                     "status": sweep.status,
@@ -195,10 +264,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 }
 
             # Update progress
-            async with in_transaction() as conn:
-                sweep = await EvaluationSweep.get(id=sweep_uuid)
-                sweep.progress[stage_name]["completed"] += 1
-                await sweep.save()
+            sweep = await EvaluationSweep.get(id=sweep_uuid)
+            sweep.progress[stage_name]["completed"] += 1
+            await sweep.save()
 
             # Collect stage results for recommendation
             if stage_name not in stages:
@@ -256,12 +324,11 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 try:
                     await execute_evaluation_run(verification_run_id)
                 except Exception as e:
-                    async with in_transaction() as conn:
-                        sweep = await EvaluationSweep.get(id=sweep_uuid)
-                        sweep.status = EvaluationSweepStatus.FAILED.value
-                        sweep.error_message = f"Verification run failed: {str(e)}"
-                        sweep.finished_at = datetime.now(timezone.utc)
-                        await sweep.save()
+                    sweep = await EvaluationSweep.get(id=sweep_uuid)
+                    sweep.status = EvaluationSweepStatus.FAILED.value
+                    sweep.error_message = f"Verification run failed: {str(e)}"
+                    sweep.finished_at = datetime.now(timezone.utc)
+                    await sweep.save()
 
                     return {
                         "status": sweep.status,
@@ -296,18 +363,17 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                         recommendation = None
 
         # Mark sweep as completed
-        async with in_transaction() as conn:
-            sweep = await EvaluationSweep.get(id=sweep_uuid)
-            sweep.status = EvaluationSweepStatus.COMPLETED.value
-            sweep.recommendation = recommendation
-            sweep.best_run_id = (
-                UUID(recommendation["candidate_key"].split(":", 1)[1])
-                if recommendation and ":" in recommendation["candidate_key"]
-                else None
-            )
-            sweep.verification_run_id = verification_run_id
-            sweep.finished_at = datetime.now(timezone.utc)
-            await sweep.save()
+        sweep = await EvaluationSweep.get(id=sweep_uuid)
+        sweep.status = EvaluationSweepStatus.COMPLETED.value
+        sweep.recommendation = recommendation
+        sweep.best_run_id = (
+            UUID(recommendation["candidate_key"].split(":", 1)[1])
+            if recommendation and ":" in recommendation["candidate_key"]
+            else None
+        )
+        sweep.verification_run_id = verification_run_id
+        sweep.finished_at = datetime.now(timezone.utc)
+        await sweep.save()
 
         return {
             "status": sweep.status,
@@ -318,16 +384,15 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
 
     except Exception as e:
         # Unexpected error
-        async with in_transaction() as conn:
-            sweep = await EvaluationSweep.get(id=sweep_uuid)
-            if sweep.status not in (
-                EvaluationSweepStatus.COMPLETED.value,
-                EvaluationSweepStatus.FAILED.value,
-                EvaluationSweepStatus.CANCELED.value,
-            ):
-                sweep.status = EvaluationSweepStatus.FAILED.value
-                sweep.error_message = str(e)
-                sweep.finished_at = datetime.now(timezone.utc)
-                await sweep.save()
+        sweep = await EvaluationSweep.get(id=sweep_uuid)
+        if sweep.status not in (
+            EvaluationSweepStatus.COMPLETED.value,
+            EvaluationSweepStatus.FAILED.value,
+            EvaluationSweepStatus.CANCELED.value,
+        ):
+            sweep.status = EvaluationSweepStatus.FAILED.value
+            sweep.error_message = str(e)
+            sweep.finished_at = datetime.now(timezone.utc)
+            await sweep.save()
 
         raise
