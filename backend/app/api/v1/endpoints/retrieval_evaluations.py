@@ -21,15 +21,19 @@ from app.models.retrieval_evaluation import (
 from app.models.user import User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.retrieval_evaluation import (
+    EvaluationCaseInput,
     EvaluationDatasetCreate,
     EvaluationDatasetUpdate,
     EvaluationRunCreate,
 )
 from app.services.retrieval_evaluation_store import (
     MAX_IMPORT_BYTES,
+    create_case,
     create_run,
     parse_cases,
     replace_cases,
+    serialize_cases,
+    update_case,
 )
 
 router = APIRouter()
@@ -64,6 +68,17 @@ async def _ensure_no_active_runs(dataset_id: UUID) -> None:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST, msg_key="evaluation_dataset_has_active_runs"
         )
+
+
+async def _case(dataset_id: UUID, case_id: UUID) -> EvaluationCase:
+    case = await EvaluationCase.filter(id=case_id, dataset_id=dataset_id).first()
+    if not case:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="evaluation_case_not_found",
+            status_code=404,
+        )
+    return case
 
 
 def _case_data(case: EvaluationCase) -> dict[str, Any]:
@@ -224,6 +239,73 @@ async def import_dataset(
     return success(
         data=await _dataset_data(dataset), msg_key="evaluation_dataset_imported"
     )
+
+
+@router.get(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/export", response_model=Response[dict]
+)
+async def export_dataset(
+    kb_id: UUID,
+    dataset_id: UUID,
+    format: str = "json",
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Export cases in an import-compatible shape; unknown formats are rejected."""
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+    cases = await EvaluationCase.filter(dataset_id=dataset.id).order_by(
+        "created_at", "id"
+    )
+    return success(data={"format": format, "content": serialize_cases(cases, format)})
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/cases", response_model=Response[dict]
+)
+async def create_dataset_case(
+    kb_id: UUID,
+    dataset_id: UUID,
+    data: EvaluationCaseInput,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+    await _ensure_no_active_runs(dataset.id)
+    case = await create_case(dataset, data)
+    return success(data=_case_data(case), msg_key="evaluation_case_created")
+
+
+@router.put(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/cases/{case_id}",
+    response_model=Response[dict],
+)
+async def update_dataset_case(
+    kb_id: UUID,
+    dataset_id: UUID,
+    case_id: UUID,
+    data: EvaluationCaseInput,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+    await _ensure_no_active_runs(dataset.id)
+    existing = await _case(dataset.id, case_id)
+    case = await update_case(dataset, existing, data)
+    return success(data=_case_data(case), msg_key="evaluation_case_updated")
+
+
+@router.delete(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/cases/{case_id}",
+    response_model=Response[None],
+)
+async def delete_dataset_case(
+    kb_id: UUID,
+    dataset_id: UUID,
+    case_id: UUID,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+    await _ensure_no_active_runs(dataset.id)
+    case = await _case(dataset.id, case_id)
+    await case.delete()
+    return success(msg_key="evaluation_case_deleted")
 
 
 @router.post(

@@ -2779,6 +2779,24 @@ msgstr "Evaluation dataset imported"
 msgid "evaluation_dataset_empty"
 msgstr "The evaluation dataset has no cases"
 
+msgid "evaluation_dataset_case_limit"
+msgstr "The evaluation dataset already holds the maximum number of cases"
+
+msgid "evaluation_export_format_invalid"
+msgstr "The export format must be json or csv"
+
+msgid "evaluation_case_not_found"
+msgstr "Evaluation case not found"
+
+msgid "evaluation_case_created"
+msgstr "Evaluation case created"
+
+msgid "evaluation_case_updated"
+msgstr "Evaluation case updated"
+
+msgid "evaluation_case_deleted"
+msgstr "Evaluation case deleted"
+
 msgid "evaluation_run_created"
 msgstr "Evaluation run created"
 
