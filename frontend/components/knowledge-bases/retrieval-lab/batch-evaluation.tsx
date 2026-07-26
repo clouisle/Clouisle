@@ -12,10 +12,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { formatDuration } from '@/lib/utils'
 import { type Config, type RetrievalApi, runConfig } from './shared'
 import { DatasetQuality } from './dataset-quality'
+import { RunComparisonComponent } from './run-comparison'
 
 type CaseDraft = { key: string; id?: string; query: string; chunkRelevance: string; documentRelevance: string; expectedEmpty: boolean }
 let nextCaseKey = 0
@@ -374,88 +376,108 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel, 
           <strong className="text-sm">{t('evaluationRuns')}</strong>
         </CardHeader>
         <CardContent className="space-y-3 p-3 pt-0">
-          <div className="rounded border bg-muted/50 p-2">
-            <div className="mb-1 text-xs font-medium text-muted-foreground">{t('runConfig')}</div>
-            <pre className="overflow-auto text-xs">{JSON.stringify(runConfig(config, hasRerankModel), null, 2)}</pre>
-          </div>
+          <Tabs defaultValue="runs" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="runs">{t('evaluationRuns')}</TabsTrigger>
+              <TabsTrigger value="comparison">{t('runComparison')}</TabsTrigger>
+            </TabsList>
 
-          <Button onClick={() => void startRun()} disabled={!canEvaluate || busy || !cases.length} size="sm">
-            {t('startRun')}
-          </Button>
-
-          <div className="space-y-2">
-            <Label className="text-xs">{t('evaluationRuns')}</Label>
-            <Select
-              aria-label={t('evaluationRuns')}
-              value={selectedRun?.id ?? '__none__'}
-              onValueChange={value => setSelectedRun(runs.find(run => run.id === value) ?? null)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {selectedRun
-                    ? `${selectedRun.status} · ${new Date(selectedRun.created_at).toLocaleString()}`
-                    : t('selectRun')}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">{t('selectRun')}</SelectItem>
-                {runs.map(run => (
-                  <SelectItem key={run.id} value={run.id}>
-                    {run.status} · {new Date(run.created_at).toLocaleString()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedRun && (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge>{selectedRun.status}</Badge>
-                {active && canEvaluate && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void api.cancelEvaluationRun(knowledgeBaseId, datasetId, selectedRun.id)
-                      .then(setSelectedRun)
-                      .catch(() => setError(t('batchRunError')))}
-                  >
-                    {t('cancelRun')}
-                  </Button>
-                )}
+            <TabsContent value="runs" className="space-y-3">
+              <div className="rounded border bg-muted/50 p-2">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">{t('runConfig')}</div>
+                <pre className="overflow-auto text-xs">{JSON.stringify(runConfig(config, hasRerankModel), null, 2)}</pre>
               </div>
 
-              {Object.keys(selectedRun.summary_metrics ?? {}).length > 0 && (
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {Object.entries(selectedRun.summary_metrics ?? {}).map(([name, value]) => (
-                    <div key={name} className="rounded border bg-muted/50 p-2">
-                      <div className="text-xs text-muted-foreground">{name}</div>
-                      <strong className="text-sm">{formatMetric(value)}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <Label className="flex items-center gap-2 text-xs">
-                <Checkbox checked={failedOnly} onCheckedChange={setFailedOnly} />
-                {t('failedCasesOnly')}
-              </Label>
+              <Button onClick={() => void startRun()} disabled={!canEvaluate || busy || !cases.length} size="sm">
+                {t('startRun')}
+              </Button>
 
               <div className="space-y-2">
-                {results.map(result => (
-                  <div key={result.id} className="rounded border p-3 text-sm">
-                    <div className="mb-1 font-medium">{result.case_snapshot?.query ?? caseQueries.get(result.case_id) ?? result.case_id}</div>
-                    {result.error_message && (
-                      <p className="mb-1 text-xs text-destructive">{result.error_message}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {Object.entries(result.metrics).map(([name, value]) => `${name}: ${formatMetric(value)}`).join(' · ')} · {formatDuration(result.latency_ms)}
-                    </p>
-                  </div>
-                ))}
+                <Label className="text-xs">{t('evaluationRuns')}</Label>
+                <Select
+                  aria-label={t('evaluationRuns')}
+                  value={selectedRun?.id ?? '__none__'}
+                  onValueChange={value => setSelectedRun(runs.find(run => run.id === value) ?? null)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {selectedRun
+                        ? `${selectedRun.status} · ${new Date(selectedRun.created_at).toLocaleString()}`
+                        : t('selectRun')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t('selectRun')}</SelectItem>
+                    {runs.map(run => (
+                      <SelectItem key={run.id} value={run.id}>
+                        {run.status} · {new Date(run.created_at).toLocaleString()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </>
-          )}
+
+              {selectedRun && (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge>{selectedRun.status}</Badge>
+                    {active && canEvaluate && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void api.cancelEvaluationRun(knowledgeBaseId, datasetId, selectedRun.id)
+                          .then(setSelectedRun)
+                          .catch(() => setError(t('batchRunError')))}
+                      >
+                        {t('cancelRun')}
+                      </Button>
+                    )}
+                  </div>
+
+                  {Object.keys(selectedRun.summary_metrics ?? {}).length > 0 && (
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {Object.entries(selectedRun.summary_metrics ?? {}).map(([name, value]) => (
+                        <div key={name} className="rounded border bg-muted/50 p-2">
+                          <div className="text-xs text-muted-foreground">{name}</div>
+                          <strong className="text-sm">{formatMetric(value)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <Label className="flex items-center gap-2 text-xs">
+                    <Checkbox checked={failedOnly} onCheckedChange={setFailedOnly} />
+                    {t('failedCasesOnly')}
+                  </Label>
+
+                  <div className="space-y-2">
+                    {results.map(result => (
+                      <div key={result.id} className="rounded border p-3 text-sm">
+                        <div className="mb-1 font-medium">{result.case_snapshot?.query ?? caseQueries.get(result.case_id) ?? result.case_id}</div>
+                        {result.error_message && (
+                          <p className="mb-1 text-xs text-destructive">{result.error_message}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {Object.entries(result.metrics).map(([name, value]) => `${name}: ${formatMetric(value)}`).join(' · ')} · {formatDuration(result.latency_ms)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="comparison" className="mt-3">
+              <RunComparisonComponent
+                runs={runs}
+                knowledgeBaseId={knowledgeBaseId}
+                datasetId={datasetId}
+                onCompare={async (baselineId, candidateId) => {
+                  return api.compareEvaluationRuns(knowledgeBaseId, datasetId, baselineId, candidateId)
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     )}

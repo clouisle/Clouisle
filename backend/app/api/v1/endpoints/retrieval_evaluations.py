@@ -26,6 +26,7 @@ from app.schemas.retrieval_evaluation import (
     EvaluationDatasetCreate,
     EvaluationDatasetUpdate,
     EvaluationRunCreate,
+    RunComparisonResponse,
 )
 from app.services.retrieval_evaluation_store import (
     MAX_IMPORT_BYTES,
@@ -432,3 +433,125 @@ async def cancel_run(
 
         celery_app.control.revoke(run.task_id, terminate=False)
     return success(data=await _run_data(run), msg_key="evaluation_run_canceled")
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/compare-runs",
+    response_model=Response[RunComparisonResponse],
+)
+async def compare_runs(
+    kb_id: UUID,
+    dataset_id: UUID,
+    baseline_run_id: UUID,
+    candidate_run_id: UUID,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Compare two evaluation runs from the same dataset.
+
+    Returns metric deltas, per-case outcomes, and config diff.
+    Comparability checks ensure dataset revision/hash and metric_k match.
+    """
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+
+    # Fetch both runs with case results
+    baseline_run = await EvaluationRun.filter(
+        id=baseline_run_id, dataset_id=dataset.id
+    ).first()
+    candidate_run = await EvaluationRun.filter(
+        id=candidate_run_id, dataset_id=dataset.id
+    ).first()
+
+    if not baseline_run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="evaluation_run_not_found",
+            status_code=404,
+        )
+    if not candidate_run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="evaluation_run_not_found",
+            status_code=404,
+        )
+
+    # Both must be completed
+    if baseline_run.status != EvaluationRunStatus.COMPLETED.value:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="evaluation_run_not_completed",
+        )
+    if candidate_run.status != EvaluationRunStatus.COMPLETED.value:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="evaluation_run_not_completed",
+        )
+
+    # Load case results
+    from app.models.retrieval_evaluation import EvaluationCaseResult
+
+    baseline_cases = await EvaluationCaseResult.filter(run_id=baseline_run.id).all()
+    candidate_cases = await EvaluationCaseResult.filter(run_id=candidate_run.id).all()
+
+    # Convert to dict format for comparison service
+    baseline_dict = {
+        "id": baseline_run.id,
+        "dataset_id": baseline_run.dataset_id,
+        "config_snapshot": baseline_run.config_snapshot,
+        "version_snapshot": baseline_run.version_snapshot,
+        "summary_metrics": baseline_run.summary_metrics,
+        "metric_k": getattr(baseline_run, "metric_k", None),
+        "case_results": [
+            {
+                "id": cr.id,
+                "case_id": cr.case_id,
+                "case_snapshot": cr.case_snapshot,
+                "candidates": cr.candidates,
+                "metrics": cr.metrics,
+                "latency_ms": cr.latency_ms,
+                "error_message": cr.error_message,
+            }
+            for cr in baseline_cases
+        ],
+    }
+
+    candidate_dict = {
+        "id": candidate_run.id,
+        "dataset_id": candidate_run.dataset_id,
+        "config_snapshot": candidate_run.config_snapshot,
+        "version_snapshot": candidate_run.version_snapshot,
+        "summary_metrics": candidate_run.summary_metrics,
+        "metric_k": getattr(candidate_run, "metric_k", None),
+        "case_results": [
+            {
+                "id": cr.id,
+                "case_id": cr.case_id,
+                "case_snapshot": cr.case_snapshot,
+                "candidates": cr.candidates,
+                "metrics": cr.metrics,
+                "latency_ms": cr.latency_ms,
+                "error_message": cr.error_message,
+            }
+            for cr in candidate_cases
+        ],
+    }
+
+    # Compare using service
+    from app.services.retrieval_evaluation_comparison import compare_runs as compare_runs_service
+
+    result = compare_runs_service(baseline_dict, candidate_dict)
+
+    response = RunComparisonResponse(
+        baseline_id=result.baseline_id,
+        candidate_id=result.candidate_id,
+        comparable=result.comparable,
+        incompatibility_reason=result.incompatibility_reason,
+        metric_deltas=result.metric_deltas,
+        improved_cases=result.improved_cases,
+        unchanged_cases=result.unchanged_cases,
+        regressed_cases=result.regressed_cases,
+        unpaired_cases=result.unpaired_cases,
+        case_deltas=result.case_deltas,
+        config_diff=result.config_diff,
+    )
+
+    return success(data=response)

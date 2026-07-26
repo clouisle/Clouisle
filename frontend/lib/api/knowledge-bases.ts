@@ -288,10 +288,32 @@ export interface EvaluationRun {
   version_snapshot: Record<string, unknown>
   summary_metrics: Record<string, unknown> | null
   error_message: string | null
+  metric_k?: number | null
   created_at: string
   started_at: string | null
   finished_at: string | null
   case_results: EvaluationCaseResult[]
+}
+
+export interface RunComparison {
+  baseline_id: string
+  candidate_id: string
+  comparable: boolean
+  incompatibility_reason: string | null
+  metric_deltas: Record<string, number>
+  improved_cases: number
+  unchanged_cases: number
+  regressed_cases: number
+  unpaired_cases: number
+  case_deltas: Array<{
+    case_id: string
+    query: string
+    baseline_score: number
+    candidate_score: number
+    delta: number
+    outcome: 'improved' | 'unchanged' | 'regressed'
+  }>
+  config_diff: Record<string, { baseline: unknown; candidate: unknown }>
 }
 
 // ============ Chunk Preview Types ============
@@ -442,6 +464,9 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
 
   cancelEvaluationRun: (kbId: string, datasetId: string, runId: string): Promise<EvaluationRun> =>
     api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs/${runId}/cancel`),
+
+  compareEvaluationRuns: (kbId: string, datasetId: string, baselineRunId: string, candidateRunId: string): Promise<RunComparison> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/compare-runs`, { baseline_run_id: baselineRunId, candidate_run_id: candidateRunId }),
 
   // ============ Document API ============
 

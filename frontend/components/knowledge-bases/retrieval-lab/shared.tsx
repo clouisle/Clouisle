@@ -8,6 +8,7 @@ import type {
   EvaluationRunConfig,
   KnowledgeBase,
   KnowledgeBaseSettings,
+  RunComparison,
   SearchMode,
   SearchParams,
   SearchResponse,
@@ -31,6 +32,7 @@ export type RetrievalApi = {
   listEvaluationRuns(kbId: string, datasetId: string): Promise<EvaluationRun[]>
   getEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
   cancelEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
+  compareEvaluationRuns(kbId: string, datasetId: string, baselineId: string, candidateId: string): Promise<RunComparison>
 }
 
 export type Config = {

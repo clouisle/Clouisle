@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T17:30:01.034Z
+// GENERATED — 2026-07-26T17:37:06.212Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -378,5 +378,24 @@ export type KnowledgeBasesMessages = {
     lowCaseCountWarning: string
     zeroSignalCasesWarning: string
     fix: string
+    runComparison: string
+    selectBaselineRun: string
+    selectCandidateRun: string
+    compareRuns: string
+    baseline: string
+    candidate: string
+    delta: string
+    metricDeltas: string
+    caseOutcomes: string
+    improved: string
+    unchanged: string
+    regressed: string
+    unpaired: string
+    configDiff: string
+    incomparableRuns: string
+    incomparabilityReason: string
+    noMetricDeltas: string
+    noCaseDeltas: string
+    noConfigDiff: string
   }
 }

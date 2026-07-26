@@ -979,6 +979,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The evaluation run cannot be canceled",
         "zh": "此评测运行无法取消",
     },
+    "evaluation_run_not_completed": {
+        "en": "Evaluation run is not completed",
+        "zh": "评测运行未完成",
+    },
     "evaluation_run_not_found": {
         "en": "Evaluation run not found",
         "zh": "未找到评测运行",

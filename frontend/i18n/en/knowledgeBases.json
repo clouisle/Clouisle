@@ -379,6 +379,25 @@
     "avgPositiveLabels": "Avg Positive Labels",
     "lowCaseCountWarning": "Dataset has fewer than 10 cases. Results may not be reliable.",
     "zeroSignalCasesWarning": "{count} case(s) have no positive labels and provide no signal for evaluation.",
-    "fix": "Fix"
+    "fix": "Fix",
+    "runComparison": "Run Comparison",
+    "selectBaselineRun": "Select Baseline Run",
+    "selectCandidateRun": "Select Candidate Run",
+    "compareRuns": "Compare Runs",
+    "baseline": "Baseline",
+    "candidate": "Candidate",
+    "delta": "Delta",
+    "metricDeltas": "Metric Deltas",
+    "caseOutcomes": "Case Outcomes",
+    "improved": "Improved",
+    "unchanged": "Unchanged",
+    "regressed": "Regressed",
+    "unpaired": "Unpaired",
+    "configDiff": "Config Differences",
+    "incomparableRuns": "Runs are not comparable",
+    "incomparabilityReason": "Reason: {reason}",
+    "noMetricDeltas": "No metric deltas available",
+    "noCaseDeltas": "No case-level deltas available",
+    "noConfigDiff": "No configuration differences"
   }
 }

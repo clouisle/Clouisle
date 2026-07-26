@@ -68,6 +68,7 @@ export {
   type EvaluationRunStatus,
   type EvaluationCaseResult,
   type EvaluationRun,
+  type RunComparison,
   type ChunkPreviewInput,
   type ChunkPreviewItem,
   type ChunkPreviewResponse,

@@ -124,9 +124,24 @@ class EvaluationRunResponse(BaseModel):
     version_snapshot: dict
     summary_metrics: dict | None
     error_message: str | None
+    metric_k: int | None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
     case_results: list[EvaluationCaseResultResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+class RunComparisonResponse(BaseModel):
+    baseline_id: UUID
+    candidate_id: UUID
+    comparable: bool
+    incompatibility_reason: str | None
+    metric_deltas: dict[str, float]
+    improved_cases: int
+    unchanged_cases: int
+    regressed_cases: int
+    unpaired_cases: int
+    case_deltas: list[dict]
+    config_diff: dict

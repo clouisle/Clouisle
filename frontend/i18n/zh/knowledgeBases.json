@@ -379,6 +379,25 @@
     "avgPositiveLabels": "平均正例数",
     "lowCaseCountWarning": "数据集少于 10 个用例，结果可能不可靠。",
     "zeroSignalCasesWarning": "{count} 个用例没有正例标注，无法提供评测信号。",
-    "fix": "修复"
+    "fix": "修复",
+    "runComparison": "运行对比",
+    "selectBaselineRun": "选择基准运行",
+    "selectCandidateRun": "选择候选运行",
+    "compareRuns": "对比运行",
+    "baseline": "基准",
+    "candidate": "候选",
+    "delta": "变化",
+    "metricDeltas": "指标变化",
+    "caseOutcomes": "用例结果",
+    "improved": "改善",
+    "unchanged": "持平",
+    "regressed": "退化",
+    "unpaired": "不可配对",
+    "configDiff": "配置差异",
+    "incomparableRuns": "运行不可比较",
+    "incomparabilityReason": "原因：{reason}",
+    "noMetricDeltas": "无可用指标变化",
+    "noCaseDeltas": "无可用用例级变化",
+    "noConfigDiff": "无配置差异"
   }
 }
