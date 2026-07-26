@@ -9,7 +9,15 @@ const confirm = mock(() => true)
 let intervalCallback: (() => void) | undefined
 const setInterval = mock((callback: () => void) => { intervalCallback = callback; return 1 })
 const clearInterval = mock(() => { intervalCallback = undefined })
-Object.assign(globalThis, { localStorage: { getItem, setItem, removeItem }, window: { confirm, setInterval, clearInterval } })
+const createObjectURL = mock(() => 'blob:evaluation')
+const revokeObjectURL = mock()
+const anchor = { href: '', download: '', click: mock() }
+const createElement = mock(() => anchor)
+Object.assign(globalThis, {
+  localStorage: { getItem, setItem, removeItem },
+  window: { confirm, setInterval, clearInterval, location: { href: 'http://localhost' } },
+  document: { createElement },
+})
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
@@ -20,6 +28,7 @@ mock.module('@/lib/utils', () => ({
 }))
 const ui = { Badge: 'badge', Button: 'button', Card: 'card', CardContent: 'card-content', CardHeader: 'card-header', Checkbox: 'checkbox', Input: 'input', Label: 'label', Select: 'select', SelectContent: 'select-content', SelectItem: 'option', SelectTrigger: 'select-trigger', SelectValue: 'select-value', Switch: 'switch', Textarea: 'textarea' }
 for (const path of ['@/components/ui/badge', '@/components/ui/button', '@/components/ui/card', '@/components/ui/checkbox', '@/components/ui/input', '@/components/ui/label', '@/components/ui/select', '@/components/ui/switch', '@/components/ui/textarea']) mock.module(path, () => ui)
+mock.module('@/components/ui/popover', () => ({ Popover: 'popover', PopoverContent: 'popover-content', PopoverTrigger: 'button' }))
 const Icon = () => null
 mock.module('lucide-react', () => ({ ArrowLeft: Icon, ChevronDown: Icon, ChevronUp: Icon, FileText: Icon, HelpCircle: Icon, Loader2: Icon, Search: Icon, Send: Icon, Settings2: Icon }))
 const toastError = mock()
@@ -71,11 +80,15 @@ const listEvaluationDatasets = mock()
 const createEvaluationDataset = mock()
 const updateEvaluationDataset = mock()
 const importEvaluationDataset = mock()
+const createEvaluationCase = mock()
+const updateEvaluationCase = mock()
+const deleteEvaluationCase = mock()
+const exportEvaluationDataset = mock()
 const startEvaluationRun = mock()
 const listEvaluationRuns = mock()
 const getEvaluationRun = mock()
 const cancelEvaluationRun = mock()
-const api = { getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun }
+const api = { getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, createEvaluationCase, updateEvaluationCase, deleteEvaluationCase, exportEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun }
 const kb = { id: 'kb-1', name: 'Handbook', settings: { rerank_candidate_k: 12 }, rerank_model: { name: 'Reranker' } }
 const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
   query: 'policy', total: 1, diagnostics, timings: [{ stage: 'recall', latency_ms: 12 }, { stage: 'total', latency_ms: 20 }],
@@ -85,7 +98,9 @@ const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
 beforeEach(() => {
   slots.splice(0); effects = []; local.clear()
   intervalCallback = undefined
-  for (const fn of [getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun, getItem, setItem, removeItem, confirm, setInterval, clearInterval, toastError]) fn.mockClear()
+  for (const fn of [getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, createEvaluationCase, updateEvaluationCase, deleteEvaluationCase, exportEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun, getItem, setItem, removeItem, confirm, setInterval, clearInterval, toastError, createObjectURL, revokeObjectURL, createElement, anchor.click]) fn.mockClear()
+  Object.assign(URL, { createObjectURL, revokeObjectURL })
+  anchor.href = ''; anchor.download = ''
   getKnowledgeBase.mockResolvedValue(kb)
   listEvaluationDatasets.mockResolvedValue([])
   listEvaluationRuns.mockResolvedValue([])
@@ -356,26 +371,85 @@ describe('RetrievalLab', () => {
     expect(importEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', file)
   })
 
-  test('validates and saves manually edited cases', async () => {
-    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [] }
+  test('validates cases and incrementally creates or updates while preserving ids', async () => {
+    const persisted = { id: 'case-1', query: 'policy', chunk_relevance: { 'chunk-1': 3 }, document_relevance: {}, expected_empty: false }
+    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [persisted] }
     listEvaluationDatasets.mockResolvedValue([dataset])
-    updateEvaluationDataset.mockResolvedValue({ ...dataset, cases: [] })
+    updateEvaluationCase.mockResolvedValue({ ...persisted, query: 'updated policy' })
+    createEvaluationCase.mockResolvedValue({ id: 'case-2', query: 'new case', chunk_relevance: {}, document_relevance: {}, expected_empty: false })
+    let tree = await flushBatch()
+    await button(tree, 'saveCases').props.onClick()
+    expect(updateEvaluationCase).toHaveBeenCalledWith('kb-1', 'dataset-1', 'case-1', expect.objectContaining({ query: 'policy' }))
+    button(renderBatch(), 'addCase').props.onClick()
+    tree = renderBatch()
+    const blankQuery = elements(tree).filter(element => element.type === 'input').at(-1)
+    blankQuery!.props.onChange({ target: { value: 'new case' } })
+    tree = renderBatch()
+    await button(tree, 'saveCases').props.onClick()
+    expect(createEvaluationCase).toHaveBeenCalledWith('kb-1', 'dataset-1', expect.objectContaining({ query: 'new case' }))
+    expect(updateEvaluationDataset).not.toHaveBeenCalled()
+
+    const areas = elements(renderBatch()).filter(element => element.type === 'textarea')
+    areas[0].props.onChange({ target: { value: '{bad' } })
+    await button(renderBatch(), 'saveCases').props.onClick()
+    expect(text(renderBatch())).toContain('batchCaseError')
+  })
+
+  test('deletes persisted cases remotely, removes drafts locally, and preserves failed removals', async () => {
+    const persisted = { id: 'case-1', query: 'policy', chunk_relevance: {}, document_relevance: {}, expected_empty: false }
+    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [persisted] }
+    listEvaluationDatasets.mockResolvedValue([dataset])
     let tree = await flushBatch()
     button(tree, 'addCase').props.onClick()
     tree = renderBatch()
-    find(tree, 'input', props => props.value === '').props.onChange({ target: { value: 'policy' } })
-    const areas = elements(renderBatch()).filter(element => element.type === 'textarea')
-    areas[0].props.onChange({ target: { value: '{bad' } })
-    tree = renderBatch()
-    await button(tree, 'saveCases').props.onClick()
-    expect(text(renderBatch())).toContain('batchCaseError')
-    expect(updateEvaluationDataset).not.toHaveBeenCalled()
+    const removeButtons = elements(tree).filter(element => element.type === 'button' && text(element) === 'removeCase')
+    await removeButtons[1].props.onClick()
+    expect(deleteEvaluationCase).not.toHaveBeenCalled()
+    expect(elements(renderBatch()).filter(element => element.type === 'button' && text(element) === 'removeCase')).toHaveLength(1)
 
-    slots.splice(0); effects = []
-    listEvaluationDatasets.mockResolvedValue([{ ...dataset, cases: [{ id: 'case-1', query: 'policy', chunk_relevance: { 'chunk-1': 3 }, document_relevance: {}, expected_empty: false }] }])
-    tree = await flushBatch()
-    await button(tree, 'saveCases').props.onClick()
-    expect(updateEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', { cases: [{ query: 'policy', chunk_relevance: { 'chunk-1': 3 }, document_relevance: {}, expected_empty: false }] })
+    deleteEvaluationCase.mockRejectedValueOnce(new Error('active run'))
+    await button(renderBatch(), 'removeCase').props.onClick()
+    expect(deleteEvaluationCase).toHaveBeenCalledWith('kb-1', 'dataset-1', 'case-1')
+    expect(elements(renderBatch()).filter(element => element.type === 'input').some(element => element.props.value === 'policy')).toBe(true)
+    expect(text(renderBatch())).toContain('batchCaseError')
+
+    deleteEvaluationCase.mockResolvedValueOnce(undefined)
+    await button(renderBatch(), 'removeCase').props.onClick()
+    expect(elements(renderBatch()).filter(element => element.type === 'input').some(element => element.props.value === 'policy')).toBe(false)
+  })
+
+  test('exports JSON and CSV with returned content and offers an id-free empty starter', async () => {
+    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: ' Regression / Set ', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [] }
+    listEvaluationDatasets.mockResolvedValue([dataset])
+    exportEvaluationDataset
+      .mockResolvedValueOnce({ format: 'json', content: '[{"query":"policy"}]' })
+      .mockResolvedValueOnce({ format: 'csv', content: 'query\npolicy' })
+    let tree = await flushBatch()
+    const starter = button(tree, 'downloadStarter')
+    starter.props.onClick()
+    const starterBlob = createObjectURL.mock.calls[0][0] as Blob
+    const starterContent = await starterBlob.text()
+    expect(starterBlob.type).toBe('application/json;charset=utf-8')
+    expect(starterContent).toContain('"chunk_relevance": {}')
+    expect(starterContent).not.toContain('chunk-id')
+    expect(starterContent).not.toContain('doc-id')
+    expect(anchor.download).toBe('evaluation-starter.json')
+
+    const exportButtons = elements(tree).filter(element => element.type === 'button' && element.props.onClick && text(element).includes('exportFormat'))
+    expect(exportButtons.length).toBeGreaterThanOrEqual(2)
+    await exportButtons[0].props.onClick()
+    expect(exportEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', 'json')
+    expect((createObjectURL.mock.calls.at(-1)?.[0] as Blob).type).toBe('application/json;charset=utf-8')
+    expect(anchor.download).toBe('Regression-Set.json')
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:evaluation')
+
+    tree = renderBatch()
+    const csvButton = elements(tree).find(element => element.type === 'button' && element.props.onClick && text(element).includes('exportFormat:CSV'))
+    await csvButton!.props.onClick()
+    expect(exportEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', 'csv')
+    expect((createObjectURL.mock.calls.at(-1)?.[0] as Blob).type).toBe('text/csv;charset=utf-8')
+    expect(anchor.download).toBe('Regression-Set.csv')
+    expect(text(tree)).toContain('importReplacementWarning')
   })
 
   test('lists, starts, polls, cancels, renders nested metrics, maps case ids, and filters failures', async () => {

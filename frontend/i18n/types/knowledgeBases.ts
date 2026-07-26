@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T08:58:11.775Z
+// GENERATED — 2026-07-26T13:23:25.274Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -271,9 +271,10 @@ export type KnowledgeBasesMessages = {
     datasetDescription: string
     createDataset: string
     importDataset: string
-    downloadTemplate: string
-    templateJsonHint: string
-    templateCsvHint: string
+    importReplacementWarning: string
+    exportDataset: string
+    exportFormat: string
+    downloadStarter: string
     datasetStats: string
     noCasesInDataset: string
     evaluationCases: string
@@ -295,6 +296,7 @@ export type KnowledgeBasesMessages = {
     batchSaveError: string
     batchCaseError: string
     batchImportError: string
+    batchExportError: string
     batchRunError: string
     searchTestHint: string
     searchTestDescription: string

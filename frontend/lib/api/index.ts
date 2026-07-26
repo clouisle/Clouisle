@@ -62,6 +62,8 @@ export {
   type EvaluationCase,
   type EvaluationDataset,
   type EvaluationDatasetInput,
+  type EvaluationDatasetExport,
+  type EvaluationExportFormat,
   type EvaluationRunConfig,
   type EvaluationRunStatus,
   type EvaluationCaseResult,

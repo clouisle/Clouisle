@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { FileText } from 'lucide-react'
-import type { EvaluationDataset, EvaluationRun } from '@/lib/api'
+import type { EvaluationCase, EvaluationCaseInput, EvaluationDataset, EvaluationExportFormat, EvaluationRun } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -16,8 +16,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { formatDuration } from '@/lib/utils'
 import { type Config, type RetrievalApi, runConfig } from './shared'
 
-type CaseDraft = { query: string; chunkRelevance: string; documentRelevance: string; expectedEmpty: boolean }
-const EMPTY_CASE: CaseDraft = { query: '', chunkRelevance: '{}', documentRelevance: '{}', expectedEmpty: false }
+type CaseDraft = { key: string; id?: string; query: string; chunkRelevance: string; documentRelevance: string; expectedEmpty: boolean }
+let nextCaseKey = 0
+const caseDraft = (item?: EvaluationCase): CaseDraft => ({
+  key: item?.id ?? `new-${nextCaseKey++}`,
+  id: item?.id,
+  query: item?.query ?? '',
+  chunkRelevance: JSON.stringify(item?.chunk_relevance ?? {}),
+  documentRelevance: JSON.stringify(item?.document_relevance ?? {}),
+  expectedEmpty: item?.expected_empty ?? false,
+})
 
 export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }: {
   knowledgeBaseId: string
@@ -41,12 +49,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
   const selectDataset = React.useCallback((id: string, available: EvaluationDataset[]) => {
     const dataset = available.find(item => item.id === id)
     setDatasetId(id)
-    setCases(dataset?.cases.map(item => ({
-      query: item.query,
-      chunkRelevance: JSON.stringify(item.chunk_relevance),
-      documentRelevance: JSON.stringify(item.document_relevance),
-      expectedEmpty: item.expected_empty,
-    })) ?? [])
+    setCases(dataset?.cases.map(item => caseDraft(item)) ?? [])
     setSelectedRun(null)
     setRuns([])
     if (id) api.listEvaluationRuns(knowledgeBaseId, id).then(setRuns).catch(() => setError(loadError))
@@ -90,15 +93,47 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
         if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object' || Object.values(parsed).some(grade => !Number.isInteger(grade) || Number(grade) < 0 || Number(grade) > 3)) throw new Error('invalid relevance')
         return parsed as Record<string, number>
       }
-      const payload = cases.map(item => ({
-        query: item.query.trim(),
-        chunk_relevance: parseRelevance(item.chunkRelevance),
-        document_relevance: parseRelevance(item.documentRelevance),
-        expected_empty: item.expectedEmpty,
+      const payloads = cases.map(item => ({
+        draft: item,
+        payload: {
+          query: item.query.trim(),
+          chunk_relevance: parseRelevance(item.chunkRelevance),
+          document_relevance: parseRelevance(item.documentRelevance),
+          expected_empty: item.expectedEmpty,
+        } satisfies EvaluationCaseInput,
       }))
-      if (payload.some(item => !item.query || (item.expected_empty && (Object.keys(item.chunk_relevance).length > 0 || Object.keys(item.document_relevance).length > 0)))) throw new Error('invalid case')
-      const dataset = await api.updateEvaluationDataset(knowledgeBaseId, datasetId, { cases: payload })
-      setDatasets(current => current.map(item => item.id === dataset.id ? dataset : item))
+      if (payloads.some(({ payload }) => !payload.query || (payload.expected_empty && (Object.keys(payload.chunk_relevance).length > 0 || Object.keys(payload.document_relevance).length > 0)))) throw new Error('invalid case')
+
+      const results = await Promise.allSettled(payloads.map(({ draft, payload }) => draft.id
+        ? api.updateEvaluationCase(knowledgeBaseId, datasetId, draft.id, payload)
+        : api.createEvaluationCase(knowledgeBaseId, datasetId, payload)))
+      const saved = new Map<string, EvaluationCase>()
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') saved.set(payloads[index].draft.key, result.value)
+      })
+      if (saved.size) {
+        setCases(current => current.map(draft => saved.has(draft.key) ? { ...caseDraft(saved.get(draft.key)), key: draft.key } : draft))
+        setDatasets(current => current.map(dataset => dataset.id !== datasetId ? dataset : {
+          ...dataset,
+          cases: cases.map(draft => saved.get(draft.key) ?? dataset.cases.find(item => item.id === draft.id)).filter((item): item is EvaluationCase => Boolean(item)),
+        }))
+      }
+      if (results.some(result => result.status === 'rejected')) setError(t('batchCaseError'))
+    } catch { setError(t('batchCaseError')) } finally { setBusy(false) }
+  }
+
+  const removeCase = async (draft: CaseDraft) => {
+    if (!draft.id) {
+      setCases(current => current.filter(item => item.key !== draft.key))
+      return
+    }
+    setBusy(true); setError('')
+    try {
+      await api.deleteEvaluationCase(knowledgeBaseId, datasetId, draft.id)
+      setCases(current => current.filter(item => item.key !== draft.key))
+      setDatasets(current => current.map(dataset => dataset.id === datasetId
+        ? { ...dataset, cases: dataset.cases.filter(item => item.id !== draft.id) }
+        : dataset))
     } catch { setError(t('batchCaseError')) } finally { setBusy(false) }
   }
 
@@ -117,23 +152,31 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
   const caseQueries = new Map(selectedDataset?.cases.map(item => [item.id, item.query]))
   const formatMetric = (value: unknown) => typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
 
-  const downloadTemplate = (format: 'json' | 'csv') => {
-    const template = format === 'json'
-      ? JSON.stringify([{
-          query: "example query",
-          chunk_relevance: { "chunk-id-1": 3, "chunk-id-2": 2 },
-          document_relevance: { "doc-id-1": 3 },
-          expected_empty: false
-        }], null, 2)
-      : `query,chunk_relevance,document_relevance,expected_empty
-"example query","{""chunk-id-1"":3,""chunk-id-2"":2}","{""doc-id-1"":3}",false`
-    const blob = new Blob([template], { type: format === 'json' ? 'application/json' : 'text/csv' })
+  const download = (content: string, filename: string, format: EvaluationExportFormat) => {
+    const blob = new Blob([content], { type: format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `evaluation-template.${format}`
-    a.click()
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  const downloadStarter = () => download(JSON.stringify([{
+    query: 'example query',
+    chunk_relevance: {},
+    document_relevance: {},
+    expected_empty: false,
+  }], null, 2), 'evaluation-starter.json', 'json')
+
+  const exportDataset = async (format: EvaluationExportFormat) => {
+    if (!selectedDataset) return
+    setBusy(true); setError('')
+    try {
+      const exported = await api.exportEvaluationDataset(knowledgeBaseId, selectedDataset.id, format)
+      const safeName = selectedDataset.name.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'evaluation-dataset'
+      download(exported.content, `${safeName}.${format}`, format)
+    } catch { setError(t('batchExportError')) } finally { setBusy(false) }
   }
 
   return <section className="min-h-0 flex-1 space-y-3 overflow-auto py-4" aria-labelledby="batch-evaluation-heading">
@@ -184,23 +227,32 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
 
         {datasetId && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <Label className="text-xs">{t('importDataset')}</Label>
-              <Popover>
-                <PopoverTrigger className="h-7 rounded px-2 text-xs hover:bg-muted">
-                  {t('downloadTemplate')}
-                </PopoverTrigger>
-                <PopoverContent className="w-56" align="end">
-                  <div className="space-y-2">
-                    <Button variant="outline" size="sm" className="w-full justify-start text-xs" onClick={() => downloadTemplate('json')}>
-                      <FileText className="mr-2 h-3.5 w-3.5" />
-                      JSON {t('downloadTemplate')}
-                    </Button>
-                    <p className="text-xs text-muted-foreground">{t('templateJsonHint')}</p>
-                  </div>
-                </PopoverContent>
-              </Popover>
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger className="h-7 rounded px-2 text-xs hover:bg-muted">
+                    {t('exportDataset')}
+                  </PopoverTrigger>
+                  <PopoverContent className="w-44" align="end">
+                    <div className="space-y-2">
+                      {(['json', 'csv'] as const).map(format => (
+                        <Button key={format} variant="outline" size="sm" className="w-full justify-start text-xs" disabled={busy} onClick={() => void exportDataset(format)}>
+                          <FileText className="mr-2 h-3.5 w-3.5" />
+                          {t('exportFormat', { format: format.toUpperCase() })}
+                        </Button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {cases.length === 0 && (
+                  <Button variant="ghost" size="sm" className="text-xs" onClick={downloadStarter}>
+                    {t('downloadStarter')}
+                  </Button>
+                )}
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">{t('importReplacementWarning')}</p>
             <Input
               type="file"
               accept=".json,.csv,application/json,text/csv"
@@ -231,7 +283,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
               <span className="text-xs text-muted-foreground">
                 {t('datasetStats', { cases: cases.length, date: '' }).split('·')[0].trim()}
               </span>
-              <Button variant="outline" size="sm" onClick={() => setCases(current => [...current, { ...EMPTY_CASE }])}>
+              <Button variant="outline" size="sm" onClick={() => setCases(current => [...current, caseDraft()])}>
                 {t('addCase')}
               </Button>
             </div>
@@ -242,7 +294,7 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
             <p className="py-8 text-center text-sm text-muted-foreground">{t('noCasesInDataset')}</p>
           ) : (
             cases.map((item, index) => (
-              <fieldset key={index} className="space-y-2 rounded border p-3">
+              <fieldset key={item.key} className="space-y-2 rounded border p-3">
                 <legend className="px-1 text-sm font-medium">{t('caseNumber', { number: index + 1 })}</legend>
                 <Label className="text-xs">
                   {t('caseQuery')}
@@ -289,7 +341,8 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel }
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setCases(current => current.filter((_, currentIndex) => currentIndex !== index))}
+                    disabled={busy}
+                    onClick={() => void removeCase(item)}
                   >
                     {t('removeCase')}
                   </Button>

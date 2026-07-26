@@ -1,6 +1,9 @@
 import type {
+  EvaluationCase,
   EvaluationCaseInput,
   EvaluationDataset,
+  EvaluationDatasetExport,
+  EvaluationExportFormat,
   EvaluationRun,
   EvaluationRunConfig,
   KnowledgeBase,
@@ -18,6 +21,10 @@ export type RetrievalApi = {
   createEvaluationDataset(kbId: string, data: { name: string; description?: string | null; cases?: EvaluationCaseInput[] }): Promise<EvaluationDataset>
   updateEvaluationDataset(kbId: string, datasetId: string, data: { cases: EvaluationCaseInput[] }): Promise<EvaluationDataset>
   importEvaluationDataset(kbId: string, datasetId: string, file: File): Promise<EvaluationDataset>
+  createEvaluationCase(kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
+  updateEvaluationCase(kbId: string, datasetId: string, caseId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
+  deleteEvaluationCase(kbId: string, datasetId: string, caseId: string): Promise<void>
+  exportEvaluationDataset(kbId: string, datasetId: string, format: EvaluationExportFormat): Promise<EvaluationDatasetExport>
   startEvaluationRun(kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun>
   listEvaluationRuns(kbId: string, datasetId: string): Promise<EvaluationRun[]>
   getEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
