@@ -5,16 +5,17 @@
 - **retrieval-tuning-and-dataset-authoring** — In progress. Turn batch evaluation into dataset-driven parameter search: fix metric pollution from ungraded cases, make tuned parameters persistable to production, build evaluation datasets by grading retrieval results instead of hand-writing chunk UUIDs, and add bounded staged coordinate search with production-path verification. See `docs/plan/retrieval-tuning-and-dataset-authoring.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Metric correctness — exclude ungraded cases from ranking means
-  - [ ] 3. Knowledge base retrieval defaults so tuned parameters can land in production
-  - [x] 4. Incremental case CRUD and dataset export
-  - [x] 5. Retrieval Lab component split (behavior preserving)
-  - [ ] 6. Labeling workbench — query-scoped grades, candidate pooling, add-to-dataset
-  - [ ] 7. Dataset quality panel
-  - [ ] 8. Tuning backend — sweep model, API, staged coordinate search, budget guards
-  - [ ] 9. Tuning executor — replay and live modes with production-path verification
-  - [ ] 10. Tuning frontend — parameter space editor, comparison table, recommendation and apply
-  - [ ] 11. Optional LLM label suggestions (default off)
-  - [ ] 12. i18n, generated types, documentation, and validation
+  - [x] 3. Stage 1: Retrieval Lab API contract and independent permissions — canEvaluate/canUpdate props wired through dashboard and platform routes
+  - [ ] 4. Knowledge base retrieval defaults so tuned parameters can land in production
+  - [x] 5. Incremental case CRUD and dataset export
+  - [x] 6. Retrieval Lab component split (behavior preserving)
+  - [ ] 7. Labeling workbench — query-scoped grades, candidate pooling, add-to-dataset
+  - [ ] 8. Dataset quality panel
+  - [ ] 9. Tuning backend — sweep model, API, staged coordinate search, budget guards
+  - [ ] 10. Tuning executor — replay and live modes with production-path verification
+  - [ ] 11. Tuning frontend — parameter space editor, comparison table, recommendation and apply
+  - [ ] 12. Optional LLM label suggestions (default off)
+  - [ ] 13. i18n, generated types, documentation, and validation
 
 - **retrieval-failure-handling** — In progress. Make first-use lexical retrieval safe, preserve sanitized per-channel diagnostics, return actionable localized retrieval guidance without exposing infrastructure details, remove rerank fail-open degradation, and add stage-aware error reporting. See `docs/plan/retrieval-failure-handling.md`
   - [x] 1. Design docs and implementation index
