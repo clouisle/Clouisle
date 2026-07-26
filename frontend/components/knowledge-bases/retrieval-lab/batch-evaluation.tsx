@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { formatDuration } from '@/lib/utils'
 import { type Config, type RetrievalApi, runConfig } from './shared'
+import { DatasetQuality } from './dataset-quality'
 
 type CaseDraft = { key: string; id?: string; query: string; chunkRelevance: string; documentRelevance: string; expectedEmpty: boolean }
 let nextCaseKey = 0
@@ -277,6 +278,12 @@ export function BatchEvaluation({ knowledgeBaseId, api, config, hasRerankModel, 
         )}
       </CardContent>
     </Card>
+
+    {datasetId && datasets.find(d => d.id === datasetId) && (
+      <div className="mx-4">
+        <DatasetQuality dataset={datasets.find(d => d.id === datasetId)!} />
+      </div>
+    )}
 
     {datasetId && (
       <Card className="mx-4 py-0">

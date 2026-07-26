@@ -370,6 +370,15 @@
     "coverageLabel": "覆盖率",
     "strategyContributions": "策略贡献",
     "unique": "独有",
-    "poolRelativeNote": "注意：指标是基于候选池的，不是全语料库的绝对召回。"
+    "poolRelativeNote": "注意：指标是基于候选池的，不是全语料库的绝对召回。",
+    "datasetQuality": "数据集质量",
+    "qualityWarnings": "警告",
+    "totalCases": "总用例数",
+    "withChunkLabels": "含分块标注",
+    "withDocumentLabels": "含文档标注",
+    "avgPositiveLabels": "平均正例数",
+    "lowCaseCountWarning": "数据集少于 10 个用例，结果可能不可靠。",
+    "zeroSignalCasesWarning": "{count} 个用例没有正例标注，无法提供评测信号。",
+    "fix": "修复"
   }
 }

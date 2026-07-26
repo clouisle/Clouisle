@@ -370,6 +370,15 @@
     "coverageLabel": "Coverage",
     "strategyContributions": "Strategy Contributions",
     "unique": "unique",
-    "poolRelativeNote": "Note: Metrics are pool-relative, not corpus-wide absolute recall."
+    "poolRelativeNote": "Note: Metrics are pool-relative, not corpus-wide absolute recall.",
+    "datasetQuality": "Dataset Quality",
+    "qualityWarnings": "Warnings",
+    "totalCases": "Total Cases",
+    "withChunkLabels": "With Chunk Labels",
+    "withDocumentLabels": "With Document Labels",
+    "avgPositiveLabels": "Avg Positive Labels",
+    "lowCaseCountWarning": "Dataset has fewer than 10 cases. Results may not be reliable.",
+    "zeroSignalCasesWarning": "{count} case(s) have no positive labels and provide no signal for evaluation.",
+    "fix": "Fix"
   }
 }
