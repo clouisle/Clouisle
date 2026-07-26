@@ -2,6 +2,32 @@
 
 ## Active
 
+- **retrieval-tuning-and-dataset-authoring** — Planned. Turn batch evaluation into dataset-driven parameter search: fix metric pollution from ungraded cases, make tuned parameters persistable to production, build evaluation datasets by grading retrieval results instead of hand-writing chunk UUIDs, and add bounded staged coordinate search with production-path verification. See `docs/plan/retrieval-tuning-and-dataset-authoring.md`
+  - [ ] 1. Design docs and implementation index
+  - [ ] 2. Metric correctness — exclude ungraded cases from ranking means
+  - [ ] 3. Knowledge base retrieval defaults so tuned parameters can land in production
+  - [ ] 4. Incremental case CRUD, dataset export, and real-ID templates
+  - [ ] 5. Retrieval Lab component split (behavior preserving)
+  - [ ] 6. Labeling workbench — query-scoped grades, candidate pooling, add-to-dataset
+  - [ ] 7. Dataset quality panel
+  - [ ] 8. Tuning backend — sweep model, API, staged coordinate search, budget guards
+  - [ ] 9. Tuning executor — replay and live modes with production-path verification
+  - [ ] 10. Tuning frontend — parameter space editor, comparison table, recommendation and apply
+  - [ ] 11. Optional LLM label suggestions (default off)
+  - [ ] 12. i18n, generated types, documentation, and validation
+
+- **retrieval-failure-handling** — In progress. Make first-use lexical retrieval safe, preserve sanitized per-channel diagnostics, return actionable localized retrieval guidance without exposing infrastructure details, remove rerank fail-open degradation, and add stage-aware error reporting. See `docs/plan/retrieval-failure-handling.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Lexical index and alias initialization
+  - [x] 3. Sanitized retrieval diagnostics and endpoint mapping
+  - [x] 4. Localized failure copy
+  - [x] 5. Preserve dual-channel failure classifications
+  - [x] 6. Focused tests, live retry, underlying channel diagnosis, and reconciliation of 184 missing lexical documents
+  - [x] 7. Actionable safe error categories and per-side Retrieval Lab guidance
+  - [x] 8. Normalize lexical result names to the search response contract and cover HTTP 500 classification
+  - [x] 9. Final live fulltext and hybrid A/B verification
+  - [ ] 10. Remove rerank fail-open, add stage-aware errors, restore toast notifications
+
 - **yun-117-knowledge-retrieval-lab** — Complete. Replace heuristic keyword matching with an evaluated Dense + BM25 hybrid pipeline and upgrade the existing search test into a retrieval evaluation lab. See `docs/plan/yun-117-knowledge-retrieval-lab.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Retrieval evaluation baseline — deterministic chunk/document Recall@K, MRR@K, nDCG@K, expected-empty accuracy, latency percentiles, and current `VectorStore.search` snapshot adapter; 6,246 backend tests passed with 97.82% lines/95.11% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
