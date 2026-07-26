@@ -75,7 +75,6 @@ describe('knowledge base APIs', () => {
         rrf_k: 80,
         rerank_enabled: false,
         rerank_candidate_k: 30,
-        rerank_fail_open: false,
         rerank_score_threshold: 0.5,
       })
 
@@ -99,9 +98,8 @@ describe('knowledge base APIs', () => {
         rrf_k: undefined,
         rerank_enabled: undefined,
         rerank_candidate_k: undefined,
-        rerank_fail_open: undefined,
         rerank_score_threshold: undefined,
-      })
+      }, { silent: true })
       expect(post).toHaveBeenNthCalledWith(3, `${prefix}/kb-1/search`, {
         query: 'renewal',
         search_mode: 'vector',
@@ -112,9 +110,8 @@ describe('knowledge base APIs', () => {
         rrf_k: 80,
         rerank_enabled: false,
         rerank_candidate_k: 30,
-        rerank_fail_open: false,
         rerank_score_threshold: 0.5,
-      })
+      }, { silent: true })
     })
 
     test(`${name} routes construct persistent evaluation requests`, async () => {

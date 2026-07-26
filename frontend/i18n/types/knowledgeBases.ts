@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-23T21:53:13.682Z
+// GENERATED — 2026-07-26T08:58:11.775Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -211,10 +211,23 @@ export type KnowledgeBasesMessages = {
     fallbackReasons: string
     unknownChannel: string
     denseStage: string
+    denseStageHelp: string
     lexicalStage: string
+    lexicalStageHelp: string
+    finalScoreStageDense: string
+    finalScoreStageLexical: string
+    finalScoreStageFusion: string
+    finalScoreStageRerank: string
+    searchTypeVector: string
+    searchTypeFulltext: string
+    searchTypeHybrid: string
+    searchTypeRerank: string
     fusionStage: string
+    fusionStageHelp: string
     rerankStage: string
+    rerankStageHelp: string
     finalStage: string
+    finalStageHelp: string
     relevance: string
     relevant: string
     partial: string
@@ -227,15 +240,42 @@ export type KnowledgeBasesMessages = {
     searchError: string
     searchPartialError: string
     searchSideError: string
+    retrievalErrorRequest: string
+    retrievalErrorConfigurationMismatch: string
+    retrievalErrorProviderAuthentication: string
+    retrievalErrorQuotaOrRateLimit: string
+    retrievalErrorModelConfiguration: string
+    retrievalErrorLexicalUnavailable: string
+    retrievalErrorProviderUnavailable: string
+    retrievalErrorUnknown: string
+    retrievalError_rerank_provider_authentication: string
+    retrievalError_rerank_quota_or_rate_limit: string
+    retrievalError_rerank_model_configuration: string
+    retrievalError_rerank_provider_unavailable: string
+    retrievalError_rerank_unknown: string
+    retrievalError_dense_recall_provider_authentication: string
+    retrievalError_dense_recall_configuration_mismatch: string
+    retrievalError_dense_recall_provider_unavailable: string
+    retrievalError_dense_recall_unknown: string
+    retrievalError_lexical_recall_lexical_unavailable: string
+    retrievalError_lexical_recall_provider_unavailable: string
+    retrievalError_lexical_recall_unknown: string
+    retrievalError_fusion_unknown: string
     presetUpdateError: string
     interactiveSearch: string
     batchEvaluation: string
+    datasetManagement: string
     datasets: string
     selectDataset: string
     datasetName: string
     datasetDescription: string
     createDataset: string
     importDataset: string
+    downloadTemplate: string
+    templateJsonHint: string
+    templateCsvHint: string
+    datasetStats: string
+    noCasesInDataset: string
     evaluationCases: string
     addCase: string
     removeCase: string
@@ -272,6 +312,7 @@ export type KnowledgeBasesMessages = {
     vectorSearch: string
     fulltextSearch: string
     advancedSettings: string
+    settings: string
     topK: string
     topKHint: string
     threshold: string

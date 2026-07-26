@@ -209,7 +209,6 @@ export interface SearchParams {
   rrf_k?: number
   rerank_enabled?: boolean
   rerank_candidate_k?: number
-  rerank_fail_open?: boolean
   rerank_score_threshold?: number | null
 }
 
@@ -375,10 +374,9 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
       rrf_k: params.rrf_k,
       rerank_enabled: params.rerank_enabled,
       rerank_candidate_k: params.rerank_candidate_k,
-      rerank_fail_open: params.rerank_fail_open,
       rerank_score_threshold: params.rerank_score_threshold,
     }
-    return api.post<SearchResponse>(`${prefix}/${id}/search`, requestBody)
+    return api.post<SearchResponse>(`${prefix}/${id}/search`, requestBody, { silent: true })
   },
 
   listEvaluationDatasets: (kbId: string): Promise<EvaluationDataset[]> =>
