@@ -32,6 +32,7 @@ class EvaluationDataset(models.Model):
         on_delete=fields.SET_NULL,
     )
     created_by_id: UUID | None
+    revision = fields.IntField(default=0)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
     cases: fields.ReverseRelation["EvaluationCase"]
@@ -50,10 +51,13 @@ class EvaluationCase(models.Model):
     )
     dataset_id: UUID
     query = fields.TextField()
+    query_fingerprint = fields.CharField(max_length=64, null=True)
     chunk_relevance: dict[str, int] = fields.JSONField(default=dict)
     document_relevance: dict[str, int] = fields.JSONField(default=dict)
     expected_empty = fields.BooleanField(default=False)
+    labeling_metadata: dict[str, Any] = fields.JSONField(default=dict)
     created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
         table = "evaluation_cases"

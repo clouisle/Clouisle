@@ -22,6 +22,7 @@ from app.models.user import User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.retrieval_evaluation import (
     EvaluationCaseInput,
+    EvaluationCaseUpsert,
     EvaluationDatasetCreate,
     EvaluationDatasetUpdate,
     EvaluationRunCreate,
@@ -30,10 +31,12 @@ from app.services.retrieval_evaluation_store import (
     MAX_IMPORT_BYTES,
     create_case,
     create_run,
+    delete_case,
     parse_cases,
     replace_cases,
     serialize_cases,
     update_case,
+    upsert_case,
 )
 
 router = APIRouter()
@@ -85,9 +88,13 @@ def _case_data(case: EvaluationCase) -> dict[str, Any]:
     return {
         "id": case.id,
         "query": case.query,
+        "query_fingerprint": case.query_fingerprint,
         "chunk_relevance": case.chunk_relevance,
         "document_relevance": case.document_relevance,
         "expected_empty": case.expected_empty,
+        "labeling_metadata": case.labeling_metadata,
+        "created_at": case.created_at,
+        "updated_at": case.updated_at,
     }
 
 
@@ -103,6 +110,7 @@ async def _dataset_data(dataset: EvaluationDataset) -> dict[str, Any]:
         "created_by_id": dataset.created_by_id,
         "created_at": dataset.created_at,
         "updated_at": dataset.updated_at,
+        "revision": dataset.revision,
         "cases": [_case_data(case) for case in cases],
     }
 
@@ -203,7 +211,6 @@ async def update_dataset(
         dataset.description = data.description
     await dataset.save()
     if data.cases is not None:
-        await _ensure_no_active_runs(dataset.id)
         await replace_cases(dataset, data.cases)
     return success(
         data=await _dataset_data(dataset), msg_key="evaluation_dataset_updated"
@@ -232,7 +239,6 @@ async def import_dataset(
     current_user: User = Depends(require_kb_evaluate),
 ) -> Any:
     dataset = await _dataset(kb_id, dataset_id, current_user)
-    await _ensure_no_active_runs(dataset.id)
     content = await file.read(MAX_IMPORT_BYTES + 1)
     cases = parse_cases(content, file.filename or "")
     await replace_cases(dataset, cases)
@@ -268,7 +274,6 @@ async def create_dataset_case(
     current_user: User = Depends(require_kb_evaluate),
 ) -> Any:
     dataset = await _dataset(kb_id, dataset_id, current_user)
-    await _ensure_no_active_runs(dataset.id)
     case = await create_case(dataset, data)
     return success(data=_case_data(case), msg_key="evaluation_case_created")
 
@@ -285,7 +290,6 @@ async def update_dataset_case(
     current_user: User = Depends(require_kb_evaluate),
 ) -> Any:
     dataset = await _dataset(kb_id, dataset_id, current_user)
-    await _ensure_no_active_runs(dataset.id)
     existing = await _case(dataset.id, case_id)
     case = await update_case(dataset, existing, data)
     return success(data=_case_data(case), msg_key="evaluation_case_updated")
@@ -302,10 +306,44 @@ async def delete_dataset_case(
     current_user: User = Depends(require_kb_evaluate),
 ) -> Any:
     dataset = await _dataset(kb_id, dataset_id, current_user)
-    await _ensure_no_active_runs(dataset.id)
     case = await _case(dataset.id, case_id)
-    await case.delete()
+    await delete_case(dataset, case)
     return success(msg_key="evaluation_case_deleted")
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/upsert-case",
+    response_model=Response[dict],
+)
+async def upsert_dataset_case(
+    kb_id: UUID,
+    dataset_id: UUID,
+    data: EvaluationCaseUpsert,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Create or update a case by query fingerprint.
+
+    If expected_revision is provided, validates dataset revision and returns 409
+    on mismatch or duplicate query fingerprint. Returns (case, created) where
+    created=True for new cases.
+    """
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+    case_input = EvaluationCaseInput(
+        query=data.query,
+        chunk_relevance=data.chunk_relevance,
+        document_relevance=data.document_relevance,
+        expected_empty=data.expected_empty,
+    )
+    case, created = await upsert_case(dataset, case_input, data.expected_revision)
+    # Update labeling_metadata after upsert
+    if data.labeling_metadata:
+        case.labeling_metadata = data.labeling_metadata
+        await case.save(update_fields=["labeling_metadata"])
+
+    return success(
+        data={**_case_data(case), "created": created},
+        msg_key="evaluation_case_created" if created else "evaluation_case_updated",
+    )
 
 
 @router.post(

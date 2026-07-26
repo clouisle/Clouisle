@@ -2326,6 +2326,15 @@ async def init_retrieval_evaluation_tables():
         "CREATE INDEX IF NOT EXISTS idx_evaluation_datasets_kb ON evaluation_datasets(knowledge_base_id)",
         "CREATE INDEX IF NOT EXISTS idx_evaluation_runs_dataset_status ON evaluation_runs(dataset_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_evaluation_case_results_run ON evaluation_case_results(run_id)",
+        "ALTER TABLE evaluation_datasets ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE evaluation_cases ADD COLUMN IF NOT EXISTS query_fingerprint VARCHAR(64)",
+        "ALTER TABLE evaluation_cases ADD COLUMN IF NOT EXISTS labeling_metadata JSONB NOT NULL DEFAULT '{}'",
+        "ALTER TABLE evaluation_cases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_cases_dataset_fingerprint
+        ON evaluation_cases(dataset_id, query_fingerprint)
+        WHERE query_fingerprint IS NOT NULL
+        """,
     ]
     for statement in statements:
         await execute_startup_migration_query(conn, statement)

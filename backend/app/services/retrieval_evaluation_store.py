@@ -1,8 +1,10 @@
 """Persistence helpers and bounded imports for retrieval evaluation."""
 
 import csv
+import hashlib
 import io
 import json
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -25,6 +27,20 @@ MAX_CASES = 1000
 EXPORT_FORMATS = ("json", "csv")
 _CSV_COLUMNS = ("query", "chunk_relevance", "document_relevance", "expected_empty")
 _CASE_LIST = TypeAdapter(list[EvaluationCaseInput])
+
+
+def normalize_query(query: str) -> str:
+    """Normalize query for fingerprint: NFKC + trim + collapse whitespace."""
+    normalized = unicodedata.normalize("NFKC", query)
+    normalized = normalized.strip()
+    normalized = " ".join(normalized.split())
+    return normalized
+
+
+def compute_query_fingerprint(query: str) -> str:
+    """Compute SHA-256 fingerprint of normalized query."""
+    normalized = normalize_query(query)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _bad_import() -> BusinessError:
@@ -138,6 +154,7 @@ async def validate_case_labels(kb_id: UUID, cases: list[EvaluationCaseInput]) ->
 def _case_fields(case: EvaluationCaseInput) -> dict[str, Any]:
     return {
         "query": case.query,
+        "query_fingerprint": compute_query_fingerprint(case.query),
         "chunk_relevance": {
             str(key): value for key, value in case.chunk_relevance.items()
         },
@@ -157,6 +174,16 @@ async def replace_cases(
     import and full-dataset replacement; use :func:`create_case` /
     :func:`update_case` to edit a dataset without losing per-case history."""
     async with in_transaction():
+        locked_dataset = await EvaluationDataset.select_for_update().get(id=dataset.id)
+
+        if await EvaluationRun.filter(
+            dataset_id=dataset.id, status__in=["pending", "running"]
+        ).exists():
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_has_active_runs",
+            )
+
         await validate_case_labels(dataset.knowledge_base_id, cases)
         await EvaluationCase.filter(dataset_id=dataset.id).delete()
         if cases:
@@ -167,32 +194,215 @@ async def replace_cases(
                 ]
             )
 
+        locked_dataset.revision += 1
+        await locked_dataset.save(update_fields=["revision"])
+
 
 async def create_case(
-    dataset: EvaluationDataset, case: EvaluationCaseInput
+    dataset: EvaluationDataset,
+    case: EvaluationCaseInput,
+    expected_revision: int | None = None,
 ) -> EvaluationCase:
     """Append one case, leaving every existing case id untouched."""
     async with in_transaction():
+        locked_dataset = await EvaluationDataset.select_for_update().get(id=dataset.id)
+
+        if (
+            expected_revision is not None
+            and locked_dataset.revision != expected_revision
+        ):
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_revision_conflict",
+                status_code=409,
+                expected=expected_revision,
+                current=locked_dataset.revision,
+            )
+
+        if await EvaluationRun.filter(
+            dataset_id=dataset.id, status__in=["pending", "running"]
+        ).exists():
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_has_active_runs",
+            )
+
         if await EvaluationCase.filter(dataset_id=dataset.id).count() >= MAX_CASES:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST, msg_key="evaluation_dataset_case_limit"
             )
         await validate_case_labels(dataset.knowledge_base_id, [case])
-        return await EvaluationCase.create(dataset_id=dataset.id, **_case_fields(case))
+        result = await EvaluationCase.create(
+            dataset_id=dataset.id, **_case_fields(case)
+        )
+
+        locked_dataset.revision += 1
+        await locked_dataset.save(update_fields=["revision"])
+
+    return result
 
 
 async def update_case(
-    dataset: EvaluationDataset, existing: EvaluationCase, case: EvaluationCaseInput
+    dataset: EvaluationDataset,
+    existing: EvaluationCase,
+    case: EvaluationCaseInput,
+    expected_revision: int | None = None,
 ) -> EvaluationCase:
     """Update one case in place so its id -- and the historical case results
     pointing at it -- survive the edit."""
     async with in_transaction():
+        locked_dataset = await EvaluationDataset.select_for_update().get(id=dataset.id)
+
+        if (
+            expected_revision is not None
+            and locked_dataset.revision != expected_revision
+        ):
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_revision_conflict",
+                status_code=409,
+                expected=expected_revision,
+                current=locked_dataset.revision,
+            )
+
+        if await EvaluationRun.filter(
+            dataset_id=dataset.id, status__in=["pending", "running"]
+        ).exists():
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_has_active_runs",
+            )
+
         await validate_case_labels(dataset.knowledge_base_id, [case])
         fields = _case_fields(case)
         for name, value in fields.items():
             setattr(existing, name, value)
-        await existing.save(update_fields=list(fields))
+        existing.updated_at = datetime.now(timezone.utc)
+        await existing.save(update_fields=[*list(fields), "updated_at"])
+
+        locked_dataset.revision += 1
+        await locked_dataset.save(update_fields=["revision"])
+
     return existing
+
+
+async def delete_case(
+    dataset: EvaluationDataset,
+    case: EvaluationCase,
+    expected_revision: int | None = None,
+) -> None:
+    """Delete one case and increment dataset revision."""
+    async with in_transaction():
+        locked_dataset = await EvaluationDataset.select_for_update().get(id=dataset.id)
+
+        if (
+            expected_revision is not None
+            and locked_dataset.revision != expected_revision
+        ):
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_revision_conflict",
+                status_code=409,
+                expected=expected_revision,
+                current=locked_dataset.revision,
+            )
+
+        if await EvaluationRun.filter(
+            dataset_id=dataset.id, status__in=["pending", "running"]
+        ).exists():
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_has_active_runs",
+            )
+
+        await case.delete()
+
+        locked_dataset.revision += 1
+        await locked_dataset.save(update_fields=["revision"])
+
+
+async def upsert_case(
+    dataset: EvaluationDataset,
+    case: EvaluationCaseInput,
+    expected_revision: int | None = None,
+) -> tuple[EvaluationCase, bool]:
+    """Create or update a case by query fingerprint.
+
+    Returns (case, created) where created=True for new cases, False for updates.
+
+    When expected_revision is provided, validates dataset revision before mutation
+    and increments it after. Returns 409 if revision doesn't match or if multiple
+    cases share the same fingerprint (historical duplicates).
+
+    When expected_revision is None, performs upsert without revision validation
+    (for import and legacy flows).
+    """
+    async with in_transaction():
+        # Lock dataset row for revision check and active run guard
+        locked_dataset = await EvaluationDataset.select_for_update().get(id=dataset.id)
+
+        if (
+            expected_revision is not None
+            and locked_dataset.revision != expected_revision
+        ):
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_revision_conflict",
+                status_code=409,
+                expected=expected_revision,
+                current=locked_dataset.revision,
+            )
+
+        # Check active runs
+        if await EvaluationRun.filter(
+            dataset_id=dataset.id, status__in=["pending", "running"]
+        ).exists():
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_has_active_runs",
+            )
+
+        await validate_case_labels(dataset.knowledge_base_id, [case])
+
+        fingerprint = compute_query_fingerprint(case.query)
+        existing_cases = await EvaluationCase.filter(
+            dataset_id=dataset.id, query_fingerprint=fingerprint
+        ).all()
+
+        if len(existing_cases) > 1:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="evaluation_dataset_duplicate_query",
+                status_code=409,
+                query=case.query,
+            )
+
+        fields = _case_fields(case)
+
+        if existing_cases:
+            # Update existing case
+            existing = existing_cases[0]
+            for name, value in fields.items():
+                setattr(existing, name, value)
+            existing.updated_at = datetime.now(timezone.utc)
+            await existing.save(update_fields=[*list(fields), "updated_at"])
+            result_case = existing
+            created = False
+        else:
+            # Create new case
+            if await EvaluationCase.filter(dataset_id=dataset.id).count() >= MAX_CASES:
+                raise BusinessError(
+                    code=ResponseCode.BAD_REQUEST,
+                    msg_key="evaluation_dataset_case_limit",
+                )
+            result_case = await EvaluationCase.create(dataset_id=dataset.id, **fields)
+            created = True
+
+        # Increment revision
+        locked_dataset.revision += 1
+        await locked_dataset.save(update_fields=["revision"])
+
+    return result_case, created
 
 
 async def create_run(

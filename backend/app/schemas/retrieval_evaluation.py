@@ -40,6 +40,29 @@ class EvaluationDatasetUpdate(BaseModel):
     cases: list[EvaluationCaseInput] | None = Field(default=None, max_length=1000)
 
 
+class EvaluationCaseUpsert(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    chunk_relevance: dict[UUID, int] = Field(default_factory=dict)
+    document_relevance: dict[UUID, int] = Field(default_factory=dict)
+    expected_empty: bool = False
+    labeling_metadata: dict = Field(default_factory=dict)
+    expected_revision: int | None = None
+
+    @model_validator(mode="after")
+    def validate_relevance(self):
+        if any(
+            grade < 0 or grade > 3
+            for grade in (
+                *self.chunk_relevance.values(),
+                *self.document_relevance.values(),
+            )
+        ):
+            raise ValueError("relevance grades must be between 0 and 3")
+        if self.expected_empty and (self.chunk_relevance or self.document_relevance):
+            raise ValueError("expected-empty cases cannot contain relevance labels")
+        return self
+
+
 class EvaluationCaseResponse(EvaluationCaseInput):
     id: UUID
 

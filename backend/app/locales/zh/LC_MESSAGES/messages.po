@@ -2069,7 +2069,6 @@ msgstr "SAML 认证失败"
 
 msgid "verification_email_code_or_token_required"
 msgstr "必须提供 email 和 code，或提供 token"
-msgstr "SSO 提供商配置有效"
 
 msgid "sso_provider_name_exists"
 msgstr "SSO 提供商名称已存在"
@@ -2781,6 +2780,12 @@ msgstr "评测数据集没有测试用例"
 
 msgid "evaluation_dataset_case_limit"
 msgstr "评测数据集的用例数量已达上限"
+
+msgid "evaluation_dataset_revision_conflict"
+msgstr "数据集已被其他操作修改"
+
+msgid "evaluation_dataset_duplicate_query"
+msgstr "该数据集中存在多个相同查询的用例"
 
 msgid "evaluation_export_format_invalid"
 msgstr "导出格式必须为 json 或 csv"

@@ -2069,7 +2069,6 @@ msgstr "SAML authentication failed"
 
 msgid "verification_email_code_or_token_required"
 msgstr "Either email and code, or token, must be provided"
-msgstr "Provider configuration is valid"
 
 msgid "sso_provider_name_exists"
 msgstr "SSO provider name already exists"
@@ -2781,6 +2780,12 @@ msgstr "The evaluation dataset has no cases"
 
 msgid "evaluation_dataset_case_limit"
 msgstr "The evaluation dataset already holds the maximum number of cases"
+
+msgid "evaluation_dataset_revision_conflict"
+msgstr "The dataset has been modified by another operation"
+
+msgid "evaluation_dataset_duplicate_query"
+msgstr "Multiple cases with the same query exist in this dataset"
 
 msgid "evaluation_export_format_invalid"
 msgstr "The export format must be json or csv"
