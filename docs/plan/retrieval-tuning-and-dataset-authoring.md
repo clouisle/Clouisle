@@ -291,7 +291,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 - **具体逻辑**：开关默认关闭。对候选池中的每个 (query, chunk) 请求结构化 0–3 建议分，带严格超时与失败静默；建议以**未确认**状态展示，人工点击确认后才写入标注，`label_source` 记录来源。绝不自动落库为金标准。
 - **验证**：开关关闭时无任何模型调用；模型超时不阻塞标注流程；未确认建议不进入数据集。
 
-### 阶段 12：i18n、类型、文档与整体验证
+### 阶段 12：i18n、类型、文档与整体验证 ✅
 
 - **修改文件**：`frontend/i18n/{en,zh}/knowledgeBases.json`、`frontend/i18n/types/knowledgeBases.ts`（生成）、`docs/dev/design/ai-data/KNOWLEDGE_BASE_SPEC.md`、`docs/dev/api/BACKEND_API.md`、`docs/IMPLEMENTATION_PLAN.md`
 - **具体逻辑**：en/zh 同步补全全部新文案；`node scripts/gen-i18n-types.ts` 重新生成类型；`node scripts/lint-translations.ts --strict` 通过；规范文档补充"调优与数据集构建"章节，含 pooling 偏差与池内召回的说明。

@@ -39,7 +39,9 @@ async def test_validate_case_labels_accepts_owned_and_rejects_foreign(kind):
 
 @pytest.mark.anyio
 async def test_replace_cases_empty_only_deletes():
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=1, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=1, save=AsyncMock()
+    )
     delete = AsyncMock()
 
     @asynccontextmanager
@@ -48,8 +50,16 @@ async def test_replace_cases_empty_only_deletes():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
         patch.object(
             store.EvaluationCase, "filter", return_value=MagicMock(delete=delete)
@@ -108,7 +118,9 @@ def test_run_config_drops_retired_rerank_fail_open():
 @pytest.mark.anyio
 @pytest.mark.parametrize("kind", ["chunk", "document"])
 async def test_single_case_writes_reject_labels_outside_kb(kind):
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=2, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=2, save=AsyncMock()
+    )
     item_id = uuid4()
     case = EvaluationCaseInput(
         query="q",
@@ -125,8 +137,16 @@ async def test_single_case_writes_reject_labels_outside_kb(kind):
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(model, "filter", return_value=Values([])),
         patch.object(
             store.EvaluationCase,
@@ -153,7 +173,9 @@ async def test_single_case_writes_reject_labels_outside_kb(kind):
     ("case_count", "expected"), [(store.MAX_CASES - 1, True), (store.MAX_CASES, False)]
 )
 async def test_create_case_enforces_dataset_case_ceiling(case_count, expected):
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock()
+    )
     chunk_id = uuid4()
     case = EvaluationCaseInput(query="q", chunk_relevance={chunk_id: 3})
     create = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
@@ -165,8 +187,16 @@ async def test_create_case_enforces_dataset_case_ceiling(case_count, expected):
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", validate),
         patch.object(
             store.EvaluationCase,
@@ -215,7 +245,9 @@ async def test_query_fingerprint_normalization():
 @pytest.mark.anyio
 async def test_create_case_increments_revision():
     """Test that create_case increments dataset revision."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock()
+    )
     case = EvaluationCaseInput(query="test")
 
     @asynccontextmanager
@@ -224,11 +256,27 @@ async def test_create_case_increments_revision():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
-        patch.object(store.EvaluationCase, "filter", return_value=MagicMock(count=AsyncMock(return_value=0))),
-        patch.object(store.EvaluationCase, "create", AsyncMock(return_value=SimpleNamespace(id=uuid4()))),
+        patch.object(
+            store.EvaluationCase,
+            "filter",
+            return_value=MagicMock(count=AsyncMock(return_value=0)),
+        ),
+        patch.object(
+            store.EvaluationCase,
+            "create",
+            AsyncMock(return_value=SimpleNamespace(id=uuid4())),
+        ),
     ):
         await store.create_case(dataset, case)
 
@@ -239,7 +287,9 @@ async def test_create_case_increments_revision():
 @pytest.mark.anyio
 async def test_update_case_increments_revision():
     """Test that update_case increments dataset revision."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=3, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=3, save=AsyncMock()
+    )
     existing = SimpleNamespace(id=uuid4(), query="old", save=AsyncMock())
     case = EvaluationCaseInput(query="new")
 
@@ -249,8 +299,16 @@ async def test_update_case_increments_revision():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
     ):
         await store.update_case(dataset, existing, case)
@@ -262,7 +320,9 @@ async def test_update_case_increments_revision():
 @pytest.mark.anyio
 async def test_delete_case_increments_revision():
     """Test that delete_case increments dataset revision."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=2, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=2, save=AsyncMock()
+    )
     case_to_delete = SimpleNamespace(id=uuid4(), delete=AsyncMock())
 
     @asynccontextmanager
@@ -271,8 +331,16 @@ async def test_delete_case_increments_revision():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
     ):
         await store.delete_case(dataset, case_to_delete)
 
@@ -284,7 +352,9 @@ async def test_delete_case_increments_revision():
 @pytest.mark.anyio
 async def test_replace_cases_increments_revision():
     """Test that replace_cases increments dataset revision."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=1, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=1, save=AsyncMock()
+    )
 
     @asynccontextmanager
     async def transaction():
@@ -292,10 +362,20 @@ async def test_replace_cases_increments_revision():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
-        patch.object(store.EvaluationCase, "filter", return_value=MagicMock(delete=AsyncMock())),
+        patch.object(
+            store.EvaluationCase, "filter", return_value=MagicMock(delete=AsyncMock())
+        ),
         patch.object(store.EvaluationCase, "bulk_create", AsyncMock()),
     ):
         await store.replace_cases(dataset, [EvaluationCaseInput(query="q1")])
@@ -307,7 +387,9 @@ async def test_replace_cases_increments_revision():
 @pytest.mark.anyio
 async def test_upsert_case_creates_when_no_match():
     """Test upsert creates a new case when no matching query fingerprint exists."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=0, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=0, save=AsyncMock()
+    )
     case = EvaluationCaseInput(query="new query")
     created_case = SimpleNamespace(id=uuid4())
 
@@ -317,11 +399,27 @@ async def test_upsert_case_creates_when_no_match():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
-        patch.object(store.EvaluationCase, "filter", return_value=MagicMock(count=AsyncMock(return_value=0), all=AsyncMock(return_value=[]))),
-        patch.object(store.EvaluationCase, "create", AsyncMock(return_value=created_case)),
+        patch.object(
+            store.EvaluationCase,
+            "filter",
+            return_value=MagicMock(
+                count=AsyncMock(return_value=0), all=AsyncMock(return_value=[])
+            ),
+        ),
+        patch.object(
+            store.EvaluationCase, "create", AsyncMock(return_value=created_case)
+        ),
     ):
         result, created = await store.upsert_case(dataset, case, expected_revision=None)
 
@@ -333,7 +431,9 @@ async def test_upsert_case_creates_when_no_match():
 @pytest.mark.anyio
 async def test_upsert_case_updates_when_unique_match():
     """Test upsert updates existing case when exactly one matching query fingerprint exists."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=10, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=10, save=AsyncMock()
+    )
     existing = SimpleNamespace(id=uuid4(), query="old", save=AsyncMock())
     case = EvaluationCaseInput(query="updated query")
 
@@ -343,10 +443,22 @@ async def test_upsert_case_updates_when_unique_match():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
-        patch.object(store.EvaluationCase, "filter", return_value=MagicMock(all=AsyncMock(return_value=[existing]))),
+        patch.object(
+            store.EvaluationCase,
+            "filter",
+            return_value=MagicMock(all=AsyncMock(return_value=[existing])),
+        ),
     ):
         result, created = await store.upsert_case(dataset, case, expected_revision=None)
 
@@ -359,7 +471,9 @@ async def test_upsert_case_updates_when_unique_match():
 @pytest.mark.anyio
 async def test_upsert_case_rejects_duplicate_query():
     """Test upsert raises 409 when multiple cases have the same query fingerprint."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock()
+    )
     case = EvaluationCaseInput(query="duplicate")
     existing1 = SimpleNamespace(id=uuid4())
     existing2 = SimpleNamespace(id=uuid4())
@@ -370,10 +484,22 @@ async def test_upsert_case_rejects_duplicate_query():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=False))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(store, "validate_case_labels", AsyncMock()),
-        patch.object(store.EvaluationCase, "filter", return_value=MagicMock(all=AsyncMock(return_value=[existing1, existing2]))),
+        patch.object(
+            store.EvaluationCase,
+            "filter",
+            return_value=MagicMock(all=AsyncMock(return_value=[existing1, existing2])),
+        ),
     ):
         with pytest.raises(BusinessError) as error:
             await store.upsert_case(dataset, case, expected_revision=None)
@@ -386,7 +512,9 @@ async def test_upsert_case_rejects_duplicate_query():
 @pytest.mark.anyio
 async def test_mutation_rejects_stale_revision():
     """Test mutations reject when expected_revision doesn't match current."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=10, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=10, save=AsyncMock()
+    )
     case = EvaluationCaseInput(query="test")
 
     @asynccontextmanager
@@ -395,7 +523,11 @@ async def test_mutation_rejects_stale_revision():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
     ):
         with pytest.raises(BusinessError) as error:
             await store.create_case(dataset, case, expected_revision=9)
@@ -408,7 +540,9 @@ async def test_mutation_rejects_stale_revision():
 @pytest.mark.anyio
 async def test_mutation_blocks_when_active_runs_exist():
     """Test mutations block when active runs exist."""
-    dataset = SimpleNamespace(id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock())
+    dataset = SimpleNamespace(
+        id=uuid4(), knowledge_base_id=uuid4(), revision=5, save=AsyncMock()
+    )
     case = EvaluationCaseInput(query="test")
 
     @asynccontextmanager
@@ -417,12 +551,19 @@ async def test_mutation_blocks_when_active_runs_exist():
 
     with (
         patch.object(store, "in_transaction", transaction),
-        patch.object(store.EvaluationDataset, "select_for_update", return_value=MagicMock(get=AsyncMock(return_value=dataset))),
-        patch.object(store.EvaluationRun, "filter", return_value=MagicMock(exists=AsyncMock(return_value=True))),
+        patch.object(
+            store.EvaluationDataset,
+            "select_for_update",
+            return_value=MagicMock(get=AsyncMock(return_value=dataset)),
+        ),
+        patch.object(
+            store.EvaluationRun,
+            "filter",
+            return_value=MagicMock(exists=AsyncMock(return_value=True)),
+        ),
     ):
         with pytest.raises(BusinessError) as error:
             await store.create_case(dataset, case, expected_revision=None)
 
     assert error.value.msg_key == "evaluation_dataset_has_active_runs"
     assert dataset.revision == 5  # unchanged
-

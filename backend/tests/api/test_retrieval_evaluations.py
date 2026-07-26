@@ -360,7 +360,7 @@ def test_new_case_and_export_messages_are_translated(language):
 @pytest.mark.anyio
 async def test_import_is_blocked_before_read_when_run_is_active():
     dataset = SimpleNamespace(id=uuid4())
-    file = SimpleNamespace(filename="cases.json", read=AsyncMock(return_value=b'[]'))
+    file = SimpleNamespace(filename="cases.json", read=AsyncMock(return_value=b"[]"))
     replace_mock = AsyncMock(
         side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
     )

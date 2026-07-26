@@ -1,9 +1,6 @@
 """Tests for retrieval parameter tuning pure functions."""
 
-import pytest
-
 from app.services.retrieval_tuning import (
-    ObjectiveMetric,
     candidate_key,
     compare_runs,
     config_fingerprint,
@@ -96,8 +93,12 @@ class TestCandidateKey:
 
     def test_dict_values(self):
         """Dict values should be JSON-serialized with sorted keys."""
-        key1 = candidate_key("s3", "rerank_config", {"enabled": True, "candidate_k": 20})
-        key2 = candidate_key("s3", "rerank_config", {"candidate_k": 20, "enabled": True})
+        key1 = candidate_key(
+            "s3", "rerank_config", {"enabled": True, "candidate_k": 20}
+        )
+        key2 = candidate_key(
+            "s3", "rerank_config", {"candidate_k": 20, "enabled": True}
+        )
 
         assert key1 == key2  # order-independent
         assert "rerank_config=" in key1
@@ -117,7 +118,9 @@ class TestExpandStage:
         parent = {"top_k": 10}
         candidates = [(1.0, 0.6), (0.6, 1.0)]
 
-        result = expand_stage("s1_weights", "channel_weights", candidates, parent, 10, 10)
+        result = expand_stage(
+            "s1_weights", "channel_weights", candidates, parent, 10, 10
+        )
 
         assert len(result) == 2
         key1, label1, config1 = result[0]
@@ -163,7 +166,9 @@ class TestExpandStage:
         parent = {"top_k": 10, "rerank_enabled": False}
         candidates = [None, 0.1, 0.3]
 
-        result = expand_stage("s4_rerank_thresh", "rerank_score_threshold", candidates, parent, 10, 10)
+        result = expand_stage(
+            "s4_rerank_thresh", "rerank_score_threshold", candidates, parent, 10, 10
+        )
 
         assert len(result) == 0  # all skipped
 
@@ -172,7 +177,9 @@ class TestExpandStage:
         parent = {"top_k": 10, "rerank_enabled": True}
         candidates = [None, 0.1, 0.3]
 
-        result = expand_stage("s4_rerank_thresh", "rerank_score_threshold", candidates, parent, 10, 10)
+        result = expand_stage(
+            "s4_rerank_thresh", "rerank_score_threshold", candidates, parent, 10, 10
+        )
 
         assert len(result) == 3
         _, label1, config1 = result[0]
@@ -184,7 +191,9 @@ class TestExpandStage:
         parent = {"top_k": 10}
         candidates = [0, 0.2, 0.35]
 
-        result = expand_stage("s5_score_thresh", "score_threshold", candidates, parent, 10, 10)
+        result = expand_stage(
+            "s5_score_thresh", "score_threshold", candidates, parent, 10, 10
+        )
 
         assert len(result) == 3
         _, label1, config1 = result[0]
@@ -354,7 +363,9 @@ class TestCompareRuns:
         baseline = {"chunk_recall@10": 0.70}
         candidate = {"chunk_recall@10": 0.85}
 
-        improved, regressed, delta = compare_runs(baseline, candidate, "chunk_recall", 10)
+        improved, regressed, delta = compare_runs(
+            baseline, candidate, "chunk_recall", 10
+        )
 
         assert improved == 1
         assert regressed == 0
@@ -365,7 +376,9 @@ class TestCompareRuns:
         baseline = {"chunk_recall@10": 0.85}
         candidate = {"chunk_recall@10": 0.70}
 
-        improved, regressed, delta = compare_runs(baseline, candidate, "chunk_recall", 10)
+        improved, regressed, delta = compare_runs(
+            baseline, candidate, "chunk_recall", 10
+        )
 
         assert improved == 0
         assert regressed == 1
@@ -376,7 +389,9 @@ class TestCompareRuns:
         baseline = {"chunk_recall@10": 0.80}
         candidate = {"chunk_recall@10": 0.805}
 
-        improved, regressed, delta = compare_runs(baseline, candidate, "chunk_recall", 10)
+        improved, regressed, delta = compare_runs(
+            baseline, candidate, "chunk_recall", 10
+        )
 
         assert improved == 0
         assert regressed == 0
@@ -387,7 +402,9 @@ class TestCompareRuns:
         baseline = {}
         candidate = {"chunk_recall@10": 0.85}
 
-        improved, regressed, delta = compare_runs(baseline, candidate, "chunk_recall", 10)
+        improved, regressed, delta = compare_runs(
+            baseline, candidate, "chunk_recall", 10
+        )
 
         # When baseline score is -1.0, delta = 0.85 - (-1.0) = 1.85 > 0.01
         assert improved == 1
@@ -401,24 +418,44 @@ class TestSelectRecommendation:
         """No candidates passing guards should return None."""
         candidates = [
             ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.80, "error_count": 0}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.81, "error_count": 0}),  # +0.01, below min
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.81, "error_count": 0},
+            ),  # +0.01, below min
         ]
         guards = {"min_improvement": 0.05}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result is None
 
     def test_selects_best_candidate(self):
         """Should select candidate with highest objective delta."""
         candidates = [
-            ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.75, "error_count": 0, "latency_p95_ms": 100}),
-            ("c2", {"rrf_k": 120}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100}),
+            (
+                "baseline",
+                {"top_k": 10},
+                {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.75, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c2",
+                {"rrf_k": 120},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100},
+            ),
         ]
         guards = {"min_improvement": 0.02}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result is not None
         assert result["candidate_key"] == "c2"
@@ -430,63 +467,123 @@ class TestSelectRecommendation:
         """Should filter candidates exceeding max_error_count."""
         candidates = [
             ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.85, "error_count": 2}),  # too many errors
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.85, "error_count": 2},
+            ),  # too many errors
         ]
         guards = {"min_improvement": 0.02, "max_error_count": 1}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result is None
 
     def test_filters_by_p95_latency(self):
         """Should filter candidates exceeding max_p95_latency_ms."""
         candidates = [
-            ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "latency_p95_ms": 100}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.85, "latency_p95_ms": 6000}),  # too slow
+            (
+                "baseline",
+                {"top_k": 10},
+                {"chunk_recall@10": 0.70, "latency_p95_ms": 100},
+            ),
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.85, "latency_p95_ms": 6000},
+            ),  # too slow
         ]
         guards = {"min_improvement": 0.02, "max_p95_latency_ms": 5000}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result is None
 
     def test_tie_break_by_error_count(self):
         """When delta is equal, should prefer lower error count."""
         candidates = [
-            ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.85, "error_count": 2, "latency_p95_ms": 100}),
-            ("c2", {"rrf_k": 120}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100}),
+            (
+                "baseline",
+                {"top_k": 10},
+                {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.85, "error_count": 2, "latency_p95_ms": 100},
+            ),
+            (
+                "c2",
+                {"rrf_k": 120},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100},
+            ),
         ]
         guards = {"min_improvement": 0.02, "max_error_count": 5}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result["candidate_key"] == "c2"  # lower error count
 
     def test_tie_break_by_latency(self):
         """When delta and error count are equal, should prefer lower latency."""
         candidates = [
-            ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 200}),
-            ("c2", {"rrf_k": 120}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 150}),
+            (
+                "baseline",
+                {"top_k": 10},
+                {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 200},
+            ),
+            (
+                "c2",
+                {"rrf_k": 120},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 150},
+            ),
         ]
         guards = {"min_improvement": 0.02}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result["candidate_key"] == "c2"  # lower latency
 
     def test_tie_break_by_config_fingerprint(self):
         """When all metrics are equal, should use config fingerprint for determinism."""
         candidates = [
-            ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100}),
-            ("c2", {"rrf_k": 120}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100}),
+            (
+                "baseline",
+                {"top_k": 10},
+                {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c2",
+                {"rrf_k": 120},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100},
+            ),
         ]
         guards = {"min_improvement": 0.02}
 
-        result1 = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
-        result2 = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result1 = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
+        result2 = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         # Should be deterministic
         assert result1["candidate_key"] == result2["candidate_key"]
@@ -521,19 +618,31 @@ class TestSelectRecommendation:
         ]
         guards = {"min_improvement": 0.02}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result["candidate_key"] == "c2"
 
     def test_guards_passed_flag(self):
         """Recommendation should always have guards_passed=True."""
         candidates = [
-            ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100}),
-            ("c1", {"rrf_k": 60}, {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100}),
+            (
+                "baseline",
+                {"top_k": 10},
+                {"chunk_recall@10": 0.70, "error_count": 0, "latency_p95_ms": 100},
+            ),
+            (
+                "c1",
+                {"rrf_k": 60},
+                {"chunk_recall@10": 0.85, "error_count": 0, "latency_p95_ms": 100},
+            ),
         ]
         guards = {"min_improvement": 0.02}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result["guards_passed"] is True
 
@@ -541,10 +650,16 @@ class TestSelectRecommendation:
         """Recommendation should include the winning config."""
         candidates = [
             ("baseline", {"top_k": 10}, {"chunk_recall@10": 0.70, "error_count": 0}),
-            ("c1", {"top_k": 10, "rrf_k": 120}, {"chunk_recall@10": 0.85, "error_count": 0}),
+            (
+                "c1",
+                {"top_k": 10, "rrf_k": 120},
+                {"chunk_recall@10": 0.85, "error_count": 0},
+            ),
         ]
         guards = {"min_improvement": 0.02}
 
-        result = select_recommendation(candidates, "baseline", "chunk_recall", 10, guards)
+        result = select_recommendation(
+            candidates, "baseline", "chunk_recall", 10, guards
+        )
 
         assert result["config"]["rrf_k"] == 120
