@@ -9,7 +9,7 @@
   - [x] 4. Stage 2: Dataset revision tracking and query fingerprinting — atomic mutations with optimistic locking, query-based upsert, and comprehensive tests
   - [x] 5. Stage 3: Query-scoped visual labeling — query isolation prevents cross-query label pollution, versioned storage envelope with migration, and comprehensive test coverage
   - [ ] 6. Knowledge base retrieval defaults so tuned parameters can land in production
-  - [ ] 7. Stage 4: Multi-strategy candidate pooling and dataset upsert
+  - [x] 7. Stage 4: Multi-strategy candidate pooling and dataset upsert — four-strategy candidate pool with provenance/rank preservation, dataset selection toolbar, create/update case promotion preview, quality diagnostics panel (judged/unjudged, positive/negative, per-strategy unique contributions, overlap, pool-relative coverage), bulk mark unlabeled as irrelevant, and bilingual i18n
   - [ ] 8. Stage 5: Dataset quality panel and run comparison
   - [ ] 9. Stage 6: Tuning backend — sweep model, API, staged coordinate search, budget guards
   - [ ] 10. Stage 7: Tuning executor — Celery orchestration with cancel/recover and live verification
