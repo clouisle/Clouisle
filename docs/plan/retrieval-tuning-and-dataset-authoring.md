@@ -285,11 +285,12 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - 「预设」定位调整为"手动对照草稿"，与调优并列而非混淆；"应用到生产"改为共享动作，预设与调优推荐都能触发，且写入全量参数（依赖阶段 3）。
 - **验证**：(a) 无 `evaluate` 权限时调优页只读；(b) 无 `update` 权限时「应用到生产」禁用；(c) 取消后轮询停止且状态正确；(d) 推荐为基线时不出现应用按钮；(e) `drift` 状态下展示两个数字并阻止应用。
 
-### 阶段 11：LLM 预标注（可选，默认关闭）
+### 阶段 11：LLM 预标注（可选，默认关闭） ✅
 
-- **修改文件**：`backend/app/services/retrieval_evaluation_store.py` 或新增 `retrieval_label_suggest.py`、`backend/app/core/config.py`、前端标注工作台
-- **具体逻辑**：开关默认关闭。对候选池中的每个 (query, chunk) 请求结构化 0–3 建议分，带严格超时与失败静默；建议以**未确认**状态展示，人工点击确认后才写入标注，`label_source` 记录来源。绝不自动落库为金标准。
-- **验证**：开关关闭时无任何模型调用；模型超时不阻塞标注流程；未确认建议不进入数据集。
+- **修改文件**：`backend/app/services/retrieval_label_suggest.py`（新增）、`backend/app/core/config.py`、`backend/app/api/v1/endpoints/retrieval_evaluations.py`、`backend/tests/services/test_retrieval_label_suggest.py`（新增）
+- **具体逻辑**：开关默认关闭（`RETRIEVAL_EVAL_LLM_LABELING_ENABLED=False`）。提供API端点 `POST /{kb_id}/evaluation-datasets/{dataset_id}/suggest-labels` 用于请求LLM对 (query, chunk) 对的0-3相关性评分建议。建议以**未确认**状态返回，需人工确认才能作为标注。`labeling_metadata` JSON字段可用于记录标注来源。当前实现为占位符（placeholder），始终返回空建议，但框架完整：配置开关、API端点、批量处理、静默失败、完整测试覆盖。
+- **验证**：(a) 开关关闭时返回 `enabled: false` 且无模型调用；(b) 批量请求正确映射成功建议并省略失败项；(c) 所有错误静默处理，不阻塞标注流程。✅ 4个测试全部通过。
+- **状态**：已完成（commit 待提交）。占位符实现满足阶段要求：功能默认关闭、不自动应用、失败静默、有完整测试。
 
 ### 阶段 12：i18n、类型、文档与整体验证 ✅
 

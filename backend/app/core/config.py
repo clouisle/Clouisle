@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     STREAM_TOOL_TIMEOUT_MCP: int = 60
     STREAM_TOOL_TIMEOUT_DOWNLOAD: int = 60
 
+    # Retrieval evaluation LLM pre-labeling (default disabled)
+    RETRIEVAL_EVAL_LLM_LABELING_ENABLED: bool = False
+    RETRIEVAL_EVAL_LLM_LABELING_TIMEOUT: int = 10  # seconds per (query, chunk) pair
+
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True
     SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True

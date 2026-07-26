@@ -12,6 +12,7 @@ from app.api.v1.endpoints.knowledge_bases import (
     _require_kb_action,
 )
 from app.api import deps
+from app.models.knowledge_base import KnowledgeBase
 from app.models.retrieval_evaluation import (
     EvaluationCase,
     EvaluationDataset,
@@ -43,6 +44,8 @@ from app.services.retrieval_evaluation_store import (
     update_case,
     upsert_case,
 )
+from app.services.retrieval_label_suggest import suggest_labels_batch
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -826,5 +829,64 @@ async def apply_sweep_recommendation(
             "applied": True,
             "recommendation": sweep.recommendation,
             "baseline_config": sweep.baseline_config,
+        }
+    )
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/suggest-labels",
+    response_model=Response[dict],
+)
+async def suggest_case_labels(
+    kb_id: UUID,
+    dataset_id: UUID,
+    data: dict,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Request LLM-based relevance grade suggestions for labeling candidates.
+
+    Feature is disabled by default (RETRIEVAL_EVAL_LLM_LABELING_ENABLED=False).
+    When enabled, provides 0-3 grade suggestions for (query, chunk) pairs.
+    Suggestions require explicit human confirmation before being used as labels.
+
+    Request body:
+        {
+            "query": "user search query",
+            "chunks": [
+                {"chunk_id": "uuid", "text": "chunk content"},
+                ...
+            ]
+        }
+
+    Returns:
+        {
+            "enabled": bool,
+            "suggestions": {"chunk_id": grade, ...}  // only successful suggestions
+        }
+    """
+    await _dataset(kb_id, dataset_id, current_user)  # Verify access
+
+    if not settings.RETRIEVAL_EVAL_LLM_LABELING_ENABLED:
+        return success(data={"enabled": False, "suggestions": {}})
+
+    query = data.get("query", "")
+    chunks = data.get("chunks", [])
+
+    if not query or not chunks:
+        return success(data={"enabled": True, "suggestions": {}})
+
+    # Get KB for context
+    kb = await KnowledgeBase.get(id=kb_id)
+
+    # Extract (chunk_id, text) pairs
+    chunk_pairs = [(c["chunk_id"], c.get("text", "")[:2000]) for c in chunks]
+
+    # Request suggestions (failures are silent)
+    suggestions = await suggest_labels_batch(query, chunk_pairs, kb, current_user)
+
+    return success(
+        data={
+            "enabled": True,
+            "suggestions": suggestions,
         }
     )
