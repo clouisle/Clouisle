@@ -3,7 +3,6 @@
 import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
-from statistics import mean
 from time import perf_counter
 from typing import Any
 from uuid import UUID
@@ -22,6 +21,7 @@ from app.services.retrieval_evaluation import (
     evaluate_case,
     expected_empty_accuracy,
     latency_percentiles,
+    ranking_means,
 )
 
 
@@ -109,7 +109,6 @@ async def execute_evaluation_run(run_id: UUID) -> dict[str, Any]:
                         rerank_overrides={
                             "rerank_enabled": config["rerank_enabled"],
                             "rerank_candidate_k": config["rerank_candidate_k"],
-                            "rerank_fail_open": config["rerank_fail_open"],
                             "rerank_score_threshold": config["rerank_score_threshold"],
                         },
                     )
@@ -165,33 +164,24 @@ async def execute_evaluation_run(run_id: UUID) -> dict[str, Any]:
                 },
             )
 
+        # Cases without positive labels carry no ranking signal, so averaging them in
+        # would let expected-empty or single-family cases drag the means to zero.
+        graded_chunks = [item.chunk for item in evaluations if item.chunk_graded]
+        graded_documents = [
+            item.document for item in evaluations if item.document_graded
+        ]
         summary = {
             "case_count": len(evaluations),
             "error_count": await EvaluationCaseResult.filter(
                 run_id=run.id, error_message__not_isnull=True
             ).count(),
-            "chunk": {
-                "recall": mean(item.chunk.recall for item in evaluations)
-                if evaluations
-                else 0,
-                "mrr": mean(item.chunk.mrr for item in evaluations)
-                if evaluations
-                else 0,
-                "ndcg": mean(item.chunk.ndcg for item in evaluations)
-                if evaluations
-                else 0,
-            },
-            "document": {
-                "recall": mean(item.document.recall for item in evaluations)
-                if evaluations
-                else 0,
-                "mrr": mean(item.document.mrr for item in evaluations)
-                if evaluations
-                else 0,
-                "ndcg": mean(item.document.ndcg for item in evaluations)
-                if evaluations
-                else 0,
-            },
+            "graded_chunk_case_count": len(graded_chunks),
+            "graded_document_case_count": len(graded_documents),
+            "expected_empty_count": sum(
+                item.expected_empty_correct is not None for item in evaluations
+            ),
+            "chunk": ranking_means(graded_chunks),
+            "document": ranking_means(graded_documents),
             "expected_empty_accuracy": expected_empty_accuracy(evaluations),
             "latency": latency_percentiles(latencies),
         }

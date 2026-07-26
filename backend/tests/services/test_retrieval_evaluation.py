@@ -6,10 +6,12 @@ import pytest
 
 from app.services.retrieval_evaluation import (
     EvaluationCase,
+    RankingMetrics,
     SearchConfiguration,
     evaluate_case,
     expected_empty_accuracy,
     latency_percentiles,
+    ranking_means,
     ranking_metrics,
     snapshot_baseline,
     snapshot_vector_store_baseline,
@@ -57,6 +59,29 @@ def test_case_metrics_cover_chunk_document_and_expected_empty_accuracy():
     assert empty_failure.expected_empty_correct is False
     assert expected_empty_accuracy([normal]) is None
     assert expected_empty_accuracy([empty_success, empty_failure]) == 0.5
+
+
+def test_case_evaluation_flags_gradeable_families_independently():
+    both = evaluate_case(case(), ["c1"], ["d1"], 2)
+    chunk_only = evaluate_case(
+        EvaluationCase("c", "moon", {"c1": 1}, {}, False), ["c1"], [], 2
+    )
+    document_only = evaluate_case(
+        EvaluationCase("d", "moon", {"c1": 0}, {"d1": 3}, False), [], ["d1"], 2
+    )
+    unlabeled = evaluate_case(EvaluationCase("e", "moon", {}, {}, True), [], [], 2)
+
+    assert (both.chunk_graded, both.document_graded) == (True, True)
+    assert (chunk_only.chunk_graded, chunk_only.document_graded) == (True, False)
+    assert (document_only.chunk_graded, document_only.document_graded) == (False, True)
+    assert (unlabeled.chunk_graded, unlabeled.document_graded) == (False, False)
+
+
+def test_ranking_means_average_gradeable_cases_and_report_none_when_empty():
+    assert ranking_means([]) == {"recall": None, "mrr": None, "ndcg": None}
+    assert ranking_means(
+        [RankingMetrics(1, 1, 1), RankingMetrics(0.5, 0, 0.5)]
+    ) == pytest.approx({"recall": 0.75, "mrr": 0.5, "ndcg": 0.75})
 
 
 def test_latency_percentiles_reuse_continuous_interpolation():
