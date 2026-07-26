@@ -190,7 +190,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 - **验证**：新增测试——(a) 纯 `expected_empty` 数据集的 chunk/document 指标为 `null` 而非 0；(b) 混合数据集中加入 expected-empty 用例后，chunk nDCG **不变**（回归当前缺陷）；(c) 只标 document 的用例不拉低 chunk 均值。
 - **状态**：已完成（commit 3b8da4d7）。
 
-### 阶段 3：KB 检索默认参数落地（让调优结果有去处） ⏳
+### 阶段 3：KB 检索默认参数落地（让调优结果有去处） ✅
 
 - **修改文件**：`backend/app/schemas/knowledge_base.py`、`backend/app/services/retrieval.py`、`backend/app/core/init_data.py`、`backend/app/api/v1/endpoints/knowledge_bases.py`、`frontend/lib/api/knowledge-bases.ts`
 - **具体逻辑**：
@@ -223,7 +223,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - `downloadTemplate('csv')` 无 UI 入口（阶段 4 已用"导出"替代，此处删除死分支）。
 - **状态**：已完成（commit 21346440 拆分，commit e163ef3d 首条展开修复）。
 
-### 阶段 6：标注工作台（前端）
+### 阶段 6：标注工作台（前端） ✅
 
 - **修改文件**：`frontend/components/knowledge-bases/retrieval-lab/labeling.tsx`（新增）、`retrieval-lab/index.tsx`、`frontend/i18n/{en,zh}/knowledgeBases.json`
 - **具体逻辑**：
@@ -248,7 +248,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 - **验证**：(a) 构造含零正例与 expected-empty 的数据集，面板计数与 `summary_metrics` 的 `graded_*_count` 一致；(b) 同 dataset 两个 completed runs 的 summary delta 与手算一致；(c) revision/version 不同显示不可比警告；(d) 不同 dataset 拒绝比较；(e) metric deltas 色彩方向正确（latency/error 反向）；(f) 前端 build 和 i18n type generation 通过。
 - **状态**：已完成（比较服务、API、frontend 类型/组件/集成、双语 i18n、所有类型错误修复）。
 
-### 阶段 8：调优后端 —— 模型、接口、搜索策略、护栏
+### 阶段 8：调优后端 —— 模型、接口、搜索策略、护栏 ✅
 
 - **修改文件**：`backend/app/models/retrieval_evaluation.py`、`backend/app/models/__init__.py`、`backend/app/schemas/retrieval_evaluation.py`、`backend/app/services/retrieval_tuning.py`（新增）、`backend/app/api/v1/endpoints/retrieval_evaluations.py`、`backend/app/core/init_data.py`、`backend/app/main.py`、`backend/app/locales/{en,zh}/LC_MESSAGES/messages.po`
 - **具体逻辑**：
@@ -262,7 +262,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - 所有面向用户的报错用 `BusinessError` + `msg_key`，en/zh 两份 `.po` 同步。
 - **验证**：(a) `expand_space` 默认空间产出 17 个配置且各配置 `top_k ≥ metric_k`（纯函数单测）；(b) 不满足改进门槛时 `select_recommendation` 返回基线；(c) 超预算配置被排除但仍出现在结果列表；(d) 活跃 sweep 期间数据集变更被拒绝；(e) `apply` 缺少 `update` 权限返回 403。
 
-### 阶段 9：调优执行器 —— 先 live 闭环，后 replay 加速
+### 阶段 9：调优执行器 —— 先 live 闭环，后 replay 加速 ✅
 
 - **修改文件**：`backend/app/services/retrieval_replay.py`（新增）、`backend/app/tasks/retrieval_tuning.py`（新增）、`backend/app/tasks/retrieval_evaluation.py`
 - **具体逻辑**：
@@ -273,7 +273,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - 幂等/重投递安全：沿用现有 `update_or_create` 与状态机，Celery 重投不产生重复子运行。
 - **验证**：(a) 同一配置 replay 与 live 的结果集合在无 LLM-rerank 时完全一致（关键正确性测试，用假通道数据 + 假 rerank）；(b) 深拷贝缺失会导致缓存污染——写一个断言缓存未被修改的测试；(c) 取消在阶段中途生效，子运行状态收敛；(d) rerank 模型抛错时该配置 `error_count > 0` 且被推荐排除；(e) 人为注入 0.05 偏差使验证失败 → `drift=True` 且无推荐。
 
-### 阶段 10：调优前端
+### 阶段 10：调优前端 ✅
 
 - **修改文件**：`frontend/components/knowledge-bases/retrieval-lab/tuning.tsx`（新增）、`retrieval-lab/index.tsx`、`frontend/lib/api/knowledge-bases.ts`、`frontend/i18n/{en,zh}/knowledgeBases.json`
 - **具体逻辑**：
