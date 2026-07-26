@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T17:37:06.212Z
+// GENERATED — 2026-07-26T17:52:48.805Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -39,8 +39,6 @@ export type KnowledgeBasesMessages = {
     rerankScoreThreshold: string
     rerankScoreThresholdPlaceholder: string
     rerankScoreThresholdHint: string
-    rerankFailOpen: string
-    rerankFailOpenHint: string
     chunkSize: string
     chunkSizeHint: string
     chunkOverlap: string

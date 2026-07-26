@@ -37,8 +37,6 @@
     "rerankScoreThreshold": "重排序分数阈值",
     "rerankScoreThresholdPlaceholder": "留空表示不启用",
     "rerankScoreThresholdHint": "过滤低于该分数的重排结果",
-    "rerankFailOpen": "失败时回退",
-    "rerankFailOpenHint": "重排序失败时返回原始召回结果",
     "chunkSize": "分块大小",
     "chunkSizeHint": "目标分块大小（字符数）",
     "chunkOverlap": "分块重叠",

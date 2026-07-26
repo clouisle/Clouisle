@@ -77,7 +77,6 @@ export function KnowledgeBaseDialog({
   const [separator, setSeparator] = React.useState<string>('')
   const [rerankEnabled, setRerankEnabled] = React.useState(true)
   const [rerankCandidateK, setRerankCandidateK] = React.useState(10)
-  const [rerankFailOpen, setRerankFailOpen] = React.useState(true)
   const [rerankScoreThreshold, setRerankScoreThreshold] = React.useState('')
   const [isActive, setIsActive] = React.useState(true)
   const [isLoading, setIsLoading] = React.useState(false)
@@ -146,7 +145,6 @@ export function KnowledgeBaseDialog({
         setSeparator(knowledgeBase.settings?.separator || '')
         setRerankEnabled(knowledgeBase.settings?.rerank_enabled ?? true)
         setRerankCandidateK(knowledgeBase.settings?.rerank_candidate_k ?? 10)
-        setRerankFailOpen(knowledgeBase.settings?.rerank_fail_open ?? true)
         setRerankScoreThreshold(
           knowledgeBase.settings?.rerank_score_threshold?.toString() || ''
         )
@@ -161,7 +159,6 @@ export function KnowledgeBaseDialog({
         setSeparator('')
         setRerankEnabled(true)
         setRerankCandidateK(10)
-        setRerankFailOpen(true)
         setRerankScoreThreshold('')
         setIsActive(true)
       }
@@ -199,7 +196,6 @@ export function KnowledgeBaseDialog({
           separator: separator.trim() || null,
           rerank_enabled: rerankEnabled,
           rerank_candidate_k: rerankCandidateK,
-          rerank_fail_open: rerankFailOpen,
           rerank_score_threshold: rerankScoreThreshold
             ? parseFloat(rerankScoreThreshold)
             : null,
@@ -479,20 +475,8 @@ export function KnowledgeBaseDialog({
                   <FieldError>{fieldErrors.rerank_score_threshold}</FieldError>
                 </div>
               </div>
-
-              <div className="flex items-center justify-between rounded-lg border p-3" data-testid="kb-dialog-rerank-fail-open">
-                <div className="space-y-0.5">
-                  <Label htmlFor="rerankFailOpen">{t('rerankFailOpen')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('rerankFailOpenHint')}</p>
-                </div>
-                <Switch
-                  id="rerankFailOpen"
-                  checked={rerankFailOpen}
-                  onCheckedChange={setRerankFailOpen}
-                />
-              </div>
             </div>
-            
+
             {/* 状态切换 - 仅编辑时显示 */}
             {isEditing && (
               <div className="flex items-center justify-between rounded-lg border p-3" data-testid="kb-dialog-status">

@@ -37,8 +37,6 @@
     "rerankScoreThreshold": "Rerank Score Threshold",
     "rerankScoreThresholdPlaceholder": "Leave empty to disable",
     "rerankScoreThresholdHint": "Discard reranked results below this score",
-    "rerankFailOpen": "Fallback On Failure",
-    "rerankFailOpenHint": "Return original recall results if reranking fails",
     "chunkSize": "Chunk Size",
     "chunkSizeHint": "Target chunk size in characters",
     "chunkOverlap": "Chunk Overlap",
