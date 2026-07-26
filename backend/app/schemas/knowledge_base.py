@@ -72,6 +72,24 @@ class KnowledgeBaseSettings(BaseModel):
         le=1,
         description="Optional minimum rerank score threshold",
     )
+    search_mode: Literal["vector", "fulltext", "hybrid"] | None = Field(
+        default=None, description="Default retrieval mode"
+    )
+    top_k: int | None = Field(default=None, ge=1, le=100)
+    score_threshold: float | None = Field(default=None, ge=0, le=1)
+    dense_weight: float | None = Field(default=None, ge=0)
+    lexical_weight: float | None = Field(default=None, ge=0)
+    rrf_k: int | None = Field(default=None, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def validate_hybrid_weights(self):
+        if (
+            self.search_mode == "hybrid"
+            and self.dense_weight == 0
+            and self.lexical_weight == 0
+        ):
+            raise ValueError("at least one retrieval weight must be positive")
+        return self
 
 
 class KnowledgeBaseBase(BaseModel):

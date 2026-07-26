@@ -133,7 +133,9 @@ async def test_retrieve_uses_vector_primary_and_isolated_hybrid_shadow(monkeypat
 
     assert response is primary
     assert retrieve_once.await_args_list[0].args[0].search_mode == "vector"
-    assert retrieve_once.await_args_list[1].args[0] is request
+    assert retrieve_once.await_args_list[1].args[0] == retrieval._effective_request(
+        request
+    )
     assert record_shadow.await_args.args[0] == shadow.results
     record_metrics.assert_awaited_once()
 

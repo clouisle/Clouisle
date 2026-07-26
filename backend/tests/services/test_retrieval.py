@@ -133,6 +133,105 @@ async def test_success_preserves_raw_fields_and_forwards_target_configuration(
 
 
 @pytest.mark.asyncio
+async def test_single_target_inherits_kb_retrieval_defaults(monkeypatch):
+    search = AsyncMock(return_value=[])
+    hit = retrieval.SearchHit("lexical", 8.0, {"document_id": str(DOC_1)})
+    install_store(monkeypatch, search, [hit])
+
+    response = await retrieval.retrieve(
+        request(
+            target(
+                settings={
+                    "search_mode": "fulltext",
+                    "top_k": 2,
+                    "score_threshold": 0.7,
+                    "dense_weight": 0.25,
+                    "lexical_weight": 1.5,
+                    "rrf_k": 20,
+                }
+            )
+        )
+    )
+
+    assert response.results[0]["chunk_id"] == "lexical"
+    retrieval.LexicalStore().search.assert_awaited_once()
+    search.assert_not_awaited()
+
+
+def test_null_kb_global_defaults_fall_back_to_system_defaults():
+    effective = retrieval._effective_request(
+        request(
+            target(
+                settings={
+                    "dense_weight": None,
+                    "lexical_weight": None,
+                    "rrf_k": None,
+                }
+            )
+        )
+    )
+
+    assert effective.dense_weight == 1
+    assert effective.lexical_weight == 1
+    assert effective.rrf_k == 60
+
+
+@pytest.mark.asyncio
+async def test_explicit_configuration_overrides_kb_defaults(monkeypatch):
+    search = AsyncMock(return_value=[])
+    stores = install_store(monkeypatch, search)
+
+    await retrieval.retrieve(
+        request(
+            target(
+                settings={
+                    "search_mode": "fulltext",
+                    "top_k": 9,
+                    "score_threshold": 0.2,
+                    "dense_weight": 4,
+                    "lexical_weight": 3,
+                    "rrf_k": 10,
+                },
+                search_mode="vector",
+                top_k=2,
+                score_threshold=0.7,
+            ),
+            search_mode="hybrid",
+            top_k=5,
+            dense_weight=2,
+            lexical_weight=1,
+            rrf_k=30,
+        )
+    )
+
+    assert search.await_args.kwargs["search_mode"] == "vector"
+    assert search.await_args.kwargs["top_k"] == 2
+    assert search.await_args.kwargs["score_threshold"] == 0.7
+    assert stores
+
+
+@pytest.mark.asyncio
+async def test_multi_target_ignores_conflicting_global_kb_defaults(monkeypatch):
+    dense = AsyncMock(
+        return_value=[{"chunk_id": "dense", "document_id": "doc", "score": 0.9}]
+    )
+    hits = [retrieval.SearchHit("lexical", 20.0, {"document_id": "doc"})]
+    install_store(monkeypatch, dense, hits)
+    targets = (
+        target(KB_1, settings={"dense_weight": 0, "lexical_weight": 5, "rrf_k": 1}),
+        target(KB_2, settings={"dense_weight": 5, "lexical_weight": 0, "rrf_k": 2}),
+    )
+
+    first = await retrieval.retrieve(request(*targets, top_k=4))
+    second = await retrieval.retrieve(request(*reversed(targets), top_k=4))
+
+    assert [(item["kb_id"], item["chunk_id"]) for item in first.results] == [
+        (item["kb_id"], item["chunk_id"]) for item in second.results
+    ]
+    assert {item["chunk_id"] for item in first.results} == {"dense", "lexical"}
+
+
+@pytest.mark.asyncio
 async def test_target_can_override_association_search_configuration(monkeypatch):
     search = AsyncMock(return_value=[])
     stores = install_store(monkeypatch, search)

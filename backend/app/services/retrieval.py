@@ -18,6 +18,21 @@ from app.services.vector_store import VectorStore
 SearchMode = Literal["vector", "fulltext", "hybrid"]
 _VALID_MODES = {"vector", "fulltext", "hybrid"}
 _MAX_CONCURRENCY = 8
+_DEFAULT_SEARCH_MODE: SearchMode = "hybrid"
+_DEFAULT_TOP_K = 5
+_DEFAULT_SCORE_THRESHOLD = 0.0
+_DEFAULT_DENSE_WEIGHT = 1.0
+_DEFAULT_LEXICAL_WEIGHT = 1.0
+_DEFAULT_RRF_K = 60
+
+
+def _target_setting(target: "RetrievalTarget", name: str) -> Any:
+    return (target.settings or {}).get(name)
+
+
+def _setting_or_default(settings: dict[str, Any], name: str, default: Any) -> Any:
+    value = settings.get(name)
+    return default if value is None else value
 
 
 class RetrievalError(RuntimeError):
@@ -49,6 +64,7 @@ class RetrievalTarget:
     embedding_model_id: UUID | None = None
     rerank_model_id: UUID | None = None
     embedding_dimension: int | None = None
+    settings: dict[str, Any] | None = None
     search_mode: SearchMode | None = None
     top_k: int | None = None
     score_threshold: float | None = None
@@ -72,14 +88,14 @@ class RetrievalTarget:
 class RetrievalRequest:
     query: str
     targets: tuple[RetrievalTarget, ...]
-    search_mode: SearchMode = "hybrid"
-    top_k: int = 5
-    score_threshold: float = 0.0
+    search_mode: SearchMode | None = None
+    top_k: int | None = None
+    score_threshold: float | None = None
     timeout_seconds: float = 30.0
     rerank_overrides: dict[str, Any] | None = None
-    dense_weight: float = 1.0
-    lexical_weight: float = 1.0
-    rrf_k: int = 60
+    dense_weight: float | None = None
+    lexical_weight: float | None = None
+    rrf_k: int | None = None
     expand_adjacent: bool = False
     max_documents: int | None = None
     max_chunks_per_document: int | None = None
@@ -88,27 +104,36 @@ class RetrievalRequest:
     def __post_init__(self) -> None:
         if not self.query.strip():
             raise ValueError("query must not be empty")
-        if self.search_mode not in _VALID_MODES:
+        if self.search_mode is not None and self.search_mode not in _VALID_MODES:
             raise ValueError(f"unsupported search mode: {self.search_mode}")
-        if self.top_k < 1:
+        if self.top_k is not None and self.top_k < 1:
             raise ValueError("top_k must be positive")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        if self.dense_weight < 0 or self.lexical_weight < 0:
+        if any(
+            value is not None and value < 0
+            for value in (self.dense_weight, self.lexical_weight)
+        ):
             raise ValueError("retrieval weights must be nonnegative")
+        if self.rrf_k is not None and self.rrf_k <= 0:
+            raise ValueError("rrf_k must be positive")
         if (
-            any(
-                (target.search_mode or self.search_mode) == "hybrid"
+            self.dense_weight == 0
+            and self.lexical_weight == 0
+            and any(
+                (
+                    target.search_mode
+                    or _target_setting(target, "search_mode")
+                    or self.search_mode
+                    or _DEFAULT_SEARCH_MODE
+                )
+                == "hybrid"
                 for target in self.targets
             )
-            and self.dense_weight == 0
-            and self.lexical_weight == 0
         ):
             raise ValueError(
                 "at least one retrieval weight must be positive in hybrid mode"
             )
-        if self.rrf_k <= 0:
-            raise ValueError("rrf_k must be positive")
         if self.max_documents is not None and self.max_documents < 1:
             raise ValueError("max_documents must be positive")
         if (
@@ -118,6 +143,55 @@ class RetrievalRequest:
             raise ValueError("max_chunks_per_document must be positive")
         if self.context_token_budget is not None and self.context_token_budget < 1:
             raise ValueError("context_token_budget must be positive")
+
+
+def _effective_request(request: RetrievalRequest) -> RetrievalRequest:
+    """Resolve optional request values and safe single-KB defaults once."""
+    settings = request.targets[0].settings or {} if len(request.targets) == 1 else {}
+    dense_weight = (
+        request.dense_weight
+        if request.dense_weight is not None
+        else _setting_or_default(settings, "dense_weight", _DEFAULT_DENSE_WEIGHT)
+    )
+    lexical_weight = (
+        request.lexical_weight
+        if request.lexical_weight is not None
+        else _setting_or_default(settings, "lexical_weight", _DEFAULT_LEXICAL_WEIGHT)
+    )
+    effective = replace(
+        request,
+        search_mode=request.search_mode or _DEFAULT_SEARCH_MODE,
+        top_k=request.top_k or _DEFAULT_TOP_K,
+        score_threshold=(
+            request.score_threshold
+            if request.score_threshold is not None
+            else _DEFAULT_SCORE_THRESHOLD
+        ),
+        dense_weight=dense_weight,
+        lexical_weight=lexical_weight,
+        rrf_k=(
+            request.rrf_k
+            if request.rrf_k is not None
+            else _setting_or_default(settings, "rrf_k", _DEFAULT_RRF_K)
+        ),
+    )
+    if (
+        dense_weight == 0
+        and lexical_weight == 0
+        and any(
+            (
+                target.search_mode
+                or _target_setting(target, "search_mode")
+                or effective.search_mode
+            )
+            == "hybrid"
+            for target in effective.targets
+        )
+    ):
+        raise ValueError(
+            "at least one retrieval weight must be positive in hybrid mode"
+        )
+    return effective
 
 
 @dataclass(frozen=True)
@@ -242,6 +316,7 @@ async def _resolve_global_rerank(
 async def _assemble_context(
     results: list[dict[str, Any]], request: RetrievalRequest
 ) -> list[dict[str, Any]]:
+    top_k = request.top_k or _DEFAULT_TOP_K
     if not results or not any(
         (
             request.expand_adjacent,
@@ -250,7 +325,7 @@ async def _assemble_context(
             request.context_token_budget,
         )
     ):
-        return results[: request.top_k]
+        return results[:top_k]
 
     target_map = {str(target.kb_id): target for target in request.targets}
     chunk_ids = [result.get("chunk_id") for result in results if result.get("chunk_id")]
@@ -305,7 +380,7 @@ async def _assemble_context(
 
         document_id = str(seed.document_id)
         if document_id not in document_results and (
-            len(document_results) >= request.top_k
+            len(document_results) >= top_k
             or (
                 request.max_documents is not None
                 and len(document_results) >= request.max_documents
@@ -382,10 +457,21 @@ async def _assemble_context(
 
 async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
     """Search targets concurrently, then rank and truncate results globally."""
+    assert request.search_mode is not None
+    assert request.top_k is not None
+    assert request.score_threshold is not None
+    assert request.dense_weight is not None
+    assert request.lexical_weight is not None
+    assert request.rrf_k is not None
+    request_top_k = request.top_k
+    request_score_threshold = request.score_threshold
+    dense_weight = request.dense_weight
+    lexical_weight = request.lexical_weight
+    rrf_k = request.rrf_k
     started_at = perf_counter()
     rerank_store, rerank_config = await _resolve_global_rerank(request)
     candidate_k = max(
-        request.top_k,
+        request_top_k,
         int(rerank_config["candidate_k"]) if rerank_config is not None else 0,
     )
     semaphore = asyncio.Semaphore(min(_MAX_CONCURRENCY, max(1, len(request.targets))))
@@ -393,15 +479,21 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
     async def search_target(
         target: RetrievalTarget,
     ) -> tuple[list[dict[str, Any]], RetrievalDiagnostic | None]:
-        search_mode = target.search_mode or request.search_mode
-        top_k = target.top_k or request.top_k
+        search_mode = (
+            target.search_mode
+            or _target_setting(target, "search_mode")
+            or request.search_mode
+        )
+        top_k = target.top_k or _target_setting(target, "top_k") or request_top_k
         if rerank_config is not None:
             top_k = max(top_k, candidate_k)
         score_threshold = (
             target.score_threshold
             if target.score_threshold is not None
-            else request.score_threshold
+            else _target_setting(target, "score_threshold")
         )
+        if score_threshold is None:
+            score_threshold = request_score_threshold
         if target.status != KnowledgeBaseStatus.ACTIVE.value:
             return [], RetrievalDiagnostic(target.kb_id, "inactive")
         if search_mode == "vector" and not target.embedding_model_id:
@@ -482,9 +574,9 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
             results = _weighted_rrf(
                 [] if isinstance(dense, BaseException) else dense,
                 [] if isinstance(lexical, BaseException) else lexical,
-                dense_weight=request.dense_weight,
-                lexical_weight=request.lexical_weight,
-                k=request.rrf_k,
+                dense_weight=dense_weight,
+                lexical_weight=lexical_weight,
+                k=rrf_k,
             )
             if reasons:
                 degradation_reasons = [
@@ -577,7 +669,8 @@ def _vector_fallback(request: RetrievalRequest) -> RetrievalRequest:
         search_mode="vector",
         targets=tuple(
             replace(target, search_mode="vector")
-            if target.search_mode == "hybrid"
+            if (target.search_mode or _target_setting(target, "search_mode"))
+            == "hybrid"
             else target
             for target in request.targets
         ),
@@ -586,9 +679,11 @@ def _vector_fallback(request: RetrievalRequest) -> RetrievalRequest:
 
 async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
     """Apply hybrid rollout policy without allowing telemetry to affect answers."""
+    request = _effective_request(request)
     team_ids = tuple(str(target.team_id) for target in request.targets)
     uses_hybrid = request.search_mode == "hybrid" or any(
-        target.search_mode == "hybrid" for target in request.targets
+        (target.search_mode or _target_setting(target, "search_mode")) == "hybrid"
+        for target in request.targets
     )
     enabled = not uses_hybrid or await hybrid_enabled(team_ids)
     primary_request = request if enabled else _vector_fallback(request)
