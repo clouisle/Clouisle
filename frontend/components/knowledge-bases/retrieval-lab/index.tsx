@@ -257,8 +257,15 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
         toast.error('B: ' + t(retrievalErrorKey(failure, stage)))
       }
 
-      const first = next.a?.results[0] ?? next.b?.results[0]
-      setExpanded(new Set(first ? [first.chunk_id] : []))
+      const firstA = next.a?.results[0]
+      const firstB = next.b?.results[0]
+      setExpanded(new Set(
+        firstA
+          ? [`a:${firstA.chunk_id}`]
+          : firstB
+            ? [`b:${firstB.chunk_id}`]
+            : [],
+      ))
     } finally {
       setSearching(false)
     }

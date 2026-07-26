@@ -160,10 +160,6 @@ async function settle() {
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
   return render()
 }
-function expand(tree: ReactNode, props: Partial<Parameters<typeof RetrievalLab>[0]> = {}) {
-  find(tree, 'card-header', header => typeof header.onClick === 'function').props.onClick()
-  return render(props)
-}
 function button(tree: ReactNode, label: string) {
   const found = elements(tree).find(element => element.type === 'button' && text(element) === label)
   if (!found) throw new Error(`Expected button ${label}`)
@@ -197,7 +193,6 @@ describe('RetrievalLab', () => {
     expect(text(tree)).toContain('noResults')
     await searchButton(tree).props.onClick()
     tree = await settle()
-    tree = expand(tree)
     expect(text(tree)).toContain('denseStage')
     expect(text(tree)).toContain('0.81')
     expect(text(tree)).toContain('dense: fallback')
@@ -238,6 +233,28 @@ describe('RetrievalLab', () => {
     tree = await settle()
     expect(text(tree)).toContain('overlap:1,1')
     expect(text(tree)).toContain('→')
+  })
+
+  test('auto-expands A first, supports collapse and reopen, and falls back to B', async () => {
+    search.mockReset().mockResolvedValueOnce(response('a')).mockResolvedValueOnce(response('b'))
+    let tree = await flush()
+    find(tree, 'switch', props => props.id === 'compare-toggle').props.onCheckedChange(true)
+    tree = await enterQuery(render())
+    await searchButton(tree).props.onClick()
+    tree = await settle()
+    expect(text(tree)).toContain('denseStage')
+
+    elements(tree).filter(element => element.type === 'card-header')[0].props.onClick()
+    tree = render()
+    expect(text(tree)).not.toContain('denseStage')
+    elements(tree).filter(element => element.type === 'card-header')[0].props.onClick()
+    tree = render()
+    expect(text(tree)).toContain('denseStage')
+
+    search.mockReset().mockRejectedValueOnce(new Error('A unavailable')).mockResolvedValueOnce(response('b-only'))
+    await searchButton(tree).props.onClick()
+    tree = await settle()
+    expect(text(tree)).toContain('denseStage')
   })
 
   test('shows connectivity guidance only for request failures and ignores IME composition Enter', async () => {
@@ -317,7 +334,6 @@ describe('RetrievalLab', () => {
     tree = await enterQuery(tree)
     await searchButton(tree).props.onClick()
     tree = await settle()
-    tree = expand(tree)
     button(tree, 'relevant').props.onClick()
     expect(JSON.parse(local.get('retrieval-lab:kb-1')!).grades['chunk-1']).toBe('relevant')
 
@@ -508,8 +524,8 @@ describe('RetrievalLab', () => {
     let tree = await flush(render({ authenticatedMarkdown: true }))
     tree = await enterQuery(tree)
     await searchButton(tree).props.onClick()
-    tree = await settle()
-    tree = expand(tree, { authenticatedMarkdown: true })
+    await settle()
+    tree = render({ authenticatedMarkdown: true })
     const markdown = find(tree, 'markdown-preview')
     const Image = (markdown.props.components as { img: (props: { src?: string; alt?: string }) => ReactElement }).img
     const imageElement = Image({ src: '/api/v1/knowledge-bases/kb-1/image', alt: 'diagram' })
