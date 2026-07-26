@@ -17,6 +17,8 @@ from app.models.retrieval_evaluation import (
     EvaluationDataset,
     EvaluationRun,
     EvaluationRunStatus,
+    EvaluationSweep,
+    EvaluationSweepStatus,
 )
 from app.models.user import User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
@@ -26,6 +28,8 @@ from app.schemas.retrieval_evaluation import (
     EvaluationDatasetCreate,
     EvaluationDatasetUpdate,
     EvaluationRunCreate,
+    EvaluationSweepCreate,
+    EvaluationSweepResponse,
     RunComparisonResponse,
 )
 from app.services.retrieval_evaluation_store import (
@@ -555,3 +559,253 @@ async def compare_runs(
     )
 
     return success(data=response)
+
+
+# ==================== Sweep APIs ====================
+
+
+async def _sweep(kb_id: UUID, dataset_id: UUID, sweep_id: UUID, user: User) -> EvaluationSweep:
+    """Get sweep and verify access."""
+    await check_kb_access(kb_id, user)
+    sweep = await EvaluationSweep.filter(
+        id=sweep_id,
+        dataset_id=dataset_id,
+    ).first()
+    if not sweep:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="evaluation_sweep_not_found",
+            status_code=404,
+        )
+    # Verify dataset belongs to kb
+    dataset = await EvaluationDataset.filter(
+        id=dataset_id,
+        knowledge_base_id=kb_id,
+    ).first()
+    if not dataset:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="evaluation_dataset_not_found",
+            status_code=404,
+        )
+    return sweep
+
+
+def _sweep_data(sweep: EvaluationSweep) -> dict[str, Any]:
+    """Convert sweep model to response dict."""
+    return {
+        "id": sweep.id,
+        "dataset_id": sweep.dataset_id,
+        "created_by_id": sweep.created_by_id,
+        "status": sweep.status,
+        "objective": sweep.objective,
+        "metric_k": sweep.metric_k,
+        "serving_top_k": sweep.serving_top_k,
+        "space": sweep.space,
+        "guards": sweep.guards,
+        "baseline_config": sweep.baseline_config,
+        "recommendation": sweep.recommendation,
+        "best_run_id": sweep.best_run_id,
+        "verification_run_id": sweep.verification_run_id,
+        "stage": sweep.stage,
+        "progress": sweep.progress,
+        "task_id": sweep.task_id,
+        "heartbeat_at": sweep.heartbeat_at,
+        "applied": sweep.applied,
+        "applied_at": sweep.applied_at,
+        "applied_by_id": sweep.applied_by_id,
+        "applied_diff": sweep.applied_diff,
+        "error_message": sweep.error_message,
+        "dataset_revision": sweep.dataset_revision,
+        "dataset_snapshot_hash": sweep.dataset_snapshot_hash,
+        "version_snapshot": sweep.version_snapshot,
+        "created_at": sweep.created_at,
+        "started_at": sweep.started_at,
+        "finished_at": sweep.finished_at,
+    }
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/sweeps",
+    response_model=Response[EvaluationSweepResponse],
+)
+async def create_sweep(
+    kb_id: UUID,
+    dataset_id: UUID,
+    payload: EvaluationSweepCreate,
+    request: Request,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Create a new parameter sweep for a dataset.
+
+    Validates dataset exists, loads baseline config, and queues the sweep task.
+    """
+    dataset = await _dataset(kb_id, dataset_id, current_user)
+
+    # Load baseline config from payload or use defaults
+    if payload.baseline_config:
+        baseline_config = payload.baseline_config
+    else:
+        # Use default baseline config
+        baseline_config = {
+            "search_mode": "hybrid",
+            "top_k": payload.serving_top_k,
+            "score_threshold": 0,
+            "dense_weight": 1.0,
+            "lexical_weight": 1.0,
+            "rrf_k": 60,
+            "rerank_enabled": False,
+            "rerank_candidate_k": 20,
+            "rerank_score_threshold": None,
+        }
+
+    # Snapshot dataset
+    cases = await EvaluationCase.filter(dataset_id=dataset_id).order_by("created_at", "id")
+    from app.tasks.retrieval_tuning import dataset_snapshot_hash
+
+    case_data = [
+        {
+            "id": str(case.id),
+            "query": case.query,
+            "chunk_relevance": case.chunk_relevance,
+            "document_relevance": case.document_relevance,
+            "expected_empty": case.expected_empty,
+        }
+        for case in cases
+    ]
+    snapshot_hash = dataset_snapshot_hash(case_data)
+
+    # Load KB for version snapshot
+    from app.models.knowledge_base import KnowledgeBase
+
+    kb = await KnowledgeBase.get(id=kb_id)
+
+    # Create sweep
+    sweep = await EvaluationSweep.create(
+        dataset_id=dataset_id,
+        created_by_id=current_user.id,
+        status=EvaluationSweepStatus.PENDING.value,
+        objective=payload.objective,
+        metric_k=payload.metric_k,
+        serving_top_k=payload.serving_top_k,
+        space=payload.space,
+        guards=payload.guards,
+        baseline_config=baseline_config,
+        dataset_revision=dataset.revision,
+        dataset_snapshot_hash=snapshot_hash,
+        version_snapshot={
+            "embedding_model_id": kb.embedding_model_id,
+            "rerank_model_id": kb.rerank_model_id,
+        },
+    )
+
+    # Queue sweep task
+    from app.tasks.retrieval_tuning import orchestrate_sweep
+
+    orchestrate_sweep.delay(str(sweep.id))
+
+    return success(data=EvaluationSweepResponse(**_sweep_data(sweep)))
+
+
+@router.get(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/sweeps/{sweep_id}",
+    response_model=Response[EvaluationSweepResponse],
+)
+async def get_sweep(
+    kb_id: UUID,
+    dataset_id: UUID,
+    sweep_id: UUID,
+    request: Request,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Get sweep status and progress."""
+    sweep = await _sweep(kb_id, dataset_id, sweep_id, current_user)
+    return success(data=EvaluationSweepResponse(**_sweep_data(sweep)))
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/sweeps/{sweep_id}/cancel",
+    response_model=Response[dict],
+)
+async def cancel_sweep_endpoint(
+    kb_id: UUID,
+    dataset_id: UUID,
+    sweep_id: UUID,
+    request: Request,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Cancel a running sweep."""
+    sweep = await _sweep(kb_id, dataset_id, sweep_id, current_user)
+
+    # Only cancel if not already terminal
+    if sweep.status in (
+        EvaluationSweepStatus.COMPLETED.value,
+        EvaluationSweepStatus.FAILED.value,
+        EvaluationSweepStatus.CANCELED.value,
+    ):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="evaluation_sweep_already_terminal",
+        )
+
+    from app.tasks.retrieval_tuning import cancel_sweep
+
+    result = await cancel_sweep(str(sweep_id))
+    return success(data=result)
+
+
+@router.post(
+    "/{kb_id}/evaluation-datasets/{dataset_id}/sweeps/{sweep_id}/apply",
+    response_model=Response[dict],
+)
+async def apply_sweep_recommendation(
+    kb_id: UUID,
+    dataset_id: UUID,
+    sweep_id: UUID,
+    request: Request,
+    current_user: User = Depends(require_kb_evaluate),
+) -> Any:
+    """Mark sweep recommendation as applied.
+
+    Records that the recommendation was applied by the user.
+    Actual KB config changes should be done by the user through KB settings UI.
+    """
+    sweep = await _sweep(kb_id, dataset_id, sweep_id, current_user)
+
+    # Verify sweep is completed with recommendation
+    if sweep.status != EvaluationSweepStatus.COMPLETED.value:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="evaluation_sweep_not_completed",
+        )
+
+    if not sweep.recommendation:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="evaluation_sweep_no_recommendation",
+        )
+
+    if sweep.applied:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="evaluation_sweep_already_applied",
+        )
+
+    # Mark sweep as applied (user acknowledges they applied the recommendation)
+    sweep.applied = True
+    sweep.applied_at = datetime.now(timezone.utc)
+    sweep.applied_by_id = current_user.id
+    sweep.applied_diff = {
+        "baseline": sweep.baseline_config,
+        "recommended": sweep.recommendation["config"],
+    }
+    await sweep.save()
+
+    return success(
+        data={
+            "applied": True,
+            "recommendation": sweep.recommendation,
+            "baseline_config": sweep.baseline_config,
+        }
+    )
+

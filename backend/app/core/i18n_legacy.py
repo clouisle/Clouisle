@@ -987,6 +987,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Evaluation run not found",
         "zh": "未找到评测运行",
     },
+    "evaluation_sweep_not_found": {
+        "en": "Evaluation sweep not found",
+        "zh": "未找到评测扫描",
+    },
+    "evaluation_sweep_already_terminal": {
+        "en": "Sweep is already in a terminal state",
+        "zh": "扫描已处于终止状态",
+    },
+    "evaluation_sweep_not_completed": {
+        "en": "Sweep is not completed",
+        "zh": "扫描未完成",
+    },
+    "evaluation_sweep_no_recommendation": {
+        "en": "Sweep has no recommendation",
+        "zh": "扫描没有推荐结果",
+    },
+    "evaluation_sweep_already_applied": {
+        "en": "Sweep recommendation has already been applied",
+        "zh": "扫描推荐已被应用",
+    },
     "feishu_not_configured": {
         "en": "Feishu service is not configured",
         "zh": "飞书服务未配置",
