@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, formatDuration } from '@/lib/utils'
 import { BatchEvaluation } from './batch-evaluation'
+import { ParameterSweep } from './parameter-sweep'
 import { type Config, type RetrievalApi, runConfig } from './shared'
 import { type Grade, type StorageEnvelope, getDraft, migrateStorage, setGrade as setGradeInDraft, setDraft, gradesToRelevance, computeDocumentRelevance } from './labeling'
 import { buildCandidatePool, defaultStrategies, type CandidateChunk } from './candidate-pool'
@@ -26,6 +27,7 @@ import { DatasetToolbar, PromotionToolbar } from './dataset-toolbar'
 import { QualityPanel } from './quality-panel'
 
 export { BatchEvaluation } from './batch-evaluation'
+export { ParameterSweep } from './parameter-sweep'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
 type RetrievalFailure =
@@ -199,6 +201,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
   const [presetName, setPresetName] = React.useState('')
   const [selectedPreset, setSelectedPreset] = React.useState('')
   const [batchMode, setBatchMode] = React.useState(false)
+  const [sweepMode, setSweepMode] = React.useState(false)
   const [submittedQuery, setSubmittedQuery] = React.useState('')
   const [poolCandidates, setPoolCandidates] = React.useState<CandidateChunk[]>([])
   const [poolDepth] = React.useState(10)
@@ -567,6 +570,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
       <div className="flex-1 min-h-0 overflow-auto">
         <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} canEvaluate={canEvaluate} />
       </div>
+    ) : sweepMode ? (
+      <div className="flex-1 min-h-0 overflow-auto p-4">
+        <ParameterSweep knowledgeBaseId={knowledgeBaseId} datasets={datasets} api={api} canEvaluate={canEvaluate} />
+      </div>
     ) : (
       <main className="flex-1 min-h-0 overflow-auto p-4">
         {!searched ? (
@@ -644,14 +651,17 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     <footer className="border-t bg-background">
       <div className="flex items-center gap-2 p-3">
         <div role="tablist" aria-label={t('retrievalLab')} className="flex gap-1">
-          <Button role="tab" aria-selected={!batchMode} variant={!batchMode ? 'secondary' : 'ghost'} size="sm" onClick={() => setBatchMode(false)}>
+          <Button role="tab" aria-selected={!batchMode && !sweepMode} variant={!batchMode && !sweepMode ? 'secondary' : 'ghost'} size="sm" onClick={() => { setBatchMode(false); setSweepMode(false) }}>
             {t('interactiveSearch')}
           </Button>
-          <Button role="tab" aria-selected={batchMode} variant={batchMode ? 'secondary' : 'ghost'} size="sm" onClick={() => setBatchMode(true)}>
+          <Button role="tab" aria-selected={batchMode} variant={batchMode ? 'secondary' : 'ghost'} size="sm" onClick={() => { setBatchMode(true); setSweepMode(false) }}>
             {t('batchEvaluation')}
           </Button>
+          <Button role="tab" aria-selected={sweepMode} variant={sweepMode ? 'secondary' : 'ghost'} size="sm" onClick={() => { setBatchMode(false); setSweepMode(true) }}>
+            {t('parameterSweep')}
+          </Button>
         </div>
-        {!batchMode && (
+        {!batchMode && !sweepMode && (
           <>
             <div className="flex-1 flex gap-2">
               <div className="relative flex-1">

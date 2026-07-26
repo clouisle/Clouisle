@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T17:52:48.805Z
+// GENERATED — 2026-07-26T18:59:23.826Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -395,5 +395,28 @@ export type KnowledgeBasesMessages = {
     noMetricDeltas: string
     noCaseDeltas: string
     noConfigDiff: string
+    parameterSweep: string
+    parameterSweepDescription: string
+    objective: string
+    metricK: string
+    servingTopK: string
+    parameterSpace: string
+    parameterSpacePlaceholder: string
+    guards: string
+    guardsPlaceholder: string
+    startSweep: string
+    sweepStatus: string
+    currentStage: string
+    cancelSweep: string
+    progress: string
+    stageProgress: string
+    recommendation: string
+    bestConfig: string
+    applyRecommendation: string
+    recommendationApplied: string
+    sweepLoadError: string
+    sweepStartError: string
+    sweepCancelError: string
+    sweepApplyError: string
   }
 }

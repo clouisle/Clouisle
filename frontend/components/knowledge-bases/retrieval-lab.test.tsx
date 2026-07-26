@@ -77,18 +77,25 @@ const getKnowledgeBase = mock()
 const search = mock()
 const updateKnowledgeBase = mock()
 const listEvaluationDatasets = mock()
+const getEvaluationDataset = mock()
 const createEvaluationDataset = mock()
 const updateEvaluationDataset = mock()
 const importEvaluationDataset = mock()
 const createEvaluationCase = mock()
 const updateEvaluationCase = mock()
 const deleteEvaluationCase = mock()
+const upsertEvaluationCaseByQuery = mock()
 const exportEvaluationDataset = mock()
 const startEvaluationRun = mock()
 const listEvaluationRuns = mock()
 const getEvaluationRun = mock()
 const cancelEvaluationRun = mock()
-const api = { getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, createEvaluationCase, updateEvaluationCase, deleteEvaluationCase, exportEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun }
+const compareEvaluationRuns = mock()
+const createEvaluationSweep = mock()
+const getEvaluationSweep = mock()
+const cancelEvaluationSweep = mock()
+const applyEvaluationSweep = mock()
+const api = { getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, getEvaluationDataset, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, createEvaluationCase, updateEvaluationCase, deleteEvaluationCase, upsertEvaluationCaseByQuery, exportEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun, compareEvaluationRuns, createEvaluationSweep, getEvaluationSweep, cancelEvaluationSweep, applyEvaluationSweep }
 const kb = { id: 'kb-1', name: 'Handbook', settings: { rerank_candidate_k: 12 }, rerank_model: { name: 'Reranker' } }
 const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
   query: 'policy', total: 1, diagnostics, timings: [{ stage: 'recall', latency_ms: 12 }, { stage: 'total', latency_ms: 20 }],

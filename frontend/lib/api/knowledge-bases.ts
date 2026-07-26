@@ -315,6 +315,50 @@ export interface RunComparison {
   config_diff: Record<string, { baseline: unknown; candidate: unknown }>
 }
 
+// ============ Sweep Types ============
+
+export type EvaluationSweepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'canceled'
+
+export interface EvaluationSweepCreate {
+  objective: string
+  metric_k: number
+  serving_top_k: number
+  space: Record<string, unknown>
+  guards: Record<string, unknown>
+  baseline_config?: Record<string, unknown> | null
+}
+
+export interface EvaluationSweep {
+  id: string
+  dataset_id: string
+  created_by_id: string | null
+  status: EvaluationSweepStatus
+  objective: string
+  metric_k: number
+  serving_top_k: number
+  space: Record<string, unknown>
+  guards: Record<string, unknown>
+  baseline_config: Record<string, unknown>
+  recommendation: Record<string, unknown> | null
+  best_run_id: string | null
+  verification_run_id: string | null
+  stage: string | null
+  progress: Record<string, { total: number; completed: number }>
+  task_id: string | null
+  heartbeat_at: string | null
+  applied: boolean
+  applied_at: string | null
+  applied_by_id: string | null
+  applied_diff: Record<string, unknown> | null
+  error_message: string | null
+  dataset_revision: number
+  dataset_snapshot_hash: string
+  version_snapshot: Record<string, unknown>
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
 // ============ Chunk Preview Types ============
 
 export interface ChunkPreviewInput {
@@ -466,6 +510,20 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
 
   compareEvaluationRuns: (kbId: string, datasetId: string, baselineRunId: string, candidateRunId: string): Promise<RunComparison> =>
     api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/compare-runs`, { baseline_run_id: baselineRunId, candidate_run_id: candidateRunId }),
+
+  // ============ Sweep API ============
+
+  createEvaluationSweep: (kbId: string, datasetId: string, data: EvaluationSweepCreate): Promise<EvaluationSweep> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/sweeps`, data),
+
+  getEvaluationSweep: (kbId: string, datasetId: string, sweepId: string): Promise<EvaluationSweep> =>
+    api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/sweeps/${sweepId}`),
+
+  cancelEvaluationSweep: (kbId: string, datasetId: string, sweepId: string): Promise<{ success: boolean; message: string }> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/sweeps/${sweepId}/cancel`),
+
+  applyEvaluationSweep: (kbId: string, datasetId: string, sweepId: string): Promise<{ applied: boolean; recommendation: Record<string, unknown>; baseline_config: Record<string, unknown> }> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/sweeps/${sweepId}/apply`),
 
   // ============ Document API ============
 

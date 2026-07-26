@@ -6,6 +6,8 @@ import type {
   EvaluationExportFormat,
   EvaluationRun,
   EvaluationRunConfig,
+  EvaluationSweep,
+  EvaluationSweepCreate,
   KnowledgeBase,
   KnowledgeBaseSettings,
   RunComparison,
@@ -33,6 +35,10 @@ export type RetrievalApi = {
   getEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
   cancelEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
   compareEvaluationRuns(kbId: string, datasetId: string, baselineId: string, candidateId: string): Promise<RunComparison>
+  createEvaluationSweep(kbId: string, datasetId: string, data: EvaluationSweepCreate): Promise<EvaluationSweep>
+  getEvaluationSweep(kbId: string, datasetId: string, sweepId: string): Promise<EvaluationSweep>
+  cancelEvaluationSweep(kbId: string, datasetId: string, sweepId: string): Promise<{ success: boolean; message: string }>
+  applyEvaluationSweep(kbId: string, datasetId: string, sweepId: string): Promise<{ applied: boolean; recommendation: Record<string, unknown> }>
 }
 
 export type Config = {
