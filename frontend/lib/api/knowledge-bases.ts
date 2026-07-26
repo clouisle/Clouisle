@@ -254,6 +254,13 @@ export interface EvaluationDatasetInput {
   cases?: EvaluationCaseInput[]
 }
 
+export type EvaluationExportFormat = 'json' | 'csv'
+
+export interface EvaluationDatasetExport {
+  format: EvaluationExportFormat
+  content: string
+}
+
 export type EvaluationRunConfig = Omit<SearchParams, 'query' | 'threshold'> & { score_threshold: number }
 export type EvaluationRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'canceled'
 
@@ -400,6 +407,21 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+
+  /** 单个新增用例，不影响已有用例的 ID 与历史结果关联 */
+  createEvaluationCase: (kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/cases`, data),
+
+  /** 原地更新单个用例，保留其 ID */
+  updateEvaluationCase: (kbId: string, datasetId: string, caseId: string, data: EvaluationCaseInput): Promise<EvaluationCase> =>
+    api.put(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/cases/${caseId}`, data),
+
+  deleteEvaluationCase: (kbId: string, datasetId: string, caseId: string): Promise<void> =>
+    api.delete(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/cases/${caseId}`),
+
+  /** 导出用例，输出可直接回灌到导入接口 */
+  exportEvaluationDataset: (kbId: string, datasetId: string, format: EvaluationExportFormat = 'json'): Promise<EvaluationDatasetExport> =>
+    api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/export?format=${format}`),
 
   startEvaluationRun: (kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun> =>
     api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`, config),
