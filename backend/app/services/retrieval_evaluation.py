@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass
 from math import log2
+from statistics import mean
 from time import perf_counter
 from typing import Any
 from uuid import UUID
@@ -39,6 +40,8 @@ class CaseEvaluation:
     chunk: RankingMetrics
     document: RankingMetrics
     expected_empty_correct: bool | None
+    chunk_graded: bool
+    document_graded: bool
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,11 @@ class BaselineSnapshot:
 
 def _unique(values: Sequence[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def _graded(relevance: dict[str, int]) -> bool:
+    """A case only carries ranking signal when it has at least one positive grade."""
+    return any(grade > 0 for grade in relevance.values())
 
 
 def ranking_metrics(
@@ -103,7 +111,20 @@ def evaluate_case(
         chunk=ranking_metrics(case.chunk_relevance, unique_chunks, k),
         document=ranking_metrics(case.document_relevance, unique_documents, k),
         expected_empty_correct=(not unique_chunks if case.expected_empty else None),
+        chunk_graded=_graded(case.chunk_relevance),
+        document_graded=_graded(case.document_relevance),
     )
+
+
+def ranking_means(metrics: Sequence[RankingMetrics]) -> dict[str, float | None]:
+    """Average one metric family, reporting None when no case is gradeable."""
+    if not metrics:
+        return {"recall": None, "mrr": None, "ndcg": None}
+    return {
+        "recall": mean(item.recall for item in metrics),
+        "mrr": mean(item.mrr for item in metrics),
+        "ndcg": mean(item.ndcg for item in metrics),
+    }
 
 
 def expected_empty_accuracy(evaluations: Sequence[CaseEvaluation]) -> float | None:
