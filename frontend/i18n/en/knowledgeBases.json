@@ -361,6 +361,15 @@
     "caseUpsertFailed": "Failed to save case",
     "datasetLoadFailed": "Failed to load datasets",
     "cancel": "Cancel",
-    "create": "Create"
+    "create": "Create",
+    "markAllUnlabeledIrrelevant": "Mark All Unlabeled as Irrelevant",
+    "unjudged": "unjudged",
+    "positiveLabel": "Positive",
+    "negativeLabel": "Negative",
+    "overlapLabel": "Overlap",
+    "coverageLabel": "Coverage",
+    "strategyContributions": "Strategy Contributions",
+    "unique": "unique",
+    "poolRelativeNote": "Note: Metrics are pool-relative, not corpus-wide absolute recall."
   }
 }

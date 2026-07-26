@@ -361,6 +361,15 @@
     "caseUpsertFailed": "保存用例失败",
     "datasetLoadFailed": "加载数据集失败",
     "cancel": "取消",
-    "create": "创建"
+    "create": "创建",
+    "markAllUnlabeledIrrelevant": "标记所有未标注为不相关",
+    "unjudged": "未标注",
+    "positiveLabel": "正例",
+    "negativeLabel": "负例",
+    "overlapLabel": "重叠",
+    "coverageLabel": "覆盖率",
+    "strategyContributions": "策略贡献",
+    "unique": "独有",
+    "poolRelativeNote": "注意：指标是基于候选池的，不是全语料库的绝对召回。"
   }
 }

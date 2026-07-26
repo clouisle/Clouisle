@@ -23,6 +23,7 @@ import { type Config, type RetrievalApi, runConfig } from './shared'
 import { type Grade, type StorageEnvelope, getDraft, migrateStorage, setGrade as setGradeInDraft, setDraft, gradesToRelevance, computeDocumentRelevance } from './labeling'
 import { buildCandidatePool, defaultStrategies, type CandidateChunk } from './candidate-pool'
 import { DatasetToolbar, PromotionToolbar } from './dataset-toolbar'
+import { QualityPanel } from './quality-panel'
 
 export { BatchEvaluation } from './batch-evaluation'
 
@@ -370,6 +371,23 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     persist(setDraft(storage, submittedQuery, { expectedEmpty: value }))
   }
 
+  const handleBulkMarkIrrelevant = () => {
+    if (!submittedQuery) return
+    const unlabeledChunkIds = poolCandidates
+      .filter(c => currentDraft.grades[c.chunk_id] === undefined)
+      .map(c => c.chunk_id)
+
+    if (unlabeledChunkIds.length === 0) return
+
+    let nextStorage = storage
+    for (const chunkId of unlabeledChunkIds) {
+      nextStorage = setGradeInDraft(nextStorage, submittedQuery, chunkId, 'irrelevant')
+    }
+    const draft = getDraft(nextStorage, submittedQuery)
+    const judgedCount = Object.keys(draft.grades).length
+    persist(setDraft(nextStorage, submittedQuery, { judgedCount }))
+  }
+
   if (loading) return <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
 
   const aRanks = new Map(responses.a?.results.map((result, index) => [result.chunk_id, index + 1]))
@@ -591,6 +609,14 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
                   canEvaluate={canEvaluate}
                   onSuccess={handlePromotionSuccess}
                 />
+                {poolCandidates.length > 0 && (
+                  <QualityPanel
+                    candidates={poolCandidates}
+                    grades={currentDraft.grades}
+                    onBulkMarkIrrelevant={handleBulkMarkIrrelevant}
+                    canEdit={canEvaluate}
+                  />
+                )}
               </>
             )}
             {compare && responses.a && responses.b && (
