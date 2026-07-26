@@ -234,11 +234,19 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - 池深度写入数据集 `pool_depth`。
 - **验证**：(a) 查询甲标注不影响查询乙（跨查询隔离测试）；(b) 「加入数据集」后 `getEvaluationDataset` 返回的用例标注与 UI 一致；(c) 全程无需手输 UUID 完成一个 3 用例数据集（手工走查）；(d) localStorage 旧格式不导致崩溃。
 
-### 阶段 7：数据集质量面板
+### 阶段 7：数据集质量面板与运行对比 ✅
 
-- **修改文件**：`frontend/components/knowledge-bases/retrieval-lab/batch-evaluation.tsx`、`backend/app/api/v1/endpoints/retrieval_evaluations.py`
-- **具体逻辑**：数据集卡片展示——用例总数 / 有 chunk 标注的用例数 / 有 document 标注的用例数 / expected-empty 用例数 / 平均每用例正例数 / 零正例用例列表（可跳转修补）/ `pool_depth`。零正例用例给出明确警告（它们不再污染均值，但也不提供任何信号）。
-- **验证**：构造含零正例与 expected-empty 的数据集，面板计数与 `summary_metrics` 的 `graded_*_count` 一致。
+- **修改文件**：`backend/app/services/retrieval_evaluation_comparison.py`（新增）、`backend/app/schemas/retrieval_evaluation.py`、`backend/app/api/v1/endpoints/retrieval_evaluations.py`、`frontend/components/knowledge-bases/retrieval-lab/run-comparison.tsx`（新增）、`frontend/components/knowledge-bases/retrieval-lab/batch-evaluation.tsx`、`frontend/lib/api/knowledge-bases.ts`、`frontend/i18n/{en,zh}/knowledgeBases.json`
+- **具体逻辑**：
+  - **数据集质量面板**：数据集卡片展示——用例总数 / 有 chunk 标注的用例数 / 有 document 标注的用例数 / expected-empty 用例数 / 平均每用例正例数 / 零正例用例列表（可跳转修补）/ `pool_depth`。零正例用例给出明确警告（它们不再污染均值，但也不提供任何信号）。
+  - **运行对比服务（response-only，无新表）**：`compare_runs(baseline_run, candidate_run)` 纯函数比较两个已完成运行，返回 `ComparisonResult`（comparable 标志、incompatibility 原因、metric deltas、improved/unchanged/regressed/unpaired case 计数、逐用例 delta 列表、config diff）。
+  - **可比性检查**：同 dataset_id、同 dataset_revision、同 dataset_snapshot_hash、同 metric_k 才标记 comparable；版本快照不一致时返回 best-effort 但明确标记不可比。
+  - **用例配对**：优先按不可变 `case_snapshot.id` 配对，旧数据 fallback 到 `case_id` 仅当 snapshot id 唯一时；无法配对的用例计入 unpaired。
+  - **结果分类**：delta > 0.01 → improved，delta < -0.01 → regressed，否则 unchanged（0.01 阈值与护栏一致）。
+  - **比较 UI**：batch-evaluation 改为 Tabs（数据集/运行/比较）；比较页两个 Select 选 baseline/candidate（过滤到 completed），展示 metric deltas 表格（directional 色彩：latency/error 负数=绿、正数=红；质量指标相反）、case outcomes badges、config diff 表格、incomparability 警告。
+  - **API 端点**：`POST /{kb_id}/evaluation-datasets/{dataset_id}/compare-runs`，验证两个运行存在、completed、属于同 dataset，调用 comparison service。
+- **验证**：(a) 构造含零正例与 expected-empty 的数据集，面板计数与 `summary_metrics` 的 `graded_*_count` 一致；(b) 同 dataset 两个 completed runs 的 summary delta 与手算一致；(c) revision/version 不同显示不可比警告；(d) 不同 dataset 拒绝比较；(e) metric deltas 色彩方向正确（latency/error 反向）；(f) 前端 build 和 i18n type generation 通过。
+- **状态**：已完成（比较服务、API、frontend 类型/组件/集成、双语 i18n、所有类型错误修复）。
 
 ### 阶段 8：调优后端 —— 模型、接口、搜索策略、护栏
 
@@ -269,7 +277,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 
 - **修改文件**：`frontend/components/knowledge-bases/retrieval-lab/tuning.tsx`（新增）、`retrieval-lab/index.tsx`、`frontend/lib/api/knowledge-bases.ts`、`frontend/i18n/{en,zh}/knowledgeBases.json`
 - **具体逻辑**：
-  - 批量评估内部改为三个子页签（沿用现有 `role="tablist"` 模式）：**数据集与标注 / 运行 / 调优**。
+  - 批量评估内部改为三个子页签（沿用现有 `role="tablist"` 模式）：**运行 / 比较 / 调优**。
   - 调优页：目标指标与 `metric_k` 选择、服务 `top_k`、参数空间编辑（每轴候选可增删，显示"共 N 个配置"）、护栏阈值、模式（replay/live，含降级提示）、成本与时长预估 → 开始。
   - 进度：沿用现有 2s 轮询模式，展示当前阶段/已完成配置数/已用时。
   - 结果表：每配置一行——label、目标指标、Δ vs 基线、改进/回归用例数、P95、错误数、是否超护栏（灰显并注明原因）；按目标指标排序，基线行固定置顶。
