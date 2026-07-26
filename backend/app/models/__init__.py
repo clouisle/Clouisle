@@ -22,6 +22,8 @@ from .retrieval_evaluation import (
     EvaluationRun,
     EvaluationCaseResult,
     EvaluationRunStatus,
+    EvaluationSweep,
+    EvaluationSweepStatus,
 )
 from .agent import (
     Agent,
@@ -114,6 +116,8 @@ __all__ = [
     "EvaluationRun",
     "EvaluationCaseResult",
     "EvaluationRunStatus",
+    "EvaluationSweep",
+    "EvaluationSweepStatus",
     "Agent",
     "AgentKnowledgeBase",
     "AgentStatus",

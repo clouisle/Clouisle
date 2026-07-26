@@ -15,6 +15,14 @@ class EvaluationRunStatus(str, Enum):
     CANCELED = "canceled"
 
 
+class EvaluationSweepStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
 class EvaluationDataset(models.Model):
     id = fields.UUIDField(pk=True)
     knowledge_base: fields.ForeignKeyRelation[Any] = fields.ForeignKeyField(
@@ -87,6 +95,20 @@ class EvaluationRun(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True)
     started_at = fields.DatetimeField(null=True)
     finished_at = fields.DatetimeField(null=True)
+    # Sweep integration fields
+    sweep: fields.ForeignKeyRelation["EvaluationSweep"] | None = fields.ForeignKeyField(
+        "models.EvaluationSweep",
+        related_name="child_runs",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    sweep_id: UUID | None
+    stage = fields.CharField(max_length=50, null=True)
+    candidate_key = fields.CharField(max_length=100, null=True)
+    label = fields.CharField(max_length=100, null=True)
+    metric_k = fields.IntField(null=True)
+    dataset_revision = fields.IntField(null=True)
+    dataset_snapshot_hash = fields.CharField(max_length=64, null=True)
 
     class Meta:
         table = "evaluation_runs"
@@ -117,3 +139,67 @@ class EvaluationCaseResult(models.Model):
         table = "evaluation_case_results"
         unique_together = (("run", "case"),)
         ordering = ["created_at", "id"]
+
+
+class EvaluationSweep(models.Model):
+    id = fields.UUIDField(pk=True)
+    dataset: fields.ForeignKeyRelation[EvaluationDataset] = fields.ForeignKeyField(
+        "models.EvaluationDataset", related_name="sweeps", on_delete=fields.CASCADE
+    )
+    dataset_id: UUID
+    created_by: fields.ForeignKeyRelation[Any] | None = fields.ForeignKeyField(
+        "models.User",
+        related_name="evaluation_sweeps",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    created_by_id: UUID | None
+    status = fields.CharField(max_length=20, default=EvaluationSweepStatus.PENDING.value)
+    objective = fields.CharField(max_length=50)
+    metric_k = fields.IntField()
+    serving_top_k = fields.IntField()
+    space: dict[str, Any] = fields.JSONField(default=dict)
+    guards: dict[str, Any] = fields.JSONField(default=dict)
+    baseline_config: dict[str, Any] = fields.JSONField()
+    baseline_config_fingerprint = fields.CharField(max_length=64, null=True)
+    dataset_revision = fields.IntField()
+    dataset_snapshot_hash = fields.CharField(max_length=64)
+    version_snapshot: dict[str, Any] = fields.JSONField(default=dict)
+    recommendation: dict[str, Any] | None = fields.JSONField(null=True)
+    best_run: fields.ForeignKeyRelation[EvaluationRun] | None = fields.ForeignKeyField(
+        "models.EvaluationRun",
+        related_name="best_for_sweeps",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    best_run_id: UUID | None
+    verification_run: fields.ForeignKeyRelation[EvaluationRun] | None = fields.ForeignKeyField(
+        "models.EvaluationRun",
+        related_name="verification_for_sweeps",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    verification_run_id: UUID | None
+    stage = fields.CharField(max_length=50, null=True)
+    progress: dict[str, Any] = fields.JSONField(default=dict)
+    heartbeat_at = fields.DatetimeField(null=True)
+    task_id = fields.CharField(max_length=100, null=True)
+    error_message = fields.TextField(null=True)
+    applied = fields.BooleanField(default=False)
+    applied_at = fields.DatetimeField(null=True)
+    applied_by: fields.ForeignKeyRelation[Any] | None = fields.ForeignKeyField(
+        "models.User",
+        related_name="applied_sweeps",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    applied_by_id: UUID | None
+    applied_diff: dict[str, Any] | None = fields.JSONField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    started_at = fields.DatetimeField(null=True)
+    finished_at = fields.DatetimeField(null=True)
+    child_runs: fields.ReverseRelation[EvaluationRun]
+
+    class Meta:
+        table = "evaluation_sweeps"
+        ordering = ["-created_at"]

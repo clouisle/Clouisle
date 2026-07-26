@@ -2335,6 +2335,59 @@ async def init_retrieval_evaluation_tables():
         ON evaluation_cases(dataset_id, query_fingerprint)
         WHERE query_fingerprint IS NOT NULL
         """,
+        # Sweep integration columns for evaluation_runs
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS sweep_id UUID REFERENCES evaluation_sweeps(id) ON DELETE SET NULL",
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS stage VARCHAR(50)",
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS candidate_key VARCHAR(100)",
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS label VARCHAR(100)",
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS metric_k INTEGER",
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS dataset_revision INTEGER",
+        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS dataset_snapshot_hash VARCHAR(64)",
+    ]
+    for statement in statements:
+        await execute_startup_migration_query(conn, statement)
+
+
+async def init_retrieval_tuning_tables():
+    """Create evaluation sweep tables idempotently."""
+    conn = Tortoise.get_connection("default")
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_sweeps (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            dataset_id UUID NOT NULL REFERENCES evaluation_datasets(id) ON DELETE CASCADE,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            objective VARCHAR(50) NOT NULL,
+            metric_k INTEGER NOT NULL,
+            serving_top_k INTEGER NOT NULL,
+            space JSONB NOT NULL DEFAULT '{}',
+            guards JSONB NOT NULL DEFAULT '{}',
+            baseline_config JSONB NOT NULL,
+            baseline_config_fingerprint VARCHAR(64),
+            dataset_revision INTEGER NOT NULL,
+            dataset_snapshot_hash VARCHAR(64) NOT NULL,
+            version_snapshot JSONB NOT NULL DEFAULT '{}',
+            recommendation JSONB,
+            best_run_id UUID REFERENCES evaluation_runs(id) ON DELETE SET NULL,
+            verification_run_id UUID REFERENCES evaluation_runs(id) ON DELETE SET NULL,
+            stage VARCHAR(50),
+            progress JSONB NOT NULL DEFAULT '{}',
+            heartbeat_at TIMESTAMPTZ,
+            task_id VARCHAR(100),
+            error_message TEXT,
+            applied BOOLEAN NOT NULL DEFAULT FALSE,
+            applied_at TIMESTAMPTZ,
+            applied_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            applied_diff JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_evaluation_sweeps_dataset_status ON evaluation_sweeps(dataset_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_evaluation_runs_sweep ON evaluation_runs(sweep_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_runs_sweep_candidate ON evaluation_runs(sweep_id, candidate_key) WHERE sweep_id IS NOT NULL AND candidate_key IS NOT NULL",
     ]
     for statement in statements:
         await execute_startup_migration_query(conn, statement)
@@ -2387,6 +2440,11 @@ async def init_db():
         await init_retrieval_evaluation_tables()
     except Exception as e:
         logger.warning(f"Retrieval evaluation migration failed (may be first run): {e}")
+
+    try:
+        await init_retrieval_tuning_tables()
+    except Exception as e:
+        logger.warning(f"Retrieval tuning migration failed (may be first run): {e}")
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")
