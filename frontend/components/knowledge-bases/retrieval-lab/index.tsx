@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, HelpCircle, Loader2, Search, Send, Settings2 } from 'lucide-react'
 import { ApiError } from '@/lib/api/client'
-import type { KnowledgeBase, SearchMode, SearchParams, SearchResponse } from '@/lib/api'
+import type { KnowledgeBase, SearchMode, SearchParams, SearchResponse, EvaluationDataset } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -20,7 +20,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn, formatDuration } from '@/lib/utils'
 import { BatchEvaluation } from './batch-evaluation'
 import { type Config, type RetrievalApi, runConfig } from './shared'
-import { type Grade, type StorageEnvelope, getDraft, migrateStorage, setGrade as setGradeInDraft } from './labeling'
+import { type Grade, type StorageEnvelope, getDraft, migrateStorage, setGrade as setGradeInDraft, setDraft, gradesToRelevance, computeDocumentRelevance } from './labeling'
+import { buildCandidatePool, defaultStrategies, type CandidateChunk } from './candidate-pool'
+import { DatasetToolbar, PromotionToolbar } from './dataset-toolbar'
 
 export { BatchEvaluation } from './batch-evaluation'
 
@@ -197,6 +199,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
   const [selectedPreset, setSelectedPreset] = React.useState('')
   const [batchMode, setBatchMode] = React.useState(false)
   const [submittedQuery, setSubmittedQuery] = React.useState('')
+  const [poolCandidates, setPoolCandidates] = React.useState<CandidateChunk[]>([])
+  const [poolDepth] = React.useState(10)
+  const [datasets, setDatasets] = React.useState<EvaluationDataset[]>([])
+  const [selectedDatasetId, setSelectedDatasetId] = React.useState<string | null>(null)
 
   const storageKey = `retrieval-lab:${knowledgeBaseId}`
   React.useEffect(() => {
@@ -220,6 +226,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
       } catch {
         localStorage.removeItem(storageKey)
       }
+      // Load datasets for promotion toolbar
+      return api.listEvaluationDatasets(knowledgeBaseId)
+    }).then(datasets => {
+      if (datasets) setDatasets(datasets)
     }).catch(() => onLoadError?.()).finally(() => setLoading(false))
   }, [api, knowledgeBaseId, onLoadError, storageKey])
 
@@ -239,8 +249,16 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     setSearching(true)
     setSearched(true)
     setResponses({})
+    setPoolCandidates([])
     setSubmittedQuery(trimmed) // Capture submitted query for labeling isolation
     try {
+      // Build candidate pool with multi-strategy retrieval
+      const strategies = defaultStrategies(configA, Boolean(knowledgeBase?.rerank_model))
+      const poolResult = await buildCandidatePool(api, knowledgeBaseId, trimmed, strategies, poolDepth)
+
+      setPoolCandidates(poolResult.candidates)
+
+      // Also run single-strategy search for display (using configA)
       const [a, b] = await Promise.allSettled([
         api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model))),
         compare ? api.search(knowledgeBaseId, configParams(trimmed, configB, Boolean(knowledgeBase?.rerank_model))) : Promise.resolve(undefined),
@@ -250,6 +268,15 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
         b: b.status === 'fulfilled' ? b.value : undefined,
       }
       setResponses(next)
+
+      // Update draft with pool metadata
+      const judgedCount = Object.keys(currentDraft.grades).length
+      persist(setDraft(storage, trimmed, {
+        poolDepth,
+        poolStrategies: strategies.map(s => s.label),
+        candidateCount: poolResult.candidates.length,
+        judgedCount,
+      }))
 
       // Handle failures with stage-aware toast notifications
       if (a.status === 'rejected') {
@@ -322,7 +349,25 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
 
   const setGrade = (chunkId: string, grade: Grade) => {
     if (!submittedQuery) return
-    persist(setGradeInDraft(storage, submittedQuery, chunkId, grade))
+    const nextStorage = setGradeInDraft(storage, submittedQuery, chunkId, grade)
+    const draft = getDraft(nextStorage, submittedQuery)
+    const judgedCount = Object.keys(draft.grades).length
+    persist(setDraft(nextStorage, submittedQuery, { judgedCount }))
+  }
+
+  const refreshDatasets = () => {
+    api.listEvaluationDatasets(knowledgeBaseId)
+      .then(setDatasets)
+      .catch(() => toast.error(t('datasetLoadFailed')))
+  }
+
+  const handlePromotionSuccess = () => {
+    refreshDatasets()
+  }
+
+  const handleExpectedEmptyChange = (value: boolean) => {
+    if (!submittedQuery) return
+    persist(setDraft(storage, submittedQuery, { expectedEmpty: value }))
   }
 
   if (loading) return <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -515,9 +560,41 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
         ) : responses.a?.results.length === 0 && !responses.b?.results.length ? (
           <div className="grid h-full place-content-center text-sm text-muted-foreground">{t('noResults')}</div>
         ) : (
-          <>
+          <div className="space-y-4">
+            {canEvaluate && submittedQuery && (
+              <>
+                <DatasetToolbar
+                  datasets={datasets}
+                  selectedDatasetId={selectedDatasetId}
+                  onSelectDataset={setSelectedDatasetId}
+                  onDatasetsChange={refreshDatasets}
+                  api={api}
+                  knowledgeBaseId={knowledgeBaseId}
+                  canEvaluate={canEvaluate}
+                />
+                <PromotionToolbar
+                  selectedDatasetId={selectedDatasetId}
+                  query={submittedQuery}
+                  chunkRelevance={gradesToRelevance(currentDraft.grades)}
+                  documentRelevance={computeDocumentRelevance(
+                    gradesToRelevance(currentDraft.grades),
+                    new Map(poolCandidates.map(c => [c.chunk_id, c.document_id]))
+                  )}
+                  expectedEmpty={currentDraft.expectedEmpty ?? false}
+                  onExpectedEmptyChange={handleExpectedEmptyChange}
+                  poolDepth={currentDraft.poolDepth ?? poolDepth}
+                  poolStrategies={currentDraft.poolStrategies ?? []}
+                  candidateCount={currentDraft.candidateCount ?? 0}
+                  judgedCount={currentDraft.judgedCount ?? 0}
+                  api={api}
+                  knowledgeBaseId={knowledgeBaseId}
+                  canEvaluate={canEvaluate}
+                  onSuccess={handlePromotionSuccess}
+                />
+              </>
+            )}
             {compare && responses.a && responses.b && (
-              <p className="mb-2 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t('overlap', { count: overlap, total: Math.max(responses.a.results.length, responses.b.results.length) })}
               </p>
             )}
@@ -533,7 +610,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
                 </section>
               )}
             </div>
-          </>
+          </div>
         )}
       </main>
     )}

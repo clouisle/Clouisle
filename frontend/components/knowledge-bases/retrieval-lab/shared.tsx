@@ -25,6 +25,7 @@ export type RetrievalApi = {
   createEvaluationCase(kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
   updateEvaluationCase(kbId: string, datasetId: string, caseId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
   deleteEvaluationCase(kbId: string, datasetId: string, caseId: string): Promise<void>
+  upsertEvaluationCaseByQuery(kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
   exportEvaluationDataset(kbId: string, datasetId: string, format: EvaluationExportFormat): Promise<EvaluationDatasetExport>
   startEvaluationRun(kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun>
   listEvaluationRuns(kbId: string, datasetId: string): Promise<EvaluationRun[]>

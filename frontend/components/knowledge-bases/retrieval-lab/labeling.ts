@@ -16,6 +16,7 @@ export interface LabelingDraft {
   poolDepth?: number
   poolStrategies?: string[]
   candidateCount?: number
+  judgedCount?: number
   targetDatasetId?: string
 }
 
@@ -80,13 +81,18 @@ export function getDraft(envelope: StorageEnvelope, query: string): LabelingDraf
 /**
  * Update labeling draft for a specific query.
  */
-export function setDraft(envelope: StorageEnvelope, query: string, grades: Record<string, Grade>): StorageEnvelope {
+export function setDraft(
+  envelope: StorageEnvelope,
+  query: string,
+  draft: Partial<LabelingDraft>
+): StorageEnvelope {
   const key = computeQueryKey(query)
+  const existing = getDraft(envelope, query)
   return {
     ...envelope,
     drafts: {
       ...envelope.drafts,
-      [key]: { query, grades },
+      [key]: { ...existing, ...draft, query },
     },
   }
 }
@@ -109,7 +115,7 @@ export function setGrade(
     nextGrades[chunkId] = grade
   }
 
-  return setDraft(envelope, query, nextGrades)
+  return setDraft(envelope, query, { grades: nextGrades })
 }
 
 /**

@@ -143,7 +143,7 @@ describe('getDraft', () => {
 describe('setDraft', () => {
   it('adds new draft for query', () => {
     const envelope: StorageEnvelope = { version: 2, presets: [], drafts: {} }
-    const updated = setDraft(envelope, 'query A', { 'chunk-1': 'relevant' })
+    const updated = setDraft(envelope, 'query A', { grades: { 'chunk-1': 'relevant' } })
     expect(updated.drafts['query A']).toEqual({
       query: 'query A',
       grades: { 'chunk-1': 'relevant' },
@@ -158,20 +158,20 @@ describe('setDraft', () => {
         'query A': { query: 'query A', grades: { 'chunk-1': 'relevant' } },
       },
     }
-    const updated = setDraft(envelope, 'query A', { 'chunk-2': 'irrelevant' })
+    const updated = setDraft(envelope, 'query A', { grades: { 'chunk-2': 'irrelevant' } })
     expect(updated.drafts['query A'].grades).toEqual({ 'chunk-2': 'irrelevant' })
   })
 
   it('does not mutate original envelope', () => {
     const envelope: StorageEnvelope = { version: 2, presets: [], drafts: {} }
-    const updated = setDraft(envelope, 'query A', { 'chunk-1': 'partial' })
+    const updated = setDraft(envelope, 'query A', { grades: { 'chunk-1': 'partial' } })
     expect(envelope.drafts).toEqual({})
     expect(updated.drafts['query A']).toBeDefined()
   })
 
   it('normalizes query key', () => {
     const envelope: StorageEnvelope = { version: 2, presets: [], drafts: {} }
-    const updated = setDraft(envelope, '  query A  ', { 'chunk-1': 'relevant' })
+    const updated = setDraft(envelope, '  query A  ', { grades: { 'chunk-1': 'relevant' } })
     expect(updated.drafts['query A']).toBeDefined()
   })
 })

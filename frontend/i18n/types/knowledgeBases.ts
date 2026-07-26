@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T16:58:06.872Z
+// GENERATED — 2026-07-26T17:09:15.140Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -340,5 +340,25 @@ export type KnowledgeBasesMessages = {
     overlapChars: string
     chunkIdCopied: string
     clickToCopyChunkId: string
+    targetDataset: string
+    cases: string
+    newDataset: string
+    createNewDataset: string
+    createDatasetDescription: string
+    datasetNamePlaceholder: string
+    datasetCreated: string
+    datasetCreateFailed: string
+    promotionPreview: string
+    createNewCase: string
+    updateExistingCase: string
+    poolStats: string
+    addToDataset: string
+    updateInDataset: string
+    selectDatasetFirst: string
+    caseCreated: string
+    caseUpdated: string
+    caseUpsertFailed: string
+    datasetLoadFailed: string
+    create: string
   }
 }
