@@ -353,7 +353,27 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
             return next
           })}>
             <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="flex min-w-0 items-center gap-2"><Badge variant="outline">#{index + 1}</Badge><FileText className="h-3.5 w-3.5" /><strong className="truncate">{result.document_name}</strong></span>
+              <span className="flex min-w-0 items-center gap-2">
+                <Badge variant="outline">#{index + 1}</Badge>
+                <FileText className="h-3.5 w-3.5" />
+                <strong className="truncate">{result.document_name}</strong>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={e => {
+                        e.stopPropagation()
+                        navigator.clipboard.writeText(result.chunk_id)
+                        toast.success(t('chunkIdCopied'))
+                      }}
+                    >
+                      <code className="text-[10px]">{result.chunk_id.slice(0, 8)}</code>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('clickToCopyChunkId')}</TooltipContent>
+                </Tooltip>
+              </span>
               <span className="flex items-center gap-2"><Badge>{translateSearchType(result.search_type, t) || translateFinalScoreStage(result.final_score_stage, t) || t('unknownChannel')}</Badge>{movement && <span>{movement - (index + 1) > 0 ? '↑' : movement - (index + 1) < 0 ? '↓' : '→'} {Math.abs(movement - (index + 1))}</span>}{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
             </div>
             {!open && <p className="line-clamp-2 text-xs text-muted-foreground"><Highlight text={result.content} query={submittedQuery} /></p>}

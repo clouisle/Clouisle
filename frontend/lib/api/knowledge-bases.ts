@@ -427,6 +427,10 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
   exportEvaluationDataset: (kbId: string, datasetId: string, format: EvaluationExportFormat = 'json'): Promise<EvaluationDatasetExport> =>
     api.get(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/export?format=${format}`),
 
+  /** Query-based case upsert: create if query not found, update if exactly one match */
+  upsertEvaluationCaseByQuery: (kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase> =>
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/cases/upsert`, data),
+
   startEvaluationRun: (kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun> =>
     api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`, config),
 

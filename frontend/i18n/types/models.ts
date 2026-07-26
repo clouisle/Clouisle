@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T08:58:11.775Z
+// GENERATED — 2026-07-26T16:58:06.872Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {

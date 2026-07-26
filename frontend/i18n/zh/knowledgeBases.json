@@ -335,6 +335,8 @@
     "chunkStatusPending": "等待中",
     "failedChunksCount": "{count} 个分段失败",
     "chars": "字符",
-    "overlapChars": "重叠 {count}"
+    "overlapChars": "重叠 {count}",
+    "chunkIdCopied": "分块 ID 已复制到剪贴板",
+    "clickToCopyChunkId": "点击复制分块 ID"
   }
 }

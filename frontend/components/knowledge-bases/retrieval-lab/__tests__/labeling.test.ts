@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import {
   clearDrafts,
+  computeDocumentRelevance,
   computeQueryKey,
   getDraft,
+  gradesToRelevance,
   migrateStorage,
   normalizeQuery,
   setDraft,
@@ -290,5 +292,71 @@ describe('query isolation', () => {
       'chunk-1': 'relevant',
       'chunk-2': 'partial',
     })
+  })
+})
+
+describe('gradesToRelevance', () => {
+  it('converts grades to numeric scores', () => {
+    const grades = {
+      'chunk-1': 'relevant' as const,
+      'chunk-2': 'partial' as const,
+      'chunk-3': 'irrelevant' as const,
+    }
+    const relevance = gradesToRelevance(grades)
+    expect(relevance).toEqual({
+      'chunk-1': 3,
+      'chunk-2': 2,
+      'chunk-3': 0,
+    })
+  })
+
+  it('handles empty grades', () => {
+    const relevance = gradesToRelevance({})
+    expect(relevance).toEqual({})
+  })
+})
+
+describe('computeDocumentRelevance', () => {
+  it('computes max chunk relevance per document', () => {
+    const chunkRelevance = {
+      'chunk-1': 3,
+      'chunk-2': 2,
+      'chunk-3': 3,
+      'chunk-4': 0,
+    }
+    const chunkToDocument = new Map([
+      ['chunk-1', 'doc-1'],
+      ['chunk-2', 'doc-1'],
+      ['chunk-3', 'doc-2'],
+      ['chunk-4', 'doc-2'],
+    ])
+
+    const docRelevance = computeDocumentRelevance(chunkRelevance, chunkToDocument)
+    expect(docRelevance).toEqual({
+      'doc-1': 3, // max(3, 2)
+      'doc-2': 3, // max(3, 0)
+    })
+  })
+
+  it('handles chunks with no document mapping', () => {
+    const chunkRelevance = {
+      'chunk-1': 3,
+      'chunk-2': 2,
+    }
+    const chunkToDocument = new Map([
+      ['chunk-1', 'doc-1'],
+      // chunk-2 missing
+    ])
+
+    const docRelevance = computeDocumentRelevance(chunkRelevance, chunkToDocument)
+    expect(docRelevance).toEqual({
+      'doc-1': 3,
+      // doc-2 not present
+    })
+  })
+
+  it('handles empty inputs', () => {
+    const docRelevance = computeDocumentRelevance({}, new Map())
+    expect(docRelevance).toEqual({})
   })
 })

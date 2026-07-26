@@ -335,6 +335,8 @@
     "chunkStatusPending": "Pending",
     "failedChunksCount": "{count} failed chunks",
     "chars": "chars",
-    "overlapChars": "overlap {count}"
+    "overlapChars": "overlap {count}",
+    "chunkIdCopied": "Chunk ID copied to clipboard",
+    "clickToCopyChunkId": "Click to copy chunk ID"
   }
 }
