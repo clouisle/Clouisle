@@ -128,16 +128,12 @@ async def test_case_update_is_blocked_by_active_run_but_metadata_update_is_allow
         id=uuid4(), name="old", description=None, save=AsyncMock()
     )
     user = SimpleNamespace(id=uuid4())
+    replace_mock = AsyncMock(
+        side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
+    )
     with (
         patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
-        patch.object(
-            api,
-            "_ensure_no_active_runs",
-            AsyncMock(
-                side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
-            ),
-        ) as guard,
-        patch.object(api, "replace_cases", AsyncMock()) as replace,
+        patch.object(api, "replace_cases", replace_mock) as replace,
         patch.object(api, "_dataset_data", AsyncMock(return_value={})),
     ):
         with pytest.raises(BusinessError):
@@ -147,8 +143,7 @@ async def test_case_update_is_blocked_by_active_run_but_metadata_update_is_allow
         await api.update_dataset(
             uuid4(), dataset.id, EvaluationDatasetUpdate(description="new"), user
         )
-    guard.assert_awaited_once_with(dataset.id)
-    replace.assert_not_awaited()
+    replace.assert_awaited_once_with(dataset, [])
     assert dataset.description == "new"
 
 
@@ -159,18 +154,25 @@ async def test_case_crud_preserves_case_id_and_returns_case_payloads():
     stored = SimpleNamespace(
         id=case_id,
         query="whats our refund policy",
+        query_fingerprint="whats our refund policy",
         chunk_relevance={},
         document_relevance={},
         expected_empty=False,
-        delete=AsyncMock(),
+        labeling_metadata=None,
+        created_at="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
     )
     edit = EvaluationCaseInput(query="What is our refund policy?")
     edited = SimpleNamespace(
         id=case_id,
         query=edit.query,
+        query_fingerprint="What is our refund policy?",
         chunk_relevance={},
         document_relevance={},
         expected_empty=False,
+        labeling_metadata=None,
+        created_at="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
     )
     with (
         patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
@@ -178,6 +180,7 @@ async def test_case_crud_preserves_case_id_and_returns_case_payloads():
         patch.object(api, "create_case", AsyncMock(return_value=stored)) as create,
         patch.object(api, "_case", AsyncMock(return_value=stored)) as lookup,
         patch.object(api, "update_case", AsyncMock(return_value=edited)) as update,
+        patch.object(api, "delete_case", AsyncMock()) as delete,
     ):
         created = await api.create_dataset_case(
             uuid4(), dataset.id, edit, SimpleNamespace()
@@ -191,18 +194,22 @@ async def test_case_crud_preserves_case_id_and_returns_case_payloads():
 
     create.assert_awaited_once_with(dataset, edit)
     update.assert_awaited_once_with(dataset, stored, edit)
+    delete.assert_awaited_once_with(dataset, stored)
     assert lookup.await_count == 2
     assert all(call.args == (dataset.id, case_id) for call in lookup.await_args_list)
     assert created["data"]["id"] == case_id
     assert updated["data"] == {
         "id": case_id,
         "query": edit.query,
+        "query_fingerprint": "What is our refund policy?",
         "chunk_relevance": {},
         "document_relevance": {},
         "expected_empty": False,
+        "labeling_metadata": None,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
     }
     assert deleted["data"] is None
-    stored.delete.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -220,14 +227,15 @@ async def test_case_lookup_is_scoped_to_dataset():
 async def test_case_mutations_are_blocked_while_a_run_is_active():
     dataset = SimpleNamespace(id=uuid4())
     case = EvaluationCaseInput(query="q")
-    guard = AsyncMock(
-        side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
-    )
+    error_response = BusinessError(msg_key="evaluation_dataset_has_active_runs")
+    create_mock = AsyncMock(side_effect=error_response)
+    update_mock = AsyncMock(side_effect=error_response)
+    delete_mock = AsyncMock(side_effect=error_response)
     with (
         patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
-        patch.object(api, "_ensure_no_active_runs", guard),
-        patch.object(api, "create_case", AsyncMock()) as create,
-        patch.object(api, "update_case", AsyncMock()) as update,
+        patch.object(api, "create_case", create_mock) as create,
+        patch.object(api, "update_case", update_mock) as update,
+        patch.object(api, "delete_case", delete_mock) as delete,
         patch.object(api, "_case", AsyncMock()) as lookup,
     ):
         calls = (
@@ -246,10 +254,10 @@ async def test_case_mutations_are_blocked_while_a_run_is_active():
                 await call()
             assert error.value.msg_key == "evaluation_dataset_has_active_runs"
 
-    assert guard.await_count == 3
-    create.assert_not_awaited()
-    update.assert_not_awaited()
-    lookup.assert_not_awaited()
+    create.assert_awaited_once()
+    update.assert_awaited_once()
+    delete.assert_awaited_once()
+    assert lookup.await_count == 2  # update and delete both lookup first
 
 
 @pytest.mark.parametrize(
@@ -352,22 +360,19 @@ def test_new_case_and_export_messages_are_translated(language):
 @pytest.mark.anyio
 async def test_import_is_blocked_before_read_when_run_is_active():
     dataset = SimpleNamespace(id=uuid4())
-    file = SimpleNamespace(filename="cases.json", read=AsyncMock())
+    file = SimpleNamespace(filename="cases.json", read=AsyncMock(return_value=b'[]'))
+    replace_mock = AsyncMock(
+        side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
+    )
     with (
         patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
-        patch.object(
-            api,
-            "_ensure_no_active_runs",
-            AsyncMock(
-                side_effect=BusinessError(msg_key="evaluation_dataset_has_active_runs")
-            ),
-        ),
-        patch.object(api, "replace_cases", AsyncMock()) as replace,
+        patch.object(api, "parse_cases", return_value=[]),
+        patch.object(api, "replace_cases", replace_mock) as replace,
     ):
         with pytest.raises(BusinessError):
             await api.import_dataset(uuid4(), dataset.id, file, SimpleNamespace())
-    file.read.assert_not_awaited()
-    replace.assert_not_awaited()
+    file.read.assert_awaited_once()
+    replace.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -425,7 +430,6 @@ async def test_update_dataset_name_and_cases_branches():
     with (
         patch.object(api, "_dataset", AsyncMock(return_value=dataset)),
         patch.object(api.EvaluationDataset, "filter", return_value=duplicate),
-        patch.object(api, "_ensure_no_active_runs", AsyncMock()) as guard,
         patch.object(api, "replace_cases", AsyncMock()) as replace,
         patch.object(api, "_dataset_data", AsyncMock(return_value={})),
     ):
@@ -437,7 +441,6 @@ async def test_update_dataset_name_and_cases_branches():
         )
     assert dataset.name == "new"
     assert dataset.description is None
-    guard.assert_awaited_once_with(dataset.id)
     replace.assert_awaited_once_with(dataset, [])
 
 
