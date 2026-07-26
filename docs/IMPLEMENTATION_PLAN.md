@@ -10,7 +10,7 @@
   - [x] 5. Stage 3: Query-scoped visual labeling — query isolation prevents cross-query label pollution, versioned storage envelope with migration, and comprehensive test coverage
   - [ ] 6. Knowledge base retrieval defaults so tuned parameters can land in production
   - [x] 7. Stage 4: Multi-strategy candidate pooling and dataset upsert — four-strategy candidate pool with provenance/rank preservation, dataset selection toolbar, create/update case promotion preview, quality diagnostics panel (judged/unjudged, positive/negative, per-strategy unique contributions, overlap, pool-relative coverage), bulk mark unlabeled as irrelevant, and bilingual i18n
-  - [ ] 8. Stage 5: Dataset quality panel and run comparison
+  - [x] 8. Stage 5: Dataset quality panel and run comparison — backend comparison service with immutable case pairing and comparability checks, frontend run-comparison component with metric deltas/case outcomes/config diff display, tabbed batch-evaluation UI separating execution from comparison, and bilingual i18n
   - [ ] 9. Stage 6: Tuning backend — sweep model, API, staged coordinate search, budget guards
   - [ ] 10. Stage 7: Tuning executor — Celery orchestration with cancel/recover and live verification
   - [ ] 11. Stage 8: Tuning frontend — parameter space editor, comparison table, recommendation and apply
