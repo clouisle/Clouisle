@@ -81,7 +81,9 @@ async def recover_stale_sweeps() -> dict:
     recovered_count = 0
     for sweep in stale_sweeps:
         sweep.status = EvaluationSweepStatus.FAILED.value
-        heartbeat_time = sweep.heartbeat_at.isoformat() if sweep.heartbeat_at else "unknown"
+        heartbeat_time = (
+            sweep.heartbeat_at.isoformat() if sweep.heartbeat_at else "unknown"
+        )
         sweep.error_message = (
             f"Heartbeat stale since {heartbeat_time}. "
             "Task may have crashed or been killed."
@@ -135,7 +137,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
         await sweep.save()
 
         # Load dataset and freeze snapshot
-        dataset = await EvaluationDataset.get(id=sweep.dataset_id).prefetch_related("cases")
+        dataset = await EvaluationDataset.get(id=sweep.dataset_id).prefetch_related(
+            "cases"
+        )
         cases = [
             {
                 "id": str(case.id),
@@ -150,7 +154,10 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
         snapshot_hash = dataset_snapshot_hash(cases)
 
         # Verify dataset revision and snapshot haven't drifted
-        if sweep.dataset_revision != dataset.revision or sweep.dataset_snapshot_hash != snapshot_hash:
+        if (
+            sweep.dataset_revision != dataset.revision
+            or sweep.dataset_snapshot_hash != snapshot_hash
+        ):
             sweep.status = EvaluationSweepStatus.FAILED.value
             sweep.error_message = "Dataset has changed since sweep was created"
             sweep.finished_at = datetime.now(timezone.utc)
@@ -165,7 +172,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
         baseline_config["search_mode"] = baseline_config.get("search_mode", "hybrid")
 
         space = normalize_space(sweep.space, baseline_config)
-        all_candidates = expand_space(space, baseline_config, sweep.metric_k, sweep.serving_top_k)
+        all_candidates = expand_space(
+            space, baseline_config, sweep.metric_k, sweep.serving_top_k
+        )
 
         # Check budget
         case_count = len(cases)
@@ -173,7 +182,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
         if run_count > 32:
             sweep = await EvaluationSweep.get(id=sweep_uuid)
             sweep.status = EvaluationSweepStatus.FAILED.value
-            sweep.error_message = f"Parameter space too large: {run_count} runs exceeds limit of 32"
+            sweep.error_message = (
+                f"Parameter space too large: {run_count} runs exceeds limit of 32"
+            )
             sweep.finished_at = datetime.now(timezone.utc)
             await sweep.save()
 
@@ -220,7 +231,10 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 candidate_key=candidate_key,
             ).first()
 
-            if existing_run and existing_run.status == EvaluationRunStatus.COMPLETED.value:
+            if (
+                existing_run
+                and existing_run.status == EvaluationRunStatus.COMPLETED.value
+            ):
                 # Already completed, skip
                 sweep = await EvaluationSweep.get(id=sweep_uuid)
                 sweep.progress[stage_name]["completed"] += 1
@@ -273,7 +287,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 stages[stage_name] = []
 
             run = await EvaluationRun.get(id=run_id)
-            stages[stage_name].append((candidate_key, config, run.summary_metrics or {}))
+            stages[stage_name].append(
+                (candidate_key, config, run.summary_metrics or {})
+            )
 
         # Select recommendation from all completed runs
         all_run_tuples = []
@@ -297,7 +313,10 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 candidate_key=f"verification:{recommendation['candidate_key']}",
             ).first()
 
-            if existing_verification and existing_verification.status == EvaluationRunStatus.COMPLETED.value:
+            if (
+                existing_verification
+                and existing_verification.status == EvaluationRunStatus.COMPLETED.value
+            ):
                 verification_run_id = existing_verification.id
             else:
                 # Create verification run
@@ -347,7 +366,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 recommendation = None  # Verification failed to produce valid score
             else:
                 # Check if verification delta is within tolerance
-                verification_delta = verification_score - recommendation["baseline_value"]
+                verification_delta = (
+                    verification_score - recommendation["baseline_value"]
+                )
                 if abs(verification_delta - recommendation["delta"]) > 0.02:
                     recommendation = None  # Verification diverged too much
 
@@ -355,7 +376,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
                 guards = sweep.guards
                 if verification_run.summary_metrics:
                     error_count = verification_run.summary_metrics.get("error_count", 0)
-                    p95_latency = verification_run.summary_metrics.get("latency_p95_ms", 0)
+                    p95_latency = verification_run.summary_metrics.get(
+                        "latency_p95_ms", 0
+                    )
 
                     if error_count > guards.get("max_error_count", 0):
                         recommendation = None
@@ -379,7 +402,9 @@ async def orchestrate_sweep(self, sweep_id: str) -> dict:
             "status": sweep.status,
             "recommendation": recommendation,
             "best_run_id": str(sweep.best_run_id) if sweep.best_run_id else None,
-            "verification_run_id": str(verification_run_id) if verification_run_id else None,
+            "verification_run_id": str(verification_run_id)
+            if verification_run_id
+            else None,
         }
 
     except Exception as e:

@@ -148,7 +148,14 @@ class RunComparisonResponse(BaseModel):
 
 
 class EvaluationSweepCreate(BaseModel):
-    objective: Literal["chunk_recall", "chunk_mrr", "chunk_ndcg", "document_recall", "document_mrr", "document_ndcg"] = "chunk_ndcg"
+    objective: Literal[
+        "chunk_recall",
+        "chunk_mrr",
+        "chunk_ndcg",
+        "document_recall",
+        "document_mrr",
+        "document_ndcg",
+    ] = "chunk_ndcg"
     metric_k: int = Field(default=10, ge=1, le=100)
     serving_top_k: int = Field(default=10, ge=1, le=100)
     space: dict = Field(default_factory=dict)
@@ -193,4 +200,3 @@ class EvaluationSweepResponse(BaseModel):
     finished_at: datetime | None
 
     model_config = {"from_attributes": True}
-

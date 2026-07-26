@@ -554,7 +554,9 @@ async def compare_runs(
     }
 
     # Compare using service
-    from app.services.retrieval_evaluation_comparison import compare_runs as compare_runs_service
+    from app.services.retrieval_evaluation_comparison import (
+        compare_runs as compare_runs_service,
+    )
 
     result = compare_runs_service(baseline_dict, candidate_dict)
 
@@ -578,7 +580,9 @@ async def compare_runs(
 # ==================== Sweep APIs ====================
 
 
-async def _sweep(kb_id: UUID, dataset_id: UUID, sweep_id: UUID, user: User) -> EvaluationSweep:
+async def _sweep(
+    kb_id: UUID, dataset_id: UUID, sweep_id: UUID, user: User
+) -> EvaluationSweep:
     """Get sweep and verify access."""
     await check_kb_access(kb_id, user)
     sweep = await EvaluationSweep.filter(
@@ -674,7 +678,9 @@ async def create_sweep(
         }
 
     # Snapshot dataset
-    cases = await EvaluationCase.filter(dataset_id=dataset_id).order_by("created_at", "id")
+    cases = await EvaluationCase.filter(dataset_id=dataset_id).order_by(
+        "created_at", "id"
+    )
     from app.tasks.retrieval_tuning import dataset_snapshot_hash
 
     case_data = [
@@ -822,4 +828,3 @@ async def apply_sweep_recommendation(
             "baseline_config": sweep.baseline_config,
         }
     )
-

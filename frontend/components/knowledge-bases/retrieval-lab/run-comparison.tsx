@@ -14,7 +14,7 @@ interface RunComparisonProps {
   onCompare: (baselineId: string, candidateId: string) => Promise<RunComparison>
 }
 
-export function RunComparisonComponent({ runs, knowledgeBaseId, datasetId, onCompare }: RunComparisonProps) {
+export function RunComparisonComponent({ runs, knowledgeBaseId: _knowledgeBaseId, datasetId: _datasetId, onCompare }: RunComparisonProps) {
   const t = useTranslations('knowledgeBases')
   const [baselineId, setBaselineId] = React.useState<string>('')
   const [candidateId, setCandidateId] = React.useState<string>('')

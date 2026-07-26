@@ -154,7 +154,9 @@ class EvaluationSweep(models.Model):
         on_delete=fields.SET_NULL,
     )
     created_by_id: UUID | None
-    status = fields.CharField(max_length=20, default=EvaluationSweepStatus.PENDING.value)
+    status = fields.CharField(
+        max_length=20, default=EvaluationSweepStatus.PENDING.value
+    )
     objective = fields.CharField(max_length=50)
     metric_k = fields.IntField()
     serving_top_k = fields.IntField()
@@ -173,11 +175,13 @@ class EvaluationSweep(models.Model):
         on_delete=fields.SET_NULL,
     )
     best_run_id: UUID | None
-    verification_run: fields.ForeignKeyRelation[EvaluationRun] | None = fields.ForeignKeyField(
-        "models.EvaluationRun",
-        related_name="verification_for_sweeps",
-        null=True,
-        on_delete=fields.SET_NULL,
+    verification_run: fields.ForeignKeyRelation[EvaluationRun] | None = (
+        fields.ForeignKeyField(
+            "models.EvaluationRun",
+            related_name="verification_for_sweeps",
+            null=True,
+            on_delete=fields.SET_NULL,
+        )
     )
     verification_run_id: UUID | None
     stage = fields.CharField(max_length=50, null=True)

@@ -50,7 +50,11 @@ def normalize_space(
         seen = set()
         unique = []
         for candidate in user_candidates:
-            key = json.dumps(candidate, sort_keys=True) if isinstance(candidate, dict) else candidate
+            key = (
+                json.dumps(candidate, sort_keys=True)
+                if isinstance(candidate, dict)
+                else candidate
+            )
             if key not in seen:
                 seen.add(key)
                 unique.append(candidate)
@@ -61,7 +65,9 @@ def normalize_space(
 
 def candidate_key(stage: str, axis: str, value: Any) -> str:
     """Generate deterministic candidate key for idempotent child run creation."""
-    value_str = json.dumps(value, sort_keys=True) if isinstance(value, dict) else str(value)
+    value_str = (
+        json.dumps(value, sort_keys=True) if isinstance(value, dict) else str(value)
+    )
     return f"{stage}:{axis}={value_str}"
 
 
@@ -101,7 +107,11 @@ def expand_stage(
         elif axis == "rerank_score_threshold":
             if config.get("rerank_enabled"):
                 config["rerank_score_threshold"] = value
-                label = f"rerank_thresh={value}" if value is not None else "rerank_thresh=none"
+                label = (
+                    f"rerank_thresh={value}"
+                    if value is not None
+                    else "rerank_thresh=none"
+                )
             else:
                 continue  # Skip threshold candidates when rerank is off
         elif axis == "score_threshold":

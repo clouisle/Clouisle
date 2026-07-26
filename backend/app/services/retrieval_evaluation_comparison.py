@@ -103,7 +103,10 @@ def _check_comparability(baseline: dict, candidate: dict) -> tuple[bool, str | N
 
     if baseline_revision is not None and candidate_revision is not None:
         if baseline_revision != candidate_revision:
-            return False, f"Dataset revision mismatch: baseline={baseline_revision}, candidate={candidate_revision}"
+            return (
+                False,
+                f"Dataset revision mismatch: baseline={baseline_revision}, candidate={candidate_revision}",
+            )
 
     baseline_hash = baseline_version.get("dataset_snapshot_hash")
     candidate_hash = candidate_version.get("dataset_snapshot_hash")
@@ -118,7 +121,10 @@ def _check_comparability(baseline: dict, candidate: dict) -> tuple[bool, str | N
 
     if baseline_metric_k is not None and candidate_metric_k is not None:
         if baseline_metric_k != candidate_metric_k:
-            return False, f"Metric K mismatch: baseline={baseline_metric_k}, candidate={candidate_metric_k}"
+            return (
+                False,
+                f"Metric K mismatch: baseline={baseline_metric_k}, candidate={candidate_metric_k}",
+            )
 
     return True, None
 
@@ -141,7 +147,9 @@ def _compute_config_diff(baseline_config: dict, candidate_config: dict) -> dict:
     return diff
 
 
-def _compute_metric_deltas(baseline_metrics: dict, candidate_metrics: dict) -> dict[str, float]:
+def _compute_metric_deltas(
+    baseline_metrics: dict, candidate_metrics: dict
+) -> dict[str, float]:
     """Compute delta for each metric."""
     deltas = {}
 
@@ -235,13 +243,15 @@ def _compute_case_deltas(
             outcome = "unchanged"
             unchanged += 1
 
-        case_deltas.append({
-            "case_id": case_key,
-            "query": baseline_result.get("case_snapshot", {}).get("query", ""),
-            "baseline_score": baseline_score,
-            "candidate_score": candidate_score,
-            "delta": delta,
-            "outcome": outcome,
-        })
+        case_deltas.append(
+            {
+                "case_id": case_key,
+                "query": baseline_result.get("case_snapshot", {}).get("query", ""),
+                "baseline_score": baseline_score,
+                "candidate_score": candidate_score,
+                "delta": delta,
+                "outcome": outcome,
+            }
+        )
 
     return case_deltas, improved, unchanged, regressed, unpaired

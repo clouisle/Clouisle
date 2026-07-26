@@ -135,8 +135,7 @@ def replay_config(
     # Apply dense score threshold
     if score_threshold > 0:
         dense_truncated = [
-            r for r in dense_truncated
-            if r.get("dense_score", 0) >= score_threshold
+            r for r in dense_truncated if r.get("dense_score", 0) >= score_threshold
         ]
 
     # Fusion based on search_mode
@@ -152,7 +151,7 @@ def replay_config(
             lexical_weight=lexical_weight,
             k=rrf_k,
         )
-        fused = fused[:rerank_candidate_k if rerank_enabled else top_k]
+        fused = fused[: rerank_candidate_k if rerank_enabled else top_k]
 
     # Rerank from cache
     if rerank_enabled and rerank_cache:
@@ -175,7 +174,8 @@ def replay_config(
         # Apply rerank score threshold
         if rerank_score_threshold is not None:
             fused_with_rerank = [
-                r for r in fused_with_rerank
+                r
+                for r in fused_with_rerank
                 if r.get("rerank_score", 0) >= rerank_score_threshold
             ]
 
