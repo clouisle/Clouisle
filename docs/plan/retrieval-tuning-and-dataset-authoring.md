@@ -85,7 +85,7 @@ KnowledgeBase
 | S5 | `score_threshold` | 0, 0.2, 0.35 | 3 |
 | — | 验证 | 推荐配置走生产路径 | 1 |
 
-合计 **≤ 19 个 Run**（和 = 17，非积 = 405）。参数空间可在前端编辑；每轴候选集去重后为空则跳过该阶段。
+合计 **≤ 19 个 Run**（基线 1 + 候选最多 17 + 验证 1，非积 = 405）。参数空间可在前端编辑；每轴候选集去重后为空则跳过该阶段。
 
 **为什么这个顺序**：权重与 `rrf_k` 决定融合排序；rerank 在融合结果之上重排；两个 threshold 是**截断**，只有在排序确定后调才有意义。反过来调（先调阈值）会得到被后续阶段推翻的局部解。
 
@@ -173,12 +173,12 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 
 ## 实施计划
 
-### 阶段 1：设计文档与索引
+### 阶段 1：设计文档与索引 ✅
 
 - **修改文件**：`docs/plan/retrieval-tuning-and-dataset-authoring.md`（本文档）、`docs/IMPLEMENTATION_PLAN.md`
 - **验证**：文档链接可达，索引条目与阶段一致。
 
-### 阶段 2：指标正确性 —— 排除无标注用例污染均值
+### 阶段 2：指标正确性 —— 排除无标注用例污染均值 ✅
 
 - **修改文件**：`backend/app/services/retrieval_evaluation.py`、`backend/app/tasks/retrieval_evaluation.py`、`backend/tests/services/test_retrieval_evaluation.py`
 - **具体逻辑**：
@@ -193,12 +193,14 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 - **修改文件**：`backend/app/schemas/knowledge_base.py`、`backend/app/services/retrieval.py`、`backend/app/core/init_data.py`、`backend/app/api/v1/endpoints/knowledge_bases.py`、`frontend/lib/api/knowledge-bases.ts`
 - **具体逻辑**：
   - `KnowledgeBaseSettings` 增加带校验的可选字段：`search_mode: Literal["vector","fulltext","hybrid"] | None`、`top_k: int | None (1..100)`、`score_threshold: float | None (0..1)`、`dense_weight: float | None (≥0)`、`lexical_weight: float | None (≥0)`、`rrf_k: int | None (1..1000)`。全部 `None` = 沿用调用方/系统默认，**行为向后兼容**。
-  - 构造 `RetrievalTarget` 的位置（`chat_rag` / `chat_tools` / `workflow/executors/knowledge.py` / AgentService）在调用方未显式指定时，用 KB settings 填充 target 级覆盖。现有 `target.search_mode or request.search_mode`、`target.top_k or request.top_k` 优先级链天然支持，改动面小。
-  - `settings` 为 `dict` 存储，无需 DDL；若为清晰起见不加列，则本阶段无迁移。
+  - `search_mode / top_k / score_threshold` 保持 target 级优先级：调用方显式 target 覆盖 > KB 默认 > request > 系统默认。
+  - `dense_weight / lexical_weight / rrf_k` 目前是 request 全局参数，不能从多 KB 中任取一个设置。统一解析为：调用方显式 request 覆盖 > 单 KB 请求的 KB 默认 > 系统默认；多 KB 请求未显式指定时继续使用系统默认，避免顺序依赖。
+  - 在 `retrieval.py` 集中解析 effective config，各调用方只携带 KB defaults，不复制 settings 字段读取；直接搜索和评测运行继续传完整显式配置。
+  - `settings` 为 `dict` 存储，无需 DDL。
   - 前端 `KnowledgeBaseSettings` 接口同步；顺带移除已随「retrieval-failure-handling 阶段 10」下线的 `rerank_fail_open`（前端接口仍留有该字段）。
 - **验证**：(a) 未设置 KB 默认值时，所有现有检索路径行为逐字节不变（回归现有 `test_retrieval.py`）；(b) 设置 KB 默认 `search_mode=fulltext` 后，AUTO/workflow 检索确实走 fulltext；(c) 调用方显式传参时**覆盖** KB 默认（优先级测试）。
 
-### 阶段 4：用例增量 CRUD、导出、真实模板
+### 阶段 4：用例增量 CRUD 与导出 ✅
 
 - **修改文件**：`backend/app/api/v1/endpoints/retrieval_evaluations.py`、`backend/app/services/retrieval_evaluation_store.py`、`backend/app/schemas/retrieval_evaluation.py`、`frontend/lib/api/knowledge-bases.ts`
 - **具体逻辑**：
@@ -210,9 +212,9 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
 
 ### 阶段 5：Retrieval Lab 组件拆分（无行为变更）
 
-- **修改文件**：`frontend/components/knowledge-bases/retrieval-lab.tsx`（1014 行）拆为 `retrieval-lab/index.tsx`、`retrieval-lab/shared.ts`（`Config`/`DEFAULT_CONFIG`/`runConfig`/`formatScore`/`Highlight`/`AuthenticatedMarkdownImage`）、`retrieval-lab/batch-evaluation.tsx`
-- **具体逻辑**：纯搬迁 + 导出，不改任何行为。后续三个阶段各自新增文件，避免单文件继续膨胀到 2000+ 行。
-- **验证**：现有 `retrieval-lab.test.tsx`（427 行）**零修改**全部通过；`bun run lint`、`bun run build` 通过。顺带修两个已发现缺陷：
+- **修改文件**：`frontend/components/knowledge-bases/retrieval-lab.tsx`（当前 1021 行）拆为 `retrieval-lab/index.tsx`、`retrieval-lab/types.ts`、`retrieval-lab/config.ts`、`retrieval-lab/result-list.tsx`、`retrieval-lab/config-panel.tsx`、`retrieval-lab/markdown-content.tsx`、`retrieval-lab/batch-evaluation.tsx`
+- **具体逻辑**：先做纯搬迁 + 导出，不改任何行为；小缺陷和 API 接线分别提交。后续功能进入独立文件，避免单文件继续膨胀到 2000+ 行。
+- **验证**：保留现有 `retrieval-lab.test.tsx` 的全部行为断言（允许仅为模块/API mock 适配做机械调整）；`bun run lint`、`bun run build` 通过。独立修复两个已发现缺陷：
   - 首条结果自动展开失效——`runSearch` 存入的是裸 `chunk_id`，渲染侧判断 `${side}:${chunk_id}`，键不匹配；
   - `downloadTemplate('csv')` 无 UI 入口（阶段 4 已用"导出"替代，此处删除死分支）。
 
@@ -247,7 +249,7 @@ objective ∈ { chunk_ndcg | chunk_recall | chunk_mrr | document_ndcg | document
   - 所有面向用户的报错用 `BusinessError` + `msg_key`，en/zh 两份 `.po` 同步。
 - **验证**：(a) `expand_space` 默认空间产出 17 个配置且各配置 `top_k ≥ metric_k`（纯函数单测）；(b) 不满足改进门槛时 `select_recommendation` 返回基线；(c) 超预算配置被排除但仍出现在结果列表；(d) 活跃 sweep 期间数据集变更被拒绝；(e) `apply` 缺少 `update` 权限返回 403。
 
-### 阶段 9：调优执行器 —— replay + live + 验证
+### 阶段 9：调优执行器 —— 先 live 闭环，后 replay 加速
 
 - **修改文件**：`backend/app/services/retrieval_replay.py`（新增）、`backend/app/tasks/retrieval_tuning.py`（新增）、`backend/app/tasks/retrieval_evaluation.py`
 - **具体逻辑**：
