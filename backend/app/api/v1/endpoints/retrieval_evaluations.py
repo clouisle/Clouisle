@@ -131,9 +131,16 @@ async def _run_data(run: EvaluationRun) -> dict[str, Any]:
         "version_snapshot": run.version_snapshot,
         "summary_metrics": run.summary_metrics,
         "error_message": run.error_message,
+        "metric_k": run.metric_k,
         "created_at": run.created_at,
         "started_at": run.started_at,
         "finished_at": run.finished_at,
+        "sweep_id": run.sweep_id,
+        "stage": run.stage,
+        "candidate_key": run.candidate_key,
+        "label": run.label,
+        "dataset_revision": run.dataset_revision,
+        "dataset_snapshot_hash": run.dataset_snapshot_hash,
         "case_results": [
             {
                 "id": result.id,
@@ -376,10 +383,17 @@ async def start_run(
     response_model=Response[list[dict]],
 )
 async def list_runs(
-    kb_id: UUID, dataset_id: UUID, current_user: User = Depends(require_kb_evaluate)
+    kb_id: UUID,
+    dataset_id: UUID,
+    sweep_id: UUID | None = None,
+    current_user: User = Depends(require_kb_evaluate),
 ) -> Any:
+    """List evaluation runs for a dataset, optionally filtered by sweep."""
     dataset = await _dataset(kb_id, dataset_id, current_user)
-    runs = await EvaluationRun.filter(dataset_id=dataset.id).order_by("-created_at")
+    query = EvaluationRun.filter(dataset_id=dataset.id)
+    if sweep_id is not None:
+        query = query.filter(sweep_id=sweep_id)
+    runs = await query.order_by("-created_at")
     return success(data=[await _run_data(run) for run in runs])
 
 
