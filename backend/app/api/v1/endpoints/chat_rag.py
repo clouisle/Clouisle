@@ -139,6 +139,7 @@ async def perform_rag_retrieval(
             status=association.knowledge_base.status,
             embedding_model_id=association.knowledge_base.embedding_model_id,
             rerank_model_id=association.knowledge_base.rerank_model_id,
+            settings=association.knowledge_base.settings,
             search_mode=association.search_mode,
             top_k=association.retrieval_top_k,
             score_threshold=association.score_threshold,

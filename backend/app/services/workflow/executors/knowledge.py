@@ -111,6 +111,7 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
                             status=kb.status,
                             embedding_model_id=kb.embedding_model_id,
                             rerank_model_id=kb.rerank_model_id,
+                            settings=kb.settings,
                         ),
                     ),
                     search_mode=search_mode,

@@ -2208,6 +2208,7 @@ async def search_knowledge_base(
                         embedding_model_id=kb.embedding_model_id,
                         rerank_model_id=kb.rerank_model_id,
                         embedding_dimension=kb.embedding_dimension,
+                        settings=kb.settings,
                         document_ids=(
                             frozenset(search_in.filter_doc_ids)
                             if search_in.filter_doc_ids

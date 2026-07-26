@@ -64,6 +64,7 @@ async def execute_tool_call(
                     status=link.knowledge_base.status,
                     embedding_model_id=link.knowledge_base.embedding_model_id,
                     rerank_model_id=link.knowledge_base.rerank_model_id,
+                    settings=link.knowledge_base.settings,
                     search_mode=link.search_mode,
                     score_threshold=link.score_threshold,
                 )
