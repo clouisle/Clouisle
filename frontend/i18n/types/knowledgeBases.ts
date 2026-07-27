@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-26T22:00:25.192Z
+// GENERATED — 2026-07-27T13:14:47.514Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -357,8 +357,12 @@ export type KnowledgeBasesMessages = {
     caseUpdated: string
     caseUpsertFailed: string
     datasetLoadFailed: string
+    applyPresetSuccess: string
     create: string
+    qualityMetrics: string
     markAllUnlabeledIrrelevant: string
+    candidatesLabel: string
+    judgedLabel: string
     unjudged: string
     positiveLabel: string
     negativeLabel: string

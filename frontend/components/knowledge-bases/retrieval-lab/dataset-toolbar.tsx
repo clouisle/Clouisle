@@ -77,16 +77,18 @@ export function DatasetToolbar({
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogTrigger>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-5"
-            disabled={!canEvaluate}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            {t('newDataset')}
-          </Button>
+        <DialogTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-5"
+              disabled={!canEvaluate}
+            />
+          }
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          {t('newDataset')}
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
