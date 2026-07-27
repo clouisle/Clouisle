@@ -501,7 +501,7 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
 
   /** Query-based case upsert: create if query not found, update if exactly one match */
   upsertEvaluationCaseByQuery: (kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase> =>
-    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/cases/upsert`, data),
+    api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/upsert-case`, data),
 
   startEvaluationRun: (kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun> =>
     api.post(`${prefix}/${kbId}/evaluation-datasets/${datasetId}/runs`, config),
