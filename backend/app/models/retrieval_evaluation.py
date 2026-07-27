@@ -173,6 +173,7 @@ class EvaluationSweep(models.Model):
         related_name="best_for_sweeps",
         null=True,
         on_delete=fields.SET_NULL,
+        db_constraint=False,  # Avoid cyclic FK constraint
     )
     best_run_id: UUID | None
     verification_run: fields.ForeignKeyRelation[EvaluationRun] | None = (
@@ -181,6 +182,7 @@ class EvaluationSweep(models.Model):
             related_name="verification_for_sweeps",
             null=True,
             on_delete=fields.SET_NULL,
+            db_constraint=False,  # Avoid cyclic FK constraint
         )
     )
     verification_run_id: UUID | None
