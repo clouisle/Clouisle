@@ -168,24 +168,9 @@ class EvaluationSweep(models.Model):
     dataset_snapshot_hash = fields.CharField(max_length=64)
     version_snapshot: dict[str, Any] = fields.JSONField(default=dict)
     recommendation: dict[str, Any] | None = fields.JSONField(null=True)
-    best_run: fields.ForeignKeyRelation[EvaluationRun] | None = fields.ForeignKeyField(
-        "models.EvaluationRun",
-        related_name="best_for_sweeps",
-        null=True,
-        on_delete=fields.SET_NULL,
-        db_constraint=False,  # Avoid cyclic FK constraint
-    )
-    best_run_id: UUID | None
-    verification_run: fields.ForeignKeyRelation[EvaluationRun] | None = (
-        fields.ForeignKeyField(
-            "models.EvaluationRun",
-            related_name="verification_for_sweeps",
-            null=True,
-            on_delete=fields.SET_NULL,
-            db_constraint=False,  # Avoid cyclic FK constraint
-        )
-    )
-    verification_run_id: UUID | None
+    # Keep these as scalar IDs to avoid a schema cycle with EvaluationRun.sweep.
+    best_run_id: UUID | None = fields.UUIDField(null=True)
+    verification_run_id: UUID | None = fields.UUIDField(null=True)
     stage = fields.CharField(max_length=50, null=True)
     progress: dict[str, Any] = fields.JSONField(default=dict)
     heartbeat_at = fields.DatetimeField(null=True)
