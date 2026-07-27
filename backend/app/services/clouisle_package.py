@@ -356,13 +356,14 @@ class ClouislePackageService:
         if check_team_membership:
             team = await ClouislePackageService._check_team_access(team_id, user)
         else:
-            team = await Team.filter(id=team_id).first()
-            if not team:
+            existing_team = await Team.filter(id=team_id).first()
+            if not existing_team:
                 raise BusinessError(
                     code=ResponseCode.TEAM_NOT_FOUND,
                     msg_key="team_not_found",
                     status_code=404,
                 )
+            team = existing_team
         manifest, resource_payload = ClouislePackageService._read_package(
             filename, content
         )
@@ -518,13 +519,14 @@ class ClouislePackageService:
                 session.team_id, user
             )
         else:
-            team = await Team.filter(id=session.team_id).first()
-            if not team:
+            existing_team = await Team.filter(id=session.team_id).first()
+            if not existing_team:
                 raise BusinessError(
                     code=ResponseCode.TEAM_NOT_FOUND,
                     msg_key="team_not_found",
                     status_code=404,
                 )
+            team = existing_team
         resource_type = ClouisleResourceType(session.resource_type)
         adapter = get_adapter(resource_type)
         if check_permission:

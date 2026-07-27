@@ -766,13 +766,14 @@ class KnowledgeBasePackageAdapter(ResourcePackageAdapter):
         if check_scope:
             kb = await check_kb_access(resource_id, user)
         else:
-            kb = await KnowledgeBase.filter(id=resource_id).first()
-            if not kb:
+            existing_kb = await KnowledgeBase.filter(id=resource_id).first()
+            if not existing_kb:
                 raise BusinessError(
                     code=ResponseCode.KB_NOT_FOUND,
                     msg_key="kb_not_found",
                     status_code=404,
                 )
+            kb = existing_kb
             if kb.created_by_id != user.id:
                 raise BusinessError(
                     code=ResponseCode.PERMISSION_DENIED,

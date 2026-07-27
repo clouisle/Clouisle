@@ -16,15 +16,6 @@ from .knowledge_base import (
     DocumentStatus,
     DocumentType,
 )
-from .retrieval_evaluation import (
-    EvaluationDataset,
-    EvaluationCase,
-    EvaluationRun,
-    EvaluationCaseResult,
-    EvaluationRunStatus,
-    EvaluationSweep,
-    EvaluationSweepStatus,
-)
 from .agent import (
     Agent,
     AgentKnowledgeBase,
@@ -111,13 +102,6 @@ __all__ = [
     "KnowledgeBaseStatus",
     "DocumentStatus",
     "DocumentType",
-    "EvaluationDataset",
-    "EvaluationCase",
-    "EvaluationRun",
-    "EvaluationCaseResult",
-    "EvaluationRunStatus",
-    "EvaluationSweep",
-    "EvaluationSweepStatus",
     "Agent",
     "AgentKnowledgeBase",
     "AgentStatus",

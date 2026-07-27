@@ -2,19 +2,26 @@
 
 ## Active
 
-- **retrieval-tuning-and-dataset-authoring** — In progress. Turn batch evaluation into dataset-driven parameter search: fix metric pollution from ungraded cases, make tuned parameters persistable to production, build evaluation datasets by grading retrieval results instead of hand-writing chunk UUIDs, and add bounded staged coordinate search with production-path verification. See `docs/plan/retrieval-tuning-and-dataset-authoring.md`
-  - [x] 1. Design docs and implementation index
-  - [x] 2. Metric correctness — exclude ungraded cases from ranking means
-  - [x] 3. Stage 1: Retrieval Lab API contract and independent permissions — canEvaluate/canUpdate props wired through dashboard and platform routes
-  - [x] 4. Stage 2: Dataset revision tracking and query fingerprinting — atomic mutations with optimistic locking, query-based upsert, and comprehensive tests
-  - [x] 5. Stage 3: Query-scoped visual labeling — query isolation prevents cross-query label pollution, versioned storage envelope with migration, and comprehensive test coverage
-  - [x] 6. Knowledge base retrieval defaults so tuned parameters can land in production
-  - [x] 7. Stage 4: Multi-strategy candidate pooling and dataset upsert — four-strategy candidate pool with provenance/rank preservation, dataset selection toolbar, create/update case promotion preview, quality diagnostics panel (judged/unjudged, positive/negative, per-strategy unique contributions, overlap, pool-relative coverage), bulk mark unlabeled as irrelevant, and bilingual i18n
-  - [x] 8. Stage 5: Dataset quality panel and run comparison — backend comparison service with immutable case pairing and comparability checks, frontend run-comparison component with metric deltas/case outcomes/config diff display, tabbed batch-evaluation UI separating execution from comparison, and bilingual i18n
-  - [ ] 9. Stage 6: Tuning backend — sweep model, API, staged coordinate search, budget guards
-  - [ ] 10. Stage 7: Tuning executor — Celery orchestration with cancel/recover and live verification
-  - [ ] 11. Stage 8: Tuning frontend — parameter space editor, comparison table, recommendation and apply
-  - [ ] 12. Stage 9: i18n, generated types, documentation, and full loop validation
+- **retrieval-lab-detail-panel** — Complete. Move compact Retrieval Lab results into a shared desktop resizable detail panel and mobile Sheet while preserving production retrieval diagnostics and A/B behavior. See `docs/plan/retrieval-lab-detail-panel.md`
+  - [x] 1. Replace inline expansion with side-aware result selection
+  - [x] 2. Add compact accessible result cards
+  - [x] 3. Add desktop resizable panel and mobile Sheet
+  - [x] 4. Update i18n and focused component tests
+  - [x] 5. Run frontend validation and record results
+
+- **backend-mypy-cleanup** — Complete. Resolved backend mypy errors through accurate ORM annotations, validated boundary narrowing, and local typing fixes without changing product behavior. See `docs/plan/backend-mypy-cleanup.md`
+  - [x] 1. Correct ORM and retrieval typing boundaries
+  - [x] 2. Correct Chat, branching, analytics, and admin filter typing
+  - [x] 3. Correct media, embed, settings, tools, and package boundaries
+  - [x] 4. Reach zero mypy errors and pass focused regression checks
+
+- **interactive-retrieval-only-cleanup** — Complete. Keep the Retrieval Lab as an immediate single-KB search and A/B inspection tool, and remove the non-production-representative dataset, labeling, batch evaluation, run comparison, and parameter sweep stack. See `docs/plan/interactive-retrieval-only-cleanup.md`
+  - [x] 1. Confirm production-path mismatch and define the removal boundary
+  - [x] 2. Remove frontend evaluation and dataset-authoring surfaces
+  - [x] 3. Remove evaluation API, models, services, tasks, and permissions
+  - [x] 4. Drop obsolete evaluation schema safely
+  - [x] 5. Remove i18n, tests, and documentation residue
+  - [x] 6. Verify interactive and production retrieval regressions
 
 - **retrieval-failure-handling** — In progress. Make first-use lexical retrieval safe, preserve sanitized per-channel diagnostics, return actionable localized retrieval guidance without exposing infrastructure details, remove rerank fail-open degradation, and add stage-aware error reporting. See `docs/plan/retrieval-failure-handling.md`
   - [x] 1. Design docs and implementation index

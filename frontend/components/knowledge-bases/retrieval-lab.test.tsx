@@ -6,17 +6,9 @@ const getItem = mock((key: string) => local.get(key) ?? null)
 const setItem = mock((key: string, value: string) => local.set(key, value))
 const removeItem = mock((key: string) => local.delete(key))
 const confirm = mock(() => true)
-let intervalCallback: (() => void) | undefined
-const setInterval = mock((callback: () => void) => { intervalCallback = callback; return 1 })
-const clearInterval = mock(() => { intervalCallback = undefined })
-const createObjectURL = mock(() => 'blob:evaluation')
-const revokeObjectURL = mock()
-const anchor = { href: '', download: '', click: mock() }
-const createElement = mock(() => anchor)
 Object.assign(globalThis, {
   localStorage: { getItem, setItem, removeItem },
-  window: { confirm, setInterval, clearInterval, location: { href: 'http://localhost' } },
-  document: { createElement },
+  window: { confirm, location: { href: 'http://localhost' } },
 })
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
@@ -26,11 +18,17 @@ mock.module('@/lib/utils', () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
   formatDuration: (ms: number) => `${Math.round(ms)}ms`,
 }))
-const ui = { Badge: 'badge', Button: 'button', Card: 'card', CardContent: 'card-content', CardHeader: 'card-header', Checkbox: 'checkbox', Input: 'input', Label: 'label', Select: 'select', SelectContent: 'select-content', SelectItem: 'option', SelectTrigger: 'select-trigger', SelectValue: 'select-value', Switch: 'switch', Textarea: 'textarea' }
-for (const path of ['@/components/ui/badge', '@/components/ui/button', '@/components/ui/card', '@/components/ui/checkbox', '@/components/ui/input', '@/components/ui/label', '@/components/ui/select', '@/components/ui/switch', '@/components/ui/textarea']) mock.module(path, () => ui)
+const ui = { Badge: 'badge', Button: 'button', Card: 'card', Input: 'input', Label: 'label', Select: 'select', SelectContent: 'select-content', SelectItem: 'option', SelectTrigger: 'select-trigger', SelectValue: 'select-value', Switch: 'switch' }
+for (const path of ['@/components/ui/badge', '@/components/ui/button', '@/components/ui/card', '@/components/ui/input', '@/components/ui/label', '@/components/ui/select', '@/components/ui/switch']) mock.module(path, () => ui)
+mock.module('@/components/ui/resizable', () => ({ ResizableHandle: 'resizable-handle', ResizablePanel: 'resizable-panel', ResizablePanelGroup: 'resizable-panel-group' }))
+mock.module('@/components/ui/sheet', () => ({ Sheet: 'sheet', SheetContent: 'sheet-content', SheetDescription: 'sheet-description', SheetHeader: 'sheet-header', SheetTitle: 'sheet-title' }))
+let mobile = false
+mock.module('@/hooks/use-mobile', () => ({ useIsMobile: () => mobile }))
+mock.module('@/components/ui/collapsible', () => ({ Collapsible: 'collapsible', CollapsibleContent: 'collapsible-content', CollapsibleTrigger: 'button' }))
 mock.module('@/components/ui/popover', () => ({ Popover: 'popover', PopoverContent: 'popover-content', PopoverTrigger: 'button' }))
+mock.module('@/components/ui/table', () => ({ Table: 'table', TableBody: 'tbody', TableCell: 'td', TableHead: 'th', TableHeader: 'thead', TableRow: 'tr' }))
 const Icon = () => null
-mock.module('lucide-react', () => ({ ArrowLeft: Icon, ChevronDown: Icon, ChevronUp: Icon, FileText: Icon, HelpCircle: Icon, Loader2: Icon, Search: Icon, Send: Icon, Settings2: Icon }))
+mock.module('lucide-react', () => ({ ArrowLeft: Icon, ChevronDown: Icon, ChevronUp: Icon, FileText: Icon, HelpCircle: Icon, Loader2: Icon, Search: Icon, Send: Icon, Settings2: Icon, X: Icon }))
 const toastError = mock()
 mock.module('sonner', () => ({ toast: { error: toastError } }))
 
@@ -39,7 +37,6 @@ const slots: Slot[] = []
 let cursor = 0
 let effects: Array<() => void> = []
 let RetrievalLab: typeof import('./retrieval-lab').RetrievalLab
-let BatchEvaluation: typeof import('./retrieval-lab').BatchEvaluation
 let ApiError: typeof import('@/lib/api/client').ApiError
 
 function sameDeps(a?: readonly unknown[], b?: readonly unknown[]) {
@@ -70,32 +67,13 @@ beforeAll(async () => {
     },
   }))
   ;({ ApiError } = await import('@/lib/api/client'))
-  ;({ RetrievalLab, BatchEvaluation } = await import('./retrieval-lab'))
+  ;({ RetrievalLab } = await import('./retrieval-lab'))
 })
 
 const getKnowledgeBase = mock()
 const search = mock()
 const updateKnowledgeBase = mock()
-const listEvaluationDatasets = mock()
-const getEvaluationDataset = mock()
-const createEvaluationDataset = mock()
-const updateEvaluationDataset = mock()
-const importEvaluationDataset = mock()
-const createEvaluationCase = mock()
-const updateEvaluationCase = mock()
-const deleteEvaluationCase = mock()
-const upsertEvaluationCaseByQuery = mock()
-const exportEvaluationDataset = mock()
-const startEvaluationRun = mock()
-const listEvaluationRuns = mock()
-const getEvaluationRun = mock()
-const cancelEvaluationRun = mock()
-const compareEvaluationRuns = mock()
-const createEvaluationSweep = mock()
-const getEvaluationSweep = mock()
-const cancelEvaluationSweep = mock()
-const applyEvaluationSweep = mock()
-const api = { getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, getEvaluationDataset, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, createEvaluationCase, updateEvaluationCase, deleteEvaluationCase, upsertEvaluationCaseByQuery, exportEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun, compareEvaluationRuns, createEvaluationSweep, getEvaluationSweep, cancelEvaluationSweep, applyEvaluationSweep }
+const api = { getKnowledgeBase, search, updateKnowledgeBase }
 const kb = { id: 'kb-1', name: 'Handbook', settings: { rerank_candidate_k: 12 }, rerank_model: { name: 'Reranker' } }
 const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
   query: 'policy', total: 1, diagnostics, timings: [{ stage: 'recall', latency_ms: 12 }, { stage: 'total', latency_ms: 20 }],
@@ -103,33 +81,16 @@ const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
 })
 
 beforeEach(() => {
-  slots.splice(0); effects = []; local.clear()
-  intervalCallback = undefined
-  for (const fn of [getKnowledgeBase, search, updateKnowledgeBase, listEvaluationDatasets, createEvaluationDataset, updateEvaluationDataset, importEvaluationDataset, createEvaluationCase, updateEvaluationCase, deleteEvaluationCase, exportEvaluationDataset, startEvaluationRun, listEvaluationRuns, getEvaluationRun, cancelEvaluationRun, getItem, setItem, removeItem, confirm, setInterval, clearInterval, toastError, createObjectURL, revokeObjectURL, createElement, anchor.click]) fn.mockClear()
-  Object.assign(URL, { createObjectURL, revokeObjectURL })
-  anchor.href = ''; anchor.download = ''
+  slots.splice(0); effects = []; local.clear(); mobile = false
+  for (const fn of [getKnowledgeBase, search, updateKnowledgeBase, getItem, setItem, removeItem, confirm, toastError]) fn.mockClear()
   getKnowledgeBase.mockResolvedValue(kb)
-  listEvaluationDatasets.mockResolvedValue([])
-  listEvaluationRuns.mockResolvedValue([])
   confirm.mockReturnValue(true)
 })
 afterEach(() => slots.forEach(slot => slot.cleanup?.()))
 
 function render(props: Partial<Parameters<typeof RetrievalLab>[0]> = {}) {
   cursor = 0
-  return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canEvaluate: true, canUpdate: true, ...props })
-}
-function renderBatch() {
-  cursor = 0
-  return BatchEvaluation({ knowledgeBaseId: 'kb-1', api, config: { search_mode: 'hybrid', top_k: 5, threshold: 0, dense_weight: 1, lexical_weight: 1, rrf_k: 60, rerank_enabled: true, rerank_candidate_k: 10, rerank_score_threshold: null }, hasRerankModel: true, canEvaluate: true })
-}
-async function flushBatch(tree = renderBatch()) {
-  while (effects.length) {
-    effects.splice(0).forEach(effect => effect())
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
-    tree = renderBatch()
-  }
-  return tree
+  return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canUpdate: true, ...props })
 }
 async function flush(tree = render()) {
   while (effects.length) {
@@ -139,17 +100,22 @@ async function flush(tree = render()) {
   }
   return tree
 }
+function renderDetail(node: ReactElement<Record<string, unknown>>) {
+  return typeof node.type === 'function' && ['ResultDetail', 'Highlight'].includes(node.type.name)
+    ? (node.type as (props: Record<string, unknown>) => ReactNode)(node.props)
+    : node.props.children as ReactNode
+}
 function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   if (Array.isArray(node)) return node.flatMap(elements)
   if (!node || typeof node !== 'object' || !('props' in node)) return []
   const element = node as ReactElement<Record<string, unknown> & { children?: ReactNode }>
-  return [element, ...elements(element.props.children)]
+  return [element, ...elements(renderDetail(element))]
 }
 function text(node: ReactNode): string {
   if (Array.isArray(node)) return node.map(text).join(' ')
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (!node || typeof node !== 'object' || !('props' in node)) return ''
-  return text((node as ReactElement<{ children?: ReactNode }>).props.children)
+  return text(renderDetail(node as ReactElement<Record<string, unknown>>))
 }
 function find(tree: ReactNode, type: string, predicate: (props: Record<string, unknown>) => boolean = () => true) {
   const found = elements(tree).find(element => element.type === type && predicate(element.props))
@@ -177,7 +143,9 @@ describe('RetrievalLab', () => {
   test('loads settings, discards malformed local state, and reports load failure', async () => {
     local.set('retrieval-lab:kb-1', '{bad')
     const tree = await flush()
-    expect(text(tree)).toContain('Handbook')
+    const backButton = find(tree, 'button', props => props['aria-label'] === 'retrievalLab')
+    expect(backButton.props.className).toContain('absolute left-3 top-3')
+    expect(elements(tree).filter(element => element.type === 'header')).toHaveLength(0)
     expect(removeItem).toHaveBeenCalledWith('retrieval-lab:kb-1')
     expect(find(tree, 'switch', props => props.disabled === undefined)).toBeTruthy()
 
@@ -200,6 +168,8 @@ describe('RetrievalLab', () => {
     expect(text(tree)).toContain('noResults')
     await searchButton(tree).props.onClick()
     tree = await settle()
+    find(tree, 'button', props => String(props['aria-label']).startsWith('selectResult')).props.onClick()
+    tree = render()
     expect(text(tree)).toContain('denseStage')
     expect(text(tree)).toContain('0.81')
     expect(text(tree)).toContain('dense: fallback')
@@ -242,26 +212,64 @@ describe('RetrievalLab', () => {
     expect(text(tree)).toContain('→')
   })
 
-  test('auto-expands A first, supports collapse and reopen, and falls back to B', async () => {
-    search.mockReset().mockResolvedValueOnce(response('a')).mockResolvedValueOnce(response('b'))
+  test('selects one side-aware desktop detail, hides chunk ids, closes, and falls back to B', async () => {
+    const a = response('shared')
+    a.results[0].content = 'Content from A'
+    const b = response('shared')
+    b.results[0].content = 'Content from B'
+    search.mockReset().mockResolvedValueOnce(a).mockResolvedValueOnce(b)
     let tree = await flush()
     find(tree, 'switch', props => props.id === 'compare-toggle').props.onCheckedChange(true)
     tree = await enterQuery(render())
     await searchButton(tree).props.onClick()
     tree = await settle()
-    expect(text(tree)).toContain('denseStage')
 
-    elements(tree).filter(element => element.type === 'card-header')[0].props.onClick()
+    expect(find(tree, 'resizable-panel-group')).toBeTruthy()
+    expect(elements(tree).filter(element => element.type === 'aside')).toHaveLength(0)
+    expect(elements(tree).filter(element => element.type === 'resizable-handle')).toHaveLength(0)
+    expect(text(tree)).not.toContain('shared')
+    expect(elements(tree).filter(element => element.type === 'button' && String(element.props['aria-label']).startsWith('selectResult')).every(element => element.props['aria-pressed'] === false)).toBe(true)
+
+    const resultButtons = elements(tree).filter(element => element.type === 'button' && String(element.props['aria-label']).startsWith('selectResult'))
+    resultButtons[1].props.onClick()
     tree = render()
-    expect(text(tree)).not.toContain('denseStage')
-    elements(tree).filter(element => element.type === 'card-header')[0].props.onClick()
+    const detailText = text(elements(tree).find(element => element.type === 'aside')!)
+    expect(detailText).toContain('Content from B')
+    expect(detailText).not.toContain('Content from A')
+
+    find(tree, 'button', props => props['aria-label'] === 'closeResultDetails').props.onClick()
     tree = render()
-    expect(text(tree)).toContain('denseStage')
+    expect(elements(tree).filter(element => element.type === 'aside')).toHaveLength(0)
 
     search.mockReset().mockRejectedValueOnce(new Error('A unavailable')).mockResolvedValueOnce(response('b-only'))
     await searchButton(tree).props.onClick()
     tree = await settle()
-    expect(text(tree)).toContain('denseStage')
+    expect(elements(tree).filter(element => element.type === 'aside')).toHaveLength(0)
+    expect(text(tree)).not.toContain('resultConfiguration:B')
+    expect(text(tree)).not.toContain('b-only')
+  })
+
+  test('uses a controlled full-width Sheet on mobile and clears selection when it closes', async () => {
+    mobile = true
+    search.mockResolvedValueOnce(response('mobile-chunk'))
+    let tree = await flush()
+    tree = await enterQuery(tree)
+    await searchButton(tree).props.onClick()
+    tree = await settle()
+
+    let sheet = find(tree, 'sheet')
+    expect(sheet.props.open).toBe(false)
+    find(tree, 'button', props => String(props['aria-label']).startsWith('selectResult')).props.onClick()
+    tree = render()
+    sheet = find(tree, 'sheet')
+    expect(sheet.props.open).toBe(true)
+    expect(find(tree, 'sheet-content').props.className).toContain('w-full')
+    expect(text(tree)).toContain('resultDetails')
+    sheet.props.onOpenChange(false)
+    tree = render()
+    expect(find(tree, 'sheet').props.open).toBe(false)
+    expect(elements(tree).filter(element => element.type === 'aside')).toHaveLength(0)
+    expect(text(tree)).not.toContain('mobile-chunk')
   })
 
   test('shows connectivity guidance only for request failures and ignores IME composition Enter', async () => {
@@ -335,19 +343,13 @@ describe('RetrievalLab', () => {
     expect(toastError.mock.calls.flat().join(' ')).not.toContain('internal URL')
   })
 
-  test('persists grades and presets, confirms updates, enforces permission, and exposes update failure', async () => {
-    search.mockResolvedValue(response())
+  test('persists presets, confirms updates, enforces permission, and exposes update failure', async () => {
     let tree = await flush()
-    tree = await enterQuery(tree)
-    await searchButton(tree).props.onClick()
-    tree = await settle()
-    button(tree, 'relevant').props.onClick()
-    expect(JSON.parse(local.get('retrieval-lab:kb-1')!).grades['chunk-1']).toBe('relevant')
-
     find(tree, 'input', props => props['aria-label'] === 'presetName').props.onChange({ target: { value: 'Fast' } })
     tree = render()
     button(tree, 'savePreset').props.onClick()
     tree = render()
+    expect(JSON.parse(local.get('retrieval-lab:kb-1')!).presets[0].name).toBe('Fast')
     find(tree, 'select', props => props['aria-label'] === 'presets').props.onValueChange('Fast')
     tree = render()
     updateKnowledgeBase.mockRejectedValueOnce(new Error('denied'))
@@ -370,159 +372,6 @@ describe('RetrievalLab', () => {
     expect(updateKnowledgeBase).toHaveBeenCalledTimes(calls)
   })
 
-  test('exposes an accessible batch evaluation tab without changing interactive defaults', async () => {
-    const tree = await flush()
-    expect(find(tree, 'button', props => props.role === 'tab' && props['aria-selected'] === true)).toBeTruthy()
-    expect(text(tree)).toContain('batchEvaluation')
-    expect(listEvaluationDatasets).not.toHaveBeenCalled()
-  })
-
-  test('creates and imports a dataset through the injected API', async () => {
-    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: 'Nightly', created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [] }
-    createEvaluationDataset.mockResolvedValue(dataset)
-    importEvaluationDataset.mockResolvedValue(dataset)
-    let tree = await flushBatch()
-    const inputs = elements(tree).filter(element => element.type === 'input')
-    inputs[0].props.onChange({ target: { value: ' Regression ' } })
-    inputs[1].props.onChange({ target: { value: ' Nightly ' } })
-    tree = renderBatch()
-    await button(tree, 'createDataset').props.onClick()
-    expect(createEvaluationDataset).toHaveBeenCalledWith('kb-1', { name: 'Regression', description: 'Nightly' })
-    tree = await flushBatch(renderBatch())
-    const file = new File(['query\npolicy'], 'cases.csv', { type: 'text/csv' })
-    await find(tree, 'input', props => props.type === 'file').props.onChange({ target: { files: [file] } })
-    expect(importEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', file)
-  })
-
-  test('validates cases and incrementally creates or updates while preserving ids', async () => {
-    const persisted = { id: 'case-1', query: 'policy', chunk_relevance: { 'chunk-1': 3 }, document_relevance: {}, expected_empty: false }
-    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [persisted] }
-    listEvaluationDatasets.mockResolvedValue([dataset])
-    updateEvaluationCase.mockResolvedValue({ ...persisted, query: 'updated policy' })
-    createEvaluationCase.mockResolvedValue({ id: 'case-2', query: 'new case', chunk_relevance: {}, document_relevance: {}, expected_empty: false })
-    let tree = await flushBatch()
-    await button(tree, 'saveCases').props.onClick()
-    expect(updateEvaluationCase).toHaveBeenCalledWith('kb-1', 'dataset-1', 'case-1', expect.objectContaining({ query: 'policy' }))
-    button(renderBatch(), 'addCase').props.onClick()
-    tree = renderBatch()
-    const blankQuery = elements(tree).filter(element => element.type === 'input').at(-1)
-    blankQuery!.props.onChange({ target: { value: 'new case' } })
-    tree = renderBatch()
-    await button(tree, 'saveCases').props.onClick()
-    expect(createEvaluationCase).toHaveBeenCalledWith('kb-1', 'dataset-1', expect.objectContaining({ query: 'new case' }))
-    expect(updateEvaluationDataset).not.toHaveBeenCalled()
-
-    const areas = elements(renderBatch()).filter(element => element.type === 'textarea')
-    areas[0].props.onChange({ target: { value: '{bad' } })
-    await button(renderBatch(), 'saveCases').props.onClick()
-    expect(text(renderBatch())).toContain('batchCaseError')
-  })
-
-  test('deletes persisted cases remotely, removes drafts locally, and preserves failed removals', async () => {
-    const persisted = { id: 'case-1', query: 'policy', chunk_relevance: {}, document_relevance: {}, expected_empty: false }
-    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [persisted] }
-    listEvaluationDatasets.mockResolvedValue([dataset])
-    let tree = await flushBatch()
-    button(tree, 'addCase').props.onClick()
-    tree = renderBatch()
-    const removeButtons = elements(tree).filter(element => element.type === 'button' && text(element) === 'removeCase')
-    await removeButtons[1].props.onClick()
-    expect(deleteEvaluationCase).not.toHaveBeenCalled()
-    expect(elements(renderBatch()).filter(element => element.type === 'button' && text(element) === 'removeCase')).toHaveLength(1)
-
-    deleteEvaluationCase.mockRejectedValueOnce(new Error('active run'))
-    await button(renderBatch(), 'removeCase').props.onClick()
-    expect(deleteEvaluationCase).toHaveBeenCalledWith('kb-1', 'dataset-1', 'case-1')
-    expect(elements(renderBatch()).filter(element => element.type === 'input').some(element => element.props.value === 'policy')).toBe(true)
-    expect(text(renderBatch())).toContain('batchCaseError')
-
-    deleteEvaluationCase.mockResolvedValueOnce(undefined)
-    await button(renderBatch(), 'removeCase').props.onClick()
-    expect(elements(renderBatch()).filter(element => element.type === 'input').some(element => element.props.value === 'policy')).toBe(false)
-  })
-
-  test('exports JSON and CSV with returned content and offers an id-free empty starter', async () => {
-    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: ' Regression / Set ', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases: [] }
-    listEvaluationDatasets.mockResolvedValue([dataset])
-    exportEvaluationDataset
-      .mockResolvedValueOnce({ format: 'json', content: '[{"query":"policy"}]' })
-      .mockResolvedValueOnce({ format: 'csv', content: 'query\npolicy' })
-    let tree = await flushBatch()
-    const starter = button(tree, 'downloadStarter')
-    starter.props.onClick()
-    const starterBlob = createObjectURL.mock.calls[0][0] as Blob
-    const starterContent = await starterBlob.text()
-    expect(starterBlob.type).toBe('application/json;charset=utf-8')
-    expect(starterContent).toContain('"chunk_relevance": {}')
-    expect(starterContent).not.toContain('chunk-id')
-    expect(starterContent).not.toContain('doc-id')
-    expect(anchor.download).toBe('evaluation-starter.json')
-
-    const exportButtons = elements(tree).filter(element => element.type === 'button' && element.props.onClick && text(element).includes('exportFormat'))
-    expect(exportButtons.length).toBeGreaterThanOrEqual(2)
-    await exportButtons[0].props.onClick()
-    expect(exportEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', 'json')
-    expect((createObjectURL.mock.calls.at(-1)?.[0] as Blob).type).toBe('application/json;charset=utf-8')
-    expect(anchor.download).toBe('Regression-Set.json')
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:evaluation')
-
-    tree = renderBatch()
-    const csvButton = elements(tree).find(element => element.type === 'button' && element.props.onClick && text(element).includes('exportFormat:CSV'))
-    await csvButton!.props.onClick()
-    expect(exportEvaluationDataset).toHaveBeenCalledWith('kb-1', 'dataset-1', 'csv')
-    expect((createObjectURL.mock.calls.at(-1)?.[0] as Blob).type).toBe('text/csv;charset=utf-8')
-    expect(anchor.download).toBe('Regression-Set.csv')
-    expect(text(tree)).toContain('importReplacementWarning')
-  })
-
-  test('lists, starts, polls, cancels, renders nested metrics, maps case ids, and filters failures', async () => {
-    const cases = [
-      { id: 'case-a', query: 'edited first query', chunk_relevance: {}, document_relevance: {}, expected_empty: false },
-      { id: 'case-b', query: 'edited failed query', chunk_relevance: {}, document_relevance: {}, expected_empty: false },
-    ]
-    const dataset = { id: 'dataset-1', knowledge_base_id: 'kb-1', name: 'Regression', description: null, created_by_id: null, created_at: '2026-01-01', updated_at: '2026-01-01', cases }
-    const running = { id: 'run-1', dataset_id: 'dataset-1', created_by_id: null, status: 'running', config_snapshot: {}, version_snapshot: {}, summary_metrics: { precision: { mean: 0.75, count: 2 } }, error_message: null, created_at: '2026-01-01', started_at: null, finished_at: null, case_results: [
-      { id: 'result-b', case_id: 'case-b', case_snapshot: { query: 'historical failed query', chunk_relevance: {}, document_relevance: {}, expected_empty: false }, candidates: [], metrics: { recall: { at_5: 0 } }, latency_ms: 20, error_message: 'timeout' },
-      { id: 'result-a', case_id: 'case-a', case_snapshot: { query: 'historical first query', chunk_relevance: {}, document_relevance: {}, expected_empty: false }, candidates: [], metrics: { recall: 1 }, latency_ms: 10, error_message: null },
-    ] }
-    listEvaluationDatasets.mockResolvedValue([dataset])
-    listEvaluationRuns.mockResolvedValue([running])
-    startEvaluationRun.mockResolvedValue(running)
-    getEvaluationRun.mockResolvedValue({ ...running, status: 'completed' })
-    cancelEvaluationRun.mockResolvedValue({ ...running, status: 'canceled' })
-    let tree = await flushBatch()
-    expect(listEvaluationRuns).toHaveBeenCalledWith('kb-1', 'dataset-1')
-    await button(tree, 'startRun').props.onClick()
-    expect(startEvaluationRun.mock.calls[0][2]).toMatchObject({ search_mode: 'hybrid', top_k: 5, score_threshold: 0, rerank_candidate_k: 10 })
-    tree = await flushBatch(renderBatch())
-    expect(setInterval).toHaveBeenCalled()
-    await intervalCallback?.()
-    expect(getEvaluationRun).toHaveBeenCalledWith('kb-1', 'dataset-1', 'run-1')
-    expect(text(tree)).toContain('{"mean":0.75,"count":2}')
-    expect(text(tree)).toContain('recall: {"at_5":0}')
-    expect(text(tree)).toContain('historical failed query')
-    expect(text(tree)).not.toContain('edited failed query')
-    expect(text(tree)).toContain('historical first query')
-    await button(tree, 'cancelRun').props.onClick()
-    expect(cancelEvaluationRun).toHaveBeenCalledWith('kb-1', 'dataset-1', 'run-1')
-    elements(tree).filter(element => element.type === 'checkbox').at(-1)!.props.onCheckedChange(true)
-    tree = renderBatch()
-    expect(text(tree)).toContain('historical failed query')
-    expect(text(tree)).not.toContain('historical first query')
-  })
-
-  test('reports dataset load, create, import, run, polling, and cancel failures', async () => {
-    listEvaluationDatasets.mockRejectedValueOnce(new Error('offline'))
-    expect(text(await flushBatch())).toContain('batchLoadError')
-
-    slots.splice(0); effects = []
-    createEvaluationDataset.mockRejectedValueOnce(new Error('create'))
-    const tree = await flushBatch()
-    find(tree, 'input', props => props.value === '').props.onChange({ target: { value: 'Broken' } })
-    await button(renderBatch(), 'createDataset').props.onClick()
-    expect(text(renderBatch())).toContain('batchSaveError')
-  })
-
   test('authenticated markdown image uses bearer token and rejects unsafe sources', async () => {
     search.mockResolvedValue(response())
     local.set('access_token', 'token-1')
@@ -533,7 +382,10 @@ describe('RetrievalLab', () => {
     await searchButton(tree).props.onClick()
     await settle()
     tree = render({ authenticatedMarkdown: true })
+    find(tree, 'button', props => String(props['aria-label']).startsWith('selectResult')).props.onClick()
+    tree = render({ authenticatedMarkdown: true })
     const markdown = find(tree, 'markdown-preview')
+    expect(find(tree, 'div', props => String(props.className).includes('[&_a.anchor]:!ml-0'))).toBeTruthy()
     const Image = (markdown.props.components as { img: (props: { src?: string; alt?: string }) => ReactElement }).img
     const imageElement = Image({ src: '/api/v1/knowledge-bases/kb-1/image', alt: 'diagram' })
 

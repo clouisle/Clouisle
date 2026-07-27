@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, replace
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from app.llm.token_counter import count_tokens
@@ -18,6 +18,15 @@ from app.services.vector_store import VectorStore
 SearchMode = Literal["vector", "fulltext", "hybrid"]
 _VALID_MODES = {"vector", "fulltext", "hybrid"}
 _MAX_CONCURRENCY = 8
+
+
+def validated_search_mode(value: str) -> SearchMode:
+    """Validate and narrow a persisted or API-provided search mode."""
+    if value not in _VALID_MODES:
+        raise ValueError(f"unsupported search mode: {value}")
+    return cast(SearchMode, value)
+
+
 _DEFAULT_SEARCH_MODE: SearchMode = "hybrid"
 _DEFAULT_TOP_K = 5
 _DEFAULT_SCORE_THRESHOLD = 0.0
@@ -78,8 +87,8 @@ class RetrievalTarget:
             and not self.document_ids <= self.allowed_document_ids
         ):
             raise ValueError("document_ids must be within allowed_document_ids")
-        if self.search_mode is not None and self.search_mode not in _VALID_MODES:
-            raise ValueError(f"unsupported search mode: {self.search_mode}")
+        if self.search_mode is not None:
+            validated_search_mode(self.search_mode)
         if self.top_k is not None and self.top_k < 1:
             raise ValueError("top_k must be positive")
 
@@ -104,8 +113,8 @@ class RetrievalRequest:
     def __post_init__(self) -> None:
         if not self.query.strip():
             raise ValueError("query must not be empty")
-        if self.search_mode is not None and self.search_mode not in _VALID_MODES:
-            raise ValueError(f"unsupported search mode: {self.search_mode}")
+        if self.search_mode is not None:
+            validated_search_mode(self.search_mode)
         if self.top_k is not None and self.top_k < 1:
             raise ValueError("top_k must be positive")
         if self.timeout_seconds <= 0:
@@ -388,7 +397,7 @@ async def _assemble_context(
         ):
             continue
 
-        candidates = [seed]
+        candidates: list[DocumentChunk | None] = [seed]
         if request.expand_adjacent:
             candidates.extend(
                 [

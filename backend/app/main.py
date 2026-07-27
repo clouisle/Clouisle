@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
         init_kb_rerank_fields,
         init_skills_table,
         init_clouisle_import_sessions_table,
-        init_retrieval_evaluation_tables,
+        drop_obsolete_retrieval_evaluation_tables,
     )
 
     try:
@@ -240,9 +240,9 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Clouisle import sessions table migration failed: {e}")
 
     try:
-        await init_retrieval_evaluation_tables()
+        await drop_obsolete_retrieval_evaluation_tables()
     except Exception as e:
-        logger.warning(f"Retrieval evaluation table migration failed: {e}")
+        logger.warning(f"Retrieval evaluation table cleanup failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()

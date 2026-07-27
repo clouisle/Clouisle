@@ -13,7 +13,6 @@ export function SearchTestClient({ knowledgeBaseId }: { knowledgeBaseId: string 
       knowledgeBaseId={knowledgeBaseId}
       api={adminKnowledgeBasesApi}
       backHref={`/knowledge-bases/${knowledgeBaseId}`}
-      canEvaluate={hasPermission('admin:knowledge-base:evaluate')}
       canUpdate={hasPermission('admin:knowledge-base:update')}
       onLoadError={() => router.push('/knowledge-bases')}
     />

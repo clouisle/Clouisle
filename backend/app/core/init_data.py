@@ -2225,172 +2225,28 @@ async def init_clouisle_import_sessions_table():
     logger.info("Clouisle import sessions table initialization complete")
 
 
-async def init_retrieval_evaluation_tables():
-    """Create persistent retrieval evaluation tables idempotently."""
+async def drop_obsolete_retrieval_evaluation_tables():
+    """Remove the retired persistent retrieval evaluation schema."""
     conn = Tortoise.get_connection("default")
-    statements = [
-        """
-        CREATE TABLE IF NOT EXISTS evaluation_datasets (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
-            name VARCHAR(100) NOT NULL,
-            description VARCHAR(500),
-            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT evaluation_datasets_kb_name_unique UNIQUE (knowledge_base_id, name)
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS evaluation_cases (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            dataset_id UUID NOT NULL REFERENCES evaluation_datasets(id) ON DELETE CASCADE,
-            query TEXT NOT NULL,
-            chunk_relevance JSONB NOT NULL DEFAULT '{}',
-            document_relevance JSONB NOT NULL DEFAULT '{}',
-            expected_empty BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS evaluation_runs (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            dataset_id UUID NOT NULL REFERENCES evaluation_datasets(id) ON DELETE CASCADE,
-            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            config_snapshot JSONB NOT NULL,
-            version_snapshot JSONB NOT NULL DEFAULT '{}',
-            summary_metrics JSONB,
-            task_id VARCHAR(100),
-            error_message TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            started_at TIMESTAMPTZ,
-            finished_at TIMESTAMPTZ
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS evaluation_case_results (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            run_id UUID NOT NULL REFERENCES evaluation_runs(id) ON DELETE CASCADE,
-            case_id UUID REFERENCES evaluation_cases(id) ON DELETE SET NULL,
-            case_snapshot JSONB NOT NULL DEFAULT '{}',
-            candidates JSONB NOT NULL DEFAULT '[]',
-            metrics JSONB NOT NULL DEFAULT '{}',
-            latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
-            error_message TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT evaluation_case_results_run_case_unique UNIQUE (run_id, case_id)
-        )
-        """,
-        "ALTER TABLE evaluation_case_results ADD COLUMN IF NOT EXISTS case_snapshot JSONB NOT NULL DEFAULT '{}'",
-        "ALTER TABLE evaluation_case_results ALTER COLUMN case_id DROP NOT NULL",
-        """
-        UPDATE evaluation_case_results result
-        SET case_snapshot = jsonb_build_object(
-            'id', case_row.id,
-            'query', case_row.query,
-            'chunk_relevance', case_row.chunk_relevance,
-            'document_relevance', case_row.document_relevance,
-            'expected_empty', case_row.expected_empty
-        )
-        FROM evaluation_cases case_row
-        WHERE result.case_id = case_row.id AND result.case_snapshot = '{}'
-        """,
+    await execute_startup_migration_query(
+        conn,
         """
         DO $$
-        DECLARE
-            constraint_name TEXT;
-            current_delete_rule TEXT;
         BEGIN
-            SELECT tc.constraint_name, rc.delete_rule
-            INTO constraint_name, current_delete_rule
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.constraint_column_usage ccu
-              ON ccu.constraint_name = tc.constraint_name
-            JOIN information_schema.referential_constraints rc
-              ON rc.constraint_name = tc.constraint_name
-            WHERE tc.table_name = 'evaluation_case_results'
-              AND tc.constraint_type = 'FOREIGN KEY'
-              AND ccu.table_name = 'evaluation_cases'
-            LIMIT 1;
-            IF current_delete_rule IS DISTINCT FROM 'SET NULL' THEN
-                IF constraint_name IS NOT NULL THEN
-                    EXECUTE format('ALTER TABLE evaluation_case_results DROP CONSTRAINT %I', constraint_name);
-                END IF;
-                ALTER TABLE evaluation_case_results
-                ADD CONSTRAINT evaluation_case_results_case_id_fkey
-                FOREIGN KEY (case_id) REFERENCES evaluation_cases(id) ON DELETE SET NULL;
-            END IF;
+            ALTER TABLE IF EXISTS evaluation_runs
+                DROP COLUMN IF EXISTS sweep_id;
+            ALTER TABLE IF EXISTS evaluation_sweeps
+                DROP COLUMN IF EXISTS best_run_id,
+                DROP COLUMN IF EXISTS verification_run_id;
+
+            DROP TABLE IF EXISTS evaluation_case_results;
+            DROP TABLE IF EXISTS evaluation_sweeps;
+            DROP TABLE IF EXISTS evaluation_runs;
+            DROP TABLE IF EXISTS evaluation_cases;
+            DROP TABLE IF EXISTS evaluation_datasets;
         END $$
         """,
-        "CREATE INDEX IF NOT EXISTS idx_evaluation_datasets_kb ON evaluation_datasets(knowledge_base_id)",
-        "CREATE INDEX IF NOT EXISTS idx_evaluation_runs_dataset_status ON evaluation_runs(dataset_id, status)",
-        "CREATE INDEX IF NOT EXISTS idx_evaluation_case_results_run ON evaluation_case_results(run_id)",
-        "ALTER TABLE evaluation_datasets ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE evaluation_cases ADD COLUMN IF NOT EXISTS query_fingerprint VARCHAR(64)",
-        "ALTER TABLE evaluation_cases ADD COLUMN IF NOT EXISTS labeling_metadata JSONB NOT NULL DEFAULT '{}'",
-        "ALTER TABLE evaluation_cases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_cases_dataset_fingerprint
-        ON evaluation_cases(dataset_id, query_fingerprint)
-        WHERE query_fingerprint IS NOT NULL
-        """,
-        # Sweep integration columns for evaluation_runs
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS sweep_id UUID REFERENCES evaluation_sweeps(id) ON DELETE SET NULL",
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS stage VARCHAR(50)",
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS candidate_key VARCHAR(100)",
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS label VARCHAR(100)",
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS metric_k INTEGER",
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS dataset_revision INTEGER",
-        "ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS dataset_snapshot_hash VARCHAR(64)",
-    ]
-    for statement in statements:
-        await execute_startup_migration_query(conn, statement)
-
-
-async def init_retrieval_tuning_tables():
-    """Create evaluation sweep tables idempotently."""
-    conn = Tortoise.get_connection("default")
-    statements = [
-        """
-        CREATE TABLE IF NOT EXISTS evaluation_sweeps (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            dataset_id UUID NOT NULL REFERENCES evaluation_datasets(id) ON DELETE CASCADE,
-            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            objective VARCHAR(50) NOT NULL,
-            metric_k INTEGER NOT NULL,
-            serving_top_k INTEGER NOT NULL,
-            space JSONB NOT NULL DEFAULT '{}',
-            guards JSONB NOT NULL DEFAULT '{}',
-            baseline_config JSONB NOT NULL,
-            baseline_config_fingerprint VARCHAR(64),
-            dataset_revision INTEGER NOT NULL,
-            dataset_snapshot_hash VARCHAR(64) NOT NULL,
-            version_snapshot JSONB NOT NULL DEFAULT '{}',
-            recommendation JSONB,
-            best_run_id UUID REFERENCES evaluation_runs(id) ON DELETE SET NULL,
-            verification_run_id UUID REFERENCES evaluation_runs(id) ON DELETE SET NULL,
-            stage VARCHAR(50),
-            progress JSONB NOT NULL DEFAULT '{}',
-            heartbeat_at TIMESTAMPTZ,
-            task_id VARCHAR(100),
-            error_message TEXT,
-            applied BOOLEAN NOT NULL DEFAULT FALSE,
-            applied_at TIMESTAMPTZ,
-            applied_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
-            applied_diff JSONB,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            started_at TIMESTAMPTZ,
-            finished_at TIMESTAMPTZ
-        )
-        """,
-        "CREATE INDEX IF NOT EXISTS idx_evaluation_sweeps_dataset_status ON evaluation_sweeps(dataset_id, status)",
-        "CREATE INDEX IF NOT EXISTS idx_evaluation_runs_sweep ON evaluation_runs(sweep_id)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_runs_sweep_candidate ON evaluation_runs(sweep_id, candidate_key) WHERE sweep_id IS NOT NULL AND candidate_key IS NOT NULL",
-    ]
-    for statement in statements:
-        await execute_startup_migration_query(conn, statement)
+    )
 
 
 async def init_db():
@@ -2437,14 +2293,9 @@ async def init_db():
         )
 
     try:
-        await init_retrieval_evaluation_tables()
+        await drop_obsolete_retrieval_evaluation_tables()
     except Exception as e:
-        logger.warning(f"Retrieval evaluation migration failed (may be first run): {e}")
-
-    try:
-        await init_retrieval_tuning_tables()
-    except Exception as e:
-        logger.warning(f"Retrieval tuning migration failed (may be first run): {e}")
+        logger.warning(f"Retrieval evaluation cleanup failed (may be first run): {e}")
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")
@@ -2507,7 +2358,6 @@ async def init_db():
         "admin:app:duplicate",
         "admin:knowledge-base:read",
         "admin:knowledge-base:test",
-        "admin:knowledge-base:evaluate",
         "admin:knowledge-base:create",
         "admin:knowledge-base:update",
         "admin:knowledge-base:delete",
@@ -2541,7 +2391,6 @@ async def init_db():
         "workflow:execute",
         "kb:read",
         "kb:test",
-        "kb:evaluate",
         "kb:create",
         "kb:update",
         "kb:delete",
@@ -2588,7 +2437,6 @@ async def init_db():
         "workflow:run",
         "kb:read",
         "kb:test",
-        "kb:evaluate",
         "kb:create",
         "kb:update",
         "kb:delete",
@@ -2631,7 +2479,6 @@ async def init_db():
         "workflow:run",
         "kb:read",
         "kb:test",
-        "kb:evaluate",
         "tool:read",
         "tool:execute",
         "skill:read",

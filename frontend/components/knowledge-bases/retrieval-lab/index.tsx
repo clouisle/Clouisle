@@ -5,29 +5,23 @@ import dynamic from 'next/dynamic'
 import { useTranslations } from 'next-intl'
 import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, HelpCircle, Loader2, Search, Send, Settings2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, HelpCircle, Loader2, Search, Send, Settings2, X } from 'lucide-react'
 import { ApiError } from '@/lib/api/client'
-import type { KnowledgeBase, SearchMode, SearchParams, SearchResponse, EvaluationDataset } from '@/lib/api'
+import type { KnowledgeBase, SearchMode, SearchParams, SearchResponse, SearchResult } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { cn, formatDuration } from '@/lib/utils'
-import { BatchEvaluation } from './batch-evaluation'
-import { ParameterSweep } from './parameter-sweep'
 import { type Config, type RetrievalApi, runConfig } from './shared'
-import { type Grade, type StorageEnvelope, getDraft, migrateStorage, setGrade as setGradeInDraft, setDraft, gradesToRelevance, computeDocumentRelevance } from './labeling'
-import { buildCandidatePool, defaultStrategies, type CandidateChunk } from './candidate-pool'
-import { DatasetToolbar, PromotionToolbar } from './dataset-toolbar'
-import { QualityPanel } from './quality-panel'
-
-export { BatchEvaluation } from './batch-evaluation'
-export { ParameterSweep } from './parameter-sweep'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
 type RetrievalFailure =
@@ -78,7 +72,6 @@ interface RetrievalLabProps {
   knowledgeBaseId: string
   api: RetrievalApi
   backHref: string
-  canEvaluate: boolean
   canUpdate: boolean
   authenticatedMarkdown?: boolean
   onLoadError?: () => void
@@ -181,9 +174,70 @@ function configParams(query: string, config: Config, hasRerankModel: boolean): S
   }
 }
 
-export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
+type ResultSelection = { side: 'a' | 'b'; chunkId: string }
+type Translate = (key: string, values?: Record<string, string | number>) => string
+
+function ResultDetail({ result, side, rank, query, authenticatedMarkdown, resolvedTheme, t, onClose }: {
+  result: SearchResult
+  side: 'a' | 'b'
+  rank: number
+  query: string
+  authenticatedMarkdown: boolean
+  resolvedTheme: string | undefined
+  t: Translate
+  onClose: () => void
+}) {
+  const stageLabel = translateSearchType(result.search_type, t) || translateFinalScoreStage(result.final_score_stage, t) || t('unknownChannel')
+  return <aside id="retrieval-result-detail" aria-labelledby="retrieval-result-detail-title" className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="outline">{t('resultConfiguration', { side: side.toUpperCase() })}</Badge>
+          <span>#{rank}</span>
+          <Badge>{stageLabel}</Badge>
+        </div>
+        <h2 id="retrieval-result-detail-title" className="truncate text-sm font-semibold">{result.document_name}</h2>
+      </div>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={t('closeResultDetails')} onClick={onClose}>
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+    <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="space-y-4">
+        <div className="grid gap-2 text-[11px] sm:grid-cols-2">
+          {[
+            [t('denseStage'), result.dense_score, result.dense_rank, t('denseStageHelp')],
+            [t('lexicalStage'), result.lexical_score, result.lexical_rank, t('lexicalStageHelp')],
+            [t('fusionStage'), result.fusion_score, result.fusion_rank, t('fusionStageHelp')],
+            [t('rerankStage'), result.rerank_score, result.rerank_rank, t('rerankStageHelp')],
+          ].map(([label, score, stageRank, help]) => <span key={String(label)} className="flex items-center gap-1">
+            {String(label)}: {formatScore(score as number | null | undefined)} / #{stageRank ?? '—'}
+            <Tooltip><TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger><TooltipContent>{String(help)}</TooltipContent></Tooltip>
+          </span>)}
+          <span className="flex items-center gap-1 sm:col-span-2">
+            {t('finalStage')}: {formatScore(result.score)} ({translateFinalScoreStage(result.final_score_stage, t)})
+            <Tooltip><TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger><TooltipContent>{t('finalStageHelp')}</TooltipContent></Tooltip>
+          </span>
+        </div>
+        <div className="min-w-0 rounded-md border bg-muted/20 p-4" data-color-mode={resolvedTheme === 'dark' ? 'dark' : 'light'}>
+          {authenticatedMarkdown ? (
+            <div className="w-full max-w-[75ch] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md [&_img]:object-contain [&_a.anchor]:!ml-0 [&_a]:break-words [&_code]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm [&_li]:text-sm [&_p]:text-sm [&_p]:leading-relaxed [&_pre]:overflow-x-auto [&_pre]:text-xs [&_table]:text-sm">
+              <MDPreview source={result.content} components={{ img: ({ src, alt }) => <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} /> }} />
+            </div>
+          ) : (
+            <p className="max-w-[75ch] whitespace-pre-wrap text-sm leading-relaxed"><Highlight text={result.content} query={query} /></p>
+          )}
+        </div>
+        {(result.degradation_reasons?.length || result.rerank_reason) && <p className="text-xs text-amber-700 dark:text-amber-300">{t('fallbackReasons')}: {[...(result.degradation_reasons ?? []).map(reason => `${reason.channel}: ${reason.error}`), result.rerank_reason].filter(Boolean).join('; ')}</p>}
+      </div>
+    </div>
+  </aside>
+}
+
+export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
   const t = useTranslations('knowledgeBases')
   const { resolvedTheme } = useTheme()
+  const isMobile = useIsMobile()
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [query, setQuery] = React.useState('')
@@ -196,17 +250,11 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
   const [updateError, setUpdateError] = React.useState(false)
   const [showConfig, setShowConfig] = React.useState(false)
   const [advanced, setAdvanced] = React.useState(false)
-  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
-  const [storage, setStorage] = React.useState<StorageEnvelope>({ version: 2, presets: [], drafts: {} })
+  const [selection, setSelection] = React.useState<ResultSelection | null>(null)
+  const [presets, setPresets] = React.useState<Array<{ name: string; config: Config }>>([])
   const [presetName, setPresetName] = React.useState('')
   const [selectedPreset, setSelectedPreset] = React.useState('')
-  const [batchMode, setBatchMode] = React.useState(false)
-  const [sweepMode, setSweepMode] = React.useState(false)
   const [submittedQuery, setSubmittedQuery] = React.useState('')
-  const [poolCandidates, setPoolCandidates] = React.useState<CandidateChunk[]>([])
-  const [poolDepth] = React.useState(10)
-  const [datasets, setDatasets] = React.useState<EvaluationDataset[]>([])
-  const [selectedDatasetId, setSelectedDatasetId] = React.useState<string | null>(null)
 
   const storageKey = `retrieval-lab:${knowledgeBaseId}`
   React.useEffect(() => {
@@ -225,27 +273,17 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
       })
       try {
         const local = JSON.parse(localStorage.getItem(storageKey) || '{}')
-        const migrated = migrateStorage(local)
-        setStorage(migrated ?? { version: 2, presets: [], drafts: {} })
+        setPresets(Array.isArray(local.presets) ? local.presets : [])
       } catch {
         localStorage.removeItem(storageKey)
       }
-      // Load datasets for promotion toolbar
-      return api.listEvaluationDatasets(knowledgeBaseId)
-    }).then(datasets => {
-      if (datasets) setDatasets(datasets)
     }).catch(() => onLoadError?.()).finally(() => setLoading(false))
   }, [api, knowledgeBaseId, onLoadError, storageKey])
 
-  const persist = (nextStorage: StorageEnvelope) => {
-    setStorage(nextStorage)
-    localStorage.setItem(storageKey, JSON.stringify(nextStorage))
+  const persistPresets = (nextPresets: Array<{ name: string; config: Config }>) => {
+    setPresets(nextPresets)
+    localStorage.setItem(storageKey, JSON.stringify({ presets: nextPresets }))
   }
-
-  // Current draft for the submitted query (not the live input text)
-  const currentDraft = getDraft(storage, submittedQuery)
-  const grades = currentDraft.grades
-  const presets = storage.presets
 
   const runSearch = async () => {
     const trimmed = query.trim()
@@ -253,16 +291,9 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     setSearching(true)
     setSearched(true)
     setResponses({})
-    setPoolCandidates([])
-    setSubmittedQuery(trimmed) // Capture submitted query for labeling isolation
+    setSelection(null)
+    setSubmittedQuery(trimmed)
     try {
-      // Build candidate pool with multi-strategy retrieval
-      const strategies = defaultStrategies(configA, Boolean(knowledgeBase?.rerank_model))
-      const poolResult = await buildCandidatePool(api, knowledgeBaseId, trimmed, strategies, poolDepth)
-
-      setPoolCandidates(poolResult.candidates)
-
-      // Also run single-strategy search for display (using configA)
       const [a, b] = await Promise.allSettled([
         api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model))),
         compare ? api.search(knowledgeBaseId, configParams(trimmed, configB, Boolean(knowledgeBase?.rerank_model))) : Promise.resolve(undefined),
@@ -272,15 +303,6 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
         b: b.status === 'fulfilled' ? b.value : undefined,
       }
       setResponses(next)
-
-      // Update draft with pool metadata
-      const judgedCount = Object.keys(currentDraft.grades).length
-      persist(setDraft(storage, trimmed, {
-        poolDepth,
-        poolStrategies: strategies.map(s => s.label),
-        candidateCount: poolResult.candidates.length,
-        judgedCount,
-      }))
 
       // Handle failures with stage-aware toast notifications
       if (a.status === 'rejected') {
@@ -295,15 +317,6 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
         toast.error('B: ' + t(retrievalErrorKey(failure, stage)))
       }
 
-      const firstA = next.a?.results[0]
-      const firstB = next.b?.results[0]
-      setExpanded(new Set(
-        firstA
-          ? [`a:${firstA.chunk_id}`]
-          : firstB
-            ? [`b:${firstB.chunk_id}`]
-            : [],
-      ))
     } finally {
       setSearching(false)
     }
@@ -323,7 +336,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     const nextPresets = [...presets.filter(preset => preset.name !== name), { name, config: configA }]
     setSelectedPreset(name)
     setPresetName('')
-    persist({ ...storage, presets: nextPresets })
+    persistPresets(nextPresets)
   }
 
   const applyPreset = async () => {
@@ -351,46 +364,6 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     }
   }
 
-  const setGrade = (chunkId: string, grade: Grade) => {
-    if (!submittedQuery) return
-    const nextStorage = setGradeInDraft(storage, submittedQuery, chunkId, grade)
-    const draft = getDraft(nextStorage, submittedQuery)
-    const judgedCount = Object.keys(draft.grades).length
-    persist(setDraft(nextStorage, submittedQuery, { judgedCount }))
-  }
-
-  const refreshDatasets = () => {
-    api.listEvaluationDatasets(knowledgeBaseId)
-      .then(setDatasets)
-      .catch(() => toast.error(t('datasetLoadFailed')))
-  }
-
-  const handlePromotionSuccess = () => {
-    refreshDatasets()
-  }
-
-  const handleExpectedEmptyChange = (value: boolean) => {
-    if (!submittedQuery) return
-    persist(setDraft(storage, submittedQuery, { expectedEmpty: value }))
-  }
-
-  const handleBulkMarkIrrelevant = () => {
-    if (!submittedQuery) return
-    const unlabeledChunkIds = poolCandidates
-      .filter(c => currentDraft.grades[c.chunk_id] === undefined)
-      .map(c => c.chunk_id)
-
-    if (unlabeledChunkIds.length === 0) return
-
-    let nextStorage = storage
-    for (const chunkId of unlabeledChunkIds) {
-      nextStorage = setGradeInDraft(nextStorage, submittedQuery, chunkId, 'irrelevant')
-    }
-    const draft = getDraft(nextStorage, submittedQuery)
-    const judgedCount = Object.keys(draft.grades).length
-    persist(setDraft(nextStorage, submittedQuery, { judgedCount }))
-  }
-
   if (loading) return <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
 
   const aRanks = new Map(responses.a?.results.map((result, index) => [result.chunk_id, index + 1]))
@@ -398,6 +371,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
   const overlap = responses.a && responses.b
     ? responses.a.results.filter(result => bRanks.has(result.chunk_id)).length
     : 0
+
+  const selectedResponse = selection ? responses[selection.side] : undefined
+  const selectedIndex = selection ? selectedResponse?.results.findIndex(result => result.chunk_id === selection.chunkId) ?? -1 : -1
+  const selectedResult = selectedIndex >= 0 ? selectedResponse?.results[selectedIndex] : undefined
 
   const renderResults = (response: SearchResponse | undefined, side: 'a' | 'b') => {
     if (!response) return null
@@ -408,98 +385,63 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
         <strong>{t('diagnostics')}</strong>: {response.diagnostics.map(item => `${item.code}${item.stage ? ` (${item.stage})` : ''}${item.latency_ms !== undefined ? ` ${formatDuration(item.latency_ms)}` : ''}${item.detail ? ` — ${item.detail}` : ''}`).join('; ')}
       </div>}
       {response.results.map((result, index) => {
-        const key = `${side}:${result.chunk_id}`
-        const open = expanded.has(key)
+        const selected = selection?.side === side && selection.chunkId === result.chunk_id
         const movement = otherRanks.get(result.chunk_id)
-        return <Card key={result.chunk_id} className="mb-3 last:mb-0 py-0">
-          <CardHeader className="cursor-pointer p-3" onClick={() => setExpanded(current => {
-            const next = new Set(current)
-            if (next.has(key)) next.delete(key)
-            else next.add(key)
-            return next
-          })}>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="flex min-w-0 items-center gap-2">
-                <Badge variant="outline">#{index + 1}</Badge>
-                <FileText className="h-3.5 w-3.5" />
-                <strong className="truncate">{result.document_name}</strong>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={e => {
-                        e.stopPropagation()
-                        navigator.clipboard.writeText(result.chunk_id)
-                        toast.success(t('chunkIdCopied'))
-                      }}
-                    >
-                      <code className="text-[10px]">{result.chunk_id.slice(0, 8)}</code>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('clickToCopyChunkId')}</TooltipContent>
-                </Tooltip>
-              </span>
-              <span className="flex items-center gap-2"><Badge>{translateSearchType(result.search_type, t) || translateFinalScoreStage(result.final_score_stage, t) || t('unknownChannel')}</Badge>{movement && <span>{movement - (index + 1) > 0 ? '↑' : movement - (index + 1) < 0 ? '↓' : '→'} {Math.abs(movement - (index + 1))}</span>}{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span>
-            </div>
-            {!open && <p className="line-clamp-2 text-xs text-muted-foreground"><Highlight text={result.content} query={submittedQuery} /></p>}
-          </CardHeader>
-          {open && <CardContent className="space-y-3 px-3 pb-3">
-            <div className="grid grid-cols-2 gap-1 text-[11px] md:grid-cols-5">
-              <span className="flex items-center gap-1">
-                {t('denseStage')}: {formatScore(result.dense_score)} / #{result.dense_rank ?? '—'}
-                <Tooltip>
-                  <TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
-                  <TooltipContent>{t('denseStageHelp')}</TooltipContent>
-                </Tooltip>
-              </span>
-              <span className="flex items-center gap-1">
-                {t('lexicalStage')}: {formatScore(result.lexical_score)} / #{result.lexical_rank ?? '—'}
-                <Tooltip>
-                  <TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
-                  <TooltipContent>{t('lexicalStageHelp')}</TooltipContent>
-                </Tooltip>
-              </span>
-              <span className="flex items-center gap-1">
-                {t('fusionStage')}: {formatScore(result.fusion_score)} / #{result.fusion_rank ?? '—'}
-                <Tooltip>
-                  <TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
-                  <TooltipContent>{t('fusionStageHelp')}</TooltipContent>
-                </Tooltip>
-              </span>
-              <span className="flex items-center gap-1">
-                {t('rerankStage')}: {formatScore(result.rerank_score)} / #{result.rerank_rank ?? '—'}
-                <Tooltip>
-                  <TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
-                  <TooltipContent>{t('rerankStageHelp')}</TooltipContent>
-                </Tooltip>
-              </span>
-              <span className="flex items-center gap-1">
-                {t('finalStage')}: {formatScore(result.score)} ({translateFinalScoreStage(result.final_score_stage, t)})
-                <Tooltip>
-                  <TooltipTrigger><HelpCircle className="h-3 w-3 text-muted-foreground" /></TooltipTrigger>
-                  <TooltipContent>{t('finalStageHelp')}</TooltipContent>
-                </Tooltip>
-              </span>
-            </div>
-            <div className="rounded border-2 border-orange-500/30 py-4 pr-4 pl-6" data-color-mode={resolvedTheme === 'dark' ? 'dark' : 'light'}>
-              {authenticatedMarkdown ? (
-                <div className="w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_img]:max-w-full [&_img]:h-auto [&_img]:max-h-80 [&_img]:rounded-md [&_img]:object-contain [&_img]:block [&_img]:my-3 [&_a]:break-words [&_p]:text-sm [&_p]:leading-relaxed [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm [&_li]:text-sm [&_pre]:text-xs [&_code]:text-xs [&_table]:text-sm">
-                  <MDPreview source={result.content} components={{ img: ({ src, alt }) => <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} /> }} />
-                </div>
-              ) : (
-                <p className="whitespace-pre-wrap text-xs"><Highlight text={result.content} query={submittedQuery} /></p>
-              )}
-            </div>
-            {(result.degradation_reasons?.length || result.rerank_reason) && <p className="text-xs text-amber-700 dark:text-amber-300">{t('fallbackReasons')}: {[...(result.degradation_reasons ?? []).map(reason => `${reason.channel}: ${reason.error}`), result.rerank_reason].filter(Boolean).join('; ')}</p>}
-            <div className="flex gap-1" aria-label={t('relevance')}>
-              {(['relevant', 'partial', 'irrelevant'] as const).map(grade => <Button key={grade} size="sm" variant={grades[result.chunk_id] === grade ? 'default' : 'outline'} onClick={() => setGrade(result.chunk_id, grade)}>{t(grade)}</Button>)}
-            </div>
-          </CardContent>}
+        const stageLabel = translateSearchType(result.search_type, t) || translateFinalScoreStage(result.final_score_stage, t) || t('unknownChannel')
+        return <Card key={result.chunk_id} className={cn('py-0 transition-colors', selected && 'border-primary bg-accent/60 ring-1 ring-primary/30')}>
+          <button
+            type="button"
+            className="w-full rounded-xl p-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label={t('selectResult', { side: side.toUpperCase(), rank: index + 1, document: result.document_name })}
+            aria-pressed={selected}
+            aria-expanded={selected}
+            aria-controls="retrieval-result-detail"
+            onClick={() => setSelection({ side, chunkId: result.chunk_id })}
+          >
+            <span className="flex min-w-0 items-center gap-2 text-xs">
+              <Badge variant="outline">#{index + 1}</Badge>
+              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <strong className="min-w-0 flex-1 truncate">{result.document_name}</strong>
+              <Badge className="shrink-0">{stageLabel}</Badge>
+              {movement && <span className="shrink-0 text-muted-foreground">{movement - (index + 1) > 0 ? '↑' : movement - (index + 1) < 0 ? '↓' : '→'} {Math.abs(movement - (index + 1))}</span>}
+            </span>
+            <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground"><Highlight text={result.content} query={submittedQuery} /></span>
+          </button>
         </Card>
       })}
     </div>
   }
+
+  const resultsView = <div className="space-y-4 p-4">
+    {compare && responses.a && responses.b && (
+      <p className="text-xs text-muted-foreground">
+        {t('overlap', { count: overlap, total: Math.max(responses.a.results.length, responses.b.results.length) })}
+      </p>
+    )}
+    <div className={cn('grid gap-3', compare && 'lg:grid-cols-2')}>
+      <section className="min-w-0" aria-labelledby="retrieval-results-a">
+        <h2 id="retrieval-results-a" className="mb-2 font-medium">A</h2>
+        {responses.a ? renderResults(responses.a, 'a') : <p className="text-sm text-muted-foreground">{t('noResults')}</p>}
+      </section>
+      {compare && (
+        <section className="min-w-0" aria-labelledby="retrieval-results-b">
+          <h2 id="retrieval-results-b" className="mb-2 font-medium">B</h2>
+          {responses.b ? renderResults(responses.b, 'b') : <p className="text-sm text-muted-foreground">{t('noResults')}</p>}
+        </section>
+      )}
+    </div>
+  </div>
+
+  const detail = selectedResult && selection ? <ResultDetail
+    result={selectedResult}
+    side={selection.side}
+    rank={selectedIndex + 1}
+    query={submittedQuery}
+    authenticatedMarkdown={authenticatedMarkdown}
+    resolvedTheme={resolvedTheme}
+    t={t}
+    onClose={() => setSelection(null)}
+  /> : null
 
   const controls = (config: Config, setConfig: React.Dispatch<React.SetStateAction<Config>>, suffix: string) => <>
     <div className="flex flex-wrap items-end gap-3">
@@ -557,119 +499,63 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
     )}
   </>
 
-  return <div className="flex h-full flex-col">
-    <header className="flex items-center gap-3 px-4 py-3 border-b">
-      <Button render={<a href={backHref} />} nativeButton={false} variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
-      <div className="flex-1">
-        <h1 className="text-lg font-semibold">{t('retrievalLab')}</h1>
-        <p className="text-xs text-muted-foreground">{knowledgeBase?.name}</p>
-      </div>
-    </header>
+  return <div className="relative flex h-full flex-col">
+    <Button
+      render={<a href={backHref} />}
+      nativeButton={false}
+      variant="outline"
+      size="icon"
+      className="absolute left-3 top-3 z-20 rounded-md bg-background shadow-sm"
+      aria-label={t('retrievalLab')}
+    >
+      <ArrowLeft className="h-4 w-4" />
+    </Button>
 
-    {batchMode ? (
-      <div className="flex-1 min-h-0 overflow-auto">
-        <BatchEvaluation knowledgeBaseId={knowledgeBaseId} api={api} config={configA} hasRerankModel={Boolean(knowledgeBase?.rerank_model)} canEvaluate={canEvaluate} />
-      </div>
-    ) : sweepMode ? (
-      <div className="flex-1 min-h-0 overflow-auto p-4">
-        <ParameterSweep knowledgeBaseId={knowledgeBaseId} datasets={datasets} api={api} canEvaluate={canEvaluate} />
-      </div>
-    ) : (
-      <main className="flex-1 min-h-0 overflow-auto p-4">
-        {!searched ? (
-          <div className="grid h-full place-content-center text-sm text-muted-foreground">{t('retrievalLabHint')}</div>
-        ) : searching ? (
-          <div className="grid h-full place-content-center"><Loader2 className="animate-spin" /></div>
-        ) : !responses.a && !responses.b ? (
-          <div className="grid h-full place-content-center text-sm text-muted-foreground">{t('noResults')}</div>
-        ) : responses.a?.results.length === 0 && !responses.b?.results.length ? (
-          <div className="grid h-full place-content-center text-sm text-muted-foreground">{t('noResults')}</div>
-        ) : (
-          <div className="space-y-4">
-            {canEvaluate && submittedQuery && (
-              <>
-                <DatasetToolbar
-                  datasets={datasets}
-                  selectedDatasetId={selectedDatasetId}
-                  onSelectDataset={setSelectedDatasetId}
-                  onDatasetsChange={refreshDatasets}
-                  api={api}
-                  knowledgeBaseId={knowledgeBaseId}
-                  canEvaluate={canEvaluate}
-                />
-                <PromotionToolbar
-                  selectedDatasetId={selectedDatasetId}
-                  query={submittedQuery}
-                  chunkRelevance={gradesToRelevance(currentDraft.grades)}
-                  documentRelevance={computeDocumentRelevance(
-                    gradesToRelevance(currentDraft.grades),
-                    new Map(poolCandidates.map(c => [c.chunk_id, c.document_id]))
-                  )}
-                  expectedEmpty={currentDraft.expectedEmpty ?? false}
-                  onExpectedEmptyChange={handleExpectedEmptyChange}
-                  poolDepth={currentDraft.poolDepth ?? poolDepth}
-                  poolStrategies={currentDraft.poolStrategies ?? []}
-                  candidateCount={currentDraft.candidateCount ?? 0}
-                  judgedCount={currentDraft.judgedCount ?? 0}
-                  api={api}
-                  knowledgeBaseId={knowledgeBaseId}
-                  canEvaluate={canEvaluate}
-                  onSuccess={handlePromotionSuccess}
-                />
-                {poolCandidates.length > 0 && (
-                  <QualityPanel
-                    candidates={poolCandidates}
-                    grades={currentDraft.grades}
-                    onBulkMarkIrrelevant={handleBulkMarkIrrelevant}
-                    canEdit={canEvaluate}
-                  />
-                )}
-              </>
-            )}
-            {compare && responses.a && responses.b && (
-              <p className="text-xs text-muted-foreground">
-                {t('overlap', { count: overlap, total: Math.max(responses.a.results.length, responses.b.results.length) })}
-              </p>
-            )}
-            <div className={cn('grid gap-3', compare && 'lg:grid-cols-2')}>
-              <section className="min-w-0">
-                <h2 className="mb-2 font-medium">A</h2>
-                {responses.a ? renderResults(responses.a, 'a') : <p className="text-sm text-muted-foreground">{t('noResults')}</p>}
-              </section>
-              {compare && (
-                <section className="min-w-0">
-                  <h2 className="mb-2 font-medium">B</h2>
-                  {responses.b ? renderResults(responses.b, 'b') : <p className="text-sm text-muted-foreground">{t('noResults')}</p>}
-                </section>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
-    )}
+    <main className="min-h-0 flex-1 overflow-hidden">
+      {!searched ? (
+        <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('retrievalLabHint')}</div>
+      ) : searching ? (
+        <div className="grid h-full place-content-center"><Loader2 className="animate-spin" /></div>
+      ) : !responses.a && !responses.b ? (
+        <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('noResults')}</div>
+      ) : responses.a?.results.length === 0 && !responses.b?.results.length ? (
+        <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('noResults')}</div>
+      ) : isMobile ? (
+        <div className="h-full overflow-y-auto">{resultsView}</div>
+      ) : (
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
+          <ResizablePanel defaultSize={detail ? '62%' : '100%'} minSize="40%">
+            <div className="h-full min-w-0 overflow-y-auto">{resultsView}</div>
+          </ResizablePanel>
+          {detail && <>
+            <ResizableHandle withHandle aria-label={t('resizeResultDetails')} />
+            <ResizablePanel defaultSize="38%" minSize="25%" maxSize="60%">
+              {detail}
+            </ResizablePanel>
+          </>}
+        </ResizablePanelGroup>
+      )}
+    </main>
+
+    {isMobile && <Sheet open={Boolean(detail)} onOpenChange={open => { if (!open) setSelection(null) }}>
+      <SheetContent side="right" className="w-full max-w-none gap-0 p-0 sm:max-w-none" showCloseButton={false}>
+        <SheetHeader className="sr-only">
+          <SheetTitle>{t('resultDetails')}</SheetTitle>
+          <SheetDescription>{selectedResult ? t('resultDetailsDescription', { side: selection?.side.toUpperCase() ?? '', document: selectedResult.document_name }) : t('resultDetails')}</SheetDescription>
+        </SheetHeader>
+        {detail}
+      </SheetContent>
+    </Sheet>}
 
     <footer className="border-t bg-background">
       <div className="flex items-center gap-2 p-3">
-        <div role="tablist" aria-label={t('retrievalLab')} className="flex gap-1">
-          <Button role="tab" aria-selected={!batchMode && !sweepMode} variant={!batchMode && !sweepMode ? 'secondary' : 'ghost'} size="sm" onClick={() => { setBatchMode(false); setSweepMode(false) }}>
-            {t('interactiveSearch')}
-          </Button>
-          <Button role="tab" aria-selected={batchMode} variant={batchMode ? 'secondary' : 'ghost'} size="sm" onClick={() => { setBatchMode(true); setSweepMode(false) }}>
-            {t('batchEvaluation')}
-          </Button>
-          <Button role="tab" aria-selected={sweepMode} variant={sweepMode ? 'secondary' : 'ghost'} size="sm" onClick={() => { setBatchMode(false); setSweepMode(true) }}>
-            {t('parameterSweep')}
-          </Button>
-        </div>
-        {!batchMode && !sweepMode && (
-          <>
-            <div className="flex-1 flex gap-2">
+        <div className="flex-1 flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input value={query} onChange={event => setQuery(event.target.value)} onKeyDown={handleKeyDown} placeholder={t('searchPlaceholder')} className="pl-9" />
               </div>
-            </div>
-            <Popover open={showConfig} onOpenChange={setShowConfig}>
+        </div>
+        <Popover open={showConfig} onOpenChange={setShowConfig}>
               <PopoverTrigger
                 className={cn(
                   "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
@@ -736,12 +622,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canEvaluate, canU
                   </div>
                 </div>
               </PopoverContent>
-            </Popover>
-            <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!query.trim() || searching}>
-              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-          </>
-        )}
+        </Popover>
+        <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!query.trim() || searching}>
+          {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
       </div>
     </footer>
   </div>

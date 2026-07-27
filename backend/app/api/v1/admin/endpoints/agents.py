@@ -133,7 +133,7 @@ async def get_agent_filter_options(
     creator_values_raw = await Agent.filter(created_by_id__isnull=False).values_list(
         "created_by__username", flat=True
     )
-    creator_values = sorted({value for value in creator_values_raw if value})
+    creator_values = sorted({cast(str, value) for value in creator_values_raw if value})
     return success(
         data={
             "statuses": [

@@ -67,7 +67,7 @@ async def get_prefix_path_before(message: Message) -> list[Message]:
         ).all()
         message_by_id = {item.id: item for item in all_messages}
         prefix: list[Message] = []
-        current_id = message.branch_parent_id
+        current_id: UUID | None = message.branch_parent_id
         seen: set[UUID] = set()
 
         while current_id and current_id not in seen:

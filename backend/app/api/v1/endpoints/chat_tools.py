@@ -49,6 +49,7 @@ async def execute_tool_call(
                 RetrievalRequest,
                 RetrievalTarget,
                 retrieve,
+                validated_search_mode,
             )
 
             query = arguments.get("query", "")
@@ -65,7 +66,7 @@ async def execute_tool_call(
                     embedding_model_id=link.knowledge_base.embedding_model_id,
                     rerank_model_id=link.knowledge_base.rerank_model_id,
                     settings=link.knowledge_base.settings,
-                    search_mode=link.search_mode,
+                    search_mode=validated_search_mode(link.search_mode),
                     score_threshold=link.score_threshold,
                 )
                 for link in agent_kbs

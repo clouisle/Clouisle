@@ -205,6 +205,36 @@ async def test_embed_conversation_messages_missing_and_success(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_embed_upload_file_delegates_request_and_auth_user(monkeypatch):
+    from app.api.v1.endpoints import upload
+
+    agent_id = uuid4()
+    user, api_key = SimpleNamespace(id=uuid4()), object()
+    upload_file = AsyncMock(return_value={"data": {"url": "/uploads/file.txt"}})
+    monkeypatch.setattr(embed, "_get_embed_agent", AsyncMock())
+    monkeypatch.setattr(upload, "upload_file", upload_file)
+    upload_request = request()
+    file = object()
+
+    response = await embed.embed_upload_file(
+        agent_id,
+        upload_request,
+        file=file,
+        category="documents",
+        auth_result=(user, api_key),
+    )
+
+    assert response == {"data": {"url": "/uploads/file.txt"}}
+    embed._get_embed_agent.assert_awaited_once_with(agent_id, api_key, upload_request)
+    upload_file.assert_awaited_once_with(
+        request=upload_request,
+        file=file,
+        category="documents",
+        current_user=user,
+    )
+
+
+@pytest.mark.anyio
 async def test_embed_workflow_run_stream_rejects_missing_and_wrong_owner(monkeypatch):
     from app.models.workflow import WorkflowRun
 

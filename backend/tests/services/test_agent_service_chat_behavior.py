@@ -243,6 +243,7 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
                             rerank_model_id=None,
                             team_id="team-1",
                             status="active",
+                            settings=None,
                         ),
                         search_mode="hybrid",
                         retrieval_top_k=2,

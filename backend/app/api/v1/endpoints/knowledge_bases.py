@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
 from fastapi.responses import FileResponse
+from starlette.responses import Response as StarletteResponse
 from tortoise.expressions import F
 
 from app.api import deps
@@ -1044,7 +1045,7 @@ async def download_document(
     kb_id: UUID,
     doc_id: UUID,
     current_user: User = Depends(require_kb_read),
-) -> FileResponse:
+) -> StarletteResponse:
     """
     Download the original document file.
     """
@@ -2194,6 +2195,7 @@ async def search_knowledge_base(
             RetrievalRequest,
             RetrievalTarget,
             retrieve,
+            validated_search_mode,
         )
 
         response = await retrieve(
@@ -2216,7 +2218,7 @@ async def search_knowledge_base(
                         ),
                     ),
                 ),
-                search_mode=search_in.search_mode,
+                search_mode=validated_search_mode(search_in.search_mode),
                 top_k=search_in.top_k,
                 score_threshold=search_in.score_threshold,
                 dense_weight=getattr(search_in, "dense_weight", 1.0),

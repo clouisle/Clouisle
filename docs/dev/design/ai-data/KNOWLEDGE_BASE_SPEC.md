@@ -21,7 +21,7 @@
 | Dense 索引 | Qdrant | 保存向量并执行语义召回 |
 | Lexical 索引 | OpenSearch | 版本化 BM25 索引，通过读写别名切换 |
 | 向量与重排模型 | ModelManager | 复用团队模型配置 |
-| 异步处理 | Celery | 文档处理、索引回填和批量评估 |
+| 异步处理 | Celery | 文档处理和索引回填 |
 
 ---
 
@@ -292,9 +292,9 @@ PostgreSQL 是知识库、文档和分块的权威数据源。检索索引可重
 | `VectorStore` | Qdrant Dense 索引写入与语义召回 |
 | `LexicalStore` | OpenSearch BM25 版本化索引、别名切换与关键词召回 |
 | PostgreSQL | 权威知识库、文档、分块、授权范围和索引状态 |
-| Retrieval Lab | 即时 A/B、持久评估数据集、批量运行和指标对比 |
+| Retrieval Lab | 即时 A/B 检索与结果诊断 |
 
-API 搜索、AUTO RAG、Agentic 知识库工具、Agent 服务、Workflow 知识节点和批量评估均使用同一个 `retrieve()` 入口。调用方只保留授权、错误翻译和结果展示职责。
+API 搜索、AUTO RAG、Agentic 知识库工具、Agent 服务和 Workflow 知识节点均使用同一个 `retrieve()` 入口。调用方只保留授权、错误翻译和结果展示职责。
 
 ### 6.2 请求与授权边界
 
@@ -524,7 +524,7 @@ dependencies = [
 | 混合检索 | ✅ 完成 | Dense + BM25 加权 RRF，保留各阶段分数与排名 |
 | 全局重排与上下文 | ✅ 完成 | 跨知识库 Rerank、邻接扩展、文档/Chunk/Token 上限 |
 | 查询上下文化 | ✅ 完成 | 仅 AUTO RAG 按需改写，严格验证并回退原查询 |
-| Retrieval Lab | ✅ 完成 | 即时 A/B、标注预设、持久数据集和批量评估 |
+| Retrieval Lab | ✅ 完成 | 即时 A/B 检索和结果诊断 |
 | 灰度与可观测性 | ✅ 完成 | Kill Switch、团队/比例灰度、隐私安全 Shadow 和 Redis 指标 |
 | 文档下载 | ✅ 完成 | Authorization Bearer Token 鉴权 |
 | 前端 UI (后台) | ✅ 完成 | 完整的知识库管理界面 |
@@ -589,8 +589,7 @@ downloadDocument: async (kbId: string, docId: string, filename: string) => {
 - Advanced 参数：各通道候选数、Dense/Lexical 权重、RRF 参数和阶段专属阈值。
 - 结果诊断：Dense、Lexical、Fusion、Rerank 分数与排名、排名变化、通道、耗时和降级原因。
 - A/B：发起两个相互独立的统一检索请求，并展示结果重合及排名移动。
-- 评估：Chunk 级分级相关性标注、命名预设、持久数据集、批量运行和失败案例筛选。
-- 应用预设需要确认和 `kb:update`；即时测试与批量评估分别受 `kb:test` 和 `kb:evaluate` 控制。
+- 应用检索参数需要确认和 `kb:update`；即时测试受 `kb:test` 控制。
 - 输入框保留中文 IME 组合状态检测，避免拼音输入过程中按 Enter 误触发检索。
 
 ### 10.4 文件存储路径

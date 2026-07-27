@@ -77,6 +77,7 @@ async def test_retrieval_formats_results_and_forwards_config(monkeypatch, query_
         embedding_model_id=embedding_id,
         rerank_model_id=rerank_id,
         team_id=team_id,
+        settings=None,
     )
     retrieve = AsyncMock(
         return_value=SimpleNamespace(
@@ -158,6 +159,7 @@ async def test_retrieval_translates_search_failures(monkeypatch):
         embedding_model_id=None,
         rerank_model_id=None,
         team_id=team_id,
+        settings=None,
     )
     monkeypatch.setattr(
         Workflow,

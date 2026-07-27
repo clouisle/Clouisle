@@ -79,6 +79,7 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
         rerank_model_id=None,
         team_id="team-1",
         status="active",
+        settings=None,
     )
     agent_kb = SimpleNamespace(
         knowledge_base=knowledge_base,

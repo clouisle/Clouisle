@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.config import settings
-from app.services.retrieval import RetrievalRequest, RetrievalTarget, retrieve
+from app.services.retrieval import (
+    RetrievalRequest,
+    RetrievalTarget,
+    retrieve,
+    validated_search_mode,
+)
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
@@ -140,7 +145,7 @@ async def perform_rag_retrieval(
             embedding_model_id=association.knowledge_base.embedding_model_id,
             rerank_model_id=association.knowledge_base.rerank_model_id,
             settings=association.knowledge_base.settings,
-            search_mode=association.search_mode,
+            search_mode=validated_search_mode(association.search_mode),
             top_k=association.retrieval_top_k,
             score_threshold=association.score_threshold,
         )

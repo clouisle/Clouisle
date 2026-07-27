@@ -260,6 +260,7 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
         embedding_model_id=None,
         rerank_model_id=None,
         team_id=uuid4(),
+        settings=None,
     )
     successful_kb = SimpleNamespace(
         id=uuid4(),
@@ -268,6 +269,7 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
         rerank_model_id=uuid4(),
         team_id=uuid4(),
         status="active",
+        settings=None,
     )
     failed_kb = SimpleNamespace(
         id=uuid4(),
@@ -276,6 +278,7 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
         rerank_model_id=None,
         team_id=uuid4(),
         status="active",
+        settings=None,
     )
     associations = [
         SimpleNamespace(
@@ -438,6 +441,7 @@ async def test_perform_rag_retrieval_is_bounded_skips_inactive_and_truncates_glo
             embedding_model_id=uuid4(),
             rerank_model_id=None,
             team_id=uuid4(),
+            settings=None,
         )
         for index in range(10)
     ]
@@ -448,6 +452,7 @@ async def test_perform_rag_retrieval_is_bounded_skips_inactive_and_truncates_glo
         embedding_model_id=uuid4(),
         rerank_model_id=None,
         team_id=uuid4(),
+        settings=None,
     )
     associations = [
         SimpleNamespace(

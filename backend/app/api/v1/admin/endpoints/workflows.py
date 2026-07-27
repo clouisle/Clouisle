@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -122,7 +122,7 @@ async def get_workflow_filter_options(
     creator_values_raw = await Workflow.filter(created_by_id__isnull=False).values_list(
         "created_by__username", flat=True
     )
-    creator_values = sorted({value for value in creator_values_raw if value})
+    creator_values = sorted({cast(str, value) for value in creator_values_raw if value})
     return success(
         data={
             "statuses": [

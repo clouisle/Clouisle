@@ -156,6 +156,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "init_kb_rerank_fields",
         "init_skills_table",
         "init_clouisle_import_sessions_table",
+        "drop_obsolete_retrieval_evaluation_tables",
     ]
     side_effect = RuntimeError("expected") if fail_initializers else None
     initializers = {

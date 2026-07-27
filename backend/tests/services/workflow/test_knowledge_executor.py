@@ -86,6 +86,7 @@ async def test_knowledge_retrieval_searches_and_formats_results():
         embedding_model_id=uuid4(),
         rerank_model_id=uuid4(),
         team_id=uuid4(),
+        settings=None,
     )
     context = MagicMock()
     context.resolve_variable_ref = AsyncMock(return_value=123)
@@ -171,6 +172,7 @@ async def test_knowledge_retrieval_translates_search_errors_and_uses_defaults():
         embedding_model_id=None,
         rerank_model_id=None,
         team_id=team_id,
+        settings=None,
     )
     error = RuntimeError("search failed")
 

@@ -1,16 +1,6 @@
 import type {
-  EvaluationCase,
-  EvaluationCaseInput,
-  EvaluationDataset,
-  EvaluationDatasetExport,
-  EvaluationExportFormat,
-  EvaluationRun,
-  EvaluationRunConfig,
-  EvaluationSweep,
-  EvaluationSweepCreate,
   KnowledgeBase,
   KnowledgeBaseSettings,
-  RunComparison,
   SearchMode,
   SearchParams,
   SearchResponse,
@@ -20,25 +10,6 @@ export type RetrievalApi = {
   getKnowledgeBase(id: string): Promise<KnowledgeBase>
   search(id: string, params: SearchParams): Promise<SearchResponse>
   updateKnowledgeBase(id: string, data: { settings: KnowledgeBaseSettings }): Promise<KnowledgeBase>
-  listEvaluationDatasets(kbId: string): Promise<EvaluationDataset[]>
-  getEvaluationDataset(kbId: string, datasetId: string): Promise<EvaluationDataset>
-  createEvaluationDataset(kbId: string, data: { name: string; description?: string | null; cases?: EvaluationCaseInput[] }): Promise<EvaluationDataset>
-  updateEvaluationDataset(kbId: string, datasetId: string, data: { cases: EvaluationCaseInput[] }): Promise<EvaluationDataset>
-  importEvaluationDataset(kbId: string, datasetId: string, file: File): Promise<EvaluationDataset>
-  createEvaluationCase(kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
-  updateEvaluationCase(kbId: string, datasetId: string, caseId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
-  deleteEvaluationCase(kbId: string, datasetId: string, caseId: string): Promise<void>
-  upsertEvaluationCaseByQuery(kbId: string, datasetId: string, data: EvaluationCaseInput): Promise<EvaluationCase>
-  exportEvaluationDataset(kbId: string, datasetId: string, format: EvaluationExportFormat): Promise<EvaluationDatasetExport>
-  startEvaluationRun(kbId: string, datasetId: string, config: EvaluationRunConfig): Promise<EvaluationRun>
-  listEvaluationRuns(kbId: string, datasetId: string, sweepId?: string): Promise<EvaluationRun[]>
-  getEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
-  cancelEvaluationRun(kbId: string, datasetId: string, runId: string): Promise<EvaluationRun>
-  compareEvaluationRuns(kbId: string, datasetId: string, baselineId: string, candidateId: string): Promise<RunComparison>
-  createEvaluationSweep(kbId: string, datasetId: string, data: EvaluationSweepCreate): Promise<EvaluationSweep>
-  getEvaluationSweep(kbId: string, datasetId: string, sweepId: string): Promise<EvaluationSweep>
-  cancelEvaluationSweep(kbId: string, datasetId: string, sweepId: string): Promise<{ success: boolean; message: string }>
-  applyEvaluationSweep(kbId: string, datasetId: string, sweepId: string): Promise<{ applied: boolean; recommendation: Record<string, unknown> }>
 }
 
 export type Config = {
@@ -53,7 +24,7 @@ export type Config = {
   rerank_score_threshold: number | null
 }
 
-export function runConfig(config: Config, hasRerankModel: boolean): EvaluationRunConfig {
+export function runConfig(config: Config, hasRerankModel: boolean): Omit<SearchParams, 'query' | 'threshold'> & { score_threshold: number } {
   const rerank = hasRerankModel && config.rerank_enabled
   return {
     search_mode: config.search_mode,

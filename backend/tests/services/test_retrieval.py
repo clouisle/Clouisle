@@ -158,6 +158,16 @@ async def test_single_target_inherits_kb_retrieval_defaults(monkeypatch):
     search.assert_not_awaited()
 
 
+@pytest.mark.parametrize("mode", ["vector", "fulltext", "hybrid"])
+def test_validated_search_mode_accepts_supported_values(mode):
+    assert retrieval.validated_search_mode(mode) == mode
+
+
+def test_validated_search_mode_rejects_unsupported_value():
+    with pytest.raises(ValueError, match="unsupported search mode: semantic"):
+        retrieval.validated_search_mode("semantic")
+
+
 def test_null_kb_global_defaults_fall_back_to_system_defaults():
     effective = retrieval._effective_request(
         request(

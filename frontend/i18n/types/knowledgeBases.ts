@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-27T13:14:47.514Z
+// GENERATED — 2026-07-27T17:09:25.257Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -202,6 +202,12 @@ export type KnowledgeBasesMessages = {
     searchTest: string
     retrievalLab: string
     retrievalLabHint: string
+    resultDetails: string
+    resultDetailsDescription: string
+    resultConfiguration: string
+    selectResult: string
+    closeResultDetails: string
+    resizeResultDetails: string
     compareAB: string
     overlap: string
     diagnostics: string
@@ -226,10 +232,6 @@ export type KnowledgeBasesMessages = {
     rerankStageHelp: string
     finalStage: string
     finalStageHelp: string
-    relevance: string
-    relevant: string
-    partial: string
-    irrelevant: string
     presetName: string
     presets: string
     savePreset: string
@@ -260,42 +262,6 @@ export type KnowledgeBasesMessages = {
     retrievalError_lexical_recall_unknown: string
     retrievalError_fusion_unknown: string
     presetUpdateError: string
-    interactiveSearch: string
-    batchEvaluation: string
-    datasetManagement: string
-    datasets: string
-    selectDataset: string
-    datasetName: string
-    datasetDescription: string
-    createDataset: string
-    importDataset: string
-    importReplacementWarning: string
-    exportDataset: string
-    exportFormat: string
-    downloadStarter: string
-    datasetStats: string
-    noCasesInDataset: string
-    evaluationCases: string
-    addCase: string
-    removeCase: string
-    caseNumber: string
-    caseQuery: string
-    chunkRelevance: string
-    documentRelevance: string
-    expectedEmpty: string
-    saveCases: string
-    evaluationRuns: string
-    runConfig: string
-    startRun: string
-    selectRun: string
-    cancelRun: string
-    failedCasesOnly: string
-    batchLoadError: string
-    batchSaveError: string
-    batchCaseError: string
-    batchImportError: string
-    batchExportError: string
-    batchRunError: string
     searchTestHint: string
     searchTestDescription: string
     searching: string
@@ -336,114 +302,6 @@ export type KnowledgeBasesMessages = {
     failedChunksCount: string
     chars: string
     overlapChars: string
-    chunkIdCopied: string
-    clickToCopyChunkId: string
-    targetDataset: string
-    cases: string
-    newDataset: string
-    createNewDataset: string
-    createDatasetDescription: string
-    datasetNamePlaceholder: string
-    datasetCreated: string
-    datasetCreateFailed: string
-    promotionPreview: string
-    createNewCase: string
-    updateExistingCase: string
-    poolStats: string
-    addToDataset: string
-    updateInDataset: string
-    selectDatasetFirst: string
-    caseCreated: string
-    caseUpdated: string
-    caseUpsertFailed: string
-    datasetLoadFailed: string
     applyPresetSuccess: string
-    create: string
-    qualityMetrics: string
-    markAllUnlabeledIrrelevant: string
-    candidatesLabel: string
-    judgedLabel: string
-    unjudged: string
-    positiveLabel: string
-    negativeLabel: string
-    overlapLabel: string
-    coverageLabel: string
-    strategyContributions: string
-    unique: string
-    poolRelativeNote: string
-    datasetQuality: string
-    qualityWarnings: string
-    totalCases: string
-    withChunkLabels: string
-    withDocumentLabels: string
-    avgPositiveLabels: string
-    lowCaseCountWarning: string
-    zeroSignalCasesWarning: string
-    fix: string
-    runComparison: string
-    selectBaselineRun: string
-    selectCandidateRun: string
-    compareRuns: string
-    baseline: string
-    candidate: string
-    delta: string
-    metricDeltas: string
-    caseOutcomes: string
-    improved: string
-    unchanged: string
-    regressed: string
-    unpaired: string
-    configDiff: string
-    incomparableRuns: string
-    incomparabilityReason: string
-    noMetricDeltas: string
-    noCaseDeltas: string
-    noConfigDiff: string
-    parameterSweep: string
-    parameterSweepDescription: string
-    objective: string
-    metricK: string
-    servingTopK: string
-    parameterSpace: string
-    parameterSpacePlaceholder: string
-    guards: string
-    guardsPlaceholder: string
-    startSweep: string
-    sweepStatus: string
-    currentStage: string
-    cancelSweep: string
-    progress: string
-    stageProgress: string
-    recommendation: string
-    bestConfig: string
-    applyRecommendation: string
-    recommendationApplied: string
-    sweepLoadError: string
-    sweepStartError: string
-    sweepCancelError: string
-    sweepApplyError: string
-    sweepRunsLoadError: string
-    parameterName: string
-    values: string
-    addValue: string
-    addParameter: string
-    totalConfigs: string
-    estimatedDuration: string
-    sweepResults: string
-    config: string
-    objectiveMetric: string
-    errors: string
-    guardStatus: string
-    violated: string
-    passed: string
-    evidence: string
-    metricImprovement: string
-    casesImproved: string
-    casesRegressed: string
-    verified: string
-    confirmApply: string
-    confirmApplyDescription: string
-    parameterDiff: string
-    confirm: string
   }
 }

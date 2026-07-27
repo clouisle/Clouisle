@@ -162,6 +162,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_model_type_unique_constraint",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
+        "drop_obsolete_retrieval_evaluation_tables",
         "init_scoped_role_assignments_table",
         "init_default_settings",
         "migrate_registration_settings_category",
@@ -248,6 +249,7 @@ async def test_init_db_continues_after_optional_migration_failures(
         "init_model_type_unique_constraint",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
+        "drop_obsolete_retrieval_evaluation_tables",
     ]
     for name in optional_names:
         monkeypatch.setattr(

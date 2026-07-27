@@ -185,6 +185,7 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
         rerank_model_id=None,
         team_id=agent.team_id,
         status="active",
+        settings=None,
     )
     second_kb = SimpleNamespace(
         id="kb-2",
@@ -193,6 +194,7 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
         rerank_model_id="rerank-1",
         team_id="team-1",
         status="active",
+        settings=None,
     )
     links = [
         SimpleNamespace(

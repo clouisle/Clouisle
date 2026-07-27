@@ -110,11 +110,13 @@ class RunwayVideoAdapter(BaseVideoAdapter):
                 model=self.model_id,
             )
 
+        start_image = request.start_image
+        assert start_image is not None
         payload = {
             "model": self.model_id,
             "promptText": prompt,
             "promptImage": image_content_to_data_uri(
-                request.start_image,
+                start_image,
                 provider="runway",
                 model=self.model_id,
                 field_name="promptImage",

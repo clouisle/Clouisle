@@ -1,8 +1,8 @@
-# YUN-117 Knowledge Retrieval Optimization and Evaluation Lab Design Document
+# YUN-117 Knowledge Retrieval Optimization and Interactive Lab Design Document
 
 ## Background & Goals
 
-Clouisle currently retrieves knowledge-base chunks through Qdrant dense search, a heuristic `jieba + icontains` lexical path, application-level RRF, and optional reranking. The existing knowledge-base search-test page exposes one-query parameter testing, but the platform cannot measure retrieval quality across a labeled dataset or reliably compare configurations.
+Clouisle originally retrieved knowledge-base chunks through Qdrant dense search, a heuristic `jieba + icontains` lexical path, application-level RRF, and optional reranking. The existing knowledge-base search-test page exposed only one-query parameter testing and did not provide production-faithful diagnostics or immediate configuration comparison.
 
 The current implementation has these confirmed problems:
 
@@ -16,20 +16,19 @@ The current implementation has these confirmed problems:
 
 ### Goals
 
-1. Establish a reproducible retrieval-quality baseline before changing algorithms.
-2. Centralize all knowledge retrieval through one service and one result contract.
-3. Replace heuristic lexical matching with production BM25 while retaining Qdrant dense retrieval.
-4. Fuse dense and lexical ranks without treating fusion scores as probabilities.
-5. Apply reranking globally and assemble bounded, citation-safe context.
-6. Upgrade the existing search test into an instant playground, A/B comparator, and batch evaluation lab.
-7. Roll out through shadow traffic, observable feature flags, and reversible index aliases.
+1. Centralize all knowledge retrieval through one service and one result contract.
+2. Replace heuristic lexical matching with production BM25 while retaining Qdrant dense retrieval.
+3. Fuse dense and lexical ranks without treating fusion scores as probabilities.
+4. Apply reranking globally and assemble bounded, citation-safe context.
+5. Upgrade the existing search test into an instant playground and immediate A/B comparator.
+6. Roll out through shadow traffic, observable feature flags, and reversible index aliases.
 
 ### Success criteria
 
 - Recall@20 improves by at least 15% over the current hybrid baseline.
 - nDCG@10 improves by at least 10%.
 - Identifier-heavy Recall@10 is at least 95%.
-- Citation correctness is at least 90% on the evaluation set.
+- Citation provenance maps to the chunks actually supplied to the answer model.
 - P95 retrieval latency is below 300 ms without rerank and below 1.5 s with rerank.
 - One retriever can fail open in hybrid mode; failure of all requested retrievers is an explicit error.
 - Search test, Chat AUTO RAG, Agentic retrieval, Workflow retrieval, and internal Agent retrieval use the same service.
@@ -56,8 +55,7 @@ query
 - `VectorStore`: Qdrant storage and dense recall only.
 - `LexicalStore`: OpenSearch index lifecycle and BM25 recall only.
 - `KnowledgeRetrievalService`: scope validation, parallel recall, failure policy, fusion, rerank, global ranking, context expansion, and diagnostics.
-- Evaluation services: immutable configuration snapshots, metric calculation, and asynchronous run orchestration.
-- Retrieval Lab: uses the same retrieval service as production paths; it must not reproduce retrieval logic in the frontend.
+- Retrieval Lab: uses the same retrieval service as production paths for immediate single-KB search and A/B inspection; it must not reproduce retrieval logic in the frontend.
 
 ### Score contract
 
@@ -71,7 +69,7 @@ Each result preserves stage-specific values:
 
 Dense thresholds apply only to dense recall. Lexical retrieval is controlled by rank/candidate count. Fusion scores are never presented as probabilities or filtered by the legacy similarity threshold. A calibrated rerank threshold may filter final results when a reranker is active.
 
-### Initial evaluation parameters
+### Initial retrieval parameters
 
 - Dense candidate K: 40
 - Lexical candidate K: 40
@@ -84,25 +82,11 @@ Dense thresholds apply only to dense recall. Lexical retrieval is controlled by 
 - Dense and rerank thresholds: disabled until model-specific calibration
 - Maximum concurrent knowledge bases: 8
 
-These are evaluation baselines, not permanent hard-coded product limits.
+These are initial retrieval defaults, not permanent hard-coded product limits.
 
 ## Implementation Plan
 
-### Stage 1: Retrieval Evaluation Baseline ✅
-
-- **Completed validation**: deterministic metric and snapshot contracts added; 6,246 backend tests passed at 97.82% line/95.11% branch coverage; 1,998 frontend tests passed at 97.77% line/95.04% function coverage; frontend source census and production build passed.
-- **Files modified**: new backend evaluation metric module and focused tests; test fixture/data format under backend tests or a documented developer fixture location.
-- **Specific logic**:
-  - Define query cases with graded document/chunk relevance and expected-empty cases.
-  - Calculate Recall@K, MRR@K, nDCG@K, empty-result accuracy, and latency summaries without a new metrics dependency.
-  - Add a runner contract able to snapshot current vector/fulltext/hybrid/rerank results.
-  - Start with representative checked-in synthetic cases; production evaluation datasets remain database records added in Stage 8.
-- **Validation**:
-  - Happy-path metric examples with known expected values.
-  - Empty labels, duplicate retrieved IDs, fewer than K hits, and expected-empty negative tests.
-  - Capture the current implementation's baseline before Stage 3 changes.
-
-### Stage 2: Correct Current Retrieval Semantics ✅
+### Stage 1: Correct Current Retrieval Semantics ✅
 
 - **Completed validation**: strict mode and score-stage contracts, corrected threshold/failure/state semantics, and bounded global AUTO RAG added; 6,255 backend tests passed at 97.82% line/95.09% branch coverage; 1,998 frontend tests passed at 97.77% line/95.04% function coverage; frontend source census and production build passed.
 - **Files modified**: `backend/app/schemas/knowledge_base.py`, `backend/app/services/vector_store.py`, current RAG entry points, focused tests, and affected API types.
@@ -186,24 +170,10 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Chinese IME Enter behavior and authenticated markdown media remain intact.
   - Frontend lint, build, and focused component/API tests pass.
 
-### Stage 7: Evaluation Datasets and Batch Runs ✅
-
-- **Completed validation**: persistent datasets and immutable case/configuration/version snapshots, bounded JSON/CSV imports, historical result retention, transaction-before-dispatch, stable dispatch/provider failures, redelivery-safe Celery execution, cancellation and active-run mutation guards, aggregate metrics, failure filtering, and shared dashboard/platform UI completed. Backend gates passed with 6,345 tests, 97.69% line coverage, and 95.02% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, source census, lint, strict translation validation, license check, and production build.
-- **Files modified**: new evaluation models/migration/schemas/API/service/Celery task; frontend Retrieval Lab batch tab; permissions/i18n; tests.
-- **Specific logic**:
-  - Persist datasets, graded cases, immutable run configuration/version snapshots, and per-case result IDs/ranks/scores/metrics.
-  - Support manual cases and validated CSV/JSON import.
-  - Run one or more configurations asynchronously with bounded concurrency and quota checks.
-  - Display aggregate metrics, latency/cost, and failure-case filters.
-  - Avoid duplicating chunk content in run records; resolve content under current authorization when viewed.
-  - Never auto-publish a winning configuration.
-- **Validation**:
-  - Dataset CRUD authorization, import validation, cancel/failure/retry states, metric correctness, retention/deletion behavior, and KB cascade cleanup.
-
 ### Stage 8: Query Contextualization Experiment ✅
 
 - **Completed validation**: default-off query contextualization is limited to short referential AUTO RAG queries and uses the six most recent user/assistant messages from the active branch. It reuses the agent's authorized chat model with a two-second timeout, accepts only a structured rewrite grounded by an exact history substring, uses the result for retrieval only, and falls back without exposing query or exception content. Non-stream, stream, edit, and regenerate paths preserve the original answer question; Agentic tool queries remain unchanged. Backend gates passed with 6,357 tests, 97.70% line coverage, and 95.03% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, 471/471 source census, lint, license check, and production build.
-- **Files modified**: retrieval request preparation, optional model prompt/config, diagnostics, evaluation cases, and tests.
+- **Files modified**: retrieval request preparation, optional model prompt/config, diagnostics, and tests.
 - **Specific logic**:
   - Trigger only for AUTO RAG queries that are short, referential, or depend on previous entities.
   - Use the rewritten standalone query only for retrieval; preserve the original question for answering.
@@ -213,19 +183,6 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - Referential multi-turn cases improve without regressing standalone queries.
   - Failures have no effect on answer availability.
 
-### Stage 9: Learned Sparse Evaluation Gate ✅
-
-- **Completed validation**: the offline deterministic adapter compares Dense + BM25, Dense + learned sparse, and three-way observations across Chinese, English, mixed-language, and identifier cohorts. It reports aggregate/cohort Recall and nDCG plus P95 latency, mean inference cost, index size, and rebuild time under a deterministic fingerprint. Mathematical eligibility requires at least 5% improvement in both Recall and nDCG, no cohort regression, and no operational regression. Because the adapter contains precomputed ID-only fixtures rather than measurements from a real learned-sparse provider, the persisted-safe report records `measured=false`, `decision=no_go`, and `decision_reason=no_measured_learned_sparse_provider`; it selects no production strategy and keeps production sparse indexing disabled. Backend gates passed with 6,365 tests, 97.70% line coverage, and 95.02% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, 471/471 source census, lint, license check, and production build.
-- **Files modified**: evaluation-only adapter, deterministic tests, and benchmark documentation; no production retrieval/indexing code or dependency was added.
-- **Specific logic**:
-  - Compare Dense + BM25, Dense + learned sparse, and three-way retrieval on Chinese, English, mixed-language, and identifier cohorts.
-  - Reuse the existing ranking and latency metric helpers while exposing only aggregates and a fingerprint, never raw queries, chunks, case IDs, or ranked IDs.
-  - Require Recall and nDCG to improve by at least 5%, reject every cohort regression, and reject P95 latency, inference cost, index size, or rebuild-time regression.
-  - Keep mathematical eligibility diagnostic-only until a real measured provider and production indexing implementation exist.
-- **Validation**:
-  - Eight focused happy/error-path tests cover deterministic eligibility, privacy-safe reporting, cohort and operational regressions, zero baselines, invalid configuration/measurements, incomplete cohorts/indexes, duplicate cases, and missing observations; focused line/branch coverage is 97%.
-  - Explicit no-go recorded: no measured learned-sparse provider satisfies the production gate.
-
 ### Stage 10: Rollout, Observability, and Documentation ✅
 
 - **Files modified**: retrieval environment config, private `SiteSetting` defaults, the shared retrieval entry point, a retrieval-specific Redis collector, deployment examples/manifests, operator docs, and focused tests.
@@ -233,7 +190,7 @@ These are evaluation baselines, not permanent hard-coded product limits.
   - `RETRIEVAL_HYBRID_KILL_SWITCH=true` has highest precedence and immediately forces vector-only retrieval. Mutable private settings then select `enabled`, `disabled`, or `rollout`; explicit team inclusion precedes deterministic SHA-256 percentage assignment.
   - Shadow execution runs only for rollout-excluded hybrid requests, never replaces or mutates the primary vector answer, and retains a bounded Redis list containing only chunk IDs, ranks, retrieval/index versions, and latency.
   - Fail-open Redis metrics use the existing seven-day retention and latency histogram buckets for candidates, recall/rerank/context/total latency, fallbacks, empty results, diagnostics/errors, and lexical index version signals.
-  - Roll out internal -> 5% -> 25% -> 50% -> 100%. Advance only when evaluation quality has no cohort regression, retrieval error/fallback rates do not regress, and P95 total latency remains within the approved service objective.
+  - Roll out internal -> 5% -> 25% -> 50% -> 100%. Advance only when interactive and shadow observations show no cohort regression, retrieval error/fallback rates do not regress, and P95 total latency remains within the approved service objective.
 - **Rollback**:
   - Set `RETRIEVAL_HYBRID_KILL_SWITCH=true` for immediate environment rollback, or set private `retrieval_hybrid_mode=disabled` for mutable rollback. Disable `RETRIEVAL_SHADOW_ENABLED` independently.
   - For lexical index rollback, call the existing atomic `LexicalStore.cutover(previous_version)`; retained versioned indexes let both read and write aliases move back together.
@@ -248,7 +205,7 @@ These are evaluation baselines, not permanent hard-coded product limits.
 - Dense-only, lexical-only, hybrid, and hybrid+rerank return deterministic stage-aware results.
 - Chinese natural language, English natural language, mixed-language, and exact identifiers retrieve expected chunks.
 - AUTO, Agentic, Workflow, API search, and Retrieval Lab share rankings.
-- A/B and batch evaluation metrics match hand-calculated examples.
+- Immediate A/B results remain independently attributable and match direct search responses.
 
 ### Error and negative paths
 
@@ -256,7 +213,6 @@ These are evaluation baselines, not permanent hard-coded product limits.
 - Missing embedding model in dense mode and valid lexical-only use.
 - Qdrant, OpenSearch, embedding, and reranker timeout/failure combinations.
 - Pending/error documents, failed chunks, inactive KBs, stale index records, and deleted documents.
-- Invalid evaluation imports, duplicate labels, expected-empty cases, cancellation, and quota exhaustion.
 
 ### Regression scope
 
@@ -281,7 +237,7 @@ These are evaluation baselines, not permanent hard-coded product limits.
 ### Misleading scores and configuration overload
 
 - **Risk**: users interpret rank scores as probabilities or tune internals without evidence.
-- **Mitigation**: stage-specific labels, rank display, simple defaults, advanced controls hidden by default, and evaluation-backed presets.
+- **Mitigation**: stage-specific labels, rank display, simple defaults, and advanced controls hidden by default.
 
 ### Latency and model cost
 
@@ -291,7 +247,7 @@ These are evaluation baselines, not permanent hard-coded product limits.
 ### Chinese lexical quality
 
 - **Risk**: an analyzer optimized for English underperforms on Chinese or mixed identifiers.
-- **Mitigation**: language-specific evaluation, built-in analyzer baseline, identifier fields, maintainable domain dictionaries only after measured need, and no assumption that FastEmbed BM25 is Chinese-ready.
+- **Mitigation**: language-specific interactive checks, built-in analyzer baseline, identifier fields, maintainable domain dictionaries only after measured need, and no assumption that FastEmbed BM25 is Chinese-ready.
 
 ### Rollback plan
 
@@ -303,5 +259,4 @@ These are evaluation baselines, not permanent hard-coded product limits.
 ## Deliberate Simplifications
 
 - Learned Sparse, HyDE, multi-query generation, automatic tuning, and LLM-as-judge are outside the initial production baseline.
-- Initial A/B comparison may execute two normal retrieval calls; shared embedding work is added only if measured cost warrants it.
-- The first evaluation corpus can use checked-in synthetic fixtures while the product database model is built later.
+- Immediate A/B comparison executes two normal retrieval calls; shared embedding work is added only if measured cost warrants it.

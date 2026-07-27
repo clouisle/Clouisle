@@ -121,6 +121,7 @@ async def test_agent_service_retrieve_rag_context_sorts_and_skips_empty_kb(
         rerank_model_id=None,
         team_id=uuid4(),
         status="active",
+        settings=None,
     )
     links = [
         SimpleNamespace(knowledge_base=None),

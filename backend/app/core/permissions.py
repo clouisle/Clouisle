@@ -75,7 +75,6 @@ class SystemPermissions:
     # ============ Admin Knowledge Base Management ============
     ADMIN_KNOWLEDGE_BASE_READ = "admin:knowledge-base:read"
     ADMIN_KNOWLEDGE_BASE_TEST = "admin:knowledge-base:test"
-    ADMIN_KNOWLEDGE_BASE_EVALUATE = "admin:knowledge-base:evaluate"
     ADMIN_KNOWLEDGE_BASE_CREATE = "admin:knowledge-base:create"
     ADMIN_KNOWLEDGE_BASE_UPDATE = "admin:knowledge-base:update"
     ADMIN_KNOWLEDGE_BASE_DELETE = "admin:knowledge-base:delete"
@@ -132,7 +131,6 @@ class SystemPermissions:
     # ============ Platform Knowledge Base Management ============
     KB_READ = "kb:read"
     KB_TEST = "kb:test"
-    KB_EVALUATE = "kb:evaluate"
     KB_CREATE = "kb:create"
     KB_UPDATE = "kb:update"
     KB_DELETE = "kb:delete"
@@ -356,11 +354,6 @@ class SystemPermissions:
                 "description": "Test knowledge base retrieval from admin",
             },
             {
-                "code": cls.ADMIN_KNOWLEDGE_BASE_EVALUATE,
-                "scope": "admin",
-                "description": "Manage retrieval evaluations from admin",
-            },
-            {
                 "code": cls.ADMIN_KNOWLEDGE_BASE_CREATE,
                 "scope": "admin",
                 "description": "Create and import knowledge bases from admin",
@@ -549,11 +542,6 @@ class SystemPermissions:
                 "code": cls.KB_TEST,
                 "scope": "kb",
                 "description": "Test knowledge base retrieval",
-            },
-            {
-                "code": cls.KB_EVALUATE,
-                "scope": "kb",
-                "description": "Manage retrieval evaluations",
             },
             {
                 "code": cls.KB_CREATE,
