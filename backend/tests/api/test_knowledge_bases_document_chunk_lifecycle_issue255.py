@@ -7,6 +7,7 @@ import pytest
 
 from app.api.v1.endpoints import knowledge_bases
 from app.models.knowledge_base import DocumentStatus
+from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError
 from app.services.vector_store import DimensionMismatchError
 
@@ -367,13 +368,11 @@ async def test_search_without_models_or_overrides(monkeypatch):
         ),
     )
     monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
-    search_in = SimpleNamespace(
+    search_in = SearchRequest(
         query="missing",
         search_mode="hybrid",
         top_k=4,
         score_threshold=0.1,
-        filter_doc_ids=None,
-        model_fields_set=set(),
     )
 
     result = await knowledge_bases.search_knowledge_base(

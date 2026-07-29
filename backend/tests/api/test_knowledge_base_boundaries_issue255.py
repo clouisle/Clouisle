@@ -5,9 +5,18 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import knowledge_bases
-from app.schemas.knowledge_base import SearchRequest, SearchResponse
+from app.schemas.knowledge_base import (
+    SearchBatchRequest,
+    SearchRequest,
+    SearchResponse,
+)
 from app.schemas.response import BusinessError, Response, ResponseCode
-from app.services.retrieval import RetrievalDiagnostic, RetrievalError
+from app.services.retrieval import (
+    RetrievalDiagnostic,
+    RetrievalError,
+    RetrievalResponse,
+    RetrievalTiming,
+)
 from app.services.vector_store import DimensionMismatchError
 
 
@@ -169,6 +178,91 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     assert request.score_threshold == 0.0
     assert request.rerank_overrides == {"rerank_enabled": False}
     assert request.targets[0].document_ids is None
+
+
+@pytest.mark.anyio
+async def test_search_batch_preserves_order_and_sanitizes_failures(monkeypatch):
+    kb_id = uuid4()
+    team_id = uuid4()
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=uuid4(),
+        embedding_dimension=1536,
+        team_id=team_id,
+    )
+    access = AsyncMock(return_value=kb)
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", access)
+    retrieve_many = AsyncMock(
+        return_value=(
+            RetrievalResponse(
+                results=({"score": 0.9},),
+                diagnostics=(),
+                timings=(RetrievalTiming("total", 12.5),),
+            ),
+            RetrievalError(
+                "failed",
+                (
+                    RetrievalDiagnostic(
+                        kb_id,
+                        "failed",
+                        "RateLimitError",
+                        stage="dense_recall",
+                    ),
+                ),
+            ),
+            DimensionMismatchError("wrong dimension"),
+        )
+    )
+    monkeypatch.setattr("app.services.retrieval.retrieve_many", retrieve_many)
+    search_in = SearchBatchRequest.model_validate(
+        {
+            "query": "policy",
+            "configurations": [
+                {"id": "a", "search_mode": "hybrid", "top_k": 3},
+                {"id": "b", "search_mode": "vector", "rerank_enabled": False},
+                {"id": "c", "search_mode": "vector"},
+            ],
+        }
+    )
+
+    result = await knowledge_bases.search_knowledge_base_batch(
+        kb_id, search_in, SimpleNamespace()
+    )
+
+    access.assert_awaited_once_with(kb_id, SimpleNamespace())
+    requests = retrieve_many.await_args.args[0]
+    assert [request.top_k for request in requests] == [3, 5, 5]
+    assert requests[1].rerank_overrides == {"rerank_enabled": False}
+    outcomes = result["data"]["outcomes"]
+    assert [outcome["id"] for outcome in outcomes] == ["a", "b", "c"]
+    assert outcomes[0]["status"] == "fulfilled"
+    assert outcomes[0]["response"]["total"] == 1
+    assert outcomes[1]["error"] == {
+        "code": int(ResponseCode.RATE_LIMITED),
+        "retrieval_error_category": "quota_or_rate_limit",
+        "stage": "dense_recall",
+    }
+    assert outcomes[2]["error"] == {
+        "code": int(ResponseCode.UNKNOWN_ERROR),
+        "retrieval_error_category": "configuration_mismatch",
+        "stage": None,
+    }
+
+
+def test_search_batch_rejects_duplicate_ids():
+    with pytest.raises(ValueError, match="configuration ids must be unique"):
+        SearchBatchRequest.model_validate(
+            {
+                "query": "policy",
+                "configurations": [
+                    {"id": "same", "search_mode": "vector"},
+                    {"id": "same", "search_mode": "fulltext"},
+                ],
+            }
+        )
 
 
 @pytest.mark.anyio

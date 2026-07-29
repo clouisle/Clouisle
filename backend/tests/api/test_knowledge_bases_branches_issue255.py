@@ -11,6 +11,7 @@ from app.models import (
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
     KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
 )
+from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.vector_store import DimensionMismatchError
 
@@ -208,13 +209,11 @@ async def test_search_maps_vector_store_errors(monkeypatch, failure, expected_co
     retrieve = AsyncMock(side_effect=failure)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
-    search = SimpleNamespace(
+    search = SearchRequest(
         query="query",
         search_mode="hybrid",
         top_k=5,
         score_threshold=0.1,
-        filter_doc_ids=None,
-        model_fields_set=set(),
     )
 
     with pytest.raises(BusinessError) as exc:
@@ -237,17 +236,12 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     retrieve = AsyncMock(return_value=SimpleNamespace(results=({"content": "match"},)))
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
-    search = SimpleNamespace(
+    search = SearchRequest(
         query="query",
         search_mode="hybrid",
         top_k=5,
         score_threshold=0.1,
-        filter_doc_ids=None,
         rerank_enabled=True,
-        rerank_candidate_k=None,
-        rerank_fail_open=None,
-        rerank_score_threshold=None,
-        model_fields_set={"rerank_enabled"},
     )
 
     response = await knowledge_bases.search_knowledge_base(

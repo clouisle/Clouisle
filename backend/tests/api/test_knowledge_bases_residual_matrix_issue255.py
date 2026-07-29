@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import knowledge_bases
+from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError
 from app.services.vector_store import DimensionMismatchError
 
@@ -173,17 +174,12 @@ async def test_issue255_search_translates_vector_failures(monkeypatch, error, ms
     retrieve = AsyncMock(side_effect=error)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
-    search_in = SimpleNamespace(
+    search_in = SearchRequest(
         query="policy",
         search_mode="hybrid",
         top_k=5,
         score_threshold=0.2,
-        filter_doc_ids=None,
         rerank_enabled=True,
-        rerank_candidate_k=None,
-        rerank_fail_open=None,
-        rerank_score_threshold=None,
-        model_fields_set={"rerank_enabled"},
     )
 
     with pytest.raises(BusinessError) as exc:
