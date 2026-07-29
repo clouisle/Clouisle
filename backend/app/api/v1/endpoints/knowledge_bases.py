@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
 from fastapi.responses import FileResponse
 from starlette.responses import Response as StarletteResponse
 from tortoise.expressions import F
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.core.i18n import has_translation, t
@@ -94,20 +95,65 @@ def _retry_lexical_document(document_id: UUID) -> None:
         )
 
 
-async def _dispatch_document_task(doc: Document, task_func: Any, *args: str) -> str:
+async def _dispatch_document_task(
+    doc: Document,
+    task_func: Any,
+    *args: str,
+    status: str,
+    metadata_updates: dict[str, Any] | None = None,
+) -> str:
     task_id = str(uuid4())
-    doc.metadata = doc.metadata or {}
-    doc.metadata["task_id"] = task_id
-    doc.metadata["task_name"] = task_func.name
-    doc.metadata["task_args"] = list(args)
-    await doc.save()
+    previous_status = doc.status
+    previous_error = doc.error_message
+    previous_metadata = dict(doc.metadata or {})
+    async with in_transaction() as connection:
+        locked_doc = (
+            await Document.filter(id=doc.id)
+            .using_db(connection)
+            .select_for_update()
+            .get()
+        )
+        metadata = dict(locked_doc.metadata or {})
+        if metadata_updates:
+            metadata.update(metadata_updates)
+        metadata.update(
+            {
+                "task_id": task_id,
+                "task_name": task_func.name,
+                "task_args": list(args),
+            }
+        )
+        locked_doc.metadata = metadata
+        locked_doc.status = status
+        locked_doc.error_message = None
+        await locked_doc.save(
+            using_db=connection,
+            update_fields=["metadata", "status", "error_message"],
+        )
+    doc.metadata = metadata
+    doc.status = status
+    doc.error_message = None
     try:
         task_func.apply_async(args=args, task_id=task_id)
     except Exception:
-        doc.metadata.pop("task_id", None)
-        doc.metadata.pop("task_name", None)
-        doc.metadata.pop("task_args", None)
-        await doc.save(update_fields=["metadata"])
+        async with in_transaction() as connection:
+            owned_doc = (
+                await Document.filter(id=doc.id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            if (owned_doc.metadata or {}).get("task_id") == task_id:
+                owned_doc.metadata = previous_metadata
+                owned_doc.status = previous_status
+                owned_doc.error_message = previous_error
+                await owned_doc.save(
+                    using_db=connection,
+                    update_fields=["metadata", "status", "error_message"],
+                )
+                doc.metadata = previous_metadata
+                doc.status = previous_status
+                doc.error_message = previous_error
         raise
     return task_id
 
@@ -1171,28 +1217,33 @@ async def process_document(
             msg_key="document_not_pending",
         )
 
-    # Store chunk settings in document metadata for processing
-    doc.metadata = doc.metadata or {}
+    metadata_updates: dict[str, Any] = {}
     if process_in is not None:
         if process_in.chunk_size is not None:
-            doc.metadata["chunk_size"] = process_in.chunk_size
+            metadata_updates["chunk_size"] = process_in.chunk_size
         if process_in.chunk_overlap is not None:
-            doc.metadata["chunk_overlap"] = process_in.chunk_overlap
+            metadata_updates["chunk_overlap"] = process_in.chunk_overlap
         if process_in.separator is not None:
-            doc.metadata["separator"] = process_in.separator
+            metadata_updates["separator"] = process_in.separator
         if process_in.clean_text is not None:
-            doc.metadata["clean_text"] = process_in.clean_text
-    doc.status = DocumentStatus.PROCESSING.value
-    doc.error_message = None  # type: ignore[assignment]
-    await doc.save()
+            metadata_updates["clean_text"] = process_in.clean_text
 
-    # Trigger async document processing task
     try:
         from app.tasks.knowledge_base import process_document_task
 
-        await _dispatch_document_task(doc, process_document_task, str(doc.id))
-    except Exception:
-        logger.warning("Celery task not dispatched - worker may not be running")
+        await _dispatch_document_task(
+            doc,
+            process_document_task,
+            str(doc.id),
+            status=DocumentStatus.PROCESSING.value,
+            metadata_updates=metadata_updates,
+        )
+    except Exception as exc:
+        logger.exception("Celery document task publication failed")
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="task_dispatch_failed",
+        ) from exc
 
     await AuditLogService.log(
         user=current_user,
@@ -1321,7 +1372,10 @@ async def process_document_with_chunks(
 
             logger.info(f"Dispatching embed_document_chunks_task for document {doc.id}")
             task_id = await _dispatch_document_task(
-                doc, embed_document_chunks_task, str(doc.id)
+                doc,
+                embed_document_chunks_task,
+                str(doc.id),
+                status=DocumentStatus.PROCESSING.value,
             )
             logger.info(f"Task dispatched successfully, task_id: {task_id}")
         except Exception as e:
@@ -1509,7 +1563,12 @@ async def reprocess_document(
     try:
         from app.tasks.knowledge_base import reprocess_document_task
 
-        await _dispatch_document_task(doc, reprocess_document_task, str(doc.id))
+        await _dispatch_document_task(
+            doc,
+            reprocess_document_task,
+            str(doc.id),
+            status=DocumentStatus.PENDING.value,
+        )
     except Exception:
         import logging
 
@@ -1585,7 +1644,12 @@ async def retry_failed_chunks(
     try:
         from app.tasks.knowledge_base import retry_failed_chunks_task
 
-        await _dispatch_document_task(doc, retry_failed_chunks_task, str(doc.id))
+        await _dispatch_document_task(
+            doc,
+            retry_failed_chunks_task,
+            str(doc.id),
+            status=DocumentStatus.PROCESSING.value,
+        )
     except Exception:
         import logging
 
@@ -1661,7 +1725,11 @@ async def retry_failed_chunk(
         from app.tasks.knowledge_base import retry_failed_chunk_task
 
         await _dispatch_document_task(
-            doc, retry_failed_chunk_task, str(doc.id), str(chunk.id)
+            doc,
+            retry_failed_chunk_task,
+            str(doc.id),
+            str(chunk.id),
+            status=DocumentStatus.PROCESSING.value,
         )
     except Exception:
         logger.warning("Celery task not dispatched - worker may not be running")
@@ -2074,7 +2142,19 @@ async def rechunk_document(
     try:
         from app.tasks.knowledge_base import rechunk_document_task
 
-        await _dispatch_document_task(doc, rechunk_document_task, str(doc.id))
+        await _dispatch_document_task(
+            doc,
+            rechunk_document_task,
+            str(doc.id),
+            status=DocumentStatus.PENDING.value,
+            metadata_updates={
+                "rechunk_settings": {
+                    "chunk_size": rechunk_in.chunk_size,
+                    "chunk_overlap": rechunk_in.chunk_overlap,
+                    "separator": rechunk_in.separator,
+                }
+            },
+        )
     except Exception:
         import logging
 
