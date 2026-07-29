@@ -77,6 +77,11 @@ describe('knowledge base APIs', () => {
         rerank_candidate_k: 30,
         rerank_score_threshold: 0.5,
       })
+      await knowledgeBasesApi.search('kb-1', {
+        query: 'renewal',
+        top_k: 0,
+        threshold: 0,
+      })
       await knowledgeBasesApi.searchBatch('kb-1', 'renewal', [
         { id: 'a', search_mode: 'hybrid', top_k: 5, score_threshold: 0 },
         { id: 'b', search_mode: 'vector', top_k: 10, score_threshold: 0.8 },
@@ -116,7 +121,19 @@ describe('knowledge base APIs', () => {
         rerank_candidate_k: 30,
         rerank_score_threshold: 0.5,
       }, { silent: true })
-      expect(post).toHaveBeenNthCalledWith(4, `${prefix}/kb-1/search/batch`, {
+      expect(post).toHaveBeenNthCalledWith(4, `${prefix}/kb-1/search`, {
+        query: 'renewal',
+        search_mode: 'hybrid',
+        top_k: 0,
+        score_threshold: 0,
+        dense_weight: undefined,
+        lexical_weight: undefined,
+        rrf_k: undefined,
+        rerank_enabled: undefined,
+        rerank_candidate_k: undefined,
+        rerank_score_threshold: undefined,
+      }, { silent: true })
+      expect(post).toHaveBeenNthCalledWith(5, `${prefix}/kb-1/search/batch`, {
         query: 'renewal',
         configurations: [
           { id: 'a', search_mode: 'hybrid', top_k: 5, score_threshold: 0 },

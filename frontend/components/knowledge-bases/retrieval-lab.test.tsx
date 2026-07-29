@@ -88,7 +88,7 @@ const search = mock()
 const searchBatch = mock()
 const updateKnowledgeBase = mock()
 const api = { getKnowledgeBase, search, searchBatch, updateKnowledgeBase }
-const kb = { id: 'kb-1', name: 'Handbook', settings: { rerank_candidate_k: 12 }, rerank_model: { name: 'Reranker' } }
+const kb = { id: 'kb-1', name: 'Handbook', settings: { chunk_size: 400, rerank_candidate_k: 12 }, rerank_model: { name: 'Reranker' } }
 const response = (id = 'chunk-1', diagnostics: object[] = []) => ({
   query: 'policy', total: 1, diagnostics, timings: [{ stage: 'recall', latency_ms: 12 }, { stage: 'total', latency_ms: 20 }],
   results: [{ chunk_id: id, document_id: 'doc-1', document_name: 'Guide', content: 'Policy keyword', score: 0.4, metadata: null, search_type: 'hybrid', dense_score: 0.81, dense_rank: 2, lexical_score: 7.4, lexical_rank: 1, fusion_score: 0.03, fusion_rank: 1, rerank_score: 0.4, rerank_rank: 1, final_score_stage: 'rerank', degradation_reasons: diagnostics.length ? [{ channel: 'dense', error: 'fallback' }] : [] }],
@@ -298,6 +298,11 @@ describe('RetrievalLab', () => {
     let tree = await flush()
     const settingsButton = find(tree, 'button', props => props.title === 'settings')
     expect(settingsButton.props.className).toContain('h-9 w-9')
+    expect(find(tree, 'popover-content').props.className).toContain('calc(100vw-1rem)')
+    expect(find(tree, 'popover-content').props.className).toContain('calc(100dvh-1rem)')
+    find(tree, 'button', props => text(props.children as ReactNode).includes('advancedSettings')).props.onClick()
+    tree = render()
+    expect(find(tree, 'input', props => props.id === 'rerankThresholdA').props.placeholder).toBe('rerankScoreThresholdPlaceholder')
     expect(find(tree, 'button', props => text(props.children as ReactNode).includes('advancedSettings')).props.size).toBeUndefined()
     expect(button(tree, 'savePreset').props.size).toBeUndefined()
     expect(button(tree, 'applyToProduction').props.size).toBeUndefined()
@@ -399,10 +404,12 @@ describe('RetrievalLab', () => {
     expect(find(tree, 'alert-dialog').props.open).toBe(true)
     expect(text(find(tree, 'alert-dialog-description'))).toContain('applyPresetConfirm:Fast')
     expect(updateKnowledgeBase).not.toHaveBeenCalled()
+    updateKnowledgeBase.mockResolvedValueOnce({ ...kb, settings: { ...kb.settings, top_k: 5 } })
     await find(tree, 'alert-dialog-action').props.onClick()
     tree = render()
     expect(updateKnowledgeBase).toHaveBeenCalledWith('kb-1', {
       settings: expect.objectContaining({
+        chunk_size: 400,
         search_mode: 'hybrid', top_k: 5, score_threshold: 0,
         dense_weight: 1, lexical_weight: 1, rrf_k: 60,
         rerank_enabled: true, rerank_candidate_k: 12,
@@ -454,6 +461,56 @@ describe('RetrievalLab', () => {
     await searchButton(tree).props.onClick()
     await settle()
     expect(search.mock.calls.at(-1)?.[1]).toMatchObject({ top_k: 20 })
+  })
+
+  test('blocks zero-weight hybrid paths per side but permits vector and fulltext', async () => {
+    let tree = await flush()
+    find(tree, 'button', props => text(props.children as ReactNode).includes('advancedSettings')).props.onClick()
+    tree = render()
+    find(tree, 'input', props => props.id === 'denseWeightA').props.onChange({ target: { value: '0' } })
+    find(render(), 'input', props => props.id === 'lexicalWeightA').props.onChange({ target: { value: '0' } })
+    tree = await enterQuery(render())
+
+    expect(text(tree)).toContain('hybridWeightsRequired:A')
+    expect(searchButton(tree).props.disabled).toBe(true)
+    expect(button(tree, 'savePreset').props.disabled).toBe(true)
+    const preventDefault = mock()
+    query(tree).props.onKeyDown({ key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false }, preventDefault })
+    expect(search).not.toHaveBeenCalled()
+    expect(preventDefault).toHaveBeenCalled()
+
+    find(tree, 'select', props => props.value === 'hybrid').props.onValueChange('vector')
+    tree = render()
+    expect(text(tree)).not.toContain('hybridWeightsRequired:A')
+    expect(searchButton(tree).props.disabled).toBe(false)
+    search.mockResolvedValueOnce(response())
+    await searchButton(tree).props.onClick()
+    await settle()
+    expect(search).toHaveBeenCalledTimes(1)
+
+    find(render(), 'switch', props => props.id === 'compare-toggle').props.onCheckedChange(true)
+    tree = render()
+    find(tree, 'select', props => props.value === 'vector').props.onValueChange('fulltext')
+    find(render(), 'select', props => props.value === 'vector').props.onValueChange('hybrid')
+    tree = render()
+    find(tree, 'input', props => props.id === 'denseWeightB').props.onChange({ target: { value: '0' } })
+    find(render(), 'input', props => props.id === 'lexicalWeightB').props.onChange({ target: { value: '0' } })
+    tree = render()
+    expect(text(tree)).toContain('hybridWeightsRequired:B')
+    expect(searchButton(tree).props.disabled).toBe(true)
+  })
+
+  test('merges legacy partial presets over current config', async () => {
+    local.set('retrieval-lab:kb-1', JSON.stringify({ presets: [{ name: 'Legacy', config: { top_k: 9 } }] }))
+    let tree = await flush()
+    find(tree, 'button', props => text(props.children as ReactNode).includes('advancedSettings')).props.onClick()
+    tree = render()
+    find(tree, 'select', props => props['aria-label'] === 'presets').props.onValueChange('Legacy')
+    tree = render()
+
+    expect(find(tree, 'select', props => props.value === 'hybrid')).toBeTruthy()
+    expect(find(tree, 'input', props => props.id === 'topKA').props.value).toBe(9)
+    expect(find(tree, 'input', props => props.id === 'denseWeightA').props.value).toBe(1)
   })
 
   test('authenticated markdown image uses bearer token and rejects unsafe sources', async () => {

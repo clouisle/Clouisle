@@ -300,6 +300,7 @@
     "failedChunksCount": "{count} 个分段失败",
     "chars": "字符",
     "overlapChars": "重叠 {count}",
-    "applyPresetSuccess": "检索预设已应用"
+    "applyPresetSuccess": "检索预设已应用",
+    "hybridWeightsRequired": "配置 {side}：混合检索的稠密或词法权重必须大于零"
   }
 }

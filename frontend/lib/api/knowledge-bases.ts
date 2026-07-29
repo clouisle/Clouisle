@@ -335,9 +335,9 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
     // Map frontend params to backend params
     const requestBody = {
       query: params.query,
-      search_mode: params.search_mode || 'hybrid',
-      top_k: params.top_k || 5,
-      score_threshold: params.threshold || 0,
+      search_mode: params.search_mode ?? 'hybrid',
+      top_k: params.top_k ?? 5,
+      score_threshold: params.threshold ?? 0,
       dense_weight: params.dense_weight,
       lexical_weight: params.lexical_weight,
       rrf_k: params.rrf_k,

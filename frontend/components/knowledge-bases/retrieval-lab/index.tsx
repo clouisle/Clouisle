@@ -325,6 +325,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     return () => { loadGeneration.current += 1 }
   }, [api, knowledgeBaseId, storageKey])
 
+  const invalidA = configA.search_mode === 'hybrid' && configA.dense_weight === 0 && configA.lexical_weight === 0
+  const invalidB = compare && configB.search_mode === 'hybrid' && configB.dense_weight === 0 && configB.lexical_weight === 0
+  const invalidConfig = invalidA || invalidB
+
   const persistPresets = (nextPresets: Array<{ name: string; config: Config }>) => {
     setPresets(nextPresets)
     localStorage.setItem(storageKey, JSON.stringify({ presets: nextPresets }))
@@ -332,7 +336,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
 
   const runSearch = async () => {
     const trimmed = query.trim()
-    if (!trimmed || !canTest) return
+    if (!trimmed || !canTest || invalidConfig) return
     const generation = ++searchGeneration.current
     setSearching(true)
     setSearched(true)
@@ -382,7 +386,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
 
   const savePreset = () => {
     const name = presetName.trim()
-    if (!name) return
+    if (!name || invalidA) return
     const nextPresets = [...presets.filter(preset => preset.name !== name), { name, config: configA }]
     setSelectedPreset(name)
     setPresetName('')
@@ -391,13 +395,14 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
 
   const applyPreset = async () => {
     const preset = presets.find(item => item.name === selectedPreset)
-    if (!preset || !canUpdate || applyingPreset) return
+    if (!preset || !canUpdate || applyingPreset || invalidA) return
     setUpdateError(false)
     setApplyingPreset(true)
     try {
-      const cfg = preset.config as Config
-      await api.updateKnowledgeBase(knowledgeBaseId, {
+      const cfg = configA
+      const updatedKnowledgeBase = await api.updateKnowledgeBase(knowledgeBaseId, {
         settings: {
+          ...(knowledgeBase?.settings ?? {}),
           search_mode: cfg.search_mode,
           top_k: cfg.top_k,
           score_threshold: cfg.threshold,
@@ -409,6 +414,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
           rerank_score_threshold: cfg.rerank_score_threshold,
         },
       })
+      setKnowledgeBase(updatedKnowledgeBase)
       setApplyDialogOpen(false)
       toast.success(t('applyPresetSuccess'))
     } catch {
@@ -503,7 +509,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     onClose={() => setSelection(null)}
   /> : null
 
-  const controls = (config: Config, setConfig: React.Dispatch<React.SetStateAction<Config>>, suffix: string) => <>
+  const controls = (config: Config, setConfig: React.Dispatch<React.SetStateAction<Config>>, suffix: string, invalid: boolean) => <>
     <div className="flex flex-wrap items-end gap-3">
       <div className="flex-1 min-w-[200px]">
         <Label className="text-xs text-muted-foreground">{t('searchMode')}</Label>
@@ -558,9 +564,10 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">{t('rerankScoreThreshold')}</Label>
-            <Input id={`rerankThreshold${suffix}`} type="number" min={0} max={1} step="0.01" value={config.rerank_score_threshold ?? ''} onChange={event => setConfig(current => ({ ...current, rerank_score_threshold: event.target.value === '' ? null : Math.min(1, Math.max(0, Number(event.target.value))) }))} placeholder="None" className="mt-1" />
+            <Input id={`rerankThreshold${suffix}`} type="number" min={0} max={1} step="0.01" value={config.rerank_score_threshold ?? ''} onChange={event => setConfig(current => ({ ...current, rerank_score_threshold: event.target.value === '' ? null : Math.min(1, Math.max(0, Number(event.target.value))) }))} placeholder={t('rerankScoreThresholdPlaceholder')} className="mt-1" />
           </div>
         </div>
+        {invalid && <p role="alert" className="text-xs text-destructive">{t('hybridWeightsRequired', { side: suffix })}</p>}
       </div>
     )}
   </>
@@ -634,7 +641,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
               >
                 <Settings2 className="h-4 w-4" />
               </PopoverTrigger>
-              <PopoverContent align="end" side="top" className="w-[500px] max-h-[70vh] overflow-y-auto">
+              <PopoverContent align="end" side="top" className="w-[min(500px,calc(100vw-1rem))] max-h-[calc(100dvh-1rem)] overflow-y-auto">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -653,7 +660,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
                     </Button>
                   </div>
 
-                  {controls(configA, setConfigA, 'A')}
+                  {controls(configA, setConfigA, 'A', invalidA)}
 
                   {!compare && (
                     <div className="flex items-center gap-2 pt-2 border-t">
@@ -665,24 +672,29 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
                   {compare && (
                     <div className="space-y-3 pt-3 border-t">
                       <span className="text-sm font-semibold">B</span>
-                      {controls(configB, setConfigB, 'B')}
+                      {controls(configB, setConfigB, 'B', invalidB)}
                     </div>
                   )}
 
                   <div className="space-y-2 pt-3 border-t">
                     <div className="flex items-center gap-2">
                       <Input aria-label={t('presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} placeholder={t('presetName')} className="flex-1" />
-                      <Button variant="outline" onClick={savePreset}>{t('savePreset')}</Button>
+                      <Button variant="outline" onClick={savePreset} disabled={invalidA}>{t('savePreset')}</Button>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Select aria-label={t('presets')} value={selectedPreset || '__none__'} onValueChange={value => { const name = !value || value === '__none__' ? '' : value; setSelectedPreset(name); const preset = presets.find(item => item.name === name); if (preset) setConfigA(preset.config as Config) }}>
+                      <Select aria-label={t('presets')} value={selectedPreset || '__none__'} onValueChange={value => {
+                        const name = !value || value === '__none__' ? '' : value
+                        setSelectedPreset(name)
+                        const preset = presets.find(item => item.name === name)
+                        if (preset) setConfigA(current => ({ ...current, ...preset.config }))
+                      }}>
                         <SelectTrigger className="flex-1"><SelectValue>{selectedPreset || t('presets')}</SelectValue></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">{t('presets')}</SelectItem>
                           {presets.map(preset => <SelectItem key={preset.name} value={preset.name}>{preset.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <Button onClick={() => setApplyDialogOpen(true)} disabled={!selectedPreset || !canUpdate}>{t('applyToProduction')}</Button>
+                      <Button onClick={() => setApplyDialogOpen(true)} disabled={!selectedPreset || !canUpdate || invalidA}>{t('applyToProduction')}</Button>
                     </div>
                     {updateError && <p className="text-xs text-destructive">{t('presetUpdateError')}</p>}
                   </div>
@@ -699,14 +711,14 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={applyingPreset}>{commonT('cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => void applyPreset()} disabled={applyingPreset}>
+              <AlertDialogAction onClick={() => void applyPreset()} disabled={applyingPreset || invalidA}>
                 {applyingPreset && <Loader2 className="h-4 w-4 animate-spin" />}
                 {commonT('confirm')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!canTest || !query.trim() || searching}>
+        <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!canTest || !query.trim() || searching || invalidConfig}>
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>

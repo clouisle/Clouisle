@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-29T06:20:44.136Z
+// GENERATED — 2026-07-29T14:14:10.564Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -303,5 +303,6 @@ export type KnowledgeBasesMessages = {
     chars: string
     overlapChars: string
     applyPresetSuccess: string
+    hybridWeightsRequired: string
   }
 }

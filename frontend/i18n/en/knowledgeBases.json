@@ -300,6 +300,7 @@
     "failedChunksCount": "{count} failed chunks",
     "chars": "chars",
     "overlapChars": "overlap {count}",
-    "applyPresetSuccess": "Retrieval preset applied"
+    "applyPresetSuccess": "Retrieval preset applied",
+    "hybridWeightsRequired": "Configuration {side}: Dense or lexical weight must be greater than zero for hybrid search"
   }
 }
