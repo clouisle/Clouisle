@@ -12,7 +12,7 @@ Success criteria:
 - PostgreSQL 17 preloads pg_search 0.24.3 and pg_stat_statements.
 - Chinese and mixed-language `pdb.jieba` BM25, field boosts, exact identifiers, tenant scope, updates, deletes, restart, and crash recovery pass.
 - Build inputs are immutable and the runtime contains no compiler, Rust toolchain, builder source tree, builder-only headers, or build cache.
-- No deployment default changes until both native architectures pass.
+- Deployment defaults use the validated `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` manifest only after both native architectures pass.
 
 ## High-Level Design
 
@@ -70,10 +70,9 @@ A standalone image test script enforces the byte limit and exercises the product
 
 ## Current Validation Evidence
 
-- Native ARM64 build completed on 2026-07-29: image `426,942,814` bytes, pg_search shared library `136,636,872` bytes.
-- ARM64 ELF audit reported only `libgcc_s.so.1` and `libc.musl-aarch64.so.1`, with no RPATH/RUNPATH or LLVM/libclang dependency.
-- ARM64 runtime acceptance passed preload, extension version, Chinese/mixed BM25, exact identifier and tenant checks, update/delete, clean restart, and forced-termination recovery.
-- Native amd64 build, registry publication, and final two-platform manifest remain unverified. Deployment defaults must not change yet.
+- Native ARM64 validation completed on 2026-07-29: image `426,942,814` bytes, pg_search shared library `136,636,872` bytes; ELF and runtime acceptance passed.
+- Release CI now requires the same native acceptance on amd64 and arm64, validates tested image architecture and labels, and accepts an existing or newly created manifest only when it contains exactly the validated `linux/amd64` and `linux/arm64` descriptor digests.
+- The canonical deployment reference is `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1`; registry publication remains a release-workflow operation.
 
 ## Testing Strategy
 

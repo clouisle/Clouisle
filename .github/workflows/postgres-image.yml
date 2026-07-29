@@ -60,7 +60,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=postgres-pg-search-${{ matrix.arch }}
 
       - name: Test image
-        run: deploy/postgres/test-image.sh clouisle-postgres-pg-search:test
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          deploy/postgres/test-image.sh clouisle-postgres-pg-search:test
+          python3 deploy/postgres/validate-release.py image \
+            clouisle-postgres-pg-search:test "$ARCH"
 
       - name: Export tested release image
         if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
@@ -90,6 +95,9 @@ jobs:
           pattern: postgres-*
           merge-multiple: true
 
+      - name: Checkout release validation
+        uses: actions/checkout@v7
+
       - name: Load tested release images
         run: |
           docker load < postgres-amd64.tar.gz
@@ -110,7 +118,7 @@ jobs:
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
         run: |
           version=${GITHUB_REF_NAME#postgres-pg-search-}
-          expected_version=0.24.3-pg17
+          expected_version=0.24.3-pg17-alpine1
           if [ "$version" != "$expected_version" ]; then
             echo "release tag must be postgres-pg-search-$expected_version" >&2
             exit 1
@@ -121,28 +129,51 @@ jobs:
             arch=$1
             local_image="clouisle-postgres-pg-search:$arch"
             remote_image="$image:$version-$arch"
+            python3 deploy/postgres/validate-release.py image "$local_image" "$arch"
             local_id=$(docker image inspect --format '{{.Id}}' "$local_image")
             if docker buildx imagetools inspect "$remote_image" >/dev/null 2>&1; then
               docker pull --platform "linux/$arch" "$remote_image"
+              python3 deploy/postgres/validate-release.py image "$remote_image" "$arch"
               remote_id=$(docker image inspect --format '{{.Id}}' "$remote_image")
               if [ "$local_id" != "$remote_id" ]; then
                 echo "existing immutable image $remote_image has different content" >&2
                 exit 1
               fi
-              return
+            else
+              docker tag "$local_image" "$remote_image"
+              docker push "$remote_image"
             fi
-            docker tag "$local_image" "$remote_image"
-            docker push "$remote_image"
+
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest}}' "$remote_image" > "$arch-descriptor.json"
+            python3 - "$arch-descriptor.json" > "$arch.digest" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          descriptor = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          digest = descriptor.get("digest")
+          if not isinstance(digest, str) or not digest.startswith("sha256:"):
+              raise SystemExit("architecture descriptor has no immutable digest")
+          print(digest)
+          PY
           }
 
           ensure_architecture_image amd64
           ensure_architecture_image arm64
+          amd64_digest=$(cat amd64.digest)
+          arm64_digest=$(cat arm64.digest)
           if docker buildx imagetools inspect "$image:$version" >/dev/null 2>&1; then
-            echo "release manifest $image:$version already exists"
+            docker buildx imagetools inspect --raw "$image:$version" > manifest.json
+            python3 deploy/postgres/validate-release.py manifest \
+              manifest.json "$amd64_digest" "$arm64_digest"
+            echo "validated existing release manifest $image:$version"
             exit 0
           fi
           docker buildx imagetools create \
             --tag "$image:$version" \
-            "$image:$version-amd64" \
-            "$image:$version-arm64"
-          docker buildx imagetools inspect "$image:$version"
+            "$image@$amd64_digest" \
+            "$image@$arm64_digest"
+          docker buildx imagetools inspect --raw "$image:$version" > manifest.json
+          python3 deploy/postgres/validate-release.py manifest \
+            manifest.json "$amd64_digest" "$arm64_digest"

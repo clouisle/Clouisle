@@ -19,7 +19,7 @@ This change replaces OpenSearch with ParadeDB `pg_search` BM25 inside PostgreSQL
 
 > Follow-up: the original Debian package image remains the verified baseline. The sub-500 MB Alpine/musl image work is tracked separately in [`postgres-pg-search-alpine-image.md`](postgres-pg-search-alpine-image.md) and must pass both native architectures before replacing this baseline.
 
-- The database image is pinned to the project-built `clouisle-postgres-pg-search:0.24.3-pg17` image (`postgres:17` plus the checksum-verified pg_search 0.24.3 package); mutable or unqualified tags are not accepted.
+- The database image is pinned to the project-built `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` image (`postgres:17` plus the checksum-verified pg_search 0.24.3 package); mutable or unqualified tags are not accepted.
 - Existing PostgreSQL 16 installations follow a tested PostgreSQL major-version migration runbook using `pg_upgrade` or logical backup/restore; an existing PG16 data directory is never mounted directly into PG17.
 - Database initialization runs `CREATE EXTENSION pg_search CASCADE` and verifies the installed extension version.
 - PostgreSQL starts with `shared_preload_libraries` containing both `pg_search` and `pg_stat_statements` and both extensions load successfully after restart.
@@ -32,7 +32,7 @@ This change replaces OpenSearch with ParadeDB `pg_search` BM25 inside PostgreSQL
 
 ### Components
 
-- **ParadeDB PostgreSQL**: replace the current PostgreSQL image with the project-built `clouisle-postgres-pg-search:0.24.3-pg17` image (`postgres:17` plus the verified pg_search 0.24.3 package); retain all existing application tables and add the `pg_search` extension.
+- **ParadeDB PostgreSQL**: replace the current PostgreSQL image with the project-built `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` image (`postgres:17` plus the verified pg_search 0.24.3 package); retain all existing application tables and add the `pg_search` extension.
 - **`knowledge_lexical_chunks` projection**: a PostgreSQL table containing one searchable row per authoritative `document_chunks.id`. It keeps the existing lexical field names and UUIDs: `chunk_id`, `document_id`, `kb_id`, `team_id`, `status`, `name`, `content`, `metadata`, `chunk_index`, `update_version`, `language`, `section`, `title`, and `identifiers`.
 - **BM25 index `knowledge_lexical_chunks_bm25_idx`**: key field `chunk_id`; indexes the authorization/scope columns and searchable text. `content`, `title`, `name`, and `section` use `pdb.jieba` for Chinese and mixed-language tokenization. `identifiers` remains a separately queryable exact-identifier representation rather than relying on Chinese segmentation.
 - **PostgreSQL lexical adapter**: keeps the existing `LexicalStore` boundary and `SearchHit(chunk_id, score, source)` behavior, but executes parameterized SQL against `pg_search` instead of HTTP requests to OpenSearch.
@@ -124,7 +124,7 @@ This is a maintenance-window direct cutover, not a gradual rollout:
 2. Stop API and worker writes; drain knowledge-processing tasks.
 3. Take and verify a PostgreSQL 16 backup and retain the old data directory unchanged.
 4. Upgrade PG16 data to PG17 with a rehearsed `pg_upgrade`, or initialize PG17 and restore a logical backup. Run `ANALYZE` and application migration checks afterward.
-5. Start the project-built `clouisle-postgres-pg-search:0.24.3-pg17` image (`postgres:17` plus the verified pg_search 0.24.3 package) with `shared_preload_libraries = 'pg_search,pg_stat_statements'` (merge with any other required libraries rather than overwriting them), then restart and verify both libraries/extensions.
+5. Start the project-built `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` image (`postgres:17` plus the verified pg_search 0.24.3 package) with `shared_preload_libraries = 'pg_search,pg_stat_statements'` (merge with any other required libraries rather than overwriting them), then restart and verify both libraries/extensions.
 6. Run `CREATE EXTENSION pg_search CASCADE`, create the projection and BM25 index, and backfill it once from authoritative completed/active knowledge records while writes remain stopped.
 7. Validate counts, UUID scopes, BM25 queries, lifecycle integration, and the integration suite.
 8. Deploy the PostgreSQL lexical adapter and remove OpenSearch configuration/services in the same release; resume workers and API only after health checks pass.
@@ -138,7 +138,7 @@ There is deliberately no interval in which the application writes to or reads fr
 - **Files modified**: deployment Compose/Kubernetes/Helm values and templates, PostgreSQL initialization/configuration, environment examples, operator deployment documentation, and focused deployment integration fixtures.
 - **Specific logic**:
   - Complete an AGPL-3.0 compliance review of distributing and operating ParadeDB/`pg_search`; make written approval a blocking pre-deployment gate.
-  - Pin every supported deployment path to the project-built `clouisle-postgres-pg-search:0.24.3-pg17` image (`postgres:17` plus the verified pg_search 0.24.3 package).
+  - Pin every supported deployment path to the project-built `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` image (`postgres:17` plus the verified pg_search 0.24.3 package).
   - Configure `shared_preload_libraries` to include `pg_search` and `pg_stat_statements`, preserving any additional required libraries, and require a PostgreSQL restart after changes.
   - Add an explicit PG16-to-PG17 runbook. Existing PG16 data must move via tested `pg_upgrade` or logical backup/restore; direct reuse of a PG16 data directory by PG17 is forbidden.
   - Specify maintenance-window prerequisites, write/task drain, backup verification, storage capacity, extension checks, `ANALYZE`, and restore checkpoints.
@@ -199,7 +199,7 @@ There is deliberately no interval in which the application writes to or reads fr
   - Document installation, PG16-to-PG17 migration, extension/preload verification, BM25 index inspection/rebuild, count reconciliation, backup, restore, and failure diagnosis.
   - Record the exact production cutover checklist, owners, maintenance window, acceptance evidence, and rollback decision point.
 - **Validation**:
-  - Run fresh-install and upgraded-database integration suites against the project-built `clouisle-postgres-pg-search:0.24.3-pg17` image (`postgres:17` plus the verified pg_search 0.24.3 package).
+  - Run fresh-install and upgraded-database integration suites against the project-built `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` image (`postgres:17` plus the verified pg_search 0.24.3 package).
   - Exercise `fulltext` and `hybrid` through the actual retrieve endpoint and production callers, checking exact IDs, score/rank fields, RRF, diagnostics, citations, and bounded context.
   - Confirm Retrieval Lab remains a production-faithful interactive caller and no evaluation routes, models, tasks, or UI are introduced.
   - Complete a restore drill before approving production cutover.

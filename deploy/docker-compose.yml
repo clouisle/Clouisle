@@ -3,10 +3,7 @@ services:
   # Infrastructure
   # ---------------------------------------------------------------------------
   db:
-    image: clouisle-postgres-pg-search:0.24.3-pg17
-    build:
-      context: ..
-      dockerfile: deploy/postgres/Dockerfile
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}

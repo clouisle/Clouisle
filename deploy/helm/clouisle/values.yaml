@@ -193,8 +193,7 @@ postgresql:
     database: ""
   image:
     repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search
-
-    tag: 0.24.3-pg17
+    tag: 0.24.3-pg17-alpine1
     pullPolicy: IfNotPresent
   extraArgs:
     - "-c"

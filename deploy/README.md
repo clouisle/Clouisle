@@ -10,7 +10,7 @@ Clouisle uses **3 Docker images** that run as **5 application services**:
 | `clouisle-sandbox-worker` | `sandbox-worker` | Sandbox task execution and artifact collection |
 | `clouisle-frontend` | `frontend` | Next.js standalone server running with `node server.js` |
 
-Infrastructure dependencies: **PostgreSQL 17 with pg_search 0.24.3**, **Redis 7**, and **Qdrant 1.18.3**. The built-in database image `clouisle-postgres-pg-search:0.24.3-pg17` is built from `deploy/postgres/Dockerfile`.
+Infrastructure dependencies are **PostgreSQL 17 with pg_search 0.24.3**, **Redis 7**, and **Qdrant 1.18.3**. `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` is the canonical built-in PostgreSQL image. It is built from `deploy/postgres/Dockerfile` and maintained by Clouisle as an Alpine/musl port.
 
 The API service is named `api` in deployment files. Older docs and scripts may refer to it as `backend`; update those commands to use `api`.
 
@@ -51,7 +51,7 @@ Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_P
 From the project root:
 
 ```bash
-docker build -f deploy/postgres/Dockerfile -t clouisle-postgres-pg-search:0.24.3-pg17 .
+docker build -f deploy/postgres/Dockerfile -t registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1 .
 docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend .
 docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t clouisle-sandbox-worker .
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
@@ -282,7 +282,7 @@ kubectl -n clouisle logs -f deployment/frontend
 - Verify `REDIS_HOST` and `REDIS_PASSWORD`.
 
 **PostgreSQL and lexical search prerequisites**
-- Compose builds `clouisle-postgres-pg-search:0.24.3-pg17` from `deploy/postgres/Dockerfile`; raw Kubernetes and Helm use that image name by default and require it to be published to a registry accessible by the cluster.
+- Compose, raw Kubernetes, and Helm use `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` by default. This Clouisle-maintained Alpine/musl image requires full amd64 and arm64 qualification whenever Alpine, PostgreSQL, Rust, pgrx, or pg_search changes.
 - Built-in deployments start with `shared_preload_libraries=pg_search,pg_stat_statements` plus `pg_stat_statements.track=all`.
 - External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded. Confirm your organization has approved pg_search's AGPL or commercial license before deployment.
 - Restart PostgreSQL after changing `shared_preload_libraries`; ensure the application database user can create the required extensions or have the database administrator create them.
