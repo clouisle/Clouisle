@@ -2,14 +2,16 @@
 
 ## Active
 
-- **pr-315-review-fixes** — Complete. Resolved correctness, lifecycle, UI concurrency, and deployment defects found in the 16-reviewer audit of PR 315. See `docs/plan/pr-315-review-fixes.md`
-  - [x] 1. Design and defect mapping
-  - [x] 2. Lexical lifecycle and API consistency
-  - [x] 3. Retrieval and chat semantics
-  - [x] 4. Retrieval Lab and frontend API
-  - [x] 5. Image publication and documentation
-  - [x] 6. Focused validation and evidence
-  - [x] 7. Dependency refresh and compatibility validation
+- **pr-315-review-fixes** — In progress. Complete P0–P3 remediation for lexical recovery, lifecycle consistency, global retrieval, AUTO-RAG, Retrieval Lab, and PostgreSQL image publication. See `docs/plan/pr-315-review-fixes.md`
+  - [x] 1. Complete remediation design and defect mapping
+  - [ ] 2. Authoritative lexical versions, bounded backfill, and reconciliation
+  - [ ] 3. Celery loop reuse and independent projection repair
+  - [ ] 4. Lifecycle dispatch compensation and transactional chunk mutations
+  - [ ] 5. Global retrieval fusion, ordered context, detached shadow, and pipelined telemetry
+  - [ ] 6. Bounded fail-open AUTO-RAG history
+  - [ ] 7. Sparse settings merge and Retrieval Lab validation
+  - [ ] 8. Verified dual-architecture PostgreSQL deployment image
+  - [ ] 9. Full validation and evidence
 
 - **retrieval-query-embedding-reuse** — Complete. Reuse invocation-local query embeddings across matching multi-KB targets and Retrieval Lab A/B variants while preserving independent retrieval and rerank semantics. See `docs/plan/retrieval-query-embedding-reuse.md`
   - [x] 1. Design and implementation index
