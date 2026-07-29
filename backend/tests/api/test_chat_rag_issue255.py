@@ -12,6 +12,8 @@ from app.api.v1.endpoints.chat_rag import (
     perform_rag_retrieval,
     should_contextualize_query,
 )
+from app.models.agent import MessageRoundRole, MessageRoundStatus
+from app.services.retrieval import RetrievalError
 
 
 def test_contextualization_trigger_is_conservative():
@@ -22,17 +24,46 @@ def test_contextualization_trigger_is_conservative():
 
 
 def test_contextualization_history_has_message_and_token_bounds(monkeypatch):
+    token_counts = {
+        "older": 1,
+        "oversized": 2_001,
+        "newest": 1,
+    }
     monkeypatch.setattr(
-        "app.api.v1.endpoints.chat_rag.count_tokens", lambda _content: 1_000
+        "app.api.v1.endpoints.chat_rag.count_tokens",
+        lambda content: token_counts[content],
     )
     history = [
-        SimpleNamespace(role="user", content=f"message-{index}") for index in range(6)
+        SimpleNamespace(role="user", content="older"),
+        SimpleNamespace(role="assistant", content="oversized"),
+        SimpleNamespace(role="user", content="newest"),
     ]
 
-    assert [item["content"] for item in _bounded_rewrite_history(history)] == [
-        "message-4",
-        "message-5",
+    assert [item["content"] for item in _bounded_rewrite_history(history)] == ["newest"]
+
+
+def test_contextualization_history_stops_at_failed_or_noncanonical_assistant():
+    history = [
+        SimpleNamespace(role="user", content="stale"),
+        SimpleNamespace(
+            role="assistant",
+            content="failed",
+            round_role=MessageRoundRole.ASSISTANT_FINAL,
+            round_status=MessageRoundStatus.ERROR,
+            is_round_canonical=True,
+        ),
+        SimpleNamespace(role="user", content="newest"),
     ]
+    assert [item["content"] for item in _bounded_rewrite_history(history)] == ["newest"]
+
+    history[-2] = SimpleNamespace(
+        role="assistant",
+        content="step",
+        round_role=MessageRoundRole.ASSISTANT_STEP,
+        round_status=MessageRoundStatus.COMPLETED,
+        is_round_canonical=False,
+    )
+    assert [item["content"] for item in _bounded_rewrite_history(history)] == ["newest"]
 
 
 @pytest.mark.asyncio
@@ -368,6 +399,43 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
     ]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [RetrievalError("unavailable", ()), RuntimeError("unavailable")],
+)
+async def test_perform_rag_retrieval_fails_open(failure):
+    agent = SimpleNamespace(id=uuid4())
+    kb = SimpleNamespace(
+        id=uuid4(),
+        name="Handbook",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=None,
+        team_id=uuid4(),
+        settings=None,
+    )
+    associations = [
+        SimpleNamespace(
+            knowledge_base=kb,
+            search_mode="vector",
+            retrieval_top_k=3,
+            score_threshold=0.0,
+        )
+    ]
+    query = MagicMock()
+    query.prefetch_related = AsyncMock(return_value=associations)
+
+    with (
+        patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query),
+        patch(
+            "app.api.v1.endpoints.chat_rag.retrieve",
+            AsyncMock(side_effect=failure),
+        ),
+    ):
+        assert await perform_rag_retrieval(agent, "question") == []
+
+
 def test_aggregate_rag_contexts_merges_documents_and_keeps_best_numeric_score():
     contexts = [
         {
@@ -377,12 +445,14 @@ def test_aggregate_rag_contexts_merges_documents_and_keeps_best_numeric_score():
             "document_name": "Guide",
             "content": "first",
             "score": None,
+            "metadata": {"chunk_index": 1},
         },
         {
             "kb_id": "kb-1",
             "document_id": "doc-1",
             "content": "second",
             "score": 0.8,
+            "metadata": {"chunk_index": 2},
         },
         {
             "kb_id": "kb-1",
@@ -399,6 +469,7 @@ def test_aggregate_rag_contexts_merges_documents_and_keeps_best_numeric_score():
             "document_id": "doc-1",
             "document_name": "Guide",
             "score": 0.8,
+            "metadata": [{"chunk_index": 1}, {"chunk_index": 2}],
             "content": "first\n\nsecond",
         },
         {
@@ -407,6 +478,7 @@ def test_aggregate_rag_contexts_merges_documents_and_keeps_best_numeric_score():
             "document_id": None,
             "document_name": "Fallback",
             "score": "unknown",
+            "metadata": [{}],
             "content": "",
         },
     ]

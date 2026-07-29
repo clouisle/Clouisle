@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.config import settings
 from app.llm.token_counter import count_tokens
+from app.models.agent import MessageRoundRole, MessageRoundStatus
 from app.services.retrieval import (
     RetrievalError,
     RetrievalRequest,
@@ -62,14 +63,24 @@ def _bounded_rewrite_history(history: list[Any]) -> list[dict[str, str]]:
     for message in reversed(history):
         role = str(getattr(message.role, "value", message.role))
         content = message.content
+        round_role = getattr(message, "round_role", None)
+        round_role = getattr(round_role, "value", round_role)
+        round_status = getattr(message, "round_status", None)
+        round_status = getattr(round_status, "value", round_status)
         if role not in {"user", "assistant"} or not isinstance(content, str):
             continue
+        if role == "assistant" and (
+            round_status == MessageRoundStatus.ERROR.value
+            or round_role not in {None, MessageRoundRole.ASSISTANT_FINAL.value}
+            or not getattr(message, "is_round_canonical", True)
+        ):
+            break
         content = content.strip()
         if not content:
             continue
         message_tokens = count_tokens(content)
         if token_count + message_tokens > _REWRITE_HISTORY_TOKENS:
-            continue
+            break
         conversation.append({"role": role, "content": content})
         token_count += message_tokens
         if len(conversation) == _REWRITE_HISTORY_MESSAGES:
@@ -130,8 +141,12 @@ async def contextualize_retrieval_query(
         ):
             return ContextualizedQuery(query, "fallback")
         return ContextualizedQuery(rewritten.strip(), "rewritten")
-    except Exception:
-        logger.warning("RAG query contextualization failed")
+    except Exception as exc:
+        logger.warning(
+            "RAG query contextualization failed category=%s",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
         return ContextualizedQuery(query, "fallback")
 
 
@@ -183,11 +198,19 @@ async def perform_rag_retrieval(
                 top_k=max(target.top_k or 1 for target in targets),
             )
         )
-    except RetrievalError:
-        logger.warning("RAG retrieval failed")
-        raise
-    except Exception:
-        logger.warning("RAG retrieval failed")
+    except RetrievalError as exc:
+        logger.warning(
+            "Optional AUTO RAG retrieval failed category=%s",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return []
+    except Exception as exc:
+        logger.warning(
+            "Optional AUTO RAG retrieval failed category=%s",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
         return []
 
     return [
@@ -228,6 +251,7 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
             idx = index_map[key]
             if ctx.get("content"):
                 aggregated[idx]["content_parts"].append(ctx.get("content"))
+            aggregated[idx]["metadata"].append(ctx.get("metadata") or {})
             score = ctx.get("score")
             if isinstance(score, (int, float)):
                 existing_score = aggregated[idx].get("score")
@@ -247,6 +271,7 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
                 "document_id": ctx.get("document_id"),
                 "document_name": ctx.get("document_name"),
                 "score": ctx.get("score"),
+                "metadata": [ctx.get("metadata") or {}],
                 "content_parts": [ctx.get("content")] if ctx.get("content") else [],
             }
         )

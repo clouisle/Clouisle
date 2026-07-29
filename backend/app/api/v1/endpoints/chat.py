@@ -111,6 +111,7 @@ from app.api.v1.endpoints.chat_sse import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_KEY = "unknown_error"
+AUTO_RAG_HISTORY_LIMIT = 6
 AUDIT_MESSAGE_CONTENT_PREVIEW_LENGTH = 500
 
 
@@ -1060,7 +1061,9 @@ async def chat(
         rag_contexts = await perform_rag_retrieval(
             agent,
             chat_in.message,
-            await get_visible_conversation_messages(conversation.id),
+            await get_visible_conversation_messages(
+                conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
+            ),
         )
         rag_contexts = aggregate_rag_contexts(rag_contexts)
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
@@ -1642,7 +1645,7 @@ async def chat_stream(
                                 agent,
                                 chat_in.message,
                                 await get_visible_conversation_messages(
-                                    conversation.id
+                                    conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
                                 ),
                             )
                             if rag_contexts:
@@ -1734,7 +1737,9 @@ async def chat_stream(
                         else None
                     )
                     image_pool, image_inventory = collect_conversation_images(
-                        await get_visible_conversation_messages(conversation.id),
+                        await get_visible_conversation_messages(
+                            conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
+                        ),
                         current_message_id=user_msg.id,
                         current_images=chat_in.images,
                     )
@@ -2996,7 +3001,9 @@ async def edit_user_message_stream(
                             rag_contexts = await perform_rag_retrieval(
                                 agent,
                                 edited_content,
-                                await get_prefix_path_before(message),
+                                await get_prefix_path_before(
+                                    message, limit=AUTO_RAG_HISTORY_LIMIT
+                                ),
                             )
                             if rag_contexts:
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)
@@ -3984,7 +3991,9 @@ async def regenerate_message(
                             rag_contexts = await perform_rag_retrieval(
                                 agent,
                                 user_message.content,
-                                await get_prefix_path_before(user_message),
+                                await get_prefix_path_before(
+                                    user_message, limit=AUTO_RAG_HISTORY_LIMIT
+                                ),
                             )
                             if rag_contexts:
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)
