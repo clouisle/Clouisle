@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from time import perf_counter
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -35,11 +36,12 @@ async def cleanup_background_tasks() -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def validated_search_mode(value: str) -> SearchMode:
+def validated_search_mode(value: object) -> SearchMode:
     """Validate and narrow a persisted or API-provided search mode."""
-    if value not in _VALID_MODES:
+    normalized = value.value if isinstance(value, Enum) else value
+    if normalized not in _VALID_MODES:
         raise ValueError(f"unsupported search mode: {value}")
-    return cast(SearchMode, value)
+    return cast(SearchMode, normalized)
 
 
 _DEFAULT_SEARCH_MODE: SearchMode = "hybrid"
@@ -577,7 +579,7 @@ async def _retrieve_once(
             or _target_setting(target, "search_mode")
             or request.search_mode
         )
-        search_mode = validated_search_mode(str(search_mode_value))
+        search_mode = validated_search_mode(search_mode_value)
         target_dense_weight = _target_setting(target, "dense_weight")
         if target_dense_weight is None:
             target_dense_weight = dense_weight

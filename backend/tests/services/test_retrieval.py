@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 
+from app.schemas.knowledge_base import SearchMode as ApiSearchMode
 from app.services import retrieval
 
 KB_1 = UUID("00000000-0000-0000-0000-000000000001")
@@ -163,9 +164,17 @@ async def test_single_target_inherits_kb_retrieval_defaults(monkeypatch):
     search.assert_not_awaited()
 
 
-@pytest.mark.parametrize("mode", ["vector", "fulltext", "hybrid"])
-def test_validated_search_mode_accepts_supported_values(mode):
-    assert retrieval.validated_search_mode(mode) == mode
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("vector", "vector"),
+        ("fulltext", "fulltext"),
+        ("hybrid", "hybrid"),
+        (ApiSearchMode.HYBRID, "hybrid"),
+    ],
+)
+def test_validated_search_mode_accepts_supported_values(mode, expected):
+    assert retrieval.validated_search_mode(mode) == expected
 
 
 def test_validated_search_mode_rejects_unsupported_value():
