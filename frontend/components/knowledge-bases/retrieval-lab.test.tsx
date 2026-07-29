@@ -5,10 +5,9 @@ const local = new Map<string, string>()
 const getItem = mock((key: string) => local.get(key) ?? null)
 const setItem = mock((key: string, value: string) => local.set(key, value))
 const removeItem = mock((key: string) => local.delete(key))
-const confirm = mock(() => true)
 Object.assign(globalThis, {
   localStorage: { getItem, setItem, removeItem },
-  window: { confirm, location: { href: 'http://localhost' } },
+  window: { location: { href: 'http://localhost' } },
 })
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
@@ -20,6 +19,11 @@ mock.module('@/lib/utils', () => ({
 }))
 const ui = { Badge: 'badge', Button: 'button', Card: 'card', Input: 'input', Label: 'label', Select: 'select', SelectContent: 'select-content', SelectItem: 'option', SelectTrigger: 'select-trigger', SelectValue: 'select-value', Switch: 'switch' }
 for (const path of ['@/components/ui/badge', '@/components/ui/button', '@/components/ui/card', '@/components/ui/input', '@/components/ui/label', '@/components/ui/select', '@/components/ui/switch']) mock.module(path, () => ui)
+mock.module('@/components/ui/alert-dialog', () => ({
+  AlertDialog: 'alert-dialog', AlertDialogAction: 'alert-dialog-action', AlertDialogCancel: 'alert-dialog-cancel',
+  AlertDialogContent: 'alert-dialog-content', AlertDialogDescription: 'alert-dialog-description',
+  AlertDialogFooter: 'alert-dialog-footer', AlertDialogHeader: 'alert-dialog-header', AlertDialogTitle: 'alert-dialog-title',
+}))
 mock.module('@/components/ui/resizable', () => ({ ResizableHandle: 'resizable-handle', ResizablePanel: 'resizable-panel', ResizablePanelGroup: 'resizable-panel-group' }))
 mock.module('@/components/ui/sheet', () => ({ Sheet: 'sheet', SheetContent: 'sheet-content', SheetDescription: 'sheet-description', SheetHeader: 'sheet-header', SheetTitle: 'sheet-title' }))
 let mobile = false
@@ -86,9 +90,8 @@ const batch = (...outcomes: object[]) => ({ query: 'policy', outcomes })
 
 beforeEach(() => {
   slots.splice(0); effects = []; local.clear(); mobile = false
-  for (const fn of [getKnowledgeBase, search, searchBatch, updateKnowledgeBase, getItem, setItem, removeItem, confirm, toastError]) fn.mockClear()
+  for (const fn of [getKnowledgeBase, search, searchBatch, updateKnowledgeBase, getItem, setItem, removeItem, toastError]) fn.mockClear()
   getKnowledgeBase.mockResolvedValue(kb)
-  confirm.mockReturnValue(true)
 })
 afterEach(() => slots.forEach(slot => slot.cleanup?.()))
 
@@ -382,9 +385,13 @@ describe('RetrievalLab', () => {
     find(tree, 'select', props => props['aria-label'] === 'presets').props.onValueChange('Fast')
     tree = render()
     updateKnowledgeBase.mockRejectedValueOnce(new Error('denied'))
-    await button(tree, 'applyToProduction').props.onClick()
+    button(tree, 'applyToProduction').props.onClick()
     tree = render()
-    expect(confirm).toHaveBeenCalled()
+    expect(find(tree, 'alert-dialog').props.open).toBe(true)
+    expect(text(find(tree, 'alert-dialog-description'))).toContain('applyPresetConfirm:Fast')
+    expect(updateKnowledgeBase).not.toHaveBeenCalled()
+    await find(tree, 'alert-dialog-action').props.onClick()
+    tree = render()
     expect(updateKnowledgeBase).toHaveBeenCalledWith('kb-1', {
       settings: expect.objectContaining({
         search_mode: 'hybrid', top_k: 5, score_threshold: 0,

@@ -8,6 +8,16 @@ import { toast } from 'sonner'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, HelpCircle, Loader2, Search, Send, Settings2, X } from 'lucide-react'
 import { ApiError } from '@/lib/api/client'
 import type { KnowledgeBase, SearchMode, SearchParams, SearchResponse, SearchResult } from '@/lib/api'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -243,6 +253,7 @@ function ResultDetail({ result, side, rank, query, authenticatedMarkdown, resolv
 
 export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
   const t = useTranslations('knowledgeBases')
+  const commonT = useTranslations('common')
   const { resolvedTheme } = useTheme()
   const isMobile = useIsMobile()
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
@@ -261,6 +272,8 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
   const [presets, setPresets] = React.useState<Array<{ name: string; config: Config }>>([])
   const [presetName, setPresetName] = React.useState('')
   const [selectedPreset, setSelectedPreset] = React.useState('')
+  const [applyDialogOpen, setApplyDialogOpen] = React.useState(false)
+  const [applyingPreset, setApplyingPreset] = React.useState(false)
   const [submittedQuery, setSubmittedQuery] = React.useState('')
 
   const storageKey = `retrieval-lab:${knowledgeBaseId}`
@@ -351,8 +364,9 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
 
   const applyPreset = async () => {
     const preset = presets.find(item => item.name === selectedPreset)
-    if (!preset || !canUpdate || !window.confirm(t('applyPresetConfirm', { name: preset.name }))) return
+    if (!preset || !canUpdate || applyingPreset) return
     setUpdateError(false)
+    setApplyingPreset(true)
     try {
       const cfg = preset.config as Config
       await api.updateKnowledgeBase(knowledgeBaseId, {
@@ -368,9 +382,12 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
           rerank_score_threshold: cfg.rerank_score_threshold,
         },
       })
+      setApplyDialogOpen(false)
       toast.success(t('applyPresetSuccess'))
     } catch {
       setUpdateError(true)
+    } finally {
+      setApplyingPreset(false)
     }
   }
 
@@ -638,13 +655,30 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
                           {presets.map(preset => <SelectItem key={preset.name} value={preset.name}>{preset.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <Button onClick={() => void applyPreset()} disabled={!selectedPreset || !canUpdate}>{t('applyToProduction')}</Button>
+                      <Button onClick={() => setApplyDialogOpen(true)} disabled={!selectedPreset || !canUpdate}>{t('applyToProduction')}</Button>
                     </div>
                     {updateError && <p className="text-xs text-destructive">{t('presetUpdateError')}</p>}
                   </div>
                 </div>
               </PopoverContent>
         </Popover>
+        <AlertDialog open={applyDialogOpen} onOpenChange={open => { if (!applyingPreset) setApplyDialogOpen(open) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('applyToProduction')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('applyPresetConfirm', { name: selectedPreset })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={applyingPreset}>{commonT('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void applyPreset()} disabled={applyingPreset}>
+                {applyingPreset && <Loader2 className="h-4 w-4 animate-spin" />}
+                {commonT('confirm')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!query.trim() || searching}>
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
