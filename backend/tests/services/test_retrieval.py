@@ -751,6 +751,108 @@ async def test_global_rerank_runs_once_after_cross_kb_ranking(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_multi_kb_hybrid_fuses_channels_globally_with_target_settings(
+    monkeypatch,
+):
+    async def dense_search(**kwargs):
+        return [
+            {
+                "chunk_id": "shared-id",
+                "document_id": str(DOC_1),
+                "score": 0.9 if kwargs["kb_id"] == KB_1 else 0.8,
+            }
+        ]
+
+    lexical = MagicMock()
+
+    async def lexical_search(_query, **kwargs):
+        return [
+            retrieval.SearchHit(
+                "shared-id",
+                10.0 if kwargs["kb_ids"] == [str(KB_2)] else 9.0,
+                {"document_id": str(DOC_1)},
+            )
+        ]
+
+    lexical.search = AsyncMock(side_effect=lexical_search)
+    lexical.__aenter__ = AsyncMock(return_value=lexical)
+    lexical.__aexit__ = AsyncMock(return_value=None)
+    install_store(monkeypatch, dense_search)
+    monkeypatch.setattr(retrieval, "LexicalStore", lambda: lexical)
+
+    response = await retrieval.retrieve(
+        request(
+            target(
+                KB_1,
+                settings={"dense_weight": 2.0, "lexical_weight": 1.0, "rrf_k": 10},
+            ),
+            target(
+                KB_2,
+                settings={"dense_weight": 1.0, "lexical_weight": 3.0, "rrf_k": 20},
+            ),
+            top_k=4,
+        )
+    )
+
+    assert [(item["kb_id"], item["chunk_id"]) for item in response.results] == [
+        (str(KB_1), "shared-id"),
+        (str(KB_2), "shared-id"),
+    ]
+    assert response.results[0]["fusion_rank"] == 1
+    assert response.results[0]["dense_rank"] == 1
+    assert response.results[0]["lexical_rank"] == 2
+    assert response.results[0]["final_score_stage"] == "fusion"
+
+
+@pytest.mark.asyncio
+async def test_global_rerank_applies_one_candidate_cut(monkeypatch):
+    async def search(**kwargs):
+        return [
+            {
+                "chunk_id": f"{kwargs['kb_id']}-{index}",
+                "document_id": str(DOC_1),
+                "content": str(index),
+                "score": score,
+            }
+            for index, score in enumerate((0.9, 0.8, 0.7))
+        ]
+
+    async def rerank(**values):
+        assert len(values["results"]) == 2
+        return values["results"]
+
+    stores = install_store(
+        monkeypatch,
+        search,
+        rerank_config={
+            "enabled": True,
+            "model_id": str(MODEL_ID),
+            "candidate_k": 2,
+            "score_threshold": None,
+        },
+        rerank_results=rerank,
+    )
+
+    response = await retrieval.retrieve(
+        request(
+            target(KB_1, rerank_model_id=MODEL_ID),
+            target(KB_2, rerank_model_id=MODEL_ID),
+            search_mode="vector",
+            top_k=1,
+        )
+    )
+
+    assert len(response.results) == 1
+    rerank_stores = [
+        store
+        for store in stores
+        if store.kwargs.get("rerank_model_id")
+        and not store.kwargs.get("embedding_model_id")
+    ]
+    rerank_stores[0]._rerank_results.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_global_rerank_failure_fails_closed_with_stage_diagnostic(monkeypatch):
     search = AsyncMock(
         return_value=[
@@ -861,9 +963,9 @@ async def test_context_expansion_enforces_scope_document_and_token_budgets(
     )
 
     result = response.results[0]
-    assert result["content"] == "seed\n\nleft"
-    assert result["citation_chunk_ids"] == ["seed", "left"]
-    assert [chunk["chunk_index"] for chunk in result["context_chunks"]] == [1, 0]
+    assert result["content"] == "left\n\nseed"
+    assert result["citation_chunk_ids"] == ["left", "seed"]
+    assert [chunk["chunk_index"] for chunk in result["context_chunks"]] == [0, 1]
     assert "rerank_score" not in result["context_chunks"][0]
 
 

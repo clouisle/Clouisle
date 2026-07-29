@@ -18,6 +18,21 @@ from app.services.vector_store import VectorSearchUnavailableError, VectorStore
 SearchMode = Literal["vector", "fulltext", "hybrid"]
 _VALID_MODES = {"vector", "fulltext", "hybrid"}
 _MAX_CONCURRENCY = 8
+_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _start_background(coro: Any) -> None:
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+
+async def cleanup_background_tasks() -> None:
+    tasks = tuple(_BACKGROUND_TASKS)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def validated_search_mode(value: str) -> SearchMode:
@@ -257,6 +272,7 @@ class RetrievalResponse:
 def _result_order(result: dict[str, Any], score_field: str) -> tuple[Any, ...]:
     return (
         -float(result.get(score_field) or 0),
+        str(result.get("kb_id") or ""),
         str(result.get("document_id") or ""),
         str(result.get("chunk_id") or ""),
     )
@@ -305,7 +321,7 @@ def _weighted_rrf(
     lexical_weight: float,
     k: int,
 ) -> list[dict[str, Any]]:
-    merged: dict[str, dict[str, Any]] = {}
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
     for channel, weight, rank_field in (
         (dense, dense_weight, "dense_rank"),
         (lexical, lexical_weight, "lexical_rank"),
@@ -313,12 +329,17 @@ def _weighted_rrf(
         if weight == 0:
             continue
         for result in channel:
-            chunk_id = str(result.get("chunk_id") or "")
-            current = merged.setdefault(chunk_id, {})
-            current.update(result)
-            current["fusion_score"] = current.get("fusion_score", 0.0) + weight / (
-                k + int(result[rank_field])
+            identity = (
+                str(result.get("kb_id") or ""),
+                str(result.get("chunk_id") or ""),
             )
+            current = merged.setdefault(identity, {})
+            current.update(result)
+            result_weight = float(result.get(f"_{rank_field}_weight", weight))
+            result_k = int(result.get("_rrf_k", k))
+            current["fusion_score"] = current.get(
+                "fusion_score", 0.0
+            ) + result_weight / (result_k + int(result[rank_field]))
 
     results = list(merged.values())
     results.sort(key=lambda result: _result_order(result, "fusion_score"))
@@ -328,6 +349,30 @@ def _weighted_rrf(
         result["search_type"] = "hybrid"
         result["final_score_stage"] = "fusion"
     return results
+
+
+def _global_fusion(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    channels: dict[str, list[dict[str, Any]]] = {"dense": [], "lexical": []}
+    for result in results:
+        channel = result.get("_fusion_channel")
+        if channel in channels:
+            channels[channel].append(result)
+    for channel, score_field, rank_field in (
+        ("dense", "dense_score", "dense_rank"),
+        ("lexical", "lexical_score", "lexical_rank"),
+    ):
+        channels[channel].sort(
+            key=lambda result: _result_order(result, score_field)
+        )
+        for rank, result in enumerate(channels[channel], 1):
+            result[rank_field] = rank
+    return _weighted_rrf(
+        channels["dense"],
+        channels["lexical"],
+        dense_weight=_DEFAULT_DENSE_WEIGHT,
+        lexical_weight=_DEFAULT_LEXICAL_WEIGHT,
+        k=_DEFAULT_RRF_K,
+    )
 
 
 async def _resolve_global_rerank(
@@ -490,6 +535,16 @@ async def _assemble_context(
         document_results[document_id] = item
         assembled.append(item)
 
+    for item in assembled:
+        item["context_chunks"].sort(
+            key=lambda chunk: (chunk["chunk_index"], chunk["chunk_id"])
+        )
+        item["citation_chunk_ids"] = [
+            chunk["chunk_id"] for chunk in item["context_chunks"]
+        ]
+        item["content"] = "\n\n".join(
+            chunk["content"] for chunk in item["context_chunks"]
+        )
     return assembled
 
 
@@ -525,6 +580,27 @@ async def _retrieve_once(
             or request.search_mode
         )
         search_mode = validated_search_mode(str(search_mode_value))
+        target_dense_weight = _target_setting(target, "dense_weight")
+        if target_dense_weight is None:
+            target_dense_weight = dense_weight
+        target_lexical_weight = _target_setting(target, "lexical_weight")
+        if target_lexical_weight is None:
+            target_lexical_weight = lexical_weight
+        target_rrf_k = _target_setting(target, "rrf_k")
+        if target_rrf_k is None:
+            target_rrf_k = rrf_k
+        if target_dense_weight < 0 or target_lexical_weight < 0:
+            raise ValueError("retrieval weights must be nonnegative")
+        if target_rrf_k <= 0:
+            raise ValueError("rrf_k must be positive")
+        if (
+            search_mode == "hybrid"
+            and target_dense_weight == 0
+            and target_lexical_weight == 0
+        ):
+            raise ValueError(
+                "at least one retrieval weight must be positive in hybrid mode"
+            )
         top_k = target.top_k
         if top_k is None:
             top_k = _target_setting(target, "top_k")
@@ -602,11 +678,21 @@ async def _retrieve_once(
 
         async def search() -> list[dict[str, Any]]:
             if search_mode == "vector":
-                return await dense_search()
+                results = await dense_search()
+                for result in results:
+                    result["_fusion_channel"] = "dense"
+                    result["_dense_rank_weight"] = dense_weight
+                    result["_rrf_k"] = rrf_k
+                return results
             if search_mode == "fulltext":
-                return await lexical_search()
+                results = await lexical_search()
+                for result in results:
+                    result["_fusion_channel"] = "lexical"
+                    result["_lexical_rank_weight"] = lexical_weight
+                    result["_rrf_k"] = rrf_k
+                return results
             channels: list[tuple[str, Any]] = []
-            if dense_weight > 0:
+            if target_dense_weight > 0:
                 dense_call = (
                     dense_search()
                     if target.embedding_model_id
@@ -615,7 +701,7 @@ async def _retrieve_once(
                     )
                 )
                 channels.append(("dense", dense_call))
-            if lexical_weight > 0:
+            if target_lexical_weight > 0:
                 channels.append(("lexical", lexical_search()))
             values = await asyncio.gather(
                 *(call for _, call in channels), return_exceptions=True
@@ -636,13 +722,17 @@ async def _retrieve_once(
             ]
             if reasons and len(reasons) == len(channels):
                 raise _HybridChannelsFailed(tuple(reasons))
-            results = _weighted_rrf(
-                [] if isinstance(dense, BaseException) else dense,
-                [] if isinstance(lexical, BaseException) else lexical,
-                dense_weight=dense_weight,
-                lexical_weight=lexical_weight,
-                k=rrf_k,
-            )
+            dense_results = [] if isinstance(dense, BaseException) else dense
+            lexical_results = [] if isinstance(lexical, BaseException) else lexical
+            for result in dense_results:
+                result["_fusion_channel"] = "dense"
+                result["_dense_rank_weight"] = target_dense_weight
+                result["_rrf_k"] = target_rrf_k
+            for result in lexical_results:
+                result["_fusion_channel"] = "lexical"
+                result["_lexical_rank_weight"] = target_lexical_weight
+                result["_rrf_k"] = target_rrf_k
+            results = dense_results + lexical_results
             if reasons:
                 degradation_reasons = [
                     {"channel": channel, "error": error} for channel, error in reasons
@@ -687,14 +777,23 @@ async def _retrieve_once(
     if request.targets and len(diagnostics) == len(request.targets):
         raise RetrievalError("all retrieval targets failed", diagnostics)
 
-    results.sort(
-        key=lambda result: (
-            -float(result.get("score") or 0),
-            str(result.get("kb_id") or ""),
-            str(result.get("document_id") or ""),
-            str(result.get("chunk_id") or ""),
+    uses_fusion = any(
+        (
+            target.search_mode
+            or _target_setting(target, "search_mode")
+            or request.search_mode
         )
+        == "hybrid"
+        for target in request.targets
     )
+    if uses_fusion:
+        results = _global_fusion(results)
+    else:
+        results.sort(key=lambda result: _result_order(result, "score"))
+    for result in results:
+        for field_name in tuple(result):
+            if field_name.startswith("_"):
+                result.pop(field_name)
     results = results[:candidate_k]
     rerank_ms = 0.0
     if rerank_store is not None and rerank_config is not None and results:
@@ -757,6 +856,24 @@ async def retrieve_many(
         await context.close()
 
 
+async def _run_shadow(request: RetrievalRequest) -> None:
+    context = _RetrievalContext()
+    started_at = perf_counter()
+    try:
+        shadow = await _retrieve_once(request, context)
+        await record_shadow(
+            shadow.results,
+            latency_ms=(perf_counter() - started_at) * 1000,
+            index_version=INDEX_VERSION,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
+    finally:
+        await context.close()
+
+
 async def retrieve(
     request: RetrievalRequest, *, context: _RetrievalContext | None = None
 ) -> RetrievalResponse:
@@ -806,16 +923,7 @@ async def retrieve(
     )
 
     if uses_hybrid and not enabled and settings.RETRIEVAL_SHADOW_ENABLED:
-        shadow_started_at = perf_counter()
-        try:
-            shadow = await _retrieve_once(request, context)
-            await record_shadow(
-                shadow.results,
-                latency_ms=(perf_counter() - shadow_started_at) * 1000,
-                index_version=INDEX_VERSION,
-            )
-        except Exception:
-            pass
+        _start_background(_run_shadow(request))
     if owns_context:
         await context.close()
     return response
