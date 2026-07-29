@@ -57,13 +57,23 @@ async def init_postgres_lexical_search() -> None:
         conn,
         """
         ALTER TABLE document_chunks
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
         UPDATE document_chunks
         SET updated_at = created_at
-        WHERE updated_at IS NULL;
+        WHERE updated_at IS NULL
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE document_chunks
             ALTER COLUMN updated_at SET DEFAULT NOW(),
-            ALTER COLUMN updated_at SET NOT NULL;
+            ALTER COLUMN updated_at SET NOT NULL
         """,
     )
     await conn.execute_query("""

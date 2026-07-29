@@ -51,14 +51,16 @@ async def test_postgres_lexical_search_initializes_and_validates(monkeypatch) ->
     await init_data.init_postgres_lexical_search()
 
     queries = [item.args[0] for item in conn.execute_query.await_args_list]
-    assert queries[0] == "CREATE EXTENSION IF NOT EXISTS pg_search CASCADE"
-    assert any(
-        "ALTER TABLE document_chunks" in q
-        and "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ" in q
-        and "SET updated_at = created_at" in q
-        and "ALTER COLUMN updated_at SET NOT NULL" in q
-        for q in queries
-    )
+    migration_queries = [
+        query
+        for query in queries
+        if "document_chunks" in query and "updated_at" in query
+    ]
+    assert len(migration_queries) == 3
+    assert "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ" in migration_queries[0]
+    assert "SET updated_at = created_at" in migration_queries[1]
+    assert "ALTER COLUMN updated_at SET NOT NULL" in migration_queries[2]
+    assert all(query.count(";") <= 1 for query in migration_queries)
     assert any(
         "CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks" in q for q in queries
     )
