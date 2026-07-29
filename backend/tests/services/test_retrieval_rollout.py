@@ -35,6 +35,18 @@ async def test_rollout_precedence_and_deterministic_assignment(monkeypatch):
     )
     assert await retrieval_rollout.hybrid_enabled(["included"]) is False
 
+    get_value.reset_mock()
+    get_value.side_effect = lambda key, default: (
+        "disabled"
+        if key == "retrieval_hybrid_mode"
+        else (_ for _ in ()).throw(RuntimeError("malformed"))
+    )
+    monkeypatch.setattr(
+        retrieval_rollout.settings, "RETRIEVAL_HYBRID_KILL_SWITCH", False
+    )
+    assert await retrieval_rollout.hybrid_enabled(["included"]) is False
+    assert get_value.await_count == 1
+
 
 @pytest.mark.asyncio
 async def test_rollout_setting_failure_preserves_current_behavior(monkeypatch):

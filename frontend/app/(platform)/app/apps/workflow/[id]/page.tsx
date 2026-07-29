@@ -20,6 +20,7 @@ import {
   ReactFlowProvider,
   OnConnectStart,
   OnConnectEnd,
+  type OnNodeDrag,
   type Node,
   type Edge,
 } from '@xyflow/react'
@@ -853,8 +854,8 @@ export function WorkflowEditorContent({
   }, [])
 
   // Handle node drag stop - check for parent assignment
-  const onNodeDragStop = React.useCallback(
-    (_: React.MouseEvent, draggedNode: WorkflowNode) => {
+  const onNodeDragStop = React.useCallback<OnNodeDrag<WorkflowNode>>(
+    (_, draggedNode) => {
       // 检查 draggedNode 是否存在
       if (!draggedNode) {
         return

@@ -150,12 +150,7 @@ def chunk(**overrides):
 
 @pytest.fixture(autouse=True)
 def mock_lexical_helpers(monkeypatch):
-    for name in (
-        "delete_lexical_kb",
-        "delete_lexical_document",
-        "delete_lexical_chunk",
-        "index_lexical_chunk",
-    ):
+    for name in ("delete_lexical_document", "index_lexical_chunk"):
         monkeypatch.setattr(kb_endpoint, name, AsyncMock())
 
 

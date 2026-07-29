@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -145,7 +145,7 @@ async def test_cancel_and_status_report_in_progress_results():
         benchmark_id="active",
         status=BenchmarkStatus.RUNNING,
         config=BenchmarkConfig(),
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
         results=[request_result("ok"), request_result("bad", success=False)],
     )
     benchmark._running_benchmarks["active"] = result
@@ -251,7 +251,7 @@ def test_result_serialization_summary_and_empty_stats():
         benchmark_id="empty",
         status=BenchmarkStatus.RUNNING,
         config=BenchmarkConfig(),
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
     )
     WorkflowBenchmark()._calculate_stats(empty)
     assert empty.total_requests == 0
@@ -264,7 +264,7 @@ async def test_quick_benchmark_returns_basic_statistics(monkeypatch):
             benchmark_id="quick",
             status=BenchmarkStatus.COMPLETED,
             config=BenchmarkConfig(),
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(UTC),
             total_requests=4,
             successful_requests=3,
             mean_latency=12,
@@ -296,7 +296,7 @@ async def test_compare_benchmarks_runs_each_executor(monkeypatch, capsys):
         benchmark_id="first",
         status=BenchmarkStatus.COMPLETED,
         config=BenchmarkConfig(),
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
         total_requests=2,
         successful_requests=2,
         requests_per_second=4,
@@ -305,7 +305,7 @@ async def test_compare_benchmarks_runs_each_executor(monkeypatch, capsys):
         benchmark_id="second",
         status=BenchmarkStatus.COMPLETED,
         config=BenchmarkConfig(),
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
     )
     run = AsyncMock(side_effect=[first, second])
     monkeypatch.setattr(WorkflowBenchmark, "run", run)

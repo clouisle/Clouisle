@@ -2,6 +2,15 @@
 
 ## Active
 
+- **pr-315-review-fixes** — Complete. Resolved correctness, lifecycle, UI concurrency, and deployment defects found in the 16-reviewer audit of PR 315. See `docs/plan/pr-315-review-fixes.md`
+  - [x] 1. Design and defect mapping
+  - [x] 2. Lexical lifecycle and API consistency
+  - [x] 3. Retrieval and chat semantics
+  - [x] 4. Retrieval Lab and frontend API
+  - [x] 5. Image publication and documentation
+  - [x] 6. Focused validation and evidence
+  - [x] 7. Dependency refresh and compatibility validation
+
 - **retrieval-query-embedding-reuse** — Complete. Reuse invocation-local query embeddings across matching multi-KB targets and Retrieval Lab A/B variants while preserving independent retrieval and rerank semantics. See `docs/plan/retrieval-query-embedding-reuse.md`
   - [x] 1. Design and implementation index
   - [x] 2. Precomputed embedding search seam
@@ -54,20 +63,20 @@
   - [x] 7. Actionable safe error categories and per-side Retrieval Lab guidance
   - [x] 8. Normalize lexical result names to the search response contract and cover HTTP 500 classification
   - [x] 9. Final live fulltext and hybrid A/B verification
-  - [ ] 10. Remove rerank fail-open, add stage-aware errors, restore toast notifications
+  - [x] 10. Remove rerank fail-open, add stage-aware errors, restore toast notifications
 
 - **yun-117-knowledge-retrieval-lab** — Complete. Replace heuristic keyword matching with an evaluated Dense + BM25 hybrid pipeline and upgrade the existing search test into a retrieval evaluation lab. See `docs/plan/yun-117-knowledge-retrieval-lab.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Retrieval evaluation baseline — deterministic chunk/document Recall@K, MRR@K, nDCG@K, expected-empty accuracy, latency percentiles, and current `VectorStore.search` snapshot adapter; 6,246 backend tests passed with 97.82% lines/95.11% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
   - [x] 3. Correct current retrieval semantics — strict modes, stage-specific scores/ranks, dense-only thresholding, explicit dense failures, hybrid degradation, authoritative status filters, lexical-only AUTO RAG, and bounded global multi-KB ranking; 6,255 backend tests passed with 97.82% lines/95.09% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
   - [x] 4. Unified retrieval service — one authorization-safe request/response contract now owns bounded multi-KB concurrency, timeout/failure diagnostics, global deterministic ranking/truncation, and VectorStore delegation across API, AUTO, Agentic, AgentService, and workflow callers; 6,267 backend tests passed with 97.81% lines/95.07% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
-  - [x] 5. OpenSearch BM25 indexing and weighted fusion — OpenSearch lexical store, lifecycle dual writes/deletes, resumable backfill/reconciliation, weighted RRF, and deployment support complete; 6,294 backend tests passed with 97.71% lines/95.02% branches; frontend gates passed with 97.77% lines/95.04% functions and 470/470 source census; deployment static validation passed
-  - [x] 6. Global rerank and bounded context assembly — one cross-KB rerank pass, fail-open/fail-closed and calibrated threshold handling, authorized adjacent-chunk expansion, document aggregation with chunk-level citation provenance, and final document/chunk/token budgets; 6,305 backend tests passed with 97.71% lines/95.02% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions and 470/470 source census
-  - [x] 7. Instant retrieval playground and A/B comparison — shared production-faithful Retrieval Lab for dashboard/platform routes, dedicated test permissions, raw stage diagnostics/timings, independent A/B calls, local grades/presets, and confirmed authorized production apply; 6,311 backend tests passed with 97.72% lines/95.02% branches; 2,001 frontend tests passed with 97.80% lines/95.14% functions and 470/470 source census
-  - [x] 8. Batch evaluation datasets and runs — persistent datasets/case snapshots, bounded JSON/CSV import, immutable versioned runs, redelivery-safe Celery execution, durable failure/cancellation, active-run mutation guards, aggregate metrics, and shared dashboard/platform UI; 6,345 backend tests passed with 97.69% lines/95.02% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions
-  - [x] 9. Query contextualization experiment — default-off, AUTO-only retrieval query rewriting uses bounded active-branch history, the agent chat model, a strict timeout, grounded structured output, retrieval-only rewrites, and privacy-safe disabled/not-needed/rewritten/fallback diagnostics; 6,357 backend tests passed with 97.70% lines/95.03% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions and 471/471 source census
-  - [x] 10. Learned Sparse evaluation gate — deterministic evaluation-only comparison of Dense+BM25, Dense+learned-sparse, and three-way retrieval across Chinese, English, mixed-language, and identifier cohorts; aggregate Recall/nDCG and operational gates remain an explicit no-go without a measured provider, and production sparse indexing stays disabled; 6,365 backend tests passed with 97.70% lines/95.02% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions and 471/471 source census
-  - [x] 11. Rollout, observability, documentation, and validation — environment kill switch plus mutable global/team/percentage rollout, deterministic hashing, answer-isolated privacy-safe shadow execution, and fail-open Redis metrics; 6,371 backend tests passed with 97.70% lines/95.03% branches; 2,008 frontend tests passed with 97.81% lines/95.15% functions and 471/471 source census
+  - [x] 5. PostgreSQL pg_search BM25 indexing and weighted fusion — PostgreSQL lexical projection, lifecycle indexing, resumable backfill/reconciliation, weighted RRF, and deployment support complete.
+  - [x] 6. Global rerank and bounded context assembly — one deterministic cross-KB rerank pass, fail-closed stage diagnostics, calibrated threshold handling, authorized adjacent-chunk expansion, document aggregation, and final context budgets.
+  - [x] 7. Instant retrieval playground and A/B comparison — shared production-faithful Retrieval Lab for dashboard/platform routes, dedicated test permissions, stage diagnostics/timings, independent A/B requests, local presets, and authorized production apply.
+  - [x] 8. Interactive-only cleanup — removed datasets, relevance labeling, batch evaluation runs, parameter sweeps, and their schema/runtime residue; Retrieval Lab remains immediate single-query and A/B inspection only.
+  - [x] 9. Query contextualization experiment — default-off, AUTO-only retrieval query rewriting uses token-bounded active-branch history, the agent chat model, a strict timeout, grounded structured output, retrieval-only rewrites, and privacy-safe diagnostics.
+  - [x] 10. Learned Sparse gate retired — evaluation-only learned-sparse artifacts were removed with the non-production evaluation stack; production retrieval remains Dense + pg_search BM25.
+  - [x] 11. Rollout, observability, documentation, and validation — environment kill switch plus mutable global/team/percentage rollout, deterministic hashing, answer-isolated privacy-safe shadow execution, and fail-open Redis metrics.
 
 - **issue-255-test-coverage** — Complete. Established honest backend and frontend coverage measurement, covered critical happy/error paths, and enforced independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
   - [x] 1. Design docs and implementation index

@@ -57,7 +57,7 @@ class KnowledgeBase(models.Model):
     for RAG (Retrieval-Augmented Generation) applications.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Basic info
     name = fields.CharField(max_length=100, description="Knowledge base name")
@@ -138,7 +138,7 @@ class Document(models.Model):
     Documents are processed into chunks for vector search.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Parent knowledge base
     knowledge_base: fields.ForeignKeyRelation[KnowledgeBase] = fields.ForeignKeyField(
@@ -213,7 +213,7 @@ class DocumentChunk(models.Model):
     Each chunk stores its content and vector embedding.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Parent document
     document: fields.ForeignKeyRelation[Document] = fields.ForeignKeyField(

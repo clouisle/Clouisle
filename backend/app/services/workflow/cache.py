@@ -10,7 +10,7 @@ import hashlib
 import logging
 from typing import TypeVar, Callable, cast
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 
 from app.core.redis import get_redis
@@ -137,7 +137,7 @@ class WorkflowCache:
         """Get value from local cache."""
         if key in self._local_cache:
             value, expires = self._local_cache[key]
-            if datetime.utcnow() < expires:
+            if datetime.now(UTC) < expires:
                 return value
             else:
                 del self._local_cache[key]
@@ -153,7 +153,7 @@ class WorkflowCache:
             )
             del self._local_cache[oldest_key]
 
-        expires = datetime.utcnow() + timedelta(seconds=ttl)
+        expires = datetime.now(UTC) + timedelta(seconds=ttl)
         self._local_cache[key] = (value, expires)
 
     # Workflow Definition Cache

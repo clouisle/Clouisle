@@ -246,7 +246,7 @@ async def test_search_batch_preserves_order_and_sanitizes_failures(monkeypatch):
         "stage": "dense_recall",
     }
     assert outcomes[2]["error"] == {
-        "code": int(ResponseCode.UNKNOWN_ERROR),
+        "code": int(ResponseCode.VALIDATION_ERROR),
         "retrieval_error_category": "configuration_mismatch",
         "stage": None,
     }

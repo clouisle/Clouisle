@@ -64,10 +64,6 @@ class SafeEvaluator(ast.NodeVisitor):
             return node.value
         raise ValueError(f"Unsupported constant type: {type(node.value)}")
 
-    def visit_Num(self, node: ast.Num) -> Any:
-        # 兼容旧版本 Python
-        return node.n
-
     def visit_BinOp(self, node: ast.BinOp) -> Any:
         op_type = type(node.op)
         if op_type not in SAFE_BINARY_OPERATORS:

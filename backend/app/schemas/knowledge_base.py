@@ -7,7 +7,7 @@ from enum import Enum
 from typing import List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ============ Enums (mirroring model enums for API) ============
@@ -84,7 +84,7 @@ class KnowledgeBaseSettings(BaseModel):
     @model_validator(mode="after")
     def validate_hybrid_weights(self):
         if (
-            self.search_mode == "hybrid"
+            self.search_mode in (None, "hybrid")
             and self.dense_weight == 0
             and self.lexical_weight == 0
         ):
@@ -130,8 +130,7 @@ class CreatorInfo(BaseModel):
     username: str
     avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamInfo(BaseModel):
@@ -141,8 +140,7 @@ class TeamInfo(BaseModel):
     name: str
     avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmbeddingModelInfo(BaseModel):
@@ -153,8 +151,7 @@ class EmbeddingModelInfo(BaseModel):
     provider: str
     model_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RerankModelInfo(BaseModel):
@@ -165,8 +162,7 @@ class RerankModelInfo(BaseModel):
     provider: str
     model_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KnowledgeBase(KnowledgeBaseBase):
@@ -191,8 +187,7 @@ class KnowledgeBase(KnowledgeBaseBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KnowledgeBaseList(BaseModel):
@@ -217,8 +212,7 @@ class KnowledgeBaseList(BaseModel):
     total_tokens: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ Document Schemas ============
@@ -262,8 +256,7 @@ class Document(DocumentBase):
     updated_at: datetime
     processed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DocumentList(BaseModel):
@@ -282,8 +275,7 @@ class DocumentList(BaseModel):
     metadata: Optional[dict] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ Document Chunk Schemas ============
@@ -308,8 +300,7 @@ class DocumentChunk(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RechunkRequest(BaseModel):

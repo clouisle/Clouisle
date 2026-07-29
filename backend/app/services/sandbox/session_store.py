@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import cast
 
 from app.core.config import settings
 from app.core.redis import get_redis
@@ -14,6 +15,12 @@ from .models import SandboxSession
 def _ttl_seconds(ttl_hours: int | None = None) -> int:
     hours = ttl_hours or settings.SANDBOX_SESSION_TTL_HOURS
     return int(timedelta(hours=hours).total_seconds())
+
+
+def _redis_text(value: bytes | str) -> str:
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
 
 
 class SandboxSessionStore:
@@ -72,14 +79,14 @@ class SandboxSessionStore:
         if not payload:
             await redis.zrem(self.INDEX_KEY, session_id)
             return None
-        return SandboxSession.model_validate_json(payload)
+        return SandboxSession.model_validate_json(_redis_text(payload))
 
     async def get_by_conversation(self, conversation_id: str) -> SandboxSession | None:
         redis = await get_redis()
         session_id = await redis.get(self._conversation_key(conversation_id))
         if not session_id:
             return None
-        session = await self.get(session_id)
+        session = await self.get(_redis_text(session_id))
         if session is None:
             await redis.delete(self._conversation_key(conversation_id))
             return None
@@ -108,13 +115,17 @@ class SandboxSessionStore:
     async def expired_session_ids(self, *, limit: int | None = None) -> list[str]:
         redis = await get_redis()
         batch_size = limit or settings.SANDBOX_SESSION_CLEANUP_BATCH_SIZE
-        return await redis.zrangebyscore(
-            self.INDEX_KEY,
-            min="-inf",
-            max=now().timestamp(),
-            start=0,
-            num=batch_size,
+        session_ids = cast(
+            "list[bytes | str]",
+            await redis.zrangebyscore(
+                self.INDEX_KEY,
+                min="-inf",
+                max=now().timestamp(),
+                start=0,
+                num=batch_size,
+            ),
         )
+        return [_redis_text(session_id) for session_id in session_ids]
 
     async def cleanup_expired(self, *, limit: int | None = None) -> int:
         session_ids = await self.expired_session_ids(limit=limit)

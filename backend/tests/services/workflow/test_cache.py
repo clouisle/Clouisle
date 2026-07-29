@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -55,16 +55,16 @@ async def test_redis_is_loaded_lazily():
 
 
 def test_local_cache_hit_expiration_and_eviction(cache):
-    now = datetime(2026, 1, 1)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
     cache._local_cache_max = 2
 
     with patch.object(cache_module, "datetime", wraps=datetime) as clock:
-        clock.utcnow.return_value = now
+        clock.now.return_value = now
         cache._set_local("old", {"value": 1}, 1)
         cache._set_local("new", {"value": 2}, 10)
         assert cache._get_local("old") == {"value": 1}
 
-        clock.utcnow.return_value = now + timedelta(seconds=2)
+        clock.now.return_value = now + timedelta(seconds=2)
         assert cache._get_local("old") is None
         assert "old" not in cache._local_cache
 
@@ -134,7 +134,7 @@ async def test_plan_local_hit_and_wrong_types_are_misses(cache, redis):
 
     cache._local_cache[key] = (
         ["not-a-dict"],
-        datetime.utcnow() + timedelta(seconds=60),
+        datetime.now(UTC) + timedelta(seconds=60),
     )
     assert await cache.get_plan("workflow-1", definition) is None
 

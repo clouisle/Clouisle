@@ -6,7 +6,7 @@
 
 import logging
 from typing import Any, Callable, Awaitable
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,7 @@ class ToolInfo(BaseModel):
     )
     handler: Callable[..., Awaitable[Any]] | None = Field(default=None, exclude=True)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def to_openai_schema(self) -> dict:
         """转换为 OpenAI 工具格式"""
@@ -116,7 +115,7 @@ class ToolRegistry:
         tool_registry.register_sandbox_tool("Bash", BashSandboxTool)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._tools: dict[str, ToolInfo] = {}
         self._sandbox_tools: dict[str, type] = {}
         self._sandbox_tool_infos: dict[str, ToolInfo] = {}

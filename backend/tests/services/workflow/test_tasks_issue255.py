@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -254,5 +254,5 @@ def test_cleanup_old_runs_deletes_before_cutoff():
 
     assert result == {"deleted": 4}
     cutoff = filter_.call_args.kwargs["created_at__lt"]
-    assert datetime.utcnow() - timedelta(days=7, seconds=1) < cutoff
-    assert cutoff < datetime.utcnow() - timedelta(days=7) + timedelta(seconds=1)
+    assert datetime.now(UTC) - timedelta(days=7, seconds=1) < cutoff
+    assert cutoff < datetime.now(UTC) - timedelta(days=7) + timedelta(seconds=1)

@@ -85,6 +85,9 @@ def test_constants_and_request_defaults():
         "lexical_weight": None,
         "rrf_k": None,
     }
+    with pytest.raises(ValidationError, match="at least one retrieval weight"):
+        KnowledgeBaseSettings(dense_weight=0, lexical_weight=0)
+
     assert RechunkRequest().model_dump() == {
         "chunk_size": 1000,
         "chunk_overlap": 100,

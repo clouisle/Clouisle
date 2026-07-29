@@ -6,7 +6,7 @@ from tortoise import fields, models
 class AuditLog(models.Model):
     """审计日志模型 - 记录系统中的关键操作"""
 
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    id = fields.UUIDField(primary_key=True, default=uuid.uuid4)
 
     # 操作者信息
     user_id = fields.UUIDField(null=True)  # 可能是系统操作

@@ -111,10 +111,7 @@ async def test_clone_git_repo_covers_failure_and_timeout(tmp_path: Path):
             "app.services.skill_import.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=timed_out),
         ),
-        patch(
-            "app.services.skill_import.asyncio.wait_for",
-            new=AsyncMock(side_effect=TimeoutError),
-        ),
+        patch("app.services.skill_import._GIT_TIMEOUT_SECONDS", 0),
         pytest.raises(BusinessError) as error,
     ):
         await SkillImportService._clone_git_repo(

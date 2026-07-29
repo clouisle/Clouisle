@@ -48,7 +48,7 @@ class Agent(models.Model):
     access knowledge bases, and maintain conversation context.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Team association for data isolation
     team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
@@ -227,7 +227,7 @@ class AgentKnowledgeBase(models.Model):
     Links an agent to a knowledge base with RAG retrieval settings.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     agent: fields.ForeignKeyRelation[Agent] = fields.ForeignKeyField(
         "models.Agent",
@@ -310,7 +310,7 @@ class Conversation(models.Model):
     containing multiple messages.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     agent: fields.ForeignKeyRelation[Agent] | None = fields.ForeignKeyField(
         "models.Agent",
@@ -364,7 +364,7 @@ class Message(models.Model):
     Supports message versioning for regeneration and editing.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     conversation: fields.ForeignKeyRelation[Conversation] = fields.ForeignKeyField(
         "models.Conversation",
@@ -478,7 +478,7 @@ class Message(models.Model):
 class ConversationSessionMemory(models.Model):
     """Conversation-scoped session memory snapshot used for context compaction."""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     conversation: fields.ForeignKeyRelation[Conversation] = fields.ForeignKeyField(
         "models.Conversation",

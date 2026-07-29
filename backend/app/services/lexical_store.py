@@ -198,9 +198,28 @@ class LexicalStore:
                     chunk_id, document_id, kb_id, team_id, status, name, content,
                     metadata, chunk_index, update_version, language, section, title,
                     identifiers
-                ) VALUES (
+                )
+                SELECT
                     $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
                     $8::jsonb, $9, $10, $11, $12, $13, $14::text[]
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM document_chunks AS authoritative_chunk
+                    JOIN documents AS authoritative_document
+                      ON authoritative_document.id = authoritative_chunk.document_id
+                    JOIN knowledge_bases AS authoritative_kb
+                      ON authoritative_kb.id = authoritative_document.knowledge_base_id
+                    WHERE authoritative_chunk.id = $1::uuid
+                      AND authoritative_chunk.document_id = $2::uuid
+                      AND authoritative_document.knowledge_base_id = $3::uuid
+                      AND authoritative_kb.team_id = $4::uuid
+                      AND authoritative_chunk.status = $5
+                      AND authoritative_document.name = $6
+                      AND authoritative_chunk.content = $7
+                      AND COALESCE(authoritative_chunk.metadata, '{}'::jsonb) = $8::jsonb
+                      AND authoritative_chunk.chunk_index = $9
+                      AND authoritative_document.status = 'completed'
+                      AND authoritative_kb.status = 'active'
                 )
                 ON CONFLICT (chunk_id) DO UPDATE SET
                     document_id = EXCLUDED.document_id,
@@ -216,6 +235,7 @@ class LexicalStore:
                     section = EXCLUDED.section,
                     title = EXCLUDED.title,
                     identifiers = EXCLUDED.identifiers
+                WHERE knowledge_lexical_chunks.update_version <= EXCLUDED.update_version
                 """,
                 values,
             )

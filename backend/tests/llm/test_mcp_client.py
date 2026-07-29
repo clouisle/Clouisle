@@ -59,19 +59,14 @@ async def test_transport_requires_connection_target(config, method, message):
 async def test_transport_initializes_session_without_real_io(monkeypatch, transport):
     read_stream, write_stream = object(), object()
     transport_call = AsyncMock()
+    http_client = _context(object())
+    http_client_factory = MagicMock(return_value=http_client)
+    monkeypatch.setattr(mcp_client, "create_mcp_http_client", http_client_factory)
 
     @asynccontextmanager
     async def fake_transport(*args, **kwargs):
         await transport_call(*args, **kwargs)
-        streams = (
-            (read_stream, write_stream, object())
-            if transport == "http"
-            else (
-                read_stream,
-                write_stream,
-            )
-        )
-        yield streams
+        yield (read_stream, write_stream)
 
     session = SimpleNamespace(initialize=AsyncMock())
     monkeypatch.setattr(
@@ -105,10 +100,18 @@ async def test_transport_initializes_session_without_real_io(monkeypatch, transp
             ["--flag"],
             {"TOKEN": "secret"},
         )
-    else:
+    elif transport == "sse":
         transport_call.assert_awaited_once_with(
             "https://mcp.example.test",
             headers={"Authorization": "Bearer token"},
+        )
+    else:
+        http_client_factory.assert_called_once_with(
+            headers={"Authorization": "Bearer token"}
+        )
+        transport_call.assert_awaited_once_with(
+            "https://mcp.example.test",
+            http_client=http_client,
         )
 
 

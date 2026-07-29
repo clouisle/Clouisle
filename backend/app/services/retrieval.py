@@ -84,6 +84,13 @@ class _RetrievalContext:
         except Exception as exc:
             raise VectorSearchUnavailableError("query_embedding_failed") from exc
 
+    async def close(self) -> None:
+        pending = [task for task in self.embedding_tasks.values() if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
 
 @dataclass(frozen=True)
 class RetrievalTarget:
@@ -325,24 +332,23 @@ def _weighted_rrf(
 
 async def _resolve_global_rerank(
     request: RetrievalRequest,
-) -> tuple[VectorStore | None, dict[str, Any] | None]:
-    target = next(
-        (target for target in request.targets if target.rerank_model_id is not None),
-        None,
-    )
-    if target is None:
-        return None, None
-
-    store = VectorStore(
-        rerank_model_id=str(target.rerank_model_id),
-        team_id=str(target.team_id),
-    )
-    config = await store._resolve_rerank_config(  # noqa: SLF001
-        target.kb_id, request.rerank_overrides
-    )
-    if not config["enabled"] or not config["model_id"]:
-        return None, None
-    return store, config
+) -> tuple[RetrievalTarget | None, VectorStore | None, dict[str, Any] | None]:
+    for target in sorted(request.targets, key=lambda item: str(item.kb_id)):
+        if (
+            target.status != KnowledgeBaseStatus.ACTIVE.value
+            or target.rerank_model_id is None
+        ):
+            continue
+        store = VectorStore(
+            rerank_model_id=str(target.rerank_model_id),
+            team_id=str(target.team_id),
+        )
+        config = await store._resolve_rerank_config(  # noqa: SLF001
+            target.kb_id, request.rerank_overrides
+        )
+        if config["enabled"] and config["model_id"]:
+            return target, store, config
+    return None, None, None
 
 
 async def _assemble_context(
@@ -503,7 +509,7 @@ async def _retrieve_once(
     lexical_weight = request.lexical_weight
     rrf_k = request.rrf_k
     started_at = perf_counter()
-    rerank_store, rerank_config = await _resolve_global_rerank(request)
+    rerank_target, rerank_store, rerank_config = await _resolve_global_rerank(request)
     candidate_k = max(
         request_top_k,
         int(rerank_config["candidate_k"]) if rerank_config is not None else 0,
@@ -513,12 +519,19 @@ async def _retrieve_once(
     async def search_target(
         target: RetrievalTarget,
     ) -> tuple[list[dict[str, Any]], RetrievalDiagnostic | None]:
-        search_mode = (
+        search_mode_value = (
             target.search_mode
             or _target_setting(target, "search_mode")
             or request.search_mode
         )
-        top_k = target.top_k or _target_setting(target, "top_k") or request_top_k
+        search_mode = validated_search_mode(str(search_mode_value))
+        top_k = target.top_k
+        if top_k is None:
+            top_k = _target_setting(target, "top_k")
+        if top_k is None:
+            top_k = request_top_k
+        if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1:
+            raise ValueError("top_k must be positive")
         if rerank_config is not None:
             top_k = max(top_k, candidate_k)
         score_threshold = (
@@ -592,21 +605,36 @@ async def _retrieve_once(
                 return await dense_search()
             if search_mode == "fulltext":
                 return await lexical_search()
-
-            dense_call = (
-                dense_search()
-                if target.embedding_model_id
-                else asyncio.sleep(0, result=RuntimeError("missing_embedding_model"))
+            channels: list[tuple[str, Any]] = []
+            if dense_weight > 0:
+                dense_call = (
+                    dense_search()
+                    if target.embedding_model_id
+                    else asyncio.sleep(
+                        0, result=RuntimeError("missing_embedding_model")
+                    )
+                )
+                channels.append(("dense", dense_call))
+            if lexical_weight > 0:
+                channels.append(("lexical", lexical_search()))
+            values = await asyncio.gather(
+                *(call for _, call in channels), return_exceptions=True
             )
-            dense, lexical = await asyncio.gather(
-                dense_call, lexical_search(), return_exceptions=True
+            channel_values: dict[str, Any] = dict(
+                zip((name for name, _ in channels), values, strict=True)
+            )
+            dense = cast(
+                list[dict[str, Any]] | BaseException, channel_values.get("dense", [])
+            )
+            lexical = cast(
+                list[dict[str, Any]] | BaseException, channel_values.get("lexical", [])
             )
             reasons = [
                 (channel, type(value).__name__)
-                for channel, value in (("dense", dense), ("lexical", lexical))
+                for channel, value in channel_values.items()
                 if isinstance(value, BaseException)
             ]
-            if len(reasons) == 2:
+            if reasons and len(reasons) == len(channels):
                 raise _HybridChannelsFailed(tuple(reasons))
             results = _weighted_rrf(
                 [] if isinstance(dense, BaseException) else dense,
@@ -679,9 +707,8 @@ async def _retrieve_once(
                 rerank_score_threshold=rerank_config["score_threshold"],
             )
         except Exception as exc:
-            # Rerank failure propagates as a retrieval error with stage context
             rerank_diagnostic = RetrievalDiagnostic(
-                request.targets[0].kb_id if request.targets else UUID(int=0),
+                rerank_target.kb_id if rerank_target else UUID(int=0),
                 "failed",
                 type(exc).__name__,
                 stage="rerank",
@@ -719,23 +746,32 @@ async def retrieve_many(
 ) -> tuple[RetrievalResponse | BaseException, ...]:
     """Retrieve independent variants while sharing invocation-local embeddings."""
     context = _RetrievalContext()
-    return tuple(
-        await asyncio.gather(
-            *(retrieve(request, context=context) for request in requests),
-            return_exceptions=True,
+    try:
+        return tuple(
+            await asyncio.gather(
+                *(retrieve(request, context=context) for request in requests),
+                return_exceptions=True,
+            )
         )
-    )
+    finally:
+        await context.close()
 
 
 async def retrieve(
     request: RetrievalRequest, *, context: _RetrievalContext | None = None
 ) -> RetrievalResponse:
     """Apply hybrid rollout policy without allowing telemetry to affect answers."""
+    owns_context = context is None
     context = context or _RetrievalContext()
     request = _effective_request(request)
     team_ids = tuple(str(target.team_id) for target in request.targets)
-    uses_hybrid = request.search_mode == "hybrid" or any(
-        (target.search_mode or _target_setting(target, "search_mode")) == "hybrid"
+    uses_hybrid = any(
+        (
+            target.search_mode
+            or _target_setting(target, "search_mode")
+            or request.search_mode
+        )
+        == "hybrid"
         for target in request.targets
     )
     enabled = not uses_hybrid or await hybrid_enabled(team_ids)
@@ -751,6 +787,12 @@ async def retrieve(
             error_count=len(exc.diagnostics),
             index_version=INDEX_VERSION,
         )
+        if owns_context:
+            await context.close()
+        raise
+    except BaseException:
+        if owns_context:
+            await context.close()
         raise
     fallback_count = sum(
         bool(result.get("degradation_reasons")) for result in response.results
@@ -774,4 +816,6 @@ async def retrieve(
             )
         except Exception:
             pass
+    if owns_context:
+        await context.close()
     return response

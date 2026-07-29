@@ -34,6 +34,34 @@ async def test_check_login_anomaly_detects_new_ip_and_user_agent(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_known_login_and_below_limit_history_need_no_anomaly_or_trimming(
+    monkeypatch,
+):
+    user_id = uuid4()
+    redis = MagicMock()
+    redis.smembers = AsyncMock(side_effect=[{"192.0.2.1"}, {"known browser"}, set()])
+    redis.sadd = AsyncMock()
+    redis.expire = AsyncMock()
+    redis.scard = AsyncMock(return_value=1)
+    redis.spop = AsyncMock()
+    monkeypatch.setattr(login_anomaly, "get_redis", AsyncMock(return_value=redis))
+
+    is_anomaly, details = await login_anomaly.check_login_anomaly(
+        user_id, "192.0.2.1", "known browser"
+    )
+    assert is_anomaly is False
+    assert details["new_ip"] is False
+    assert details["new_user_agent"] is False
+
+    is_anomaly, _ = await login_anomaly.check_login_anomaly(user_id, "192.0.2.1")
+    assert is_anomaly is False
+
+    await login_anomaly.record_login(user_id, "192.0.2.1")
+    await login_anomaly.record_login(user_id, "192.0.2.1", "known browser")
+    redis.spop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_check_login_anomaly_handles_redis_failures(monkeypatch):
     user_id = uuid4()
     monkeypatch.setattr(

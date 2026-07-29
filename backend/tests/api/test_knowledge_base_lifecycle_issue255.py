@@ -11,12 +11,8 @@ from app.schemas.knowledge_base import DocumentUpdate, KnowledgeBaseUpdate
 
 @pytest.fixture(autouse=True)
 def lexical_store_calls(monkeypatch):
-    calls = SimpleNamespace(
-        chunk=AsyncMock(), document=AsyncMock(), kb=AsyncMock(), index=AsyncMock()
-    )
-    monkeypatch.setattr(knowledge_bases, "delete_lexical_chunk", calls.chunk)
+    calls = SimpleNamespace(document=AsyncMock(), index=AsyncMock())
     monkeypatch.setattr(knowledge_bases, "delete_lexical_document", calls.document)
-    monkeypatch.setattr(knowledge_bases, "delete_lexical_kb", calls.kb)
     monkeypatch.setattr(knowledge_bases, "index_lexical_chunk", calls.index)
     return calls
 
@@ -185,7 +181,6 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
     )
     authorize.assert_awaited_once()
     kb.save.assert_awaited_once()
-    lexical_store_calls.kb.assert_awaited_once_with(kb.id, kb.team_id)
     kb.delete.assert_awaited_once()
     assert updated["msg_key"] == "kb_updated"
     assert deleted["data"] == {"id": str(kb_id)}
@@ -291,7 +286,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(
         )
 
     celery_app.control.revoke.assert_called_once_with("task-1", terminate=True)
-    lexical_store_calls.document.assert_awaited_once_with(doc_id, kb.team_id)
+    lexical_store_calls.document.assert_not_awaited()
     vector_store.delete_document_vectors.assert_awaited_once_with(doc_id)
     media_delete.assert_awaited_once()
     file_delete.assert_awaited_once_with("uploads/report.pdf")

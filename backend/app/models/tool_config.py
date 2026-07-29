@@ -16,7 +16,7 @@ class ToolConfig(models.Model):
     per team or globally.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Tool identification
     tool_name = fields.CharField(

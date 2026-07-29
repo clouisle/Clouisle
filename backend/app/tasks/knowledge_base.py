@@ -29,13 +29,8 @@ from app.services.vector_store import (
 logger = logging.getLogger(__name__)
 
 
-def _dispatch_lexical_index(document_id: UUID | str) -> None:
-    try:
-        index_document_lexically_task.delay(str(document_id))
-    except Exception:
-        logger.exception(
-            "Failed to dispatch lexical indexing for document %s", document_id
-        )
+async def _index_document_lexically(document_id: UUID | str) -> None:
+    await index_document(document_id)
 
 
 @shared_task(
@@ -163,6 +158,8 @@ async def _finish_stale_task(document: Document, task_id: str | None) -> dict:
 async def _finish_already_finished_task(
     document: Document, task_id: str | None
 ) -> dict:
+    if document.status == DocumentStatus.COMPLETED.value:
+        await _index_document_lexically(document.id)
     logger.info(f"Skipping finished document task {task_id} for document {document.id}")
     return {
         "status": "already_finished",
@@ -483,7 +480,7 @@ def process_document_task(self, document_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             await document.save()
             if document.status == DocumentStatus.COMPLETED.value:
-                _dispatch_lexical_index(document.id)
+                await _index_document_lexically(document.id)
             logger.info(
                 f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
             )
@@ -837,7 +834,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             await document.save()
             if document.status == DocumentStatus.COMPLETED.value:
-                _dispatch_lexical_index(document.id)
+                await _index_document_lexically(document.id)
 
             # Update KB statistics
             kb.total_chunks += len(created_chunks)
@@ -1114,7 +1111,7 @@ async def _embed_existing_document_chunks(
         document.processed_at = datetime.now(timezone.utc)
         document.error_message = None
         await document.save()
-        _dispatch_lexical_index(document.id)
+        await _index_document_lexically(document.id)
         logger.info(
             f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
         )
@@ -1253,7 +1250,7 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                 document.status = DocumentStatus.COMPLETED.value
                 document.error_message = None
                 await document.save()
-                _dispatch_lexical_index(document.id)
+                await _index_document_lexically(document.id)
                 return {
                     "status": "success",
                     "document_id": document_id,
@@ -1345,7 +1342,7 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
             _clear_task_metadata(document)
             await document.save()
             if document.status == DocumentStatus.COMPLETED.value:
-                _dispatch_lexical_index(document.id)
+                await _index_document_lexically(document.id)
 
             # Refresh KB stats
             docs = await Document.filter(
@@ -1521,7 +1518,7 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             _clear_task_metadata(document)
             await document.save()
-            _dispatch_lexical_index(document.id)
+            await _index_document_lexically(document.id)
 
             stats = (
                 await Document.filter(

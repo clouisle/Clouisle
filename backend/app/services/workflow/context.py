@@ -12,7 +12,7 @@ import asyncio
 import json
 import re
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast, TypeVar
 from uuid import UUID
 
@@ -97,7 +97,7 @@ class ExecutionContext:
             "user_id": str(user_id) if user_id else None,
             "workflow_id": str(workflow_id),
             "workflow_run_id": str(run_id),
-            "timestamp": int(datetime.utcnow().timestamp()),
+            "timestamp": int(datetime.now(UTC).timestamp()),
         }
 
         # Store metadata
@@ -108,7 +108,7 @@ class ExecutionContext:
                 mapping={
                     "workflow_id": str(workflow_id),
                     "user_id": str(user_id) if user_id else "",
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 },
             )
         )
@@ -149,7 +149,7 @@ class ExecutionContext:
                 "user_id": meta.get("user_id") or None,
                 "workflow_id": meta.get("workflow_id", ""),
                 "workflow_run_id": str(run_id),
-                "timestamp": int(datetime.utcnow().timestamp()),
+                "timestamp": int(datetime.now(UTC).timestamp()),
             }
 
         return ctx

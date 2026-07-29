@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import ConfigDict, BaseModel, EmailStr
 
 from app.schemas.sso import UserSSOConnectionSchema
 
@@ -22,8 +22,7 @@ class Permission(PermissionBase):
     id: UUID
     is_system: bool = True
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionScopeOption(BaseModel):
@@ -46,8 +45,7 @@ class Role(RoleBase):
     is_system_role: bool
     permissions: List[Permission] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # User Schemas
@@ -88,8 +86,7 @@ class UserInDBBase(UserBase):
     force_password_change: bool = False
     password_expiration_exempt: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class User(UserInDBBase):
@@ -97,8 +94,7 @@ class User(UserInDBBase):
     roles: List[Role] = []
     sso_connections: List[UserSSOConnectionSchema] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def model_validate(cls, obj, **kwargs):

@@ -12,7 +12,7 @@ import json
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 from enum import Enum
 
@@ -227,8 +227,8 @@ class WorkflowVersionManager:
             definition=definition,
             status=VersionStatus.PUBLISHED if auto_publish else VersionStatus.DRAFT,
             created_by=str(user_id),
-            created_at=datetime.utcnow(),
-            published_at=datetime.utcnow() if auto_publish else None,
+            created_at=datetime.now(UTC),
+            published_at=datetime.now(UTC) if auto_publish else None,
             parent_version_id=parent_version_id,
         )
 
@@ -328,7 +328,7 @@ class WorkflowVersionManager:
 
         # Update status
         version.status = VersionStatus.PUBLISHED
-        version.published_at = datetime.utcnow()
+        version.published_at = datetime.now(UTC)
 
         # Update workflow in database
         await self._update_workflow(
@@ -586,7 +586,7 @@ class WorkflowVersionManager:
             if workflow:
                 workflow.definition = definition
                 workflow.current_version_id = version_id
-                workflow.updated_at = datetime.utcnow()
+                workflow.updated_at = datetime.now(UTC)
                 await workflow.save()
 
     async def fork(

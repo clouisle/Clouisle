@@ -105,7 +105,7 @@ class NotificationDeliveryStatus(str, Enum):
 
 
 class Notification(models.Model):
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    id = fields.UUIDField(primary_key=True, default=uuid.uuid4)
 
     scope = fields.CharEnumField(NotificationScope, max_length=20)
     team: fields.ForeignKeyRelation["Team"] | None = fields.ForeignKeyField(
@@ -149,7 +149,7 @@ class Notification(models.Model):
 
 
 class NotificationRead(models.Model):
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    id = fields.UUIDField(primary_key=True, default=uuid.uuid4)
 
     notification: fields.ForeignKeyRelation["Notification"] = fields.ForeignKeyField(
         "models.Notification",
@@ -176,7 +176,7 @@ class NotificationRead(models.Model):
 
 
 class NotificationAudit(models.Model):
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    id = fields.UUIDField(primary_key=True, default=uuid.uuid4)
 
     notification: fields.ForeignKeyRelation["Notification"] = fields.ForeignKeyField(
         "models.Notification",
@@ -207,7 +207,7 @@ class NotificationAudit(models.Model):
 class NotificationDelivery(models.Model):
     """通知发送记录 - 跟踪每个渠道的发送状态"""
 
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    id = fields.UUIDField(primary_key=True, default=uuid.uuid4)
 
     notification: fields.ForeignKeyRelation["Notification"] = fields.ForeignKeyField(
         "models.Notification",

@@ -102,6 +102,8 @@ def test_retry_failed_chunks_stops_for_invalid_task_state(
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(document)
     )
+    lexical_index = AsyncMock()
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", lexical_index)
     knowledge_base.retry_failed_chunks_task.push_request(id="current")
     try:
         result = knowledge_base.retry_failed_chunks_task.run(str(document_id))
@@ -110,6 +112,10 @@ def test_retry_failed_chunks_stops_for_invalid_task_state(
 
     assert result["status"] == expected
     assert result["document_id"] == str(document_id)
+    if expected == "already_finished":
+        lexical_index.assert_awaited_once_with(document_id)
+    else:
+        lexical_index.assert_not_awaited()
 
 
 def test_embed_task_creates_event_loop_when_none_exists(monkeypatch):

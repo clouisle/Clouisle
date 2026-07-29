@@ -58,6 +58,9 @@ export {
   type SearchParams,
   type SearchResponse,
   type SearchMode,
+  type SearchBatchConfiguration,
+  type SearchBatchResponse,
+
   type ChunkPreviewInput,
   type ChunkPreviewItem,
   type ChunkPreviewResponse,

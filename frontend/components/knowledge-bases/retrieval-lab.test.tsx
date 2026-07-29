@@ -10,7 +10,11 @@ Object.assign(globalThis, {
   window: { location: { href: 'http://localhost' } },
 })
 
-mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
+const translate = Object.assign(
+  (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key,
+  { has: (key: string) => !key.startsWith('retrievalError_recall_') }
+)
+mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
 mock.module('next/dynamic', () => ({ default: () => 'markdown-preview' }))
 mock.module('@/lib/utils', () => ({
@@ -69,6 +73,11 @@ beforeAll(async () => {
       if (!sameDeps(slots[index]?.deps, deps)) slots[index] = { value: callback, deps }
       return slots[index].value
     },
+    useRef(initial: unknown) {
+      const index = cursor++
+      slots[index] ??= { value: { current: initial } }
+      return slots[index].value
+    },
   }))
   ;({ ApiError } = await import('@/lib/api/client'))
   ;({ RetrievalLab } = await import('./retrieval-lab'))
@@ -97,7 +106,7 @@ afterEach(() => slots.forEach(slot => slot.cleanup?.()))
 
 function render(props: Partial<Parameters<typeof RetrievalLab>[0]> = {}) {
   cursor = 0
-  return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canUpdate: true, ...props })
+  return RetrievalLab({ knowledgeBaseId: 'kb-1', api, backHref: '/back', canTest: true, canUpdate: true, ...props })
 }
 async function flush(tree = render()) {
   while (effects.length) {
@@ -406,6 +415,45 @@ describe('RetrievalLab', () => {
     tree = render({ canUpdate: false })
     await button(tree, 'applyToProduction').props.onClick()
     expect(updateKnowledgeBase).toHaveBeenCalledTimes(calls)
+  })
+
+  test('reports whole batch failures and falls back from missing stage keys', async () => {
+    searchBatch.mockRejectedValueOnce(new ApiError(-1, 'network detail', { stage: 'recall' }))
+    let tree = await flush()
+    find(tree, 'switch', props => props.id === 'compare-toggle').props.onCheckedChange(true)
+    tree = await enterQuery(render())
+    await searchButton(tree).props.onClick()
+    await settle()
+    expect(toastError).toHaveBeenCalledWith('retrievalErrorRequest')
+
+    search.mockRejectedValueOnce(new ApiError(5000, 'provider detail', {
+      retrieval_error_category: 'provider_unavailable', stage: 'recall',
+    }))
+    slots.splice(0); effects = []
+    tree = await flush()
+    tree = await enterQuery(tree)
+    await searchButton(tree).props.onClick()
+    await settle()
+    expect(toastError).toHaveBeenCalledWith('retrievalErrorProviderUnavailable')
+  })
+
+  test('disables testing without permission and clamps stored top-k', async () => {
+    let tree = await flush()
+    tree = render({ canTest: false })
+    query(tree).props.onChange({ target: { value: 'policy' } })
+    tree = render({ canTest: false })
+    expect(searchButton(tree).props.disabled).toBe(true)
+    await searchButton(tree).props.onClick()
+    expect(search).not.toHaveBeenCalled()
+
+    slots.splice(0); effects = []
+    getKnowledgeBase.mockResolvedValueOnce({ ...kb, settings: { ...kb.settings, top_k: 100 } })
+    search.mockResolvedValueOnce(response())
+    tree = await flush()
+    tree = await enterQuery(tree)
+    await searchButton(tree).props.onClick()
+    await settle()
+    expect(search.mock.calls.at(-1)?.[1]).toMatchObject({ top_k: 20 })
   })
 
   test('authenticated markdown image uses bearer token and rejects unsafe sources', async () => {

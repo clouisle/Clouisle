@@ -5,13 +5,12 @@
 
 import logging
 import secrets
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Optional
+from email.mime.text import MIMEText
 
 import aiosmtplib
 
-from app.core.i18n import t, normalize_language
+from app.core.i18n import normalize_language, t
 from app.core.redis import get_redis
 from app.models.site_setting import SiteSetting
 
@@ -24,6 +23,12 @@ EMAIL_COOLDOWN_PREFIX = "email:cooldown:"
 # 批量邮件防刷前缀
 BULK_EMAIL_RATE_PREFIX = "email:rate:bulk:"  # 管理员批量发送速率
 RECIPIENT_EMAIL_RATE_PREFIX = "email:rate:recipient:"  # 单个收件人速率
+
+
+def _redis_text(value: bytes | str) -> str:
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
 
 
 async def get_smtp_config() -> dict:
@@ -44,7 +49,7 @@ async def send_email(
     to_email: str,
     subject: str,
     body_text: str,
-    body_html: Optional[str] = None,
+    body_html: str | None = None,
 ) -> bool:
     """
     发送邮件
@@ -100,8 +105,8 @@ async def send_email(
         logger.info(f"Email sent successfully to {to_email}")
         return True
 
-    except Exception as e:
-        logger.error(f"Failed to send email to {to_email}: {e}")
+    except (aiosmtplib.SMTPException, OSError):
+        logger.exception("Failed to send email to %s", to_email)
         return False
 
 
@@ -151,7 +156,7 @@ async def verify_code(email: str, code: str, purpose: str = "register") -> bool:
     if not stored:
         return False
 
-    stored_code, _ = stored.split(":")
+    stored_code, _ = _redis_text(stored).split(":", 1)
     if stored_code != code:
         return False
 
@@ -160,7 +165,7 @@ async def verify_code(email: str, code: str, purpose: str = "register") -> bool:
     return True
 
 
-async def verify_token(token: str) -> Optional[tuple[str, str]]:
+async def verify_token(token: str) -> tuple[str, str] | None:
     """
     验证 token
 
@@ -174,7 +179,7 @@ async def verify_token(token: str) -> Optional[tuple[str, str]]:
     if not stored:
         return None
 
-    email, purpose = stored.split(":")
+    email, purpose = _redis_text(stored).split(":", 1)
 
     # 删除 token 和对应的 code
     code_key = f"{VERIFICATION_CODE_PREFIX}{email}:{purpose}"

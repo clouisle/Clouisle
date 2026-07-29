@@ -155,6 +155,8 @@ def test_retry_single_chunk_guards_and_creates_event_loop(monkeypatch, document)
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(first=document)
     )
+    lexical_index = AsyncMock()
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", lexical_index)
     chunk_filter = Mock()
     monkeypatch.setattr(knowledge_base.DocumentChunk, "filter", chunk_filter)
     loop = Mock()
@@ -173,5 +175,6 @@ def test_retry_single_chunk_guards_and_creates_event_loop(monkeypatch, document)
 
     assert result["status"] == "already_finished"
     chunk_filter.assert_not_called()
+    lexical_index.assert_awaited_once_with(document.id)
     set_event_loop.assert_called_once_with(loop)
     loop.run_until_complete.assert_called_once()

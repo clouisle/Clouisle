@@ -21,7 +21,7 @@ class ToolCallAccumulator:
     此类负责累加这些增量，并在完成时返回完整的工具调用列表。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # index -> partial tool call
         self._tool_calls: dict[int, dict[str, Any]] = {}
 

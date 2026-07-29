@@ -174,6 +174,9 @@ def test_process_document_success_updates_document_and_kb():
         patch("app.services.document_processor.chunk_text", return_value=["a", "b"]),
         patch.object(kb_tasks, "VectorStore", return_value=vector_store),
         patch.object(
+            kb_tasks, "_index_document_lexically", new=AsyncMock()
+        ) as lexical_index,
+        patch.object(
             kb_tasks, "_send_doc_indexed_notification", new=AsyncMock()
         ) as notify,
     ):
@@ -194,6 +197,7 @@ def test_process_document_success_updates_document_and_kb():
     ) == (2, 8)
     assert extract_text.await_args.kwargs["clean_text"] is False
     notify.assert_awaited_once()
+    lexical_index.assert_awaited_once_with(document.id)
 
 
 def test_process_document_dimension_mismatch_is_specific_and_cleans_metadata():

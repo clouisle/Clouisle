@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.config import settings
+from app.llm.token_counter import count_tokens
 from app.services.retrieval import (
+    RetrievalError,
     RetrievalRequest,
     RetrievalTarget,
     retrieve,
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REWRITE_HISTORY_MESSAGES = 6
+_REWRITE_HISTORY_TOKENS = 2_000
 _REWRITE_PROMPT = """Rewrite the latest user question as a standalone knowledge-base search query using only the conversation context below.
 Do not answer the question. Do not add facts, names, or constraints absent from the conversation.
 Return exactly one JSON object with two string fields: {"query":"...","evidence":"..."}.
@@ -53,6 +56,28 @@ def should_contextualize_query(query: str) -> bool:
     )
 
 
+def _bounded_rewrite_history(history: list[Any]) -> list[dict[str, str]]:
+    conversation: list[dict[str, str]] = []
+    token_count = 0
+    for message in reversed(history):
+        role = str(getattr(message.role, "value", message.role))
+        content = message.content
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if not content:
+            continue
+        message_tokens = count_tokens(content)
+        if token_count + message_tokens > _REWRITE_HISTORY_TOKENS:
+            continue
+        conversation.append({"role": role, "content": content})
+        token_count += message_tokens
+        if len(conversation) == _REWRITE_HISTORY_MESSAGES:
+            break
+    conversation.reverse()
+    return conversation
+
+
 async def contextualize_retrieval_query(
     agent: "Agent", query: str, history: list[Any] | None
 ) -> ContextualizedQuery:
@@ -64,16 +89,7 @@ async def contextualize_retrieval_query(
     if not agent.model_id or not agent.team_id:
         return ContextualizedQuery(query, "fallback")
 
-    conversation = [
-        {
-            "role": str(getattr(message.role, "value", message.role)),
-            "content": message.content,
-        }
-        for message in history
-        if getattr(message.role, "value", message.role) in {"user", "assistant"}
-        and isinstance(message.content, str)
-        and message.content.strip()
-    ][-_REWRITE_HISTORY_MESSAGES:]
+    conversation = _bounded_rewrite_history(history)
     if not conversation:
         return ContextualizedQuery(query, "not_needed")
 
@@ -167,6 +183,9 @@ async def perform_rag_retrieval(
                 top_k=max(target.top_k or 1 for target in targets),
             )
         )
+    except RetrievalError:
+        logger.warning("RAG retrieval failed")
+        raise
     except Exception:
         logger.warning("RAG retrieval failed")
         return []
@@ -179,6 +198,7 @@ async def perform_rag_retrieval(
             "document_name": result.get("document_name"),
             "content": result.get("content"),
             "score": result.get("score"),
+            "metadata": result.get("metadata") or {},
         }
         for result in response.results
     ]

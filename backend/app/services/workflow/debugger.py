@@ -12,7 +12,7 @@ import json
 import logging
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 from enum import Enum
 
@@ -115,7 +115,7 @@ class DebugSession:
     breakpoints: list[Breakpoint] = field(default_factory=list)
     watches: list[str] = field(default_factory=list)  # Variable names to watch
     call_stack: list[str] = field(default_factory=list)  # Node IDs
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         return {
@@ -163,7 +163,7 @@ class WorkflowDebugger:
         await debugger.goto_frame(session.session_id, frame_index=5)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._sessions: dict[str, DebugSession] = {}
         self._action_events: dict[str, asyncio.Event] = {}
         self._pending_actions: dict[str, DebugAction] = {}
@@ -408,7 +408,7 @@ class WorkflowDebugger:
 
         frame = DebugFrame(
             frame_id=str(uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             node_id=node_id,
             node_type=node_type,
             node_label=node_label,

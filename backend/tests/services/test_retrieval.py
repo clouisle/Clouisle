@@ -559,6 +559,82 @@ async def test_hybrid_weighted_rrf_allows_zero_weight_channel(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_hybrid_fails_when_only_weighted_channel_fails(monkeypatch):
+    dense = AsyncMock(side_effect=RuntimeError("qdrant down"))
+    install_store(
+        monkeypatch,
+        dense,
+        [retrieval.SearchHit("lexical", 20.0, {"document_id": "doc"})],
+    )
+
+    with pytest.raises(retrieval.RetrievalError) as exc_info:
+        await retrieval.retrieve(request(dense_weight=1.0, lexical_weight=0.0))
+
+    assert exc_info.value.diagnostics[0].detail == "dense=RuntimeError"
+    retrieval.LexicalStore().search.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_inherited_target_settings_are_validated(monkeypatch):
+    install_store(monkeypatch, AsyncMock(return_value=[]))
+
+    with pytest.raises(ValueError, match="unsupported search mode"):
+        await retrieval.retrieve(request(target(settings={"search_mode": "semantic"})))
+    with pytest.raises(ValueError, match="top_k must be positive"):
+        await retrieval.retrieve(request(target(settings={"top_k": -1})))
+
+
+@pytest.mark.asyncio
+async def test_timeout_cancels_orphaned_query_embedding(monkeypatch):
+    cancelled = asyncio.Event()
+
+    async def embed_query(_query):
+        try:
+            await asyncio.sleep(10)
+        finally:
+            cancelled.set()
+
+    install_store(
+        monkeypatch,
+        AsyncMock(return_value=[]),
+        embed_query_side_effect=embed_query,
+    )
+
+    with pytest.raises(retrieval.RetrievalError):
+        await retrieval.retrieve(request(search_mode="vector", timeout_seconds=0.001))
+
+    assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_global_rerank_skips_disabled_target_deterministically(monkeypatch):
+    selected_request = request(
+        target(KB_2, rerank_model_id=MODEL_ID),
+        target(KB_1, rerank_model_id=MODEL_ID),
+    )
+    stores_by_kb = {
+        KB_1: {"enabled": False, "model_id": str(MODEL_ID)},
+        KB_2: {"enabled": True, "model_id": str(MODEL_ID)},
+    }
+
+    async def resolve(kb_id, _overrides):
+        return stores_by_kb[kb_id]
+
+    monkeypatch.setattr(
+        retrieval,
+        "VectorStore",
+        lambda **kwargs: SimpleNamespace(
+            kwargs=kwargs,
+            _resolve_rerank_config=AsyncMock(side_effect=resolve),
+        ),
+    )
+    selected, _store, config = await retrieval._resolve_global_rerank(selected_request)
+
+    assert selected is not None and selected.kb_id == KB_2
+    assert config == stores_by_kb[KB_2]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("failing_channel", "healthy_chunk"), [("dense", "lex"), ("lexical", "dense")]
 )

@@ -44,22 +44,22 @@ type RetrievalFailure =
   | 'provider_unavailable'
   | 'unknown'
 
-const RETRIEVAL_FAILURES = new Set<RetrievalFailure>([
-  'configuration_mismatch',
-  'provider_authentication',
-  'quota_or_rate_limit',
-  'model_configuration',
-  'lexical_unavailable',
-  'provider_unavailable',
-  'unknown',
-])
+const RETRIEVAL_FAILURES: Record<Exclude<RetrievalFailure, 'request'>, true> = {
+  configuration_mismatch: true,
+  provider_authentication: true,
+  quota_or_rate_limit: true,
+  model_configuration: true,
+  lexical_unavailable: true,
+  provider_unavailable: true,
+  unknown: true,
+}
 
 function retrievalFailure(reason: unknown): RetrievalFailure {
   if (!(reason instanceof ApiError)) return 'unknown'
   if (reason.code === -1) return 'request'
   if (!reason.data || typeof reason.data !== 'object') return 'unknown'
   const category = (reason.data as Record<string, unknown>).retrieval_error_category
-  return typeof category === 'string' && RETRIEVAL_FAILURES.has(category as RetrievalFailure)
+  return typeof category === 'string' && category in RETRIEVAL_FAILURES
     ? category as RetrievalFailure
     : 'unknown'
 }
@@ -85,10 +85,20 @@ function retrievalErrorKey(failure: RetrievalFailure, stage: string | null): str
   return `retrievalError${suffix}`
 }
 
+function retrievalErrorMessage(
+  t: Translate,
+  failure: RetrievalFailure,
+  stage: string | null
+): string {
+  const key = retrievalErrorKey(failure, stage)
+  return t.has(key) ? t(key) : t(retrievalErrorKey(failure, null))
+}
+
 interface RetrievalLabProps {
   knowledgeBaseId: string
   api: RetrievalApi
   backHref: string
+  canTest: boolean
   canUpdate: boolean
   authenticatedMarkdown?: boolean
   onLoadError?: () => void
@@ -192,7 +202,10 @@ function configParams(query: string, config: Config, hasRerankModel: boolean): S
 }
 
 type ResultSelection = { side: 'a' | 'b'; chunkId: string }
-type Translate = (key: string, values?: Record<string, string | number>) => string
+type Translate = {
+  (key: string, values?: Record<string, string | number>): string
+  has(key: string): boolean
+}
 
 function ResultDetail({ result, side, rank, query, authenticatedMarkdown, resolvedTheme, t, onClose }: {
   result: SearchResult
@@ -251,7 +264,7 @@ function ResultDetail({ result, side, rank, query, authenticatedMarkdown, resolv
   </aside>
 }
 
-export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
+export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const { resolvedTheme } = useTheme()
@@ -274,15 +287,22 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
   const [selectedPreset, setSelectedPreset] = React.useState('')
   const [applyDialogOpen, setApplyDialogOpen] = React.useState(false)
   const [applyingPreset, setApplyingPreset] = React.useState(false)
+  const onLoadErrorRef = React.useRef(onLoadError)
+  onLoadErrorRef.current = onLoadError
   const [submittedQuery, setSubmittedQuery] = React.useState('')
+  const loadGeneration = React.useRef(0)
+  const searchGeneration = React.useRef(0)
 
   const storageKey = `retrieval-lab:${knowledgeBaseId}`
   React.useEffect(() => {
+    const generation = ++loadGeneration.current
+    setLoading(true)
     api.getKnowledgeBase(knowledgeBaseId).then(kb => {
+      if (generation !== loadGeneration.current) return
       setKnowledgeBase(kb)
       setConfigA({
         search_mode: kb.settings?.search_mode ?? DEFAULT_CONFIG.search_mode,
-        top_k: kb.settings?.top_k ?? DEFAULT_CONFIG.top_k,
+        top_k: Math.min(20, Math.max(1, kb.settings?.top_k ?? DEFAULT_CONFIG.top_k)),
         threshold: kb.settings?.score_threshold ?? DEFAULT_CONFIG.threshold,
         dense_weight: kb.settings?.dense_weight ?? DEFAULT_CONFIG.dense_weight,
         lexical_weight: kb.settings?.lexical_weight ?? DEFAULT_CONFIG.lexical_weight,
@@ -297,8 +317,13 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
       } catch {
         localStorage.removeItem(storageKey)
       }
-    }).catch(() => onLoadError?.()).finally(() => setLoading(false))
-  }, [api, knowledgeBaseId, onLoadError, storageKey])
+    }).catch(() => {
+      if (generation === loadGeneration.current) onLoadErrorRef.current?.()
+    }).finally(() => {
+      if (generation === loadGeneration.current) setLoading(false)
+    })
+    return () => { loadGeneration.current += 1 }
+  }, [api, knowledgeBaseId, storageKey])
 
   const persistPresets = (nextPresets: Array<{ name: string; config: Config }>) => {
     setPresets(nextPresets)
@@ -307,7 +332,8 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
 
   const runSearch = async () => {
     const trimmed = query.trim()
-    if (!trimmed) return
+    if (!trimmed || !canTest) return
+    const generation = ++searchGeneration.current
     setSearching(true)
     setSearched(true)
     setResponses({})
@@ -320,6 +346,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
           { id: 'a', ...runConfig(configA, hasRerankModel) },
           { id: 'b', ...runConfig(configB, hasRerankModel) },
         ])
+        if (generation !== searchGeneration.current) return
         const outcomes = new Map(batch.outcomes.map(outcome => [outcome.id, outcome]))
         const a = outcomes.get('a')
         const b = outcomes.get('b')
@@ -330,24 +357,24 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
         for (const [id, outcome] of [['A', a], ['B', b]] as const) {
           if (outcome?.status !== 'rejected') continue
           const reason = batchErrorReason(outcome.error)
-          toast.error(`${id}: ${t(retrievalErrorKey(retrievalFailure(reason), retrievalStage(reason)))}`)
+          toast.error(`${id}: ${retrievalErrorMessage(t, retrievalFailure(reason), retrievalStage(reason))}`)
         }
       } else {
-        try {
-          const response = await api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model)))
-          setResponses({ a: response })
-        } catch (reason) {
-          toast.error(t(retrievalErrorKey(retrievalFailure(reason), retrievalStage(reason))))
-        }
+        const response = await api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model)))
+        if (generation === searchGeneration.current) setResponses({ a: response })
+      }
+    } catch (reason) {
+      if (generation === searchGeneration.current) {
+        toast.error(retrievalErrorMessage(t, retrievalFailure(reason), retrievalStage(reason)))
       }
     } finally {
-      setSearching(false)
+      if (generation === searchGeneration.current) setSearching(false)
     }
   }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.nativeEvent.isComposing) return
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !searching && canTest) {
       event.preventDefault()
       void runSearch()
     }
@@ -591,7 +618,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
         <div className="flex-1 flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input value={query} onChange={event => setQuery(event.target.value)} onKeyDown={handleKeyDown} placeholder={t('searchPlaceholder')} className="pl-9" />
+                <Input value={query} onChange={event => setQuery(event.target.value)} onKeyDown={handleKeyDown} placeholder={t('searchPlaceholder')} className="pl-9" disabled={!canTest} />
               </div>
         </div>
         <Popover open={showConfig} onOpenChange={setShowConfig}>
@@ -679,7 +706,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!query.trim() || searching}>
+        <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!canTest || !query.trim() || searching}>
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>

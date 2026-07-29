@@ -18,9 +18,10 @@ describe('platform SearchTestClient', () => {
     const tree = SearchTestClient({ knowledgeBaseId: 'kb-1' }) as ReactElement<Record<string, unknown>>
     expect(tree.type).toBe('retrieval-lab')
     expect(tree.props).toMatchObject({
-      knowledgeBaseId: 'kb-1', api, backHref: '/app/kb/kb-1', canUpdate: true, authenticatedMarkdown: true,
+      knowledgeBaseId: 'kb-1', api, backHref: '/app/kb/kb-1',
+      canUpdate: true, canTest: true, authenticatedMarkdown: true,
     })
-    expect(hasPermission).toHaveBeenCalledWith('kb:update')
+    expect(hasPermission.mock.calls.map(call => call[0])).toEqual(['kb:update', 'kb:test'])
     ;(tree.props.onLoadError as () => void)()
     expect(push).toHaveBeenCalledWith('/app/kb')
   })

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class SSOSession(models.Model):
     """Temporary SSO session state (for OAuth2/OIDC state parameter, SAML RelayState)"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     session_id = fields.CharField(
         max_length=255, unique=True, description="Random state/RelayState"
     )

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 
 class APIKeyUserInfo(BaseModel):
@@ -11,8 +11,7 @@ class APIKeyUserInfo(BaseModel):
     id: UUID
     username: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIKeyAgentInfo(BaseModel):
@@ -22,8 +21,7 @@ class APIKeyAgentInfo(BaseModel):
     name: str
     icon: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIKeyWorkflowInfo(BaseModel):
@@ -33,8 +31,7 @@ class APIKeyWorkflowInfo(BaseModel):
     name: str
     icon: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIKeyBase(BaseModel):
@@ -97,8 +94,7 @@ class APIKeyResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIKeyCreateResponse(APIKeyResponse):

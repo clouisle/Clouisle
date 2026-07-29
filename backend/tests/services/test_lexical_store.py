@@ -73,6 +73,9 @@ async def test_index_chunks_uses_parameterized_upsert():
     assert "ON CONFLICT (chunk_id) DO UPDATE" in query
     assert values[0][0] == chunk["chunk_id"]
     assert values[0][-1] == ["YUN-117"]
+    assert "WHERE EXISTS" in query
+    assert "authoritative_chunk.content = $7" in query
+    assert "knowledge_lexical_chunks.update_version <= EXCLUDED.update_version" in query
     assert await store.index_chunks([]) == 0
 
 

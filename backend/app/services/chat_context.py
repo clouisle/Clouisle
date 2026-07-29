@@ -71,7 +71,7 @@ AGGRESSIVE_BLOCK_SUMMARY_CHARS = 220
 DEFAULT_FILE_CONTENT_HEAD_CHARS = 12000
 DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
 FILE_CONTENT_PLACEHOLDER = "{{fileContent}}"
-MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = """## Markdown Output
+MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = r"""## Markdown Output
 
 When the user asks you to show or display an image, output the image using normal Markdown image syntax, for example `![alt text](image-url)`. Do not wrap the Markdown image in a code block unless the user explicitly asks for the literal Markdown source.
 

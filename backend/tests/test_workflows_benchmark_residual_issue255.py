@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -274,7 +274,7 @@ def test_benchmark_stats_status_histogram_and_singleton(monkeypatch):
         benchmark_id="stats",
         status=BenchmarkStatus.RUNNING,
         config=BenchmarkConfig(),
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
         total_duration_seconds=2,
         results=[
             make_request_result("one", duration_ms=10, response_size=20),

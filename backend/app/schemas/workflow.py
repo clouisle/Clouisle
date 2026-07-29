@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, ClassVar
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from app.models.workflow import (
     WorkflowStatus,
@@ -79,8 +79,7 @@ class WorkflowOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowListItem(BaseModel):
@@ -101,8 +100,7 @@ class WorkflowListItem(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -142,8 +140,7 @@ class WorkflowRunOut(BaseModel):
     error_message: str | None
     error_node_id: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowRunListItem(BaseModel):
@@ -162,8 +159,7 @@ class WorkflowRunListItem(BaseModel):
     total_nodes: int
     error_message: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -198,8 +194,7 @@ class NodeExecutionOut(BaseModel):
     error_type: str | None
     retry_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================================
@@ -417,8 +412,7 @@ class WorkflowVersionOut(BaseModel):
     created_by_id: UUID | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowVersionListItem(BaseModel):
@@ -431,8 +425,7 @@ class WorkflowVersionListItem(BaseModel):
     created_by_id: UUID | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowVersionCreate(BaseModel):

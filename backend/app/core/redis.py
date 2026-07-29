@@ -3,17 +3,22 @@ Redis 连接和 Token 黑名单管理
 """
 
 import redis.asyncio as redis
-from typing import Optional
 
 from app.core.config import settings
 
 # Redis 连接池
-_redis_pool: Optional[redis.Redis] = None
+_redis_pool: redis.Redis | None = None
 
 # Token 黑名单的 key 前缀
 TOKEN_BLACKLIST_PREFIX = "token:blacklist:"
 # 用户当前会话 key 前缀（用于单一会话模式）
 USER_SESSION_PREFIX = "user:session:"
+
+
+def _redis_text(value: bytes | str) -> str:
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
 
 
 async def get_redis() -> redis.Redis:
@@ -80,7 +85,7 @@ async def set_user_session(user_id: str, token: str, expires_in: int):
     await r.setex(key, expires_in, token)
 
 
-async def get_user_session(user_id: str) -> Optional[str]:
+async def get_user_session(user_id: str) -> str | None:
     """
     获取用户当前会话 token
 
@@ -92,7 +97,8 @@ async def get_user_session(user_id: str) -> Optional[str]:
     """
     r = await get_redis()
     key = f"{USER_SESSION_PREFIX}{user_id}"
-    return await r.get(key)
+    value = await r.get(key)
+    return _redis_text(value) if value is not None else None
 
 
 async def invalidate_user_session(user_id: str, token_expires_in: int = 86400 * 30):
@@ -109,7 +115,7 @@ async def invalidate_user_session(user_id: str, token_expires_in: int = 86400 * 
     # 获取旧 token 并加入黑名单
     old_token = await r.get(key)
     if old_token:
-        await add_token_to_blacklist(old_token, token_expires_in)
+        await add_token_to_blacklist(_redis_text(old_token), token_expires_in)
 
     # 删除用户会话记录
     await r.delete(key)

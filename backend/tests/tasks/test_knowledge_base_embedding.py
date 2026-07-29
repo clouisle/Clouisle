@@ -95,6 +95,7 @@ def isolate_dependencies(monkeypatch):
     )
     monkeypatch.setattr(knowledge_base, "_send_doc_indexed_notification", AsyncMock())
     monkeypatch.setattr(knowledge_base, "_send_doc_failed_notification", AsyncMock())
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", AsyncMock())
 
 
 @pytest.mark.asyncio
@@ -201,6 +202,7 @@ async def test_embed_existing_chunks_completes_pending_chunks_and_cleans_task_me
     assert doc.metadata == {"task_id": "task-1"}
     assert (doc.knowledge_base.total_chunks, doc.knowledge_base.total_tokens) == (2, 8)
     knowledge_base._send_doc_indexed_notification.assert_awaited_once()
+    knowledge_base._index_document_lexically.assert_awaited_once_with(doc.id)
 
 
 @pytest.mark.asyncio

@@ -74,10 +74,11 @@ The cutover must not rename or reinterpret current retrieval identifiers and fie
 The implementation migration must use stable, explicit identifiers and be idempotent:
 
 ```sql
-CREATE EXTENSION pg_search CASCADE;
+CREATE EXTENSION IF NOT EXISTS pg_search CASCADE;
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
-CREATE TABLE knowledge_lexical_chunks (
+CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks (
+
     chunk_id uuid PRIMARY KEY,
     document_id uuid NOT NULL,
     kb_id uuid NOT NULL,

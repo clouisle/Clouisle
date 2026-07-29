@@ -2,7 +2,7 @@
 Tests for the WorkflowOrchestrator class.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -497,8 +497,8 @@ class TestWorkflowOrchestratorGetStatus:
         mock_run.outputs = {"answer": "result"}
         mock_run.error_message = None
         mock_run.total_duration_ms = 1234
-        mock_run.created_at = datetime.utcnow()
-        mock_run.finished_at = datetime.utcnow()
+        mock_run.created_at = datetime.now(UTC)
+        mock_run.finished_at = datetime.now(UTC)
 
         with patch("app.services.workflow.orchestrator.WorkflowRun") as mock_run_cls:
             mock_run_cls.filter.return_value.first = AsyncMock(return_value=mock_run)

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### Dependencies and Tooling
+- Updated backend and frontend dependency manifests and lockfiles to current compatible releases.
+- Made the Python lint policy explicit for stable Ruff upgrades and audited the complete Bun production dependency closure.
+- Added `MIT-0` to the approved permissive-license policy.
+
+### Fixed
+
+#### Dependency Compatibility
+- Adapted Redis, MCP, SMTP, sandbox session, React, Radix, TypeScript, and ICU message-format integrations to their refreshed APIs while preserving exception tracebacks.
+
 ## [0.2.9] - 2026-06-09
 
 ### Added

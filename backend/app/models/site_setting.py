@@ -6,7 +6,7 @@ from tortoise import fields, models
 class SiteSetting(models.Model):
     """站点设置模型 - 键值对存储"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     key = fields.CharField(max_length=100, unique=True, description="Setting key")
     value = fields.TextField(
         null=True, description="Setting value (JSON string for complex types)"

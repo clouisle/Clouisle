@@ -74,7 +74,9 @@ async def execute_tool_call(
             response = await retrieve(
                 RetrievalRequest(query=query, targets=targets, top_k=top_k)
             )
-            return json.dumps({"contexts": response.results}, ensure_ascii=False)
+            return json.dumps(
+                {"contexts": response.results}, ensure_ascii=False, default=str
+            )
         except Exception as e:
             logger.exception("RAG search failed: %s", e)
             return json.dumps({"error": t("rag_search_failed")})

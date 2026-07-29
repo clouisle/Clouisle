@@ -90,7 +90,7 @@ describe('simple UI primitive semantics', () => {
     expect(radioHtml).toContain('aria-checked="true"')
     expect(switchHtml).toContain('role="switch"')
     expect(switchHtml).toContain('aria-checked="true"')
-    expect(toggleHtml).toContain('role="group"')
+    expect(toggleHtml).toContain('role="radiogroup"')
     expect(toggleHtml).toContain('data-state="on"')
   })
 })

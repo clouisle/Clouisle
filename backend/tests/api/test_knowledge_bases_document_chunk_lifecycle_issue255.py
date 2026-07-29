@@ -14,12 +14,8 @@ from app.services.vector_store import DimensionMismatchError
 
 @pytest.fixture(autouse=True)
 def lexical_store_calls(monkeypatch):
-    calls = SimpleNamespace(
-        chunk=AsyncMock(), document=AsyncMock(), kb=AsyncMock(), index=AsyncMock()
-    )
-    monkeypatch.setattr(knowledge_bases, "delete_lexical_chunk", calls.chunk)
+    calls = SimpleNamespace(document=AsyncMock(), index=AsyncMock())
     monkeypatch.setattr(knowledge_bases, "delete_lexical_document", calls.document)
-    monkeypatch.setattr(knowledge_bases, "delete_lexical_kb", calls.kb)
     monkeypatch.setattr(knowledge_bases, "index_lexical_chunk", calls.index)
     return calls
 
@@ -106,7 +102,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(
     )
 
     celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
-    lexical_store_calls.document.assert_awaited_once_with(doc_id, kb.team_id)
+    lexical_store_calls.document.assert_not_awaited()
     vectors.delete_document_vectors.assert_awaited_once_with(doc_id)
     knowledge_bases.document_processor.delete_media_assets.assert_called_once_with(
         kb_id, doc_id

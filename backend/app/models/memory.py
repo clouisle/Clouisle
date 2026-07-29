@@ -50,7 +50,7 @@ class MemoryEntity(models.Model):
     Represents a node in the knowledge graph.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # User association
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
@@ -115,7 +115,7 @@ class MemoryRelation(models.Model):
     Represents an edge in the knowledge graph.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # User association
     user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(

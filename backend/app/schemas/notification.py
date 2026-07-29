@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from app.models.notification import (
     NotificationScope,
@@ -25,8 +25,7 @@ class NotificationDeliveryOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationOut(BaseModel):
@@ -49,8 +48,7 @@ class NotificationOut(BaseModel):
     read_at: Optional[datetime] = None
     deliveries: list[NotificationDeliveryOut] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotificationAdminCreate(BaseModel):

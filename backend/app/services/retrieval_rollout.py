@@ -26,6 +26,13 @@ async def hybrid_enabled(team_ids: Sequence[str]) -> bool:
         mode = str(
             await SiteSetting.get_value("retrieval_hybrid_mode", "rollout")
         ).lower()
+    except Exception:
+        return True
+    if mode == "enabled":
+        return True
+    if mode == "disabled":
+        return False
+    try:
         included = {
             str(value)
             for value in await SiteSetting.get_value("retrieval_hybrid_team_ids", [])
@@ -35,10 +42,6 @@ async def hybrid_enabled(team_ids: Sequence[str]) -> bool:
         )
     except Exception:
         return True
-    if mode == "enabled":
-        return True
-    if mode == "disabled":
-        return False
     if included.intersection(team_ids):
         return True
     return rollout_bucket(team_ids) < max(0, min(100, percentage))

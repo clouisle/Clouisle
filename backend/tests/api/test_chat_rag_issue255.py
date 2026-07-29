@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints.chat_rag import (
+    _bounded_rewrite_history,
     aggregate_rag_contexts,
     build_rag_prompt,
     contextualize_retrieval_query,
@@ -18,6 +19,20 @@ def test_contextualization_trigger_is_conservative():
     assert should_contextualize_query("它的保留期限呢？")
     assert not should_contextualize_query("Annual leave retention period")
     assert not should_contextualize_query("  ")
+
+
+def test_contextualization_history_has_message_and_token_bounds(monkeypatch):
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_rag.count_tokens", lambda _content: 1_000
+    )
+    history = [
+        SimpleNamespace(role="user", content=f"message-{index}") for index in range(6)
+    ]
+
+    assert [item["content"] for item in _bounded_rewrite_history(history)] == [
+        "message-4",
+        "message-5",
+    ]
 
 
 @pytest.mark.asyncio
@@ -348,6 +363,7 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
             "document_name": "Guide",
             "content": "Answer",
             "score": 0.9,
+            "metadata": {},
         }
     ]
 

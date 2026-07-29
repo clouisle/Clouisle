@@ -5,7 +5,7 @@ Handles streaming output to clients via SSE (Server-Sent Events).
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import AsyncIterator, cast
 import asyncio
@@ -65,7 +65,7 @@ class StreamEvent:
     event_type: StreamEventType
     data: dict[str, WorkflowValue] = field(default_factory=dict)
     node_id: str | None = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     sequence: int = 0
 
     def to_dict(self) -> dict:
@@ -436,7 +436,7 @@ class StreamManager:
             data=data.get("data", {}),
             node_id=data.get("node_id"),
             timestamp=datetime.fromisoformat(
-                data.get("timestamp", datetime.utcnow().isoformat())
+                data.get("timestamp", datetime.now(UTC).isoformat())
             ),
             sequence=data.get("sequence", 0),
         )

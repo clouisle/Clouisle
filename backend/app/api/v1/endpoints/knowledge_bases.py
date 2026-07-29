@@ -67,9 +67,7 @@ from app.schemas.response import (
 )
 from app.services.document_processor import document_processor
 from app.services.lexical_store import (
-    delete_chunk as delete_lexical_chunk,
     delete_document as delete_lexical_document,
-    delete_kb as delete_lexical_kb,
     index_chunk as index_lexical_chunk,
 )
 from app.services.upload_storage import get_upload_storage_backend
@@ -85,7 +83,11 @@ def _retry_lexical_document(document_id: UUID) -> None:
     try:
         from app.tasks.knowledge_base import index_document_lexically_task
 
-        index_document_lexically_task.delay(str(document_id))
+        index_document_lexically_task.apply_async(
+            args=(str(document_id),),
+            retry=True,
+            retry_policy={"max_retries": 3, "interval_start": 1},
+        )
     except Exception:
         logger.exception(
             "Failed to dispatch lexical repair for document %s", document_id
@@ -643,9 +645,6 @@ async def delete_knowledge_base(
     )
     kb_name = kb.name
 
-    # External indexes must be deleted before PostgreSQL removes their scope.
-    await delete_lexical_kb(kb.id, kb.team_id)
-
     # Delete all documents and chunks (cascades)
     await kb.delete()
 
@@ -1003,9 +1002,6 @@ async def delete_document(
                 logger.info(f"Revoked Celery task {task_id} for document {doc_id}")
             except Exception as e:
                 logger.warning(f"Failed to revoke Celery task {task_id}: {e}")
-
-    # Remove the local lexical projection before deleting its authoritative row.
-    await delete_lexical_document(doc_id, kb.team_id)
 
     # Delete vectors
     vector_store = VectorStore()
@@ -1776,8 +1772,6 @@ async def update_document_chunk(
     new_token_count = len(chunk_in.content) // 4  # Simple estimate
     chunk.token_count = new_token_count
     await chunk.save()
-
-    # Update document and KB token counts
     token_diff = new_token_count - old_token_count
     doc.token_count += token_diff
     await doc.save()
@@ -1816,8 +1810,8 @@ async def update_document_chunk(
     try:
         await index_lexical_chunk(chunk.id)
     except Exception:
+        logger.exception("Failed to index updated chunk %s lexically", chunk.id)
         _retry_lexical_document(doc.id)
-        raise
 
     await AuditLogService.log(
         user=current_user,
@@ -1868,9 +1862,6 @@ async def delete_document_chunk(
 
     chunk_index = chunk.chunk_index
     chunk_token_count = chunk.token_count
-
-    # Delete lexical data before the vector helper deletes the PostgreSQL chunk.
-    await delete_lexical_chunk(chunk_id, kb.team_id)
 
     # Delete vector
     try:
@@ -2004,8 +1995,8 @@ async def create_document_chunk(
         try:
             await index_lexical_chunk(chunk.id)
         except Exception:
+            logger.exception("Failed to index new chunk %s lexically", chunk.id)
             _retry_lexical_document(doc.id)
-            raise
 
     await AuditLogService.log(
         user=current_user,
@@ -2158,6 +2149,8 @@ def _retrieval_response_code(category: str, tokens: tuple[str, ...]) -> Response
         return ResponseCode.MODEL_QUOTA_EXCEEDED
     if category == "model_configuration" and set(tokens) == {"ModelNotFoundError"}:
         return ResponseCode.MODEL_NOT_FOUND
+    if category == "configuration_mismatch":
+        return ResponseCode.VALIDATION_ERROR
     return ResponseCode.UNKNOWN_ERROR
 
 

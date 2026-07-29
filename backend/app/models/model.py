@@ -185,7 +185,7 @@ class Model(models.Model):
     capabilities, and default inference parameters.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Basic info
     name = fields.CharField(max_length=100, description="Display name")
@@ -287,7 +287,7 @@ class TeamModel(models.Model):
     关联 Team 和 Model，支持配额限制和用量追踪。
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # 关联关系
     team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(

@@ -5,7 +5,7 @@ Handles entity and relation CRUD, vector embeddings, and graph traversal.
 
 import importlib
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -191,7 +191,7 @@ class MemoryService:
         if properties:
             entity.properties = {**entity.properties, **properties}
 
-        entity.updated_at = datetime.utcnow()
+        entity.updated_at = datetime.now(UTC)
         await entity.save()
 
         # Re-generate embedding
@@ -402,7 +402,7 @@ class MemoryService:
         # Update access tracking
         for entity in entities:
             entity.access_count += 1
-            entity.last_accessed_at = datetime.utcnow()
+            entity.last_accessed_at = datetime.now(UTC)
             await entity.save()
 
         return entities

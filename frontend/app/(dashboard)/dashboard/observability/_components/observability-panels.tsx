@@ -84,6 +84,8 @@ const CHART_AXIS_PROPS = {
   tickLine: false,
 }
 const CHART_MARGIN = { top: 12, right: 12, left: 0, bottom: 0 }
+const formatTooltipBucket = (label: React.ReactNode) =>
+  formatBucket(label == null ? undefined : String(label))
 
 interface OverviewPanelProps {
   overview: ObservabilityOverview | null
@@ -194,7 +196,7 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
               <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
               <YAxis hide />
-              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
               <Legend />
               <Area name={t('overview.agentRequests')} type="monotone" dataKey="agent_requests" stackId="requests" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} fill="url(#observabilityAgentRequests)" fillOpacity={1} />
               <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} fill="url(#observabilityWorkflowRuns)" fillOpacity={1} />
@@ -255,7 +257,7 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
               <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
               <YAxis hide />
-              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
               <Legend />
               <Line name="CPU" type="monotone" dataKey="cpu_percent" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
               <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
@@ -473,7 +475,7 @@ export function ThroughputPanel({ throughput }: { throughput: ThroughputResponse
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
             <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
             <YAxis hide />
-            <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+            <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
             <Legend />
             <Bar name={t('overview.agentRequests')} dataKey="agent_requests" stackId="requests" fill={CHART_COLOR_ORDER[0]} radius={[6, 6, 0, 0]} />
             <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[6, 6, 0, 0]} />
@@ -651,7 +653,7 @@ function DetailTrendChart({ data, countKey }: { data: ObservabilityTrendPoint[];
           <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
           <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
           <YAxis hide />
-          <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatBucket} />
+          <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
           <Legend />
           <Line name="P95" type="monotone" dataKey="p95_ms" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
           <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />

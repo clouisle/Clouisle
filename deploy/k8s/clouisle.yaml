@@ -110,7 +110,8 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: clouisle-postgres-pg-search:0.24.3-pg17
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17
+
           args:
             - "-c"
             - "shared_preload_libraries=pg_search,pg_stat_statements"

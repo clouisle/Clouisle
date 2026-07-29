@@ -7,14 +7,15 @@ import { useRouter } from 'next/navigation'
 
 export function SearchTestClient({ knowledgeBaseId }: { knowledgeBaseId: string }) {
   const { hasPermission } = usePermissions()
-  const router = useRouter()
+  const { push } = useRouter()
   return (
     <RetrievalLab
       knowledgeBaseId={knowledgeBaseId}
       api={adminKnowledgeBasesApi}
       backHref={`/knowledge-bases/${knowledgeBaseId}`}
       canUpdate={hasPermission('admin:knowledge-base:update')}
-      onLoadError={() => router.push('/knowledge-bases')}
+      canTest={hasPermission('admin:knowledge-base:test')}
+      onLoadError={() => push('/knowledge-bases')}
     />
   )
 }

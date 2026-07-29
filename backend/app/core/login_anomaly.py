@@ -7,7 +7,7 @@ Detects unusual login patterns such as:
 """
 
 import logging
-from typing import Optional
+from typing import cast
 from uuid import UUID
 
 from app.core.redis import get_redis
@@ -30,7 +30,7 @@ LOGIN_HISTORY_TTL = 30 * 24 * 60 * 60
 async def check_login_anomaly(
     user_id: UUID,
     ip_address: str,
-    user_agent: Optional[str] = None,
+    user_agent: str | None = None,
 ) -> tuple[bool, dict]:
     """
     Check if the current login is anomalous.
@@ -47,8 +47,10 @@ async def check_login_anomaly(
     """
     try:
         redis = await get_redis()
-    except Exception as e:
-        logger.warning(f"Redis not available, skipping login anomaly check: {e}")
+    except Exception:
+        logger.warning(
+            "Redis not available, skipping login anomaly check", exc_info=True
+        )
         return False, {}
 
     is_anomaly = False
@@ -63,7 +65,7 @@ async def check_login_anomaly(
     try:
         # Check IP address
         ip_key = LOGIN_IPS_KEY.format(user_id=str(user_id))
-        known_ips: set[str] = await redis.smembers(ip_key)  # type: ignore[misc]
+        known_ips = cast("set[str]", await redis.smembers(ip_key))
 
         if known_ips and ip_address not in known_ips:
             # New IP detected
@@ -74,7 +76,7 @@ async def check_login_anomaly(
         # Check user agent if provided
         if user_agent:
             ua_key = LOGIN_UAS_KEY.format(user_id=str(user_id))
-            known_uas: set[str] = await redis.smembers(ua_key)  # type: ignore[misc]
+            known_uas = cast("set[str]", await redis.smembers(ua_key))
 
             # Normalize user agent for comparison (take first 200 chars)
             ua_normalized = user_agent[:200]
@@ -85,8 +87,8 @@ async def check_login_anomaly(
                 details["new_user_agent"] = True
                 details["known_uas_count"] = len(known_uas)
 
-    except Exception as e:
-        logger.error(f"Error checking login anomaly: {e}")
+    except Exception:
+        logger.exception("Error checking login anomaly")
         return False, {}
 
     return is_anomaly, details
@@ -95,7 +97,7 @@ async def check_login_anomaly(
 async def record_login(
     user_id: UUID,
     ip_address: str,
-    user_agent: Optional[str] = None,
+    user_agent: str | None = None,
 ) -> None:
     """
     Record a successful login for anomaly detection.
@@ -108,6 +110,7 @@ async def record_login(
     try:
         redis = await get_redis()
     except Exception:
+        logger.warning("Redis not available, cannot record login", exc_info=True)
         return
 
     try:
@@ -138,8 +141,8 @@ async def record_login(
                 for _ in range(to_remove):
                     await redis.spop(ua_key)  # type: ignore[misc]
 
-    except Exception as e:
-        logger.error(f"Error recording login: {e}")
+    except Exception:
+        logger.exception("Error recording login")
 
 
 async def clear_login_history(user_id: UUID) -> None:
@@ -152,11 +155,12 @@ async def clear_login_history(user_id: UUID) -> None:
     try:
         redis = await get_redis()
     except Exception:
+        logger.warning("Redis not available, cannot clear login history", exc_info=True)
         return
 
     try:
         ip_key = LOGIN_IPS_KEY.format(user_id=str(user_id))
         ua_key = LOGIN_UAS_KEY.format(user_id=str(user_id))
         await redis.delete(ip_key, ua_key)
-    except Exception as e:
-        logger.error(f"Error clearing login history: {e}")
+    except Exception:
+        logger.exception("Error clearing login history")

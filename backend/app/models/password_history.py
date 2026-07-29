@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class PasswordHistory(models.Model):
     """Password history model for tracking previous passwords"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User", related_name="password_history", on_delete=fields.CASCADE
     )

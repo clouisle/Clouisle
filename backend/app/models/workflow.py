@@ -68,7 +68,7 @@ class Workflow(models.Model):
     to automate tasks, process data, or interact with AI models.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Team association for data isolation
     team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
@@ -168,7 +168,7 @@ class WorkflowRun(models.Model):
     inputs, outputs, timing, and node-level execution details.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Workflow association
     workflow: fields.ForeignKeyRelation[Workflow] | None = fields.ForeignKeyField(
@@ -268,7 +268,7 @@ class NodeExecution(models.Model):
     including timing, inputs, outputs, and any errors.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Run association
     run: fields.ForeignKeyRelation[WorkflowRun] = fields.ForeignKeyField(
@@ -355,7 +355,7 @@ class WorkflowVersion(models.Model):
     allowing users to view and restore previous versions.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Parent workflow
     workflow: fields.ForeignKeyRelation["Workflow"] = fields.ForeignKeyField(

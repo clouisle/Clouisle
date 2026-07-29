@@ -193,10 +193,10 @@ These are initial retrieval defaults, not permanent hard-coded product limits.
   - Roll out internal -> 5% -> 25% -> 50% -> 100%. Advance only when interactive and shadow observations show no cohort regression, retrieval error/fallback rates do not regress, and P95 total latency remains within the approved service objective.
 - **Rollback**:
   - Set `RETRIEVAL_HYBRID_KILL_SWITCH=true` for immediate environment rollback, or set private `retrieval_hybrid_mode=disabled` for mutable rollback. Disable `RETRIEVAL_SHADOW_ENABLED` independently.
-  - For lexical index rollback, call the existing atomic `LexicalStore.cutover(previous_version)`; retained versioned indexes let both read and write aliases move back together.
+  - PostgreSQL pg_search 使用直接切换，不提供 OpenSearch 版本别名。回滚时先启用 `RETRIEVAL_HYBRID_KILL_SWITCH`，再恢复兼容的应用版本和 PostgreSQL 备份；权威文档与 Chunk 数据仍保留在 PostgreSQL。
 - **Validation**:
   - Focused tests cover deterministic assignment and precedence, setting-store failure, privacy-safe bounded telemetry, metric failure isolation, vector-primary shadow isolation, and shadow failure isolation.
-  - OpenSearch alias cutover/rollback remains covered by the existing atomic alias tests. Backend gates passed with 6,371 tests, 97.70% line coverage, and 95.03% branch coverage. Frontend gates passed with 2,008 tests, 97.81% line coverage, 95.15% function coverage, 471/471 source census, lint, license check, and production build. Compose validation requires a local `deploy/.env`; Helm and `kubectl` rendering were skipped because those CLIs are not installed in this environment.
+  - PostgreSQL lexical initialization and retrieval validation replace the retired OpenSearch alias tests. Compose validation requires a local `deploy/.env`; Helm and `kubectl` rendering remain environment-dependent.
 
 ## Testing Strategy
 

@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
+from uuid import uuid4
 
 import pytest
 
@@ -94,7 +95,7 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
                 {
                     "kb_id": "kb-1",
                     "kb_name": "Handbook",
-                    "document_id": "doc-1",
+                    "document_id": uuid4(),
                     "document_name": "Guide",
                     "content": "Answer",
                     "score": 0.9,
@@ -118,7 +119,7 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
             {
                 "kb_id": "kb-1",
                 "kb_name": "Handbook",
-                "document_id": "doc-1",
+                "document_id": str(retrieve.return_value.results[0]["document_id"]),
                 "document_name": "Guide",
                 "content": "Answer",
                 "score": 0.9,

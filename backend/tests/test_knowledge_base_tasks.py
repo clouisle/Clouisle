@@ -240,7 +240,7 @@ def test_process_document_happy_path_updates_document_and_kb():
             "app.services.document_processor.chunk_text", return_value=["a", "b"]
         ) as split,
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
-        patch(f"{MODULE}._dispatch_lexical_index") as lexical,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
     ):
         result = process_document_task.run(str(document.id))
 
@@ -259,7 +259,7 @@ def test_process_document_happy_path_updates_document_and_kb():
         "text", chunk_size=1000, chunk_overlap=100, separators=None
     )
     notify.assert_awaited_once()
-    lexical.assert_called_once_with(document.id)
+    lexical.assert_awaited_once_with(document.id)
 
 
 @pytest.mark.parametrize(
@@ -381,7 +381,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
         patch(f"{MODULE}.document_processor.delete_media_assets") as delete_assets,
         patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
-        patch(f"{MODULE}._dispatch_lexical_index") as lexical,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
     ):
         result = rechunk_document_task.run(str(document.id))
 
@@ -403,7 +403,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
         for call in document.save.await_args_list
     )
     notify.assert_awaited_once()
-    lexical.assert_called_once_with(document.id)
+    lexical.assert_awaited_once_with(document.id)
 
 
 def test_rechunk_dimension_failure_cleans_task_metadata():
@@ -478,6 +478,7 @@ def test_retry_failed_chunks_succeeds_when_nothing_needs_retry():
         patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
         patch(f"{MODULE}.get_default_language", new=AsyncMock(return_value="en")),
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()),
     ):
         result = retry_failed_chunks_task.run(str(document.id))
 
@@ -514,6 +515,7 @@ def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as indexed,
         patch(f"{MODULE}._send_doc_failed_notification", new=AsyncMock()) as failed,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
     ):
         result = retry_failed_chunks_task.run(str(document.id))
@@ -528,6 +530,7 @@ def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails
         assert failed_chunk.error_message == "provider down"
         failed.assert_awaited_once()
         indexed.assert_not_awaited()
+        lexical.assert_not_awaited()
     else:
         assert failed_chunk.status == "embedded"
         assert failed_chunk.error_message is None
@@ -535,6 +538,7 @@ def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails
         assert document.knowledge_base.total_tokens == 20
         indexed.assert_awaited_once()
         failed.assert_not_awaited()
+        lexical.assert_awaited_once_with(document.id)
 
 
 def test_retry_failed_chunks_handles_progress_persistence_failure():
@@ -630,7 +634,7 @@ def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
         patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
-        patch(f"{MODULE}._dispatch_lexical_index") as lexical,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
     ):
         result = retry_failed_chunk_task.run(str(document.id), str(failed_chunk.id))
@@ -649,7 +653,7 @@ def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
         assert document.knowledge_base.total_chunks == 4
         assert document.knowledge_base.total_tokens == 40
         notify.assert_awaited_once()
-        lexical.assert_called_once_with(document.id)
+        lexical.assert_awaited_once_with(document.id)
 
 
 def test_retry_one_chunk_failure_restores_error_state():

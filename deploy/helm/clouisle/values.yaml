@@ -192,7 +192,8 @@ postgresql:
     user: ""
     database: ""
   image:
-    repository: clouisle-postgres-pg-search
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search
+
     tag: 0.24.3-pg17
     pullPolicy: IfNotPresent
   extraArgs:

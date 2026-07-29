@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class APIKey(models.Model):
     """API 密钥模型 - 用于 API 访问认证"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     name = fields.CharField(max_length=100, description="API Key name")
     key_prefix = fields.CharField(
         max_length=16, description="First 12 characters of the key for identification"

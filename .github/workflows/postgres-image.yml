@@ -110,17 +110,37 @@ jobs:
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
         run: |
           version=${GITHUB_REF_NAME#postgres-pg-search-}
+          expected_version=0.24.3-pg17
+          if [ "$version" != "$expected_version" ]; then
+            echo "release tag must be postgres-pg-search-$expected_version" >&2
+            exit 1
+          fi
           image="$REGISTRY/$NAMESPACE/clouisle-postgres-pg-search"
-          for tag in "$version" "$version-amd64" "$version-arm64"; do
-            if docker buildx imagetools inspect "$image:$tag" >/dev/null 2>&1; then
-              echo "refusing to overwrite existing image $image:$tag" >&2
-              exit 1
+
+          ensure_architecture_image() {
+            arch=$1
+            local_image="clouisle-postgres-pg-search:$arch"
+            remote_image="$image:$version-$arch"
+            local_id=$(docker image inspect --format '{{.Id}}' "$local_image")
+            if docker buildx imagetools inspect "$remote_image" >/dev/null 2>&1; then
+              docker pull --platform "linux/$arch" "$remote_image"
+              remote_id=$(docker image inspect --format '{{.Id}}' "$remote_image")
+              if [ "$local_id" != "$remote_id" ]; then
+                echo "existing immutable image $remote_image has different content" >&2
+                exit 1
+              fi
+              return
             fi
-          done
-          docker tag clouisle-postgres-pg-search:amd64 "$image:$version-amd64"
-          docker tag clouisle-postgres-pg-search:arm64 "$image:$version-arm64"
-          docker push "$image:$version-amd64"
-          docker push "$image:$version-arm64"
+            docker tag "$local_image" "$remote_image"
+            docker push "$remote_image"
+          }
+
+          ensure_architecture_image amd64
+          ensure_architecture_image arm64
+          if docker buildx imagetools inspect "$image:$version" >/dev/null 2>&1; then
+            echo "release manifest $image:$version already exists"
+            exit 0
+          fi
           docker buildx imagetools create \
             --tag "$image:$version" \
             "$image:$version-amd64" \
