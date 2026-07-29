@@ -1351,39 +1351,34 @@ class VectorStore:
         deleted = await DocumentChunk.filter(document_id=document_id).delete()
         return deleted
 
-    async def delete_chunk_vector(self, chunk_id: UUID) -> bool:
-        """
-        Delete vector for a single chunk.
-
-        Args:
-            chunk_id: Chunk ID
-
-        Returns:
-            True if deleted
-        """
-        document_ids = cast(
-            list[UUID],
-            await DocumentChunk.filter(id=chunk_id).values_list(
-                "document_id", flat=True
-            ),
-        )
-        document_id = document_ids[0] if document_ids else None
-        if document_id:
-            kb_ids = cast(
+    async def delete_chunk_vector(
+        self, chunk_id: UUID, *, kb_id: UUID | None = None
+    ) -> bool:
+        """Delete a chunk's Qdrant projection without mutating PostgreSQL."""
+        if kb_id is None:
+            document_ids = cast(
                 list[UUID],
-                await Document.filter(id=document_id).values_list(
-                    "knowledge_base_id", flat=True
+                await DocumentChunk.filter(id=chunk_id).values_list(
+                    "document_id", flat=True
                 ),
             )
-            kb_id = kb_ids[0] if kb_ids else None
-            if kb_id:
-                dim = await get_kb_embedding_dimension(kb_id)
-                if dim and await _collection_exists(_collection_name(dim)):
-                    await _delete_qdrant_points(_collection_name(dim), [str(chunk_id)])
+            document_id = document_ids[0] if document_ids else None
+            if document_id:
+                kb_ids = cast(
+                    list[UUID],
+                    await Document.filter(id=document_id).values_list(
+                        "knowledge_base_id", flat=True
+                    ),
+                )
+                kb_id = kb_ids[0] if kb_ids else None
+        if not kb_id:
+            return False
 
-        # Chunk deletion handles embedding deletion
-        deleted = await DocumentChunk.filter(id=chunk_id).delete()
-        return deleted > 0
+        dim = await get_kb_embedding_dimension(kb_id)
+        if not dim or not await _collection_exists(_collection_name(dim)):
+            return False
+        await _delete_qdrant_points(_collection_name(dim), [str(chunk_id)])
+        return True
 
     async def update_chunk_vector(
         self, chunk: DocumentChunk, kb_id: UUID | None = None

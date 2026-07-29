@@ -11,6 +11,27 @@ from app.services.vector_store import EmbeddingRequestTimeoutError, VectorStore
 vector_store_module = importlib.import_module("app.services.vector_store")
 
 
+@pytest.mark.asyncio
+async def test_delete_chunk_vector_only_deletes_qdrant_projection(monkeypatch):
+    kb_id = uuid4()
+    chunk_id = uuid4()
+    delete_points = AsyncMock()
+    chunk_filter = Mock()
+    monkeypatch.setattr(
+        vector_store_module, "get_kb_embedding_dimension", AsyncMock(return_value=3)
+    )
+    monkeypatch.setattr(
+        vector_store_module, "_collection_exists", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(vector_store_module, "_delete_qdrant_points", delete_points)
+    monkeypatch.setattr(vector_store_module.DocumentChunk, "filter", chunk_filter)
+
+    assert await VectorStore().delete_chunk_vector(chunk_id, kb_id=kb_id) is True
+
+    delete_points.assert_awaited_once_with("kb_dim_3", [str(chunk_id)])
+    chunk_filter.assert_not_called()
+
+
 @pytest.fixture
 def qdrant_models(monkeypatch):
     class Model:

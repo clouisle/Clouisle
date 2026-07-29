@@ -1928,38 +1928,61 @@ async def delete_document_chunk(
             status_code=404,
         )
 
-    chunk_index = chunk.chunk_index
-    chunk_token_count = chunk.token_count
+    async with in_transaction() as connection:
+        locked_doc = (
+            await Document.filter(id=doc_id, knowledge_base_id=kb_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        locked_chunk = (
+            await DocumentChunk.filter(id=chunk_id, document_id=doc_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        if not locked_doc or not locked_chunk:
+            raise BusinessError(
+                code=ResponseCode.CHUNK_NOT_FOUND,
+                msg_key="chunk_not_found",
+                status_code=404,
+            )
+        chunk_index = locked_chunk.chunk_index
+        chunk_token_count = locked_chunk.token_count
+        await locked_chunk.delete(using_db=connection)
+        await (
+            DocumentChunk.filter(document_id=doc_id, chunk_index__gt=chunk_index)
+            .using_db(connection)
+            .update(chunk_index=F("chunk_index") - 1)
+        )
+        await (
+            Document.filter(id=doc_id)
+            .using_db(connection)
+            .update(
+                chunk_count=F("chunk_count") - 1,
+                token_count=F("token_count") - chunk_token_count,
+            )
+        )
+        await (
+            KnowledgeBase.filter(id=kb_id)
+            .using_db(connection)
+            .update(
+                total_chunks=F("total_chunks") - 1,
+                total_tokens=F("total_tokens") - chunk_token_count,
+            )
+        )
 
-    # Delete vector
     try:
         embedding_model_id = (
             str(kb.embedding_model_id) if kb.embedding_model_id else None
         )
         vector_store = VectorStore(embedding_model_id=embedding_model_id)
-        await vector_store.delete_chunk_vector(chunk_id)
-    except Exception as e:
-        import logging
+        await vector_store.delete_chunk_vector(chunk_id, kb_id=kb_id)
+    except Exception:
+        logger.exception("Failed to delete vector projection for chunk %s", chunk_id)
 
-        logging.warning(f"Failed to delete vector: {e}")
-
-    # Update statistics
-    kb.total_chunks = max(0, kb.total_chunks - 1)
-    kb.total_tokens = max(0, kb.total_tokens - chunk_token_count)
-    await kb.save()
-
-    doc.chunk_count = max(0, doc.chunk_count - 1)
-    doc.token_count = max(0, doc.token_count - chunk_token_count)
-    await doc.save()
-
-    # Delete chunk
-    deleted_index = chunk.chunk_index
-    await chunk.delete()
-
-    # Reindex remaining chunks with a single bulk update
-    await DocumentChunk.filter(
-        document_id=doc_id, chunk_index__gt=deleted_index
-    ).update(chunk_index=F("chunk_index") - 1)
+    if doc.status == DocumentStatus.COMPLETED.value:
+        _retry_lexical_document(doc.id)
 
     await AuditLogService.log(
         user=current_user,
