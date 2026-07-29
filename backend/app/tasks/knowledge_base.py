@@ -2,6 +2,7 @@
 Celery tasks for knowledge base document processing.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -29,8 +30,42 @@ from app.services.vector_store import (
 logger = logging.getLogger(__name__)
 
 
+def _get_worker_loop() -> asyncio.AbstractEventLoop:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
+
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
+
+
+def _run_async(coro: Any) -> Any:
+    return _get_worker_loop().run_until_complete(coro)
+
+
+def _enqueue_lexical_repair(document_id: UUID | str) -> None:
+    try:
+        index_document_lexically_task.apply_async(args=(str(document_id),))
+    except Exception:
+        logger.exception(
+            "Failed to enqueue lexical repair for document %s", document_id
+        )
+
+
 async def _index_document_lexically(document_id: UUID | str) -> None:
-    await index_document(document_id)
+    try:
+        await index_document(document_id)
+    except Exception:
+        logger.exception("Lexical indexing failed for document %s", document_id)
+        _enqueue_lexical_repair(document_id)
 
 
 @shared_task(
@@ -38,9 +73,8 @@ async def _index_document_lexically(document_id: UUID | str) -> None:
 )
 def index_document_lexically_task(self, document_id: str) -> dict[str, Any]:
     """Retry lexical indexing independently without changing PostgreSQL status."""
-    import asyncio
 
-    indexed = asyncio.run(index_document(document_id))
+    indexed = _run_async(index_document(document_id))
     return {"status": "success", "document_id": document_id, "indexed": indexed}
 
 
@@ -54,7 +88,6 @@ def backfill_lexical_index_task(
     reconcile: bool = False,
 ) -> dict[str, Any]:
     """Backfill one resumable authoritative chunk batch and optionally reconcile."""
-    import asyncio
 
     async def _backfill() -> dict[str, Any]:
         authoritative_filters: dict[str, Any] = {
@@ -74,23 +107,35 @@ def backfill_lexical_index_task(
         async with LexicalStore() as store:
             await store.ensure_index()
             result = await store.backfill_batch(payloads)
+            complete = len(chunks) < batch_size
             response: dict[str, Any] = {
                 "status": "success",
+                "scanned": len(chunks),
+                "affected": result.indexed,
                 "indexed": result.indexed,
                 "checkpoint": result.checkpoint,
-                "complete": len(chunks) < batch_size,
+                "complete": complete,
             }
-            if reconcile:
-                expected = await DocumentChunk.filter(**authoritative_filters).count()
-                counts = await store.reconcile(expected)
+            if not complete:
+                backfill_lexical_index_task.apply_async(
+                    kwargs={
+                        "checkpoint": result.checkpoint,
+                        "batch_size": batch_size,
+                        "reconcile": reconcile,
+                    }
+                )
+            elif reconcile:
+                counts = await store.reconcile()
                 response["reconciliation"] = {
                     "expected": counts.expected,
                     "actual": counts.actual,
+                    "repaired": counts.repaired,
+                    "deleted": counts.deleted,
                     "matches": counts.matches,
                 }
             return response
 
-    return asyncio.run(_backfill())
+    return _run_async(_backfill())
 
 
 def _get_document_error_lang(document: Document, user_locale: str = "en") -> str:
@@ -283,6 +328,267 @@ async def _send_doc_failed_notification(
         logger.error(f"Failed to send doc failed notification: {e}")
 
 
+async def _process_document(document_id: str, task_id: str | None) -> dict[str, Any]:
+    doc_uuid = UUID(document_id)
+
+    # Get document with uploader for locale
+    document = (
+        await Document.filter(id=doc_uuid)
+        .prefetch_related("knowledge_base", "uploaded_by")
+        .first()
+    )
+
+    if not document:
+        logger.error(f"Document {document_id} not found")
+        default_lang = await get_default_language()
+        return {
+            "status": "error",
+            "message": t("document_not_found", lang=default_lang),
+        }
+
+    if _is_stale_task(document, task_id):
+        return await _finish_stale_task(document, task_id)
+    if _is_finished_task(document, task_id):
+        return await _finish_already_finished_task(document, task_id)
+
+    kb = document.knowledge_base
+    # Get uploader's locale for notifications
+    user_locale = (
+        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    )
+
+    existing_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
+    if existing_chunks > 0:
+        return await _embed_existing_document_chunks(document_id, task_id)
+
+    try:
+        # Update status to processing
+        document.status = DocumentStatus.PROCESSING.value
+        await document.save()
+
+        # Extract text
+        # Get clean_text setting from document metadata (default to True)
+        doc_meta = document.metadata or {}
+        clean_text_setting = doc_meta.get("clean_text", True)
+
+        if document.file_path:
+            document_processor.delete_media_assets(kb.id, document.id)
+            text, metadata = await document_processor.extract_text(
+                document.file_path,
+                document.doc_type,
+                clean_text=clean_text_setting,
+                kb_id=kb.id,
+                document_id=document.id,
+            )
+        elif document.source_url:
+            text, metadata = await document_processor.fetch_url_content(
+                document.source_url,
+                clean_text=clean_text_setting,
+            )
+        else:
+            raise ValueError(t("document_missing_source", lang=user_locale))
+
+        # Update document metadata
+        document.metadata = document.metadata or {}
+        document.metadata.update(metadata)
+
+        # Get chunking settings from document metadata first, then fallback to KB settings
+        doc_meta = document.metadata or {}
+        kb_settings = kb.settings or {}
+        chunk_size = doc_meta.get("chunk_size") or kb_settings.get("chunk_size", 1000)
+        chunk_overlap = doc_meta.get("chunk_overlap") or kb_settings.get(
+            "chunk_overlap", 100
+        )
+        separator = doc_meta.get("separator") or kb_settings.get("separator")
+
+        # Chunk text
+        from app.services.document_processor import chunk_text
+
+        chunks = chunk_text(
+            text,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=[separator] if separator else None,
+        )
+
+        if not chunks:
+            raise ValueError(t("document_no_chunks_generated", lang=user_locale))
+
+        # Initialize vector store with KB's embedding model and team ID for usage tracking
+        embedding_model_id = (
+            str(kb.embedding_model_id) if kb.embedding_model_id else None
+        )
+        team_id = str(kb.team_id) if kb.team_id else None
+        vector_store = VectorStore(
+            embedding_model_id=embedding_model_id,
+            team_id=team_id,
+        )
+
+        # Store chunks with embeddings and progress tracking
+        # Pass kb_id to enable dimension management:
+        # - First document sets the KB's embedding dimension
+        # - Subsequent documents must match the dimension
+        async def _update_progress(embedded: int, failed: int, total: int) -> None:
+            document.metadata = document.metadata or {}
+            document.metadata["embed_progress"] = {
+                "embedded": embedded,
+                "failed": failed,
+                "total": total,
+            }
+            await document.save(update_fields=["metadata"])
+
+        created_chunks = await vector_store.store_chunks_with_progress(
+            document, chunks, kb_id=kb.id, progress_callback=_update_progress
+        )
+        logger.info(
+            f"Document {document_id} embeddings stored, chunks={len(created_chunks)}"
+        )
+
+        # Check for failed chunks
+        failed_chunks = [c for c in created_chunks if c.status == "failed"]
+        embedded_chunks = [c for c in created_chunks if c.status == "embedded"]
+
+        # Calculate totals from embedded chunks
+        total_tokens = sum(c.token_count for c in created_chunks)
+
+        # Clear progress from metadata
+        document.metadata = document.metadata or {}
+        _clear_task_metadata(document)
+
+        if failed_chunks and not embedded_chunks:
+            # All failed
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = t(
+                "all_chunks_failed_to_embed",
+                lang=user_locale,
+                error=t("unknown_error_generic", lang=user_locale),
+            )[:500]
+            document.chunk_count = len(created_chunks)
+            document.token_count = total_tokens
+            await document.save()
+
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=document.error_message,
+                user_locale=user_locale,
+            )
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": document.error_message,
+            }
+
+        if failed_chunks:
+            # Partial failure
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = t(
+                "chunks_failed_to_embed",
+                lang=user_locale,
+                failed_count=len(failed_chunks),
+                total_chunks=len(created_chunks),
+                error=t("unknown_error_generic", lang=user_locale),
+            )[:500]
+        else:
+            document.status = DocumentStatus.COMPLETED.value
+            document.error_message = None
+
+        document.chunk_count = len(created_chunks)
+        document.token_count = total_tokens
+        document.processed_at = datetime.now(timezone.utc)
+        await document.save()
+        if document.status == DocumentStatus.COMPLETED.value:
+            await _index_document_lexically(document.id)
+        logger.info(
+            f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
+        )
+
+        # Update KB statistics
+        kb.total_chunks += len(created_chunks)
+        kb.total_tokens += total_tokens
+        await kb.save()
+        logger.info(
+            f"KB {kb.id} stats updated: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
+        )
+
+        logger.info(
+            f"Document {document_id} processed: "
+            f"{len(created_chunks)} chunks, {total_tokens} tokens"
+        )
+
+        # Send success notification
+        await _send_doc_indexed_notification(
+            document=document,
+            kb_name=kb.name,
+            team_id=kb.team_id,
+            chunk_count=len(created_chunks),
+            token_count=total_tokens,
+            user_locale=user_locale,
+        )
+
+        return {
+            "status": "success",
+            "document_id": document_id,
+            "chunk_count": len(created_chunks),
+            "token_count": total_tokens,
+        }
+
+    except DimensionMismatchError as e:
+        logger.error(f"Dimension mismatch for document {document_id}: {e}")
+
+        # Update document status with specific error
+        document.status = DocumentStatus.ERROR.value
+        _clear_task_metadata(document)
+        document.error_message = _get_dimension_mismatch_error(document, user_locale)[
+            :500
+        ]
+        await document.save()
+
+        # Send failure notification
+        await _send_doc_failed_notification(
+            document=document,
+            kb_name=kb.name,
+            team_id=kb.team_id,
+            error=document.error_message,
+            user_locale=user_locale,
+        )
+
+        return {
+            "status": "error",
+            "document_id": document_id,
+            "message": document.error_message,
+            "error_type": "dimension_mismatch",
+        }
+
+    except Exception as e:
+        logger.exception(f"Error processing document {document_id}: {e}")
+
+        # Update document status
+        document.status = DocumentStatus.ERROR.value
+        _clear_task_metadata(document)
+        document.error_message = _get_generic_processing_error(document, user_locale)[
+            :500
+        ]
+        await document.save()
+
+        # Send failure notification
+        await _send_doc_failed_notification(
+            document=document,
+            kb_name=kb.name,
+            team_id=kb.team_id,
+            error=document.error_message,
+            user_locale=user_locale,
+        )
+
+        return {
+            "status": "error",
+            "document_id": document_id,
+            "message": document.error_message,
+        }
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def process_document_task(self, document_id: str) -> dict:
     """
@@ -301,281 +607,9 @@ def process_document_task(self, document_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    import asyncio
 
-    async def _process():
-        doc_uuid = UUID(document_id)
-
-        # Get document with uploader for locale
-        document = (
-            await Document.filter(id=doc_uuid)
-            .prefetch_related("knowledge_base", "uploaded_by")
-            .first()
-        )
-
-        if not document:
-            logger.error(f"Document {document_id} not found")
-            default_lang = await get_default_language()
-            return {
-                "status": "error",
-                "message": t("document_not_found", lang=default_lang),
-            }
-
-        task_id = getattr(self.request, "id", None)
-        if _is_stale_task(document, task_id):
-            return await _finish_stale_task(document, task_id)
-        if _is_finished_task(document, task_id):
-            return await _finish_already_finished_task(document, task_id)
-
-        kb = document.knowledge_base
-        # Get uploader's locale for notifications
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
-        )
-
-        existing_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
-        if existing_chunks > 0:
-            return await _embed_existing_document_chunks(document_id, task_id)
-
-        try:
-            # Update status to processing
-            document.status = DocumentStatus.PROCESSING.value
-            await document.save()
-
-            # Extract text
-            # Get clean_text setting from document metadata (default to True)
-            doc_meta = document.metadata or {}
-            clean_text_setting = doc_meta.get("clean_text", True)
-
-            if document.file_path:
-                document_processor.delete_media_assets(kb.id, document.id)
-                text, metadata = await document_processor.extract_text(
-                    document.file_path,
-                    document.doc_type,
-                    clean_text=clean_text_setting,
-                    kb_id=kb.id,
-                    document_id=document.id,
-                )
-            elif document.source_url:
-                text, metadata = await document_processor.fetch_url_content(
-                    document.source_url,
-                    clean_text=clean_text_setting,
-                )
-            else:
-                raise ValueError(t("document_missing_source", lang=user_locale))
-
-            # Update document metadata
-            document.metadata = document.metadata or {}
-            document.metadata.update(metadata)
-
-            # Get chunking settings from document metadata first, then fallback to KB settings
-            doc_meta = document.metadata or {}
-            kb_settings = kb.settings or {}
-            chunk_size = doc_meta.get("chunk_size") or kb_settings.get(
-                "chunk_size", 1000
-            )
-            chunk_overlap = doc_meta.get("chunk_overlap") or kb_settings.get(
-                "chunk_overlap", 100
-            )
-            separator = doc_meta.get("separator") or kb_settings.get("separator")
-
-            # Chunk text
-            from app.services.document_processor import chunk_text
-
-            chunks = chunk_text(
-                text,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                separators=[separator] if separator else None,
-            )
-
-            if not chunks:
-                raise ValueError(t("document_no_chunks_generated", lang=user_locale))
-
-            # Initialize vector store with KB's embedding model and team ID for usage tracking
-            embedding_model_id = (
-                str(kb.embedding_model_id) if kb.embedding_model_id else None
-            )
-            team_id = str(kb.team_id) if kb.team_id else None
-            vector_store = VectorStore(
-                embedding_model_id=embedding_model_id,
-                team_id=team_id,
-            )
-
-            # Store chunks with embeddings and progress tracking
-            # Pass kb_id to enable dimension management:
-            # - First document sets the KB's embedding dimension
-            # - Subsequent documents must match the dimension
-            async def _update_progress(embedded: int, failed: int, total: int) -> None:
-                document.metadata = document.metadata or {}
-                document.metadata["embed_progress"] = {
-                    "embedded": embedded,
-                    "failed": failed,
-                    "total": total,
-                }
-                await document.save(update_fields=["metadata"])
-
-            created_chunks = await vector_store.store_chunks_with_progress(
-                document, chunks, kb_id=kb.id, progress_callback=_update_progress
-            )
-            logger.info(
-                f"Document {document_id} embeddings stored, chunks={len(created_chunks)}"
-            )
-
-            # Check for failed chunks
-            failed_chunks = [c for c in created_chunks if c.status == "failed"]
-            embedded_chunks = [c for c in created_chunks if c.status == "embedded"]
-
-            # Calculate totals from embedded chunks
-            total_tokens = sum(c.token_count for c in created_chunks)
-
-            # Clear progress from metadata
-            document.metadata = document.metadata or {}
-            _clear_task_metadata(document)
-
-            if failed_chunks and not embedded_chunks:
-                # All failed
-                document.status = DocumentStatus.ERROR.value
-                document.error_message = t(
-                    "all_chunks_failed_to_embed",
-                    lang=user_locale,
-                    error=t("unknown_error_generic", lang=user_locale),
-                )[:500]
-                document.chunk_count = len(created_chunks)
-                document.token_count = total_tokens
-                await document.save()
-
-                await _send_doc_failed_notification(
-                    document=document,
-                    kb_name=kb.name,
-                    team_id=kb.team_id,
-                    error=document.error_message,
-                    user_locale=user_locale,
-                )
-
-                return {
-                    "status": "error",
-                    "document_id": document_id,
-                    "message": document.error_message,
-                }
-
-            if failed_chunks:
-                # Partial failure
-                document.status = DocumentStatus.ERROR.value
-                document.error_message = t(
-                    "chunks_failed_to_embed",
-                    lang=user_locale,
-                    failed_count=len(failed_chunks),
-                    total_chunks=len(created_chunks),
-                    error=t("unknown_error_generic", lang=user_locale),
-                )[:500]
-            else:
-                document.status = DocumentStatus.COMPLETED.value
-                document.error_message = None
-
-            document.chunk_count = len(created_chunks)
-            document.token_count = total_tokens
-            document.processed_at = datetime.now(timezone.utc)
-            await document.save()
-            if document.status == DocumentStatus.COMPLETED.value:
-                await _index_document_lexically(document.id)
-            logger.info(
-                f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
-            )
-
-            # Update KB statistics
-            kb.total_chunks += len(created_chunks)
-            kb.total_tokens += total_tokens
-            await kb.save()
-            logger.info(
-                f"KB {kb.id} stats updated: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
-            )
-
-            logger.info(
-                f"Document {document_id} processed: "
-                f"{len(created_chunks)} chunks, {total_tokens} tokens"
-            )
-
-            # Send success notification
-            await _send_doc_indexed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                chunk_count=len(created_chunks),
-                token_count=total_tokens,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "success",
-                "document_id": document_id,
-                "chunk_count": len(created_chunks),
-                "token_count": total_tokens,
-            }
-
-        except DimensionMismatchError as e:
-            logger.error(f"Dimension mismatch for document {document_id}: {e}")
-
-            # Update document status with specific error
-            document.status = DocumentStatus.ERROR.value
-            _clear_task_metadata(document)
-            document.error_message = _get_dimension_mismatch_error(
-                document, user_locale
-            )[:500]
-            await document.save()
-
-            # Send failure notification
-            await _send_doc_failed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                error=document.error_message,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "error",
-                "document_id": document_id,
-                "message": document.error_message,
-                "error_type": "dimension_mismatch",
-            }
-
-        except Exception as e:
-            logger.exception(f"Error processing document {document_id}: {e}")
-
-            # Update document status
-            document.status = DocumentStatus.ERROR.value
-            _clear_task_metadata(document)
-            document.error_message = _get_generic_processing_error(
-                document, user_locale
-            )[:500]
-            await document.save()
-
-            # Send failure notification
-            await _send_doc_failed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                error=document.error_message,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "error",
-                "document_id": document_id,
-                "message": document.error_message,
-            }
-
-    # Run async function
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(_process())
+    task_id = getattr(self.request, "id", None)
+    return _run_async(_process_document(document_id, task_id))
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -591,7 +625,6 @@ def reprocess_document_task(self, document_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    import asyncio
 
     async def _reprocess():
         doc_uuid = UUID(document_id)
@@ -637,17 +670,11 @@ def reprocess_document_task(self, document_id: str) -> dict:
 
         return {"status": "pending", "deleted_chunks": deleted_count}
 
-    # Run delete, then process
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    result = loop.run_until_complete(_reprocess())
+    result = _run_async(_reprocess())
 
     if result.get("status") == "pending":
-        return process_document_task(document_id)
+        task_id = getattr(self.request, "id", None)
+        return _run_async(_process_document(document_id, task_id))
 
     return result
 
@@ -663,8 +690,7 @@ def process_url_document_task(document_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    # URL documents are processed the same way, just different extraction
-    return process_document_task(document_id)
+    return _run_async(_process_document(document_id, None))
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -680,7 +706,6 @@ def rechunk_document_task(self, document_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    import asyncio
 
     async def _rechunk():
         doc_uuid = UUID(document_id)
@@ -917,14 +942,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 "message": document.error_message,
             }
 
-    # Run async function
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(_rechunk())
+    return _run_async(_rechunk())
 
 
 async def _embed_existing_document_chunks(
@@ -1178,18 +1196,9 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    import asyncio
 
     task_id = getattr(self.request, "id", None)
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(
-        _embed_existing_document_chunks(document_id, task_id)
-    )
+    return _run_async(_embed_existing_document_chunks(document_id, task_id))
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -1203,7 +1212,6 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    import asyncio
 
     async def _retry():
         doc_uuid = UUID(document_id)
@@ -1386,13 +1394,7 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                 "message": document.error_message,
             }
 
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(_retry())
+    return _run_async(_retry())
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -1407,7 +1409,6 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
     Returns:
         Result dict with status and stats
     """
-    import asyncio
 
     async def _retry():
         doc_uuid = UUID(document_id)
@@ -1589,10 +1590,4 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
                 "message": document.error_message,
             }
 
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(_retry())
+    return _run_async(_retry())
