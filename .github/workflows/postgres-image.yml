@@ -1,0 +1,128 @@
+name: PostgreSQL pg_search Image
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "deploy/postgres/**"
+      - ".github/workflows/postgres-image.yml"
+  push:
+    branches: [ "main" ]
+    tags:
+      - "postgres-pg-search-*"
+    paths:
+      - "deploy/postgres/**"
+      - ".github/workflows/postgres-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag is on main
+        if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/postgres/Dockerfile
+          load: true
+          platforms: ${{ matrix.platform }}
+          tags: clouisle-postgres-pg-search:test
+          cache-from: type=gha,scope=postgres-pg-search-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=postgres-pg-search-${{ matrix.arch }}
+
+      - name: Test image
+        run: deploy/postgres/test-image.sh clouisle-postgres-pg-search:test
+
+      - name: Export tested release image
+        if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker save clouisle-postgres-pg-search:test | gzip > "postgres-$ARCH.tar.gz"
+
+      - name: Upload tested release image
+        if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-${{ matrix.arch }}
+          path: postgres-${{ matrix.arch }}.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  publish-manifest:
+    name: Publish multi-platform manifest
+    if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Download tested release images
+        uses: actions/download-artifact@v5
+        with:
+          pattern: postgres-*
+          merge-multiple: true
+
+      - name: Load tested release images
+        run: |
+          docker load < postgres-amd64.tar.gz
+          docker tag clouisle-postgres-pg-search:test clouisle-postgres-pg-search:amd64
+          docker load < postgres-arm64.tar.gz
+          docker tag clouisle-postgres-pg-search:test clouisle-postgres-pg-search:arm64
+
+      - name: Login to ACR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Push immutable architecture images and manifest
+        env:
+          REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+        run: |
+          version=${GITHUB_REF_NAME#postgres-pg-search-}
+          image="$REGISTRY/$NAMESPACE/clouisle-postgres-pg-search"
+          for tag in "$version" "$version-amd64" "$version-arm64"; do
+            if docker buildx imagetools inspect "$image:$tag" >/dev/null 2>&1; then
+              echo "refusing to overwrite existing image $image:$tag" >&2
+              exit 1
+            fi
+          done
+          docker tag clouisle-postgres-pg-search:amd64 "$image:$version-amd64"
+          docker tag clouisle-postgres-pg-search:arm64 "$image:$version-arm64"
+          docker push "$image:$version-amd64"
+          docker push "$image:$version-arm64"
+          docker buildx imagetools create \
+            --tag "$image:$version" \
+            "$image:$version-amd64" \
+            "$image:$version-arm64"
+          docker buildx imagetools inspect "$image:$version"

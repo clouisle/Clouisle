@@ -2,6 +2,19 @@
 
 ## Active
 
+- **postgres-pg-search-alpine-image** — In progress. ARM64 passed at 426,942,814 bytes; native amd64 and release-manifest evidence remain required before adoption. See `docs/plan/postgres-pg-search-alpine-image.md`
+  - [x] 1. Reproducible Alpine source build
+  - [x] 2. Runtime and size acceptance harness
+  - [x] 3. Native multi-architecture CI and publication workflow
+  - [ ] 4. Dual-architecture qualification and deployment adoption
+
+- **postgres-pg-search-lexical** — Complete. Replaced OpenSearch lexical retrieval with ParadeDB `pg_search` through a direct PostgreSQL 17 cutover while preserving current retrieval and weighted-RRF contracts. See `docs/plan/postgresql-pg-search-lexical.md`
+  - [x] 1. PostgreSQL 17 migration and compliance readiness
+  - [x] 2. pg_search extension, lexical relation, and BM25 index
+  - [x] 3. PostgreSQL lexical adapter and lifecycle integration
+  - [x] 4. Direct cutover and OpenSearch removal
+  - [x] 5. Integration validation and operator documentation
+
 - **retrieval-lab-detail-panel** — Complete. Move compact Retrieval Lab results into a shared desktop resizable detail panel and mobile Sheet while preserving production retrieval diagnostics and A/B behavior. See `docs/plan/retrieval-lab-detail-panel.md`
   - [x] 1. Replace inline expansion with side-aware result selection
   - [x] 2. Add compact accessible result cards
