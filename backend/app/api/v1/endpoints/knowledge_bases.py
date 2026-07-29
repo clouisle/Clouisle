@@ -1833,32 +1833,51 @@ async def update_document_chunk(
             status_code=404,
         )
 
-    old_token_count = chunk.token_count
-    chunk.content = chunk_in.content
+    new_token_count = len(chunk_in.content) // 4
+    token_diff = new_token_count - chunk.token_count
+    embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
+    team_id = str(kb.team_id) if kb.team_id else None
+    vector_store = VectorStore(
+        embedding_model_id=embedding_model_id,
+        team_id=team_id,
+    )
 
-    # Recalculate token count
-    new_token_count = len(chunk_in.content) // 4  # Simple estimate
-    chunk.token_count = new_token_count
-    await chunk.save()
-    token_diff = new_token_count - old_token_count
-    doc.token_count += token_diff
-    await doc.save()
-
-    kb.total_tokens += token_diff
-    await kb.save()
-
-    # Update vector embedding
+    vector_updated = False
+    old_content = chunk.content
     try:
-        embedding_model_id = (
-            str(kb.embedding_model_id) if kb.embedding_model_id else None
-        )
-        team_id = str(kb.team_id) if kb.team_id else None
-        vector_store = VectorStore(
-            embedding_model_id=embedding_model_id,
-            team_id=team_id,
-        )
-        if not await vector_store.update_chunk_vector(chunk, kb_id=kb.id):
-            raise RuntimeError("Vector update failed")
+        async with in_transaction() as connection:
+            await (
+                Document.filter(id=doc_id, knowledge_base_id=kb_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            locked_chunk = (
+                await DocumentChunk.filter(id=chunk_id, document_id=doc_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            old_content = locked_chunk.content
+            token_diff = new_token_count - locked_chunk.token_count
+            locked_chunk.content = chunk_in.content
+            locked_chunk.token_count = new_token_count
+            if not await vector_store.update_chunk_vector(
+                locked_chunk, kb_id=kb.id, using_db=connection
+            ):
+                raise RuntimeError("Vector update failed")
+            vector_updated = True
+            await (
+                Document.filter(id=doc_id)
+                .using_db(connection)
+                .update(token_count=F("token_count") + token_diff)
+            )
+            await (
+                KnowledgeBase.filter(id=kb_id)
+                .using_db(connection)
+                .update(total_tokens=F("total_tokens") + token_diff)
+            )
+            chunk = locked_chunk
     except DimensionMismatchError as e:
         logger.warning("Dimension mismatch for chunk %s: %s", chunk_id, e)
         raise BusinessError(
@@ -1866,14 +1885,29 @@ async def update_document_chunk(
             msg_key="kb_embedding_dimension_mismatch",
         )
     except Exception as e:
+        if vector_updated:
+            try:
+                await vector_store.restore_chunk_vector(
+                    chunk_id=chunk_id,
+                    document_id=doc_id,
+                    content=old_content,
+                    kb_id=kb_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to restore vector projection for chunk %s after rollback",
+                    chunk_id,
+                )
         logger.error(
-            f"Failed to update vector embedding for chunk {chunk_id}: {e}",
+            "Failed to update vector embedding for chunk %s: %s",
+            chunk_id,
+            e,
             exc_info=True,
         )
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_update_failed",
-        )
+        ) from e
 
     try:
         await index_lexical_chunk(chunk.id)
@@ -2026,61 +2060,80 @@ async def create_document_chunk(
             status_code=404,
         )
 
-    # Determine chunk index
-    existing_chunks = await DocumentChunk.filter(document_id=doc_id).order_by(
-        "chunk_index"
-    )
-
-    if after_index is not None:
-        new_index = after_index + 1
-        # Shift subsequent chunks
-        for chunk in existing_chunks:
-            if chunk.chunk_index >= new_index:
-                chunk.chunk_index += 1
-                await chunk.save()
-    else:
-        new_index = len(existing_chunks)
-
-    # Calculate token count
     token_count = len(chunk_in.content) // 4
-
-    # Create chunk
-    chunk = await DocumentChunk.create(
-        document=doc,
-        content=chunk_in.content,
-        chunk_index=new_index,
-        token_count=token_count,
+    embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
+    team_id = str(kb.team_id) if kb.team_id else None
+    vector_store = VectorStore(
+        embedding_model_id=embedding_model_id,
+        team_id=team_id,
     )
 
-    # Update statistics
-    doc.chunk_count += 1
-    doc.token_count += token_count
-    await doc.save()
-
-    kb.total_chunks += 1
-    kb.total_tokens += token_count
-    await kb.save()
-
-    # Create vector embedding
+    vector_created = False
+    chunk: DocumentChunk | None = None
     try:
-        embedding_model_id = (
-            str(kb.embedding_model_id) if kb.embedding_model_id else None
-        )
-        team_id = str(kb.team_id) if kb.team_id else None
-        vector_store = VectorStore(
-            embedding_model_id=embedding_model_id,
-            team_id=team_id,
-        )
-        await vector_store.add_chunk_vector(kb_id, chunk)
-        chunk.status = "embedded"
-        chunk.error_message = None
-        await chunk.save(update_fields=["status", "error_message"])
+        async with in_transaction() as connection:
+            await (
+                Document.filter(id=doc_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            existing_count = await (
+                DocumentChunk.filter(document_id=doc_id).using_db(connection).count()
+            )
+            new_index = after_index + 1 if after_index is not None else existing_count
+            await (
+                DocumentChunk.filter(document_id=doc_id, chunk_index__gte=new_index)
+                .using_db(connection)
+                .update(chunk_index=F("chunk_index") + 1)
+            )
+            chunk = await DocumentChunk.create(
+                document_id=doc_id,
+                content=chunk_in.content,
+                chunk_index=new_index,
+                token_count=token_count,
+                using_db=connection,
+            )
+            await vector_store.add_chunk_vector(kb_id, chunk, using_db=connection)
+            vector_created = True
+            chunk.status = "embedded"
+            chunk.error_message = None
+            await chunk.save(
+                using_db=connection,
+                update_fields=["status", "error_message"],
+            )
+            await (
+                Document.filter(id=doc_id)
+                .using_db(connection)
+                .update(
+                    chunk_count=F("chunk_count") + 1,
+                    token_count=F("token_count") + token_count,
+                )
+            )
+            await (
+                KnowledgeBase.filter(id=kb_id)
+                .using_db(connection)
+                .update(
+                    total_chunks=F("total_chunks") + 1,
+                    total_tokens=F("total_tokens") + token_count,
+                )
+            )
     except Exception as e:
-        logger.exception("Failed to embed new chunk %s", chunk.id)
+        if vector_created and chunk is not None:
+            try:
+                await vector_store.delete_chunk_vector(chunk.id, kb_id=kb_id)
+            except Exception:
+                logger.exception(
+                    "Failed to delete vector projection for rolled-back chunk %s",
+                    chunk.id,
+                )
+        logger.exception("Failed to embed new chunk")
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_update_failed",
         ) from e
+
+    assert chunk is not None
 
     if doc.status == DocumentStatus.COMPLETED.value:
         try:

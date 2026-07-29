@@ -17,6 +17,7 @@ from uuid import UUID
 
 import jieba
 from tortoise import Tortoise
+from tortoise.backends.base.client import BaseDBAsyncClient
 
 from app.core.config import settings
 from app.models.knowledge_base import (
@@ -1381,7 +1382,12 @@ class VectorStore:
         return True
 
     async def update_chunk_vector(
-        self, chunk: DocumentChunk, kb_id: UUID | None = None
+        self,
+        chunk: DocumentChunk,
+        kb_id: UUID | None = None,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+        persist_embedding_id: bool = True,
     ) -> bool:
         """
         Update vector embedding for a chunk.
@@ -1409,7 +1415,8 @@ class VectorStore:
 
             # Update embedding reference
             chunk.embedding_id = f"chunk_{chunk.id}_updated"
-            await chunk.save()
+            if persist_embedding_id:
+                await chunk.save(using_db=using_db)
 
             # Store actual embedding vector in Qdrant
             await self._store_embedding(
@@ -1424,11 +1431,37 @@ class VectorStore:
 
             logger.info(f"Updated vector for chunk {chunk.id}")
             return True
+        except DimensionMismatchError:
+            raise
         except Exception as e:
             logger.error(f"Error updating chunk vector: {e}")
             return False
 
-    async def add_chunk_vector(self, kb_id: UUID, chunk: DocumentChunk) -> bool:
+    async def restore_chunk_vector(
+        self,
+        *,
+        chunk_id: UUID,
+        document_id: UUID,
+        content: str,
+        kb_id: UUID,
+    ) -> None:
+        """Restore a chunk's Qdrant projection without mutating PostgreSQL."""
+        embedding = await self.embed_query(content)
+        await _ensure_kb_dimension(kb_id, len(embedding))
+        await self._store_embedding(
+            chunk_id,
+            embedding,
+            dimension=len(embedding),
+            payload={"kb_id": str(kb_id), "document_id": str(document_id)},
+        )
+
+    async def add_chunk_vector(
+        self,
+        kb_id: UUID,
+        chunk: DocumentChunk,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> bool:
         """
         Add vector embedding for a new chunk.
 
@@ -1449,7 +1482,7 @@ class VectorStore:
 
         # Store embedding reference
         chunk.embedding_id = f"kb_{kb_id}_chunk_{chunk.id}"
-        await chunk.save()
+        await chunk.save(using_db=using_db)
 
         # Store actual embedding vector in Qdrant
         await self._store_embedding(
