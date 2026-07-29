@@ -187,14 +187,22 @@ async def test_deletes_are_team_scoped(method: str, field: str, value: str):
 @pytest.mark.asyncio
 async def test_count_reconcile_and_resumable_backfill():
     connection = ConnectionStub()
-    connection.query_dict_results = [[{"count": 7}], [{"count": 7}]]
+    connection.query_dict_results = [
+        [{"count": 7}],
+        [{"expected": 9, "repaired": 2, "deleted": 0}],
+        [{"count": 9}],
+    ]
     store = LexicalStore(connection=connection)
 
     assert await store.count(team_id=None, kb_id=None, document_id=None) == 7
     result = await store.reconcile(9)
-    assert result.actual == 7
-    assert result.delta == -2
-    assert result.matches is False
+    assert result.actual == 9
+    assert result.repaired == 2
+    assert result.deleted == 0
+    assert result.matches is True
+    reconcile_query, _ = connection.queries[1]
+    assert "knowledge_lexical_chunks IS DISTINCT FROM EXCLUDED" in reconcile_query
+    assert "NOT EXISTS" in reconcile_query
 
     batch = await store.backfill_batch(
         [

@@ -36,6 +36,8 @@ class SearchHit:
 class ReconciliationResult:
     expected: int
     actual: int
+    repaired: int = 0
+    deleted: int = 0
 
     @property
     def matches(self) -> bool:
@@ -430,11 +432,107 @@ class LexicalStore:
 
     async def reconcile(
         self,
-        expected: int,
+        expected: int | None = None,
         *,
         team_id: str | None = None,
         kb_id: str | None = None,
         document_id: str | None = None,
     ) -> ReconciliationResult:
-        actual = await self.count(team_id=team_id, kb_id=kb_id, document_id=document_id)
-        return ReconciliationResult(expected=expected, actual=actual)
+        try:
+            rows = await self.connection.execute_query_dict(
+                """
+                WITH authoritative AS (
+                    SELECT
+                        chunk.id AS chunk_id,
+                        chunk.document_id,
+                        document.knowledge_base_id AS kb_id,
+                        kb.team_id,
+                        chunk.status,
+                        document.name,
+                        chunk.content,
+                        COALESCE(chunk.metadata, '{}'::jsonb) AS metadata,
+                        chunk.chunk_index,
+                        floor(extract(epoch FROM chunk.updated_at) * 1000000)::bigint
+                            AS update_version,
+                        chunk.metadata->>'language' AS language,
+                        chunk.metadata->>'section' AS section,
+                        COALESCE(chunk.metadata->>'title', document.name) AS title,
+                        CASE
+                            WHEN jsonb_typeof(chunk.metadata->'identifiers') = 'array'
+                            THEN ARRAY(
+                                SELECT jsonb_array_elements_text(
+                                    chunk.metadata->'identifiers'
+                                )
+                            )
+                            ELSE ARRAY[]::text[]
+                        END AS identifiers
+                    FROM document_chunks AS chunk
+                    JOIN documents AS document ON document.id = chunk.document_id
+                    JOIN knowledge_bases AS kb
+                      ON kb.id = document.knowledge_base_id
+                    WHERE document.status = 'completed'
+                      AND kb.status = 'active'
+                      AND ($1::uuid IS NULL OR kb.team_id = $1::uuid)
+                      AND ($2::uuid IS NULL OR kb.id = $2::uuid)
+                      AND ($3::uuid IS NULL OR document.id = $3::uuid)
+                ), repaired AS (
+                    INSERT INTO knowledge_lexical_chunks (
+                        chunk_id, document_id, kb_id, team_id, status, name, content,
+                        metadata, chunk_index, update_version, language, section, title,
+                        identifiers
+                    )
+                    SELECT
+                        chunk_id, document_id, kb_id, team_id, status, name, content,
+                        metadata, chunk_index, update_version, language, section, title,
+                        identifiers
+                    FROM authoritative
+                    ON CONFLICT (chunk_id) DO UPDATE SET
+                        document_id = EXCLUDED.document_id,
+                        kb_id = EXCLUDED.kb_id,
+                        team_id = EXCLUDED.team_id,
+                        status = EXCLUDED.status,
+                        name = EXCLUDED.name,
+                        content = EXCLUDED.content,
+                        metadata = EXCLUDED.metadata,
+                        chunk_index = EXCLUDED.chunk_index,
+                        update_version = EXCLUDED.update_version,
+                        language = EXCLUDED.language,
+                        section = EXCLUDED.section,
+                        title = EXCLUDED.title,
+                        identifiers = EXCLUDED.identifiers
+                    WHERE knowledge_lexical_chunks.update_version <= EXCLUDED.update_version
+                      AND knowledge_lexical_chunks IS DISTINCT FROM EXCLUDED
+                    RETURNING chunk_id
+                ), deleted AS (
+                    DELETE FROM knowledge_lexical_chunks AS lexical
+                    WHERE ($1::uuid IS NULL OR lexical.team_id = $1::uuid)
+                      AND ($2::uuid IS NULL OR lexical.kb_id = $2::uuid)
+                      AND ($3::uuid IS NULL OR lexical.document_id = $3::uuid)
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM authoritative
+                          WHERE authoritative.chunk_id = lexical.chunk_id
+                      )
+                    RETURNING chunk_id
+                )
+                SELECT
+                    (SELECT count(*) FROM authoritative) AS expected,
+                    (SELECT count(*) FROM repaired) AS repaired,
+                    (SELECT count(*) FROM deleted) AS deleted
+                """,
+                [team_id, kb_id, document_id],
+            )
+            actual = await self.count(
+                team_id=team_id, kb_id=kb_id, document_id=document_id
+            )
+        except Exception as exc:
+            raise LexicalStoreError("PostgreSQL lexical reconciliation failed") from exc
+        authoritative_count = int(rows[0]["expected"])
+        if expected is not None and expected != authoritative_count:
+            raise LexicalStoreError("Authoritative lexical count changed during repair")
+        return ReconciliationResult(
+            expected=authoritative_count,
+            actual=actual,
+            repaired=int(rows[0]["repaired"]),
+            deleted=int(rows[0]["deleted"]),
+        )
