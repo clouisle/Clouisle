@@ -61,6 +61,7 @@ async def record_metrics(
 ) -> None:
     try:
         redis = await get_redis()
+        pipeline = redis.pipeline(transaction=False)
         key = "retrieval:metrics:v1"
         values: dict[str, int] = {
             "requests": 1,
@@ -75,8 +76,9 @@ async def record_metrics(
             values[f"latency:{stage}:sum_ms"] = round(latency_ms)
             values[f"latency:{stage}:le:{_latency_bucket(latency_ms)}"] = 1
         for field, value in values.items():
-            await redis.hincrby(key, field, value)  # type: ignore[misc]
-        await redis.expire(key, METRIC_TTL_SECONDS)  # type: ignore[misc]
+            pipeline.hincrby(key, field, value)
+        pipeline.expire(key, METRIC_TTL_SECONDS)
+        await pipeline.execute()
     except Exception:
         return
 
@@ -86,6 +88,7 @@ async def record_shadow(
 ) -> None:
     try:
         redis = await get_redis()
+        pipeline = redis.pipeline(transaction=False)
         payload = {
             "ids": [
                 {"chunk_id": str(result.get("chunk_id") or ""), "rank": rank}
@@ -95,10 +98,9 @@ async def record_shadow(
             "latency_ms": latency_ms,
         }
         key = "retrieval:shadow:v1"
-        await redis.lpush(  # type: ignore[misc]
-            key, json.dumps(payload, separators=(",", ":"))
-        )
-        await redis.ltrim(key, 0, 999)  # type: ignore[misc]
-        await redis.expire(key, METRIC_TTL_SECONDS)  # type: ignore[misc]
+        pipeline.lpush(key, json.dumps(payload, separators=(",", ":")))
+        pipeline.ltrim(key, 0, 999)
+        pipeline.expire(key, METRIC_TTL_SECONDS)
+        await pipeline.execute()
     except Exception:
         return

@@ -271,6 +271,10 @@ async def lifespan(app: FastAPI):
     with contextlib.suppress(asyncio.CancelledError):
         await cleanup_task
 
+    from app.services.retrieval import cleanup_background_tasks
+
+    await cleanup_background_tasks()
+
     # Cleanup
     await Tortoise.close_connections()
     await close_redis()

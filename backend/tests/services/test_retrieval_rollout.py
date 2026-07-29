@@ -1,5 +1,6 @@
+import asyncio
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -64,7 +65,10 @@ async def test_rollout_setting_failure_preserves_current_behavior(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metrics_and_shadow_are_bounded_and_privacy_safe(monkeypatch):
-    redis = AsyncMock()
+    redis = MagicMock()
+    pipeline = MagicMock()
+    pipeline.execute = AsyncMock()
+    redis.pipeline.return_value = pipeline
     monkeypatch.setattr(retrieval_rollout, "get_redis", AsyncMock(return_value=redis))
 
     await retrieval_rollout.record_metrics(
@@ -86,17 +90,19 @@ async def test_metrics_and_shadow_are_bounded_and_privacy_safe(monkeypatch):
         index_version=3,
     )
 
-    fields = [call.args[1:] for call in redis.hincrby.await_args_list]
+    redis.pipeline.assert_called_with(transaction=False)
+    fields = [call.args[1:] for call in pipeline.hincrby.call_args_list]
     assert ("candidates", 2) in fields
     assert ("latency:recall:le:50", 1) in fields
     assert ("latency:total:le:inf", 1) in fields
-    payload = json.loads(redis.lpush.await_args.args[1])
+    payload = json.loads(pipeline.lpush.call_args.args[1])
     assert payload == {
         "ids": [{"chunk_id": "chunk-1", "rank": 1}],
         "versions": {"retrieval": 1, "lexical_index": 3},
         "latency_ms": 4.5,
     }
-    redis.ltrim.assert_awaited_once_with("retrieval:shadow:v1", 0, 999)
+    pipeline.ltrim.assert_called_once_with("retrieval:shadow:v1", 0, 999)
+    assert pipeline.execute.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -145,10 +151,11 @@ async def test_retrieve_uses_vector_primary_and_isolated_hybrid_shadow(monkeypat
 
     assert response is primary
     assert retrieve_once.await_args_list[0].args[0].search_mode == "vector"
-    assert retrieve_once.await_args_list[1].args[0] == retrieval._effective_request(
-        request
-    )
-    assert record_shadow.await_args.args[0] == shadow.results
+    assert retrieve_once.await_count == 1
+    assert len(retrieval._BACKGROUND_TASKS) == 1
+    await retrieval.cleanup_background_tasks()
+    assert retrieve_once.await_count == 1
+    record_shadow.assert_not_awaited()
     record_metrics.assert_awaited_once()
 
 
@@ -177,3 +184,5 @@ async def test_shadow_failure_does_not_change_primary_answer(monkeypatch):
     )
 
     assert response is primary
+    await asyncio.sleep(0)
+    await retrieval.cleanup_background_tasks()
