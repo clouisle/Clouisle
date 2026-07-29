@@ -361,9 +361,7 @@ def _global_fusion(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ("dense", "dense_score", "dense_rank"),
         ("lexical", "lexical_score", "lexical_rank"),
     ):
-        channels[channel].sort(
-            key=lambda result: _result_order(result, score_field)
-        )
+        channels[channel].sort(key=lambda result: _result_order(result, score_field))
         for rank, result in enumerate(channels[channel], 1):
             result[rank_field] = rank
     return _weighted_rrf(
