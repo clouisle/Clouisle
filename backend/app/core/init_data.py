@@ -317,8 +317,13 @@ async def init_scoped_role_assignments_table():
         await execute_startup_migration_query(
             conn,
             f"""
-            INSERT INTO scoped_role_assignments (user_id, role_id, scope_type, scope_id, source)
-            VALUES ('{membership.user.id}', '{role.id}', 'team', '{membership.team.id}', 'migration')
+            INSERT INTO scoped_role_assignments (
+                id, user_id, role_id, scope_type, scope_id, source, created_at, updated_at
+            )
+            VALUES (
+                gen_random_uuid(), '{membership.user.id}', '{role.id}',
+                'team', '{membership.team.id}', 'migration', NOW(), NOW()
+            )
             ON CONFLICT (user_id, role_id, scope_type, scope_id) DO NOTHING
             """,
         )

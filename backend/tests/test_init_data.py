@@ -482,8 +482,10 @@ async def test_scoped_role_assignments_backfills_supported_memberships(
     assert execute.await_count == 5
     statements = [awaited.args[1] for awaited in execute.await_args_list]
     assert "CREATE TABLE IF NOT EXISTS scoped_role_assignments" in statements[0]
-    assert "'user-owner', 'role-admin'" in statements[3]
-    assert "'user-member', 'role-member'" in statements[4]
+    assert "gen_random_uuid(), 'user-owner', 'role-admin'" in statements[3]
+    assert "NOW(), NOW()" in statements[3]
+    assert "gen_random_uuid(), 'user-member', 'role-member'" in statements[4]
+    assert "NOW(), NOW()" in statements[4]
     assert all("user-viewer" not in statement for statement in statements)
     assert all("user-legacy" not in statement for statement in statements)
 
