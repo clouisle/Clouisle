@@ -61,6 +61,13 @@ function retrievalStage(reason: unknown): string | null {
   return typeof stage === 'string' ? stage : null
 }
 
+function batchErrorReason(error: { code: number; retrieval_error_category: string; stage?: string | null }): ApiError {
+  return new ApiError(error.code, '', {
+    retrieval_error_category: error.retrieval_error_category,
+    stage: error.stage,
+  })
+}
+
 // Stage-less keys are camelCase in the catalog, so every snake_case segment is capitalized
 function retrievalErrorKey(failure: RetrievalFailure, stage: string | null): string {
   if (stage) return `retrievalError_${stage}_${failure}`
@@ -294,29 +301,32 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
     setSelection(null)
     setSubmittedQuery(trimmed)
     try {
-      const [a, b] = await Promise.allSettled([
-        api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model))),
-        compare ? api.search(knowledgeBaseId, configParams(trimmed, configB, Boolean(knowledgeBase?.rerank_model))) : Promise.resolve(undefined),
-      ])
-      const next = {
-        a: a.status === 'fulfilled' ? a.value : undefined,
-        b: b.status === 'fulfilled' ? b.value : undefined,
+      if (compare) {
+        const hasRerankModel = Boolean(knowledgeBase?.rerank_model)
+        const batch = await api.searchBatch(knowledgeBaseId, trimmed, [
+          { id: 'a', ...runConfig(configA, hasRerankModel) },
+          { id: 'b', ...runConfig(configB, hasRerankModel) },
+        ])
+        const outcomes = new Map(batch.outcomes.map(outcome => [outcome.id, outcome]))
+        const a = outcomes.get('a')
+        const b = outcomes.get('b')
+        setResponses({
+          a: a?.status === 'fulfilled' ? a.response : undefined,
+          b: b?.status === 'fulfilled' ? b.response : undefined,
+        })
+        for (const [id, outcome] of [['A', a], ['B', b]] as const) {
+          if (outcome?.status !== 'rejected') continue
+          const reason = batchErrorReason(outcome.error)
+          toast.error(`${id}: ${t(retrievalErrorKey(retrievalFailure(reason), retrievalStage(reason)))}`)
+        }
+      } else {
+        try {
+          const response = await api.search(knowledgeBaseId, configParams(trimmed, configA, Boolean(knowledgeBase?.rerank_model)))
+          setResponses({ a: response })
+        } catch (reason) {
+          toast.error(t(retrievalErrorKey(retrievalFailure(reason), retrievalStage(reason))))
+        }
       }
-      setResponses(next)
-
-      // Handle failures with stage-aware toast notifications
-      if (a.status === 'rejected') {
-        const failure = retrievalFailure(a.reason)
-        const stage = retrievalStage(a.reason)
-        const label = compare ? 'A: ' : ''
-        toast.error(label + t(retrievalErrorKey(failure, stage)))
-      }
-      if (compare && b.status === 'rejected') {
-        const failure = retrievalFailure(b.reason)
-        const stage = retrievalStage(b.reason)
-        toast.error('B: ' + t(retrievalErrorKey(failure, stage)))
-      }
-
     } finally {
       setSearching(false)
     }
@@ -387,6 +397,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
       {response.results.map((result, index) => {
         const selected = selection?.side === side && selection.chunkId === result.chunk_id
         const movement = otherRanks.get(result.chunk_id)
+        const movementDelta = movement === undefined ? null : movement - (index + 1)
         const stageLabel = translateSearchType(result.search_type, t) || translateFinalScoreStage(result.final_score_stage, t) || t('unknownChannel')
         return <Card key={result.chunk_id} className={cn('py-0 transition-colors', selected && 'border-primary bg-accent/60 ring-1 ring-primary/30')}>
           <button
@@ -402,8 +413,13 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
               <Badge variant="outline">#{index + 1}</Badge>
               <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <strong className="min-w-0 flex-1 truncate">{result.document_name}</strong>
+              {movementDelta !== null && <Badge variant="outline" className={cn(
+                'shrink-0 border-transparent font-medium tabular-nums',
+                movementDelta > 0 && 'bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300',
+                movementDelta < 0 && 'bg-red-500/15 text-red-700 dark:bg-red-400/20 dark:text-red-300',
+                movementDelta === 0 && 'bg-muted text-muted-foreground'
+              )}>{movementDelta > 0 ? '↑' : movementDelta < 0 ? '↓' : '→'} {Math.abs(movementDelta)}</Badge>}
               <Badge className="shrink-0">{stageLabel}</Badge>
-              {movement && <span className="shrink-0 text-muted-foreground">{movement - (index + 1) > 0 ? '↑' : movement - (index + 1) < 0 ? '↓' : '→'} {Math.abs(movement - (index + 1))}</span>}
             </span>
             <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground"><Highlight text={result.content} query={submittedQuery} /></span>
           </button>
@@ -448,7 +464,11 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
       <div className="flex-1 min-w-[200px]">
         <Label className="text-xs text-muted-foreground">{t('searchMode')}</Label>
         <Select value={config.search_mode} onValueChange={value => setConfig(current => ({ ...current, search_mode: value as SearchMode }))}>
-          <SelectTrigger aria-label={`${t('searchMode')} ${suffix}`} className="mt-1"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label={`${t('searchMode')} ${suffix}`} className="mt-1">
+            <SelectValue>
+              {config.search_mode === 'hybrid' ? t('hybridSearch') : config.search_mode === 'vector' ? t('vectorSearch') : t('fulltextSearch')}
+            </SelectValue>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="hybrid">{t('hybridSearch')}</SelectItem>
             <SelectItem value="vector">{t('vectorSearch')}</SelectItem>
@@ -461,9 +481,11 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
         <Input id={`topK${suffix}`} type="number" min={1} max={20} value={config.top_k} onChange={event => setConfig(current => ({ ...current, top_k: Math.min(20, Math.max(1, Number(event.target.value) || 1)) }))} className="mt-1" />
       </div>
       {knowledgeBase?.rerank_model && (
-        <div className="flex items-center gap-2 pb-1">
-          <Switch id={`rerank${suffix}`} checked={config.rerank_enabled} onCheckedChange={value => setConfig(current => ({ ...current, rerank_enabled: value }))} />
-          <Label htmlFor={`rerank${suffix}`} className="text-sm cursor-pointer">{t('rerankEnabled')}</Label>
+        <div className="flex h-14 flex-col justify-between">
+          <Label htmlFor={`rerank${suffix}`} className="text-xs text-muted-foreground cursor-pointer">{t('rerankEnabled')}</Label>
+          <div className="flex h-9 items-center">
+            <Switch id={`rerank${suffix}`} checked={config.rerank_enabled} onCheckedChange={value => setConfig(current => ({ ...current, rerank_enabled: value }))} />
+          </div>
         </div>
       )}
     </div>
@@ -511,7 +533,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
       <ArrowLeft className="h-4 w-4" />
     </Button>
 
-    <main className="min-h-0 flex-1 overflow-hidden">
+    <main className="min-h-0 flex-1 overflow-hidden pt-14">
       {!searched ? (
         <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('retrievalLabHint')}</div>
       ) : searching ? (
@@ -562,7 +584,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   "disabled:pointer-events-none disabled:opacity-50",
                   "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-                  "h-10 w-10"
+                  "h-9 w-9"
                 )}
                 title={t('settings')}
               >
@@ -580,7 +602,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
                         </div>
                       )}
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => setAdvanced(value => !value)}>
+                    <Button variant="ghost" onClick={() => setAdvanced(value => !value)}>
                       <Settings2 className="mr-1.5 h-3.5 w-3.5" />
                       {t('advancedSettings')}
                       {advanced ? <ChevronUp className="ml-1 h-3.5 w-3.5" /> : <ChevronDown className="ml-1 h-3.5 w-3.5" />}
@@ -606,7 +628,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
                   <div className="space-y-2 pt-3 border-t">
                     <div className="flex items-center gap-2">
                       <Input aria-label={t('presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} placeholder={t('presetName')} className="flex-1" />
-                      <Button variant="outline" size="sm" onClick={savePreset}>{t('savePreset')}</Button>
+                      <Button variant="outline" onClick={savePreset}>{t('savePreset')}</Button>
                     </div>
                     <div className="flex items-center gap-2">
                       <Select aria-label={t('presets')} value={selectedPreset || '__none__'} onValueChange={value => { const name = !value || value === '__none__' ? '' : value; setSelectedPreset(name); const preset = presets.find(item => item.name === name); if (preset) setConfigA(preset.config as Config) }}>
@@ -616,7 +638,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canUpdate, authen
                           {presets.map(preset => <SelectItem key={preset.name} value={preset.name}>{preset.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <Button size="sm" onClick={() => void applyPreset()} disabled={!selectedPreset || !canUpdate}>{t('applyToProduction')}</Button>
+                      <Button onClick={() => void applyPreset()} disabled={!selectedPreset || !canUpdate}>{t('applyToProduction')}</Button>
                     </div>
                     {updateError && <p className="text-xs text-destructive">{t('presetUpdateError')}</p>}
                   </div>

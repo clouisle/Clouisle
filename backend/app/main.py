@@ -101,6 +101,7 @@ async def lifespan(app: FastAPI):
         init_kb_rerank_fields,
         init_skills_table,
         init_clouisle_import_sessions_table,
+        init_postgres_lexical_search,
         drop_obsolete_retrieval_evaluation_tables,
     )
 
@@ -246,6 +247,10 @@ async def lifespan(app: FastAPI):
 
     # Generate schemas
     await Tortoise.generate_schemas()
+
+    # pg_search depends on the authoritative knowledge tables above. Detect and
+    # initialize it on the first startup; validate it on every later startup.
+    await init_postgres_lexical_search()
 
     # Initialize default data
     try:

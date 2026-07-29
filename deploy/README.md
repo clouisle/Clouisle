@@ -10,7 +10,7 @@ Clouisle uses **3 Docker images** that run as **5 application services**:
 | `clouisle-sandbox-worker` | `sandbox-worker` | Sandbox task execution and artifact collection |
 | `clouisle-frontend` | `frontend` | Next.js standalone server running with `node server.js` |
 
-Infrastructure dependencies: **PostgreSQL 16**, **Redis 7**, **Qdrant 1.18.3**, and **OpenSearch 3.7.0**.
+Infrastructure dependencies: **PostgreSQL 17 with pg_search 0.24.3**, **Redis 7**, and **Qdrant 1.18.3**. The built-in database image `clouisle-postgres-pg-search:0.24.3-pg17` is built from `deploy/postgres/Dockerfile`.
 
 The API service is named `api` in deployment files. Older docs and scripts may refer to it as `backend`; update those commands to use `api`.
 
@@ -51,6 +51,7 @@ Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_P
 From the project root:
 
 ```bash
+docker build -f deploy/postgres/Dockerfile -t clouisle-postgres-pg-search:0.24.3-pg17 .
 docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend .
 docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t clouisle-sandbox-worker .
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
@@ -66,7 +67,7 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 cd deploy
 cp .env.example .env
 # Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD,
-# QDRANT_API_KEY, and OPENSEARCH_PASSWORD.
+# and QDRANT_API_KEY.
 
 docker compose up -d --build
 ```
@@ -87,10 +88,9 @@ IMAGE_TAG=0.1.0
 | `worker` | — | Celery worker for `default,workflow` queues |
 | `sandbox-worker` | — | Celery worker for sandbox queue and artifact upload |
 | `beat` | — | Celery beat scheduler; keep exactly one replica |
-| `db` | 5432 | PostgreSQL 16 |
+| `db` | 5432 | ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
 | `redis` | 6379 | Redis 7 |
 | `qdrant` | 6333 | Qdrant 1.18.3 vector database |
-| `opensearch` | 9200 | OpenSearch 3.7.0 lexical index |
 
 ### Important Internal URLs
 
@@ -100,8 +100,6 @@ Containerized services should use internal service names:
 POSTGRES_SERVER=db
 REDIS_HOST=redis
 QDRANT_URL=http://qdrant:6333
-OPENSEARCH_URL=https://opensearch:9200
-OPENSEARCH_USERNAME=admin
 API_BASE_URL=http://api:8000
 SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 ```
@@ -115,7 +113,6 @@ SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 | `postgres_data` | PostgreSQL data |
 | `redis_data` | Redis persistence |
 | `qdrant_data` | Qdrant vector storage |
-| `opensearch_data` | OpenSearch lexical indexes |
 | `uploads_data` | User uploads and sandbox artifacts |
 
 ### Common Operations
@@ -172,8 +169,7 @@ kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
   --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
-  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
-  --from-literal=OPENSEARCH_PASSWORD='replace-with-a-strong-opensearch-password'
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
 
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
@@ -181,7 +177,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   -f deploy/helm/clouisle/values-production.yaml
 ```
 
-See `deploy/helm/clouisle/README.md` for external PostgreSQL, Redis, Qdrant, and OpenSearch examples.
+See `deploy/helm/clouisle/README.md` for external PostgreSQL, Redis, and Qdrant examples.
 
 ### Option B: Single-file manifest
 
@@ -198,7 +194,6 @@ kubectl apply -f deploy/k8s/clouisle.yaml
 kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
-kubectl -n clouisle wait --for=condition=ready pod -l app=opensearch --timeout=180s
 ```
 
 ### Manifest Sections
@@ -208,17 +203,16 @@ kubectl -n clouisle wait --for=condition=ready pod -l app=opensearch --timeout=1
 | 1 | Namespace | `clouisle` |
 | 2 | ConfigMap | Non-sensitive configuration |
 | 3 | Secret | Passwords and keys |
-| 4 | PostgreSQL | StatefulSet + headless Service + PVC |
+| 4 | PostgreSQL | ParadeDB PG17 StatefulSet + headless Service + PVC |
 | 5 | Redis | Deployment + Service |
 | 6 | Qdrant | StatefulSet + headless Service + PVC |
-| 7 | OpenSearch | Single-node StatefulSet + headless Service + PVC |
-| 8 | Uploads | Shared `uploads-data` PVC |
-| 9 | API | Deployment + Service :8000 |
-| 10 | Worker | Deployment, no Service |
-| 11 | Sandbox Worker | Deployment, no Service |
-| 12 | Beat | Deployment, 1 replica, Recreate |
-| 13 | Frontend | Deployment + Service :3000 |
-| 14 | Ingress | `/api` → `api`, `/` → `frontend` |
+| 7 | Uploads | Shared `uploads-data` PVC |
+| 8 | API | Deployment + Service :8000 |
+| 9 | Worker | Deployment, no Service |
+| 10 | Sandbox Worker | Deployment, no Service |
+| 11 | Beat | Deployment, 1 replica, Recreate |
+| 12 | Frontend | Deployment + Service :3000 |
+| 13 | Ingress | `/api` → `api`, `/` → `frontend` |
 
 ### Scaling
 
@@ -259,10 +253,6 @@ kubectl -n clouisle logs -f deployment/frontend
 | `REDIS_PASSWORD` | Recommended | empty | Redis password |
 | `QDRANT_URL` | Yes | `http://qdrant:6333` | Qdrant URL |
 | `QDRANT_API_KEY` | Recommended | empty | Qdrant API key |
-| `OPENSEARCH_URL` | Yes | `https://opensearch:9200` | OpenSearch endpoint |
-| `OPENSEARCH_USERNAME` | Yes | `admin` | OpenSearch user |
-| `OPENSEARCH_PASSWORD` | Yes | documented placeholder | OpenSearch password; replace before deployment |
-| `OPENSEARCH_JAVA_OPTS` | No | `-Xms512m -Xmx512m` | Built-in single-node heap settings |
 | `RETRIEVAL_HYBRID_KILL_SWITCH` | No | `false` | Emergency environment override that forces vector-only retrieval |
 | `RETRIEVAL_SHADOW_ENABLED` | No | `false` | Run hybrid retrieval in shadow for rollout-excluded teams; stores IDs, ranks, versions, and latency only |
 | `SANDBOX_WORKER_CONCURRENCY` | No | `1` | Sandbox worker concurrency |
@@ -291,10 +281,12 @@ kubectl -n clouisle logs -f deployment/frontend
 - Check worker logs for Redis connection or auth errors.
 - Verify `REDIS_HOST` and `REDIS_PASSWORD`.
 
-**Observability slow queries are unavailable**
-- The built-in Compose and Helm PostgreSQL services start with `shared_preload_libraries=pg_stat_statements` and `pg_stat_statements.track=all`.
-- For an existing PostgreSQL container, restart/recreate the database container after applying the updated command so the preload setting takes effect.
-- For external PostgreSQL, ask the database administrator to enable `pg_stat_statements` in `shared_preload_libraries`, restart PostgreSQL, and allow the application database user to run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` or create the extension manually.
+**PostgreSQL and lexical search prerequisites**
+- Compose builds `clouisle-postgres-pg-search:0.24.3-pg17` from `deploy/postgres/Dockerfile`; raw Kubernetes and Helm use that image name by default and require it to be published to a registry accessible by the cluster.
+- Built-in deployments start with `shared_preload_libraries=pg_search,pg_stat_statements` plus `pg_stat_statements.track=all`.
+- External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded. Confirm your organization has approved pg_search's AGPL or commercial license before deployment.
+- Restart PostgreSQL after changing `shared_preload_libraries`; ensure the application database user can create the required extensions or have the database administrator create them.
+- Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migrate with `pg_dump`/restore or `pg_upgrade` during a planned maintenance window before switching images.
 
 **Beat running duplicate schedules**
 - Ensure only one `beat` replica is running.

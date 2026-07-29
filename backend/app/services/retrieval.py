@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from time import perf_counter
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.models.knowledge_base import DocumentChunk, DocumentStatus, KnowledgeBaseStatus
 from app.services.lexical_store import INDEX_VERSION, LexicalStore, SearchHit
 from app.services.retrieval_rollout import hybrid_enabled, record_metrics, record_shadow
-from app.services.vector_store import VectorStore
+from app.services.vector_store import VectorSearchUnavailableError, VectorStore
 
 SearchMode = Literal["vector", "fulltext", "hybrid"]
 _VALID_MODES = {"vector", "fulltext", "hybrid"}
@@ -60,6 +60,29 @@ class _HybridChannelsFailed(RuntimeError):
     def __init__(self, reasons: tuple[tuple[str, str], ...]) -> None:
         self.reasons = reasons
         super().__init__("both retrieval channels failed")
+
+
+@dataclass
+class _RetrievalContext:
+    """Share in-flight query embeddings within one logical invocation."""
+
+    embedding_tasks: dict[tuple[str, UUID, UUID], asyncio.Task[list[float]]] = field(
+        default_factory=dict
+    )
+
+    async def embedding(
+        self, query: str, target: "RetrievalTarget", store: VectorStore
+    ) -> list[float]:
+        assert target.embedding_model_id is not None
+        key = (query, target.team_id, target.embedding_model_id)
+        task = self.embedding_tasks.get(key)
+        if task is None:
+            task = asyncio.create_task(store.embed_query(query))
+            self.embedding_tasks[key] = task
+        try:
+            return await asyncio.shield(task)
+        except Exception as exc:
+            raise VectorSearchUnavailableError("query_embedding_failed") from exc
 
 
 @dataclass(frozen=True)
@@ -464,7 +487,9 @@ async def _assemble_context(
     return assembled
 
 
-async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
+async def _retrieve_once(
+    request: RetrievalRequest, context: _RetrievalContext
+) -> RetrievalResponse:
     """Search targets concurrently, then rank and truncate results globally."""
     assert request.search_mode is not None
     assert request.top_k is not None
@@ -520,18 +545,20 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
         )
 
         async def dense_search() -> list[dict[str, Any]]:
+            store = VectorStore(
+                embedding_model_id=(
+                    str(target.embedding_model_id)
+                    if target.embedding_model_id
+                    else None
+                ),
+                rerank_model_id=(
+                    str(target.rerank_model_id) if target.rerank_model_id else None
+                ),
+                team_id=str(target.team_id),
+            )
+            query_embedding = await context.embedding(request.query, target, store)
             return _dense_results(
-                await VectorStore(
-                    embedding_model_id=(
-                        str(target.embedding_model_id)
-                        if target.embedding_model_id
-                        else None
-                    ),
-                    rerank_model_id=(
-                        str(target.rerank_model_id) if target.rerank_model_id else None
-                    ),
-                    team_id=str(target.team_id),
-                ).search(
+                await store.search(
                     kb_id=target.kb_id,
                     query=request.query,
                     search_mode="vector",
@@ -540,6 +567,7 @@ async def _retrieve_once(request: RetrievalRequest) -> RetrievalResponse:
                     filter_doc_ids=document_ids,
                     embedding_dimension=target.embedding_dimension,
                     rerank_overrides={"rerank_enabled": False},
+                    query_embedding=query_embedding,
                 )
             )
 
@@ -686,8 +714,24 @@ def _vector_fallback(request: RetrievalRequest) -> RetrievalRequest:
     )
 
 
-async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
+async def retrieve_many(
+    requests: tuple[RetrievalRequest, ...],
+) -> tuple[RetrievalResponse | BaseException, ...]:
+    """Retrieve independent variants while sharing invocation-local embeddings."""
+    context = _RetrievalContext()
+    return tuple(
+        await asyncio.gather(
+            *(retrieve(request, context=context) for request in requests),
+            return_exceptions=True,
+        )
+    )
+
+
+async def retrieve(
+    request: RetrievalRequest, *, context: _RetrievalContext | None = None
+) -> RetrievalResponse:
     """Apply hybrid rollout policy without allowing telemetry to affect answers."""
+    context = context or _RetrievalContext()
     request = _effective_request(request)
     team_ids = tuple(str(target.team_id) for target in request.targets)
     uses_hybrid = request.search_mode == "hybrid" or any(
@@ -698,7 +742,7 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
     primary_request = request if enabled else _vector_fallback(request)
 
     try:
-        response = await _retrieve_once(primary_request)
+        response = await _retrieve_once(primary_request, context)
     except RetrievalError as exc:
         await record_metrics(
             candidate_count=0,
@@ -722,7 +766,7 @@ async def retrieve(request: RetrievalRequest) -> RetrievalResponse:
     if uses_hybrid and not enabled and settings.RETRIEVAL_SHADOW_ENABLED:
         shadow_started_at = perf_counter()
         try:
-            shadow = await _retrieve_once(request)
+            shadow = await _retrieve_once(request, context)
             await record_shadow(
                 shadow.results,
                 latency_ms=(perf_counter() - shadow_started_at) * 1000,

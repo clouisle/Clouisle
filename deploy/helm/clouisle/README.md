@@ -7,7 +7,7 @@ This chart deploys Clouisle on Kubernetes with the current service model:
 - `sandbox-worker`
 - `beat`
 - `frontend`
-- optional built-in `postgres`, `redis`, `qdrant`, and `opensearch`
+- optional built-in ParadeDB PostgreSQL 17, Redis, and Qdrant
 
 ## Quick Start
 
@@ -37,8 +37,7 @@ kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
   --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
-  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
-  --from-literal=OPENSEARCH_PASSWORD='replace-with-a-strong-opensearch-password'
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
 ```
 
 Install with production values:
@@ -52,7 +51,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 ## External Infrastructure
 
-Disable built-in PostgreSQL, Redis, Qdrant, and OpenSearch when using managed services. The existing Secret must still contain `OPENSEARCH_PASSWORD` for authenticated OpenSearch:
+Disable built-in PostgreSQL, Redis, and Qdrant when using managed services. External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 available and `pg_search,pg_stat_statements` preloaded. Confirm AGPL or commercial license approval for pg_search before deployment:
 
 ```bash
 helm upgrade --install clouisle deploy/helm/clouisle \
@@ -65,10 +64,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   --set redis.enabled=false \
   --set redis.external.host=redis.example.internal \
   --set qdrant.enabled=false \
-  --set qdrant.external.url=https://qdrant.example.internal \
-  --set opensearch.enabled=false \
-  --set opensearch.external.url=https://opensearch.example.internal:9200 \
-  --set config.OPENSEARCH_USERNAME=clouisle
+  --set qdrant.external.url=https://qdrant.example.internal
 ```
 
 ## Important Values
@@ -83,11 +79,16 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 | `secrets.create` | `true` | Create a Secret from values |
 | `secrets.existingSecret` | empty | Existing Secret for production |
 | `uploads.accessModes` | `ReadWriteMany` | Shared uploads PVC mode |
-| `postgresql.enabled` | `true` | Deploy built-in PostgreSQL |
+| `postgresql.enabled` | `true` | Deploy built-in ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
+| `postgresql.external.host` | empty | External PG17+ host with pg_search 0.24.3 preloaded when built-in mode is disabled |
 | `redis.enabled` | `true` | Deploy built-in Redis |
 | `qdrant.enabled` | `true` | Deploy built-in Qdrant 1.18.3 |
-| `opensearch.enabled` | `true` | Deploy built-in single-node OpenSearch 3.7.0 |
-| `opensearch.external.url` | empty | Required OpenSearch URL when built-in mode is disabled |
+
+## PostgreSQL Upgrade and Licensing
+
+The built-in image defaults to `clouisle-postgres-pg-search:0.24.3-pg17`, built from `deploy/postgres/Dockerfile`. Publish it to a registry accessible by the cluster and override `postgresql.image.repository` when needed. It preloads `pg_search,pg_stat_statements` with `pg_stat_statements.track=all`. External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 installed and the same libraries preloaded. Confirm your organization has approved pg_search's AGPL or commercial license before deployment.
+
+Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migrate with `pg_dump`/restore or `pg_upgrade` during a planned maintenance window before enabling the PG17 deployment.
 
 ## Storage
 

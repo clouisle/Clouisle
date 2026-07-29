@@ -2,6 +2,14 @@
 
 ## Active
 
+- **retrieval-query-embedding-reuse** — Complete. Reuse invocation-local query embeddings across matching multi-KB targets and Retrieval Lab A/B variants while preserving independent retrieval and rerank semantics. See `docs/plan/retrieval-query-embedding-reuse.md`
+  - [x] 1. Design and implementation index
+  - [x] 2. Precomputed embedding search seam
+  - [x] 3. Multi-target and rollout singleflight reuse
+  - [x] 4. Batch retrieval API
+  - [x] 5. Retrieval Lab batch comparison
+  - [x] 6. Documentation and validation
+
 - **postgres-pg-search-alpine-image** — In progress. ARM64 passed at 426,942,814 bytes; native amd64 and release-manifest evidence remain required before adoption. See `docs/plan/postgres-pg-search-alpine-image.md`
   - [x] 1. Reproducible Alpine source build
   - [x] 2. Runtime and size acceptance harness

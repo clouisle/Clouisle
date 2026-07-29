@@ -1,353 +1,187 @@
-import json
 from typing import Any
 
-import httpx
 import pytest
 
-from app.core.config import settings
 from app.services.lexical_store import (
-    INDEX_MAPPINGS,
-    BulkIndexError,
+    LEXICAL_INDEX,
     LexicalStore,
     LexicalStoreError,
 )
 
 
-class OpenSearchStub:
-    def __init__(self, responses: list[tuple[int, Any]]):
-        self.responses = responses
-        self.requests: list[httpx.Request] = []
+class ConnectionStub:
+    def __init__(self):
+        self.query_dict_results: list[list[dict[str, Any]]] = []
+        self.queries: list[tuple[str, list[Any] | None]] = []
+        self.many: list[tuple[str, list[list[Any]]]] = []
 
-    async def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        status, payload = self.responses.pop(0)
-        if isinstance(payload, str):
-            return httpx.Response(status, text=payload)
-        return httpx.Response(status, json=payload)
+    async def execute_query_dict(self, query: str, values=None):
+        self.queries.append((query, values))
+        return self.query_dict_results.pop(0)
 
+    async def execute_query(self, query: str, values=None):
+        self.queries.append((query, values))
+        return 1, []
 
-def client_for(stub: OpenSearchStub) -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        base_url="http://opensearch:9200", transport=httpx.MockTransport(stub)
-    )
-
-
-def body(request: httpx.Request) -> dict[str, Any]:
-    return json.loads(request.content)
+    async def execute_many(self, query: str, values: list[list[Any]]):
+        self.many.append((query, values))
 
 
 @pytest.mark.asyncio
-async def test_default_client_configures_api_key_and_timeout(monkeypatch):
-    captured: dict[str, Any] = {}
-
-    class Client:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", Client)
-    monkeypatch.setattr(settings, "OPENSEARCH_VERIFY_SSL", False)
-    LexicalStore(
-        base_url="https://search.example/",
-        api_key="secret",
-        timeout=4.5,
-        index_prefix="chunks",
-    )
-
-    assert captured["base_url"] == "https://search.example"
-    assert captured["headers"]["Authorization"] == "ApiKey secret"
-    assert captured["auth"] is None
-    assert captured["timeout"] == 4.5
-    assert captured["verify"] is False
-
-
-@pytest.mark.asyncio
-async def test_default_client_uses_basic_auth_without_api_key(monkeypatch):
-    captured: dict[str, Any] = {}
-
-    class Client:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", Client)
-    LexicalStore(username="user", password="pass")
-
-    assert isinstance(captured["auth"], httpx.BasicAuth)
-    assert "Authorization" not in captured["headers"]
-
-
-@pytest.mark.asyncio
-async def test_request_translates_timeout_and_http_errors():
-    async def timeout(_request):
-        raise httpx.ReadTimeout("late")
-
-    store = LexicalStore(
-        client=httpx.AsyncClient(
-            base_url="http://search", transport=httpx.MockTransport(timeout)
-        )
-    )
-    with pytest.raises(LexicalStoreError, match="timed out"):
-        await store.count(team_id="team")
-
-    stub = OpenSearchStub([(503, "unavailable")])
-    store = LexicalStore(client=client_for(stub))
-    with pytest.raises(LexicalStoreError, match="503.*unavailable"):
-        await store.count(team_id="team")
-
-
-@pytest.mark.asyncio
-async def test_ensure_index_creates_v1_mapping_and_aliases_atomically():
-    stub = OpenSearchStub([(404, ""), (201, {}), (404, {}), (200, {})])
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
-
-    assert await store.ensure_index() == "chunks-v1"
-    assert [(r.method, r.url.path) for r in stub.requests] == [
-        ("HEAD", "/chunks-v1"),
-        ("PUT", "/chunks-v1"),
-        ("GET", "/_alias/chunks-read,chunks-write"),
-        ("POST", "/_aliases"),
-    ]
-    assert body(stub.requests[1]) == {"mappings": INDEX_MAPPINGS}
-    assert set(INDEX_MAPPINGS["properties"]) == {
-        "chunk_id",
-        "document_id",
-        "kb_id",
-        "team_id",
-        "status",
-        "name",
-        "content",
-        "metadata",
-        "chunk_index",
-        "update_version",
-        "language",
-        "section",
-        "title",
-        "identifiers",
-    }
-    assert body(stub.requests[3]) == {
-        "actions": [
-            {"add": {"index": "chunks-v1", "alias": "chunks-read"}},
-            {"add": {"index": "chunks-v1", "alias": "chunks-write"}},
-        ]
-    }
-
-
-@pytest.mark.asyncio
-async def test_ensure_index_is_idempotent_when_index_and_aliases_exist():
-    aliases = {"chunks-v1": {"aliases": {"chunks-read": {}, "chunks-write": {}}}}
-    stub = OpenSearchStub([(200, ""), (200, aliases)])
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
-
-    await store.ensure_index()
-
-    assert [request.method for request in stub.requests] == ["HEAD", "GET"]
-
-
-@pytest.mark.asyncio
-async def test_cutover_moves_aliases_atomically_and_retains_old_index():
-    stub = OpenSearchStub(
+async def test_ensure_index_validates_extension_table_and_index():
+    connection = ConnectionStub()
+    connection.query_dict_results = [
         [
-            (200, ""),
-            (200, {"chunks-v1": {"aliases": {"chunks-read": {}}}}),
-            (200, {"chunks-v1": {"aliases": {"chunks-write": {}}}}),
-            (200, {}),
-            (200, [{"index": "chunks-v1"}, {"index": "chunks-v2"}]),
-            (200, {}),
+            {
+                "extversion": "0.24.3",
+                "lexical_table": "knowledge_lexical_chunks",
+                "lexical_index": LEXICAL_INDEX,
+            }
         ]
-    )
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
+    ]
 
-    await store.cutover(2)
-    assert body(stub.requests[3]) == {
-        "actions": [
-            {"remove": {"index": "chunks-v1", "alias": "chunks-read"}},
-            {"add": {"index": "chunks-v2", "alias": "chunks-read"}},
-            {"remove": {"index": "chunks-v1", "alias": "chunks-write"}},
-            {"add": {"index": "chunks-v2", "alias": "chunks-write"}},
-        ]
-    }
-    assert await store.list_versions() == ["chunks-v1", "chunks-v2"]
-    await store.delete_version(1)
-    assert stub.requests[-1].url.path == "/chunks-v1"
+    assert await LexicalStore(connection=connection).ensure_index() == LEXICAL_INDEX
+
+    connection.query_dict_results = [[]]
+    with pytest.raises(LexicalStoreError, match="not initialized"):
+        await LexicalStore(connection=connection).ensure_index()
 
 
 @pytest.mark.asyncio
-async def test_bulk_indexes_chunks_as_ndjson_and_detects_partial_failure():
-    chunks = [
-        {"chunk_id": "c1", "content": "one", "team_id": "t"},
-        {"chunk_id": "c2", "content": "two", "team_id": "t"},
-    ]
-    stub = OpenSearchStub([(200, {"errors": False, "items": []})])
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
+async def test_index_chunks_uses_parameterized_upsert():
+    connection = ConnectionStub()
+    store = LexicalStore(connection=connection)
+    chunk = {
+        "chunk_id": "00000000-0000-0000-0000-000000000001",
+        "document_id": "10000000-0000-0000-0000-000000000001",
+        "kb_id": "20000000-0000-0000-0000-000000000001",
+        "team_id": "30000000-0000-0000-0000-000000000001",
+        "status": "completed",
+        "name": "guide",
+        "content": "answer",
+        "metadata": {"language": "en"},
+        "chunk_index": 0,
+        "update_version": 1,
+        "language": "en",
+        "section": "intro",
+        "title": "Guide",
+        "identifiers": ["YUN-117"],
+    }
 
-    assert await store.index_chunks(chunks) == 2
-    lines = stub.requests[0].content.decode().splitlines()
-    assert json.loads(lines[0]) == {"index": {"_index": "chunks-write", "_id": "c1"}}
-    assert json.loads(lines[1]) == chunks[0]
-    assert stub.requests[0].headers["content-type"] == "application/x-ndjson"
+    assert await store.index_chunks([chunk]) == 1
+    query, values = connection.many[0]
+    assert "ON CONFLICT (chunk_id) DO UPDATE" in query
+    assert values[0][0] == chunk["chunk_id"]
+    assert values[0][-1] == ["YUN-117"]
     assert await store.index_chunks([]) == 0
 
-    failure = {
-        "errors": True,
-        "items": [
-            {"index": {"_id": "c1", "status": 201}},
-            {"index": {"_id": "c2", "status": 429, "error": {"type": "busy"}}},
+
+@pytest.mark.asyncio
+async def test_search_is_scoped_parameterized_and_parses_hits():
+    connection = ConnectionStub()
+    connection.query_dict_results = [
+        [
+            {
+                "extversion": "0.24.3",
+                "lexical_table": "knowledge_lexical_chunks",
+                "lexical_index": LEXICAL_INDEX,
+            }
         ],
-    }
-    stub = OpenSearchStub([(200, failure)])
-    store = LexicalStore(client=client_for(stub))
-    with pytest.raises(BulkIndexError) as exc_info:
-        await store.index_chunks(chunks)
-    assert exc_info.value.failures == [failure["items"][1]["index"]]
+        [
+            {
+                "chunk_id": "c1",
+                "document_id": "d1",
+                "kb_id": "k1",
+                "team_id": "t1",
+                "content": "answer",
+                "metadata": '{"source": "frontend_preview"}',
+                "identifiers": ["YUN-117"],
+                "score": 3.25,
+            }
+        ],
+    ]
+    store = LexicalStore(connection=connection)
+
+    hits = await store.search(
+        "YUN-117",
+        team_id="30000000-0000-0000-0000-000000000001",
+        kb_ids=["20000000-0000-0000-0000-000000000001"],
+        document_ids=["10000000-0000-0000-0000-000000000001"],
+        limit=5,
+        offset=2,
+    )
+
+    assert [(hit.chunk_id, hit.score) for hit in hits] == [("c1", 3.25)]
+    assert hits[0].source["metadata"] == {"source": "frontend_preview"}
+    query, values = connection.queries[1]
+    assert "team_id = $2::uuid" in query
+    assert "pdb.score(chunk_id)" in query
+    assert "pdb.boost(2)" in query
+    assert values[-3:] == [["YUN-117"], 5, 2]
 
 
 @pytest.mark.asyncio
-async def test_search_builds_bm25_scopes_and_parses_hits():
-    response = {
-        "hits": {
-            "hits": [
-                {
-                    "_id": "fallback",
-                    "_score": 3.25,
-                    "_source": {"chunk_id": "c1", "content": "answer"},
-                },
-                {"_id": "c2", "_score": None, "_source": {}},
-            ]
-        }
-    }
-    aliases = {"chunks-v1": {"aliases": {"chunks-read": {}, "chunks-write": {}}}}
-    stub = OpenSearchStub([(200, ""), (200, aliases), (200, response)])
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
+async def test_search_rejects_empty_query_and_empty_explicit_scopes():
+    connection = ConnectionStub()
+    store = LexicalStore(connection=connection)
 
-    hits = await store.search(
-        "answer",
-        team_id="team-1",
-        kb_ids=["kb-1"],
-        document_ids=["doc-1", "doc-2"],
-        limit=5,
-        offset=10,
-    )
-
-    assert [(hit.chunk_id, hit.score) for hit in hits] == [("c1", 3.25), ("c2", 0)]
-    query = body(stub.requests[2])
-    assert query["from"] == 10
-    assert query["size"] == 5
-    assert query["query"]["bool"]["must"][0]["multi_match"]["query"] == "answer"
-    assert query["query"]["bool"]["filter"] == [
-        {"term": {"team_id": "team-1"}},
-        {"terms": {"kb_id": ["kb-1"]}},
-        {"terms": {"document_id": ["doc-1", "doc-2"]}},
-    ]
+    assert await store.search(" ", team_id="team") == []
+    assert await store.search("answer", team_id="team", kb_ids=[]) == []
+    assert await store.search("answer", team_id="team", document_ids=[]) == []
+    assert connection.queries == []
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("method", "field", "value"),
     [
-        ("delete_document", "document_id", "doc"),
-        ("delete_kb", "kb_id", "kb"),
-        ("delete_chunk", "chunk_id", "chunk"),
+        ("delete_document", "document_id", "10000000-0000-0000-0000-000000000001"),
+        ("delete_kb", "kb_id", "20000000-0000-0000-0000-000000000001"),
+        ("delete_chunk", "chunk_id", "00000000-0000-0000-0000-000000000001"),
     ],
 )
 async def test_deletes_are_team_scoped(method: str, field: str, value: str):
-    stub = OpenSearchStub([(200, {"deleted": 4})])
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
+    connection = ConnectionStub()
+    store = LexicalStore(connection=connection)
 
-    assert await getattr(store, method)(value, team_id="team") == 4
-    assert stub.requests[0].url.path == "/chunks-write/_delete_by_query"
-    assert stub.requests[0].url.params["conflicts"] == "proceed"
-    assert body(stub.requests[0])["query"]["bool"]["filter"] == [
-        {"term": {"team_id": "team"}},
-        {"term": {field: value}},
-    ]
+    assert (
+        await getattr(store, method)(
+            value, team_id="30000000-0000-0000-0000-000000000001"
+        )
+        == 1
+    )
+    query, values = connection.queries[0]
+    assert f"AND {field} = $2::uuid" in query
+    assert values[1] == value
 
 
 @pytest.mark.asyncio
 async def test_count_reconcile_and_resumable_backfill():
-    stub = OpenSearchStub(
-        [
-            (200, {"count": 7}),
-            (200, {"count": 7}),
-            (200, {"errors": False, "items": []}),
-        ]
-    )
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
+    connection = ConnectionStub()
+    connection.query_dict_results = [[{"count": 7}], [{"count": 7}]]
+    store = LexicalStore(connection=connection)
 
-    assert await store.count(team_id="team", kb_id="kb", document_id="doc") == 7
-    result = await store.reconcile(9, team_id="team", kb_id="kb")
+    assert await store.count(team_id=None, kb_id=None, document_id=None) == 7
+    result = await store.reconcile(9)
     assert result.actual == 7
     assert result.delta == -2
     assert result.matches is False
 
-    batch = await store.backfill_batch([{"chunk_id": "cursor-2", "content": "x"}])
+    batch = await store.backfill_batch(
+        [
+            {
+                "chunk_id": "00000000-0000-0000-0000-000000000001",
+                "document_id": "10000000-0000-0000-0000-000000000001",
+                "kb_id": "20000000-0000-0000-0000-000000000001",
+                "team_id": "30000000-0000-0000-0000-000000000001",
+                "status": "completed",
+                "name": "guide",
+                "content": "answer",
+                "chunk_index": 0,
+                "update_version": 1,
+                "title": "guide",
+            }
+        ]
+    )
     assert batch.indexed == 1
-    assert batch.checkpoint == "cursor-2"
-    empty = await store.backfill_batch([])
-    assert empty.indexed == 0
-    assert empty.checkpoint is None
-
-
-@pytest.mark.asyncio
-async def test_cutover_handles_missing_aliases_and_skips_target_removal():
-    stub = OpenSearchStub(
-        [
-            (200, ""),
-            (404, {}),
-            (200, {"chunks-v2": {"aliases": {"chunks-write": {}}}}),
-            (200, {}),
-        ]
-    )
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
-
-    await store.cutover(2)
-
-    assert body(stub.requests[3]) == {
-        "actions": [
-            {"add": {"index": "chunks-v2", "alias": "chunks-read"}},
-            {"add": {"index": "chunks-v2", "alias": "chunks-write"}},
-        ]
-    }
-
-
-@pytest.mark.asyncio
-async def test_first_search_initializes_missing_index_and_aliases():
-    stub = OpenSearchStub(
-        [
-            (404, ""),
-            (201, {}),
-            (404, {}),
-            (200, {}),
-            (200, {"hits": {"hits": []}}),
-        ]
-    )
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
-
-    assert await store.search("answer", team_id="team") == []
-    assert [(request.method, request.url.path) for request in stub.requests] == [
-        ("HEAD", "/chunks-v1"),
-        ("PUT", "/chunks-v1"),
-        ("GET", "/_alias/chunks-read,chunks-write"),
-        ("POST", "/_aliases"),
-        ("POST", "/chunks-read/_search"),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_search_and_count_allow_global_optional_scopes():
-    aliases = {"chunks-v1": {"aliases": {"chunks-read": {}, "chunks-write": {}}}}
-    stub = OpenSearchStub(
-        [
-            (200, ""),
-            (200, aliases),
-            (200, {"hits": {"hits": []}}),
-            (200, {"count": 3}),
-        ]
-    )
-    store = LexicalStore(client=client_for(stub), index_prefix="chunks")
-
-    assert await store.search("answer", team_id="team") == []
-    assert body(stub.requests[2])["query"]["bool"]["filter"] == [
-        {"term": {"team_id": "team"}}
-    ]
-
-    assert await store.count() == 3
-    assert body(stub.requests[3])["query"]["bool"]["filter"] == []
+    assert batch.checkpoint == "00000000-0000-0000-0000-000000000001"

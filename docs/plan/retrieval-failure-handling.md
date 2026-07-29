@@ -1,5 +1,7 @@
 # Retrieval Failure Handling Design Document
 
+> **Historical plan:** This document records the former OpenSearch-based lexical retrieval implementation. The current architecture uses PostgreSQL with pg_search; the OpenSearch details below are intentionally preserved as implementation history.
+
 ## Background & Goals
 
 Knowledge-base searches can currently fail before the first lexical indexing operation because the OpenSearch aliases do not exist. Aggregate retrieval failures also hide useful channel classification in server logs, while clients receive a vector-specific message containing an unresolved `{error}` placeholder.

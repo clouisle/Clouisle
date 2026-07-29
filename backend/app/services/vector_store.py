@@ -819,6 +819,7 @@ class VectorStore:
         filter_doc_ids: list[UUID] | None = None,
         embedding_dimension: int | None = None,
         rerank_overrides: dict[str, Any] | None = None,
+        query_embedding: list[float] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search knowledge base using specified search mode.
@@ -832,6 +833,7 @@ class VectorStore:
             filter_doc_ids: Optional list of document IDs to filter
             embedding_dimension: Optional embedding dimension (auto-detected from KB if not provided)
             rerank_overrides: Optional rerank config overrides for this search only
+            query_embedding: Optional precomputed query vector for request-scoped reuse
 
         Returns:
             List of search results with chunk info and scores
@@ -859,7 +861,12 @@ class VectorStore:
 
         if search_mode == "vector":
             results = await self._vector_search(
-                kb_id, query, recall_limit, filter_doc_ids, embedding_dimension
+                kb_id,
+                query,
+                recall_limit,
+                filter_doc_ids,
+                embedding_dimension,
+                query_embedding,
             )
             if score_threshold > 0:
                 results = [
@@ -880,6 +887,7 @@ class VectorStore:
                     rerank_candidate_k,
                     filter_doc_ids,
                     embedding_dimension,
+                    query_embedding,
                 )
                 if score_threshold > 0:
                     vector_results = [
@@ -929,6 +937,7 @@ class VectorStore:
         limit: int,
         filter_doc_ids: list[UUID] | None = None,
         embedding_dimension: int | None = None,
+        query_embedding: list[float] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Vector similarity search using Qdrant.
@@ -953,10 +962,11 @@ class VectorStore:
         if not dim:
             raise VectorSearchUnavailableError("embedding_dimension_unavailable")
 
-        try:
-            query_embedding = await self.embed_query(query)
-        except Exception as exc:
-            raise VectorSearchUnavailableError("query_embedding_failed") from exc
+        if query_embedding is None:
+            try:
+                query_embedding = await self.embed_query(query)
+            except Exception as exc:
+                raise VectorSearchUnavailableError("query_embedding_failed") from exc
 
         # Validate dimension match
         if len(query_embedding) != dim:

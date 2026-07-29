@@ -36,7 +36,6 @@ config:
   VECTOR_BACKEND: qdrant
   QDRANT_COLLECTION_PREFIX: kb_dim
   QDRANT_DISTANCE: Cosine
-  OPENSEARCH_USERNAME: admin
   RETRIEVAL_HYBRID_KILL_SWITCH: "false"
   RETRIEVAL_SHADOW_ENABLED: "false"
   SANDBOX_RUNTIME_ENABLED: "true"
@@ -60,7 +59,6 @@ secrets:
     POSTGRES_PASSWORD: changeme
     REDIS_PASSWORD: changeme
     QDRANT_API_KEY: changeme
-    OPENSEARCH_PASSWORD: replace-with-a-strong-opensearch-password
     TAVILY_API_KEY: ""
     SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""
 
@@ -194,12 +192,12 @@ postgresql:
     user: ""
     database: ""
   image:
-    repository: postgres
-    tag: "16"
+    repository: clouisle-postgres-pg-search
+    tag: 0.24.3-pg17
     pullPolicy: IfNotPresent
   extraArgs:
     - "-c"
-    - "shared_preload_libraries=pg_stat_statements"
+    - "shared_preload_libraries=pg_search,pg_stat_statements"
     - "-c"
     - "pg_stat_statements.track=all"
   persistence:
@@ -260,30 +258,6 @@ qdrant:
     requests:
       cpu: 250m
       memory: 256Mi
-    limits:
-      cpu: "1"
-      memory: 2Gi
-
-opensearch:
-  enabled: true
-  external:
-    url: ""
-  image:
-    repository: opensearchproject/opensearch
-    tag: 3.7.0
-    pullPolicy: IfNotPresent
-  javaOpts: -Xms512m -Xmx512m
-  persistence:
-    enabled: true
-    existingClaim: ""
-    storageClassName: ""
-    size: 10Gi
-    accessModes:
-      - ReadWriteOnce
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
     limits:
       cpu: "1"
       memory: 2Gi

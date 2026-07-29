@@ -25,9 +25,9 @@ The current implementation has these confirmed problems:
 
 ### Success criteria
 
-- Recall@20 improves by at least 15% over the current hybrid baseline.
-- nDCG@10 improves by at least 10%.
-- Identifier-heavy Recall@10 is at least 95%.
+- Historical quality target (unverified): Recall@20 improves by at least 15% over the then-current hybrid baseline.
+- Historical quality target (unverified): nDCG@10 improves by at least 10%.
+- Historical quality target (unverified): identifier-heavy Recall@10 is at least 95%.
 - Citation provenance maps to the chunks actually supplied to the answer model.
 - P95 retrieval latency is below 300 ms without rerank and below 1.5 s with rerank.
 - One retriever can fail open in hybrid mode; failure of all requested retrievers is an explicit error.
@@ -118,9 +118,9 @@ These are initial retrieval defaults, not permanent hard-coded product limits.
   - Authorization scope cannot be widened by caller-supplied KB or document IDs.
   - Timeout and dual-retriever failure paths are explicit.
 
-### Stage 4: OpenSearch BM25 Indexing and Weighted Fusion ✅
+### Stage 4: OpenSearch BM25 Indexing and Weighted Fusion — Historical/Superseded ✅
 
-- **Completed validation**: OpenSearch lexical store, versioned aliases, BM25 search, bulk indexing, scoped deletes, lifecycle dual writes/deletes, resumable backfill/reconciliation, weighted RRF, and deployment support completed. Backend gates passed with 6,294 tests, 97.71% line coverage, and 95.02% branch coverage. Frontend gates passed with 97.77% line coverage, 95.04% function coverage, 470/470 source census, lint, license check, and production build. Deployment static validation passed for Compose, qdrant cluster Compose, raw Kubernetes YAML/dry-run, pinned Qdrant 1.18.3, and OpenSearch 3.7.0; Helm CLI was unavailable, so Helm lint/template remains unexecuted.
+- **Historical implementation (superseded)**: OpenSearch lexical store, versioned aliases, BM25 search, bulk indexing, scoped deletes, lifecycle dual writes/deletes, resumable backfill/reconciliation, weighted RRF, and deployment support completed. The planned direct cutover to ParadeDB `pg_search` is defined in `docs/plan/postgresql-pg-search-lexical.md`. Backend gates passed with 6,294 tests, 97.71% line coverage, and 95.02% branch coverage. Frontend gates passed with 97.77% line coverage, 95.04% function coverage, 470/470 source census, lint, license check, and production build. Deployment static validation passed for Compose, qdrant cluster Compose, raw Kubernetes YAML/dry-run, pinned Qdrant 1.18.3, and OpenSearch 3.7.0; Helm CLI was unavailable, so Helm lint/template remains unexecuted.
 - **Files modified**: backend config, lexical-store service, document processing/rechunk/delete tasks, deployment manifests/Helm values, environment examples, deployment docs, and tests.
 - **Specific logic**:
   - Pin verified OpenSearch and Qdrant image versions rather than `latest`.
@@ -161,7 +161,7 @@ These are initial retrieval defaults, not permanent hard-coded product limits.
   - Default UI exposes mode, final top K, and rerank toggle; advanced settings expose candidate/fusion/rerank parameters with precise labels.
   - Display stage scores as raw values and ranks, not universal percentages.
   - Show retriever channel, rank changes, keyword highlights, stage latency, and fallback reason.
-  - Compare two configurations side by side and compute result overlap/rank movement.
+  - Compare two configurations side by side and compute result overlap/rank movement. Comparison uses one batch envelope with independent per-side outcomes and shares only the invocation-local query embedding when team/model/query identity matches.
   - Allow relevant/partially relevant/not relevant annotations and named configuration presets.
   - Applying a preset to production requires confirmation and `kb:update` authorization.
 - **Validation**:
@@ -259,4 +259,4 @@ These are initial retrieval defaults, not permanent hard-coded product limits.
 ## Deliberate Simplifications
 
 - Learned Sparse, HyDE, multi-query generation, automatic tuning, and LLM-as-judge are outside the initial production baseline.
-- Immediate A/B comparison executes two normal retrieval calls; shared embedding work is added only if measured cost warrants it.
+- Immediate A/B comparison executes independent retrieval variants in one batch envelope; only matching invocation-local query embeddings are shared.

@@ -36,6 +36,40 @@ async def test_startup_migration_resets_lock_timeout_after_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_postgres_lexical_search_initializes_and_validates(monkeypatch) -> None:
+    conn = SimpleNamespace(
+        execute_query_dict=AsyncMock(
+            side_effect=[
+                [{"libraries": "pg_search,pg_stat_statements"}],
+                [{"extversion": "0.24.3"}],
+            ]
+        ),
+        execute_query=AsyncMock(),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_postgres_lexical_search()
+
+    queries = [item.args[0] for item in conn.execute_query.await_args_list]
+    assert queries[0] == "CREATE EXTENSION IF NOT EXISTS pg_search CASCADE"
+    assert any(
+        "CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks" in q for q in queries
+    )
+    assert any("USING bm25" in q and "pdb.jieba" in q for q in queries)
+
+
+@pytest.mark.asyncio
+async def test_postgres_lexical_search_rejects_missing_preload(monkeypatch) -> None:
+    conn = SimpleNamespace(
+        execute_query_dict=AsyncMock(return_value=[{"libraries": "pg_stat_statements"}])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="pg_search"):
+        await init_data.init_postgres_lexical_search()
+
+
+@pytest.mark.asyncio
 async def test_sync_role_permissions_adds_and_removes_only_differences(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

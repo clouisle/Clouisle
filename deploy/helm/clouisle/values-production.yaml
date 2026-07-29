@@ -59,7 +59,3 @@ ingress:
 #   enabled: false
 #   external:
 #     url: https://qdrant.example.internal
-# opensearch:
-#   enabled: false
-#   external:
-#     url: https://opensearch.example.internal:9200

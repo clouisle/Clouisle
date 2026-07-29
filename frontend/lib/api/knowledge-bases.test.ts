@@ -77,6 +77,10 @@ describe('knowledge base APIs', () => {
         rerank_candidate_k: 30,
         rerank_score_threshold: 0.5,
       })
+      await knowledgeBasesApi.searchBatch('kb-1', 'renewal', [
+        { id: 'a', search_mode: 'hybrid', top_k: 5, score_threshold: 0 },
+        { id: 'b', search_mode: 'vector', top_k: 10, score_threshold: 0.8 },
+      ])
 
       expect(get).toHaveBeenNthCalledWith(1, `${prefix}?page=1&page_size=20`)
       expect(get).toHaveBeenNthCalledWith(
@@ -111,6 +115,13 @@ describe('knowledge base APIs', () => {
         rerank_enabled: false,
         rerank_candidate_k: 30,
         rerank_score_threshold: 0.5,
+      }, { silent: true })
+      expect(post).toHaveBeenNthCalledWith(4, `${prefix}/kb-1/search/batch`, {
+        query: 'renewal',
+        configurations: [
+          { id: 'a', search_mode: 'hybrid', top_k: 5, score_threshold: 0 },
+          { id: 'b', search_mode: 'vector', top_k: 10, score_threshold: 0.8 },
+        ],
       }, { silent: true })
     })
 

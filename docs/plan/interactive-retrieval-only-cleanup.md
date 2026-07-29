@@ -1,5 +1,7 @@
 # Retrieval Lab Interactive-Only Cleanup Design Document
 
+> **Historical note:** OpenSearch references in this completed cleanup plan describe the lexical retrieval architecture in use at that time. Current lexical retrieval uses PostgreSQL with pg_search; the references below remain unchanged to preserve the cleanup record.
+
 ## Background & Goals
 
 The Retrieval Lab currently combines immediate single-knowledge-base search with persistent datasets, relevance labeling, batch runs, run comparison, and parameter sweeps. The persistent evaluator always builds one retrieval target, while production Agent retrieval operates on a target set and performs cross-KB merging, truncation, reranking, diagnostics, and context assembly. The current batch results therefore cannot validate production behavior. Comparison and sweep code also reads metric shapes that the executor does not persist.

@@ -1,6 +1,8 @@
 import type {
   KnowledgeBase,
   KnowledgeBaseSettings,
+  SearchBatchConfiguration,
+  SearchBatchResponse,
   SearchMode,
   SearchParams,
   SearchResponse,
@@ -9,6 +11,7 @@ import type {
 export type RetrievalApi = {
   getKnowledgeBase(id: string): Promise<KnowledgeBase>
   search(id: string, params: SearchParams): Promise<SearchResponse>
+  searchBatch(id: string, query: string, configurations: SearchBatchConfiguration[]): Promise<SearchBatchResponse>
   updateKnowledgeBase(id: string, data: { settings: KnowledgeBaseSettings }): Promise<KnowledgeBase>
 }
 

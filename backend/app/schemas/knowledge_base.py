@@ -401,10 +401,9 @@ class SearchMode(str, Enum):
     HYBRID = "hybrid"
 
 
-class SearchRequest(BaseModel):
-    """Search request for knowledge base"""
+class SearchConfiguration(BaseModel):
+    """Validated retrieval configuration shared by single and batch search."""
 
-    query: str = Field(..., min_length=1, max_length=1000, description="Search query")
     search_mode: SearchMode = Field(
         default=SearchMode.HYBRID, description="Search mode: vector, fulltext, hybrid"
     )
@@ -442,6 +441,34 @@ class SearchRequest(BaseModel):
         return self
 
 
+class SearchRequest(SearchConfiguration):
+    """Search request for one knowledge base configuration."""
+
+    query: str = Field(..., min_length=1, max_length=1000, description="Search query")
+
+
+class SearchBatchConfiguration(SearchConfiguration):
+    """Identified search configuration in a batch request."""
+
+    id: str = Field(..., min_length=1, max_length=64)
+
+
+class SearchBatchRequest(BaseModel):
+    """Search one query with independently evaluated configurations."""
+
+    query: str = Field(..., min_length=1, max_length=1000)
+    configurations: List[SearchBatchConfiguration] = Field(
+        ..., min_length=1, max_length=10
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self):
+        ids = [configuration.id for configuration in self.configurations]
+        if len(ids) != len(set(ids)):
+            raise ValueError("configuration ids must be unique")
+        return self
+
+
 class SearchResult(BaseModel):
     """Search result item"""
 
@@ -472,6 +499,7 @@ class RetrievalDiagnostic(BaseModel):
     kb_id: UUID
     code: Literal["inactive", "missing_embedding_model", "timeout", "failed"]
     detail: Optional[str] = None
+    stage: Optional[str] = None
 
 
 class RetrievalTiming(BaseModel):
@@ -489,6 +517,30 @@ class SearchResponse(BaseModel):
     total: int
     diagnostics: List[RetrievalDiagnostic] = Field(default_factory=list)
     timings: List[RetrievalTiming] = Field(default_factory=list)
+
+
+class SearchBatchError(BaseModel):
+    """Sanitized failure for one batch configuration."""
+
+    code: int
+    retrieval_error_category: str
+    stage: Optional[str] = None
+
+
+class SearchBatchOutcome(BaseModel):
+    """Independent outcome for one search configuration."""
+
+    id: str
+    status: Literal["fulfilled", "rejected"]
+    response: Optional[SearchResponse] = None
+    error: Optional[SearchBatchError] = None
+
+
+class SearchBatchResponse(BaseModel):
+    """Ordered outcomes for a batch search."""
+
+    query: str
+    outcomes: List[SearchBatchOutcome]
 
 
 # ============ Statistics Schemas ============

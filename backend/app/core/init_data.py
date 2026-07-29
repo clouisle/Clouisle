@@ -26,6 +26,71 @@ async def execute_startup_migration_query(conn, query: str):
         await conn.execute_query("RESET lock_timeout")
 
 
+async def init_postgres_lexical_search() -> None:
+    """Create and validate pg_search objects on first startup."""
+    conn = Tortoise.get_connection("default")
+    preload_rows = await conn.execute_query_dict(
+        "SELECT current_setting('shared_preload_libraries') AS libraries"
+    )
+    preloaded = {
+        value.strip() for value in str(preload_rows[0]["libraries"]).split(",")
+    }
+    required = {"pg_search", "pg_stat_statements"}
+    missing = sorted(required - preloaded)
+    if missing:
+        raise RuntimeError(
+            "PostgreSQL is missing required shared preload libraries: "
+            + ", ".join(missing)
+        )
+
+    await conn.execute_query("CREATE EXTENSION IF NOT EXISTS pg_search CASCADE")
+    version_rows = await conn.execute_query_dict(
+        "SELECT extversion FROM pg_extension WHERE extname = 'pg_search'"
+    )
+    if not version_rows or version_rows[0]["extversion"] != "0.24.3":
+        installed = version_rows[0]["extversion"] if version_rows else "missing"
+        raise RuntimeError(
+            f"pg_search 0.24.3 is required; installed version is {installed}"
+        )
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks (
+            chunk_id UUID PRIMARY KEY REFERENCES document_chunks(id) ON DELETE CASCADE,
+            document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            kb_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+            team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            chunk_index INTEGER NOT NULL,
+            update_version BIGINT NOT NULL,
+            language TEXT,
+            section TEXT,
+            title TEXT NOT NULL,
+            identifiers TEXT[] NOT NULL DEFAULT ARRAY[]::text[]
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS knowledge_lexical_chunks_bm25_idx
+        ON knowledge_lexical_chunks
+        USING bm25 (
+            chunk_id, team_id, kb_id, document_id, status,
+            (content::pdb.jieba), (title::pdb.jieba), (name::pdb.jieba),
+            (section::pdb.jieba), identifiers, chunk_index, update_version
+        )
+        WITH (key_field = 'chunk_id')
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS knowledge_lexical_chunks_team_kb_idx
+        ON knowledge_lexical_chunks (team_id, kb_id)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS knowledge_lexical_chunks_team_document_idx
+        ON knowledge_lexical_chunks (team_id, document_id)
+    """)
+
+
 async def sync_role_permissions(
     role: Role, target_permissions: list[str], role_name: str
 ):

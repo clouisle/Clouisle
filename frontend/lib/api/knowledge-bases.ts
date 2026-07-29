@@ -230,6 +230,26 @@ export interface SearchResponse {
   timings: RetrievalTiming[]
 }
 
+export interface SearchBatchConfiguration extends Omit<SearchParams, 'query' | 'threshold'> {
+  id: string
+  score_threshold?: number
+}
+
+export interface SearchBatchError {
+  code: number
+  retrieval_error_category: string
+  stage?: string | null
+}
+
+export type SearchBatchOutcome =
+  | { id: string; status: 'fulfilled'; response: SearchResponse; error?: never }
+  | { id: string; status: 'rejected'; response?: never; error: SearchBatchError }
+
+export interface SearchBatchResponse {
+  query: string
+  outcomes: SearchBatchOutcome[]
+}
+
 // ============ Chunk Preview Types ============
 
 export interface ChunkPreviewInput {
@@ -326,6 +346,18 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
       rerank_score_threshold: params.rerank_score_threshold,
     }
     return api.post<SearchResponse>(`${prefix}/${id}/search`, requestBody, { silent: true })
+  },
+
+  searchBatch: async (
+    id: string,
+    query: string,
+    configurations: SearchBatchConfiguration[]
+  ): Promise<SearchBatchResponse> => {
+    return api.post<SearchBatchResponse>(
+      `${prefix}/${id}/search/batch`,
+      { query, configurations },
+      { silent: true }
+    )
   },
 
   // ============ Document API ============

@@ -52,6 +52,8 @@ from app.schemas.knowledge_base import (
     RechunkRequest,
     SearchRequest,
     SearchResponse,
+    SearchBatchRequest,
+    SearchBatchResponse,
     ChunkPreviewRequest,
     ChunkPreviewResponse,
     ChunkPreviewItem,
@@ -1002,7 +1004,7 @@ async def delete_document(
             except Exception as e:
                 logger.warning(f"Failed to revoke Celery task {task_id}: {e}")
 
-    # External indexes must be deleted before PostgreSQL removes their scope.
+    # Remove the local lexical projection before deleting its authoritative row.
     await delete_lexical_document(doc_id, kb.team_id)
 
     # Delete vectors
@@ -2159,6 +2161,116 @@ def _retrieval_response_code(category: str, tokens: tuple[str, ...]) -> Response
     return ResponseCode.UNKNOWN_ERROR
 
 
+def _retrieval_request(kb: KnowledgeBase, query: str, configuration: Any):
+    from app.services.retrieval import (
+        RetrievalRequest,
+        RetrievalTarget,
+        validated_search_mode,
+    )
+
+    rerank_fields = {
+        "rerank_enabled",
+        "rerank_candidate_k",
+        "rerank_score_threshold",
+    }
+    rerank_overrides = {
+        field_name: getattr(configuration, field_name)
+        for field_name in rerank_fields
+        if field_name in configuration.model_fields_set
+    }
+    return RetrievalRequest(
+        query=query,
+        targets=(
+            RetrievalTarget(
+                kb_id=kb.id,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                status=kb.status,
+                embedding_model_id=kb.embedding_model_id,
+                rerank_model_id=kb.rerank_model_id,
+                embedding_dimension=kb.embedding_dimension,
+                settings=None,
+                document_ids=(
+                    frozenset(configuration.filter_doc_ids)
+                    if configuration.filter_doc_ids
+                    else None
+                ),
+            ),
+        ),
+        search_mode=validated_search_mode(configuration.search_mode),
+        top_k=configuration.top_k,
+        score_threshold=configuration.score_threshold,
+        dense_weight=configuration.dense_weight,
+        lexical_weight=configuration.lexical_weight,
+        rrf_k=configuration.rrf_k,
+        rerank_overrides=rerank_overrides or None,
+    )
+
+
+def _retrieval_batch_error(error: BaseException) -> dict[str, Any]:
+    from app.services.retrieval import RetrievalError
+
+    diagnostics = error.diagnostics if isinstance(error, RetrievalError) else ()
+    tokens = _retrieval_exception_tokens(diagnostics)
+    if isinstance(error, DimensionMismatchError):
+        tokens = (DimensionMismatchError.__name__,)
+    category = (
+        "configuration_mismatch"
+        if DimensionMismatchError.__name__ in tokens
+        else _retrieval_error_category(tokens)
+    )
+    return {
+        "code": int(_retrieval_response_code(category, tokens)),
+        "retrieval_error_category": category,
+        "stage": diagnostics[0].stage if diagnostics else None,
+    }
+
+
+@router.post("/{kb_id}/search/batch", response_model=Response[SearchBatchResponse])
+async def search_knowledge_base_batch(
+    kb_id: UUID,
+    search_in: SearchBatchRequest,
+    current_user: User = Depends(require_kb_test),
+) -> Any:
+    """Search independent configurations with request-scoped embedding reuse."""
+    from app.services.retrieval import RetrievalResponse, retrieve_many
+
+    kb = await check_kb_access(kb_id, current_user)
+    requests = tuple(
+        _retrieval_request(kb, search_in.query, configuration)
+        for configuration in search_in.configurations
+    )
+    results = await retrieve_many(requests)
+    outcomes = []
+    for configuration, result in zip(search_in.configurations, results, strict=True):
+        if isinstance(result, RetrievalResponse):
+            outcomes.append(
+                {
+                    "id": configuration.id,
+                    "status": "fulfilled",
+                    "response": {
+                        "query": search_in.query,
+                        "results": result.results,
+                        "total": len(result.results),
+                        "diagnostics": result.diagnostics,
+                        "timings": result.timings,
+                    },
+                }
+            )
+        else:
+            outcomes.append(
+                {
+                    "id": configuration.id,
+                    "status": "rejected",
+                    "error": _retrieval_batch_error(result),
+                }
+            )
+    return success(
+        data={"query": search_in.query, "outcomes": outcomes},
+        msg_key="search_completed",
+    )
+
+
 @router.post("/{kb_id}/search", response_model=Response[SearchResponse])
 async def search_knowledge_base(
     kb_id: UUID,
@@ -2177,56 +2289,14 @@ async def search_knowledge_base(
     """
     kb = await check_kb_access(kb_id, current_user)
 
-    rerank_override_fields = {
-        "rerank_enabled",
-        "rerank_candidate_k",
-        "rerank_score_threshold",
-    }
-    rerank_overrides = {
-        field_name: getattr(search_in, field_name)
-        for field_name in rerank_override_fields
-        if field_name in search_in.model_fields_set
-    }
-
     # Perform search
     try:
         from app.services.retrieval import (
             RetrievalError,
-            RetrievalRequest,
-            RetrievalTarget,
             retrieve,
-            validated_search_mode,
         )
 
-        response = await retrieve(
-            RetrievalRequest(
-                query=search_in.query,
-                targets=(
-                    RetrievalTarget(
-                        kb_id=kb.id,
-                        kb_name=kb.name,
-                        team_id=kb.team_id,
-                        status=kb.status,
-                        embedding_model_id=kb.embedding_model_id,
-                        rerank_model_id=kb.rerank_model_id,
-                        embedding_dimension=kb.embedding_dimension,
-                        settings=None,  # Direct search: explicit request params take precedence
-                        document_ids=(
-                            frozenset(search_in.filter_doc_ids)
-                            if search_in.filter_doc_ids
-                            else None
-                        ),
-                    ),
-                ),
-                search_mode=validated_search_mode(search_in.search_mode),
-                top_k=search_in.top_k,
-                score_threshold=search_in.score_threshold,
-                dense_weight=getattr(search_in, "dense_weight", 1.0),
-                lexical_weight=getattr(search_in, "lexical_weight", 1.0),
-                rrf_k=getattr(search_in, "rrf_k", 60),
-                rerank_overrides=rerank_overrides or None,
-            )
-        )
+        response = await retrieve(_retrieval_request(kb, search_in.query, search_in))
         results = response.results
         diagnostics = getattr(response, "diagnostics", ())
         timings = getattr(response, "timings", ())

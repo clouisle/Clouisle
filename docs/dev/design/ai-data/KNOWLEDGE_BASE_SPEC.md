@@ -9,7 +9,7 @@
 - **团队隔离**：知识库归属于团队，实现数据隔离
 - **格式丰富**：支持多种文档格式
 - **智能处理**：自动文本提取、分块和向量化
-- **高效检索**：基于 Qdrant Dense 与 OpenSearch BM25 的混合检索、全局重排和受限上下文组装
+- **高效检索**：基于 Qdrant Dense 与 PostgreSQL pg_search BM25 的混合检索、全局重排和受限上下文组装
 
 ### 1.2 技术选型
 
@@ -19,7 +19,7 @@
 | 文本分块 | 自研 TextChunker | 语义感知分块 |
 | 权威数据 | PostgreSQL | 保存知识库、文档、分块及索引状态 |
 | Dense 索引 | Qdrant | 保存向量并执行语义召回 |
-| Lexical 索引 | OpenSearch | 版本化 BM25 索引，通过读写别名切换 |
+| Lexical 检索 | PostgreSQL pg_search | 对同库可重建的 Chunk 投影执行 BM25 关键词召回 |
 | 向量与重排模型 | ModelManager | 复用团队模型配置 |
 | 异步处理 | Celery | 文档处理和索引回填 |
 
@@ -270,13 +270,13 @@ chunks = chunker.chunk_text(text)
 
 ### 5.4 向量与 Lexical 索引
 
-文档分块首先写入 PostgreSQL，随后分别写入两个可重建索引：
+文档分块首先写入 PostgreSQL 权威表；Dense 向量另行写入可重建的 Qdrant 索引，Lexical 检索使用同一 PostgreSQL 服务内的可重建投影：
 
 1. 通过团队 Embedding 模型生成向量并写入 Qdrant，`DocumentChunk.embedding_id` 保存向量点引用。
-2. 将 Chunk 内容、标题、路径、文档及团队标识、状态和索引版本写入 OpenSearch。
+2. 文档处理流程把可检索 Chunk 投影到 PostgreSQL 的 `knowledge_lexical_chunks`，pg_search BM25 索引在该表上执行关键词召回，无需独立 Lexical 服务。
 3. 只有成功生成向量的 Chunk 才参与 Dense 召回；已完成文档的 Chunk 可独立参与 BM25 召回。
-4. 索引写入失败保留明确状态，并由幂等重试、回填和对账任务修复；PostgreSQL 内容始终是权威来源。
-5. OpenSearch 使用版本化索引与读写别名，重建完成后原子切换，并保留旧版本用于回滚。
+4. Dense 索引或 Lexical 投影写入失败保留明确状态，并由幂等重试、回填和数量对账修复；原始知识库、文档和 Chunk 表始终是权威来源。
+5. Lexical 索引随 PostgreSQL 数据库和扩展管理，不使用独立服务的索引版本、读写别名或跨服务回填。
 
 ---
 
@@ -290,7 +290,7 @@ PostgreSQL 是知识库、文档和分块的权威数据源。检索索引可重
 |------|------|
 | 统一检索服务（`services/retrieval.py`） | 统一请求校验、目标并发、降级、融合、全局重排、上下文组装和诊断 |
 | `VectorStore` | Qdrant Dense 索引写入与语义召回 |
-| `LexicalStore` | OpenSearch BM25 版本化索引、别名切换与关键词召回 |
+| `LexicalStore` | 维护 PostgreSQL Lexical 投影，并通过 pg_search 执行 BM25 召回和授权范围过滤 |
 | PostgreSQL | 权威知识库、文档、分块、授权范围和索引状态 |
 | Retrieval Lab | 即时 A/B 检索与结果诊断 |
 
@@ -303,7 +303,7 @@ API 搜索、AUTO RAG、Agentic 知识库工具、Agent 服务和 Workflow 知�
 | 模式 | 召回通道 | 阈值语义 |
 |------|----------|----------|
 | `vector` | Qdrant Dense | `score_threshold` 仅过滤 Dense 相似度 |
-| `fulltext` | OpenSearch BM25 | 不套用 Dense 相似度阈值 |
+| `fulltext` | PostgreSQL pg_search BM25 | 不套用 Dense 相似度阈值 |
 | `hybrid` | Dense 与 BM25 并行 | 通过加权 RRF 融合，不把融合分数当作概率 |
 
 调用方必须先解析用户已授权的知识库和文档范围，再构造 `RetrievalTarget`：
@@ -340,12 +340,12 @@ API 搜索、AUTO RAG、Agentic 知识库工具、Agent 服务和 Workflow 知�
 
 ### 6.4 并发召回与失败策略
 
-多个知识库并发检索，服务级并发上限为 8，每个目标受 `timeout_seconds` 约束。
+多个知识库并发检索，服务级并发上限为 8，每个目标受 `timeout_seconds` 约束。同一次逻辑调用内，相同原始查询、团队和 Embedding 模型 UUID 的 Dense 目标共享一个进行中的查询向量任务；共享范围覆盖主检索与可选 Shadow 检索，但不跨请求持久化。每个目标仍独立校验向量维度和授权过滤，完整召回结果不会共享。
 
 ```text
 每个授权知识库
     +-> Qdrant Dense 召回
-    +-> OpenSearch BM25 召回
+    +-> PostgreSQL pg_search BM25 召回
               |
               v
        加权 RRF（Hybrid）
@@ -357,7 +357,7 @@ API 搜索、AUTO RAG、Agentic 知识库工具、Agent 服务和 Workflow 知�
 各模式的失败行为：
 
 - `vector`：Embedding 或 Qdrant 失败时，该目标返回明确诊断，不静默伪造结果。
-- `fulltext`：OpenSearch 失败时，该目标返回明确诊断。
+- `fulltext`：PostgreSQL 或 pg_search 查询失败时，该目标返回明确诊断。
 - `hybrid`：单通道失败时使用另一通道继续，并在结果中附加结构化 `degradation_reasons`；双通道失败时该目标失败。
 - 某些目标失败不影响其他知识库的有效结果；仅当全部目标失败时抛出 `RetrievalError`。
 - 诊断区分 `inactive`、`missing_embedding_model`、`timeout` 和 `failed`。
@@ -394,7 +394,7 @@ RRF 分数只用于排序，不归一化或展示为相关概率。相同分数�
 4. 只使用 `rerank_score_threshold` 过滤重排分数。
 5. `rerank_fail_open=true` 时，重排失败继续使用召回排序；否则按失败配置终止。
 
-最终 Top K 在全局排序和可选重排后应用，避免多个知识库分别截断后简单拼接造成偏差。
+最终 Top K 在全局排序和可选重排后应用，避免多个知识库分别截断后简单拼接造成偏差。Retrieval Lab A/B 批量请求只共享查询向量；A、B 各自独立召回、融合、截断和重排，因此每个启用重排的配置最多调用一次 Rerank，候选池不会跨配置合并。
 
 ### 6.7 上下文组装
 
@@ -427,10 +427,10 @@ internal -> 5% -> 25% -> 50% -> 100%
 Shadow 只保存以下数据，最多 1,000 条并保留 7 天：
 
 - Chunk ID 与排名
-- 检索版本与 Lexical 索引版本
+- 检索版本与 pg_search 扩展版本
 - 总耗时
 
-Shadow 不保存原始查询、Chunk 内容、凭据或异常正文。OpenSearch 回滚通过将读写别名原子切回上一版本索引完成。
+Shadow 不保存原始查询、Chunk 内容、凭据或异常正文。Lexical 检索不维护独立服务或别名版本；回滚 PostgreSQL 或 pg_search 变更时使用数据库备份和与应用版本匹配的迁移流程。
 
 ### 6.9 可观测性
 
@@ -438,7 +438,7 @@ Shadow 不保存原始查询、Chunk 内容、凭据或异常正文。OpenSearch
 
 - 请求数、候选数和空结果数
 - 降级次数和错误数
-- Lexical 索引版本
+- PostgreSQL、pg_search 扩展和 BM25 索引健康状态
 - `recall`、`rerank`、`context`、`total` 阶段耗时
 - 各阶段延迟计数、总和和直方图桶
 
@@ -455,7 +455,7 @@ Kill Switch / 全局 / 团队 / 百分比灰度判断
         ↓
 在授权文档范围内并发检索（上限 8）
         ↓
-Qdrant Dense + OpenSearch BM25
+Qdrant Dense + PostgreSQL pg_search BM25
         ↓
 按知识库执行加权 RRF；单通道失败可降级
         ↓
@@ -485,7 +485,7 @@ backend/app/
 ├── services/
 │   ├── document_processor.py  # 文档处理 + 分块
 │   ├── vector_store.py        # Qdrant Dense 索引与召回
-│   ├── lexical_store.py       # OpenSearch BM25 索引与召回
+│   ├── lexical_store.py       # PostgreSQL pg_search 投影与 BM25 召回
 │   ├── retrieval.py           # 统一检索、融合、重排与上下文组装
 │   └── retrieval_rollout.py   # 灰度、Shadow 与聚合指标
 └── tasks/
@@ -520,7 +520,7 @@ dependencies = [
 | Celery 异步任务 | ✅ 完成 | 后台处理大文档 |
 | 向量生成 | ✅ 完成 | 通过 embedding_model 配置 |
 | Dense 索引与语义召回 | ✅ 完成 | Qdrant 向量索引、状态过滤和授权范围过滤 |
-| BM25 关键词召回 | ✅ 完成 | OpenSearch 版本化索引、读写别名和回填对账 |
+| BM25 关键词召回 | ✅ 完成 | PostgreSQL pg_search 索引、授权过滤和关键词召回 |
 | 混合检索 | ✅ 完成 | Dense + BM25 加权 RRF，保留各阶段分数与排名 |
 | 全局重排与上下文 | ✅ 完成 | 跨知识库 Rerank、邻接扩展、文档/Chunk/Token 上限 |
 | 查询上下文化 | ✅ 完成 | 仅 AUTO RAG 按需改写，严格验证并回退原查询 |
@@ -588,7 +588,7 @@ downloadDocument: async (kbId: string, docId: string, filename: string) => {
 - Simple 参数：检索模式、最终 Top K、是否启用 Rerank。
 - Advanced 参数：各通道候选数、Dense/Lexical 权重、RRF 参数和阶段专属阈值。
 - 结果诊断：Dense、Lexical、Fusion、Rerank 分数与排名、排名变化、通道、耗时和降级原因。
-- A/B：发起两个相互独立的统一检索请求，并展示结果重合及排名移动。
+- A/B：通过一个批量请求执行两个相互独立的统一检索变体，仅复用匹配的调用内查询向量，并展示结果重合及排名移动。
 - 应用检索参数需要确认和 `kb:update`；即时测试受 `kb:test` 控制。
 - 输入框保留中文 IME 组合状态检测，避免拼音输入过程中按 Enter 误触发检索。
 
@@ -614,12 +614,12 @@ uploads_dir = project_root / "uploads" / "documents"
 
 - PostgreSQL 的 `DocumentChunk` 保存权威文本、顺序、Token 数、元数据、Embedding 状态和 `embedding_id`。
 - Qdrant 保存向量点，并使用知识库、文档、Chunk 和状态字段进行过滤。
-- OpenSearch 保存可重建的 BM25 文档，并通过版本化索引及读写别名管理切换。
-- 文档重处理、Chunk 删除、文档删除和知识库删除必须同步更新两个索引；失败操作由幂等任务重试。
-- Dense 与 Lexical 索引都不是权威数据源，发生漂移时以 PostgreSQL 为准执行回填与数量对账。
+- PostgreSQL 的 `knowledge_lexical_chunks` 保存可重建的 Chunk 检索投影，pg_search 在该表上维护 BM25 索引；它不替代原始知识库、文档和 Chunk 权威表。
+- 文档重处理、Chunk 删除、文档删除和知识库删除必须在现有生命周期内同步更新 Lexical 投影和 Qdrant；失败操作由幂等任务重试。
+- Qdrant Dense 索引和 PostgreSQL Lexical 投影都不是权威数据源，发生漂移时以权威表为准执行回填与数量对账。
 
 维度不匹配必须在写入 Qdrant 前失败，并保留明确的索引错误状态，不能把不兼容向量写入现有集合。
 
 #### 10.5.1 索引重建与回滚
 
-索引重建不修改 PostgreSQL 权威数据。Dense 索引通过重新写入 Qdrant 点完成；Lexical 索引通过新版本 OpenSearch 索引回填完成，验证通过后切换读别名。若新版本异常，运维可把读别名切回上一版本，并继续使用 PostgreSQL 数据重新回填。
+索引重建不修改 PostgreSQL 权威表。Dense 索引通过重新写入 Qdrant 点完成；Lexical 索引通过从权威表回填 `knowledge_lexical_chunks` 并重建同库 pg_search BM25 索引完成，不需要跨服务复制或切换读别名。运维必须核对投影与符合条件的权威 Chunk 数量，并验证扩展版本、索引有效性和 BM25 查询计划。升级 pg_search 前先备份数据库并确认扩展与 PostgreSQL、应用版本兼容；若升级异常，恢复匹配版本的数据库备份和应用镜像。

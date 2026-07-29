@@ -44,8 +44,6 @@ data:
   QDRANT_URL: "http://qdrant:6333"
   QDRANT_COLLECTION_PREFIX: "kb_dim"
   QDRANT_DISTANCE: "Cosine"
-  OPENSEARCH_URL: "https://opensearch:9200"
-  OPENSEARCH_USERNAME: "admin"
   RETRIEVAL_HYBRID_KILL_SWITCH: "false"
   RETRIEVAL_SHADOW_ENABLED: "false"
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
@@ -65,7 +63,6 @@ data:
   POSTGRES_PASSWORD: Y2hhbmdlbWU=   # changeme
   REDIS_PASSWORD: Y2hhbmdlbWU=      # changeme
   QDRANT_API_KEY: Y2hhbmdlbWU=      # changeme
-  OPENSEARCH_PASSWORD: cmVwbGFjZS13aXRoLWEtc3Ryb25nLW9wZW5zZWFyY2gtcGFzc3dvcmQ=   # replace-with-a-strong-opensearch-password
 
 # ===========================================================================
 # 4. PostgreSQL — StatefulSet + Headless Service + PVC
@@ -113,7 +110,12 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16
+          image: clouisle-postgres-pg-search:0.24.3-pg17
+          args:
+            - "-c"
+            - "shared_preload_libraries=pg_search,pg_stat_statements"
+            - "-c"
+            - "pg_stat_statements.track=all"
           ports:
             - containerPort: 5432
           env:
@@ -315,95 +317,7 @@ spec:
             claimName: qdrant-data
 
 # ===========================================================================
-# 7. OpenSearch — Single-node StatefulSet + Headless Service + PVC
-# ===========================================================================
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: opensearch
-  namespace: clouisle
-spec:
-  selector:
-    app: opensearch
-  ports:
-    - name: https
-      port: 9200
-      targetPort: 9200
-  clusterIP: None
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: opensearch-data
-  namespace: clouisle
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 10Gi
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: opensearch
-  namespace: clouisle
-spec:
-  serviceName: opensearch
-  replicas: 1
-  selector:
-    matchLabels:
-      app: opensearch
-  template:
-    metadata:
-      labels:
-        app: opensearch
-    spec:
-      containers:
-        - name: opensearch
-          image: opensearchproject/opensearch:3.7.0
-          ports:
-            - name: https
-              containerPort: 9200
-          env:
-            - name: discovery.type
-              value: single-node
-            - name: bootstrap.memory_lock
-              value: "false"
-            - name: OPENSEARCH_JAVA_OPTS
-              value: -Xms512m -Xmx512m
-            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: clouisle-secret
-                  key: OPENSEARCH_PASSWORD
-          volumeMounts:
-            - name: data
-              mountPath: /usr/share/opensearch/data
-          readinessProbe:
-            exec:
-              command: ["sh", "-c", "curl -kfsS -u admin:$OPENSEARCH_INITIAL_ADMIN_PASSWORD 'https://localhost:9200/_cluster/health?wait_for_status=yellow' >/dev/null"]
-            initialDelaySeconds: 20
-            periodSeconds: 10
-          livenessProbe:
-            exec:
-              command: ["sh", "-c", "curl -kfsS -u admin:$OPENSEARCH_INITIAL_ADMIN_PASSWORD https://localhost:9200 >/dev/null"]
-            initialDelaySeconds: 60
-            periodSeconds: 20
-          resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: "1"
-              memory: 2Gi
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: opensearch-data
-
-# ===========================================================================
-# 8. Uploads — Shared PVC
+# 7. Uploads — Shared PVC
 #    Production multi-replica deployments require a ReadWriteMany-capable
 #    StorageClass. Use single replicas or object storage if RWX is unavailable.
 # ===========================================================================
@@ -420,7 +334,7 @@ spec:
       storage: 10Gi
 
 # ===========================================================================
-# 9. API — Deployment + Service
+# 8. API — Deployment + Service
 # ===========================================================================
 ---
 apiVersion: v1
@@ -490,7 +404,7 @@ spec:
             claimName: uploads-data
 
 # ===========================================================================
-# 10. Worker — Deployment (no Service)
+# 9. Worker — Deployment (no Service)
 # ===========================================================================
 ---
 apiVersion: apps/v1
@@ -534,7 +448,7 @@ spec:
             claimName: uploads-data
 
 # ===========================================================================
-# 11. Sandbox Worker — Deployment (no Service)
+# 10. Sandbox Worker — Deployment (no Service)
 # ===========================================================================
 ---
 apiVersion: apps/v1
@@ -581,7 +495,7 @@ spec:
             claimName: uploads-data
 
 # ===========================================================================
-# 12. Beat — Deployment (single replica, Recreate)
+# 11. Beat — Deployment (single replica, Recreate)
 # ===========================================================================
 ---
 apiVersion: apps/v1
@@ -620,7 +534,7 @@ spec:
               memory: 256Mi
 
 # ===========================================================================
-# 13. Frontend — Deployment + Service
+# 12. Frontend — Deployment + Service
 # ===========================================================================
 ---
 apiVersion: v1
@@ -677,7 +591,7 @@ spec:
               memory: 512Mi
 
 # ===========================================================================
-# 14. Ingress
+# 13. Ingress
 # ===========================================================================
 ---
 apiVersion: networking.k8s.io/v1

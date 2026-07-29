@@ -1,12 +1,11 @@
 import json
-from collections.abc import Iterable, Sequence
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-import httpx
-
-from app.core.config import settings
+from tortoise import Tortoise
 from app.models.knowledge_base import (
     Document,
     DocumentChunk,
@@ -15,37 +14,14 @@ from app.models.knowledge_base import (
 )
 
 
-INDEX_VERSION = 1
-
-INDEX_MAPPINGS: dict[str, Any] = {
-    "dynamic": "strict",
-    "properties": {
-        "chunk_id": {"type": "keyword"},
-        "document_id": {"type": "keyword"},
-        "kb_id": {"type": "keyword"},
-        "team_id": {"type": "keyword"},
-        "status": {"type": "keyword"},
-        "name": {"type": "text"},
-        "content": {"type": "text"},
-        "metadata": {"type": "object", "dynamic": True},
-        "chunk_index": {"type": "integer"},
-        "update_version": {"type": "long"},
-        "language": {"type": "keyword"},
-        "section": {"type": "text"},
-        "title": {"type": "text"},
-        "identifiers": {"type": "keyword"},
-    },
-}
+INDEX_VERSION = 2
+LEXICAL_TABLE = "knowledge_lexical_chunks"
+LEXICAL_INDEX = "knowledge_lexical_chunks_bm25_idx"
+_IDENTIFIER_RE = re.compile(r"[\w./:+-]+", re.UNICODE)
 
 
 class LexicalStoreError(RuntimeError):
     pass
-
-
-class BulkIndexError(LexicalStoreError):
-    def __init__(self, failures: list[dict[str, Any]]):
-        self.failures = failures
-        super().__init__(f"OpenSearch bulk request failed for {len(failures)} item(s)")
 
 
 @dataclass(frozen=True)
@@ -153,164 +129,98 @@ async def delete_chunk(chunk_id: UUID | str, team_id: UUID | str) -> int:
 
 
 class LexicalStore:
-    """OpenSearch lexical index; PostgreSQL remains the source of truth."""
+    """PostgreSQL pg_search projection; authoritative chunks remain unchanged."""
 
-    def __init__(
-        self,
-        *,
-        base_url: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
-        api_key: str | None = None,
-        index_prefix: str | None = None,
-        timeout: float | None = None,
-        client: httpx.AsyncClient | None = None,
-    ) -> None:
-        self.index_prefix = index_prefix or settings.OPENSEARCH_INDEX_PREFIX
-        self._owns_client = client is None
-        if client is not None:
-            self._client = client
-            return
-
-        headers = {"Accept": "application/json"}
-        configured_api_key = api_key or settings.OPENSEARCH_API_KEY
-        if configured_api_key:
-            headers["Authorization"] = f"ApiKey {configured_api_key}"
-        configured_username = username or settings.OPENSEARCH_USERNAME
-        configured_password = password or settings.OPENSEARCH_PASSWORD
-        auth = (
-            httpx.BasicAuth(configured_username, configured_password)
-            if configured_username and configured_password and not configured_api_key
-            else None
-        )
-        self._client = httpx.AsyncClient(
-            base_url=(base_url or settings.OPENSEARCH_URL).rstrip("/"),
-            headers=headers,
-            auth=auth,
-            timeout=timeout or settings.OPENSEARCH_TIMEOUT_SECONDS,
-            verify=settings.OPENSEARCH_VERIFY_SSL,
-        )
+    def __init__(self, *, connection: Any | None = None) -> None:
+        self._connection = connection
 
     @property
-    def read_alias(self) -> str:
-        return f"{self.index_prefix}-read"
-
-    @property
-    def write_alias(self) -> str:
-        return f"{self.index_prefix}-write"
-
-    def index_name(self, version: int = INDEX_VERSION) -> str:
-        return f"{self.index_prefix}-v{version}"
+    def connection(self) -> Any:
+        return self._connection or Tortoise.get_connection("default")
 
     async def __aenter__(self) -> "LexicalStore":
         return self
 
     async def __aexit__(self, *_args: object) -> None:
-        await self.close()
+        return None
 
     async def close(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        expected: tuple[int, ...] = (200,),
-        **kwargs: Any,
-    ) -> httpx.Response:
-        try:
-            response = await self._client.request(method, path, **kwargs)
-        except httpx.TimeoutException as exc:
-            raise LexicalStoreError("OpenSearch request timed out") from exc
-        except httpx.HTTPError as exc:
-            raise LexicalStoreError(f"OpenSearch request failed: {exc}") from exc
-        if response.status_code not in expected:
-            raise LexicalStoreError(
-                f"OpenSearch {method} {path} returned {response.status_code}: "
-                f"{response.text}"
-            )
-        return response
+        return None
 
     async def ensure_index(self, version: int = INDEX_VERSION) -> str:
-        index = self.index_name(version)
-        response = await self._request("HEAD", f"/{index}", expected=(200, 404))
-        if response.status_code == 404:
-            await self._request(
-                "PUT",
-                f"/{index}",
-                expected=(200, 201),
-                json={"mappings": INDEX_MAPPINGS},
+        del version
+        try:
+            rows = await self.connection.execute_query_dict(
+                """
+                SELECT extversion,
+                       to_regclass('public.knowledge_lexical_chunks') AS lexical_table,
+                       to_regclass('public.knowledge_lexical_chunks_bm25_idx') AS lexical_index
+                FROM pg_extension
+                WHERE extname = 'pg_search'
+                """
             )
-        await self.ensure_aliases(index)
-        return index
-
-    async def ensure_aliases(self, index: str) -> None:
-        response = await self._request(
-            "GET", f"/_alias/{self.read_alias},{self.write_alias}", expected=(200, 404)
-        )
-        aliases = response.json() if response.status_code == 200 else {}
-        actions: list[dict[str, Any]] = []
-        for alias in (self.read_alias, self.write_alias):
-            if not any(alias in data.get("aliases", {}) for data in aliases.values()):
-                actions.append({"add": {"index": index, "alias": alias}})
-        if actions:
-            await self._request("POST", "/_aliases", json={"actions": actions})
-
-    async def cutover(self, version: int) -> None:
-        """Atomically move both aliases while retaining old indices for rollback."""
-        target = self.index_name(version)
-        await self._request("HEAD", f"/{target}")
-        actions: list[dict[str, Any]] = []
-        for alias in (self.read_alias, self.write_alias):
-            response = await self._request(
-                "GET", f"/_alias/{alias}", expected=(200, 404)
-            )
-            if response.status_code == 200:
-                actions.extend(
-                    {"remove": {"index": index, "alias": alias}}
-                    for index in response.json()
-                    if index != target
-                )
-            actions.append({"add": {"index": target, "alias": alias}})
-        await self._request("POST", "/_aliases", json={"actions": actions})
-
-    async def list_versions(self) -> list[str]:
-        response = await self._request(
-            "GET", f"/_cat/indices/{self.index_prefix}-v*", params={"format": "json"}
-        )
-        return sorted(item["index"] for item in response.json())
-
-    async def delete_version(self, version: int) -> None:
-        await self._request(
-            "DELETE", f"/{self.index_name(version)}", expected=(200, 404)
-        )
+        except Exception as exc:
+            raise LexicalStoreError("PostgreSQL lexical search is unavailable") from exc
+        if (
+            not rows
+            or rows[0]["lexical_table"] is None
+            or rows[0]["lexical_index"] is None
+        ):
+            raise LexicalStoreError("PostgreSQL lexical search is not initialized")
+        return LEXICAL_INDEX
 
     async def index_chunks(self, chunks: Sequence[dict[str, Any]]) -> int:
         if not chunks:
             return 0
-        lines: list[str] = []
-        for chunk in chunks:
-            chunk_id = str(chunk["chunk_id"])
-            lines.append(
-                json.dumps({"index": {"_index": self.write_alias, "_id": chunk_id}})
-            )
-            lines.append(json.dumps(chunk, default=str))
-        response = await self._request(
-            "POST",
-            "/_bulk",
-            headers={"Content-Type": "application/x-ndjson"},
-            content="\n".join(lines) + "\n",
-        )
-        payload = response.json()
-        failures = [
-            item["index"]
-            for item in payload.get("items", [])
-            if item.get("index", {}).get("status", 500) >= 300
+        values = [
+            [
+                str(chunk["chunk_id"]),
+                str(chunk["document_id"]),
+                str(chunk["kb_id"]),
+                str(chunk["team_id"]),
+                str(chunk["status"]),
+                str(chunk["name"]),
+                str(chunk["content"]),
+                json.dumps(chunk.get("metadata") or {}, default=str),
+                int(chunk["chunk_index"]),
+                int(chunk["update_version"]),
+                chunk.get("language"),
+                chunk.get("section"),
+                str(chunk["title"]),
+                [str(value) for value in chunk.get("identifiers") or []],
+            ]
+            for chunk in chunks
         ]
-        if payload.get("errors") or failures:
-            raise BulkIndexError(failures)
+        try:
+            await self.connection.execute_many(
+                """
+                INSERT INTO knowledge_lexical_chunks (
+                    chunk_id, document_id, kb_id, team_id, status, name, content,
+                    metadata, chunk_index, update_version, language, section, title,
+                    identifiers
+                ) VALUES (
+                    $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
+                    $8::jsonb, $9, $10, $11, $12, $13, $14::text[]
+                )
+                ON CONFLICT (chunk_id) DO UPDATE SET
+                    document_id = EXCLUDED.document_id,
+                    kb_id = EXCLUDED.kb_id,
+                    team_id = EXCLUDED.team_id,
+                    status = EXCLUDED.status,
+                    name = EXCLUDED.name,
+                    content = EXCLUDED.content,
+                    metadata = EXCLUDED.metadata,
+                    chunk_index = EXCLUDED.chunk_index,
+                    update_version = EXCLUDED.update_version,
+                    language = EXCLUDED.language,
+                    section = EXCLUDED.section,
+                    title = EXCLUDED.title,
+                    identifiers = EXCLUDED.identifiers
+                """,
+                values,
+            )
+        except Exception as exc:
+            raise LexicalStoreError("PostgreSQL lexical indexing failed") from exc
         return len(chunks)
 
     async def backfill_batch(self, chunks: Sequence[dict[str, Any]]) -> BackfillResult:
@@ -328,82 +238,101 @@ class LexicalStore:
         limit: int = 10,
         offset: int = 0,
     ) -> list[SearchHit]:
+        normalized_query = query.strip()
+        if not normalized_query or limit <= 0 or offset < 0:
+            return []
+        if kb_ids is not None and not kb_ids:
+            return []
+        if document_ids is not None and not document_ids:
+            return []
         await self.ensure_index()
-        filters: list[dict[str, Any]] = [{"term": {"team_id": str(team_id)}}]
-        if kb_ids:
-            filters.append({"terms": {"kb_id": [str(value) for value in kb_ids]}})
-        if document_ids:
-            filters.append(
-                {"terms": {"document_id": [str(value) for value in document_ids]}}
+        identifiers = [
+            token
+            for token in _IDENTIFIER_RE.findall(normalized_query)
+            if any(char.isdigit() for char in token)
+        ]
+        try:
+            rows = await self.connection.execute_query_dict(
+                """
+                SELECT chunk_id::text,
+                       document_id::text,
+                       kb_id::text,
+                       team_id::text,
+                       status,
+                       name,
+                       content,
+                       metadata,
+                       chunk_index,
+                       update_version,
+                       language,
+                       section,
+                       title,
+                       identifiers,
+                       pdb.score(chunk_id) AS score
+                FROM knowledge_lexical_chunks
+                WHERE team_id = $2::uuid
+                  AND ($3::uuid[] IS NULL OR kb_id = ANY($3::uuid[]))
+                  AND ($4::uuid[] IS NULL OR document_id = ANY($4::uuid[]))
+                  AND (
+                      content ||| $1::pdb.jieba
+                      OR title ||| ($1::pdb.jieba)::pdb.boost(2)
+                      OR name ||| ($1::pdb.jieba)::pdb.boost(2)
+                      OR section ||| $1::pdb.jieba
+                      OR identifiers && $5::text[]
+                  )
+                ORDER BY (identifiers && $5::text[]) DESC,
+                         pdb.score(chunk_id) DESC,
+                         document_id,
+                         chunk_id
+                LIMIT $6 OFFSET $7
+                """,
+                [
+                    normalized_query,
+                    str(team_id),
+                    [str(value) for value in kb_ids] if kb_ids is not None else None,
+                    [str(value) for value in document_ids]
+                    if document_ids is not None
+                    else None,
+                    identifiers,
+                    limit,
+                    offset,
+                ],
             )
-        response = await self._request(
-            "POST",
-            f"/{self.read_alias}/_search",
-            json={
-                "from": offset,
-                "size": limit,
-                "query": {
-                    "bool": {
-                        "must": [
-                            {
-                                "multi_match": {
-                                    "query": query,
-                                    "fields": [
-                                        "content",
-                                        "title^2",
-                                        "name^2",
-                                        "section",
-                                    ],
-                                    "type": "best_fields",
-                                }
-                            }
-                        ],
-                        "filter": filters,
-                    }
-                },
-            },
-        )
+        except Exception as exc:
+            raise LexicalStoreError("PostgreSQL lexical search failed") from exc
+        for row in rows:
+            if isinstance(row.get("metadata"), str):
+                row["metadata"] = json.loads(row["metadata"])
         return [
             SearchHit(
-                chunk_id=str(hit.get("_source", {}).get("chunk_id", hit["_id"])),
-                score=float(hit.get("_score") or 0),
-                source=hit.get("_source", {}),
+                chunk_id=str(row["chunk_id"]),
+                score=float(row.pop("score") or 0),
+                source=row,
             )
-            for hit in response.json().get("hits", {}).get("hits", [])
+            for row in rows
         ]
 
-    async def _delete_by_query(self, filters: Iterable[dict[str, Any]]) -> int:
-        response = await self._request(
-            "POST",
-            f"/{self.write_alias}/_delete_by_query",
-            params={"conflicts": "proceed", "refresh": "true"},
-            json={"query": {"bool": {"filter": list(filters)}}},
-        )
-        return int(response.json().get("deleted", 0))
+    async def _delete(self, field: str, value: str, *, team_id: str) -> int:
+        if field not in {"document_id", "kb_id", "chunk_id"}:
+            raise ValueError("Unsupported lexical delete scope")
+        try:
+            count, _ = await self.connection.execute_query(
+                f"DELETE FROM {LEXICAL_TABLE} WHERE team_id = $1::uuid "
+                f"AND {field} = $2::uuid",
+                [str(team_id), str(value)],
+            )
+        except Exception as exc:
+            raise LexicalStoreError("PostgreSQL lexical deletion failed") from exc
+        return int(count)
 
     async def delete_document(self, document_id: str, *, team_id: str) -> int:
-        return await self._delete_by_query(
-            [
-                {"term": {"team_id": str(team_id)}},
-                {"term": {"document_id": str(document_id)}},
-            ]
-        )
+        return await self._delete("document_id", document_id, team_id=team_id)
 
     async def delete_kb(self, kb_id: str, *, team_id: str) -> int:
-        return await self._delete_by_query(
-            [
-                {"term": {"team_id": str(team_id)}},
-                {"term": {"kb_id": str(kb_id)}},
-            ]
-        )
+        return await self._delete("kb_id", kb_id, team_id=team_id)
 
     async def delete_chunk(self, chunk_id: str, *, team_id: str) -> int:
-        return await self._delete_by_query(
-            [
-                {"term": {"team_id": str(team_id)}},
-                {"term": {"chunk_id": str(chunk_id)}},
-            ]
-        )
+        return await self._delete("chunk_id", chunk_id, team_id=team_id)
 
     async def count(
         self,
@@ -412,19 +341,17 @@ class LexicalStore:
         kb_id: str | None = None,
         document_id: str | None = None,
     ) -> int:
-        filters: list[dict[str, Any]] = []
-        if team_id is not None:
-            filters.append({"term": {"team_id": str(team_id)}})
-        if kb_id is not None:
-            filters.append({"term": {"kb_id": str(kb_id)}})
-        if document_id is not None:
-            filters.append({"term": {"document_id": str(document_id)}})
-        response = await self._request(
-            "POST",
-            f"/{self.read_alias}/_count",
-            json={"query": {"bool": {"filter": filters}}},
+        rows = await self.connection.execute_query_dict(
+            """
+            SELECT count(*) AS count
+            FROM knowledge_lexical_chunks
+            WHERE ($1::uuid IS NULL OR team_id = $1::uuid)
+              AND ($2::uuid IS NULL OR kb_id = $2::uuid)
+              AND ($3::uuid IS NULL OR document_id = $3::uuid)
+            """,
+            [team_id, kb_id, document_id],
         )
-        return int(response.json()["count"])
+        return int(rows[0]["count"])
 
     async def reconcile(
         self,

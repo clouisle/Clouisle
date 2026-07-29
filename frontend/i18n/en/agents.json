@@ -220,8 +220,8 @@
           "label": "Retrieval Mode",
           "agentic": "Agentic RAG",
           "agenticShort": "Agentic RAG",
-          "auto": "Auto RAG",
-          "autoShort": "Auto RAG",
+          "auto": "Naive RAG",
+          "autoShort": "Naive RAG",
           "off": "Off",
           "offShort": "Off"
         },

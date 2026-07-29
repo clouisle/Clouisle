@@ -40,12 +40,17 @@ def install_store(
     *,
     rerank_config=None,
     rerank_results=None,
+    embed_query_side_effect=None,
 ):
     stores = []
 
     def factory(**kwargs):
         store = SimpleNamespace(
             search=search,
+            embed_query=AsyncMock(
+                return_value=[0.0] * 1536,
+                side_effect=embed_query_side_effect,
+            ),
             kwargs=kwargs,
             _resolve_rerank_config=AsyncMock(
                 return_value=rerank_config
@@ -239,6 +244,63 @@ async def test_multi_target_ignores_conflicting_global_kb_defaults(monkeypatch):
         (item["kb_id"], item["chunk_id"]) for item in second.results
     ]
     assert {item["chunk_id"] for item in first.results} == {"dense", "lexical"}
+
+
+@pytest.mark.asyncio
+async def test_multi_target_reuses_embedding_for_same_team_and_model(monkeypatch):
+    search = AsyncMock(return_value=[])
+    stores = install_store(monkeypatch, search)
+
+    await retrieval.retrieve(request(target(KB_1), target(KB_2), search_mode="vector"))
+
+    assert len(stores) == 2
+    assert sum(store.embed_query.await_count for store in stores) == 1
+    assert search.await_count == 2
+    assert search.await_args_list[0].kwargs["query_embedding"] == [0.0] * 1536
+    assert search.await_args_list[1].kwargs["query_embedding"] == [0.0] * 1536
+
+
+@pytest.mark.asyncio
+async def test_retrieve_many_reuses_embedding_but_keeps_variants_independent(
+    monkeypatch,
+):
+    search = AsyncMock(return_value=[])
+    stores = install_store(monkeypatch, search)
+
+    results = await retrieval.retrieve_many(
+        (
+            request(target(KB_1), search_mode="vector", top_k=2),
+            request(target(KB_1), search_mode="vector", top_k=7),
+        )
+    )
+
+    assert all(isinstance(result, retrieval.RetrievalResponse) for result in results)
+    assert sum(store.embed_query.await_count for store in stores) == 1
+    assert [call.kwargs["top_k"] for call in search.await_args_list] == [2, 7]
+
+
+@pytest.mark.asyncio
+async def test_shared_embedding_failure_keeps_vector_error_classification(monkeypatch):
+    search = AsyncMock(return_value=[])
+    stores = install_store(
+        monkeypatch,
+        search,
+        embed_query_side_effect=RuntimeError("provider detail"),
+    )
+
+    with pytest.raises(retrieval.RetrievalError) as exc_info:
+        await retrieval.retrieve(
+            request(target(KB_1), target(KB_2), search_mode="vector")
+        )
+
+    assert sum(store.embed_query.await_count for store in stores) == 1
+    assert search.await_count == 0
+    assert {diagnostic.detail for diagnostic in exc_info.value.diagnostics} == {
+        "VectorSearchUnavailableError"
+    }
+    assert {diagnostic.stage for diagnostic in exc_info.value.diagnostics} == {
+        "dense_recall"
+    }
 
 
 @pytest.mark.asyncio
@@ -515,7 +577,7 @@ async def test_hybrid_degrades_to_healthy_channel(
     install_store(monkeypatch, dense, lexical_hits)
     if failing_channel == "lexical":
         lexical = retrieval.LexicalStore()
-        lexical.search.side_effect = RuntimeError("opensearch down")
+        lexical.search.side_effect = RuntimeError("postgres lexical down")
 
     response = await retrieval.retrieve(request())
 
@@ -530,20 +592,21 @@ async def test_hybrid_dual_failure_and_fulltext_failure_are_explicit(monkeypatch
     dense = AsyncMock(side_effect=RuntimeError("qdrant secret response"))
     install_store(monkeypatch, dense)
     lexical = retrieval.LexicalStore()
-    lexical.search.side_effect = ValueError("opensearch secret response")
+    lexical.search.side_effect = ValueError("postgres lexical secret response")
 
     with pytest.raises(retrieval.RetrievalError) as hybrid_error:
         await retrieval.retrieve(request())
     hybrid_detail = hybrid_error.value.diagnostics[0].detail
     assert hybrid_detail == "dense=RuntimeError; lexical=ValueError"
     assert "qdrant secret response" not in hybrid_detail
-    assert "opensearch secret response" not in hybrid_detail
+    assert "postgres lexical secret response" not in hybrid_detail
 
     with pytest.raises(retrieval.RetrievalError) as fulltext_error:
         await retrieval.retrieve(request(search_mode="fulltext"))
     assert fulltext_error.value.diagnostics[0].detail == "ValueError"
     assert (
-        "opensearch secret response" not in fulltext_error.value.diagnostics[0].detail
+        "postgres lexical secret response"
+        not in fulltext_error.value.diagnostics[0].detail
     )
 
 
