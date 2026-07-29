@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -6,6 +8,7 @@ from app.services.lexical_store import (
     LEXICAL_INDEX,
     LexicalStore,
     LexicalStoreError,
+    chunk_document,
 )
 
 
@@ -13,18 +16,16 @@ class ConnectionStub:
     def __init__(self):
         self.query_dict_results: list[list[dict[str, Any]]] = []
         self.queries: list[tuple[str, list[Any] | None]] = []
-        self.many: list[tuple[str, list[list[Any]]]] = []
 
     async def execute_query_dict(self, query: str, values=None):
         self.queries.append((query, values))
-        return self.query_dict_results.pop(0)
+        if self.query_dict_results:
+            return self.query_dict_results.pop(0)
+        return [{"count": 1}]
 
     async def execute_query(self, query: str, values=None):
         self.queries.append((query, values))
         return 1, []
-
-    async def execute_many(self, query: str, values: list[list[Any]]):
-        self.many.append((query, values))
 
 
 @pytest.mark.asyncio
@@ -68,15 +69,40 @@ async def test_index_chunks_uses_parameterized_upsert():
         "identifiers": ["YUN-117"],
     }
 
-    assert await store.index_chunks([chunk]) == 1
-    query, values = connection.many[0]
+    connection.query_dict_results = [[{"count": 1}]]
+    assert await store.index_chunks([chunk, chunk]) == 1
+    query, values = connection.queries[0]
     assert "ON CONFLICT (chunk_id) DO UPDATE" in query
-    assert values[0][0] == chunk["chunk_id"]
-    assert values[0][-1] == ["YUN-117"]
-    assert "WHERE EXISTS" in query
-    assert "authoritative_chunk.content = $7" in query
-    assert "knowledge_lexical_chunks.update_version <= EXCLUDED.update_version" in query
+    assert "RETURNING chunk_id" in query
+    assert "authoritative_chunk.updated_at" in query
+    assert "knowledge_lexical_chunks.update_version < EXCLUDED.update_version" in query
+    assert values is not None
+    assert chunk["chunk_id"] in values[0]
+    assert "YUN-117" in values[0]
     assert await store.index_chunks([]) == 0
+
+
+def test_chunk_document_uses_authoritative_update_timestamp():
+    updated_at = datetime(2026, 7, 29, 12, 0, 0, 123456, tzinfo=timezone.utc)
+    chunk = SimpleNamespace(
+        id="00000000-0000-0000-0000-000000000001",
+        status="embedded",
+        content="answer",
+        metadata={},
+        chunk_index=0,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=updated_at,
+    )
+    document = SimpleNamespace(
+        id="10000000-0000-0000-0000-000000000001",
+        knowledge_base_id="20000000-0000-0000-0000-000000000001",
+        knowledge_base=SimpleNamespace(team_id="30000000-0000-0000-0000-000000000001"),
+        name="guide",
+    )
+
+    payload = chunk_document(chunk, document)
+
+    assert payload["update_version"] == int(updated_at.timestamp() * 1_000_000)
 
 
 @pytest.mark.asyncio

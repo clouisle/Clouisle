@@ -53,6 +53,19 @@ async def init_postgres_lexical_search() -> None:
             f"pg_search 0.24.3 is required; installed version is {installed}"
         )
 
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+        UPDATE document_chunks
+        SET updated_at = created_at
+        WHERE updated_at IS NULL;
+        ALTER TABLE document_chunks
+            ALTER COLUMN updated_at SET DEFAULT NOW(),
+            ALTER COLUMN updated_at SET NOT NULL;
+        """,
+    )
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks (
             chunk_id UUID PRIMARY KEY REFERENCES document_chunks(id) ON DELETE CASCADE,

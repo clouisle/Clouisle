@@ -15,6 +15,7 @@ from app.models.knowledge_base import (
 
 
 INDEX_VERSION = 2
+LEXICAL_BATCH_SIZE = 500
 LEXICAL_TABLE = "knowledge_lexical_chunks"
 LEXICAL_INDEX = "knowledge_lexical_chunks_bm25_idx"
 _IDENTIFIER_RE = re.compile(r"[\w./:+-]+", re.UNICODE)
@@ -64,7 +65,7 @@ def chunk_document(chunk: DocumentChunk, document: Document) -> dict[str, Any]:
         "content": chunk.content,
         "metadata": metadata,
         "chunk_index": chunk.chunk_index,
-        "update_version": int(chunk.created_at.timestamp() * 1_000_000),
+        "update_version": int(chunk.updated_at.timestamp() * 1_000_000),
         "language": metadata.get("language"),
         "section": metadata.get("section"),
         "title": metadata.get("title") or document.name,
@@ -85,14 +86,29 @@ async def index_document(document_id: UUID | str) -> int:
     )
     if not document:
         raise LexicalStoreError("Document is not ready for lexical indexing")
-    chunks = await DocumentChunk.filter(document_id=document.id).order_by("chunk_index")
-    if len(chunks) != document.chunk_count:
+    chunk_count = await DocumentChunk.filter(document_id=document.id).count()
+    if chunk_count != document.chunk_count:
         raise LexicalStoreError("Document chunks are not ready for lexical indexing")
+    indexed = 0
+    offset = 0
     async with LexicalStore() as store:
         await store.ensure_index()
-        return await store.index_chunks(
-            [chunk_document(chunk, document) for chunk in chunks]
-        )
+        while offset < chunk_count:
+            chunks = await (
+                DocumentChunk.filter(document_id=document.id)
+                .order_by("chunk_index", "id")
+                .offset(offset)
+                .limit(LEXICAL_BATCH_SIZE)
+            )
+            if not chunks:
+                raise LexicalStoreError(
+                    "Document chunks changed during lexical indexing"
+                )
+            indexed += await store.index_chunks(
+                [chunk_document(chunk, document) for chunk in chunks]
+            )
+            offset += len(chunks)
+    return indexed
 
 
 async def index_chunk(chunk_id: UUID | str) -> int:
@@ -172,76 +188,115 @@ class LexicalStore:
     async def index_chunks(self, chunks: Sequence[dict[str, Any]]) -> int:
         if not chunks:
             return 0
-        values = [
-            [
-                str(chunk["chunk_id"]),
-                str(chunk["document_id"]),
-                str(chunk["kb_id"]),
-                str(chunk["team_id"]),
-                str(chunk["status"]),
-                str(chunk["name"]),
-                str(chunk["content"]),
-                json.dumps(chunk.get("metadata") or {}, default=str),
-                int(chunk["chunk_index"]),
-                int(chunk["update_version"]),
-                chunk.get("language"),
-                chunk.get("section"),
-                str(chunk["title"]),
-                [str(value) for value in chunk.get("identifiers") or []],
-            ]
-            for chunk in chunks
+        unique_chunks = {str(chunk["chunk_id"]): chunk for chunk in chunks}
+        payload = [
+            {
+                "chunk_id": str(chunk["chunk_id"]),
+                "document_id": str(chunk["document_id"]),
+                "kb_id": str(chunk["kb_id"]),
+                "team_id": str(chunk["team_id"]),
+                "status": str(chunk["status"]),
+                "name": str(chunk["name"]),
+                "content": str(chunk["content"]),
+                "metadata": chunk.get("metadata") or {},
+                "chunk_index": int(chunk["chunk_index"]),
+                "update_version": int(chunk["update_version"]),
+                "language": chunk.get("language"),
+                "section": chunk.get("section"),
+                "title": str(chunk["title"]),
+                "identifiers": [str(value) for value in chunk.get("identifiers") or []],
+            }
+            for chunk in unique_chunks.values()
         ]
         try:
-            await self.connection.execute_many(
+            rows = await self.connection.execute_query_dict(
                 """
-                INSERT INTO knowledge_lexical_chunks (
-                    chunk_id, document_id, kb_id, team_id, status, name, content,
-                    metadata, chunk_index, update_version, language, section, title,
-                    identifiers
+                WITH incoming AS (
+                    SELECT *
+                    FROM jsonb_to_recordset($1::jsonb) AS value (
+                        chunk_id uuid,
+                        document_id uuid,
+                        kb_id uuid,
+                        team_id uuid,
+                        status text,
+                        name text,
+                        content text,
+                        metadata jsonb,
+                        chunk_index integer,
+                        update_version bigint,
+                        language text,
+                        section text,
+                        title text,
+                        identifiers jsonb
+                    )
+                ), upserted AS (
+                    INSERT INTO knowledge_lexical_chunks (
+                        chunk_id, document_id, kb_id, team_id, status, name, content,
+                        metadata, chunk_index, update_version, language, section, title,
+                        identifiers
+                    )
+                    SELECT
+                        incoming.chunk_id,
+                        incoming.document_id,
+                        incoming.kb_id,
+                        incoming.team_id,
+                        incoming.status,
+                        incoming.name,
+                        incoming.content,
+                        incoming.metadata,
+                        incoming.chunk_index,
+                        incoming.update_version,
+                        incoming.language,
+                        incoming.section,
+                        incoming.title,
+                        ARRAY(
+                            SELECT jsonb_array_elements_text(incoming.identifiers)
+                        )
+                    FROM incoming
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM document_chunks AS authoritative_chunk
+                        JOIN documents AS authoritative_document
+                          ON authoritative_document.id = authoritative_chunk.document_id
+                        JOIN knowledge_bases AS authoritative_kb
+                          ON authoritative_kb.id = authoritative_document.knowledge_base_id
+                        WHERE authoritative_chunk.id = incoming.chunk_id
+                          AND authoritative_chunk.document_id = incoming.document_id
+                          AND authoritative_document.knowledge_base_id = incoming.kb_id
+                          AND authoritative_kb.team_id = incoming.team_id
+                          AND authoritative_chunk.status = incoming.status
+                          AND authoritative_document.name = incoming.name
+                          AND authoritative_chunk.content = incoming.content
+                          AND COALESCE(authoritative_chunk.metadata, '{}'::jsonb) = incoming.metadata
+                          AND authoritative_chunk.chunk_index = incoming.chunk_index
+                          AND floor(extract(epoch FROM authoritative_chunk.updated_at) * 1000000)::bigint = incoming.update_version
+                          AND authoritative_document.status = 'completed'
+                          AND authoritative_kb.status = 'active'
+                    )
+                    ON CONFLICT (chunk_id) DO UPDATE SET
+                        document_id = EXCLUDED.document_id,
+                        kb_id = EXCLUDED.kb_id,
+                        team_id = EXCLUDED.team_id,
+                        status = EXCLUDED.status,
+                        name = EXCLUDED.name,
+                        content = EXCLUDED.content,
+                        metadata = EXCLUDED.metadata,
+                        chunk_index = EXCLUDED.chunk_index,
+                        update_version = EXCLUDED.update_version,
+                        language = EXCLUDED.language,
+                        section = EXCLUDED.section,
+                        title = EXCLUDED.title,
+                        identifiers = EXCLUDED.identifiers
+                    WHERE knowledge_lexical_chunks.update_version < EXCLUDED.update_version
+                    RETURNING chunk_id
                 )
-                SELECT
-                    $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7,
-                    $8::jsonb, $9, $10, $11, $12, $13, $14::text[]
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM document_chunks AS authoritative_chunk
-                    JOIN documents AS authoritative_document
-                      ON authoritative_document.id = authoritative_chunk.document_id
-                    JOIN knowledge_bases AS authoritative_kb
-                      ON authoritative_kb.id = authoritative_document.knowledge_base_id
-                    WHERE authoritative_chunk.id = $1::uuid
-                      AND authoritative_chunk.document_id = $2::uuid
-                      AND authoritative_document.knowledge_base_id = $3::uuid
-                      AND authoritative_kb.team_id = $4::uuid
-                      AND authoritative_chunk.status = $5
-                      AND authoritative_document.name = $6
-                      AND authoritative_chunk.content = $7
-                      AND COALESCE(authoritative_chunk.metadata, '{}'::jsonb) = $8::jsonb
-                      AND authoritative_chunk.chunk_index = $9
-                      AND authoritative_document.status = 'completed'
-                      AND authoritative_kb.status = 'active'
-                )
-                ON CONFLICT (chunk_id) DO UPDATE SET
-                    document_id = EXCLUDED.document_id,
-                    kb_id = EXCLUDED.kb_id,
-                    team_id = EXCLUDED.team_id,
-                    status = EXCLUDED.status,
-                    name = EXCLUDED.name,
-                    content = EXCLUDED.content,
-                    metadata = EXCLUDED.metadata,
-                    chunk_index = EXCLUDED.chunk_index,
-                    update_version = EXCLUDED.update_version,
-                    language = EXCLUDED.language,
-                    section = EXCLUDED.section,
-                    title = EXCLUDED.title,
-                    identifiers = EXCLUDED.identifiers
-                WHERE knowledge_lexical_chunks.update_version <= EXCLUDED.update_version
+                SELECT count(*) AS count FROM upserted
                 """,
-                values,
+                [json.dumps(payload, default=str)],
             )
         except Exception as exc:
             raise LexicalStoreError("PostgreSQL lexical indexing failed") from exc
-        return len(chunks)
+        return int(rows[0]["count"])
 
     async def backfill_batch(self, chunks: Sequence[dict[str, Any]]) -> BackfillResult:
         indexed = await self.index_chunks(chunks)

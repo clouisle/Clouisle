@@ -53,6 +53,13 @@ async def test_postgres_lexical_search_initializes_and_validates(monkeypatch) ->
     queries = [item.args[0] for item in conn.execute_query.await_args_list]
     assert queries[0] == "CREATE EXTENSION IF NOT EXISTS pg_search CASCADE"
     assert any(
+        "ALTER TABLE document_chunks" in q
+        and "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ" in q
+        and "SET updated_at = created_at" in q
+        and "ALTER COLUMN updated_at SET NOT NULL" in q
+        for q in queries
+    )
+    assert any(
         "CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks" in q for q in queries
     )
     assert any("USING bm25" in q and "pdb.jieba" in q for q in queries)
