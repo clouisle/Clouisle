@@ -180,3 +180,19 @@ def test_retry_single_chunk_guards_and_creates_event_loop(monkeypatch, document)
     lexical_index.assert_awaited_once_with(document.id)
     set_event_loop.assert_called_once_with(loop)
     loop.run_until_complete.assert_called_once()
+
+
+def test_get_worker_loop_replaces_closed_policy_loop(monkeypatch):
+    closed_loop = Mock()
+    closed_loop.is_closed.return_value = True
+    policy = Mock()
+    policy.get_event_loop.return_value = closed_loop
+    new_loop = Mock()
+
+    monkeypatch.setattr(asyncio, "get_event_loop_policy", Mock(return_value=policy))
+    monkeypatch.setattr(asyncio, "new_event_loop", Mock(return_value=new_loop))
+    set_event_loop = Mock()
+    monkeypatch.setattr(asyncio, "set_event_loop", set_event_loop)
+
+    assert knowledge_base._get_worker_loop() is new_loop
+    set_event_loop.assert_called_once_with(new_loop)

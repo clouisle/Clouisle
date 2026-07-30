@@ -200,6 +200,65 @@ def test_process_document_success_updates_document_and_kb():
     lexical_index.assert_awaited_once_with(document.id)
 
 
+def test_process_document_generic_error_notifies_and_cleans_metadata():
+    document = make_document(metadata={"task_name": "queued", "embed_progress": {}})
+
+    with (
+        patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
+        patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks.document_processor,
+            "extract_text",
+            new=AsyncMock(side_effect=RuntimeError("provider unavailable")),
+        ),
+        patch.object(
+            kb_tasks,
+            "t",
+            side_effect=lambda key, **kwargs: f"{key}:{kwargs['lang']}",
+        ),
+        patch.object(
+            kb_tasks, "_send_doc_failed_notification", new=AsyncMock()
+        ) as notify,
+    ):
+        result = kb_tasks.process_document_task.run(str(document.id))
+
+    assert result == {
+        "status": "error",
+        "document_id": str(document.id),
+        "message": "document_processing_failed_generic:zh",
+    }
+    assert document.status == DocumentStatus.ERROR.value
+    assert document.metadata == {}
+    notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_indexed_notification_for_uploader_uses_user_locale():
+    document = make_document()
+
+    with (
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user,
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_team", new=AsyncMock()
+        ) as send_team,
+        patch.object(
+            kb_tasks,
+            "t",
+            side_effect=lambda key, **kwargs: f"{key}:{kwargs['lang']}",
+        ),
+    ):
+        await kb_tasks._send_doc_indexed_notification(
+            document, "Knowledge", document.knowledge_base.team_id, 2, 8, "zh"
+        )
+
+    send_team.assert_not_awaited()
+    send_user.assert_awaited_once()
+    assert send_user.await_args.kwargs["title"] == "notify_kb_doc_indexed_title:zh"
+    assert send_user.await_args.kwargs["content"] == "notify_kb_doc_indexed_content:zh"
+
+
 def test_process_document_dimension_mismatch_is_specific_and_cleans_metadata():
     document = make_document(metadata={"task_name": "queued", "embed_progress": {}})
 

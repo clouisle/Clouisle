@@ -735,3 +735,60 @@ def test_lexical_backfill_resumes_and_reconciles():
     }
     assert chunks.call_args_list[0].kwargs["id__gt"] == checkpoint
     store.reconcile.assert_awaited_once_with()
+
+
+def test_lexical_backfill_dispatches_continuation_without_checkpoint():
+    items = [SimpleNamespace(id=uuid4(), document=SimpleNamespace()) for _ in range(2)]
+    query = Query(items=items)
+    query.limit = MagicMock(return_value=query)
+    store = AsyncMock()
+    store.__aenter__.return_value = store
+    store.backfill_batch.return_value = SimpleNamespace(
+        indexed=2, checkpoint=str(items[-1].id)
+    )
+
+    with (
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=query) as chunks,
+        patch(f"{MODULE}.chunk_document", return_value={"chunk_id": "chunk"}),
+        patch(f"{MODULE}.LexicalStore", return_value=store),
+        patch.object(backfill_lexical_index_task, "apply_async") as dispatch,
+    ):
+        result = backfill_lexical_index_task.run(None, 2, False)
+
+    assert result["complete"] is False
+    assert result["scanned"] == 2
+    assert "id__gt" not in chunks.call_args.kwargs
+    dispatch.assert_called_once_with(
+        kwargs={
+            "checkpoint": str(items[-1].id),
+            "batch_size": 2,
+            "reconcile": False,
+        }
+    )
+    store.reconcile.assert_not_awaited()
+
+
+def test_lexical_backfill_complete_without_reconciliation():
+    query = Query(items=[])
+    query.limit = MagicMock(return_value=query)
+    store = AsyncMock()
+    store.__aenter__.return_value = store
+    store.backfill_batch.return_value = SimpleNamespace(indexed=0, checkpoint=None)
+
+    with (
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=query),
+        patch(f"{MODULE}.LexicalStore", return_value=store),
+        patch.object(backfill_lexical_index_task, "apply_async") as dispatch,
+    ):
+        result = backfill_lexical_index_task.run(None, 2, False)
+
+    assert result == {
+        "status": "success",
+        "scanned": 0,
+        "affected": 0,
+        "indexed": 0,
+        "checkpoint": None,
+        "complete": True,
+    }
+    dispatch.assert_not_called()
+    store.reconcile.assert_not_awaited()
