@@ -108,8 +108,13 @@ function PublicThemeApplicator({ settings }: { settings: PublicSiteSettings }) {
     theme_chart_5_color,
   } = settings
 
+  // Only force the theme when the site admin explicitly sets a fixed mode (light/dark).
+  // When theme_mode is 'system', don't call setTheme at all — let next-themes manage
+  // the user's own preference from localStorage.
   React.useEffect(() => {
-    setTheme(shouldApplySiteThemeMode(theme_mode) ? theme_mode : 'system')
+    if (shouldApplySiteThemeMode(theme_mode)) {
+      setTheme(theme_mode)
+    }
   }, [theme_mode, setTheme])
 
   React.useEffect(() => {
