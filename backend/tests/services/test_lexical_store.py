@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -9,6 +10,8 @@ from app.services.lexical_store import (
     LexicalStore,
     LexicalStoreError,
     chunk_document,
+    index_chunk,
+    index_document,
 )
 
 
@@ -105,6 +108,161 @@ def test_chunk_document_uses_authoritative_update_timestamp():
     assert payload["update_version"] == int(updated_at.timestamp() * 1_000_000)
 
 
+class AwaitableRows(list):
+    def __await__(self):
+        async def resolve():
+            return self
+
+        return resolve().__await__()
+
+
+class QueryStub:
+    def __init__(self, *, first=None, count=0, rows=None):
+        self.first_result = first
+        self.count_result = count
+        self.rows = rows or []
+
+    def prefetch_related(self, *_args):
+        return self
+
+    def order_by(self, *_args):
+        return self
+
+    def offset(self, offset):
+        self.current_offset = offset
+        return self
+
+    def limit(self, limit):
+        return AwaitableRows(
+            self.rows[self.current_offset : self.current_offset + limit]
+        )
+
+    async def first(self):
+        return self.first_result
+
+    async def count(self):
+        return self.count_result
+
+
+@pytest.mark.asyncio
+async def test_index_document_rejects_missing_or_incomplete_document(monkeypatch):
+    from app.services import lexical_store
+
+    monkeypatch.setattr(
+        lexical_store.Document, "filter", lambda **_kwargs: QueryStub(first=None)
+    )
+    with pytest.raises(LexicalStoreError, match="Document is not ready"):
+        await index_document("document-id")
+
+    document = SimpleNamespace(id="document-id", chunk_count=2)
+    monkeypatch.setattr(
+        lexical_store.Document,
+        "filter",
+        lambda **_kwargs: QueryStub(first=document),
+    )
+    monkeypatch.setattr(
+        lexical_store.DocumentChunk,
+        "filter",
+        lambda **_kwargs: QueryStub(count=1),
+    )
+    with pytest.raises(LexicalStoreError, match="Document chunks are not ready"):
+        await index_document("document-id")
+
+
+@pytest.mark.asyncio
+async def test_index_document_indexes_multiple_batches(monkeypatch):
+    from app.services import lexical_store
+
+    document = SimpleNamespace(id="document-id", chunk_count=501)
+    chunks = [SimpleNamespace(id=index) for index in range(501)]
+    monkeypatch.setattr(
+        lexical_store.Document,
+        "filter",
+        lambda **_kwargs: QueryStub(first=document),
+    )
+    monkeypatch.setattr(
+        lexical_store.DocumentChunk,
+        "filter",
+        lambda **_kwargs: QueryStub(count=len(chunks), rows=chunks),
+    )
+    monkeypatch.setattr(
+        lexical_store,
+        "chunk_document",
+        lambda chunk, _document: {"chunk_id": chunk.id},
+    )
+    ensure_index = AsyncMock()
+    index_chunks = AsyncMock(side_effect=[500, 1])
+    monkeypatch.setattr(lexical_store.LexicalStore, "ensure_index", ensure_index)
+    monkeypatch.setattr(lexical_store.LexicalStore, "index_chunks", index_chunks)
+
+    assert await index_document("document-id") == 501
+    ensure_index.assert_awaited_once()
+    assert [len(call.args[0]) for call in index_chunks.await_args_list] == [500, 1]
+
+
+@pytest.mark.asyncio
+async def test_index_chunk_rejects_missing_chunk(monkeypatch):
+    from app.services import lexical_store
+
+    monkeypatch.setattr(
+        lexical_store.DocumentChunk,
+        "filter",
+        lambda **_kwargs: QueryStub(first=None),
+    )
+
+    with pytest.raises(LexicalStoreError, match="Chunk is not ready"):
+        await index_chunk("chunk-id")
+
+
+@pytest.mark.asyncio
+async def test_index_document_rejects_disappearing_batch(monkeypatch):
+    from app.services import lexical_store
+
+    document = SimpleNamespace(id="document-id", chunk_count=1)
+    monkeypatch.setattr(
+        lexical_store.Document,
+        "filter",
+        lambda **_kwargs: QueryStub(first=document),
+    )
+    monkeypatch.setattr(
+        lexical_store.DocumentChunk,
+        "filter",
+        lambda **_kwargs: QueryStub(count=1),
+    )
+    monkeypatch.setattr(lexical_store.LexicalStore, "ensure_index", AsyncMock())
+
+    with pytest.raises(LexicalStoreError, match="chunks changed"):
+        await index_document("document-id")
+
+
+@pytest.mark.asyncio
+async def test_index_chunk_indexes_ready_chunk(monkeypatch):
+    from app.services import lexical_store
+
+    chunk = SimpleNamespace(id="chunk-id", document=SimpleNamespace(id="document-id"))
+    monkeypatch.setattr(
+        lexical_store.DocumentChunk,
+        "filter",
+        lambda **_kwargs: QueryStub(first=chunk),
+    )
+    monkeypatch.setattr(
+        lexical_store,
+        "chunk_document",
+        lambda value, document: {
+            "chunk_id": value.id,
+            "document_id": document.id,
+        },
+    )
+    monkeypatch.setattr(lexical_store.LexicalStore, "ensure_index", AsyncMock())
+    index_chunks = AsyncMock(return_value=1)
+    monkeypatch.setattr(lexical_store.LexicalStore, "index_chunks", index_chunks)
+
+    assert await index_chunk("chunk-id") == 1
+    index_chunks.assert_awaited_once_with(
+        [{"chunk_id": "chunk-id", "document_id": "document-id"}]
+    )
+
+
 @pytest.mark.asyncio
 async def test_search_is_scoped_parameterized_and_parses_hits():
     connection = ConnectionStub()
@@ -158,6 +316,39 @@ async def test_search_rejects_empty_query_and_empty_explicit_scopes():
     assert await store.search("answer", team_id="team", kb_ids=[]) == []
     assert await store.search("answer", team_id="team", document_ids=[]) == []
     assert connection.queries == []
+
+
+@pytest.mark.asyncio
+async def test_search_preserves_mapping_metadata():
+    connection = ConnectionStub()
+    connection.query_dict_results = [
+        [
+            {
+                "extversion": "0.24.3",
+                "lexical_table": "knowledge_lexical_chunks",
+                "lexical_index": LEXICAL_INDEX,
+            }
+        ],
+        [
+            {
+                "chunk_id": "c1",
+                "metadata": {"source": "database"},
+                "score": 1,
+            }
+        ],
+    ]
+
+    hits = await LexicalStore(connection=connection).search("answer", team_id="team")
+
+    assert hits[0].source["metadata"] == {"source": "database"}
+
+
+@pytest.mark.asyncio
+async def test_delete_rejects_unsupported_scope():
+    with pytest.raises(ValueError, match="Unsupported lexical delete scope"):
+        await LexicalStore(connection=ConnectionStub())._delete(
+            "team_id", "value", team_id="team"
+        )
 
 
 @pytest.mark.asyncio
@@ -222,3 +413,15 @@ async def test_count_reconcile_and_resumable_backfill():
     )
     assert batch.indexed == 1
     assert batch.checkpoint == "00000000-0000-0000-0000-000000000001"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_rejects_changed_authoritative_count():
+    connection = ConnectionStub()
+    connection.query_dict_results = [
+        [{"expected": 8, "repaired": 0, "deleted": 0}],
+        [{"count": 8}],
+    ]
+
+    with pytest.raises(LexicalStoreError, match="Authoritative lexical count changed"):
+        await LexicalStore(connection=connection).reconcile(expected=9)
