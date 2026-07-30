@@ -139,6 +139,7 @@
     "addFirstChunk": "Add first chunk",
     "newChunkPlaceholder": "Enter chunk content here...",
     "chunkContentPlaceholder": "Enter chunk content...",
+    "chunkContentEmpty": "分块内容不能为空",
     "customSeparator": "Custom Separator",
     "separatorPlaceholder": "e.g., \\n\\n or ---",
     "separatorHint": "Leave empty to use default separators",

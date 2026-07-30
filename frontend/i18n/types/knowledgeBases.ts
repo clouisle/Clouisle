@@ -141,6 +141,7 @@ export type KnowledgeBasesMessages = {
     addFirstChunk: string
     newChunkPlaceholder: string
     chunkContentPlaceholder: string
+    chunkContentEmpty: string
     customSeparator: string
     separatorPlaceholder: string
     separatorHint: string

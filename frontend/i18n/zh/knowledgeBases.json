@@ -139,6 +139,7 @@
     "addFirstChunk": "添加第一个分块",
     "newChunkPlaceholder": "在此输入分块内容...",
     "chunkContentPlaceholder": "输入分块内容...",
+    "chunkContentEmpty": "分块内容不能为空",
     "customSeparator": "自定义分隔符",
     "separatorPlaceholder": "例如：\\n\\n 或 ---",
     "separatorHint": "留空则使用默认分隔符",

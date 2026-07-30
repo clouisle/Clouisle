@@ -432,7 +432,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   }
 
   const saveChunk = async (chunk: EditableChunk): Promise<boolean> => {
-    if (!chunk.editContent || chunk.editContent === chunk.content) {
+    if (chunk.editContent === chunk.content) {
       cancelEditing(chunk.id)
       if (pendingBlurChunkIdRef.current === chunk.id) {
         pendingBlurChunkIdRef.current = null
@@ -440,6 +440,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       }
       return true
     }
+
+    if (!chunk.editContent?.trim()) {
+      toast.error(t('chunkContentEmpty'))
+      return false
+    }
+
 
     setIsSaving(true)
     try {
@@ -847,8 +853,11 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             />
                           ) : (
                             <div
+                              role="button"
+                              tabIndex={0}
                               className="cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
                               onClick={() => isCompleted && startEditing(chunk.id)}
+                              onKeyDown={(e) => { if (isCompleted && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
                             >
                               <ChunkMarkdown source={chunk.content} />
                             </div>
