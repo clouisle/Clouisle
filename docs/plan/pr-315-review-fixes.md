@@ -61,6 +61,7 @@ Retrieval retains dense and lexical channel candidates across targets, performs 
 - **Files modified**: `docs/IMPLEMENTATION_PLAN.md`, this document, and only behavior-specific retrieval/deployment docs.
 - **Specific logic**: run focused checks after each logical segment, then complete backend/frontend/infrastructure gates; record only observed evidence; mark the implementation index complete only after all required checks pass.
 - **Validation**: Ruff, format check, mypy, full pytest, i18n generation/lint when applicable, frontend lint/build/tests, image/manifest checks, deployment renders, and `git diff --check`.
+- **Observed backend evidence (2026-07-30)**: `uv run ruff check .` passed; `uv run ruff format --check .` reported 913 files formatted; `uv run mypy app/` reported no issues in 315 source files; CI-equivalent `uv run pytest` passed with 6,374 tests passed, 3 skipped, 7 warnings, and 97% total coverage; `git diff --check` and `git diff --cached --check` passed. The remaining uncommitted `frontend/i18n/types/*.ts` changes are unrelated concurrent generated-file changes and were not included.
 
 ## Testing Strategy
 
