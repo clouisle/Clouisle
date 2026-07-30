@@ -379,13 +379,13 @@ export function TeamsClient() {
               
               {/* 卡片底部信息 */}
               <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                  <Crown className="h-4 w-4 text-yellow-500" />
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Crown className="h-4 w-4 text-yellow-500 shrink-0" />
                   <span className="truncate max-w-[100px]">{team.owner?.username || '-'}</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4" />
-                  <span>{formatDateTime(team.created_at)}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Calendar className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">{formatDateTime(team.created_at)}</span>
                 </div>
               </div>
             </div>
