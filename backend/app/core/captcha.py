@@ -7,7 +7,7 @@ import json
 import math
 import secrets
 import time
-from typing import Any, Optional, Tuple
+from typing import Any, cast
 
 from app.core.redis import get_redis
 
@@ -106,12 +106,10 @@ def _is_human_pointer_trajectory(
         return False
     if direction_changes < MIN_DIRECTION_CHANGES:
         return False
-    if len(speeds) < 3 or max(speeds) - min(speeds) < MIN_SPEED_VARIANCE:
-        return False
-    return True
+    return len(speeds) >= 3 and max(speeds) - min(speeds) >= MIN_SPEED_VARIANCE
 
 
-async def generate_captcha() -> Tuple[str, str]:
+async def generate_captcha() -> tuple[str, str]:
     """
     生成点击式验证码挑战
 
@@ -145,7 +143,7 @@ async def create_captcha_proof(
     clicked_option: str,
     elapsed_ms: int,
     pointer: list[dict[str, Any]],
-) -> Optional[str]:
+) -> str | None:
     """Issue a private one-time proof after a valid click interaction."""
     if not captcha_id or not challenge or not clicked_option:
         return None
@@ -175,7 +173,7 @@ async def create_captcha_proof(
 
     if stored_marker is None:
         return None
-    stored_marker_hash = hashlib.sha256(stored_marker.encode()).hexdigest()
+    stored_marker_hash = hashlib.sha256(cast(str, stored_marker).encode()).hexdigest()
     if not secrets.compare_digest(marker, stored_marker_hash):
         return None
 
@@ -208,13 +206,13 @@ async def verify_captcha(captcha_id: str, user_token: str) -> bool:
     if stored_token is None:
         return False
 
-    return secrets.compare_digest(user_token.strip(), stored_token.strip())
+    return secrets.compare_digest(user_token.strip(), cast(str, stored_token).strip())
 
 
-async def get_captcha_answer(captcha_id: str) -> Optional[str]:
+async def get_captcha_answer(captcha_id: str) -> str | None:
     """
     获取验证码答案（仅用于调试）
     """
     r = await get_redis()
     key = f"{CAPTCHA_PROOF_PREFIX}{captcha_id}"
-    return await r.get(key)
+    return cast(str | None, await r.get(key))

@@ -4,7 +4,7 @@ Start node executors (user_input, trigger).
 These are the entry points for workflow execution.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
@@ -166,7 +166,7 @@ class TriggerNodeExecutor(NodeExecutor):
 
         outputs = {
             "_trigger_type": trigger_type,
-            "_trigger_time": datetime.utcnow().isoformat(),
+            "_trigger_time": datetime.now(UTC).isoformat(),
         }
 
         # Process variables same as user_input

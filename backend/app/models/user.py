@@ -2,7 +2,7 @@ from tortoise import fields, models
 
 
 class Permission(models.Model):
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     scope = fields.CharField(
         max_length=50, description="Permission scope (e.g., user, kb)"
     )
@@ -25,7 +25,7 @@ class Permission(models.Model):
 
 
 class Role(models.Model):
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     name = fields.CharField(max_length=50, unique=True)
     description = fields.CharField(max_length=255, null=True)
     is_system_role = fields.BooleanField(
@@ -45,7 +45,7 @@ class Role(models.Model):
 class Team(models.Model):
     """团队模型 - 用于资源隔离和协作"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
     description = fields.CharField(max_length=500, null=True)
     avatar_url = fields.CharField(max_length=512, null=True)
@@ -93,7 +93,7 @@ class Team(models.Model):
 class TeamMember(models.Model):
     """团队成员关联表 - 包含成员角色"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     team: fields.ForeignKeyRelation[Team] = fields.ForeignKeyField(
         "models.Team", related_name="memberships", on_delete=fields.CASCADE
     )
@@ -116,7 +116,7 @@ class TeamMember(models.Model):
 class ScopedRoleAssignment(models.Model):
     """Role assignment scoped to a team or future resource scope."""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User", related_name="scoped_role_assignments", on_delete=fields.CASCADE
     )
@@ -142,7 +142,7 @@ class ScopedRoleAssignment(models.Model):
 
 
 class User(models.Model):
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     username = fields.CharField(max_length=50, unique=True)
     email = fields.CharField(max_length=255, unique=True)
     hashed_password = fields.CharField(max_length=255)

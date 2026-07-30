@@ -1,23 +1,54 @@
 # 快速开始指南
 
-5 分钟内开始使用 Clouisle。
+使用 Docker Compose 快速启动 Clouisle。
 
 ## 前置要求
 
-- 已安装 Docker 和 Docker Compose
+- Docker 和 Docker Compose
 - 最低 4GB RAM
 - 现代网络浏览器
 
-## 安装步骤
+## 1. 克隆仓库
 
-详细的安装步骤请参考英文版本。
+```bash
+git clone https://github.com/clouisle/Clouisle.git
+cd clouisle
+```
 
----
+## 2. 配置环境变量
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+```bash
+# 复制 Docker 部署环境变量文件
+cp deploy/.env.example deploy/.env
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+# 编辑 deploy/.env，为以下字段设置强随机值：
+#   SECRET_KEY、POSTGRES_PASSWORD、REDIS_PASSWORD、QDRANT_API_KEY
+```
+
+## 3. 启动 Clouisle
+
+```bash
+cd deploy
+docker compose --env-file .env up -d
+```
+
+## 4. 访问应用
+
+- **前端**：http://localhost:3000
+- **API 文档**：http://localhost:8000/docs
+
+## 入门步骤
+
+1. 使用默认管理员凭据登录（在 `.env` 中配置）
+2. 创建你的第一个团队
+3. 添加 AI 模型（设置 → 模型）
+4. 创建知识库并上传文档
+5. 构建 AI Agent 并开始对话
+
+## 下一步
+
+- [基本概念](./basic-concepts_zh-CN.md)
+- [开发环境搭建](./development_zh-CN.md) — 面向贡献者
+- [用户指南](../user-guide/)
+- [管理指南](../admin-guide/)
+- [部署指南](../deployment/DEPLOYMENT_zh-CN.md)

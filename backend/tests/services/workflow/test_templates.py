@@ -201,7 +201,7 @@ async def test_public_category_and_featured_helpers(manager: TemplateManager):
     ]
 
 
-def test_get_template_manager_reuses_global_instance(monkeypatch):
+async def test_get_template_manager_reuses_global_instance(monkeypatch):
     monkeypatch.setattr(templates_module, "_template_manager", None)
 
     manager = templates_module.get_template_manager()

@@ -72,19 +72,19 @@ def test_reprocess_resets_stats_then_delegates_processing(monkeypatch):
         save=AsyncMock(),
     )
     vector_store = SimpleNamespace(delete_document_vectors=AsyncMock(return_value=4))
-    process = Mock(return_value={"status": "success"})
+    process = AsyncMock(return_value={"status": "success"})
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(document)
     )
     monkeypatch.setattr(knowledge_base, "VectorStore", lambda: vector_store)
-    monkeypatch.setattr(knowledge_base, "process_document_task", process)
+    monkeypatch.setattr(knowledge_base, "_process_document", process)
 
     result = knowledge_base.reprocess_document_task.run(str(document_id))
 
     assert result == {"status": "success"}
     assert (kb.total_chunks, kb.total_tokens) == (0, 0)
     assert (document.chunk_count, document.token_count) == (0, 0)
-    process.assert_called_once_with(str(document_id))
+    process.assert_awaited_once_with(str(document_id), None)
 
 
 @pytest.mark.parametrize(
@@ -102,6 +102,8 @@ def test_retry_failed_chunks_stops_for_invalid_task_state(
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(document)
     )
+    lexical_index = AsyncMock()
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", lexical_index)
     knowledge_base.retry_failed_chunks_task.push_request(id="current")
     try:
         result = knowledge_base.retry_failed_chunks_task.run(str(document_id))
@@ -110,12 +112,18 @@ def test_retry_failed_chunks_stops_for_invalid_task_state(
 
     assert result["status"] == expected
     assert result["document_id"] == str(document_id)
+    if expected == "already_finished":
+        lexical_index.assert_awaited_once_with(document_id)
+    else:
+        lexical_index.assert_not_awaited()
 
 
 def test_embed_task_creates_event_loop_when_none_exists(monkeypatch):
     loop = Mock()
     loop.run_until_complete.return_value = {"status": "success"}
-    monkeypatch.setattr(asyncio, "get_event_loop", Mock(side_effect=RuntimeError))
+    policy = Mock()
+    policy.get_event_loop.side_effect = RuntimeError
+    monkeypatch.setattr(asyncio, "get_event_loop_policy", Mock(return_value=policy))
     monkeypatch.setattr(asyncio, "new_event_loop", Mock(return_value=loop))
     set_loop = Mock()
     monkeypatch.setattr(asyncio, "set_event_loop", set_loop)

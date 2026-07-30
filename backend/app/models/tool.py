@@ -57,7 +57,7 @@ class Tool(models.Model):
     Stores user-defined tools that can be used by agents.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # Team association for data isolation
     team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
@@ -148,6 +148,7 @@ class Tool(models.Model):
         null=True,
         description="Creator",
     )
+    created_by_id: UUID | None  # type: ignore[assignment]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -167,7 +168,7 @@ class ToolShare(models.Model):
     Allows a tool owned by one team to be shared with other teams.
     """
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     # The tool being shared
     tool: fields.ForeignKeyRelation["Tool"] = fields.ForeignKeyField(

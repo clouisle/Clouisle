@@ -129,6 +129,7 @@ async def test_embed_existing_chunks_completes_and_cleans_task_metadata(monkeypa
     monkeypatch.setattr(
         knowledge_base, "_send_doc_indexed_notification", indexed_notification
     )
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", AsyncMock())
 
     result = await knowledge_base._embed_existing_document_chunks(
         str(document.id), "task-1"
@@ -146,6 +147,7 @@ async def test_embed_existing_chunks_completes_and_cleans_task_metadata(monkeypa
     assert document.knowledge_base.total_chunks == 2
     assert document.knowledge_base.total_tokens == 7
     indexed_notification.assert_awaited_once()
+    knowledge_base._index_document_lexically.assert_awaited_once_with(document.id)
 
 
 @pytest.mark.asyncio

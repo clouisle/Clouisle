@@ -258,6 +258,11 @@ async def test_nonstream_builds_user_message_variants(
         patch.object(chat_module, "build_rag_prompt", return_value="rag prompt"),
         patch.object(
             chat_module,
+            "get_visible_conversation_messages",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            chat_module,
             "get_next_user_branch_parent_id",
             new=AsyncMock(return_value=None),
         ),

@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import ConfigDict, BaseModel
 
 
 class SiteSettingResponse(BaseModel):
@@ -11,8 +11,7 @@ class SiteSettingResponse(BaseModel):
     description: Optional[str] = None
     is_public: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SiteSettingUpdate(BaseModel):

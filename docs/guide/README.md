@@ -7,6 +7,7 @@ Welcome to the user and operator documentation for Clouisle.
 ### Getting started
 - [Introduction](getting-started/introduction.md)
 - [Quick Start](getting-started/quick-start.md)
+- [Development Setup](getting-started/development.md)
 - [Basic Concepts](getting-started/basic-concepts.md)
 
 ### User guide
@@ -36,12 +37,12 @@ Welcome to the user and operator documentation for Clouisle.
 - [Response Format](api-reference/response-format.md)
 - [Error Codes](api-reference/error-codes.md)
 - [Endpoints](api-reference/endpoints/)
-
 ### Concepts
 - [Architecture](concepts/architecture.md)
 - [Multi-Tenancy](concepts/multi-tenancy.md)
 - [RAG Explained](concepts/rag-explained.md)
 - [Agent vs Workflow](concepts/agent-vs-workflow.md)
+- [Code Sandbox](concepts/code-sandbox.md)
 - [Vector Embeddings](concepts/vector-embeddings.md)
 
 ### Best practices

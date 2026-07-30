@@ -33,6 +33,15 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.first_value
+
     def offset(self, _value):
         return self
 
@@ -92,6 +101,27 @@ async def assert_error(awaitable, msg_key):
     with pytest.raises(BusinessError) as exc_info:
         await awaitable
     assert exc_info.value.msg_key == msg_key
+
+
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in ("delete_lexical_document", "index_lexical_chunk"):
+        monkeypatch.setattr(endpoint, name, AsyncMock())
+
+
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(endpoint, "in_transaction", Transaction)
+    return connection
 
 
 @pytest.mark.asyncio
@@ -203,6 +233,7 @@ async def test_update_document_without_name_skips_save(monkeypatch):
 async def test_delete_document_without_task_or_file(monkeypatch, status):
     kb = SimpleNamespace(
         id=uuid4(),
+        team_id=uuid4(),
         name="Docs",
         document_count=1,
         total_chunks=2,
@@ -380,12 +411,18 @@ async def test_create_chunk_appends_when_after_index_omitted(monkeypatch):
         save=AsyncMock(),
     )
     doc = document(chunk_count=0, token_count=0)
-    chunk = SimpleNamespace(id=uuid4(), chunk_index=0)
+    chunk = SimpleNamespace(
+        id=uuid4(), chunk_index=0, status="pending", save=AsyncMock()
+    )
     vector_store = SimpleNamespace(add_chunk_vector=AsyncMock())
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(first=doc))
     monkeypatch.setattr(endpoint.DocumentChunk, "filter", lambda **_kwargs: Query())
-    monkeypatch.setattr(endpoint.DocumentChunk, "create", AsyncMock(return_value=chunk))
+    monkeypatch.setattr(
+        endpoint.KnowledgeBase, "filter", lambda **_kwargs: Query(first=kb)
+    )
+    create_chunk = AsyncMock(return_value=chunk)
+    monkeypatch.setattr(endpoint.DocumentChunk, "create", create_chunk)
     monkeypatch.setattr(endpoint, "VectorStore", lambda **_kwargs: vector_store)
     monkeypatch.setattr(endpoint, "serialize_chunk", AsyncMock(return_value={}))
     monkeypatch.setattr(endpoint.AuditLogService, "log", AsyncMock())
@@ -398,7 +435,7 @@ async def test_create_chunk_appends_when_after_index_omitted(monkeypatch):
         current_user=user(),
     )
 
-    assert doc.chunk_count == 1
+    assert create_chunk.await_args.kwargs["chunk_index"] == 0
     vector_store.add_chunk_vector.assert_awaited_once()
 
 

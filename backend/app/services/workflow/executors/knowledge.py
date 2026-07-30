@@ -61,7 +61,8 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute knowledge retrieval node."""
         from app.models.knowledge_base import KnowledgeBase
-        from app.services.vector_store import VectorStore
+        from app.models.workflow import Workflow
+        from app.services.retrieval import RetrievalRequest, RetrievalTarget, retrieve
 
         node_data = node.get("data", {})
         # Get knowledgeRetrievalConfig from node data
@@ -87,32 +88,38 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
         if not query:
             return ExecutionResult(error="query_parameter_required")
 
-        # Load knowledge base
-        kb = await KnowledgeBase.filter(id=kb_id).first()
+        workflow = (
+            await Workflow.filter(id=run.workflow_id).only("team_id").first()
+            if run.workflow_id
+            else None
+        )
+        if not workflow:
+            return ExecutionResult(error="not_found")
+        kb = await KnowledgeBase.filter(id=kb_id, team_id=workflow.team_id).first()
         if not kb:
             return ExecutionResult(error="not_found")
 
         try:
-            # Get embedding model and team ID from KB for usage tracking
-            embedding_model_id = (
-                str(kb.embedding_model_id) if kb.embedding_model_id else None
+            response = await retrieve(
+                RetrievalRequest(
+                    query=str(query),
+                    targets=(
+                        RetrievalTarget(
+                            kb_id=kb.id,
+                            kb_name=kb.name,
+                            team_id=kb.team_id,
+                            status=kb.status,
+                            embedding_model_id=kb.embedding_model_id,
+                            rerank_model_id=kb.rerank_model_id,
+                            settings=kb.settings,
+                        ),
+                    ),
+                    search_mode=search_mode,
+                    top_k=top_k,
+                    score_threshold=threshold,
+                )
             )
-            team_id = str(kb.team_id) if kb.team_id else None
-
-            vector_store = VectorStore(
-                embedding_model_id=embedding_model_id,
-                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
-                team_id=team_id,
-            )
-
-            # Perform retrieval based on search mode
-            results = await vector_store.search(
-                kb_id=kb_id,
-                query=str(query),
-                search_mode=search_mode,  # vector, fulltext, or hybrid
-                top_k=top_k,
-                score_threshold=threshold,
-            )
+            results = response.results
 
             # Format results
             formatted_results = []

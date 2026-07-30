@@ -207,7 +207,7 @@ describe('KnowledgeBaseDialog', () => {
       embedding_model: { name: 'Stored Embedding' },
       rerank_model_id: 'missing-rerank',
       rerank_model: { name: 'Stored Rerank' },
-      settings: { chunk_size: 1200, chunk_overlap: 120, rerank_enabled: true, rerank_candidate_k: 12, rerank_fail_open: true },
+      settings: { chunk_size: 1200, chunk_overlap: 120, rerank_enabled: true, rerank_candidate_k: 12 },
       status: 'active',
     }
     updateKnowledgeBase.mockRejectedValueOnce({ 'settings.chunk_size': 'too large' })

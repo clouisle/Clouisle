@@ -191,7 +191,6 @@ export const ReasoningContent = memo(
             return <p {...pProps}>{pChildren}</p>
           },
         }}
-        {...props}
       >
         {children}
       </Streamdown>

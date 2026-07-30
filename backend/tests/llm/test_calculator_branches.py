@@ -1,5 +1,4 @@
 import math
-from types import SimpleNamespace
 
 import pytest
 
@@ -66,10 +65,6 @@ def test_safe_eval_rejects_unsafe_or_invalid_expressions(expression, message):
 def test_allowed_function_argument_errors_propagate():
     with pytest.raises(TypeError, match="sum.*at least 1"):
         calculator.safe_eval("sum()")
-
-
-def test_legacy_number_visitor_returns_number():
-    assert calculator.SafeEvaluator().visit_Num(SimpleNamespace(n=4)) == 4
 
 
 @pytest.mark.asyncio

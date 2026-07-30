@@ -2,16 +2,157 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-from typing import TYPE_CHECKING, Any
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
+
+from app.core.config import settings
+from app.llm.token_counter import count_tokens
+from app.models.agent import MessageRoundRole, MessageRoundStatus
+from app.services.retrieval import (
+    RetrievalError,
+    RetrievalRequest,
+    RetrievalTarget,
+    retrieve,
+    validated_search_mode,
+)
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
 
 logger = logging.getLogger(__name__)
 
+_REWRITE_HISTORY_MESSAGES = 6
+_REWRITE_HISTORY_TOKENS = 2_000
+_REWRITE_PROMPT = """Rewrite the latest user question as a standalone knowledge-base search query using only the conversation context below.
+Do not answer the question. Do not add facts, names, or constraints absent from the conversation.
+Return exactly one JSON object with two string fields: {"query":"...","evidence":"..."}.
+The evidence must be an exact non-empty substring copied from the conversation that supplies the missing entity or subject.
+The query must be exactly the evidence, one space, then the latest user question unchanged."""
+_REFERENTIAL_QUERY = re.compile(
+    r"\b(it|its|they|them|their|this|that|these|those|he|she|there|former|latter)\b"
+    r"|它|其|他们|她们|这个|那个|这些|那些|上述|前者|后者"
+)
 
-async def perform_rag_retrieval(agent: "Agent", query: str) -> list[dict[str, Any]]:
+
+ContextualizationStatus = Literal["disabled", "not_needed", "rewritten", "fallback"]
+
+
+@dataclass(frozen=True)
+class ContextualizedQuery:
+    query: str
+    status: ContextualizationStatus
+
+
+def should_contextualize_query(query: str) -> bool:
+    """Conservatively detect referential follow-ups without a model call."""
+    normalized = query.strip()
+    return (
+        bool(normalized)
+        and len(normalized) <= 160
+        and bool(_REFERENTIAL_QUERY.search(normalized.lower()))
+    )
+
+
+def _bounded_rewrite_history(history: list[Any]) -> list[dict[str, str]]:
+    conversation: list[dict[str, str]] = []
+    token_count = 0
+    for message in reversed(history):
+        role = str(getattr(message.role, "value", message.role))
+        content = message.content
+        round_role = getattr(message, "round_role", None)
+        round_role = getattr(round_role, "value", round_role)
+        round_status = getattr(message, "round_status", None)
+        round_status = getattr(round_status, "value", round_status)
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        if role == "assistant" and (
+            round_status == MessageRoundStatus.ERROR.value
+            or round_role not in {None, MessageRoundRole.ASSISTANT_FINAL.value}
+            or not getattr(message, "is_round_canonical", True)
+        ):
+            break
+        content = content.strip()
+        if not content:
+            continue
+        message_tokens = count_tokens(content)
+        if token_count + message_tokens > _REWRITE_HISTORY_TOKENS:
+            break
+        conversation.append({"role": role, "content": content})
+        token_count += message_tokens
+        if len(conversation) == _REWRITE_HISTORY_MESSAGES:
+            break
+    conversation.reverse()
+    return conversation
+
+
+async def contextualize_retrieval_query(
+    agent: "Agent", query: str, history: list[Any] | None
+) -> ContextualizedQuery:
+    """Best-effort standalone query rewrite for conversational AUTO retrieval."""
+    if not settings.RAG_QUERY_CONTEXTUALIZATION_ENABLED:
+        return ContextualizedQuery(query, "disabled")
+    if not history or not should_contextualize_query(query):
+        return ContextualizedQuery(query, "not_needed")
+    if not agent.model_id or not agent.team_id:
+        return ContextualizedQuery(query, "fallback")
+
+    conversation = _bounded_rewrite_history(history)
+    if not conversation:
+        return ContextualizedQuery(query, "not_needed")
+
+    from app.llm import model_manager
+    from app.models.model import TeamModel
+
+    try:
+        team_model = (
+            await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+        )
+        if not team_model:
+            return ContextualizedQuery(query, "fallback")
+        response = await asyncio.wait_for(
+            model_manager.team_chat(
+                team_id=str(agent.team_id),
+                model_id=str(team_model.model.id),
+                messages=[
+                    {"role": "system", "content": _REWRITE_PROMPT},
+                    *conversation,
+                    {"role": "user", "content": query},
+                ],
+            ),
+            timeout=settings.RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS,
+        )
+        payload = json.loads(response.content or "")
+        if set(payload) != {"query", "evidence"}:
+            return ContextualizedQuery(query, "fallback")
+        rewritten = payload["query"]
+        evidence = payload["evidence"]
+        history_text = "\n".join(message["content"] for message in conversation)
+        if (
+            not isinstance(rewritten, str)
+            or not rewritten.strip()
+            or not isinstance(evidence, str)
+            or not evidence.strip()
+            or evidence not in history_text
+            or rewritten.strip() != f"{evidence} {query}"
+        ):
+            return ContextualizedQuery(query, "fallback")
+        return ContextualizedQuery(rewritten.strip(), "rewritten")
+    except Exception as exc:
+        logger.warning(
+            "RAG query contextualization failed category=%s",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return ContextualizedQuery(query, "fallback")
+
+
+async def perform_rag_retrieval(
+    agent: "Agent", query: str, history: list[Any] | None = None
+) -> list[dict[str, Any]]:
     """Perform RAG retrieval from knowledge bases.
 
     Args:
@@ -22,52 +163,68 @@ async def perform_rag_retrieval(agent: "Agent", query: str) -> list[dict[str, An
         List of retrieval results with kb_id, kb_name, document_id, document_name, content, score
     """
     from app.models.agent import AgentKnowledgeBase
-    from app.services.vector_store import VectorStore
 
-    rag_contexts: list[dict[str, Any]] = []
-
-    # Get knowledge base associations
     kb_associations = await AgentKnowledgeBase.filter(
         agent_id=agent.id
     ).prefetch_related("knowledge_base")
+    targets = tuple(
+        RetrievalTarget(
+            kb_id=association.knowledge_base.id,
+            kb_name=association.knowledge_base.name,
+            team_id=association.knowledge_base.team_id,
+            status=association.knowledge_base.status,
+            embedding_model_id=association.knowledge_base.embedding_model_id,
+            rerank_model_id=association.knowledge_base.rerank_model_id,
+            settings=association.knowledge_base.settings,
+            search_mode=validated_search_mode(association.search_mode),
+            top_k=association.retrieval_top_k,
+            score_threshold=association.score_threshold,
+        )
+        for association in kb_associations
+    )
+    if not targets:
+        return []
 
-    for akb in kb_associations:
-        kb = akb.knowledge_base
-
-        # Skip if KB has no embedding model
-        if not kb.embedding_model_id:
-            continue
-
-        try:
-            vector_store = VectorStore(
-                embedding_model_id=str(kb.embedding_model_id),
-                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
-                team_id=str(kb.team_id),
+    contextualized = await contextualize_retrieval_query(agent, query, history)
+    logger.info(
+        "RAG query contextualization status=%s",
+        contextualized.status,
+    )
+    try:
+        response = await retrieve(
+            RetrievalRequest(
+                query=contextualized.query,
+                targets=targets,
+                top_k=max(target.top_k or 1 for target in targets),
             )
+        )
+    except RetrievalError as exc:
+        logger.warning(
+            "Optional AUTO RAG retrieval failed category=%s",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return []
+    except Exception as exc:
+        logger.warning(
+            "Optional AUTO RAG retrieval failed category=%s",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return []
 
-            results = await vector_store.search(
-                kb_id=kb.id,
-                query=query,
-                search_mode=akb.search_mode,
-                top_k=akb.retrieval_top_k,
-                score_threshold=akb.score_threshold,
-            )
-
-            for result in results:
-                rag_contexts.append(
-                    {
-                        "kb_id": str(kb.id),
-                        "kb_name": kb.name,
-                        "document_id": str(result.get("document_id")),
-                        "document_name": result.get("document_name"),
-                        "content": result.get("content"),
-                        "score": result.get("score"),
-                    }
-                )
-        except Exception as e:
-            logger.warning(f"RAG retrieval failed for KB {kb.id}: {e}")
-
-    return rag_contexts
+    return [
+        {
+            "kb_id": result["kb_id"],
+            "kb_name": result["kb_name"],
+            "document_id": str(result.get("document_id")),
+            "document_name": result.get("document_name"),
+            "content": result.get("content"),
+            "score": result.get("score"),
+            "metadata": result.get("metadata") or {},
+        }
+        for result in response.results
+    ]
 
 
 def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -94,6 +251,7 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
             idx = index_map[key]
             if ctx.get("content"):
                 aggregated[idx]["content_parts"].append(ctx.get("content"))
+            aggregated[idx]["metadata"].append(ctx.get("metadata") or {})
             score = ctx.get("score")
             if isinstance(score, (int, float)):
                 existing_score = aggregated[idx].get("score")
@@ -113,6 +271,7 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
                 "document_id": ctx.get("document_id"),
                 "document_name": ctx.get("document_name"),
                 "score": ctx.get("score"),
+                "metadata": [ctx.get("metadata") or {}],
                 "content_parts": [ctx.get("content")] if ctx.get("content") else [],
             }
         )

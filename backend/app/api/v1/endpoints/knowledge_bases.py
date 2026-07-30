@@ -12,7 +12,9 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
 from fastapi.responses import FileResponse
+from starlette.responses import Response as StarletteResponse
 from tortoise.expressions import F
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.core.i18n import has_translation, t
@@ -51,6 +53,8 @@ from app.schemas.knowledge_base import (
     RechunkRequest,
     SearchRequest,
     SearchResponse,
+    SearchBatchRequest,
+    SearchBatchResponse,
     ChunkPreviewRequest,
     ChunkPreviewResponse,
     ChunkPreviewItem,
@@ -63,6 +67,10 @@ from app.schemas.response import (
     success,
 )
 from app.services.document_processor import document_processor
+from app.services.lexical_store import (
+    delete_document as delete_lexical_document,
+    index_chunk as index_lexical_chunk,
+)
 from app.services.upload_storage import get_upload_storage_backend
 from app.services.error_messages import is_safe_user_visible_error
 from app.services.audit_log import AuditLogService
@@ -72,20 +80,80 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def _dispatch_document_task(doc: Document, task_func: Any, *args: str) -> str:
+def _retry_lexical_document(document_id: UUID) -> None:
+    try:
+        from app.tasks.knowledge_base import index_document_lexically_task
+
+        index_document_lexically_task.apply_async(
+            args=(str(document_id),),
+            retry=True,
+            retry_policy={"max_retries": 3, "interval_start": 1},
+        )
+    except Exception:
+        logger.exception(
+            "Failed to dispatch lexical repair for document %s", document_id
+        )
+
+
+async def _dispatch_document_task(
+    doc: Document,
+    task_func: Any,
+    *args: str,
+    status: str,
+    metadata_updates: dict[str, Any] | None = None,
+) -> str:
     task_id = str(uuid4())
-    doc.metadata = doc.metadata or {}
-    doc.metadata["task_id"] = task_id
-    doc.metadata["task_name"] = task_func.name
-    doc.metadata["task_args"] = list(args)
-    await doc.save()
+    previous_status = doc.status
+    previous_error = doc.error_message
+    previous_metadata = dict(doc.metadata or {})
+    async with in_transaction() as connection:
+        locked_doc = (
+            await Document.filter(id=doc.id)
+            .using_db(connection)
+            .select_for_update()
+            .get()
+        )
+        metadata = dict(locked_doc.metadata or {})
+        if metadata_updates:
+            metadata.update(metadata_updates)
+        metadata.update(
+            {
+                "task_id": task_id,
+                "task_name": task_func.name,
+                "task_args": list(args),
+            }
+        )
+        locked_doc.metadata = metadata
+        locked_doc.status = status
+        locked_doc.error_message = None
+        await locked_doc.save(
+            using_db=connection,
+            update_fields=["metadata", "status", "error_message"],
+        )
+    doc.metadata = metadata
+    doc.status = status
+    doc.error_message = None
     try:
         task_func.apply_async(args=args, task_id=task_id)
     except Exception:
-        doc.metadata.pop("task_id", None)
-        doc.metadata.pop("task_name", None)
-        doc.metadata.pop("task_args", None)
-        await doc.save(update_fields=["metadata"])
+        async with in_transaction() as connection:
+            owned_doc = (
+                await Document.filter(id=doc.id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            if (owned_doc.metadata or {}).get("task_id") == task_id:
+                owned_doc.metadata = previous_metadata
+                owned_doc.status = previous_status
+                owned_doc.error_message = previous_error
+                await owned_doc.save(
+                    using_db=connection,
+                    update_fields=["metadata", "status", "error_message"],
+                )
+                doc.metadata = previous_metadata
+                doc.status = previous_status
+                doc.error_message = previous_error
         raise
     return task_id
 
@@ -180,6 +248,15 @@ async def require_kb_read(
     user = await require_kb_permission(request, current_user)
     if _kb_access_mode.get() == "admin":
         _require_kb_action(user, "read")
+    return user
+
+
+async def require_kb_test(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> User:
+    user = await require_kb_permission(request, current_user)
+    _require_kb_action(user, "test")
     return user
 
 
@@ -1012,7 +1089,7 @@ async def download_document(
     kb_id: UUID,
     doc_id: UUID,
     current_user: User = Depends(require_kb_read),
-) -> FileResponse:
+) -> StarletteResponse:
     """
     Download the original document file.
     """
@@ -1140,28 +1217,33 @@ async def process_document(
             msg_key="document_not_pending",
         )
 
-    # Store chunk settings in document metadata for processing
-    doc.metadata = doc.metadata or {}
+    metadata_updates: dict[str, Any] = {}
     if process_in is not None:
         if process_in.chunk_size is not None:
-            doc.metadata["chunk_size"] = process_in.chunk_size
+            metadata_updates["chunk_size"] = process_in.chunk_size
         if process_in.chunk_overlap is not None:
-            doc.metadata["chunk_overlap"] = process_in.chunk_overlap
+            metadata_updates["chunk_overlap"] = process_in.chunk_overlap
         if process_in.separator is not None:
-            doc.metadata["separator"] = process_in.separator
+            metadata_updates["separator"] = process_in.separator
         if process_in.clean_text is not None:
-            doc.metadata["clean_text"] = process_in.clean_text
-    doc.status = DocumentStatus.PROCESSING.value
-    doc.error_message = None  # type: ignore[assignment]
-    await doc.save()
+            metadata_updates["clean_text"] = process_in.clean_text
 
-    # Trigger async document processing task
     try:
         from app.tasks.knowledge_base import process_document_task
 
-        await _dispatch_document_task(doc, process_document_task, str(doc.id))
-    except Exception:
-        logger.warning("Celery task not dispatched - worker may not be running")
+        await _dispatch_document_task(
+            doc,
+            process_document_task,
+            str(doc.id),
+            status=DocumentStatus.PROCESSING.value,
+            metadata_updates=metadata_updates,
+        )
+    except Exception as exc:
+        logger.exception("Celery document task publication failed")
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="task_dispatch_failed",
+        ) from exc
 
     await AuditLogService.log(
         user=current_user,
@@ -1203,7 +1285,7 @@ async def process_document_with_chunks(
     This bypasses the server-side chunking process, allowing users to have full
     control over how their documents are segmented.
     """
-    await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -1231,8 +1313,9 @@ async def process_document_with_chunks(
         except Exception:
             pass
 
-    # Delete existing vectors for reprocessing (if document was completed)
+    # Delete existing external index records before replacing authoritative chunks.
     if doc.status == DocumentStatus.COMPLETED.value:
+        await delete_lexical_document(doc.id, kb.team_id)
         try:
             from app.services.vector_store import vector_store
 
@@ -1289,7 +1372,10 @@ async def process_document_with_chunks(
 
             logger.info(f"Dispatching embed_document_chunks_task for document {doc.id}")
             task_id = await _dispatch_document_task(
-                doc, embed_document_chunks_task, str(doc.id)
+                doc,
+                embed_document_chunks_task,
+                str(doc.id),
+                status=DocumentStatus.PROCESSING.value,
             )
             logger.info(f"Task dispatched successfully, task_id: {task_id}")
         except Exception as e:
@@ -1442,7 +1528,7 @@ async def reprocess_document(
     """
     Reprocess a document (re-chunk and re-embed).
     """
-    await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -1465,6 +1551,9 @@ async def reprocess_document(
         except Exception as e:
             logger.warning(f"Failed to revoke old task {old_task_id}: {e}")
 
+    # Remove old lexical data before asynchronous reprocessing replaces chunks.
+    await delete_lexical_document(doc.id, kb.team_id)
+
     # Reset status
     doc.status = DocumentStatus.PENDING.value
     doc.error_message = None  # type: ignore[assignment]
@@ -1474,7 +1563,12 @@ async def reprocess_document(
     try:
         from app.tasks.knowledge_base import reprocess_document_task
 
-        await _dispatch_document_task(doc, reprocess_document_task, str(doc.id))
+        await _dispatch_document_task(
+            doc,
+            reprocess_document_task,
+            str(doc.id),
+            status=DocumentStatus.PENDING.value,
+        )
     except Exception:
         import logging
 
@@ -1550,7 +1644,12 @@ async def retry_failed_chunks(
     try:
         from app.tasks.knowledge_base import retry_failed_chunks_task
 
-        await _dispatch_document_task(doc, retry_failed_chunks_task, str(doc.id))
+        await _dispatch_document_task(
+            doc,
+            retry_failed_chunks_task,
+            str(doc.id),
+            status=DocumentStatus.PROCESSING.value,
+        )
     except Exception:
         import logging
 
@@ -1626,7 +1725,11 @@ async def retry_failed_chunk(
         from app.tasks.knowledge_base import retry_failed_chunk_task
 
         await _dispatch_document_task(
-            doc, retry_failed_chunk_task, str(doc.id), str(chunk.id)
+            doc,
+            retry_failed_chunk_task,
+            str(doc.id),
+            str(chunk.id),
+            status=DocumentStatus.PROCESSING.value,
         )
     except Exception:
         logger.warning("Celery task not dispatched - worker may not be running")
@@ -1730,33 +1833,51 @@ async def update_document_chunk(
             status_code=404,
         )
 
-    old_token_count = chunk.token_count
-    chunk.content = chunk_in.content
+    new_token_count = len(chunk_in.content) // 4
+    token_diff = new_token_count - chunk.token_count
+    embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
+    team_id = str(kb.team_id) if kb.team_id else None
+    vector_store = VectorStore(
+        embedding_model_id=embedding_model_id,
+        team_id=team_id,
+    )
 
-    # Recalculate token count
-    new_token_count = len(chunk_in.content) // 4  # Simple estimate
-    chunk.token_count = new_token_count
-    await chunk.save()
-
-    # Update document and KB token counts
-    token_diff = new_token_count - old_token_count
-    doc.token_count += token_diff
-    await doc.save()
-
-    kb.total_tokens += token_diff
-    await kb.save()
-
-    # Update vector embedding
+    vector_updated = False
+    old_content = chunk.content
     try:
-        embedding_model_id = (
-            str(kb.embedding_model_id) if kb.embedding_model_id else None
-        )
-        team_id = str(kb.team_id) if kb.team_id else None
-        vector_store = VectorStore(
-            embedding_model_id=embedding_model_id,
-            team_id=team_id,
-        )
-        await vector_store.update_chunk_vector(chunk, kb_id=kb.id)
+        async with in_transaction() as connection:
+            await (
+                Document.filter(id=doc_id, knowledge_base_id=kb_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            locked_chunk = (
+                await DocumentChunk.filter(id=chunk_id, document_id=doc_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            old_content = locked_chunk.content
+            token_diff = new_token_count - locked_chunk.token_count
+            locked_chunk.content = chunk_in.content
+            locked_chunk.token_count = new_token_count
+            if not await vector_store.update_chunk_vector(
+                locked_chunk, kb_id=kb.id, using_db=connection
+            ):
+                raise RuntimeError("Vector update failed")
+            vector_updated = True
+            await (
+                Document.filter(id=doc_id)
+                .using_db(connection)
+                .update(token_count=F("token_count") + token_diff)
+            )
+            await (
+                KnowledgeBase.filter(id=kb_id)
+                .using_db(connection)
+                .update(total_tokens=F("total_tokens") + token_diff)
+            )
+            chunk = locked_chunk
     except DimensionMismatchError as e:
         logger.warning("Dimension mismatch for chunk %s: %s", chunk_id, e)
         raise BusinessError(
@@ -1764,14 +1885,35 @@ async def update_document_chunk(
             msg_key="kb_embedding_dimension_mismatch",
         )
     except Exception as e:
+        if vector_updated:
+            try:
+                await vector_store.restore_chunk_vector(
+                    chunk_id=chunk_id,
+                    document_id=doc_id,
+                    content=old_content,
+                    kb_id=kb_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to restore vector projection for chunk %s after rollback",
+                    chunk_id,
+                )
         logger.error(
-            f"Failed to update vector embedding for chunk {chunk_id}: {e}",
+            "Failed to update vector embedding for chunk %s: %s",
+            chunk_id,
+            e,
             exc_info=True,
         )
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_update_failed",
-        )
+        ) from e
+
+    try:
+        await index_lexical_chunk(chunk.id)
+    except Exception:
+        logger.exception("Failed to index updated chunk %s lexically", chunk.id)
+        _retry_lexical_document(doc.id)
 
     await AuditLogService.log(
         user=current_user,
@@ -1820,38 +1962,61 @@ async def delete_document_chunk(
             status_code=404,
         )
 
-    chunk_index = chunk.chunk_index
-    chunk_token_count = chunk.token_count
+    async with in_transaction() as connection:
+        locked_doc = (
+            await Document.filter(id=doc_id, knowledge_base_id=kb_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        locked_chunk = (
+            await DocumentChunk.filter(id=chunk_id, document_id=doc_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        if not locked_doc or not locked_chunk:
+            raise BusinessError(
+                code=ResponseCode.CHUNK_NOT_FOUND,
+                msg_key="chunk_not_found",
+                status_code=404,
+            )
+        chunk_index = locked_chunk.chunk_index
+        chunk_token_count = locked_chunk.token_count
+        await locked_chunk.delete(using_db=connection)
+        await (
+            DocumentChunk.filter(document_id=doc_id, chunk_index__gt=chunk_index)
+            .using_db(connection)
+            .update(chunk_index=F("chunk_index") - 1)
+        )
+        await (
+            Document.filter(id=doc_id)
+            .using_db(connection)
+            .update(
+                chunk_count=F("chunk_count") - 1,
+                token_count=F("token_count") - chunk_token_count,
+            )
+        )
+        await (
+            KnowledgeBase.filter(id=kb_id)
+            .using_db(connection)
+            .update(
+                total_chunks=F("total_chunks") - 1,
+                total_tokens=F("total_tokens") - chunk_token_count,
+            )
+        )
 
-    # Delete vector
     try:
         embedding_model_id = (
             str(kb.embedding_model_id) if kb.embedding_model_id else None
         )
         vector_store = VectorStore(embedding_model_id=embedding_model_id)
-        await vector_store.delete_chunk_vector(chunk_id)
-    except Exception as e:
-        import logging
+        await vector_store.delete_chunk_vector(chunk_id, kb_id=kb_id)
+    except Exception:
+        logger.exception("Failed to delete vector projection for chunk %s", chunk_id)
 
-        logging.warning(f"Failed to delete vector: {e}")
-
-    # Update statistics
-    kb.total_chunks = max(0, kb.total_chunks - 1)
-    kb.total_tokens = max(0, kb.total_tokens - chunk_token_count)
-    await kb.save()
-
-    doc.chunk_count = max(0, doc.chunk_count - 1)
-    doc.token_count = max(0, doc.token_count - chunk_token_count)
-    await doc.save()
-
-    # Delete chunk
-    deleted_index = chunk.chunk_index
-    await chunk.delete()
-
-    # Reindex remaining chunks with a single bulk update
-    await DocumentChunk.filter(
-        document_id=doc_id, chunk_index__gt=deleted_index
-    ).update(chunk_index=F("chunk_index") - 1)
+    if doc.status == DocumentStatus.COMPLETED.value:
+        _retry_lexical_document(doc.id)
 
     await AuditLogService.log(
         user=current_user,
@@ -1895,56 +2060,87 @@ async def create_document_chunk(
             status_code=404,
         )
 
-    # Determine chunk index
-    existing_chunks = await DocumentChunk.filter(document_id=doc_id).order_by(
-        "chunk_index"
-    )
-
-    if after_index is not None:
-        new_index = after_index + 1
-        # Shift subsequent chunks
-        for chunk in existing_chunks:
-            if chunk.chunk_index >= new_index:
-                chunk.chunk_index += 1
-                await chunk.save()
-    else:
-        new_index = len(existing_chunks)
-
-    # Calculate token count
     token_count = len(chunk_in.content) // 4
-
-    # Create chunk
-    chunk = await DocumentChunk.create(
-        document=doc,
-        content=chunk_in.content,
-        chunk_index=new_index,
-        token_count=token_count,
+    embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
+    team_id = str(kb.team_id) if kb.team_id else None
+    vector_store = VectorStore(
+        embedding_model_id=embedding_model_id,
+        team_id=team_id,
     )
 
-    # Update statistics
-    doc.chunk_count += 1
-    doc.token_count += token_count
-    await doc.save()
-
-    kb.total_chunks += 1
-    kb.total_tokens += token_count
-    await kb.save()
-
-    # Create vector embedding
+    vector_created = False
+    chunk: DocumentChunk | None = None
     try:
-        embedding_model_id = (
-            str(kb.embedding_model_id) if kb.embedding_model_id else None
-        )
-        team_id = str(kb.team_id) if kb.team_id else None
-        vector_store = VectorStore(
-            embedding_model_id=embedding_model_id,
-            team_id=team_id,
-        )
-        await vector_store.add_chunk_vector(kb_id, chunk)
+        async with in_transaction() as connection:
+            await (
+                Document.filter(id=doc_id)
+                .using_db(connection)
+                .select_for_update()
+                .get()
+            )
+            existing_count = await (
+                DocumentChunk.filter(document_id=doc_id).using_db(connection).count()
+            )
+            new_index = after_index + 1 if after_index is not None else existing_count
+            await (
+                DocumentChunk.filter(document_id=doc_id, chunk_index__gte=new_index)
+                .using_db(connection)
+                .update(chunk_index=F("chunk_index") + 1)
+            )
+            chunk = await DocumentChunk.create(
+                document_id=doc_id,
+                content=chunk_in.content,
+                chunk_index=new_index,
+                token_count=token_count,
+                using_db=connection,
+            )
+            await vector_store.add_chunk_vector(kb_id, chunk, using_db=connection)
+            vector_created = True
+            chunk.status = "embedded"
+            chunk.error_message = None
+            await chunk.save(
+                using_db=connection,
+                update_fields=["status", "error_message"],
+            )
+            await (
+                Document.filter(id=doc_id)
+                .using_db(connection)
+                .update(
+                    chunk_count=F("chunk_count") + 1,
+                    token_count=F("token_count") + token_count,
+                )
+            )
+            await (
+                KnowledgeBase.filter(id=kb_id)
+                .using_db(connection)
+                .update(
+                    total_chunks=F("total_chunks") + 1,
+                    total_tokens=F("total_tokens") + token_count,
+                )
+            )
     except Exception as e:
-        import logging
+        if vector_created and chunk is not None:
+            try:
+                await vector_store.delete_chunk_vector(chunk.id, kb_id=kb_id)
+            except Exception:
+                logger.exception(
+                    "Failed to delete vector projection for rolled-back chunk %s",
+                    chunk.id,
+                )
+        logger.exception("Failed to embed new chunk")
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="vector_update_failed",
+        ) from e
 
-        logging.warning(f"Failed to create vector embedding: {e}")
+    assert chunk is not None
+
+    if doc.status == DocumentStatus.COMPLETED.value:
+        try:
+            await index_lexical_chunk(chunk.id)
+        except Exception:
+            logger.exception("Failed to index new chunk %s lexically", chunk.id)
+            _retry_lexical_document(doc.id)
 
     await AuditLogService.log(
         user=current_user,
@@ -1977,7 +2173,7 @@ async def rechunk_document(
     Re-chunk a document with new chunking settings.
     This will delete all existing chunks and create new ones.
     """
-    await check_kb_access(kb_id, current_user, require_write=True)
+    kb = await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -2003,6 +2199,9 @@ async def rechunk_document(
         except Exception:
             pass
 
+    # Remove old lexical data before asynchronous rechunking replaces chunks.
+    await delete_lexical_document(doc.id, kb.team_id)
+
     # Store the rechunk settings in document metadata
     if not doc.metadata:
         doc.metadata = {}
@@ -2019,7 +2218,19 @@ async def rechunk_document(
     try:
         from app.tasks.knowledge_base import rechunk_document_task
 
-        await _dispatch_document_task(doc, rechunk_document_task, str(doc.id))
+        await _dispatch_document_task(
+            doc,
+            rechunk_document_task,
+            str(doc.id),
+            status=DocumentStatus.PENDING.value,
+            metadata_updates={
+                "rechunk_settings": {
+                    "chunk_size": rechunk_in.chunk_size,
+                    "chunk_overlap": rechunk_in.chunk_overlap,
+                    "separator": rechunk_in.separator,
+                }
+            },
+        )
     except Exception:
         import logging
 
@@ -2050,11 +2261,170 @@ async def rechunk_document(
 # ============ Search ============
 
 
+_RETRIEVAL_ERROR_CATEGORIES = {
+    "AuthenticationError": "provider_authentication",
+    "RateLimitError": "quota_or_rate_limit",
+    "InsufficientQuotaError": "quota_or_rate_limit",
+    "QuotaExceededError": "quota_or_rate_limit",
+    "ModelNotFoundError": "model_configuration",
+    "ModelDisabledError": "model_configuration",
+    "InvalidRequestError": "model_configuration",
+    "UnsupportedOperationError": "model_configuration",
+    "LexicalStoreError": "lexical_unavailable",
+    "BulkIndexError": "lexical_unavailable",
+    "ProviderError": "provider_unavailable",
+    "VectorSearchUnavailableError": "provider_unavailable",
+    "TimeoutError": "provider_unavailable",
+}
+
+
+def _retrieval_exception_tokens(diagnostics: tuple[Any, ...]) -> tuple[str, ...]:
+    tokens = []
+    for diagnostic in diagnostics:
+        if not diagnostic.detail:
+            continue
+        for value in diagnostic.detail.split("; "):
+            _, separator, classified = value.partition("=")
+            tokens.append(classified if separator else value)
+    return tuple(tokens)
+
+
+def _retrieval_error_category(tokens: tuple[str, ...]) -> str:
+    categories = {_RETRIEVAL_ERROR_CATEGORIES.get(token) for token in tokens}
+    if len(categories) != 1 or None in categories:
+        return "unknown"
+    return categories.pop() or "unknown"
+
+
+def _retrieval_response_code(category: str, tokens: tuple[str, ...]) -> ResponseCode:
+    if category == "provider_authentication":
+        return ResponseCode.MODEL_NOT_AUTHORIZED
+    if category == "quota_or_rate_limit":
+        if set(tokens) == {"RateLimitError"}:
+            return ResponseCode.RATE_LIMITED
+        return ResponseCode.MODEL_QUOTA_EXCEEDED
+    if category == "model_configuration" and set(tokens) == {"ModelNotFoundError"}:
+        return ResponseCode.MODEL_NOT_FOUND
+    if category == "configuration_mismatch":
+        return ResponseCode.VALIDATION_ERROR
+    return ResponseCode.UNKNOWN_ERROR
+
+
+def _retrieval_request(kb: KnowledgeBase, query: str, configuration: Any):
+    from app.services.retrieval import (
+        RetrievalRequest,
+        RetrievalTarget,
+        validated_search_mode,
+    )
+
+    rerank_fields = {
+        "rerank_enabled",
+        "rerank_candidate_k",
+        "rerank_score_threshold",
+    }
+    rerank_overrides = {
+        field_name: getattr(configuration, field_name)
+        for field_name in rerank_fields
+        if field_name in configuration.model_fields_set
+    }
+    return RetrievalRequest(
+        query=query,
+        targets=(
+            RetrievalTarget(
+                kb_id=kb.id,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                status=kb.status,
+                embedding_model_id=kb.embedding_model_id,
+                rerank_model_id=kb.rerank_model_id,
+                embedding_dimension=kb.embedding_dimension,
+                settings=None,
+                document_ids=(
+                    frozenset(configuration.filter_doc_ids)
+                    if configuration.filter_doc_ids
+                    else None
+                ),
+            ),
+        ),
+        search_mode=validated_search_mode(configuration.search_mode),
+        top_k=configuration.top_k,
+        score_threshold=configuration.score_threshold,
+        dense_weight=configuration.dense_weight,
+        lexical_weight=configuration.lexical_weight,
+        rrf_k=configuration.rrf_k,
+        rerank_overrides=rerank_overrides or None,
+    )
+
+
+def _retrieval_batch_error(error: BaseException) -> dict[str, Any]:
+    from app.services.retrieval import RetrievalError
+
+    diagnostics = error.diagnostics if isinstance(error, RetrievalError) else ()
+    tokens = _retrieval_exception_tokens(diagnostics)
+    if isinstance(error, DimensionMismatchError):
+        tokens = (DimensionMismatchError.__name__,)
+    category = (
+        "configuration_mismatch"
+        if DimensionMismatchError.__name__ in tokens
+        else _retrieval_error_category(tokens)
+    )
+    return {
+        "code": int(_retrieval_response_code(category, tokens)),
+        "retrieval_error_category": category,
+        "stage": diagnostics[0].stage if diagnostics else None,
+    }
+
+
+@router.post("/{kb_id}/search/batch", response_model=Response[SearchBatchResponse])
+async def search_knowledge_base_batch(
+    kb_id: UUID,
+    search_in: SearchBatchRequest,
+    current_user: User = Depends(require_kb_test),
+) -> Any:
+    """Search independent configurations with request-scoped embedding reuse."""
+    from app.services.retrieval import RetrievalResponse, retrieve_many
+
+    kb = await check_kb_access(kb_id, current_user)
+    requests = tuple(
+        _retrieval_request(kb, search_in.query, configuration)
+        for configuration in search_in.configurations
+    )
+    results = await retrieve_many(requests)
+    outcomes = []
+    for configuration, result in zip(search_in.configurations, results, strict=True):
+        if isinstance(result, RetrievalResponse):
+            outcomes.append(
+                {
+                    "id": configuration.id,
+                    "status": "fulfilled",
+                    "response": {
+                        "query": search_in.query,
+                        "results": result.results,
+                        "total": len(result.results),
+                        "diagnostics": result.diagnostics,
+                        "timings": result.timings,
+                    },
+                }
+            )
+        else:
+            outcomes.append(
+                {
+                    "id": configuration.id,
+                    "status": "rejected",
+                    "error": _retrieval_batch_error(result),
+                }
+            )
+    return success(
+        data={"query": search_in.query, "outcomes": outcomes},
+        msg_key="search_completed",
+    )
+
+
 @router.post("/{kb_id}/search", response_model=Response[SearchResponse])
 async def search_knowledge_base(
     kb_id: UUID,
     search_in: SearchRequest,
-    current_user: User = Depends(require_kb_read),
+    current_user: User = Depends(require_kb_test),
 ) -> Any:
     """
     Search the knowledge base.
@@ -2068,46 +2438,61 @@ async def search_knowledge_base(
     """
     kb = await check_kb_access(kb_id, current_user)
 
-    # Get embedding model and team ID from KB for usage tracking
-    embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
-    team_id = str(kb.team_id) if kb.team_id else None
-    vector_store = VectorStore(
-        embedding_model_id=embedding_model_id,
-        rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
-        team_id=team_id,
-    )
-
-    rerank_override_fields = {
-        "rerank_enabled",
-        "rerank_candidate_k",
-        "rerank_fail_open",
-        "rerank_score_threshold",
-    }
-    rerank_overrides = {
-        field_name: getattr(search_in, field_name)
-        for field_name in rerank_override_fields
-        if field_name in search_in.model_fields_set
-    }
-
     # Perform search
     try:
-        results = await vector_store.search(
-            kb_id=kb_id,
-            query=search_in.query,
-            search_mode=search_in.search_mode,
-            top_k=search_in.top_k,
-            score_threshold=search_in.score_threshold,
-            filter_doc_ids=search_in.filter_doc_ids,
-            rerank_overrides=rerank_overrides or None,
+        from app.services.retrieval import (
+            RetrievalError,
+            retrieve,
         )
-    except DimensionMismatchError as e:
-        logger.warning("Dimension mismatch during KB search: %s", e)
+
+        response = await retrieve(_retrieval_request(kb, search_in.query, search_in))
+        results = response.results
+        diagnostics = getattr(response, "diagnostics", ())
+        timings = getattr(response, "timings", ())
+    except (DimensionMismatchError, RetrievalError) as e:
+        diagnostics = e.diagnostics if isinstance(e, RetrievalError) else ()
+        exception_tokens = _retrieval_exception_tokens(diagnostics)
+        dimension_mismatch = (
+            isinstance(e, DimensionMismatchError)
+            or DimensionMismatchError.__name__ in exception_tokens
+        )
+        if dimension_mismatch:
+            logger.warning("Dimension mismatch during KB search")
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="kb_embedding_dimension_mismatch",
+                data={"retrieval_error_category": "configuration_mismatch"},
+            )
+        diagnostic_values = [
+            {
+                "kb_id": str(diagnostic.kb_id),
+                "code": diagnostic.code,
+                "detail": diagnostic.detail,
+                "stage": diagnostic.stage,
+            }
+            for diagnostic in diagnostics
+        ]
+        logger.exception(
+            "Knowledge retrieval failed: kb_id=%s diagnostics=%s",
+            kb_id,
+            diagnostic_values,
+        )
+        category = _retrieval_error_category(exception_tokens)
+        stage = diagnostics[0].stage if diagnostics else None
         raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="kb_embedding_dimension_mismatch",
+            code=_retrieval_response_code(category, exception_tokens),
+            msg_key="vector_search_failed",
+            data={
+                "retrieval_error_category": category,
+                "stage": stage,
+            },
         )
     except Exception as e:
-        logger.exception("Vector search failed: %s", e)
+        logger.exception(
+            "Knowledge retrieval failed: kb_id=%s error=%s",
+            kb_id,
+            type(e).__name__,
+        )
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_search_failed",
@@ -2118,6 +2503,8 @@ async def search_knowledge_base(
             "query": search_in.query,
             "results": results,
             "total": len(results),
+            "diagnostics": diagnostics,
+            "timings": timings,
         },
         msg_key="search_completed",
     )

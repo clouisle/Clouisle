@@ -10,7 +10,7 @@ Clouisle uses **3 Docker images** that run as **5 application services**:
 | `clouisle-sandbox-worker` | `sandbox-worker` | Sandbox task execution and artifact collection |
 | `clouisle-frontend` | `frontend` | Next.js standalone server running with `node server.js` |
 
-Infrastructure dependencies: **PostgreSQL 16**, **Redis 7**, **Qdrant**.
+Infrastructure dependencies are **PostgreSQL 17 with pg_search 0.24.3**, **Redis 7**, and **Qdrant 1.18.3**. `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` is the canonical built-in PostgreSQL image. It is built from `deploy/postgres/Dockerfile` and maintained by Clouisle as an Alpine/musl port.
 
 The API service is named `api` in deployment files. Older docs and scripts may refer to it as `backend`; update those commands to use `api`.
 
@@ -51,6 +51,7 @@ Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_P
 From the project root:
 
 ```bash
+docker build -f deploy/postgres/Dockerfile -t registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1 .
 docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend .
 docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t clouisle-sandbox-worker .
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
@@ -65,7 +66,8 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, and QDRANT_API_KEY.
+# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD,
+# and QDRANT_API_KEY.
 
 docker compose up -d --build
 ```
@@ -86,9 +88,9 @@ IMAGE_TAG=0.1.0
 | `worker` | — | Celery worker for `default,workflow` queues |
 | `sandbox-worker` | — | Celery worker for sandbox queue and artifact upload |
 | `beat` | — | Celery beat scheduler; keep exactly one replica |
-| `db` | 5432 | PostgreSQL 16 |
+| `db` | 5432 | ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
 | `redis` | 6379 | Redis 7 |
-| `qdrant` | 6333 | Qdrant vector database |
+| `qdrant` | 6333 | Qdrant 1.18.3 vector database |
 
 ### Important Internal URLs
 
@@ -175,7 +177,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   -f deploy/helm/clouisle/values-production.yaml
 ```
 
-See `deploy/helm/clouisle/README.md` for external PostgreSQL/Redis/Qdrant examples.
+See `deploy/helm/clouisle/README.md` for external PostgreSQL, Redis, and Qdrant examples.
 
 ### Option B: Single-file manifest
 
@@ -201,7 +203,7 @@ kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
 | 1 | Namespace | `clouisle` |
 | 2 | ConfigMap | Non-sensitive configuration |
 | 3 | Secret | Passwords and keys |
-| 4 | PostgreSQL | StatefulSet + headless Service + PVC |
+| 4 | PostgreSQL | ParadeDB PG17 StatefulSet + headless Service + PVC |
 | 5 | Redis | Deployment + Service |
 | 6 | Qdrant | StatefulSet + headless Service + PVC |
 | 7 | Uploads | Shared `uploads-data` PVC |
@@ -251,6 +253,8 @@ kubectl -n clouisle logs -f deployment/frontend
 | `REDIS_PASSWORD` | Recommended | empty | Redis password |
 | `QDRANT_URL` | Yes | `http://qdrant:6333` | Qdrant URL |
 | `QDRANT_API_KEY` | Recommended | empty | Qdrant API key |
+| `RETRIEVAL_HYBRID_KILL_SWITCH` | No | `false` | Emergency environment override that forces vector-only retrieval |
+| `RETRIEVAL_SHADOW_ENABLED` | No | `false` | Run hybrid retrieval in shadow for rollout-excluded teams; stores IDs, ranks, versions, and latency only |
 | `SANDBOX_WORKER_CONCURRENCY` | No | `1` | Sandbox worker concurrency |
 | `SANDBOX_WORKSPACE_ROOT` | No | `/tmp/clouisle-sandbox/jobs` | Sandbox workspace root |
 | `NEXT_PUBLIC_API_URL` | Yes for frontend build | `/api/v1` | Browser-visible API base path |
@@ -277,10 +281,12 @@ kubectl -n clouisle logs -f deployment/frontend
 - Check worker logs for Redis connection or auth errors.
 - Verify `REDIS_HOST` and `REDIS_PASSWORD`.
 
-**Observability slow queries are unavailable**
-- The built-in Compose and Helm PostgreSQL services start with `shared_preload_libraries=pg_stat_statements` and `pg_stat_statements.track=all`.
-- For an existing PostgreSQL container, restart/recreate the database container after applying the updated command so the preload setting takes effect.
-- For external PostgreSQL, ask the database administrator to enable `pg_stat_statements` in `shared_preload_libraries`, restart PostgreSQL, and allow the application database user to run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` or create the extension manually.
+**PostgreSQL and lexical search prerequisites**
+- Compose, raw Kubernetes, and Helm use `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` by default. This Clouisle-maintained Alpine/musl image requires full amd64 and arm64 qualification whenever Alpine, PostgreSQL, Rust, pgrx, or pg_search changes.
+- Built-in deployments start with `shared_preload_libraries=pg_search,pg_stat_statements` plus `pg_stat_statements.track=all`.
+- External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded. Confirm your organization has approved pg_search's AGPL or commercial license before deployment.
+- Restart PostgreSQL after changing `shared_preload_libraries`; ensure the application database user can create the required extensions or have the database administrator create them.
+- Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migrate with `pg_dump`/restore or `pg_upgrade` during a planned maintenance window before switching images.
 
 **Beat running duplicate schedules**
 - Ensure only one `beat` replica is running.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -46,52 +45,38 @@ async def execute_tool_call(
 
         try:
             from app.models.agent import AgentKnowledgeBase
-            from app.services.vector_store import VectorStore
+            from app.services.retrieval import (
+                RetrievalRequest,
+                RetrievalTarget,
+                retrieve,
+                validated_search_mode,
+            )
 
             query = arguments.get("query", "")
             top_k = arguments.get("top_k", 5)
-            contexts = []
             agent_kbs = await AgentKnowledgeBase.filter(
                 agent_id=agent.id
             ).prefetch_related("knowledge_base")
-
-            search_tasks = []
-            for agent_kb in agent_kbs:
-                kb = agent_kb.knowledge_base
-                vector_store = VectorStore(
-                    embedding_model_id=str(kb.embedding_model_id)
-                    if kb.embedding_model_id
-                    else None,
-                    rerank_model_id=str(kb.rerank_model_id)
-                    if getattr(kb, "rerank_model_id", None)
-                    else None,
-                    team_id=str(kb.team_id) if kb.team_id else None,
+            targets = tuple(
+                RetrievalTarget(
+                    kb_id=link.knowledge_base.id,
+                    kb_name=link.knowledge_base.name,
+                    team_id=link.knowledge_base.team_id,
+                    status=link.knowledge_base.status,
+                    embedding_model_id=link.knowledge_base.embedding_model_id,
+                    rerank_model_id=link.knowledge_base.rerank_model_id,
+                    settings=link.knowledge_base.settings,
+                    search_mode=validated_search_mode(link.search_mode),
+                    score_threshold=link.score_threshold,
                 )
-                search_tasks.append(
-                    vector_store.search(
-                        kb_id=kb.id,
-                        query=query,
-                        search_mode=agent_kb.search_mode,
-                        top_k=top_k,
-                        score_threshold=agent_kb.score_threshold,
-                    )
-                )
-
-            search_results = await asyncio.gather(*search_tasks)
-            for agent_kb, results in zip(agent_kbs, search_results, strict=False):
-                kb = agent_kb.knowledge_base
-                for result in results:
-                    contexts.append(
-                        {
-                            "kb_id": str(kb.id),
-                            "kb_name": kb.name,
-                            "document_id": str(result.get("document_id")),
-                            "document_name": result.get("document_name"),
-                            "content": result.get("content"),
-                            "score": result.get("score"),
-                        }
-                    )
-            return json.dumps({"contexts": contexts}, ensure_ascii=False)
+                for link in agent_kbs
+            )
+            response = await retrieve(
+                RetrievalRequest(query=query, targets=targets, top_k=top_k)
+            )
+            return json.dumps(
+                {"contexts": response.results}, ensure_ascii=False, default=str
+            )
         except Exception as e:
             logger.exception("RAG search failed: %s", e)
             return json.dumps({"error": t("rag_search_failed")})

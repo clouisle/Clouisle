@@ -140,5 +140,19 @@ describe('API client', () => {
       code: 404,
       message: 'The requested resource could not be found',
     })
+
+    const serverError: AxiosAdapter = async (config) => {
+      throw new AxiosError('fake 500', 'ERR_BAD_RESPONSE', config, undefined, {
+        data: 'Internal Server Error',
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: {},
+        config,
+      })
+    }
+    await expect(api.get('/server-error', {
+      adapter: serverError,
+      silent: true,
+    })).rejects.toMatchObject({ code: 500 })
   })
 })

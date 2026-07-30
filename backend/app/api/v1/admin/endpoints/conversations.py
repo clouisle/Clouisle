@@ -5,8 +5,9 @@ Provides administrative access to all conversations across the system.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-from typing import Any
+from collections.abc import Iterable
+from datetime import date, datetime, timedelta
+from typing import Any, TypeVar, TypedDict, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -40,6 +41,25 @@ router = APIRouter()
 # ============ Helper Functions ============
 
 
+FlatValue = TypeVar("FlatValue")
+
+
+class ConversationTrendRow(TypedDict):
+    id: UUID
+    created_at: datetime
+
+
+class MessageTrendRow(TypedDict):
+    created_at: datetime
+    token_usage: dict[str, int] | None
+
+
+def _normalize_flat_values(
+    values: Iterable[FlatValue | tuple[FlatValue]],
+) -> list[FlatValue]:
+    return [value[0] if isinstance(value, tuple) else value for value in values]
+
+
 async def check_team_access(team_id: UUID, user: User) -> Team:
     """Check if user has access to the team."""
     team = await Team.filter(id=team_id).first()
@@ -71,23 +91,30 @@ async def get_user_team_agent_ids(
     if team_id:
         # Verify access to specific team
         await check_team_access(team_id, user)
-        agent_id_rows = await Agent.filter(team_id=team_id).values_list("id", flat=True)
-        agent_ids = [row[0] if isinstance(row, tuple) else row for row in agent_id_rows]
+        agent_id_rows = cast(
+            list[UUID | tuple[UUID]],
+            await Agent.filter(team_id=team_id).values_list("id", flat=True),
+        )
+        agent_ids = _normalize_flat_values(agent_id_rows)
     elif user.is_superuser:
         # Superuser can access all agents
-        agent_id_rows = await Agent.all().values_list("id", flat=True)
-        agent_ids = [row[0] if isinstance(row, tuple) else row for row in agent_id_rows]
+        agent_id_rows = cast(
+            list[UUID | tuple[UUID]],
+            await Agent.all().values_list("id", flat=True),
+        )
+        agent_ids = _normalize_flat_values(agent_id_rows)
     else:
         # Get teams user belongs to
-        membership_rows = await TeamMember.filter(user=user).values_list(
-            "team_id", flat=True
+        membership_rows = cast(
+            list[UUID | tuple[UUID]],
+            await TeamMember.filter(user=user).values_list("team_id", flat=True),
         )
-        memberships = [
-            row[0] if isinstance(row, tuple) else row for row in membership_rows
-        ]
-        agent_ids = await Agent.filter(team_id__in=memberships).values_list(
-            "id", flat=True
+        memberships = _normalize_flat_values(membership_rows)
+        agent_id_rows = cast(
+            list[UUID | tuple[UUID]],
+            await Agent.filter(team_id__in=memberships).values_list("id", flat=True),
         )
+        agent_ids = _normalize_flat_values(agent_id_rows)
 
     return list(agent_ids)
 
@@ -128,12 +155,11 @@ async def list_all_conversations(
     if team_id:
         for current_team_id in team_id:
             await check_team_access(current_team_id, current_user)
-        agent_id_rows = await Agent.filter(team_id__in=team_id).values_list(
-            "id", flat=True
+        agent_id_rows = cast(
+            list[UUID | tuple[UUID]],
+            await Agent.filter(team_id__in=team_id).values_list("id", flat=True),
         )
-        accessible_agent_ids = [
-            row[0] if isinstance(row, tuple) else row for row in agent_id_rows
-        ]
+        accessible_agent_ids = _normalize_flat_values(agent_id_rows)
     else:
         accessible_agent_ids = await get_user_team_agent_ids(current_user)
 
@@ -380,15 +406,21 @@ async def get_conversation_trends(
     if not has_dashboard_access:
         conv_query = conv_query.filter(user_id=current_user.id)
 
-    conversations = await conv_query.values("id", "created_at")
+    conversations = cast(
+        list[ConversationTrendRow],
+        await conv_query.values("id", "created_at"),
+    )
     conversation_ids = [row["id"] for row in conversations]
 
-    message_rows: list[dict[str, Any]] = []
+    message_rows: list[MessageTrendRow] = []
     if conversation_ids:
-        message_rows = await Message.filter(
-            conversation_id__in=conversation_ids,
-            created_at__gte=start_time_utc,
-        ).values("created_at", "token_usage")
+        message_rows = cast(
+            list[MessageTrendRow],
+            await Message.filter(
+                conversation_id__in=conversation_ids,
+                created_at__gte=start_time_utc,
+            ).values("created_at", "token_usage"),
+        )
 
     conv_counts_by_date: dict[date, int] = {}
     for row in conversations:
@@ -397,11 +429,11 @@ async def get_conversation_trends(
 
     msg_counts_by_date: dict[date, int] = {}
     token_counts_by_date: dict[date, int] = {}
-    for row in message_rows:
-        date_key = to_local(row["created_at"]).date()
+    for message_row in message_rows:
+        date_key = to_local(message_row["created_at"]).date()
         msg_counts_by_date[date_key] = msg_counts_by_date.get(date_key, 0) + 1
 
-        token_usage = row["token_usage"] or {}
+        token_usage = message_row["token_usage"] or {}
         token_counts_by_date[date_key] = token_counts_by_date.get(date_key, 0) + (
             (token_usage.get("prompt", 0) or 0)
             + (token_usage.get("completion", 0) or 0)

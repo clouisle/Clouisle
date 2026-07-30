@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -283,9 +283,9 @@ def test_cleanup_old_runs_uses_requested_retention_window():
     with patch(
         "app.models.workflow.WorkflowRun.filter", return_value=query
     ) as filter_runs:
-        before = datetime.utcnow()
+        before = datetime.now(UTC)
         result = cleanup_old_runs.run(10)
-        after = datetime.utcnow()
+        after = datetime.now(UTC)
 
     assert result == {"deleted": 7}
     cutoff = filter_runs.call_args.kwargs["created_at__lt"]

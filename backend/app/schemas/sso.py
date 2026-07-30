@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import ConfigDict, BaseModel, Field, field_validator
 
 # Provider name: lowercase letters, numbers, hyphens, underscores; must start with a letter
 PROVIDER_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
@@ -89,8 +89,7 @@ class SSOProviderPublic(BaseModel):
     button_text: Optional[str]
     protocol: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SSOProviderAdmin(BaseModel):
@@ -111,8 +110,7 @@ class SSOProviderAdmin(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # User SSO Connection Schemas
@@ -130,5 +128,4 @@ class UserSSOConnectionSchema(BaseModel):
     first_login: datetime
     last_login: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

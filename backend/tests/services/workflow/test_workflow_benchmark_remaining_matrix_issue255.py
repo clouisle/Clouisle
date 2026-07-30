@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -57,10 +57,10 @@ def test_status_cancel_and_stats_empty_failed_only_and_single_latency():
         benchmark_id=benchmark_id,
         status=BenchmarkStatus.RUNNING,
         config=BenchmarkConfig(),
-        start_time=datetime.utcnow() - timedelta(seconds=1),
+        start_time=datetime.now(UTC) - timedelta(seconds=1),
         results=[
-            RequestResult("ok", True, 7, datetime.utcnow(), datetime.utcnow()),
-            RequestResult("bad", False, 3, datetime.utcnow(), datetime.utcnow()),
+            RequestResult("ok", True, 7, datetime.now(UTC), datetime.now(UTC)),
+            RequestResult("bad", False, 3, datetime.now(UTC), datetime.now(UTC)),
         ],
     )
 
@@ -73,7 +73,7 @@ def test_status_cancel_and_stats_empty_failed_only_and_single_latency():
     assert bench._cancel_events[benchmark_id].is_set()
 
     empty = BenchmarkResult(
-        "empty", BenchmarkStatus.RUNNING, BenchmarkConfig(), datetime.utcnow()
+        "empty", BenchmarkStatus.RUNNING, BenchmarkConfig(), datetime.now(UTC)
     )
     bench._calculate_stats(empty)
     assert empty.total_requests == 0
@@ -82,14 +82,14 @@ def test_status_cancel_and_stats_empty_failed_only_and_single_latency():
         "failed-only",
         BenchmarkStatus.RUNNING,
         BenchmarkConfig(),
-        datetime.utcnow(),
+        datetime.now(UTC),
         total_duration_seconds=2,
         results=[
             RequestResult(
-                "f1", False, 4, datetime.utcnow(), datetime.utcnow(), error="x" * 80
+                "f1", False, 4, datetime.now(UTC), datetime.now(UTC), error="x" * 80
             ),
             RequestResult(
-                "f2", False, 5, datetime.utcnow(), datetime.utcnow(), error="x" * 80
+                "f2", False, 5, datetime.now(UTC), datetime.now(UTC), error="x" * 80
             ),
         ],
     )
@@ -102,11 +102,11 @@ def test_status_cancel_and_stats_empty_failed_only_and_single_latency():
         "one-success",
         BenchmarkStatus.RUNNING,
         BenchmarkConfig(),
-        datetime.utcnow(),
+        datetime.now(UTC),
         total_duration_seconds=4,
         results=[
             RequestResult(
-                "s", True, 11, datetime.utcnow(), datetime.utcnow(), response_size=8
+                "s", True, 11, datetime.now(UTC), datetime.now(UTC), response_size=8
             )
         ],
     )
@@ -180,7 +180,7 @@ async def test_run_quick_and_compare_reuse_benchmark_paths(monkeypatch, capsys):
             benchmark_id=name,
             status=BenchmarkStatus.COMPLETED,
             config=config or BenchmarkConfig(),
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(UTC),
             total_duration_seconds=1,
             total_requests=2,
             successful_requests=1,

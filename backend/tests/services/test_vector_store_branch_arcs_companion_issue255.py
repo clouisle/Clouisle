@@ -257,7 +257,7 @@ async def test_deletions_skip_remote_cleanup_at_each_boundary(monkeypatch):
         "filter",
         Mock(side_effect=[Query([uuid4()]), Query(deleted=1)]),
     )
-    assert await store.delete_chunk_vector(uuid4()) is True
+    assert await store.delete_chunk_vector(uuid4()) is False
 
     delete_filter.assert_not_awaited()
     delete_points.assert_not_awaited()

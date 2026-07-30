@@ -156,6 +156,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "init_kb_rerank_fields",
         "init_skills_table",
         "init_clouisle_import_sessions_table",
+        "drop_obsolete_retrieval_evaluation_tables",
     ]
     side_effect = RuntimeError("expected") if fail_initializers else None
     initializers = {
@@ -164,6 +165,12 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
     for name, initializer in initializers.items():
         monkeypatch.setattr(init_data_module, name, initializer)
 
+    init_postgres_lexical_search = AsyncMock()
+    monkeypatch.setattr(
+        init_data_module,
+        "init_postgres_lexical_search",
+        init_postgres_lexical_search,
+    )
     init = AsyncMock()
     generate_schemas = AsyncMock()
     close_connections = AsyncMock()
@@ -196,6 +203,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
 
     assert init.await_args.kwargs["db_url"] == "postgres://user:pass@db:5432/clouisle"
     assert all(mock.await_count == 1 for mock in initializers.values())
+    init_postgres_lexical_search.assert_awaited_once()
     init_db.assert_awaited_once()
     assert task.cancelled
     close_connections.assert_awaited_once()

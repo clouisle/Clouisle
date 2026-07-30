@@ -101,6 +101,8 @@ async def lifespan(app: FastAPI):
         init_kb_rerank_fields,
         init_skills_table,
         init_clouisle_import_sessions_table,
+        init_postgres_lexical_search,
+        drop_obsolete_retrieval_evaluation_tables,
     )
 
     try:
@@ -238,8 +240,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Clouisle import sessions table migration failed: {e}")
 
+    try:
+        await drop_obsolete_retrieval_evaluation_tables()
+    except Exception as e:
+        logger.warning(f"Retrieval evaluation table cleanup failed: {e}")
+
     # Generate schemas
     await Tortoise.generate_schemas()
+
+    # pg_search depends on the authoritative knowledge tables above. Detect and
+    # initialize it on the first startup; validate it on every later startup.
+    await init_postgres_lexical_search()
 
     # Initialize default data
     try:
@@ -259,6 +270,10 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await cleanup_task
+
+    from app.services.retrieval import cleanup_background_tasks
+
+    await cleanup_background_tasks()
 
     # Cleanup
     await Tortoise.close_connections()

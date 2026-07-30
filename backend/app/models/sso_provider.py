@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class SSOProvider(models.Model):
     """SSO Provider Configuration"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     name = fields.CharField(
         max_length=100, unique=True, description="Unique provider identifier"
     )

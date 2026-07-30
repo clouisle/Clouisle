@@ -33,6 +33,10 @@ class Query:
         self.ordering = fields
         return self
 
+    def limit(self, value):
+        self.limit_value = value
+        return self
+
     def using_db(self, db):
         self.db = db
         return self
@@ -117,6 +121,16 @@ async def test_visible_queries_apply_optional_filters(monkeypatch):
     assert visible_query.filters[-1][1] == {"created_at__lt": before}
     assert visible_query.excludes == [{"id__in": excluded}]
     assert visible_query.ordering == ("created_at", "id")
+
+    bounded_query = Query([hidden, visible])
+    monkeypatch.setattr(
+        branching.Message, "filter", MagicMock(return_value=bounded_query)
+    )
+    assert await branching.get_visible_conversation_messages(
+        visible.conversation_id, limit=1
+    ) == [visible]
+    assert bounded_query.ordering == ("-created_at", "-id")
+    assert bounded_query.limit_value == 8
 
 
 @pytest.mark.anyio

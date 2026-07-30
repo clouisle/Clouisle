@@ -2574,8 +2574,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "username_exists": {"en": "Username already exists", "zh": "用户名已存在"},
     "validation_error": {"en": "Validation error", "zh": "验证错误"},
     "vector_search_failed": {
-        "en": "Vector search failed: {error}",
-        "zh": "向量搜索失败：{error}",
+        "en": "Knowledge retrieval failed. Please try again.",
+        "zh": "知识检索失败，请稍后重试。",
     },
     "vector_update_failed": {
         "en": "Failed to update vector store",

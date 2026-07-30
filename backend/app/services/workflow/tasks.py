@@ -273,12 +273,12 @@ def check_scheduled_workflows() -> dict:
         Number of workflows triggered
     """
     import asyncio
-    from datetime import datetime
+    from datetime import UTC, datetime
     from croniter import croniter  # type: ignore[import-untyped]
     from app.models.workflow import Workflow, WorkflowStatus, TriggerType
 
     async def check():
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         triggered = 0
 
         # Find workflows with cron triggers
@@ -334,11 +334,11 @@ def cleanup_old_runs(days: int = 30) -> dict:
         Number of runs deleted
     """
     import asyncio
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
     from app.models.workflow import WorkflowRun
 
     async def cleanup():
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         deleted = await WorkflowRun.filter(created_at__lt=cutoff).delete()
         return {"deleted": deleted}
 

@@ -1,66 +1,54 @@
 # Quick Start Guide
 
-Get started with Clouisle in 5 minutes.
+Get started with Clouisle using Docker Compose.
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
+- Docker & Docker Compose
 - 4GB RAM minimum
 - Modern web browser
 
-## Installation
+## 1. Clone the Repository
 
-1. **Clone the repository**:
 ```bash
-git clone https://github.com/your-org/clouisle.git
+git clone https://github.com/clouisle/Clouisle.git
 cd clouisle
 ```
 
-2. **Start infrastructure**:
+## 2. Configure Environment
+
 ```bash
-docker-compose -f deploy/docker-compose.dev.yml up -d
+# Copy the Docker deployment environment file
+cp deploy/.env.example deploy/.env
+
+# Edit deploy/.env with secure random values for:
+#   SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, QDRANT_API_KEY
 ```
 
-3. **Configure environment**:
+## 3. Start Clouisle
+
 ```bash
-cp .env.example .env
-# Edit .env with your settings
+cd deploy
+docker compose --env-file .env up -d
 ```
 
-4. **Start backend**:
-```bash
-cd backend
-uv sync
-uv run uvicorn app.main:app --reload
-```
+## 4. Access the Application
 
-5. **Start frontend**:
-```bash
-cd frontend
-bun install
-bun dev
-```
-
-6. **Access the application**:
-- Frontend: http://localhost:3000
-- API: http://localhost:8000/docs
+- **Frontend**: http://localhost:3000
+- **API Documentation**: http://localhost:8000/docs
 
 ## First Steps
 
-1. Log in with default credentials (see .env)
+1. Log in with the default admin credentials (set in `.env`)
 2. Create your first team
-3. Add a knowledge base
-4. Create an AI agent
-5. Start chatting!
+3. Add an AI model (Settings → Models)
+4. Create a knowledge base and upload documents
+5. Build an AI agent and start chatting
 
 ## Next Steps
 
 - [Basic Concepts](./basic-concepts.md)
+- [Development Setup](./development.md) — for contributors
 - [User Guide](../user-guide/)
 - [Admin Guide](../admin-guide/)
-
----
-
-**Note**: This is a placeholder document. Please update with detailed content.
-
-For more information, see the [main documentation](../README.md).
+- [Deployment Guide](../deployment/DEPLOYMENT.md)

@@ -14,7 +14,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createRequire } from 'node:module'
+import { IntlMessageFormat } from 'intl-messageformat'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -33,9 +33,6 @@ for (const arg of argv) {
 if (positional[0]) sourceLang = positional[0]
 if (positional[1]) i18nDir = resolve(ROOT, positional[1])
 
-// Load intl-messageformat (ESM) via createRequire from script location
-const require = createRequire(resolve(__dirname, 'lint-translations.js'))
-const { IntlMessageFormat } = require('intl-messageformat/index.js')
 
 let errors = 0
 let warnings = 0

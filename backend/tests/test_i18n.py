@@ -13,6 +13,16 @@ def reset_language():
         i18n.current_language.reset(token)
 
 
+def test_retrieval_failure_copy_is_generic_and_fully_rendered():
+    for language, expected in (
+        ("en", "Knowledge retrieval failed. Please try again."),
+        ("zh", "知识检索失败，请稍后重试。"),
+    ):
+        message = i18n.t("vector_search_failed", lang=language)
+        assert message == expected
+        assert "{error}" not in message
+
+
 @pytest.mark.parametrize(
     ("language", "expected"),
     [

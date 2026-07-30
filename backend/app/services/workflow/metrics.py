@@ -8,7 +8,7 @@ including latency, throughput, error rates, and resource utilization.
 import time
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 
 from app.core.redis import get_redis
@@ -397,10 +397,10 @@ class MetricsCollector:
             if time_range_minutes > 0:
                 metrics.runs_per_minute = total_in_range / time_range_minutes
 
-            metrics.start_time = datetime.utcnow() - timedelta(
+            metrics.start_time = datetime.now(UTC) - timedelta(
                 minutes=time_range_minutes
             )
-            metrics.end_time = datetime.utcnow()
+            metrics.end_time = datetime.now(UTC)
 
         except Exception as e:
             logger.warning(f"Get metrics error: {e}")
@@ -590,7 +590,7 @@ class Timer:
         print(f"Duration: {t.duration_ms}ms")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.start_time: float = 0
         self.end_time: float = 0
         self.duration_ms: int = 0

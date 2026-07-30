@@ -2069,7 +2069,6 @@ msgstr "SAML authentication failed"
 
 msgid "verification_email_code_or_token_required"
 msgstr "Either email and code, or token, must be provided"
-msgstr "Provider configuration is valid"
 
 msgid "sso_provider_name_exists"
 msgstr "SSO provider name already exists"
@@ -2465,7 +2464,7 @@ msgid "workflow_media_prompt_required"
 msgstr "Enter a prompt in the media generation node before running the workflow"
 
 msgid "vector_search_failed"
-msgstr "Vector search failed: {error}"
+msgstr "Knowledge retrieval failed. Please try again."
 
 msgid "vector_update_failed"
 msgstr "Failed to update vector store"

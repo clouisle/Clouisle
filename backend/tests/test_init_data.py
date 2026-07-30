@@ -36,6 +36,49 @@ async def test_startup_migration_resets_lock_timeout_after_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_postgres_lexical_search_initializes_and_validates(monkeypatch) -> None:
+    conn = SimpleNamespace(
+        execute_query_dict=AsyncMock(
+            side_effect=[
+                [{"libraries": "pg_search,pg_stat_statements"}],
+                [{"extversion": "0.24.3"}],
+            ]
+        ),
+        execute_query=AsyncMock(),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_postgres_lexical_search()
+
+    queries = [item.args[0] for item in conn.execute_query.await_args_list]
+    migration_queries = [
+        query
+        for query in queries
+        if "document_chunks" in query and "updated_at" in query
+    ]
+    assert len(migration_queries) == 3
+    assert "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ" in migration_queries[0]
+    assert "SET updated_at = created_at" in migration_queries[1]
+    assert "ALTER COLUMN updated_at SET NOT NULL" in migration_queries[2]
+    assert all(query.count(";") <= 1 for query in migration_queries)
+    assert any(
+        "CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks" in q for q in queries
+    )
+    assert any("USING bm25" in q and "pdb.jieba" in q for q in queries)
+
+
+@pytest.mark.asyncio
+async def test_postgres_lexical_search_rejects_missing_preload(monkeypatch) -> None:
+    conn = SimpleNamespace(
+        execute_query_dict=AsyncMock(return_value=[{"libraries": "pg_stat_statements"}])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="pg_search"):
+        await init_data.init_postgres_lexical_search()
+
+
+@pytest.mark.asyncio
 async def test_sync_role_permissions_adds_and_removes_only_differences(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -162,6 +205,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_model_type_unique_constraint",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
+        "drop_obsolete_retrieval_evaluation_tables",
         "init_scoped_role_assignments_table",
         "init_default_settings",
         "migrate_registration_settings_category",
@@ -248,6 +292,7 @@ async def test_init_db_continues_after_optional_migration_failures(
         "init_model_type_unique_constraint",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
+        "drop_obsolete_retrieval_evaluation_tables",
     ]
     for name in optional_names:
         monkeypatch.setattr(
@@ -437,8 +482,10 @@ async def test_scoped_role_assignments_backfills_supported_memberships(
     assert execute.await_count == 5
     statements = [awaited.args[1] for awaited in execute.await_args_list]
     assert "CREATE TABLE IF NOT EXISTS scoped_role_assignments" in statements[0]
-    assert "'user-owner', 'role-admin'" in statements[3]
-    assert "'user-member', 'role-member'" in statements[4]
+    assert "gen_random_uuid(), 'user-owner', 'role-admin'" in statements[3]
+    assert "NOW(), NOW()" in statements[3]
+    assert "gen_random_uuid(), 'user-member', 'role-member'" in statements[4]
+    assert "NOW(), NOW()" in statements[4]
     assert all("user-viewer" not in statement for statement in statements)
     assert all("user-legacy" not in statement for statement in statements)
 

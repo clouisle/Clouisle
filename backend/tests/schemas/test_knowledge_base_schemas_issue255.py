@@ -77,9 +77,17 @@ def test_constants_and_request_defaults():
         "separator": None,
         "rerank_enabled": True,
         "rerank_candidate_k": 10,
-        "rerank_fail_open": True,
         "rerank_score_threshold": None,
+        "search_mode": None,
+        "top_k": None,
+        "score_threshold": None,
+        "dense_weight": None,
+        "lexical_weight": None,
+        "rrf_k": None,
     }
+    with pytest.raises(ValidationError, match="at least one retrieval weight"):
+        KnowledgeBaseSettings(dense_weight=0, lexical_weight=0)
+
     assert RechunkRequest().model_dump() == {
         "chunk_size": 1000,
         "chunk_overlap": 100,
@@ -118,6 +126,16 @@ def test_constants_and_request_defaults():
         (KnowledgeBaseSettings, {"chunk_overlap": -1}),
         (KnowledgeBaseSettings, {"rerank_candidate_k": 101}),
         (KnowledgeBaseSettings, {"rerank_score_threshold": 1.1}),
+        (KnowledgeBaseSettings, {"search_mode": "semantic"}),
+        (KnowledgeBaseSettings, {"top_k": 0}),
+        (KnowledgeBaseSettings, {"score_threshold": 1.1}),
+        (KnowledgeBaseSettings, {"dense_weight": -0.1}),
+        (KnowledgeBaseSettings, {"lexical_weight": -0.1}),
+        (KnowledgeBaseSettings, {"rrf_k": 0}),
+        (
+            KnowledgeBaseSettings,
+            {"search_mode": "hybrid", "dense_weight": 0, "lexical_weight": 0},
+        ),
         (KnowledgeBaseCreate, {"name": "", "team_id": uuid4()}),
         (KnowledgeBaseCreate, {"name": "x" * 101, "team_id": uuid4()}),
         (KnowledgeBaseUpdate, {"description": "x" * 501}),
@@ -134,6 +152,10 @@ def test_constants_and_request_defaults():
         (SearchRequest, {"query": ""}),
         (SearchRequest, {"query": "x", "top_k": 21}),
         (SearchRequest, {"query": "x", "score_threshold": -0.1}),
+        (SearchRequest, {"query": "x", "dense_weight": -0.1}),
+        (SearchRequest, {"query": "x", "lexical_weight": -0.1}),
+        (SearchRequest, {"query": "x", "rrf_k": 0}),
+        (SearchRequest, {"query": "x", "dense_weight": 0, "lexical_weight": 0}),
         (SearchRequest, {"query": "x", "rerank_candidate_k": 0}),
         (SearchRequest, {"query": "x", "rerank_score_threshold": 1.1}),
     ],

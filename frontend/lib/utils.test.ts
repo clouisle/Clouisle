@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { cn, formatDate, formatDateTime, isValidEmail } from './utils'
+import { cn, formatDate, formatDateTime, formatDuration, isValidEmail } from './utils'
 
 describe('utility helpers', () => {
   test('combines conditional classes and resolves Tailwind conflicts', () => {
@@ -24,5 +24,18 @@ describe('utility helpers', () => {
     expect(isValidEmail('person@example')).toBe(false)
     expect(isValidEmail('person @example.com')).toBe(false)
     expect(isValidEmail('person@@example.com')).toBe(false)
+  })
+
+  test('formats durations with integer values and escalating units', () => {
+    expect(formatDuration(0)).toBe('0ms')
+    expect(formatDuration(42.5)).toBe('43ms')
+    expect(formatDuration(999)).toBe('999ms')
+    expect(formatDuration(1000)).toBe('1s')
+    expect(formatDuration(1500)).toBe('2s')
+    expect(formatDuration(59000)).toBe('59s')
+    expect(formatDuration(60000)).toBe('1m')
+    expect(formatDuration(90000)).toBe('2m')
+    expect(formatDuration(3600000)).toBe('1h')
+    expect(formatDuration(5400000)).toBe('2h')
   })
 })

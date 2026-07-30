@@ -5,7 +5,11 @@ from uuid import UUID
 
 import pytest
 
-from app.services.vector_store import DimensionMismatchError, VectorStore
+from app.services.vector_store import (
+    DimensionMismatchError,
+    VectorSearchUnavailableError,
+    VectorStore,
+)
 
 vector_store_module = importlib.import_module("app.services.vector_store")
 
@@ -100,7 +104,12 @@ async def test_vector_retrieval_transforms_scores_metadata_and_scopes_documents(
     ]
     assert conditions[1].key == "document_id"
     assert conditions[1].match.any == [str(document_id)]
-    assert calls["chunk_filter"] == {"id__in": [str(first_id), str(second_id)]}
+    assert calls["chunk_filter"] == {
+        "id__in": [str(first_id), str(second_id)],
+        "status": "embedded",
+        "document__status": "completed",
+        "document__knowledge_base__status": "active",
+    }
     assert results == [
         {
             "chunk_id": first_id,
@@ -110,6 +119,9 @@ async def test_vector_retrieval_transforms_scores_metadata_and_scopes_documents(
             "score": 0.0,
             "metadata": {"source": "manual"},
             "search_type": "vector",
+            "dense_score": 0.0,
+            "dense_rank": 1,
+            "final_score_stage": "dense",
         },
         {
             "chunk_id": second_id,
@@ -119,6 +131,9 @@ async def test_vector_retrieval_transforms_scores_metadata_and_scopes_documents(
             "score": 1.0,
             "metadata": None,
             "search_type": "vector",
+            "dense_score": 1.0,
+            "dense_rank": 2,
+            "final_score_stage": "dense",
         },
     ]
 
@@ -149,7 +164,8 @@ async def test_vector_retrieval_returns_empty_for_embedding_failure_or_no_points
     ensure_collection = AsyncMock()
     monkeypatch.setattr(vector_store_module, "_ensure_collection", ensure_collection)
 
-    assert await store._vector_search(UUID(int=1), "query", 5) == []
+    with pytest.raises(VectorSearchUnavailableError, match="query_embedding_failed"):
+        await store._vector_search(UUID(int=1), "query", 5)
     ensure_collection.assert_not_awaited()
 
     monkeypatch.setattr(store, "embed_query", AsyncMock(return_value=[0.1, 0.2, 0.3]))
@@ -193,7 +209,17 @@ async def test_hybrid_retrieval_falls_back_when_vector_provider_fails(monkeypatc
     monkeypatch.setattr(store, "_fulltext_search", fulltext_search)
 
     assert await store.search(UUID(int=1), "query", search_mode="hybrid") == [
-        {"chunk_id": "fulltext", "score": 0.5, "search_type": "hybrid"}
+        {
+            "chunk_id": "fulltext",
+            "score": 1 / 61,
+            "search_type": "hybrid",
+            "lexical_score": 0.8,
+            "lexical_rank": 1,
+            "fusion_score": 1 / 61,
+            "fusion_rank": 1,
+            "final_score_stage": "fusion",
+            "degradation_reasons": ["vector_unavailable"],
+        }
     ]
     fulltext_search.assert_awaited_once()
 
@@ -235,6 +261,9 @@ async def test_vector_retrieval_keeps_mapping_metadata_and_euclidean_scores(
             "score": 0.25,
             "metadata": {"page": 1},
             "search_type": "vector",
+            "dense_score": 0.25,
+            "dense_rank": 1,
+            "final_score_stage": "dense",
         }
     ]
 

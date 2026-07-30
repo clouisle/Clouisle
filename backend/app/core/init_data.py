@@ -26,6 +26,94 @@ async def execute_startup_migration_query(conn, query: str):
         await conn.execute_query("RESET lock_timeout")
 
 
+async def init_postgres_lexical_search() -> None:
+    """Create and validate pg_search objects on first startup."""
+    conn = Tortoise.get_connection("default")
+    preload_rows = await conn.execute_query_dict(
+        "SELECT current_setting('shared_preload_libraries') AS libraries"
+    )
+    preloaded = {
+        value.strip() for value in str(preload_rows[0]["libraries"]).split(",")
+    }
+    required = {"pg_search", "pg_stat_statements"}
+    missing = sorted(required - preloaded)
+    if missing:
+        raise RuntimeError(
+            "PostgreSQL is missing required shared preload libraries: "
+            + ", ".join(missing)
+        )
+
+    await conn.execute_query("CREATE EXTENSION IF NOT EXISTS pg_search CASCADE")
+    version_rows = await conn.execute_query_dict(
+        "SELECT extversion FROM pg_extension WHERE extname = 'pg_search'"
+    )
+    if not version_rows or version_rows[0]["extversion"] != "0.24.3":
+        installed = version_rows[0]["extversion"] if version_rows else "missing"
+        raise RuntimeError(
+            f"pg_search 0.24.3 is required; installed version is {installed}"
+        )
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
+        UPDATE document_chunks
+        SET updated_at = created_at
+        WHERE updated_at IS NULL
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE document_chunks
+            ALTER COLUMN updated_at SET DEFAULT NOW(),
+            ALTER COLUMN updated_at SET NOT NULL
+        """,
+    )
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS knowledge_lexical_chunks (
+            chunk_id UUID PRIMARY KEY REFERENCES document_chunks(id) ON DELETE CASCADE,
+            document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            kb_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+            team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            chunk_index INTEGER NOT NULL,
+            update_version BIGINT NOT NULL,
+            language TEXT,
+            section TEXT,
+            title TEXT NOT NULL,
+            identifiers TEXT[] NOT NULL DEFAULT ARRAY[]::text[]
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS knowledge_lexical_chunks_bm25_idx
+        ON knowledge_lexical_chunks
+        USING bm25 (
+            chunk_id, team_id, kb_id, document_id, status,
+            (content::pdb.jieba), (title::pdb.jieba), (name::pdb.jieba),
+            (section::pdb.jieba), identifiers, chunk_index, update_version
+        )
+        WITH (key_field = 'chunk_id')
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS knowledge_lexical_chunks_team_kb_idx
+        ON knowledge_lexical_chunks (team_id, kb_id)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS knowledge_lexical_chunks_team_document_idx
+        ON knowledge_lexical_chunks (team_id, document_id)
+    """)
+
+
 async def sync_role_permissions(
     role: Role, target_permissions: list[str], role_name: str
 ):
@@ -229,8 +317,13 @@ async def init_scoped_role_assignments_table():
         await execute_startup_migration_query(
             conn,
             f"""
-            INSERT INTO scoped_role_assignments (user_id, role_id, scope_type, scope_id, source)
-            VALUES ('{membership.user.id}', '{role.id}', 'team', '{membership.team.id}', 'migration')
+            INSERT INTO scoped_role_assignments (
+                id, user_id, role_id, scope_type, scope_id, source, created_at, updated_at
+            )
+            VALUES (
+                gen_random_uuid(), '{membership.user.id}', '{role.id}',
+                'team', '{membership.team.id}', 'migration', NOW(), NOW()
+            )
             ON CONFLICT (user_id, role_id, scope_type, scope_id) DO NOTHING
             """,
         )
@@ -2225,6 +2318,30 @@ async def init_clouisle_import_sessions_table():
     logger.info("Clouisle import sessions table initialization complete")
 
 
+async def drop_obsolete_retrieval_evaluation_tables():
+    """Remove the retired persistent retrieval evaluation schema."""
+    conn = Tortoise.get_connection("default")
+    await execute_startup_migration_query(
+        conn,
+        """
+        DO $$
+        BEGIN
+            ALTER TABLE IF EXISTS evaluation_runs
+                DROP COLUMN IF EXISTS sweep_id;
+            ALTER TABLE IF EXISTS evaluation_sweeps
+                DROP COLUMN IF EXISTS best_run_id,
+                DROP COLUMN IF EXISTS verification_run_id;
+
+            DROP TABLE IF EXISTS evaluation_case_results;
+            DROP TABLE IF EXISTS evaluation_sweeps;
+            DROP TABLE IF EXISTS evaluation_runs;
+            DROP TABLE IF EXISTS evaluation_cases;
+            DROP TABLE IF EXISTS evaluation_datasets;
+        END $$
+        """,
+    )
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -2267,6 +2384,11 @@ async def init_db():
         logger.warning(
             f"Clouisle import sessions migration failed (may be first run): {e}"
         )
+
+    try:
+        await drop_obsolete_retrieval_evaluation_tables()
+    except Exception as e:
+        logger.warning(f"Retrieval evaluation cleanup failed (may be first run): {e}")
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")
@@ -2328,6 +2450,7 @@ async def init_db():
         "admin:app:publish",
         "admin:app:duplicate",
         "admin:knowledge-base:read",
+        "admin:knowledge-base:test",
         "admin:knowledge-base:create",
         "admin:knowledge-base:update",
         "admin:knowledge-base:delete",
@@ -2360,6 +2483,7 @@ async def init_db():
         "workflow:run",
         "workflow:execute",
         "kb:read",
+        "kb:test",
         "kb:create",
         "kb:update",
         "kb:delete",
@@ -2405,6 +2529,7 @@ async def init_db():
         "workflow:update",
         "workflow:run",
         "kb:read",
+        "kb:test",
         "kb:create",
         "kb:update",
         "kb:delete",
@@ -2446,6 +2571,7 @@ async def init_db():
         "workflow:read",
         "workflow:run",
         "kb:read",
+        "kb:test",
         "tool:read",
         "tool:execute",
         "skill:read",

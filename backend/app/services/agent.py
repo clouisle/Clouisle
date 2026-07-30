@@ -496,52 +496,38 @@ class AgentService:
             if not agent_kbs:
                 return None
 
-            from app.services.vector_store import VectorStore
+            from app.services.retrieval import (
+                RetrievalRequest,
+                RetrievalTarget,
+                retrieve,
+                validated_search_mode,
+            )
 
-            all_chunks = []
-            for agent_kb in agent_kbs:
-                kb = agent_kb.knowledge_base
-                if not kb:
-                    continue
-
-                # Search in each knowledge base
-                vector_store = VectorStore(
-                    embedding_model_id=str(kb.embedding_model_id)
-                    if kb.embedding_model_id
-                    else None,
-                    rerank_model_id=str(kb.rerank_model_id)
-                    if getattr(kb, "rerank_model_id", None)
-                    else None,
-                    team_id=str(kb.team_id) if kb.team_id else None,
+            targets = tuple(
+                RetrievalTarget(
+                    kb_id=link.knowledge_base.id,
+                    kb_name=link.knowledge_base.name,
+                    team_id=link.knowledge_base.team_id,
+                    status=link.knowledge_base.status,
+                    embedding_model_id=link.knowledge_base.embedding_model_id,
+                    rerank_model_id=link.knowledge_base.rerank_model_id,
+                    settings=link.knowledge_base.settings,
+                    search_mode=validated_search_mode(link.search_mode),
+                    top_k=link.retrieval_top_k,
+                    score_threshold=link.score_threshold,
                 )
-
-                results = await vector_store.search(
-                    kb_id=kb.id,
-                    query=query,
-                    search_mode=agent_kb.search_mode,
-                    top_k=agent_kb.retrieval_top_k,
-                    score_threshold=agent_kb.score_threshold,
-                )
-
-                for result in results:
-                    all_chunks.append(
-                        {
-                            "content": result.get("content", ""),
-                            "score": result.get("score", 0),
-                            "source": kb.name,
-                        }
-                    )
-
-            if not all_chunks:
+                for link in agent_kbs
+                if link.knowledge_base
+            )
+            response = await retrieve(
+                RetrievalRequest(query=query, targets=targets, top_k=10)
+            )
+            if not response.results:
                 return None
 
-            # Sort by score and take top results
-            all_chunks.sort(key=lambda x: x["score"], reverse=True)
-            top_chunks = all_chunks[:10]  # Top 10 across all KBs
-
             context_parts = []
-            for chunk in top_chunks:
-                context_parts.append(f"[{chunk['source']}] {chunk['content']}")
+            for chunk in response.results:
+                context_parts.append(f"[{chunk['kb_name']}] {chunk.get('content', '')}")
 
             return "\n\n".join(context_parts)
 

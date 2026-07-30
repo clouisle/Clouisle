@@ -8,6 +8,12 @@ from app.api.v1.endpoints import knowledge_bases
 from app.schemas.response import BusinessError
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in ("delete_lexical_document", "index_lexical_chunk"):
+        monkeypatch.setattr(knowledge_bases, name, AsyncMock())
+
+
 class Query:
     def __init__(self, value=None):
         self.value = value
@@ -217,6 +223,7 @@ async def test_delete_document_cleans_storage_vectors_and_statistics(monkeypatch
     kb_id, doc_id = uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
+        team_id=uuid4(),
         document_count=1,
         total_chunks=2,
         total_tokens=6,

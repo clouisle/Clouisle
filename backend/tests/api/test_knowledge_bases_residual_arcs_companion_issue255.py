@@ -22,6 +22,15 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.first_value
+
     async def first(self):
         return self.first_value
 
@@ -37,13 +46,38 @@ class Saved(SimpleNamespace):
         self.saved = True
 
 
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(endpoint, "in_transaction", Transaction)
+    return connection
+
+
 @pytest.mark.asyncio
-async def test_dispatch_document_task_rolls_back_metadata_when_task_submit_fails():
-    doc = Saved(metadata={"keep": "yes"})
+async def test_dispatch_document_task_rolls_back_metadata_when_task_submit_fails(
+    monkeypatch,
+):
+    doc = Saved(
+        id=uuid4(),
+        status=DocumentStatus.PENDING.value,
+        error_message="err",
+        metadata={"keep": "yes"},
+    )
     task = SimpleNamespace(name="process", apply_async=Mock(side_effect=RuntimeError))
+    monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(doc))
 
     with pytest.raises(RuntimeError):
-        await endpoint._dispatch_document_task(doc, task, "doc-id")
+        await endpoint._dispatch_document_task(
+            doc, task, "doc-id", status=DocumentStatus.PROCESSING.value
+        )
 
     assert doc.metadata == {"keep": "yes"}
     assert doc.saved is True
@@ -100,7 +134,8 @@ async def test_process_document_applies_only_provided_chunk_settings(monkeypatch
             filter=lambda **_kwargs: Query(doc), get=lambda **_kwargs: Query(doc)
         ),
     )
-    monkeypatch.setattr(endpoint, "_dispatch_document_task", AsyncMock())
+    dispatch = AsyncMock()
+    monkeypatch.setattr(endpoint, "_dispatch_document_task", dispatch)
     monkeypatch.setattr(endpoint.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(
         endpoint, "serialize_document", AsyncMock(return_value={"id": str(doc_id)})
@@ -116,9 +151,12 @@ async def test_process_document_applies_only_provided_chunk_settings(monkeypatch
         SimpleNamespace(),
     )
 
-    assert doc.status == DocumentStatus.PROCESSING.value
-    assert doc.error_message is None
-    assert doc.metadata == {"chunk_size": 321, "separator": "\n", "clean_text": False}
+    assert dispatch.await_args.kwargs["status"] == DocumentStatus.PROCESSING.value
+    assert dispatch.await_args.kwargs["metadata_updates"] == {
+        "chunk_size": 321,
+        "separator": "\n",
+        "clean_text": False,
+    }
     assert response["data"]["id"] == str(doc_id)
 
 
@@ -170,15 +208,22 @@ async def test_search_maps_vector_failures_and_passes_explicit_rerank_overrides(
 ):
     kb_id = uuid4()
     kb = SimpleNamespace(
-        id=kb_id, embedding_model_id=uuid4(), rerank_model_id=uuid4(), team_id=uuid4()
+        id=kb_id,
+        name="kb",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=uuid4(),
+        embedding_dimension=None,
+        team_id=uuid4(),
     )
-    search = AsyncMock(
-        side_effect=[endpoint.DimensionMismatchError("bad dim"), ["hit"]]
+    retrieve = AsyncMock(
+        side_effect=[
+            endpoint.DimensionMismatchError("bad dim"),
+            SimpleNamespace(results=("hit",)),
+        ]
     )
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(
-        endpoint, "VectorStore", lambda **_kwargs: SimpleNamespace(search=search)
-    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
 
     with pytest.raises(BusinessError) as exc_info:
         await endpoint.search_knowledge_base(
@@ -192,5 +237,5 @@ async def test_search_maps_vector_failures_and_passes_explicit_rerank_overrides(
         SimpleNamespace(),
     )
 
-    assert response["data"]["results"] == ["hit"]
-    assert search.await_args.kwargs["rerank_overrides"] == {"rerank_enabled": False}
+    assert response["data"]["results"] == ("hit",)
+    assert retrieve.await_args.args[0].rerank_overrides == {"rerank_enabled": False}

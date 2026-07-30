@@ -37,6 +37,7 @@ test('uses provided values and renders one thumb per value', () => {
   expect(tree.props['data-slot']).toBe('slider')
   expect(tree.props.min).toBe(10)
   expect(tree.props.max).toBe(90)
+  expect(tree.props.thumbAlignment).toBe('edge-client-only')
   expect(control.props.className).toContain('range')
   const [, thumbs] = control.props.children as [unknown, unknown[]]
 

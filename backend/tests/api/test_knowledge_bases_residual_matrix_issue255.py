@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import knowledge_bases
+from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError
 from app.services.vector_store import DimensionMismatchError
 
@@ -19,8 +20,32 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.value
+
     async def first(self):
         return self.value
+
+
+@pytest.fixture
+def dispatch_transaction(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
 
 
 @pytest.mark.asyncio
@@ -46,16 +71,35 @@ async def test_issue255_upload_limit_normalizes_configured_value(
 
 
 @pytest.mark.asyncio
-async def test_issue255_dispatch_failure_removes_task_metadata(monkeypatch):
-    doc = SimpleNamespace(metadata={"kept": True}, save=AsyncMock())
+async def test_issue255_dispatch_failure_removes_task_metadata(
+    monkeypatch, dispatch_transaction
+):
+    doc = SimpleNamespace(
+        id=uuid4(),
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata={"kept": True},
+        save=AsyncMock(),
+    )
     task = SimpleNamespace(name="process", apply_async=Mock(side_effect=RuntimeError))
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
 
     with pytest.raises(RuntimeError):
-        await knowledge_bases._dispatch_document_task(doc, task, "document-id")
+        await knowledge_bases._dispatch_document_task(
+            doc,
+            task,
+            "document-id",
+            status=knowledge_bases.DocumentStatus.PROCESSING.value,
+        )
 
     assert doc.metadata == {"kept": True}
     assert doc.save.await_count == 2
-    doc.save.assert_awaited_with(update_fields=["metadata"])
+    doc.save.assert_awaited_with(
+        using_db=dispatch_transaction,
+        update_fields=["metadata", "status", "error_message"],
+    )
 
 
 @pytest.mark.asyncio
@@ -162,28 +206,23 @@ async def test_issue255_update_rejects_duplicate_name_and_embedding_change(monke
 )
 async def test_issue255_search_translates_vector_failures(monkeypatch, error, msg_key):
     kb = SimpleNamespace(
+        id=uuid4(),
+        name="kb",
+        status="active",
         embedding_model_id=uuid4(),
         rerank_model_id=uuid4(),
+        embedding_dimension=None,
         team_id=uuid4(),
     )
-    search = AsyncMock(side_effect=error)
+    retrieve = AsyncMock(side_effect=error)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(
-        knowledge_bases,
-        "VectorStore",
-        lambda **_kwargs: SimpleNamespace(search=search),
-    )
-    search_in = SimpleNamespace(
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
+    search_in = SearchRequest(
         query="policy",
         search_mode="hybrid",
         top_k=5,
         score_threshold=0.2,
-        filter_doc_ids=None,
         rerank_enabled=True,
-        rerank_candidate_k=None,
-        rerank_fail_open=None,
-        rerank_score_threshold=None,
-        model_fields_set={"rerank_enabled"},
     )
 
     with pytest.raises(BusinessError) as exc:
@@ -192,7 +231,7 @@ async def test_issue255_search_translates_vector_failures(monkeypatch, error, ms
         )
 
     assert exc.value.msg_key == msg_key
-    assert search.await_args.kwargs["rerank_overrides"] == {"rerank_enabled": True}
+    assert retrieve.await_args.args[0].rerank_overrides == {"rerank_enabled": True}
 
 
 @pytest.mark.asyncio

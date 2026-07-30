@@ -43,7 +43,7 @@ class SkillImportSessionStatus(str, Enum):
 class Skill(models.Model):
     """Sandboxed capability that can be selected by Agents."""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     team: fields.ForeignKeyRelation["Team"] | None = fields.ForeignKeyField(
         "models.Team",
@@ -170,7 +170,7 @@ class Skill(models.Model):
 class SkillImportSession(models.Model):
     """Preview session for importing one or more Skill packages."""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     team: fields.ForeignKeyRelation["Team"] | None = fields.ForeignKeyField(
         "models.Team",

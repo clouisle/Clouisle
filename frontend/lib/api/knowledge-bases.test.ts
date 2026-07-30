@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 
 import { api } from './client'
-import { adminKnowledgeBasesApi, knowledgeBasesApi } from './knowledge-bases'
+import {
+  adminKnowledgeBasesApi,
+  knowledgeBasesApi,
+  type RetrievalDiagnostic,
+  type SearchResult,
+} from './knowledge-bases'
 
 let get: ReturnType<typeof spyOn>
 let post: ReturnType<typeof spyOn>
@@ -27,6 +32,22 @@ const apiVariants = [
 ] as const
 
 describe('knowledge base APIs', () => {
+  test('types structured retrieval diagnostics and every score/rank stage', () => {
+    const result: SearchResult = {
+      chunk_id: 'chunk-1', document_id: 'doc-1', document_name: 'Guide', content: 'Policy',
+      score: 0.4, metadata: null, search_type: 'hybrid', dense_score: 0.81, dense_rank: 2,
+      lexical_score: 7.4, lexical_rank: 1, fusion_score: 0.03, fusion_rank: 1,
+      original_score: 0.03, rerank_score: 0.4, rerank_rank: 1, rerank_reason: 'match',
+      final_score_stage: 'rerank', degradation_reasons: [{ channel: 'dense', error: 'fallback' }],
+    }
+    const diagnostic: RetrievalDiagnostic = {
+      kb_id: 'kb-1', code: 'timeout', stage: 'dense', latency_ms: 120, detail: 'fallback',
+    }
+
+    expect(result).toMatchObject({ dense_rank: 2, lexical_rank: 1, fusion_rank: 1, rerank_rank: 1 })
+    expect(diagnostic).toMatchObject({ code: 'timeout', stage: 'dense', latency_ms: 120 })
+  })
+
   for (const [name, knowledgeBasesApi, prefix] of apiVariants) {
     test(`${name} routes construct knowledge base requests`, async () => {
       await knowledgeBasesApi.getKnowledgeBases()
@@ -49,11 +70,22 @@ describe('knowledge base APIs', () => {
         search_mode: 'vector',
         top_k: 10,
         threshold: 0.8,
+        dense_weight: 1.5,
+        lexical_weight: 0.5,
+        rrf_k: 80,
         rerank_enabled: false,
         rerank_candidate_k: 30,
-        rerank_fail_open: false,
         rerank_score_threshold: 0.5,
       })
+      await knowledgeBasesApi.search('kb-1', {
+        query: 'renewal',
+        top_k: 0,
+        threshold: 0,
+      })
+      await knowledgeBasesApi.searchBatch('kb-1', 'renewal', [
+        { id: 'a', search_mode: 'hybrid', top_k: 5, score_threshold: 0 },
+        { id: 'b', search_mode: 'vector', top_k: 10, score_threshold: 0.8 },
+      ])
 
       expect(get).toHaveBeenNthCalledWith(1, `${prefix}?page=1&page_size=20`)
       expect(get).toHaveBeenNthCalledWith(
@@ -70,21 +102,44 @@ describe('knowledge base APIs', () => {
         search_mode: 'hybrid',
         top_k: 5,
         score_threshold: 0,
+        dense_weight: undefined,
+        lexical_weight: undefined,
+        rrf_k: undefined,
         rerank_enabled: undefined,
         rerank_candidate_k: undefined,
-        rerank_fail_open: undefined,
         rerank_score_threshold: undefined,
-      })
+      }, { silent: true })
       expect(post).toHaveBeenNthCalledWith(3, `${prefix}/kb-1/search`, {
         query: 'renewal',
         search_mode: 'vector',
         top_k: 10,
         score_threshold: 0.8,
+        dense_weight: 1.5,
+        lexical_weight: 0.5,
+        rrf_k: 80,
         rerank_enabled: false,
         rerank_candidate_k: 30,
-        rerank_fail_open: false,
         rerank_score_threshold: 0.5,
-      })
+      }, { silent: true })
+      expect(post).toHaveBeenNthCalledWith(4, `${prefix}/kb-1/search`, {
+        query: 'renewal',
+        search_mode: 'hybrid',
+        top_k: 0,
+        score_threshold: 0,
+        dense_weight: undefined,
+        lexical_weight: undefined,
+        rrf_k: undefined,
+        rerank_enabled: undefined,
+        rerank_candidate_k: undefined,
+        rerank_score_threshold: undefined,
+      }, { silent: true })
+      expect(post).toHaveBeenNthCalledWith(5, `${prefix}/kb-1/search/batch`, {
+        query: 'renewal',
+        configurations: [
+          { id: 'a', search_mode: 'hybrid', top_k: 5, score_threshold: 0 },
+          { id: 'b', search_mode: 'vector', top_k: 10, score_threshold: 0.8 },
+        ],
+      }, { silent: true })
     })
 
     test(`${name} routes construct document and chunk requests`, async () => {

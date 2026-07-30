@@ -44,6 +44,8 @@ data:
   QDRANT_URL: "http://qdrant:6333"
   QDRANT_COLLECTION_PREFIX: "kb_dim"
   QDRANT_DISTANCE: "Cosine"
+  RETRIEVAL_HYBRID_KILL_SWITCH: "false"
+  RETRIEVAL_SHADOW_ENABLED: "false"
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
 
 # ===========================================================================
@@ -108,7 +110,12 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          args:
+            - "-c"
+            - "shared_preload_libraries=pg_search,pg_stat_statements"
+            - "-c"
+            - "pg_stat_statements.track=all"
           ports:
             - containerPort: 5432
           env:
@@ -273,7 +280,7 @@ spec:
     spec:
       containers:
         - name: qdrant
-          image: qdrant/qdrant:latest
+          image: qdrant/qdrant:v1.18.3
           ports:
             - containerPort: 6333
           env:

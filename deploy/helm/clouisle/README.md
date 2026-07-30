@@ -7,7 +7,7 @@ This chart deploys Clouisle on Kubernetes with the current service model:
 - `sandbox-worker`
 - `beat`
 - `frontend`
-- optional built-in `postgres`, `redis`, and `qdrant`
+- optional built-in ParadeDB PostgreSQL 17, Redis, and Qdrant
 
 ## Quick Start
 
@@ -51,7 +51,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 ## External Infrastructure
 
-Disable built-in PostgreSQL, Redis, and Qdrant when using managed services:
+Disable built-in PostgreSQL, Redis, and Qdrant when using managed services. External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 available and `pg_search,pg_stat_statements` preloaded. Confirm AGPL or commercial license approval for pg_search before deployment:
 
 ```bash
 helm upgrade --install clouisle deploy/helm/clouisle \
@@ -79,9 +79,16 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 | `secrets.create` | `true` | Create a Secret from values |
 | `secrets.existingSecret` | empty | Existing Secret for production |
 | `uploads.accessModes` | `ReadWriteMany` | Shared uploads PVC mode |
-| `postgresql.enabled` | `true` | Deploy built-in PostgreSQL |
+| `postgresql.enabled` | `true` | Deploy built-in ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
+| `postgresql.external.host` | empty | External PG17+ host with pg_search 0.24.3 preloaded when built-in mode is disabled |
 | `redis.enabled` | `true` | Deploy built-in Redis |
-| `qdrant.enabled` | `true` | Deploy built-in Qdrant |
+| `qdrant.enabled` | `true` | Deploy built-in Qdrant 1.18.3 |
+
+## PostgreSQL Upgrade and Licensing
+
+The built-in image defaults to `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1`, built from `deploy/postgres/Dockerfile`. Override `postgresql.image.repository` when mirroring it to another cluster registry. This Alpine/musl port is maintained by Clouisle; every Alpine, PostgreSQL, Rust, pgrx, or pg_search update requires full amd64 and arm64 qualification. It preloads `pg_search,pg_stat_statements` with `pg_stat_statements.track=all`. External PostgreSQL must be PostgreSQL 17 or newer with pg_search 0.24.3 installed and the same libraries preloaded. Confirm your organization has approved pg_search's AGPL or commercial license before deployment.
+
+Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migrate with `pg_dump`/restore or `pg_upgrade` during a planned maintenance window before enabling the PG17 deployment.
 
 ## Storage
 

@@ -2069,7 +2069,6 @@ msgstr "SAML 认证失败"
 
 msgid "verification_email_code_or_token_required"
 msgstr "必须提供 email 和 code，或提供 token"
-msgstr "SSO 提供商配置有效"
 
 msgid "sso_provider_name_exists"
 msgstr "SSO 提供商名称已存在"
@@ -2465,7 +2464,7 @@ msgid "workflow_media_prompt_required"
 msgstr "请先在媒体生成节点中填写提示词，再运行工作流"
 
 msgid "vector_search_failed"
-msgstr "向量搜索失败：{error}"
+msgstr "知识检索失败，请稍后重试。"
 
 msgid "vector_update_failed"
 msgstr "向量存储更新失败"

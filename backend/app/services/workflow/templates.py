@@ -10,7 +10,7 @@ Provides a template system for reusable workflow patterns:
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from uuid import uuid4
 
@@ -99,8 +99,8 @@ class WorkflowTemplate:
     rating_count: int = 0
 
     # Timestamps
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         return {
@@ -177,7 +177,7 @@ class TemplateManager:
         )
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # In-memory storage (use database in production)
         self._templates: dict[str, WorkflowTemplate] = {}
         self._init_builtin_templates()
@@ -605,7 +605,7 @@ class TemplateManager:
             if hasattr(template, key):
                 setattr(template, key, value)
 
-        template.updated_at = datetime.utcnow()
+        template.updated_at = datetime.now(UTC)
         return template
 
     async def delete_template(self, template_id: str) -> bool:

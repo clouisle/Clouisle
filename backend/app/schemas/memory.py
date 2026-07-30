@@ -5,7 +5,7 @@ Pydantic schemas for memory API.
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from app.models.memory import EntityType, RelationType
 
@@ -55,8 +55,7 @@ class EntityResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RelationResponse(BaseModel):
@@ -74,8 +73,7 @@ class RelationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EntityWithRelationsResponse(BaseModel):

@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     QDRANT_COLLECTION_PREFIX: str = "kb_dim"
     QDRANT_DISTANCE: str = "Cosine"
 
+    # Lexical search
+    RETRIEVAL_HYBRID_KILL_SWITCH: bool = False
+    RETRIEVAL_SHADOW_ENABLED: bool = False
+    RAG_QUERY_CONTEXTUALIZATION_ENABLED: bool = False
+    RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS: float = 2.0
+
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # Next.js dev server

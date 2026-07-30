@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.034Z
+// GENERATED — 2026-07-29T14:14:10.564Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -39,8 +39,6 @@ export type KnowledgeBasesMessages = {
     rerankScoreThreshold: string
     rerankScoreThresholdPlaceholder: string
     rerankScoreThresholdHint: string
-    rerankFailOpen: string
-    rerankFailOpenHint: string
     chunkSize: string
     chunkSizeHint: string
     chunkOverlap: string
@@ -202,6 +200,68 @@ export type KnowledgeBasesMessages = {
     cancel: string
     save: string
     searchTest: string
+    retrievalLab: string
+    retrievalLabHint: string
+    resultDetails: string
+    resultDetailsDescription: string
+    resultConfiguration: string
+    selectResult: string
+    closeResultDetails: string
+    resizeResultDetails: string
+    compareAB: string
+    overlap: string
+    diagnostics: string
+    stageTimings: string
+    fallbackReasons: string
+    unknownChannel: string
+    denseStage: string
+    denseStageHelp: string
+    lexicalStage: string
+    lexicalStageHelp: string
+    finalScoreStageDense: string
+    finalScoreStageLexical: string
+    finalScoreStageFusion: string
+    finalScoreStageRerank: string
+    searchTypeVector: string
+    searchTypeFulltext: string
+    searchTypeHybrid: string
+    searchTypeRerank: string
+    fusionStage: string
+    fusionStageHelp: string
+    rerankStage: string
+    rerankStageHelp: string
+    finalStage: string
+    finalStageHelp: string
+    presetName: string
+    presets: string
+    savePreset: string
+    applyToProduction: string
+    applyPresetConfirm: string
+    searchError: string
+    searchPartialError: string
+    searchSideError: string
+    retrievalErrorRequest: string
+    retrievalErrorConfigurationMismatch: string
+    retrievalErrorProviderAuthentication: string
+    retrievalErrorQuotaOrRateLimit: string
+    retrievalErrorModelConfiguration: string
+    retrievalErrorLexicalUnavailable: string
+    retrievalErrorProviderUnavailable: string
+    retrievalErrorUnknown: string
+    retrievalError_rerank_provider_authentication: string
+    retrievalError_rerank_quota_or_rate_limit: string
+    retrievalError_rerank_model_configuration: string
+    retrievalError_rerank_provider_unavailable: string
+    retrievalError_rerank_unknown: string
+    retrievalError_dense_recall_provider_authentication: string
+    retrievalError_dense_recall_configuration_mismatch: string
+    retrievalError_dense_recall_provider_unavailable: string
+    retrievalError_dense_recall_unknown: string
+    retrievalError_lexical_recall_lexical_unavailable: string
+    retrievalError_lexical_recall_provider_unavailable: string
+    retrievalError_lexical_recall_unknown: string
+    retrievalError_fusion_unknown: string
+    presetUpdateError: string
     searchTestHint: string
     searchTestDescription: string
     searching: string
@@ -218,10 +278,14 @@ export type KnowledgeBasesMessages = {
     vectorSearch: string
     fulltextSearch: string
     advancedSettings: string
+    settings: string
     topK: string
     topKHint: string
     threshold: string
     thresholdHint: string
+    denseWeight: string
+    lexicalWeight: string
+    rrfK: string
     search: string
     embeddingProgress: string
     embeddedCount: string
@@ -238,5 +302,7 @@ export type KnowledgeBasesMessages = {
     failedChunksCount: string
     chars: string
     overlapChars: string
+    applyPresetSuccess: string
+    hybridWeightsRequired: string
   }
 }

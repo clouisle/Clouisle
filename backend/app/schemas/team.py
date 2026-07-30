@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import ConfigDict, BaseModel
 
 
 class TeamMemberRole:
@@ -63,8 +63,7 @@ class TeamMemberInfo(BaseModel):
     role: str
     joined_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamOwnerInfo(BaseModel):
@@ -75,8 +74,7 @@ class TeamOwnerInfo(BaseModel):
     email: str
     avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Team(TeamBase):
@@ -88,8 +86,7 @@ class Team(TeamBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamWithMembers(Team):
@@ -108,5 +105,4 @@ class UserTeamInfo(BaseModel):
     role: str  # 用户在该团队的角色
     joined_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

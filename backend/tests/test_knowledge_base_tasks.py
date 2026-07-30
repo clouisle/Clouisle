@@ -16,7 +16,9 @@ from app.tasks.knowledge_base import (
     _get_embedding_error,
     _is_finished_task,
     _is_stale_task,
+    backfill_lexical_index_task,
     embed_document_chunks_task,
+    index_document_lexically_task,
     process_document_task,
     process_url_document_task,
     rechunk_document_task,
@@ -238,6 +240,7 @@ def test_process_document_happy_path_updates_document_and_kb():
             "app.services.document_processor.chunk_text", return_value=["a", "b"]
         ) as split,
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
     ):
         result = process_document_task.run(str(document.id))
 
@@ -256,6 +259,7 @@ def test_process_document_happy_path_updates_document_and_kb():
         "text", chunk_size=1000, chunk_overlap=100, separators=None
     )
     notify.assert_awaited_once()
+    lexical.assert_awaited_once_with(document.id)
 
 
 @pytest.mark.parametrize(
@@ -295,7 +299,8 @@ def test_reprocess_clamps_stats_and_starts_processing():
         patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(
-            f"{MODULE}.process_document_task", return_value={"status": "success"}
+            f"{MODULE}._process_document",
+            new=AsyncMock(return_value={"status": "success"}),
         ) as process,
     ):
         result = reprocess_document_task.run(str(document.id))
@@ -304,15 +309,17 @@ def test_reprocess_clamps_stats_and_starts_processing():
     assert document.knowledge_base.total_chunks == 0
     assert document.knowledge_base.total_tokens == 0
     assert document.chunk_count == document.token_count == 0
-    process.assert_called_once_with(str(document.id))
+    process.assert_awaited_once_with(str(document.id), None)
 
 
 def test_url_task_delegates_to_process_task():
+    document_id = str(uuid4())
     with patch(
-        f"{MODULE}.process_document_task", return_value={"status": "success"}
+        f"{MODULE}._process_document",
+        new=AsyncMock(return_value={"status": "success"}),
     ) as process:
-        assert process_url_document_task.run("doc-id") == {"status": "success"}
-    process.assert_called_once_with("doc-id")
+        assert process_url_document_task.run(document_id) == {"status": "success"}
+    process.assert_awaited_once_with(document_id, None)
 
 
 def test_rechunk_uses_requested_settings_and_reports_partial_failure():
@@ -377,6 +384,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
         patch(f"{MODULE}.document_processor.delete_media_assets") as delete_assets,
         patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
     ):
         result = rechunk_document_task.run(str(document.id))
 
@@ -398,6 +406,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
         for call in document.save.await_args_list
     )
     notify.assert_awaited_once()
+    lexical.assert_awaited_once_with(document.id)
 
 
 def test_rechunk_dimension_failure_cleans_task_metadata():
@@ -472,6 +481,7 @@ def test_retry_failed_chunks_succeeds_when_nothing_needs_retry():
         patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
         patch(f"{MODULE}.get_default_language", new=AsyncMock(return_value="en")),
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()),
     ):
         result = retry_failed_chunks_task.run(str(document.id))
 
@@ -508,6 +518,7 @@ def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as indexed,
         patch(f"{MODULE}._send_doc_failed_notification", new=AsyncMock()) as failed,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
     ):
         result = retry_failed_chunks_task.run(str(document.id))
@@ -522,6 +533,7 @@ def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails
         assert failed_chunk.error_message == "provider down"
         failed.assert_awaited_once()
         indexed.assert_not_awaited()
+        lexical.assert_not_awaited()
     else:
         assert failed_chunk.status == "embedded"
         assert failed_chunk.error_message is None
@@ -529,6 +541,7 @@ def test_retry_failed_chunks_persists_success_or_provider_failure(provider_fails
         assert document.knowledge_base.total_tokens == 20
         indexed.assert_awaited_once()
         failed.assert_not_awaited()
+        lexical.assert_awaited_once_with(document.id)
 
 
 def test_retry_failed_chunks_handles_progress_persistence_failure():
@@ -624,6 +637,7 @@ def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
         patch(f"{MODULE}.DocumentChunk.filter", side_effect=filter_chunks),
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
+        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
         patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
     ):
         result = retry_failed_chunk_task.run(str(document.id), str(failed_chunk.id))
@@ -642,6 +656,7 @@ def test_retry_one_chunk_persists_full_or_partial_success(remaining_failed):
         assert document.knowledge_base.total_chunks == 4
         assert document.knowledge_base.total_tokens == 40
         notify.assert_awaited_once()
+        lexical.assert_awaited_once_with(document.id)
 
 
 def test_retry_one_chunk_failure_restores_error_state():
@@ -669,3 +684,111 @@ def test_retry_one_chunk_failure_restores_error_state():
     assert failed_chunk.error_message == "provider down"
     assert document.status == DocumentStatus.ERROR.value
     notify.assert_awaited_once()
+
+
+def test_lexical_index_task_preserves_document_status_contract():
+    with patch(f"{MODULE}.index_document", new=AsyncMock(return_value=3)) as index:
+        result = index_document_lexically_task.run("doc-id")
+
+    assert result == {"status": "success", "document_id": "doc-id", "indexed": 3}
+    index.assert_awaited_once_with("doc-id")
+
+
+def test_lexical_backfill_resumes_and_reconciles():
+    checkpoint = uuid4()
+    item = SimpleNamespace(
+        id=uuid4(),
+        document=SimpleNamespace(),
+    )
+    query = Query(items=[item], count=4)
+    query.limit = MagicMock(return_value=query)
+    store = AsyncMock()
+    store.__aenter__.return_value = store
+    store.backfill_batch.return_value = SimpleNamespace(
+        indexed=1, checkpoint=str(item.id)
+    )
+    store.reconcile.return_value = SimpleNamespace(
+        expected=4, actual=4, repaired=0, deleted=0, matches=True
+    )
+
+    with (
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=query) as chunks,
+        patch(f"{MODULE}.chunk_document", return_value={"chunk_id": str(item.id)}),
+        patch(f"{MODULE}.LexicalStore", return_value=store),
+    ):
+        result = backfill_lexical_index_task.run(str(checkpoint), 2, True)
+
+    assert result == {
+        "status": "success",
+        "scanned": 1,
+        "affected": 1,
+        "indexed": 1,
+        "checkpoint": str(item.id),
+        "complete": True,
+        "reconciliation": {
+            "expected": 4,
+            "actual": 4,
+            "repaired": 0,
+            "deleted": 0,
+            "matches": True,
+        },
+    }
+    assert chunks.call_args_list[0].kwargs["id__gt"] == checkpoint
+    store.reconcile.assert_awaited_once_with()
+
+
+def test_lexical_backfill_dispatches_continuation_without_checkpoint():
+    items = [SimpleNamespace(id=uuid4(), document=SimpleNamespace()) for _ in range(2)]
+    query = Query(items=items)
+    query.limit = MagicMock(return_value=query)
+    store = AsyncMock()
+    store.__aenter__.return_value = store
+    store.backfill_batch.return_value = SimpleNamespace(
+        indexed=2, checkpoint=str(items[-1].id)
+    )
+
+    with (
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=query) as chunks,
+        patch(f"{MODULE}.chunk_document", return_value={"chunk_id": "chunk"}),
+        patch(f"{MODULE}.LexicalStore", return_value=store),
+        patch.object(backfill_lexical_index_task, "apply_async") as dispatch,
+    ):
+        result = backfill_lexical_index_task.run(None, 2, False)
+
+    assert result["complete"] is False
+    assert result["scanned"] == 2
+    assert "id__gt" not in chunks.call_args.kwargs
+    dispatch.assert_called_once_with(
+        kwargs={
+            "checkpoint": str(items[-1].id),
+            "batch_size": 2,
+            "reconcile": False,
+        }
+    )
+    store.reconcile.assert_not_awaited()
+
+
+def test_lexical_backfill_complete_without_reconciliation():
+    query = Query(items=[])
+    query.limit = MagicMock(return_value=query)
+    store = AsyncMock()
+    store.__aenter__.return_value = store
+    store.backfill_batch.return_value = SimpleNamespace(indexed=0, checkpoint=None)
+
+    with (
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=query),
+        patch(f"{MODULE}.LexicalStore", return_value=store),
+        patch.object(backfill_lexical_index_task, "apply_async") as dispatch,
+    ):
+        result = backfill_lexical_index_task.run(None, 2, False)
+
+    assert result == {
+        "status": "success",
+        "scanned": 0,
+        "affected": 0,
+        "indexed": 0,
+        "checkpoint": None,
+        "complete": True,
+    }
+    dispatch.assert_not_called()
+    store.reconcile.assert_not_awaited()

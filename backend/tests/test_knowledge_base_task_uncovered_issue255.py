@@ -49,6 +49,8 @@ def test_process_document_skips_already_finished_task(monkeypatch, document):
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(document)
     )
+    lexical_index = AsyncMock()
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", lexical_index)
 
     result = run_with_task_id(
         knowledge_base.process_document_task,
@@ -60,6 +62,7 @@ def test_process_document_skips_already_finished_task(monkeypatch, document):
         "document_id": str(document.id),
         "document_status": DocumentStatus.COMPLETED.value,
     }
+    lexical_index.assert_awaited_once_with(document.id)
 
 
 @pytest.mark.parametrize(
@@ -120,12 +123,15 @@ async def test_embed_existing_chunks_skips_already_finished(monkeypatch, documen
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(document)
     )
+    lexical_index = AsyncMock()
+    monkeypatch.setattr(knowledge_base, "_index_document_lexically", lexical_index)
 
     result = await knowledge_base._embed_existing_document_chunks(
         str(document.id), "current"
     )
 
     assert result["status"] == "already_finished"
+    lexical_index.assert_awaited_once_with(document.id)
 
 
 def test_retry_single_chunk_skips_stale_task(monkeypatch, document):

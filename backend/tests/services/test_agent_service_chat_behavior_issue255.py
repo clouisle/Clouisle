@@ -183,7 +183,9 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
         name="First",
         embedding_model_id=None,
         rerank_model_id=None,
-        team_id=None,
+        team_id=agent.team_id,
+        status="active",
+        settings=None,
     )
     second_kb = SimpleNamespace(
         id="kb-2",
@@ -191,6 +193,8 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
         embedding_model_id="embedding-1",
         rerank_model_id="rerank-1",
         team_id="team-1",
+        status="active",
+        settings=None,
     )
     links = [
         SimpleNamespace(
@@ -213,21 +217,24 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
         ),
     ]
     query = SimpleNamespace(prefetch_related=AsyncMock(return_value=links))
-    search = AsyncMock(
-        side_effect=[
-            [{"content": "lower", "score": 0.4}],
-            [{"content": "higher", "score": 0.9}],
-        ]
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
+                {"kb_name": "Second", "content": "higher", "score": 0.9},
+                {"kb_name": "First", "content": "lower", "score": 0.4},
+            )
+        )
     )
 
     with (
         patch("app.services.agent.AgentKnowledgeBase.filter", return_value=query),
-        patch("app.services.vector_store.VectorStore") as vector_store,
+        patch("app.services.retrieval.retrieve", retrieve),
     ):
-        vector_store.return_value.search = search
         context = await service._retrieve_rag_context(agent, "question")
 
     assert context == "[Second] higher\n\n[First] lower"
+    request = retrieve.await_args.args[0]
+    assert [target.kb_id for target in request.targets] == ["kb-1", "kb-2"]
 
     broken_query = SimpleNamespace(
         prefetch_related=AsyncMock(side_effect=RuntimeError("db unavailable"))

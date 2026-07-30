@@ -11,6 +11,7 @@ from app.models import (
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
     KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
 )
+from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.vector_store import DimensionMismatchError
 
@@ -19,8 +20,32 @@ class Query:
     def __init__(self, value=None):
         self.value = value
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.value
+
     async def first(self):
         return self.value
+
+
+@pytest.fixture
+def dispatch_transaction(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
 
 
 @pytest.mark.anyio
@@ -70,11 +95,24 @@ def test_serialize_knowledge_base_error_hides_unsafe_details(
 
 
 @pytest.mark.anyio
-async def test_dispatch_document_task_records_and_rolls_back_metadata():
-    doc = SimpleNamespace(metadata=None, save=AsyncMock())
+async def test_dispatch_document_task_records_and_rolls_back_metadata(
+    monkeypatch, dispatch_transaction
+):
+    doc = SimpleNamespace(
+        id=uuid4(),
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata=None,
+        save=AsyncMock(),
+    )
     task = SimpleNamespace(name="process", apply_async=Mock())
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
 
-    task_id = await knowledge_bases._dispatch_document_task(doc, task, "doc-id")
+    task_id = await knowledge_bases._dispatch_document_task(
+        doc, task, "doc-id", status=knowledge_bases.DocumentStatus.PROCESSING.value
+    )
 
     assert doc.metadata == {
         "task_id": task_id,
@@ -85,9 +123,18 @@ async def test_dispatch_document_task_records_and_rolls_back_metadata():
 
     task.apply_async.side_effect = RuntimeError("broker unavailable")
     with pytest.raises(RuntimeError, match="broker unavailable"):
-        await knowledge_bases._dispatch_document_task(doc, task, "doc-id")
-    assert doc.metadata == {}
-    doc.save.assert_awaited_with(update_fields=["metadata"])
+        await knowledge_bases._dispatch_document_task(
+            doc, task, "doc-id", status=knowledge_bases.DocumentStatus.PROCESSING.value
+        )
+    assert doc.metadata == {
+        "task_id": task_id,
+        "task_name": "process",
+        "task_args": ["doc-id"],
+    }
+    doc.save.assert_awaited_with(
+        using_db=dispatch_transaction,
+        update_fields=["metadata", "status", "error_message"],
+    )
 
 
 @pytest.mark.anyio
@@ -197,20 +244,22 @@ async def test_preview_document_chunks_rejects_missing_source(monkeypatch):
 )
 async def test_search_maps_vector_store_errors(monkeypatch, failure, expected_code):
     kb = SimpleNamespace(
+        id=uuid4(),
+        name="kb",
+        status="active",
         embedding_model_id=None,
         rerank_model_id=None,
-        team_id=None,
+        embedding_dimension=None,
+        team_id=uuid4(),
     )
-    store = SimpleNamespace(search=AsyncMock(side_effect=failure))
+    retrieve = AsyncMock(side_effect=failure)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: store)
-    search = SimpleNamespace(
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
+    search = SearchRequest(
         query="query",
         search_mode="hybrid",
         top_k=5,
         score_threshold=0.1,
-        filter_doc_ids=None,
-        model_fields_set=set(),
     )
 
     with pytest.raises(BusinessError) as exc:
@@ -222,24 +271,23 @@ async def test_search_maps_vector_store_errors(monkeypatch, failure, expected_co
 async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     kb_id = uuid4()
     kb = SimpleNamespace(
+        id=kb_id,
+        name="kb",
+        status="active",
         embedding_model_id=uuid4(),
         rerank_model_id=uuid4(),
+        embedding_dimension=None,
         team_id=uuid4(),
     )
-    store = SimpleNamespace(search=AsyncMock(return_value=[{"content": "match"}]))
+    retrieve = AsyncMock(return_value=SimpleNamespace(results=({"content": "match"},)))
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: store)
-    search = SimpleNamespace(
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
+    search = SearchRequest(
         query="query",
         search_mode="hybrid",
         top_k=5,
         score_threshold=0.1,
-        filter_doc_ids=None,
         rerank_enabled=True,
-        rerank_candidate_k=None,
-        rerank_fail_open=None,
-        rerank_score_threshold=None,
-        model_fields_set={"rerank_enabled"},
     )
 
     response = await knowledge_bases.search_knowledge_base(
@@ -247,6 +295,4 @@ async def test_search_passes_explicit_rerank_overrides(monkeypatch):
     )
 
     assert response["data"]["total"] == 1
-    assert store.search.await_args.kwargs["rerank_overrides"] == {
-        "rerank_enabled": True
-    }
+    assert retrieve.await_args.args[0].rerank_overrides == {"rerank_enabled": True}

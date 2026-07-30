@@ -46,7 +46,14 @@ async def test_knowledge_retrieval_validates_config_and_query(
 
 @pytest.mark.anyio
 async def test_knowledge_retrieval_returns_not_found_for_unknown_knowledge_base():
-    with patch("app.models.knowledge_base.KnowledgeBase.filter") as kb_filter:
+    workflow_id, team_id = uuid4(), uuid4()
+    with (
+        patch("app.models.workflow.Workflow.filter") as workflow_filter,
+        patch("app.models.knowledge_base.KnowledgeBase.filter") as kb_filter,
+    ):
+        workflow_filter.return_value.only.return_value.first = AsyncMock(
+            return_value=SimpleNamespace(team_id=team_id)
+        )
         kb_filter.return_value.first = AsyncMock(return_value=None)
         result = await KnowledgeRetrievalNodeExecutor().execute(
             {
@@ -59,9 +66,11 @@ async def test_knowledge_retrieval_returns_not_found_for_unknown_knowledge_base(
                 }
             },
             MagicMock(),
-            MagicMock(),
+            SimpleNamespace(workflow_id=workflow_id),
         )
 
+    workflow_filter.assert_called_once_with(id=workflow_id)
+    kb_filter.assert_called_once_with(id="missing-kb", team_id=team_id)
     assert result.error == "not_found"
 
 
@@ -69,30 +78,42 @@ async def test_knowledge_retrieval_returns_not_found_for_unknown_knowledge_base(
 async def test_knowledge_retrieval_searches_and_formats_results():
     document_id = uuid4()
     chunk_id = uuid4()
+    workflow_id = uuid4()
     kb = SimpleNamespace(
-        embedding_model_id=uuid4(), rerank_model_id=uuid4(), team_id=uuid4()
+        id=uuid4(),
+        name="Docs",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=uuid4(),
+        team_id=uuid4(),
+        settings=None,
     )
     context = MagicMock()
     context.resolve_variable_ref = AsyncMock(return_value=123)
-    search = AsyncMock(
-        return_value=[
-            {
-                "content": "first",
-                "score": 0.9,
-                "metadata": {"page": 1},
-                "document_id": document_id,
-                "chunk_id": chunk_id,
-            },
-            {},
-        ]
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(
+                {
+                    "content": "first",
+                    "score": 0.9,
+                    "metadata": {"page": 1},
+                    "document_id": document_id,
+                    "chunk_id": chunk_id,
+                },
+                {},
+            )
+        )
     )
 
     with (
+        patch("app.models.workflow.Workflow.filter") as workflow_filter,
         patch("app.models.knowledge_base.KnowledgeBase.filter") as kb_filter,
-        patch("app.services.vector_store.VectorStore") as vector_store,
+        patch("app.services.retrieval.retrieve", retrieve),
     ):
+        workflow_filter.return_value.only.return_value.first = AsyncMock(
+            return_value=SimpleNamespace(team_id=kb.team_id)
+        )
         kb_filter.return_value.first = AsyncMock(return_value=kb)
-        vector_store.return_value.search = search
         result = await KnowledgeRetrievalNodeExecutor().execute(
             {
                 "data": {
@@ -107,22 +128,18 @@ async def test_knowledge_retrieval_searches_and_formats_results():
                 }
             },
             context,
-            MagicMock(),
+            SimpleNamespace(workflow_id=workflow_id),
         )
 
     context.resolve_variable_ref.assert_awaited_once_with("{{start.query}}")
-    vector_store.assert_called_once_with(
-        embedding_model_id=str(kb.embedding_model_id),
-        rerank_model_id=str(kb.rerank_model_id),
-        team_id=str(kb.team_id),
-    )
-    search.assert_awaited_once_with(
-        kb_id="kb-1",
-        query="123",
-        search_mode="vector",
-        top_k=3,
-        score_threshold=0.4,
-    )
+    kb_filter.assert_called_once_with(id="kb-1", team_id=kb.team_id)
+    request = retrieve.await_args.args[0]
+    assert request.query == "123"
+    assert request.search_mode == "vector"
+    assert request.top_k == 3
+    assert request.score_threshold == 0.4
+    assert request.targets[0].kb_id == kb.id
+    assert request.targets[0].embedding_model_id == kb.embedding_model_id
     assert result.outputs == {
         "matches": [
             {
@@ -147,19 +164,31 @@ async def test_knowledge_retrieval_searches_and_formats_results():
 
 @pytest.mark.anyio
 async def test_knowledge_retrieval_translates_search_errors_and_uses_defaults():
-    kb = SimpleNamespace(embedding_model_id=None, rerank_model_id=None, team_id=None)
+    workflow_id, team_id = uuid4(), uuid4()
+    kb = SimpleNamespace(
+        id=uuid4(),
+        name="Docs",
+        status="active",
+        embedding_model_id=None,
+        rerank_model_id=None,
+        team_id=team_id,
+        settings=None,
+    )
     error = RuntimeError("search failed")
 
     with (
+        patch("app.models.workflow.Workflow.filter") as workflow_filter,
         patch("app.models.knowledge_base.KnowledgeBase.filter") as kb_filter,
-        patch("app.services.vector_store.VectorStore") as vector_store,
+        patch("app.services.retrieval.retrieve", new=AsyncMock(side_effect=error)),
         patch(
             "app.services.workflow.executors.knowledge.translate_public_workflow_error",
             return_value="translated_error",
         ) as translate,
     ):
+        workflow_filter.return_value.only.return_value.first = AsyncMock(
+            return_value=SimpleNamespace(team_id=team_id)
+        )
         kb_filter.return_value.first = AsyncMock(return_value=kb)
-        vector_store.return_value.search = AsyncMock(side_effect=error)
         result = await KnowledgeRetrievalNodeExecutor().execute(
             {
                 "data": {
@@ -172,19 +201,10 @@ async def test_knowledge_retrieval_translates_search_errors_and_uses_defaults():
                 }
             },
             MagicMock(),
-            MagicMock(),
+            SimpleNamespace(workflow_id=workflow_id),
         )
 
-    vector_store.assert_called_once_with(
-        embedding_model_id=None, rerank_model_id=None, team_id=None
-    )
-    vector_store.return_value.search.assert_awaited_once_with(
-        kb_id="kb-1",
-        query="question",
-        search_mode="hybrid",
-        top_k=5,
-        score_threshold=0.0,
-    )
+    kb_filter.assert_called_once_with(id="kb-1", team_id=team_id)
     translate.assert_called_once_with(error)
     assert result.error == "translated_error"
 

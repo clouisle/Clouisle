@@ -2,6 +2,84 @@
 
 ## Active
 
+- **pr-315-review-fixes** — In progress. Complete P0–P3 remediation for lexical recovery, lifecycle consistency, global retrieval, AUTO-RAG, Retrieval Lab, and PostgreSQL image publication. See `docs/plan/pr-315-review-fixes.md`
+  - [x] 1. Complete remediation design and defect mapping
+  - [ ] 2. Authoritative lexical versions, bounded backfill, and reconciliation
+  - [ ] 3. Celery loop reuse and independent projection repair
+  - [ ] 4. Lifecycle dispatch compensation and transactional chunk mutations
+  - [ ] 5. Global retrieval fusion, ordered context, detached shadow, and pipelined telemetry
+  - [ ] 6. Bounded fail-open AUTO-RAG history
+  - [ ] 7. Sparse settings merge and Retrieval Lab validation
+  - [ ] 8. Verified dual-architecture PostgreSQL deployment image
+  - [ ] 9. Full validation and evidence
+
+- **retrieval-query-embedding-reuse** — Complete. Reuse invocation-local query embeddings across matching multi-KB targets and Retrieval Lab A/B variants while preserving independent retrieval and rerank semantics. See `docs/plan/retrieval-query-embedding-reuse.md`
+  - [x] 1. Design and implementation index
+  - [x] 2. Precomputed embedding search seam
+  - [x] 3. Multi-target and rollout singleflight reuse
+  - [x] 4. Batch retrieval API
+  - [x] 5. Retrieval Lab batch comparison
+  - [x] 6. Documentation and validation
+
+- **postgres-pg-search-alpine-image** — In progress. ARM64 passed at 426,942,814 bytes; native amd64 and release-manifest evidence remain required before adoption. See `docs/plan/postgres-pg-search-alpine-image.md`
+  - [x] 1. Reproducible Alpine source build
+  - [x] 2. Runtime and size acceptance harness
+  - [x] 3. Native multi-architecture CI and publication workflow
+  - [ ] 4. Dual-architecture qualification and deployment adoption
+
+- **postgres-pg-search-lexical** — Complete. Replaced OpenSearch lexical retrieval with ParadeDB `pg_search` through a direct PostgreSQL 17 cutover while preserving current retrieval and weighted-RRF contracts. See `docs/plan/postgresql-pg-search-lexical.md`
+  - [x] 1. PostgreSQL 17 migration and compliance readiness
+  - [x] 2. pg_search extension, lexical relation, and BM25 index
+  - [x] 3. PostgreSQL lexical adapter and lifecycle integration
+  - [x] 4. Direct cutover and OpenSearch removal
+  - [x] 5. Integration validation and operator documentation
+
+- **retrieval-lab-detail-panel** — Complete. Move compact Retrieval Lab results into a shared desktop resizable detail panel and mobile Sheet while preserving production retrieval diagnostics and A/B behavior. See `docs/plan/retrieval-lab-detail-panel.md`
+  - [x] 1. Replace inline expansion with side-aware result selection
+  - [x] 2. Add compact accessible result cards
+  - [x] 3. Add desktop resizable panel and mobile Sheet
+  - [x] 4. Update i18n and focused component tests
+  - [x] 5. Run frontend validation and record results
+
+- **backend-mypy-cleanup** — Complete. Resolved backend mypy errors through accurate ORM annotations, validated boundary narrowing, and local typing fixes without changing product behavior. See `docs/plan/backend-mypy-cleanup.md`
+  - [x] 1. Correct ORM and retrieval typing boundaries
+  - [x] 2. Correct Chat, branching, analytics, and admin filter typing
+  - [x] 3. Correct media, embed, settings, tools, and package boundaries
+  - [x] 4. Reach zero mypy errors and pass focused regression checks
+
+- **interactive-retrieval-only-cleanup** — Complete. Keep the Retrieval Lab as an immediate single-KB search and A/B inspection tool, and remove the non-production-representative dataset, labeling, batch evaluation, run comparison, and parameter sweep stack. See `docs/plan/interactive-retrieval-only-cleanup.md`
+  - [x] 1. Confirm production-path mismatch and define the removal boundary
+  - [x] 2. Remove frontend evaluation and dataset-authoring surfaces
+  - [x] 3. Remove evaluation API, models, services, tasks, and permissions
+  - [x] 4. Drop obsolete evaluation schema safely
+  - [x] 5. Remove i18n, tests, and documentation residue
+  - [x] 6. Verify interactive and production retrieval regressions
+
+- **retrieval-failure-handling** — In progress. Make first-use lexical retrieval safe, preserve sanitized per-channel diagnostics, return actionable localized retrieval guidance without exposing infrastructure details, remove rerank fail-open degradation, and add stage-aware error reporting. See `docs/plan/retrieval-failure-handling.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Lexical index and alias initialization
+  - [x] 3. Sanitized retrieval diagnostics and endpoint mapping
+  - [x] 4. Localized failure copy
+  - [x] 5. Preserve dual-channel failure classifications
+  - [x] 6. Focused tests, live retry, underlying channel diagnosis, and reconciliation of 184 missing lexical documents
+  - [x] 7. Actionable safe error categories and per-side Retrieval Lab guidance
+  - [x] 8. Normalize lexical result names to the search response contract and cover HTTP 500 classification
+  - [x] 9. Final live fulltext and hybrid A/B verification
+  - [x] 10. Remove rerank fail-open, add stage-aware errors, restore toast notifications
+
+- **yun-117-knowledge-retrieval-lab** — Complete. Replace heuristic keyword matching with an evaluated Dense + BM25 hybrid pipeline and upgrade the existing search test into a retrieval evaluation lab. See `docs/plan/yun-117-knowledge-retrieval-lab.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Retrieval evaluation baseline — deterministic chunk/document Recall@K, MRR@K, nDCG@K, expected-empty accuracy, latency percentiles, and current `VectorStore.search` snapshot adapter; 6,246 backend tests passed with 97.82% lines/95.11% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
+  - [x] 3. Correct current retrieval semantics — strict modes, stage-specific scores/ranks, dense-only thresholding, explicit dense failures, hybrid degradation, authoritative status filters, lexical-only AUTO RAG, and bounded global multi-KB ranking; 6,255 backend tests passed with 97.82% lines/95.09% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
+  - [x] 4. Unified retrieval service — one authorization-safe request/response contract now owns bounded multi-KB concurrency, timeout/failure diagnostics, global deterministic ranking/truncation, and VectorStore delegation across API, AUTO, Agentic, AgentService, and workflow callers; 6,267 backend tests passed with 97.81% lines/95.07% branches; 1,998 frontend tests passed with 97.77% lines/95.04% functions
+  - [x] 5. PostgreSQL pg_search BM25 indexing and weighted fusion — PostgreSQL lexical projection, lifecycle indexing, resumable backfill/reconciliation, weighted RRF, and deployment support complete.
+  - [x] 6. Global rerank and bounded context assembly — one deterministic cross-KB rerank pass, fail-closed stage diagnostics, calibrated threshold handling, authorized adjacent-chunk expansion, document aggregation, and final context budgets.
+  - [x] 7. Instant retrieval playground and A/B comparison — shared production-faithful Retrieval Lab for dashboard/platform routes, dedicated test permissions, stage diagnostics/timings, independent A/B requests, local presets, and authorized production apply.
+  - [x] 8. Interactive-only cleanup — removed datasets, relevance labeling, batch evaluation runs, parameter sweeps, and their schema/runtime residue; Retrieval Lab remains immediate single-query and A/B inspection only.
+  - [x] 9. Query contextualization experiment — default-off, AUTO-only retrieval query rewriting uses token-bounded active-branch history, the agent chat model, a strict timeout, grounded structured output, retrieval-only rewrites, and privacy-safe diagnostics.
+  - [x] 10. Learned Sparse gate retired — evaluation-only learned-sparse artifacts were removed with the non-production evaluation stack; production retrieval remains Dense + pg_search BM25.
+  - [x] 11. Rollout, observability, documentation, and validation — environment kill switch plus mutable global/team/percentage rollout, deterministic hashing, answer-isolated privacy-safe shadow execution, and fail-open Redis metrics.
+
 - **issue-255-test-coverage** — Complete. Established honest backend and frontend coverage measurement, covered critical happy/error paths, and enforced independent 95% CI gates. See `docs/plan/issue-255-test-coverage.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend and frontend coverage baselines

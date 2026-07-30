@@ -36,6 +36,8 @@ config:
   VECTOR_BACKEND: qdrant
   QDRANT_COLLECTION_PREFIX: kb_dim
   QDRANT_DISTANCE: Cosine
+  RETRIEVAL_HYBRID_KILL_SWITCH: "false"
+  RETRIEVAL_SHADOW_ENABLED: "false"
   SANDBOX_RUNTIME_ENABLED: "true"
   SANDBOX_LEGACY_FALLBACK_ENABLED: "true"
   SANDBOX_WORKER_CONCURRENCY: "1"
@@ -190,12 +192,12 @@ postgresql:
     user: ""
     database: ""
   image:
-    repository: postgres
-    tag: "16"
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search
+    tag: 0.24.3-pg17-alpine1
     pullPolicy: IfNotPresent
   extraArgs:
     - "-c"
-    - "shared_preload_libraries=pg_stat_statements"
+    - "shared_preload_libraries=pg_search,pg_stat_statements"
     - "-c"
     - "pg_stat_statements.track=all"
   persistence:
@@ -243,7 +245,7 @@ qdrant:
     url: ""
   image:
     repository: qdrant/qdrant
-    tag: latest
+    tag: v1.18.3
     pullPolicy: IfNotPresent
   persistence:
     enabled: true

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -66,7 +66,7 @@ async def _validate_setting_value(key: str, value: object) -> None:
         BusinessError: If validation fails
     """
 
-    def raise_validation_error() -> None:
+    def raise_validation_error() -> NoReturn:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="validation_error",

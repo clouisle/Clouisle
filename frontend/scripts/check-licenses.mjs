@@ -11,6 +11,8 @@ const rootDir = path.resolve(__dirname, '..', '..')
 const frontendDir = path.resolve(__dirname, '..')
 const policyPath = path.join(rootDir, 'license-policy.yml')
 const nextConfigPath = path.join(frontendDir, 'next.config.ts')
+const bunLockPath = path.join(frontendDir, 'bun.lock')
+
 
 function stripComment(line) {
   let inSingle = false
@@ -239,13 +241,54 @@ async function loadPolicy() {
   }
 }
 
+function packageNameFromVersion(version) {
+  return version.slice(0, version.lastIndexOf('@'))
+}
+
+async function productionPackageNames() {
+  const lockText = await readFile(bunLockPath, 'utf-8')
+  const lock = JSON.parse(lockText.replace(/,([\s]*[}\]])/g, '$1'))
+  const rootDependencies = lock.workspaces?.['']?.dependencies ?? {}
+  const dependenciesByName = new Map()
+
+  for (const entry of Object.values(lock.packages ?? {})) {
+    const [version, , metadata = {}] = entry
+    const name = packageNameFromVersion(version)
+    const dependencies = dependenciesByName.get(name) ?? new Set()
+    for (const dependency of Object.keys(metadata.dependencies ?? {})) {
+      dependencies.add(dependency)
+    }
+    for (const dependency of Object.keys(metadata.optionalDependencies ?? {})) {
+      dependencies.add(dependency)
+    }
+    dependenciesByName.set(name, dependencies)
+  }
+
+  const production = new Set(Object.keys(rootDependencies))
+  const pending = [...production]
+  for (const name of pending) {
+    for (const dependency of dependenciesByName.get(name) ?? []) {
+      if (!production.has(dependency)) {
+        production.add(dependency)
+        pending.push(dependency)
+      }
+    }
+  }
+  return production
+}
+
 async function runLicenseChecker() {
   const { stdout } = await execFileAsync(
     path.join(frontendDir, 'node_modules', '.bin', 'license-checker-rseidelsohn'),
-    ['--json', '--production'],
+    ['--json', '--start', path.join(frontendDir, 'node_modules')],
     { cwd: frontendDir, maxBuffer: 10 * 1024 * 1024 },
   )
-  return JSON.parse(stdout)
+  const production = await productionPackageNames()
+  return Object.fromEntries(
+    Object.entries(JSON.parse(stdout)).filter(([key]) =>
+      production.has(parsePackageKey(key).name),
+    ),
+  )
 }
 
 async function isNextImageOptimizationDisabled() {

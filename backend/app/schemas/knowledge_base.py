@@ -3,10 +3,11 @@ Knowledge Base schemas for API request/response.
 """
 
 from datetime import datetime
-from typing import Optional, List
+from enum import Enum
+from typing import List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ============ Enums (mirroring model enums for API) ============
@@ -65,16 +66,30 @@ class KnowledgeBaseSettings(BaseModel):
     rerank_candidate_k: int = Field(
         default=10, ge=1, le=100, description="Candidate pool size before reranking"
     )
-    rerank_fail_open: bool = Field(
-        default=True,
-        description="Whether to fall back to recall results when reranking fails",
-    )
     rerank_score_threshold: Optional[float] = Field(
         default=None,
         ge=0,
         le=1,
         description="Optional minimum rerank score threshold",
     )
+    search_mode: Literal["vector", "fulltext", "hybrid"] | None = Field(
+        default=None, description="Default retrieval mode"
+    )
+    top_k: int | None = Field(default=None, ge=1, le=100)
+    score_threshold: float | None = Field(default=None, ge=0, le=1)
+    dense_weight: float | None = Field(default=None, ge=0)
+    lexical_weight: float | None = Field(default=None, ge=0)
+    rrf_k: int | None = Field(default=None, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def validate_hybrid_weights(self):
+        if (
+            self.search_mode in (None, "hybrid")
+            and self.dense_weight == 0
+            and self.lexical_weight == 0
+        ):
+            raise ValueError("at least one retrieval weight must be positive")
+        return self
 
 
 class KnowledgeBaseBase(BaseModel):
@@ -115,8 +130,7 @@ class CreatorInfo(BaseModel):
     username: str
     avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamInfo(BaseModel):
@@ -126,8 +140,7 @@ class TeamInfo(BaseModel):
     name: str
     avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmbeddingModelInfo(BaseModel):
@@ -138,8 +151,7 @@ class EmbeddingModelInfo(BaseModel):
     provider: str
     model_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RerankModelInfo(BaseModel):
@@ -150,8 +162,7 @@ class RerankModelInfo(BaseModel):
     provider: str
     model_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KnowledgeBase(KnowledgeBaseBase):
@@ -176,8 +187,7 @@ class KnowledgeBase(KnowledgeBaseBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KnowledgeBaseList(BaseModel):
@@ -202,8 +212,7 @@ class KnowledgeBaseList(BaseModel):
     total_tokens: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ Document Schemas ============
@@ -247,8 +256,7 @@ class Document(DocumentBase):
     updated_at: datetime
     processed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DocumentList(BaseModel):
@@ -267,8 +275,7 @@ class DocumentList(BaseModel):
     metadata: Optional[dict] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ Document Chunk Schemas ============
@@ -293,8 +300,7 @@ class DocumentChunk(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RechunkRequest(BaseModel):
@@ -378,25 +384,27 @@ class ChunkPreviewResponse(BaseModel):
 # ============ Search Schemas ============
 
 
-class SearchMode:
-    """Search mode constants"""
+class SearchMode(str, Enum):
+    """Supported search modes."""
 
-    VECTOR = "vector"  # Vector/semantic search
-    FULLTEXT = "fulltext"  # Full-text search
-    HYBRID = "hybrid"  # Hybrid (vector + fulltext)
+    VECTOR = "vector"
+    FULLTEXT = "fulltext"
+    HYBRID = "hybrid"
 
 
-class SearchRequest(BaseModel):
-    """Search request for knowledge base"""
+class SearchConfiguration(BaseModel):
+    """Validated retrieval configuration shared by single and batch search."""
 
-    query: str = Field(..., min_length=1, max_length=1000, description="Search query")
-    search_mode: str = Field(
-        default="hybrid", description="Search mode: vector, fulltext, hybrid"
+    search_mode: SearchMode = Field(
+        default=SearchMode.HYBRID, description="Search mode: vector, fulltext, hybrid"
     )
     top_k: int = Field(default=5, ge=1, le=20, description="Number of results")
     score_threshold: float = Field(
-        default=0.0, ge=0, le=1, description="Minimum similarity score"
+        default=0.0, ge=0, le=1, description="Minimum dense similarity score"
     )
+    dense_weight: float = Field(default=1.0, ge=0, description="Dense RRF weight")
+    lexical_weight: float = Field(default=1.0, ge=0, description="Lexical RRF weight")
+    rrf_k: int = Field(default=60, ge=1, le=1000, description="RRF rank constant")
     filter_doc_ids: Optional[List[UUID]] = Field(
         None, description="Filter by document IDs"
     )
@@ -406,15 +414,50 @@ class SearchRequest(BaseModel):
     rerank_candidate_k: Optional[int] = Field(
         default=None, ge=1, le=100, description="Override rerank candidate pool size"
     )
-    rerank_fail_open: Optional[bool] = Field(
-        default=None, description="Override rerank fail-open behavior"
-    )
     rerank_score_threshold: Optional[float] = Field(
         default=None,
         ge=0,
         le=1,
         description="Override rerank score threshold, null disables threshold",
     )
+
+    @model_validator(mode="after")
+    def validate_hybrid_weights(self):
+        if (
+            self.search_mode == SearchMode.HYBRID
+            and self.dense_weight == 0
+            and self.lexical_weight == 0
+        ):
+            raise ValueError("at least one retrieval weight must be positive")
+        return self
+
+
+class SearchRequest(SearchConfiguration):
+    """Search request for one knowledge base configuration."""
+
+    query: str = Field(..., min_length=1, max_length=1000, description="Search query")
+
+
+class SearchBatchConfiguration(SearchConfiguration):
+    """Identified search configuration in a batch request."""
+
+    id: str = Field(..., min_length=1, max_length=64)
+
+
+class SearchBatchRequest(BaseModel):
+    """Search one query with independently evaluated configurations."""
+
+    query: str = Field(..., min_length=1, max_length=1000)
+    configurations: List[SearchBatchConfiguration] = Field(
+        ..., min_length=1, max_length=10
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self):
+        ids = [configuration.id for configuration in self.configurations]
+        if len(ids) != len(set(ids)):
+            raise ValueError("configuration ids must be unique")
+        return self
 
 
 class SearchResult(BaseModel):
@@ -427,9 +470,34 @@ class SearchResult(BaseModel):
     score: float
     metadata: Optional[dict] = None
     search_type: Optional[str] = None
+    dense_score: Optional[float] = None
+    dense_rank: Optional[int] = None
+    lexical_score: Optional[float] = None
+    lexical_rank: Optional[int] = None
+    fusion_score: Optional[float] = None
+    fusion_rank: Optional[int] = None
     original_score: Optional[float] = None
     rerank_score: Optional[float] = None
+    rerank_rank: Optional[int] = None
     rerank_reason: Optional[str] = None
+    final_score_stage: Optional[str] = None
+    degradation_reasons: Optional[List[dict[str, str]]] = None
+
+
+class RetrievalDiagnostic(BaseModel):
+    """Retrieval target diagnostic."""
+
+    kb_id: UUID
+    code: Literal["inactive", "missing_embedding_model", "timeout", "failed"]
+    detail: Optional[str] = None
+    stage: Optional[str] = None
+
+
+class RetrievalTiming(BaseModel):
+    """Observed retrieval stage latency."""
+
+    stage: Literal["recall", "rerank", "context", "total"]
+    latency_ms: float
 
 
 class SearchResponse(BaseModel):
@@ -438,6 +506,32 @@ class SearchResponse(BaseModel):
     query: str
     results: List[SearchResult]
     total: int
+    diagnostics: List[RetrievalDiagnostic] = Field(default_factory=list)
+    timings: List[RetrievalTiming] = Field(default_factory=list)
+
+
+class SearchBatchError(BaseModel):
+    """Sanitized failure for one batch configuration."""
+
+    code: int
+    retrieval_error_category: str
+    stage: Optional[str] = None
+
+
+class SearchBatchOutcome(BaseModel):
+    """Independent outcome for one search configuration."""
+
+    id: str
+    status: Literal["fulfilled", "rejected"]
+    response: Optional[SearchResponse] = None
+    error: Optional[SearchBatchError] = None
+
+
+class SearchBatchResponse(BaseModel):
+    """Ordered outcomes for a batch search."""
+
+    query: str
+    outcomes: List[SearchBatchOutcome]
 
 
 # ============ Statistics Schemas ============

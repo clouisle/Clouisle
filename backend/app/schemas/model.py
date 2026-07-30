@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 
 class ModelProvider(str, Enum):
@@ -155,8 +155,7 @@ class ModelResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ModelBrief(BaseModel):
@@ -169,8 +168,7 @@ class ModelBrief(BaseModel):
     model_type: str
     capabilities: Optional[dict[str, Any]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ModelTestRequest(BaseModel):
@@ -281,8 +279,7 @@ class TeamModelResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamModelQuotaStatus(BaseModel):

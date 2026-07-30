@@ -272,7 +272,9 @@ async def embed_upload_file(
     # Delegate to the upload endpoint logic
     from app.api.v1.endpoints.upload import upload_file as _upload_file
 
-    return await _upload_file(file=file, category=category, current_user=user)
+    return await _upload_file(
+        request=request, file=file, category=category, current_user=user
+    )
 
 
 # ============ Workflow Embed Helpers ============

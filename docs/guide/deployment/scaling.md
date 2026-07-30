@@ -112,11 +112,11 @@ spec:
 **Backend Workers:**
 
 ```yaml
-# Increase Uvicorn workers
-uvicorn app.main:app --workers 8 --host 0.0.0.0 --port 8000
+# Increase backend workers (production mode)
+python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 
 # Or in docker-compose.yml
-command: uvicorn app.main:app --workers 8 --host 0.0.0.0 --port 8000
+command: python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 ```
 
 **Celery Workers:**
@@ -737,7 +737,7 @@ client.create_collection(
 # docker-compose.yml
 services:
   qdrant-1:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335
@@ -746,7 +746,7 @@ services:
       - "6335:6335"
 
   qdrant-2:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.18.3
     environment:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT__CLUSTER__P2P__PORT: 6335

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class UserSSOConnection(models.Model):
     """Links users to their SSO provider accounts"""
 
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User", related_name="sso_connections", on_delete=fields.CASCADE
     )

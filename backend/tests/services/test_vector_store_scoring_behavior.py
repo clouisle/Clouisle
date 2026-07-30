@@ -66,14 +66,23 @@ def test_rrf_merge_prioritizes_shared_results_without_mutating_inputs():
 
     merged = vector_store._merge_results_rrf(vector_results, fulltext_results)
 
-    assert [result["chunk_id"] for result in merged] == ["shared", "vector", "text"]
+    assert [result["chunk_id"] for result in merged] == ["shared", "text", "vector"]
     assert merged[0] == {
         "chunk_id": "shared",
         "content": "vector shared",
-        "score": 1.0,
+        "score": 2 / 61,
+        "dense_score": 0.9,
+        "dense_rank": 1,
+        "lexical_score": 1.0,
+        "lexical_rank": 1,
         "search_type": "hybrid",
+        "fusion_score": 2 / 61,
+        "fusion_rank": 1,
+        "final_score_stage": "fusion",
     }
-    assert merged[1]["score"] == merged[2]["score"] == 0.4919
+    assert merged[1]["score"] == merged[2]["score"] == 1 / 62
+    assert merged[1]["fusion_rank"] == 2
+    assert merged[2]["fusion_rank"] == 3
     assert vector_results[0]["score"] == 0.9
     assert fulltext_results[0]["score"] == 1.0
 

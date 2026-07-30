@@ -20,6 +20,12 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
     def order_by(self, *_args):
         return self
 
@@ -40,6 +46,27 @@ class Query:
             return self.items if self.items else self.first_value
 
         return result().__await__()
+
+
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in ("delete_lexical_document", "index_lexical_chunk"):
+        monkeypatch.setattr(knowledge_bases, name, AsyncMock())
+
+
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
 
 
 @pytest.mark.asyncio
@@ -267,12 +294,18 @@ async def test_delete_chunk_updates_stats_and_bulk_reindexes(monkeypatch):
     kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
+        team_id=uuid4(),
         embedding_model_id=None,
         total_chunks=0,
         total_tokens=2,
         save=AsyncMock(),
     )
-    doc = SimpleNamespace(chunk_count=0, token_count=1, save=AsyncMock())
+    doc = SimpleNamespace(
+        status=DocumentStatus.PENDING.value,
+        chunk_count=0,
+        token_count=1,
+        save=AsyncMock(),
+    )
     chunk = SimpleNamespace(
         id=chunk_id,
         chunk_index=2,
@@ -280,11 +313,11 @@ async def test_delete_chunk_updates_stats_and_bulk_reindexes(monkeypatch):
         delete=AsyncMock(),
     )
     reindex_query = Query()
+    doc_query = Query(first=doc)
+    kb_query = Query(first=kb)
 
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(
-        knowledge_bases.Document, "filter", lambda **_kwargs: Query(first=doc)
-    )
+    monkeypatch.setattr(knowledge_bases.Document, "filter", lambda **_kwargs: doc_query)
 
     def chunk_filter(**kwargs):
         if "id" in kwargs:
@@ -292,6 +325,9 @@ async def test_delete_chunk_updates_stats_and_bulk_reindexes(monkeypatch):
         return reindex_query
 
     monkeypatch.setattr(knowledge_bases.DocumentChunk, "filter", chunk_filter)
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: kb_query
+    )
     vector_store = SimpleNamespace(delete_chunk_vector=AsyncMock(side_effect=OSError()))
     monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: vector_store)
     monkeypatch.setattr(knowledge_bases.AuditLogService, "log", AsyncMock())
@@ -300,8 +336,8 @@ async def test_delete_chunk_updates_stats_and_bulk_reindexes(monkeypatch):
         kb_id, doc_id, chunk_id, SimpleNamespace(), SimpleNamespace()
     )
 
-    assert (kb.total_chunks, kb.total_tokens) == (0, 0)
-    assert (doc.chunk_count, doc.token_count) == (0, 0)
+    assert set(kb_query.updated) == {"total_chunks", "total_tokens"}
+    assert set(doc_query.updated) == {"chunk_count", "token_count"}
     chunk.delete.assert_awaited_once()
     assert set(reindex_query.updated) == {"chunk_index"}
     assert result["data"] == {"id": str(chunk_id)}

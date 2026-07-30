@@ -25,7 +25,7 @@ class ClouisleImportSource(str, Enum):
 
 
 class ClouisleImportSession(models.Model):
-    id = fields.UUIDField(pk=True)
+    id = fields.UUIDField(primary_key=True)
 
     team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
         "models.Team",

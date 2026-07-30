@@ -18,6 +18,18 @@ class Query:
         self.offset_value = None
         self.limit_value = None
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.first_result
+
+    async def update(self, **_values):
+        return 1
+
     async def first(self):
         return self.first_result
 
@@ -40,6 +52,27 @@ class Query:
             return self.items
 
         return result().__await__()
+
+
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
+
+
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in ("delete_lexical_document", "index_lexical_chunk"):
+        monkeypatch.setattr(knowledge_bases, name, AsyncMock())
 
 
 @pytest.mark.asyncio
@@ -93,40 +126,43 @@ async def test_process_document_covers_validation_settings_and_dispatch_fallback
         AsyncMock(return_value={"id": str(doc_id)}),
     )
 
-    result = await knowledge_bases.process_document(
-        kb_id,
-        doc_id,
-        request,
-        ProcessRequest(
-            chunk_size=400,
-            chunk_overlap=40,
-            separator="\n\n",
-            clean_text=False,
-        ),
-        user,
-    )
-
-    assert doc.metadata == {
+    with pytest.raises(BusinessError) as exc:
+        await knowledge_bases.process_document(
+            kb_id,
+            doc_id,
+            request,
+            ProcessRequest(
+                chunk_size=400,
+                chunk_overlap=40,
+                separator="\n\n",
+                clean_text=False,
+            ),
+            user,
+        )
+    assert exc.value.msg_key == "task_dispatch_failed"
+    assert dispatch.await_args.kwargs["status"] == DocumentStatus.PROCESSING.value
+    assert dispatch.await_args.kwargs["metadata_updates"] == {
         "chunk_size": 400,
         "chunk_overlap": 40,
         "separator": "\n\n",
         "clean_text": False,
     }
-    assert doc.status == DocumentStatus.PROCESSING.value
-    assert doc.error_message is None
-    doc.save.assert_awaited_once()
-    dispatch.assert_awaited_once()
-    audit.assert_awaited_once()
-    assert result["data"] == {"id": str(doc_id)}
-    assert check_access.await_count == 3
+    audit.assert_not_awaited()
 
     doc.status = DocumentStatus.PENDING.value
-    doc.metadata = {}
-    await knowledge_bases.process_document(
-        kb_id, doc_id, request, ProcessRequest(), user
-    )
+    with pytest.raises(BusinessError) as exc:
+        await knowledge_bases.process_document(
+            kb_id, doc_id, request, ProcessRequest(), user
+        )
+    assert exc.value.msg_key == "task_dispatch_failed"
+    assert dispatch.await_args.kwargs["metadata_updates"] == {}
+
     doc.status = DocumentStatus.PENDING.value
-    await knowledge_bases.process_document(kb_id, doc_id, request, None, user)
+    with pytest.raises(BusinessError) as exc:
+        await knowledge_bases.process_document(kb_id, doc_id, request, None, user)
+    assert exc.value.msg_key == "task_dispatch_failed"
+    assert dispatch.await_args.kwargs["metadata_updates"] == {}
+    assert dispatch.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -246,6 +282,9 @@ async def test_update_document_chunk_covers_resource_and_vector_paths(
         "filter",
         lambda **_kwargs: Query(first=chunk),
     )
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: Query(first=kb)
+    )
     update_vector = AsyncMock(side_effect=vector_error)
     monkeypatch.setattr(
         knowledge_bases,
@@ -285,6 +324,4 @@ async def test_update_document_chunk_covers_resource_and_vector_paths(
         assert result["data"] == {"id": str(chunk_id)}
         assert chunk.content == "updated content"
         assert chunk.token_count == 3
-        assert doc.token_count == 12
-        assert kb.total_tokens == 22
         audit.assert_awaited_once()

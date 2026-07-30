@@ -1,5 +1,6 @@
 """Focused branch coverage for workflow executors without dedicated tests."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,14 +18,20 @@ class TestKnowledgeExecutors:
         executor = KnowledgeRetrievalNodeExecutor()
         context = MagicMock(spec=ExecutionContext)
         context.resolve_variable_ref = AsyncMock(return_value="question")
-        run = MagicMock()
+        run = MagicMock(workflow_id="workflow")
 
         assert (
             await executor.execute(
                 {"data": {"knowledgeRetrievalConfig": {}}}, context, run
             )
         ).error == "validation_error"
-        with patch("app.models.knowledge_base.KnowledgeBase.filter") as filter_mock:
+        with (
+            patch("app.models.workflow.Workflow.filter") as workflow_filter,
+            patch("app.models.knowledge_base.KnowledgeBase.filter") as filter_mock,
+        ):
+            workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=SimpleNamespace(team_id="team")
+            )
             filter_mock.return_value.first = AsyncMock(return_value=None)
             result = await executor.execute(
                 {
@@ -40,17 +47,35 @@ class TestKnowledgeExecutors:
             )
         assert result.error == "not_found"
 
-        kb = MagicMock(embedding_model_id=None, rerank_model_id=None, team_id=None)
-        with (
-            patch("app.models.knowledge_base.KnowledgeBase.filter") as filter_mock,
-            patch("app.services.vector_store.VectorStore") as store_cls,
-        ):
-            filter_mock.return_value.first = AsyncMock(return_value=kb)
-            store_cls.return_value.search = AsyncMock(
-                return_value=[
-                    {"content": "chunk", "score": 0.8, "document_id": 1, "chunk_id": 2}
-                ]
+        kb = MagicMock(
+            id="kb",
+            name="KB",
+            status="active",
+            embedding_model_id=None,
+            rerank_model_id=None,
+            team_id="team",
+        )
+        retrieve = AsyncMock(
+            return_value=SimpleNamespace(
+                results=(
+                    {
+                        "content": "chunk",
+                        "score": 0.8,
+                        "document_id": 1,
+                        "chunk_id": 2,
+                    },
+                )
             )
+        )
+        with (
+            patch("app.models.workflow.Workflow.filter") as workflow_filter,
+            patch("app.models.knowledge_base.KnowledgeBase.filter") as filter_mock,
+            patch("app.services.retrieval.retrieve", retrieve),
+        ):
+            workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=SimpleNamespace(team_id="team")
+            )
+            filter_mock.return_value.first = AsyncMock(return_value=kb)
             result = await executor.execute(
                 {
                     "data": {
@@ -81,13 +106,12 @@ class TestKnowledgeExecutors:
             "context": "chunk",
             "totalFound": 1,
         }
-        store_cls.return_value.search.assert_awaited_once_with(
-            kb_id="kb",
-            query="question",
-            search_mode="vector",
-            top_k=2,
-            score_threshold=0.4,
-        )
+        request = retrieve.await_args.args[0]
+        assert request.query == "question"
+        assert request.search_mode == "vector"
+        assert request.top_k == 2
+        assert request.score_threshold == 0.4
+        assert request.targets[0].kb_id == "kb"
 
     @pytest.mark.asyncio
     async def test_document_extractor_validates_and_translates_exception(self):

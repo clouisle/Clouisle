@@ -7,6 +7,7 @@ import pytest
 from app.api.v1.endpoints import knowledge_bases
 from app.schemas.knowledge_base import ProcessWithChunksRequest, SearchRequest
 from app.schemas.response import BusinessError
+from app.services.retrieval import RetrievalError
 from app.services.vector_store import DimensionMismatchError
 
 
@@ -16,6 +17,15 @@ class Query:
 
     def prefetch_related(self, *_args):
         return self
+
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.value
 
     async def first(self):
         return self.value
@@ -40,15 +50,41 @@ class Task:
             raise self.error
 
 
+@pytest.fixture
+def dispatch_transaction(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
+
+
 @pytest.mark.anyio
 async def test_dispatch_document_task_records_and_cleans_up_failed_dispatch(
-    monkeypatch,
+    monkeypatch, dispatch_transaction
 ):
     monkeypatch.setattr(knowledge_bases, "uuid4", lambda: "task-id")
-    doc = SimpleNamespace(metadata=None, save=AsyncMock())
+    doc = SimpleNamespace(
+        id=uuid4(),
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata=None,
+        save=AsyncMock(),
+    )
     task = Task()
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
 
-    task_id = await knowledge_bases._dispatch_document_task(doc, task, "doc-id")
+    task_id = await knowledge_bases._dispatch_document_task(
+        doc, task, "doc-id", status=knowledge_bases.DocumentStatus.PROCESSING.value
+    )
 
     assert task_id == "task-id"
     assert doc.metadata == {
@@ -60,9 +96,21 @@ async def test_dispatch_document_task_records_and_cleans_up_failed_dispatch(
 
     failed_task = Task(RuntimeError("broker unavailable"))
     with pytest.raises(RuntimeError, match="broker unavailable"):
-        await knowledge_bases._dispatch_document_task(doc, failed_task, "doc-id")
-    assert doc.metadata == {}
-    assert doc.save.await_args.kwargs == {"update_fields": ["metadata"]}
+        await knowledge_bases._dispatch_document_task(
+            doc,
+            failed_task,
+            "doc-id",
+            status=knowledge_bases.DocumentStatus.PROCESSING.value,
+        )
+    assert doc.metadata == {
+        "task_id": "task-id",
+        "task_name": "process",
+        "task_args": ["doc-id"],
+    }
+    assert doc.save.await_args.kwargs == {
+        "using_db": dispatch_transaction,
+        "update_fields": ["metadata", "status", "error_message"],
+    }
 
 
 @pytest.mark.anyio
@@ -172,16 +220,20 @@ async def test_model_authorization_validates_type_and_team_grant(monkeypatch):
 async def test_search_forwards_explicit_rerank_overrides(monkeypatch):
     kb_id = uuid4()
     kb = SimpleNamespace(
-        embedding_model_id=uuid4(), rerank_model_id=uuid4(), team_id=uuid4()
+        id=kb_id,
+        name="Docs",
+        status="active",
+        embedding_model_id=uuid4(),
+        rerank_model_id=uuid4(),
+        embedding_dimension=1536,
+        team_id=uuid4(),
     )
-    search = AsyncMock(return_value=[{"content": "answer", "score": 0.9}])
-    vector_store = SimpleNamespace(search=search)
-
-    def vector_store_factory(**_kwargs):
-        return vector_store
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(results=({"content": "answer", "score": 0.9},))
+    )
 
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
-    monkeypatch.setattr(knowledge_bases, "VectorStore", vector_store_factory)
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     request = SearchRequest(query="question", rerank_enabled=False, top_k=3)
 
     response = await knowledge_bases.search_knowledge_base(
@@ -189,8 +241,10 @@ async def test_search_forwards_explicit_rerank_overrides(monkeypatch):
     )
 
     assert response["data"]["total"] == 1
-    assert search.await_args.kwargs["rerank_overrides"] == {"rerank_enabled": False}
-    assert search.await_args.kwargs["top_k"] == 3
+    retrieval_request = retrieve.await_args.args[0]
+    assert retrieval_request.rerank_overrides == {"rerank_enabled": False}
+    assert retrieval_request.top_k == 3
+    assert retrieval_request.targets[0].embedding_dimension == 1536
 
 
 @pytest.mark.anyio
@@ -198,28 +252,31 @@ async def test_search_forwards_explicit_rerank_overrides(monkeypatch):
     ("error", "message"),
     [
         (DimensionMismatchError("wrong dimension"), "kb_embedding_dimension_mismatch"),
-        (RuntimeError("offline"), "vector_search_failed"),
+        (RetrievalError("all retrieval targets failed", ()), "vector_search_failed"),
     ],
 )
 async def test_search_converts_vector_errors(monkeypatch, error, message):
+    kb_id = uuid4()
     monkeypatch.setattr(
         knowledge_bases,
         "check_kb_access",
         AsyncMock(
             return_value=SimpleNamespace(
-                embedding_model_id=None, rerank_model_id=None, team_id=None
+                id=kb_id,
+                name="Docs",
+                status="active",
+                embedding_model_id=None,
+                rerank_model_id=None,
+                embedding_dimension=None,
+                team_id=uuid4(),
             )
         ),
     )
-    monkeypatch.setattr(
-        knowledge_bases,
-        "VectorStore",
-        lambda **_kwargs: SimpleNamespace(search=AsyncMock(side_effect=error)),
-    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", AsyncMock(side_effect=error))
 
     with pytest.raises(BusinessError) as caught:
         await knowledge_bases.search_knowledge_base(
-            uuid4(), SearchRequest(query="question"), SimpleNamespace()
+            kb_id, SearchRequest(query="question"), SimpleNamespace()
         )
     assert caught.value.msg_key == message
 

@@ -71,7 +71,7 @@ AGGRESSIVE_BLOCK_SUMMARY_CHARS = 220
 DEFAULT_FILE_CONTENT_HEAD_CHARS = 12000
 DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
 FILE_CONTENT_PLACEHOLDER = "{{fileContent}}"
-MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = """## Markdown Output
+MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = r"""## Markdown Output
 
 When the user asks you to show or display an image, output the image using normal Markdown image syntax, for example `![alt text](image-url)`. Do not wrap the Markdown image in a code block unless the user explicitly asks for the literal Markdown source.
 
@@ -2049,14 +2049,6 @@ async def prepare_model_context(
     preflight_guard_enabled = bool(
         compression_config.get("preflight_guard_enabled", True)
     )
-    session_memory_compaction_kwargs = {
-        "conversation": conversation,
-        "model_id": model_id,
-        "provider": provider,
-        "recent_raw_turns": configured_recent_raw_turns,
-        "recent_tool_turns": configured_recent_tool_turns,
-        "before_created_at": history_before_message_created_at,
-    }
     if compression_enabled and preflight_guard_enabled:
         (
             baseline_messages,
@@ -2064,8 +2056,13 @@ async def prepare_model_context(
             baseline_protected_indexes,
         ) = await _apply_session_memory_compaction(
             untrimmed_messages,
+            conversation=conversation,
+            model_id=model_id,
+            provider=provider,
+            recent_raw_turns=configured_recent_raw_turns,
+            recent_tool_turns=configured_recent_tool_turns,
             protected_indexes=untrimmed_protected_indexes,
-            **session_memory_compaction_kwargs,
+            before_created_at=history_before_message_created_at,
         )
         if baseline_session_memory_compacted:
             untrimmed_messages = baseline_messages
@@ -2147,8 +2144,13 @@ async def prepare_model_context(
             base_protected_indexes,
         ) = await _apply_session_memory_compaction(
             base_messages,
+            conversation=conversation,
+            model_id=model_id,
+            provider=provider,
+            recent_raw_turns=configured_recent_raw_turns,
+            recent_tool_turns=configured_recent_tool_turns,
             protected_indexes=base_protected_indexes,
-            **session_memory_compaction_kwargs,
+            before_created_at=history_before_message_created_at,
         )
 
     base_tokens = _estimate_message_tokens(

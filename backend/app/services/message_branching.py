@@ -46,13 +46,21 @@ async def get_visible_conversation_messages(
     *,
     before_created_at=None,
     exclude_message_ids: Iterable[UUID] | None = None,
+    limit: int | None = None,
 ) -> list[Message]:
     query = Message.filter(conversation_id=conversation_id, is_active=True)
     if before_created_at is not None:
         query = query.filter(created_at__lt=before_created_at)
     if exclude_message_ids:
         query = query.exclude(id__in=list(exclude_message_ids))
-    return await query.order_by("created_at", "id")
+    if limit is None:
+        return await query.order_by("created_at", "id")
+
+    messages = await query.order_by("-created_at", "-id").limit(limit * 8)
+    visible = [message for message in messages if _is_canonical_visible(message)]
+    visible = visible[:limit]
+    visible.reverse()
+    return visible
 
 
 async def get_last_active_canonical_message(conversation_id: UUID) -> Message | None:
@@ -60,14 +68,16 @@ async def get_last_active_canonical_message(conversation_id: UUID) -> Message | 
     return path[-1] if path else None
 
 
-async def get_prefix_path_before(message: Message) -> list[Message]:
-    if message.branch_parent_id:
+async def get_prefix_path_before(
+    message: Message, *, limit: int | None = None
+) -> list[Message]:
+    if message.branch_parent_id and limit is None:
         all_messages = await Message.filter(
             conversation_id=message.conversation_id
         ).all()
         message_by_id = {item.id: item for item in all_messages}
         prefix: list[Message] = []
-        current_id = message.branch_parent_id
+        current_id: UUID | None = message.branch_parent_id
         seen: set[UUID] = set()
 
         while current_id and current_id not in seen:
@@ -83,8 +93,38 @@ async def get_prefix_path_before(message: Message) -> list[Message]:
             prefix.reverse()
             return prefix
 
-    path = await get_active_canonical_path(message.conversation_id)
-    return [item for item in path if item.created_at < message.created_at]
+        path = await get_active_canonical_path(message.conversation_id)
+        return [item for item in path if item.created_at < message.created_at]
+
+    if message.branch_parent_id and limit is not None:
+        prefix = []
+        current_id = message.branch_parent_id
+        seen = set()
+        scan_limit = limit * 8
+
+        while current_id and current_id not in seen and len(seen) < scan_limit:
+            current = await Message.filter(
+                conversation_id=message.conversation_id,
+                id=current_id,
+            ).first()
+            if not current:
+                break
+            seen.add(current_id)
+            if _is_canonical_visible(current):
+                prefix.append(current)
+                if len(prefix) == limit:
+                    break
+            current_id = current.branch_parent_id
+
+        if prefix:
+            prefix.reverse()
+            return prefix
+
+    return await get_visible_conversation_messages(
+        message.conversation_id,
+        before_created_at=message.created_at,
+        limit=limit,
+    )
 
 
 async def _select_descendant_child(parent: Message) -> Message | None:

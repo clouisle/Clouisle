@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============ Enums ============
@@ -333,8 +333,7 @@ class CreatorInfo(BaseModel):
     username: str
     avatar_url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_user(cls, user):
@@ -351,8 +350,7 @@ class TeamInfo(BaseModel):
     name: str
     avatar_url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ModelInfo(BaseModel):
@@ -363,8 +361,7 @@ class ModelInfo(BaseModel):
     provider: str
     model_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KnowledgeBaseInfo(BaseModel):
@@ -376,8 +373,7 @@ class KnowledgeBaseInfo(BaseModel):
     icon: str | None = None
     document_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ToolConfig(BaseModel):
@@ -593,8 +589,7 @@ class AgentKnowledgeBaseOut(BaseModel):
     score_threshold: float
     search_mode: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AgentOut(AgentBase):
@@ -635,8 +630,7 @@ class AgentOut(AgentBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AgentPublicOut(BaseModel):
@@ -656,8 +650,7 @@ class AgentPublicOut(BaseModel):
     hide_tool_calls: bool = False
     created_by: CreatorInfo | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmbedAgentInfo(BaseModel):
@@ -677,8 +670,7 @@ class EmbedAgentInfo(BaseModel):
     hide_tool_calls: bool = False
     embed_config: dict[str, Any] = {}
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AgentListOut(BaseModel):
@@ -699,8 +691,7 @@ class AgentListOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ Conversation Schemas ============
@@ -734,8 +725,7 @@ class ConversationOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationListOut(BaseModel):
@@ -753,8 +743,7 @@ class ConversationListOut(BaseModel):
     user_id: UUID | None = None
     user_name: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ Message Schemas ============
@@ -769,8 +758,7 @@ class MessageVersion(BaseModel):
     content: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MessageRoundStep(BaseModel):
@@ -797,8 +785,7 @@ class MessageRoundStep(BaseModel):
     iteration_index: int | None = None
     round_status: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MessageOut(BaseModel):
@@ -842,8 +829,7 @@ class MessageOut(BaseModel):
         None  # All versions (optional, for detail view)
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SwitchVersionRequest(BaseModel):

@@ -1,15 +1,15 @@
 services:
   db:
-    image: postgres:16
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: clouisle
     ports:
       - "5432:5432"
-    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
+    command: ["postgres", "-c", "shared_preload_libraries=pg_search,pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres17_data:/var/lib/postgresql/data
 
   redis:
     image: redis:alpine
@@ -19,16 +19,16 @@ services:
     volumes:
       - redis_data:/data
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.3
     ports:
       - "6333:6333"
       - "6334:6334"
     environment:
-      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     volumes:
       - qdrant_data:/qdrant/storage
 
 volumes:
-  postgres_data:
+  postgres17_data:
   redis_data:
   qdrant_data:

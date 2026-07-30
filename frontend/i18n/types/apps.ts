@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-28T03:49:57.030Z
+// GENERATED — 2026-07-29T06:20:44.131Z
 // Source: i18n/en/apps.json
 export type AppsMessages = {
   apps: {

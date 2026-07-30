@@ -8,7 +8,7 @@ node-level timing, bottleneck detection, and optimization suggestions.
 import time
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -145,12 +145,12 @@ class ExecutionProfiler:
 
     def start(self) -> None:
         """Start profiling."""
-        self._profile.start_time = datetime.utcnow()
+        self._profile.start_time = datetime.now(UTC)
         self._start_time = time.time()
 
     def finish(self) -> WorkflowProfile:
         """Finish profiling and generate report."""
-        self._profile.end_time = datetime.utcnow()
+        self._profile.end_time = datetime.now(UTC)
         self._profile.total_duration_ms = int((time.time() - self._start_time) * 1000)
 
         # Calculate summary metrics

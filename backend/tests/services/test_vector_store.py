@@ -11,6 +11,27 @@ from app.services.vector_store import EmbeddingRequestTimeoutError, VectorStore
 vector_store_module = importlib.import_module("app.services.vector_store")
 
 
+@pytest.mark.asyncio
+async def test_delete_chunk_vector_only_deletes_qdrant_projection(monkeypatch):
+    kb_id = uuid4()
+    chunk_id = uuid4()
+    delete_points = AsyncMock()
+    chunk_filter = Mock()
+    monkeypatch.setattr(
+        vector_store_module, "get_kb_embedding_dimension", AsyncMock(return_value=3)
+    )
+    monkeypatch.setattr(
+        vector_store_module, "_collection_exists", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(vector_store_module, "_delete_qdrant_points", delete_points)
+    monkeypatch.setattr(vector_store_module.DocumentChunk, "filter", chunk_filter)
+
+    assert await VectorStore().delete_chunk_vector(chunk_id, kb_id=kb_id) is True
+
+    delete_points.assert_awaited_once_with("kb_dim_3", [str(chunk_id)])
+    chunk_filter.assert_not_called()
+
+
 @pytest.fixture
 def qdrant_models(monkeypatch):
     class Model:
@@ -101,9 +122,11 @@ async def test_add_chunk_vector_uses_timed_embed_texts(monkeypatch):
 
     store = VectorStore()
 
+    connection = object()
     result = await store.add_chunk_vector(
         UUID("00000000-0000-0000-0000-000000000001"),
         chunk,
+        using_db=connection,
     )
 
     assert result is True
@@ -111,7 +134,38 @@ async def test_add_chunk_vector_uses_timed_embed_texts(monkeypatch):
     assert (
         chunk.embedding_id == "kb_00000000-0000-0000-0000-000000000001_chunk_chunk-id"
     )
-    chunk.save.assert_awaited_once()
+    chunk.save.assert_awaited_once_with(using_db=connection)
+
+
+@pytest.mark.asyncio
+async def test_restore_chunk_vector_only_updates_qdrant(monkeypatch):
+    kb_id = uuid4()
+    chunk_id = uuid4()
+    document_id = uuid4()
+    store = VectorStore()
+    monkeypatch.setattr(store, "embed_query", AsyncMock(return_value=[0.1, 0.2]))
+    ensure_dimension = AsyncMock()
+    monkeypatch.setattr(vector_store_module, "_ensure_kb_dimension", ensure_dimension)
+    store_embedding = AsyncMock()
+    monkeypatch.setattr(store, "_store_embedding", store_embedding)
+    chunk_filter = Mock()
+    monkeypatch.setattr(vector_store_module.DocumentChunk, "filter", chunk_filter)
+
+    await store.restore_chunk_vector(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        content="old content",
+        kb_id=kb_id,
+    )
+
+    ensure_dimension.assert_awaited_once_with(kb_id, 2)
+    store_embedding.assert_awaited_once_with(
+        chunk_id,
+        [0.1, 0.2],
+        dimension=2,
+        payload={"kb_id": str(kb_id), "document_id": str(document_id)},
+    )
+    chunk_filter.assert_not_called()
 
 
 def test_build_qdrant_filter_scopes_kb_and_optional_documents(qdrant_models):

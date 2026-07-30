@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -34,6 +35,15 @@ class Query:
 
     def prefetch_related(self, *_args):
         return self
+
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.first_item
 
     def order_by(self, *_args):
         return self
@@ -184,6 +194,27 @@ def allow_kb_access(monkeypatch, kb):
     monkeypatch.setattr(kb_api, "check_kb_access", fake_check_kb_access)
 
 
+@pytest.fixture(autouse=True)
+def mock_lexical_helpers(monkeypatch):
+    for name in ("delete_lexical_document", "index_lexical_chunk"):
+        monkeypatch.setattr(kb_api, name, AsyncMock())
+
+
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(kb_api, "in_transaction", Transaction)
+    return connection
+
+
 @pytest.mark.anyio
 async def test_admin_dependency_enforces_actions_only_on_admin_routes(user):
     request = SimpleNamespace(url=SimpleNamespace(path="/api/v1/admin/knowledge-bases"))
@@ -259,7 +290,7 @@ async def test_model_authorization_rejects_missing_wrong_type_and_disabled(
 
 
 @pytest.mark.anyio
-async def test_process_document_metadata_and_dispatch_failure_are_tolerated(
+async def test_process_document_metadata_and_dispatch_failure_raise_business_error(
     monkeypatch, user, team, fake_request, auditless
 ):
     kb = kb_obj(team)
@@ -267,24 +298,22 @@ async def test_process_document_metadata_and_dispatch_failure_are_tolerated(
     allow_kb_access(monkeypatch, kb)
     monkeypatch.setattr(kb_api.Document, "filter", lambda **_kwargs: Query(first=doc))
     monkeypatch.setattr(kb_api.Document, "get", lambda **_kwargs: Query(first=doc))
-    monkeypatch.setattr(
-        kb_api,
-        "_dispatch_document_task",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("down")),
-    )
+    dispatch = AsyncMock(side_effect=RuntimeError("down"))
+    monkeypatch.setattr(kb_api, "_dispatch_document_task", dispatch)
 
-    result = await kb_api.process_document(
-        kb.id,
-        doc.id,
-        fake_request,
-        ProcessRequest(
-            chunk_size=200, chunk_overlap=20, separator="\n", clean_text=False
-        ),
-        user,
-    )
+    with pytest.raises(BusinessError) as exc_info:
+        await kb_api.process_document(
+            kb.id,
+            doc.id,
+            fake_request,
+            ProcessRequest(
+                chunk_size=200, chunk_overlap=20, separator="\n", clean_text=False
+            ),
+            user,
+        )
 
-    assert result["data"]["status"] == DocumentStatus.PROCESSING.value
-    assert doc.metadata == {
+    assert exc_info.value.msg_key == "task_dispatch_failed"
+    assert dispatch.await_args.kwargs["metadata_updates"] == {
         "chunk_size": 200,
         "chunk_overlap": 20,
         "separator": "\n",
@@ -415,40 +444,27 @@ async def test_search_passes_rerank_overrides_and_maps_vector_errors(
 ):
     kb = kb_obj(team)
     allow_kb_access(monkeypatch, kb)
-    calls = []
-
-    class VectorStore:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        async def search(self, **kwargs):
-            calls.append(kwargs)
-            return [{"content": "hit", "score": 0.9}]
-
-    monkeypatch.setattr(kb_api, "VectorStore", VectorStore)
+    retrieve = AsyncMock(
+        return_value=SimpleNamespace(results=({"content": "hit", "score": 0.9},))
+    )
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
     result = await kb_api.search_knowledge_base(
         kb.id,
         SearchRequest(query="q", rerank_enabled=False, rerank_score_threshold=None),
         user,
     )
     assert result["data"]["total"] == 1
-    assert calls[0]["rerank_overrides"] == {
+    assert retrieve.await_args.args[0].rerank_overrides == {
         "rerank_enabled": False,
         "rerank_score_threshold": None,
     }
 
-    async def dim_failure(self, **_kwargs):
-        raise kb_api.DimensionMismatchError("bad dim")
-
-    monkeypatch.setattr(VectorStore, "search", dim_failure)
+    retrieve.side_effect = kb_api.DimensionMismatchError("bad dim")
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.search_knowledge_base(kb.id, SearchRequest(query="q"), user)
     assert exc_info.value.msg_key == "kb_embedding_dimension_mismatch"
 
-    async def generic_failure(self, **_kwargs):
-        raise RuntimeError("qdrant down")
-
-    monkeypatch.setattr(VectorStore, "search", generic_failure)
+    retrieve.side_effect = RuntimeError("qdrant down")
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.search_knowledge_base(kb.id, SearchRequest(query="q"), user)
     assert exc_info.value.msg_key == "vector_search_failed"

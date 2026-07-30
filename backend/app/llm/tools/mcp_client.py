@@ -12,14 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
 from mcp import ClientSession
-from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.sse import sse_client
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 
 from app.services.error_messages import resolve_user_visible_error
 
@@ -106,10 +107,15 @@ class McpClient:
             env=env if env else None,
         )
 
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
+        async with (
+            stdio_client(server_params) as (
+                read_stream,
+                write_stream,
+            ),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            yield session
 
     @asynccontextmanager
     async def _connect_sse(self):
@@ -120,13 +126,15 @@ class McpClient:
         if not url:
             raise ValueError("URL is required for SSE transport")
 
-        async with sse_client(url, headers=headers if headers else None) as (
-            read_stream,
-            write_stream,
+        async with (
+            sse_client(url, headers=headers if headers else None) as (
+                read_stream,
+                write_stream,
+            ),
+            ClientSession(read_stream, write_stream) as session,
         ):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
+            await session.initialize()
+            yield session
 
     @asynccontextmanager
     async def _connect_http(self):
@@ -137,11 +145,15 @@ class McpClient:
         if not url:
             raise ValueError("URL is required for HTTP transport")
 
-        async with streamablehttp_client(url, headers=headers if headers else None) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
+        async with AsyncExitStack() as stack:
+            http_client = None
+            if headers:
+                http_client = create_mcp_http_client(headers=headers)
+                await stack.enter_async_context(http_client)
+
+            read_stream, write_stream = await stack.enter_async_context(
+                streamablehttp_client(url, http_client=http_client)
+            )
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 yield session
@@ -222,7 +234,7 @@ class McpClient:
                 ),
             )
         except Exception as e:
-            logger.exception(f"MCP tool execution error: {e}")
+            logger.exception("MCP tool execution error")
             return McpToolResult(
                 success=False,
                 error=resolve_user_visible_error(

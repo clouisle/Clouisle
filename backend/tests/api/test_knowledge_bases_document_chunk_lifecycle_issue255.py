@@ -7,8 +7,32 @@ import pytest
 
 from app.api.v1.endpoints import knowledge_bases
 from app.models.knowledge_base import DocumentStatus
+from app.schemas.knowledge_base import SearchRequest
 from app.schemas.response import BusinessError
 from app.services.vector_store import DimensionMismatchError
+
+
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
+
+
+@pytest.fixture(autouse=True)
+def lexical_store_calls(monkeypatch):
+    calls = SimpleNamespace(document=AsyncMock(), index=AsyncMock())
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_document", calls.document)
+    monkeypatch.setattr(knowledge_bases, "index_lexical_chunk", calls.index)
+    return calls
 
 
 class Query:
@@ -30,6 +54,20 @@ class Query:
     def limit(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        if self.value is None:
+            raise LookupError
+        return self.value
+
+    async def update(self, **_values):
+        return 1
+
     async def first(self):
         return self.value
 
@@ -47,12 +85,15 @@ class Query:
 
 
 @pytest.mark.asyncio
-async def test_delete_document_cleans_task_vectors_media_file_and_stats(monkeypatch):
+async def test_delete_document_cleans_task_vectors_media_file_and_stats(
+    monkeypatch, lexical_store_calls
+):
     from app.core.celery import celery_app
 
     kb_id, doc_id = uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
+        team_id=uuid4(),
         name="kb",
         document_count=1,
         total_chunks=2,
@@ -90,6 +131,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(monkeypa
     )
 
     celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
+    lexical_store_calls.document.assert_not_awaited()
     vectors.delete_document_vectors.assert_awaited_once_with(doc_id)
     knowledge_bases.document_processor.delete_media_assets.assert_called_once_with(
         kb_id, doc_id
@@ -205,7 +247,9 @@ async def test_batch_processing_validation_and_dispatch_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
+async def test_chunk_create_and_update_cover_vector_paths(
+    monkeypatch, lexical_store_calls, transaction_context
+):
     kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
     kb = SimpleNamespace(
         id=kb_id,
@@ -215,7 +259,12 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
         total_tokens=4,
         save=AsyncMock(),
     )
-    doc = SimpleNamespace(chunk_count=1, token_count=4, save=AsyncMock())
+    doc = SimpleNamespace(
+        status=DocumentStatus.COMPLETED.value,
+        chunk_count=1,
+        token_count=4,
+        save=AsyncMock(),
+    )
     existing = SimpleNamespace(chunk_index=1, save=AsyncMock())
     created = SimpleNamespace(
         id=chunk_id,
@@ -225,7 +274,7 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
         save=AsyncMock(),
     )
     vectors = SimpleNamespace(
-        add_chunk_vector=AsyncMock(), update_chunk_vector=AsyncMock()
+        add_chunk_vector=AsyncMock(), update_chunk_vector=AsyncMock(return_value=True)
     )
 
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
@@ -233,8 +282,12 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
         knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
     )
 
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: Query(kb)
+    )
+
     def chunk_filter(**kwargs):
-        return Query(created if "id" in kwargs else None, [existing])
+        return Query(created if "id" in kwargs else None, [existing], count=1)
 
     monkeypatch.setattr(knowledge_bases.DocumentChunk, "filter", chunk_filter)
     monkeypatch.setattr(
@@ -254,8 +307,10 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
         after_index=0,
         current_user=SimpleNamespace(),
     )
-    assert existing.chunk_index == 2
-    vectors.add_chunk_vector.assert_awaited_once_with(kb_id, created)
+    assert vectors.add_chunk_vector.await_args.kwargs == {
+        "using_db": transaction_context
+    }
+    lexical_store_calls.index.assert_awaited_once_with(chunk_id)
     assert result["data"] == {"id": chunk_id}
 
     vectors.update_chunk_vector.side_effect = DimensionMismatchError("changed")
@@ -269,14 +324,130 @@ async def test_chunk_create_and_update_cover_vector_paths(monkeypatch):
             current_user=SimpleNamespace(),
         )
     assert exc.value.msg_key == "kb_embedding_dimension_mismatch"
-    assert created.token_count == 1
 
 
 @pytest.mark.asyncio
-async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
+async def test_chunk_update_restores_vector_when_commit_fails(monkeypatch):
+    kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
+    kb = SimpleNamespace(
+        id=kb_id,
+        embedding_model_id=None,
+        team_id=None,
+    )
+    doc = SimpleNamespace(id=doc_id, status=DocumentStatus.COMPLETED.value)
+    chunk = SimpleNamespace(
+        id=chunk_id,
+        document_id=doc_id,
+        content="old content",
+        chunk_index=0,
+        token_count=2,
+        save=AsyncMock(),
+    )
+    vectors = SimpleNamespace(
+        update_chunk_vector=AsyncMock(return_value=True),
+        restore_chunk_vector=AsyncMock(),
+    )
+
+    class FailingCommit:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            if exc_type is None:
+                raise RuntimeError("commit failed")
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", FailingCommit)
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.DocumentChunk, "filter", lambda **_kwargs: Query(chunk)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: Query(kb)
+    )
+    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: vectors)
+
+    with pytest.raises(BusinessError) as exc:
+        await knowledge_bases.update_document_chunk(
+            kb_id=kb_id,
+            doc_id=doc_id,
+            chunk_id=chunk_id,
+            chunk_in=SimpleNamespace(content="new content"),
+            request=SimpleNamespace(),
+            current_user=SimpleNamespace(),
+        )
+
+    assert exc.value.msg_key == "vector_update_failed"
+    vectors.restore_chunk_vector.assert_awaited_once_with(
+        chunk_id=chunk_id,
+        document_id=doc_id,
+        content="old content",
+        kb_id=kb_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_chunk_create_deletes_vector_when_commit_fails(monkeypatch):
+    kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
+    kb = SimpleNamespace(id=kb_id, embedding_model_id=None, team_id=None)
+    doc = SimpleNamespace(id=doc_id, status=DocumentStatus.COMPLETED.value)
+    chunk = SimpleNamespace(id=chunk_id, document_id=doc_id, save=AsyncMock())
+    vectors = SimpleNamespace(
+        add_chunk_vector=AsyncMock(return_value=True),
+        delete_chunk_vector=AsyncMock(return_value=True),
+    )
+
+    class FailingCommit:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            if exc_type is None:
+                raise RuntimeError("commit failed")
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", FailingCommit)
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.DocumentChunk,
+        "filter",
+        lambda **_kwargs: Query(count=0),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.DocumentChunk, "create", AsyncMock(return_value=chunk)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: Query(kb)
+    )
+    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda **_kwargs: vectors)
+
+    with pytest.raises(BusinessError) as exc:
+        await knowledge_bases.create_document_chunk(
+            kb_id=kb_id,
+            doc_id=doc_id,
+            chunk_in=SimpleNamespace(content="new content"),
+            request=SimpleNamespace(),
+            current_user=SimpleNamespace(),
+        )
+
+    assert exc.value.msg_key == "vector_update_failed"
+    vectors.delete_chunk_vector.assert_awaited_once_with(chunk_id, kb_id=kb_id)
+
+
+@pytest.mark.asyncio
+async def test_reprocess_and_rechunk_lifecycle_dispatch(
+    monkeypatch, lexical_store_calls
+):
     from app.core.celery import celery_app
 
     kb_id, doc_id = uuid4(), uuid4()
+    kb = SimpleNamespace(team_id=uuid4())
     doc = SimpleNamespace(
         id=doc_id,
         name="doc",
@@ -285,7 +456,7 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
         error_message="old",
         save=AsyncMock(),
     )
-    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr(
         knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
     )
@@ -303,6 +474,7 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
     )
     celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
     assert doc.status == DocumentStatus.PENDING.value
+    lexical_store_calls.document.assert_awaited_once_with(doc.id, kb.team_id)
 
     await knowledge_bases.rechunk_document(
         kb_id=kb_id,
@@ -321,33 +493,34 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_without_models_or_overrides(monkeypatch):
-    search = AsyncMock(return_value=[])
+    kb_id = uuid4()
+    retrieve = AsyncMock(return_value=SimpleNamespace(results=()))
     monkeypatch.setattr(
         knowledge_bases,
         "check_kb_access",
         AsyncMock(
             return_value=SimpleNamespace(
-                embedding_model_id=None, rerank_model_id=None, team_id=None
+                id=kb_id,
+                name="kb",
+                status="active",
+                embedding_model_id=None,
+                rerank_model_id=None,
+                embedding_dimension=None,
+                team_id=uuid4(),
             )
         ),
     )
-    monkeypatch.setattr(
-        knowledge_bases,
-        "VectorStore",
-        lambda **kwargs: SimpleNamespace(search=search, constructor_kwargs=kwargs),
-    )
-    search_in = SimpleNamespace(
+    monkeypatch.setattr("app.services.retrieval.retrieve", retrieve)
+    search_in = SearchRequest(
         query="missing",
         search_mode="hybrid",
         top_k=4,
         score_threshold=0.1,
-        filter_doc_ids=None,
-        model_fields_set=set(),
     )
 
     result = await knowledge_bases.search_knowledge_base(
-        uuid4(), search_in, SimpleNamespace()
+        kb_id, search_in, SimpleNamespace()
     )
 
     assert result["data"]["total"] == 0
-    assert search.await_args.kwargs["rerank_overrides"] is None
+    assert retrieve.await_args.args[0].rerank_overrides is None

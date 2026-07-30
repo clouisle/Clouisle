@@ -6,7 +6,7 @@ Provides administrative access to all conversations across the system.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypedDict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -39,6 +39,16 @@ router = APIRouter()
 
 
 # ============ Helper Functions ============
+
+
+class UserUsage(TypedDict):
+    name: str
+    conversations: int
+    tokens: int
+
+
+def _token_count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 async def check_team_access(team_id: UUID, user: User) -> Team:
@@ -394,7 +404,7 @@ async def get_conversation_trends(
 
         # Count messages for conversations in accessible scope (not just today's conversations)
         all_conv_ids = await conv_query.values_list("id", flat=True)
-        user_usage = {
+        user_usage: dict[str, UserUsage] = {
             str(user_id): {"name": username, "conversations": 0, "tokens": 0}
             for user_id, username in user_map.items()
         }
@@ -421,8 +431,8 @@ async def get_conversation_trends(
             tokens = 0
             for m in token_messages:
                 if m["token_usage"]:
-                    tokens += m["token_usage"].get("prompt", 0) or 0
-                    tokens += m["token_usage"].get("completion", 0) or 0
+                    tokens += _token_count(m["token_usage"].get("prompt"))
+                    tokens += _token_count(m["token_usage"].get("completion"))
 
             if has_dashboard_access:
                 token_rows = await Message.filter(
@@ -434,9 +444,9 @@ async def get_conversation_trends(
                 for message in token_rows:
                     user_id = message.conversation.user_id
                     if user_id in user_map and message.token_usage:
-                        user_usage[str(user_id)]["tokens"] += (
-                            message.token_usage.get("prompt", 0) or 0
-                        ) + (message.token_usage.get("completion", 0) or 0)
+                        user_usage[str(user_id)]["tokens"] += _token_count(
+                            message.token_usage.get("prompt")
+                        ) + _token_count(message.token_usage.get("completion"))
         else:
             msg_count = 0
             tokens = 0

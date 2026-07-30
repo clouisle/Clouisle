@@ -174,6 +174,9 @@ def test_process_document_success_updates_document_and_kb():
         patch("app.services.document_processor.chunk_text", return_value=["a", "b"]),
         patch.object(kb_tasks, "VectorStore", return_value=vector_store),
         patch.object(
+            kb_tasks, "_index_document_lexically", new=AsyncMock()
+        ) as lexical_index,
+        patch.object(
             kb_tasks, "_send_doc_indexed_notification", new=AsyncMock()
         ) as notify,
     ):
@@ -194,6 +197,66 @@ def test_process_document_success_updates_document_and_kb():
     ) == (2, 8)
     assert extract_text.await_args.kwargs["clean_text"] is False
     notify.assert_awaited_once()
+    lexical_index.assert_awaited_once_with(document.id)
+
+
+def test_process_document_generic_error_notifies_and_cleans_metadata():
+    document = make_document(metadata={"task_name": "queued", "embed_progress": {}})
+
+    with (
+        patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
+        patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks.document_processor,
+            "extract_text",
+            new=AsyncMock(side_effect=RuntimeError("provider unavailable")),
+        ),
+        patch.object(
+            kb_tasks,
+            "t",
+            side_effect=lambda key, **kwargs: f"{key}:{kwargs['lang']}",
+        ),
+        patch.object(
+            kb_tasks, "_send_doc_failed_notification", new=AsyncMock()
+        ) as notify,
+    ):
+        result = kb_tasks.process_document_task.run(str(document.id))
+
+    assert result == {
+        "status": "error",
+        "document_id": str(document.id),
+        "message": "document_processing_failed_generic:zh",
+    }
+    assert document.status == DocumentStatus.ERROR.value
+    assert document.metadata == {}
+    notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_indexed_notification_for_uploader_uses_user_locale():
+    document = make_document()
+
+    with (
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user,
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_team", new=AsyncMock()
+        ) as send_team,
+        patch.object(
+            kb_tasks,
+            "t",
+            side_effect=lambda key, **kwargs: f"{key}:{kwargs['lang']}",
+        ),
+    ):
+        await kb_tasks._send_doc_indexed_notification(
+            document, "Knowledge", document.knowledge_base.team_id, 2, 8, "zh"
+        )
+
+    send_team.assert_not_awaited()
+    send_user.assert_awaited_once()
+    assert send_user.await_args.kwargs["title"] == "notify_kb_doc_indexed_title:zh"
+    assert send_user.await_args.kwargs["content"] == "notify_kb_doc_indexed_content:zh"
 
 
 def test_process_document_dimension_mismatch_is_specific_and_cleans_metadata():
@@ -235,7 +298,9 @@ def test_reprocess_clamps_stats_and_delegates_to_processing():
         patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
         patch.object(kb_tasks, "VectorStore", return_value=vector_store),
         patch.object(
-            kb_tasks.process_document_task, "run", return_value={"status": "success"}
+            kb_tasks,
+            "_process_document",
+            new=AsyncMock(return_value={"status": "success"}),
         ) as process,
     ):
         result = kb_tasks.reprocess_document_task.run(str(document.id))
@@ -246,7 +311,7 @@ def test_reprocess_clamps_stats_and_delegates_to_processing():
         document.knowledge_base.total_tokens,
     ) == (0, 0)
     assert (document.chunk_count, document.token_count) == (0, 0)
-    process.assert_called_once_with(str(document.id))
+    process.assert_awaited_once_with(str(document.id), None)
 
 
 @pytest.mark.asyncio
@@ -311,12 +376,12 @@ async def test_embed_existing_chunks_handles_partial_failure_and_refreshes_stats
 def test_process_url_and_embed_wrappers_forward_arguments():
     document_id = str(uuid4())
     with patch.object(
-        kb_tasks.process_document_task, "run", return_value={"status": "success"}
+        kb_tasks, "_process_document", new=AsyncMock(return_value={"status": "success"})
     ) as process:
         assert kb_tasks.process_url_document_task.run(document_id) == {
             "status": "success"
         }
-    process.assert_called_once_with(document_id)
+    process.assert_awaited_once_with(document_id, None)
 
     with patch.object(
         kb_tasks,

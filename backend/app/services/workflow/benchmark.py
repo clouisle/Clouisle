@@ -14,7 +14,7 @@ import time
 import statistics
 from typing import Callable, Awaitable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 from enum import Enum
 
@@ -241,7 +241,7 @@ class WorkflowBenchmark:
         print(result.to_summary())
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._running_benchmarks: dict[str, BenchmarkResult] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
 
@@ -271,7 +271,7 @@ class WorkflowBenchmark:
             benchmark_id=benchmark_id,
             status=BenchmarkStatus.RUNNING,
             config=config,
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(UTC),
         )
 
         self._running_benchmarks[benchmark_id] = result
@@ -302,7 +302,7 @@ class WorkflowBenchmark:
 
             # Calculate statistics
             result.results = all_results
-            result.end_time = datetime.utcnow()
+            result.end_time = datetime.now(UTC)
             result.total_duration_seconds = (
                 result.end_time - result.start_time
             ).total_seconds()
@@ -314,11 +314,11 @@ class WorkflowBenchmark:
 
         except asyncio.CancelledError:
             result.status = BenchmarkStatus.CANCELLED
-            result.end_time = datetime.utcnow()
+            result.end_time = datetime.now(UTC)
             logger.info(f"Benchmark cancelled: {benchmark_id}")
         except Exception as e:
             result.status = BenchmarkStatus.FAILED
-            result.end_time = datetime.utcnow()
+            result.end_time = datetime.now(UTC)
             result.errors["benchmark_error"] = str(e)
             logger.error(f"Benchmark failed: {benchmark_id} - {e}")
         finally:
@@ -439,7 +439,7 @@ class WorkflowBenchmark:
         timeout: float,
     ) -> RequestResult:
         """Execute a single request and measure it."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         start_ns = time.perf_counter_ns()
 
         try:
@@ -461,7 +461,7 @@ class WorkflowBenchmark:
                 success=True,
                 duration_ms=duration_ms,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(UTC),
                 response_size=response_size,
             )
         except asyncio.TimeoutError:
@@ -471,7 +471,7 @@ class WorkflowBenchmark:
                 success=False,
                 duration_ms=(end_ns - start_ns) / 1_000_000,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(UTC),
                 error="timeout",
             )
         except Exception as e:
@@ -481,7 +481,7 @@ class WorkflowBenchmark:
                 success=False,
                 duration_ms=(end_ns - start_ns) / 1_000_000,
                 start_time=start_time,
-                end_time=datetime.utcnow(),
+                end_time=datetime.now(UTC),
                 error=str(e),
             )
 
@@ -552,7 +552,7 @@ class WorkflowBenchmark:
                 "successful": sum(1 for r in result.results if r.success),
                 "failed": sum(1 for r in result.results if not r.success),
                 "elapsed_seconds": (
-                    datetime.utcnow() - result.start_time
+                    datetime.now(UTC) - result.start_time
                 ).total_seconds(),
             }
         return None
