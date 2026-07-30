@@ -130,6 +130,8 @@ export type KnowledgeBasesMessages = {
     editChunks: string
     chunkSettings: string
     unsavedChanges: string
+    unsavedChangesDescription: string
+    discard: string
     chunkUpdated: string
     chunkDeleted: string
     chunkCreated: string

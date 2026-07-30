@@ -128,6 +128,8 @@
     "editChunks": "编辑分块",
     "chunkSettings": "分块设置",
     "unsavedChanges": "有未保存的更改",
+    "unsavedChangesDescription": "此分块有未保存的修改，要保存还是放弃？",
+    "discard": "放弃",
     "chunkUpdated": "分块更新成功",
     "chunkDeleted": "分块删除成功",
     "chunkCreated": "分块创建成功",

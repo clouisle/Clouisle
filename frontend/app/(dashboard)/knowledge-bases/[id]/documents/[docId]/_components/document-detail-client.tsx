@@ -37,6 +37,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ChunkMarkdown } from '@/components/ui/chunk-markdown'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -75,6 +76,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
   const [document, setDocument] = React.useState<Document | null>(null)
   const [chunks, setChunks] = React.useState<EditableChunk[]>([])
+  const chunksRef = React.useRef(chunks)
+  chunksRef.current = chunks
   const [pageData, setPageData] = React.useState<PageData<DocumentChunk> | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [isLoadingChunks, setIsLoadingChunks] = React.useState(false)
@@ -87,6 +90,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const [retryingChunkId, setRetryingChunkId] = React.useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deleteChunkId, setDeleteChunkId] = React.useState<string | null>(null)
+  const [pendingBlurChunkId, setPendingBlurChunkId] = React.useState<string | null>(null)
 
   // 预览状态
   const [isPreviewMode, setIsPreviewMode] = React.useState(false)
@@ -353,6 +357,44 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       c.id === chunkId ? { ...c, isEditing: false, editContent: c.content } : c
     ))
   }
+  // 监听点击外部退出编辑
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const currentChunks = chunksRef.current
+      const editingChunk = currentChunks.find(c => c.isEditing)
+      if (!editingChunk) return
+      const editorContainer = target.closest('[data-chunk-editor]')
+      if (editorContainer?.getAttribute('data-chunk-editor') === editingChunk.id) return
+      if (target.closest('[role="alertdialog"]')) return
+      if (editingChunk.editContent === editingChunk.content) {
+        setChunks(prev => prev.map(c =>
+          c.id === editingChunk.id ? { ...c, isEditing: false } : c
+        ))
+        return
+      }
+      setPendingBlurChunkId(editingChunk.id)
+    }
+    window.addEventListener('mousedown', handleMouseDown, true)
+    return () => { window.removeEventListener('mousedown', handleMouseDown, true) }
+  }, [])
+  // 放弃修改
+  const handleDiscardChanges = () => {
+    if (!pendingBlurChunkId) return
+    setChunks(prev => prev.map(c =>
+      c.id === pendingBlurChunkId ? { ...c, isEditing: false, editContent: c.content } : c
+    ))
+    setPendingBlurChunkId(null)
+  }
+
+  // 保存修改
+  const handleSaveChanges = () => {
+    if (!pendingBlurChunkId) return
+    const chunk = chunks.find(c => c.id === pendingBlurChunkId)
+    if (chunk) saveChunk(chunk)
+    setPendingBlurChunkId(null)
+  }
 
   const updateEditContent = (chunkId: string, content: string) => {
     setChunks(prev => prev.map(c =>
@@ -434,50 +476,52 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const isProcessingStatus = document.status === 'processing'
 
   return (
-    <div className="flex h-full overflow-hidden gap-4 p-4">
-      {/* 左侧：分块列表 */}
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-xl border bg-card">
-        {/* 头部 */}
-        <div className="flex items-center justify-between p-4 bg-muted/30">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.push(`/knowledge-bases/${knowledgeBaseId}`)}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                <h1 className="text-lg font-semibold truncate" title={document.name}>
-                  {document.name}
-                </h1>
-                {getStatusBadge(document.status)}
-              </div>
-              <p className="text-sm text-muted-foreground truncate">
-                {knowledgeBase.name} · {formatSize(document.file_size || 0)}
-                {isCompleted && ` · ${document.chunk_count} ${t('chunks')}`}
-              </p>
+    <div className="flex flex-col gap-4 p-4 h-full overflow-hidden">
+      {/* 页面头部 */}
+      <div className="flex items-start justify-between shrink-0">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.push(`/knowledge-bases/${knowledgeBaseId}`)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+              <h1 className="text-xl font-semibold truncate" title={document.name}>
+                {document.name}
+              </h1>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {(isCompleted || isFailed) && (
-              <Button variant="outline" size="sm" onClick={handleReprocess}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                {t('reprocess')}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <p className="text-sm text-muted-foreground truncate mt-0.5">
+              {knowledgeBase.name} · {formatSize(document.file_size || 0)}
+              {isCompleted && ` · ${document.chunk_count} ${t('chunks')}`}
+            </p>
           </div>
         </div>
 
-        {/* 分块内容区 */}
-        <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex items-center gap-2 shrink-0">
+          {getStatusBadge(document.status)}
+          {(isCompleted || isFailed) && (
+            <Button variant="outline" size="sm" onClick={handleReprocess}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t('reprocess')}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* 两栏内容区 */}
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+        {/* 左侧：分块列表 */}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-xl border bg-card">
+          {/* 分块内容区 */}
+          <div className="flex-1 min-w-0 overflow-hidden">
           {isPending && !isPreviewMode && (
             <div className="flex flex-col items-center justify-center h-full text-center p-8">
               <Clock className="h-12 w-12 text-muted-foreground mb-4" />
@@ -618,6 +662,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     {chunks.map((chunk) => (
                       <div
                         key={chunk.id}
+                        data-chunk-editor={chunk.id}
                         className="group rounded-lg border bg-card hover:border-primary/50 transition-colors overflow-hidden"
                       >
                         {/* 分块头部 */}
@@ -666,23 +711,37 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             )}
                             {chunk.isEditing ? (
                               <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => saveChunk(chunk)}
-                                  disabled={isSaving}
-                                >
-                                  <Save className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => cancelEditing(chunk.id)}
-                                >
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                </Button>
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={() => saveChunk(chunk)}
+                                        disabled={isSaving}
+                                      >
+                                        <Save className="h-3.5 w-3.5" />
+                                      </Button>
+                                    }
+                                  />
+                                  <TooltipContent>{commonT('save')}</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={() => cancelEditing(chunk.id)}
+                                      >
+                                        <RotateCcw className="h-3.5 w-3.5" />
+                                      </Button>
+                                    }
+                                  />
+                                  <TooltipContent>{commonT('cancel')}</TooltipContent>
+                                </Tooltip>
                               </>
                             ) : (
                               <>
@@ -742,12 +801,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                               placeholder={t('chunkContentPlaceholder')}
                             />
                           ) : (
-                            <p
-                              className="text-sm whitespace-pre-wrap break-all [overflow-wrap:anywhere] cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
+                            <div
+                              className="cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
                               onClick={() => isCompleted && startEditing(chunk.id)}
                             >
-                              {chunk.content}
-                            </p>
+                              <ChunkMarkdown source={chunk.content} />
+                            </div>
                           )}
                         </div>
                       </div>
@@ -954,6 +1013,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
           </div>
         </ScrollArea>
       </div>
+      </div>
 
       {/* 删除文档确认 */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -986,6 +1046,27 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={deleteChunk}>
               {commonT('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 未保存修改确认 */}
+      <AlertDialog open={!!pendingBlurChunkId} onOpenChange={(open) => !open && setPendingBlurChunkId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('unsavedChanges')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('unsavedChangesDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="default" onClick={handleDiscardChanges}>
+              {t('discard')}
+            </AlertDialogAction>
+            <AlertDialogAction onClick={handleSaveChanges}>
+              {commonT('save')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

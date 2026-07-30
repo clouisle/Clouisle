@@ -128,6 +128,8 @@
     "editChunks": "Edit Chunks",
     "chunkSettings": "Chunk Settings",
     "unsavedChanges": "Unsaved changes",
+    "unsavedChangesDescription": "You have unsaved changes to this chunk. Do you want to save or discard them?",
+    "discard": "Discard",
     "chunkUpdated": "Chunk updated successfully",
     "chunkDeleted": "Chunk deleted successfully",
     "chunkCreated": "Chunk created successfully",
