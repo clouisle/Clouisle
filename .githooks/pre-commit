@@ -12,17 +12,18 @@ PY_FILES=$(echo "$STAGED_FILES" | grep '^backend/.*\.py$' || true)
 if [ -n "$PY_FILES" ]; then
   echo "  → Backend: ruff format --check"
   cd backend
-  uv run ruff format --check $PY_FILES || {
+  # Strip backend/ prefix since we cd'd into the directory
+  PY_REL=$(echo "$PY_FILES" | sed 's|^backend/||')
+  uv run ruff format --check $PY_REL || {
     echo "❌ Backend formatting issues found. Run: uv run ruff format ."
     exit 1
   }
   echo "  → Backend: ruff check"
-  uv run ruff check $PY_FILES || {
+  uv run ruff check $PY_REL || {
     echo "❌ Backend lint issues found. Run: uv run ruff check ."
     exit 1
   }
   cd ..
-  echo "  ✓ Backend checks passed"
 fi
 
 # ── Frontend (TypeScript/JS/JSX/TSX) ─────────────────────────────

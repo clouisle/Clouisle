@@ -1833,7 +1833,6 @@ async def update_document_chunk(
             status_code=404,
         )
 
-
     # Sanitize content to prevent XSS in rendered Markdown
     chunk_in.content = sanitize_content(chunk_in.content)
 
