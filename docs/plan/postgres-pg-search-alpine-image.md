@@ -20,7 +20,7 @@ The Dockerfile downloads the exact ParadeDB source commit, verifies its archive 
 
 The build uses `RUSTFLAGS="-C target-feature=-crt-static"` because PostgreSQL must dynamically load the musl `cdylib`. It does not copy ParadeDB's glibc packages into Alpine, remove tokenizer dictionaries, alter pg_search features, or compress the shared library with UPX.
 
-A standalone image test script enforces the byte limit and exercises the production preload, extension, BM25, lifecycle, and recovery behavior. Release CI builds and tests each architecture natively, publishes architecture digests only after validation, then assembles the multi-platform manifest.
+A standalone image test script enforces the byte limit and exercises the production preload, extension, BM25, lifecycle, and recovery behavior. Release CI builds and tests each architecture natively, publishes the validated artifacts as untagged architecture digests, then assembles the multi-platform manifest under one release tag.
 
 ## Implementation Plan
 
@@ -53,8 +53,8 @@ A standalone image test script enforces the byte limit and exercises the product
 - **Specific logic**:
   - Run affected pull-request builds without pushing images.
   - Build/test amd64 and arm64 on native Linux runners with architecture-specific caches.
-  - Export tested artifacts per architecture, then push both immutable architecture tags only after the complete matrix passes.
-  - Assemble a manifest containing exactly linux/amd64 and linux/arm64; publish a revision tag such as `0.24.3-pg17-alpine1`, not `latest`.
+  - Push each validated native artifact by digest without architecture-specific tags; create the shared release tag only after the complete matrix passes.
+  - Assemble a manifest containing exactly linux/amd64 and linux/arm64 under a single revision tag such as `0.24.3-pg17-alpine1`, not `latest`.
   - Keep database image publication separate from application release tags so ordinary application releases do not rebuild this pinned database artifact.
 - **Validation**: Inspect manifest platforms and record both digests and unpacked sizes in workflow evidence.
 
@@ -71,7 +71,7 @@ A standalone image test script enforces the byte limit and exercises the product
 ## Current Validation Evidence
 
 - Native ARM64 validation completed on 2026-07-29: image `426,942,814` bytes, pg_search shared library `136,636,872` bytes; ELF and runtime acceptance passed.
-- Release CI now requires the same native acceptance on amd64 and arm64, validates tested image architecture and labels, and accepts an existing or newly created manifest only when it contains exactly the validated `linux/amd64` and `linux/arm64` descriptor digests.
+- Release CI now requires the same native acceptance on amd64 and arm64, verifies that each pushed digest matches its tested image, and publishes only the shared release tag when the manifest contains exactly those validated `linux/amd64` and `linux/arm64` descriptor digests.
 - The canonical deployment reference is `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1`; registry publication remains a release-workflow operation.
 
 ## Testing Strategy

@@ -42,6 +42,7 @@ jobs:
       - name: Verify release tag is on main
         if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
         run: |
+          test "$GITHUB_REF_NAME" = "postgres-pg-search-0.24.3-pg17-alpine1"
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
@@ -67,19 +68,52 @@ jobs:
           python3 deploy/postgres/validate-release.py image \
             clouisle-postgres-pg-search:test "$ARCH"
 
-      - name: Export tested release image
+      - name: Login to ACR
+        if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Push tested image by digest
+        id: push_digest
+        if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/postgres/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-postgres-pg-search,push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=postgres-pg-search-${{ matrix.arch }}
+
+      - name: Verify pushed image digest
         if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
         env:
           ARCH: ${{ matrix.arch }}
-        run: docker save clouisle-postgres-pg-search:test | gzip > "postgres-$ARCH.tar.gz"
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-postgres-pg-search
+          DIGEST: ${{ steps.push_digest.outputs.digest }}
+        run: |
+          local_id=$(docker image inspect --format '{{.Id}}' clouisle-postgres-pg-search:test)
+          docker pull --platform "$PLATFORM" "$IMAGE@$DIGEST"
+          python3 deploy/postgres/validate-release.py image "$IMAGE@$DIGEST" "$ARCH"
+          remote_id=$(docker image inspect --format '{{.Id}}' "$IMAGE@$DIGEST")
+          if [ "$local_id" != "$remote_id" ]; then
+            echo "pushed digest does not match the tested image" >&2
+            exit 1
+          fi
+          mkdir -p digests
+          printf '%s\n' "$DIGEST" > "digests/$ARCH"
 
-      - name: Upload tested release image
+      - name: Upload architecture digest
         if: startsWith(github.ref, 'refs/tags/postgres-pg-search-')
         uses: actions/upload-artifact@v4
         with:
-          name: postgres-${{ matrix.arch }}
-          path: postgres-${{ matrix.arch }}.tar.gz
-          compression-level: 0
+          name: postgres-digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}
           retention-days: 1
 
   publish-manifest:
@@ -92,18 +126,15 @@ jobs:
       - name: Checkout release validation
         uses: actions/checkout@v7
 
-      - name: Download tested release images
+      - name: Download tested image digests
         uses: actions/download-artifact@v5
         with:
-          pattern: postgres-*
+          pattern: postgres-digest-*
+          path: digests
           merge-multiple: true
 
-      - name: Load tested release images
-        run: |
-          docker load < postgres-amd64.tar.gz
-          docker tag clouisle-postgres-pg-search:test clouisle-postgres-pg-search:amd64
-          docker load < postgres-arm64.tar.gz
-          docker tag clouisle-postgres-pg-search:test clouisle-postgres-pg-search:arm64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to ACR
         uses: docker/login-action@v4
@@ -112,7 +143,7 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Push immutable architecture images and manifest
+      - name: Publish multi-platform image
         env:
           REGISTRY: ${{ secrets.ACR_REGISTRY }}
           NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
@@ -124,52 +155,9 @@ jobs:
             exit 1
           fi
           image="$REGISTRY/$NAMESPACE/clouisle-postgres-pg-search"
+          amd64_digest=$(cat digests/amd64)
+          arm64_digest=$(cat digests/arm64)
 
-          ensure_architecture_image() {
-            arch=$1
-            local_image="clouisle-postgres-pg-search:$arch"
-            remote_image="$image:$version-$arch"
-            python3 deploy/postgres/validate-release.py image "$local_image" "$arch"
-            local_id=$(docker image inspect --format '{{.Id}}' "$local_image")
-            if docker buildx imagetools inspect "$remote_image" >/dev/null 2>&1; then
-              docker pull --platform "linux/$arch" "$remote_image"
-              python3 deploy/postgres/validate-release.py image "$remote_image" "$arch"
-              remote_id=$(docker image inspect --format '{{.Id}}' "$remote_image")
-              if [ "$local_id" != "$remote_id" ]; then
-                echo "existing immutable image $remote_image has different content" >&2
-                exit 1
-              fi
-            else
-              docker tag "$local_image" "$remote_image"
-              docker push "$remote_image"
-            fi
-
-            docker buildx imagetools inspect \
-              --format '{{json .Manifest}}' "$remote_image" > "$arch-descriptor.json"
-            python3 - "$arch-descriptor.json" > "$arch.digest" <<'PY'
-          import json
-          import pathlib
-          import sys
-
-          descriptor = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          digest = descriptor.get("digest")
-          if not isinstance(digest, str) or not digest.startswith("sha256:"):
-              raise SystemExit("architecture descriptor has no immutable digest")
-          print(digest)
-          PY
-          }
-
-          ensure_architecture_image amd64
-          ensure_architecture_image arm64
-          amd64_digest=$(cat amd64.digest)
-          arm64_digest=$(cat arm64.digest)
-          if docker buildx imagetools inspect "$image:$version" >/dev/null 2>&1; then
-            docker buildx imagetools inspect --raw "$image:$version" > manifest.json
-            python3 deploy/postgres/validate-release.py manifest \
-              manifest.json "$amd64_digest" "$arm64_digest"
-            echo "validated existing release manifest $image:$version"
-            exit 0
-          fi
           docker buildx imagetools create \
             --tag "$image:$version" \
             "$image@$amd64_digest" \
