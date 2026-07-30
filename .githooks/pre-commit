@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔍 Running pre-commit checks..."
+
+# Detect changed files in the staging area
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+# ── Backend (Python) ──────────────────────────────────────────────
+PY_FILES=$(echo "$STAGED_FILES" | grep '^backend/.*\.py$' || true)
+
+if [ -n "$PY_FILES" ]; then
+  echo "  → Backend: ruff format --check"
+  cd backend
+  uv run ruff format --check $PY_FILES || {
+    echo "❌ Backend formatting issues found. Run: uv run ruff format ."
+    exit 1
+  }
+  echo "  → Backend: ruff check"
+  uv run ruff check $PY_FILES || {
+    echo "❌ Backend lint issues found. Run: uv run ruff check ."
+    exit 1
+  }
+  cd ..
+  echo "  ✓ Backend checks passed"
+fi
+
+# ── Frontend (TypeScript/JS/JSX/TSX) ─────────────────────────────
+JS_FILES=$(echo "$STAGED_FILES" | grep -E '^frontend/.*\.(ts|tsx|js|jsx)$' || true)
+
+if [ -n "$JS_FILES" ]; then
+  echo "  → Frontend: eslint"
+  cd frontend
+  # Only lint changed files; eslint doesn't support stdin paths natively,
+  # so we lint the whole frontend but only fail on errors.
+  bun run lint --quiet --max-warnings=0 || {
+    echo "❌ Frontend lint issues found. Run: bun run lint"
+    exit 1
+  }
+  cd ..
+  echo "  ✓ Frontend checks passed"
+fi
+
+# ── No files to check ─────────────────────────────────────────────
+if [ -z "$PY_FILES" ] && [ -z "$JS_FILES" ]; then
+  echo "  (no staged Python or TypeScript files)"
+fi
+
+echo "✅ Pre-commit checks passed"
