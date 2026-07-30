@@ -194,18 +194,15 @@ async def test_throughput_merges_metrics_and_current_counters(monkeypatch, perio
 async def test_token_analytics_groups_models_and_sources(monkeypatch, period):
     monkeypatch.setattr(
         service,
-        "_agent_message_rows",
+        "_agent_model_token_rows",
         AsyncMock(
             return_value=[
-                {"model_used": "small", "tokens": 2},
-                {"model_used": None, "tokens": None},
-                {"model_used": "small", "tokens": 3},
+                {"model_used": "small", "tokens": 5},
+                {"model_used": None, "tokens": 0},
             ]
         ),
     )
-    monkeypatch.setattr(
-        service, "_workflow_run_rows", AsyncMock(return_value=[{"tokens": 7}])
-    )
+    monkeypatch.setattr(service, "_workflow_token_total", AsyncMock(return_value=7))
     monkeypatch.setattr(
         service,
         "_tracked_model_token_rows",
@@ -273,28 +270,32 @@ async def test_tracked_model_token_rows_use_current_counter_period(
 
 
 @pytest.mark.asyncio
-async def test_query_row_helpers_normalize_database_results(monkeypatch, period):
+async def test_query_aggregation_helpers_normalize_bounded_results(monkeypatch, period):
     execute = AsyncMock(
         side_effect=[
-            (1, [{"created_at": period, "duration_ms": 1.234}]),
-            (1, [{"created_at": period, "status": "success"}]),
+            (1, [{"agent_requests": 2, "p95_ms": 1.234}]),
+            (1, [{"model_used": "small", "tokens": 3}]),
+            (1, [{"tokens": 7}]),
             (1, [{"request_count": 2, "success_count": 1, "total_tokens": 3}]),
             (1, [{"run_count": 2, "success_count": 1, "total_tokens": 3}]),
         ]
     )
     monkeypatch.setattr(service, "_execute", execute)
 
-    messages = await service._agent_message_rows(None, period)
-    workflows = await service._workflow_run_rows(None, period)
+    overview = await service._overview_stats_row(None, period)
+    messages = await service._agent_model_token_rows(None, period)
+    workflow_tokens = await service._workflow_token_total(None, period)
     agents = await service._agent_performance_rows(None, period)
     performance = await service._workflow_performance_rows(None, period)
 
-    assert messages[0]["created_at"] == period.isoformat()
-    assert messages[0]["duration_ms"] == 1.23
-    assert workflows[0]["status"] == "success"
+    assert overview == {"agent_requests": 2, "p95_ms": 1.23}
+    assert messages == [{"model_used": "small", "tokens": 3}]
+    assert workflow_tokens == 7
     assert agents[0]["success_rate"] == 50
     assert performance[0]["avg_tokens"] == 1.5
-    assert "assistant_final" in execute.await_args_list[0].args[0]
+    assert "AS MATERIALIZED" in execute.await_args_list[0].args[0]
+    assert "GROUP BY m.model_used" in execute.await_args_list[1].args[0]
+    assert "SUM(" in execute.await_args_list[2].args[0]
 
 
 @pytest.mark.asyncio

@@ -67,38 +67,19 @@ async def test_cached_payload_computes_when_redis_fails():
 
 
 @pytest.mark.asyncio
-async def test_overview_reports_ttft_separately_from_total_duration():
-    agent_rows = [
-        {
-            "duration_ms": 30000,
-            "first_token_ms": 900,
-            "round_status": "completed",
-            "tokens": 10,
-            "created_at": "2026-06-05T10:00:00+00:00",
-        },
-        {
-            "duration_ms": 60000,
-            "first_token_ms": 1300,
-            "round_status": "completed",
-            "tokens": 20,
-            "created_at": "2026-06-05T10:01:00+00:00",
-        },
-        {
-            "duration_ms": 90000,
-            "first_token_ms": None,
-            "round_status": "completed",
-            "tokens": 30,
-            "created_at": "2026-06-05T10:02:00+00:00",
-        },
-    ]
-    workflow_rows = [
-        {
-            "duration_ms": 120000,
-            "status": "success",
-            "tokens": 40,
-            "created_at": "2026-06-05T10:03:00+00:00",
-        }
-    ]
+async def test_overview_reports_database_aggregated_latency_and_ttft():
+    stats = {
+        "agent_requests": 3,
+        "workflow_runs": 1,
+        "agent_success": 3,
+        "workflow_success": 1,
+        "timeout_count": 0,
+        "total_tokens": 100,
+        "p95_ms": 115500,
+        "ttft_p95_ms": 1280,
+        "recent_count": 2,
+        "peak_hourly_requests": 4,
+    }
 
     with (
         patch(
@@ -106,18 +87,18 @@ async def test_overview_reports_ttft_separately_from_total_duration():
             return_value=(None, admin_observability.to_utc(admin_observability.now())),
         ),
         patch(
-            "app.services.admin_observability._agent_message_rows",
-            new=AsyncMock(return_value=agent_rows),
-        ),
-        patch(
-            "app.services.admin_observability._workflow_run_rows",
-            new=AsyncMock(return_value=workflow_rows),
+            "app.services.admin_observability._overview_stats_row",
+            new=AsyncMock(return_value=stats),
         ),
     ):
         result = await admin_observability.get_overview("30d")
 
     assert result["latency"]["p95_ms"] == 115500
     assert result["ttft"]["p95_ms"] == 1280
+    assert result["throughput"] == {
+        "current_qps": 0.033,
+        "peak_hourly_requests": 4,
+    }
 
 
 @pytest.mark.asyncio
@@ -293,7 +274,7 @@ async def test_timeout_throughput_and_token_aggregations():
             new=AsyncMock(return_value=0.25),
         ),
         patch(
-            "app.services.admin_observability._agent_message_rows",
+            "app.services.admin_observability._agent_model_token_rows",
             new=AsyncMock(
                 return_value=[
                     {"model_used": "model-a", "tokens": 5},
@@ -302,8 +283,8 @@ async def test_timeout_throughput_and_token_aggregations():
             ),
         ),
         patch(
-            "app.services.admin_observability._workflow_run_rows",
-            new=AsyncMock(return_value=[{"tokens": 7}]),
+            "app.services.admin_observability._workflow_token_total",
+            new=AsyncMock(return_value=7),
         ),
         patch(
             "app.services.admin_observability._tracked_model_token_rows",

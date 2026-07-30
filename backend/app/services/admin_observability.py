@@ -16,7 +16,6 @@ from tortoise import Tortoise
 from app.core.celery import celery_app
 from app.core.redis import get_redis
 from app.core.timezone import now, to_utc
-from app.models.agent import MessageRoundStatus
 from app.models.workflow import RunStatus
 
 try:  # pragma: no cover - exercised when dependency is installed
@@ -122,53 +121,14 @@ async def cached_payload(
 
 async def get_overview(time_range: str) -> dict[str, Any]:
     start_time, end_time = normalize_time_range(time_range)
-    agent_rows = await _agent_message_rows(start_time, end_time)
-    workflow_rows = await _workflow_run_rows(start_time, end_time)
+    stats = await _overview_stats_row(start_time, end_time)
 
-    agent_count = len(agent_rows)
-    workflow_count = len(workflow_rows)
+    agent_count = int(stats.get("agent_requests") or 0)
+    workflow_count = int(stats.get("workflow_runs") or 0)
     total_requests = agent_count + workflow_count
-    agent_success = sum(
-        1
-        for row in agent_rows
-        if row.get("round_status") == MessageRoundStatus.COMPLETED.value
-    )
-    workflow_success = sum(
-        1 for row in workflow_rows if row.get("status") == RunStatus.SUCCESS.value
-    )
-    workflow_timeout = sum(
-        1 for row in workflow_rows if row.get("status") == RunStatus.TIMEOUT.value
-    )
-    agent_errors = sum(
-        1
-        for row in agent_rows
-        if row.get("round_status") == MessageRoundStatus.ERROR.value
-    )
-    durations = [
-        int(row["duration_ms"])
-        for row in [*agent_rows, *workflow_rows]
-        if row.get("duration_ms") is not None
-    ]
-    first_token_durations = [
-        int(row["first_token_ms"])
-        for row in agent_rows
-        if row.get("first_token_ms") is not None
-    ]
-    total_tokens = sum(
-        int(row.get("tokens") or 0) for row in [*agent_rows, *workflow_rows]
-    )
-
-    recent_start = end_time - timedelta(seconds=60)
-    recent_count = sum(
-        1
-        for row in [*agent_rows, *workflow_rows]
-        if _coerce_datetime(row.get("created_at")) >= recent_start
-    )
-    bucket_counts: dict[str, int] = {}
-    for row in [*agent_rows, *workflow_rows]:
-        created_at = _coerce_datetime(row.get("created_at"))
-        bucket = created_at.replace(minute=0, second=0, microsecond=0).isoformat()
-        bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+    agent_success = int(stats.get("agent_success") or 0)
+    workflow_success = int(stats.get("workflow_success") or 0)
+    timeout_count = int(stats.get("timeout_count") or 0)
 
     return {
         "time_range": time_range,
@@ -178,7 +138,7 @@ async def get_overview(time_range: str) -> dict[str, Any]:
             "agent_requests": agent_count,
             "workflow_runs": workflow_count,
             "total_requests": total_requests,
-            "total_tokens": total_tokens,
+            "total_tokens": int(stats.get("total_tokens") or 0),
         },
         "rates": {
             "agent_success_rate": safe_rate(agent_success, agent_count),
@@ -186,13 +146,24 @@ async def get_overview(time_range: str) -> dict[str, Any]:
             "overall_success_rate": safe_rate(
                 agent_success + workflow_success, total_requests
             ),
-            "timeout_rate": safe_rate(workflow_timeout + agent_errors, total_requests),
+            "timeout_rate": safe_rate(timeout_count, total_requests),
         },
-        "latency": percentile_payload(durations),
-        "ttft": percentile_payload(first_token_durations),
+        "latency": {
+            key: _round_nullable(stats.get(key))
+            for key in ("p50_ms", "p90_ms", "p95_ms", "p99_ms")
+        },
+        "ttft": {
+            key.removeprefix("ttft_"): _round_nullable(stats.get(key))
+            for key in (
+                "ttft_p50_ms",
+                "ttft_p90_ms",
+                "ttft_p95_ms",
+                "ttft_p99_ms",
+            )
+        },
         "throughput": {
-            "current_qps": round(recent_count / 60, 3),
-            "peak_hourly_requests": max(bucket_counts.values()) if bucket_counts else 0,
+            "current_qps": round(int(stats.get("recent_count") or 0) / 60, 3),
+            "peak_hourly_requests": int(stats.get("peak_hourly_requests") or 0),
         },
     }
 
@@ -379,25 +350,25 @@ async def _tracked_model_token_rows(time_range: str) -> list[dict[str, Any]]:
 
 async def get_tokens(time_range: str) -> dict[str, Any]:
     start_time, end_time = normalize_time_range(time_range)
-    agent_rows = await _agent_message_rows(start_time, end_time)
-    workflow_rows = await _workflow_run_rows(start_time, end_time)
-    tracked_rows = await _tracked_model_token_rows(time_range)
+    agent_rows, workflow_tokens, tracked_rows = await asyncio.gather(
+        _agent_model_token_rows(start_time, end_time),
+        _workflow_token_total(start_time, end_time),
+        _tracked_model_token_rows(time_range),
+    )
 
     by_model: dict[str, int] = {}
     for row in agent_rows:
         model = row.get("model_used")
         tokens = int(row.get("tokens") or 0)
         if model and tokens > 0:
-            model_key = str(model)
-            by_model[model_key] = by_model.get(model_key, 0) + tokens
+            by_model[str(model)] = tokens
 
     tracked_by_model: dict[str, int] = {}
     for row in tracked_rows:
         model = row.get("model_used")
         tokens = int(row.get("tokens") or 0)
         if model and tokens > 0:
-            model_key = str(model)
-            tracked_by_model[model_key] = tracked_by_model.get(model_key, 0) + tokens
+            tracked_by_model[str(model)] = tokens
 
     # A chat call can be present in both message history and team-model counters.
     # Keep the larger per-model value rather than double-counting the same usage.
@@ -405,7 +376,6 @@ async def get_tokens(time_range: str) -> dict[str, Any]:
         by_model[model] = max(by_model.get(model, 0), tokens)
 
     agent_tokens = sum(int(row.get("tokens") or 0) for row in agent_rows)
-    workflow_tokens = sum(int(row.get("tokens") or 0) for row in workflow_rows)
     event_total = agent_tokens + workflow_tokens
     attributed_total = sum(by_model.values())
     total_tokens = max(event_total, attributed_total)
@@ -565,58 +535,142 @@ async def get_workers() -> dict[str, Any]:
         }
 
 
-async def _agent_message_rows(
+async def _overview_stats_row(
+    start_time: datetime | None, end_time: datetime
+) -> dict[str, Any]:
+    where, params = _time_where("created_at", start_time, end_time)
+    end_param = 1 if start_time is None else 2
+    _, rows = await _execute(
+        f"""
+        WITH events AS MATERIALIZED (
+            SELECT
+                created_at,
+                duration_ms,
+                first_token_ms,
+                COALESCE(
+                    (token_usage->>'total')::bigint,
+                    (token_usage->>'total_tokens')::bigint,
+                    COALESCE((token_usage->>'prompt')::bigint, (token_usage->>'prompt_tokens')::bigint, 0)
+                      + COALESCE((token_usage->>'completion')::bigint, (token_usage->>'completion_tokens')::bigint, 0),
+                    0
+                ) AS tokens,
+                'agent'::text AS source,
+                round_status = 'completed' AS succeeded,
+                round_status = 'error' AS timed_out
+            FROM messages
+            WHERE {where}
+              AND round_role = 'assistant_final'
+              AND is_round_canonical = true
+
+            UNION ALL
+
+            SELECT
+                created_at,
+                total_duration_ms AS duration_ms,
+                NULL::integer AS first_token_ms,
+                COALESCE(
+                    (total_token_usage->>'total')::bigint,
+                    (total_token_usage->>'total_tokens')::bigint,
+                    COALESCE((total_token_usage->>'prompt')::bigint, (total_token_usage->>'prompt_tokens')::bigint, 0)
+                      + COALESCE((total_token_usage->>'completion')::bigint, (total_token_usage->>'completion_tokens')::bigint, 0),
+                    0
+                ) AS tokens,
+                'workflow'::text AS source,
+                status = 'success' AS succeeded,
+                status = 'timeout' AS timed_out
+            FROM workflow_runs
+            WHERE {where}
+        ),
+        hourly AS (
+            SELECT COUNT(*)::bigint AS request_count
+            FROM events
+            GROUP BY date_trunc('hour', created_at)
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE source = 'agent')::bigint AS agent_requests,
+            COUNT(*) FILTER (WHERE source = 'workflow')::bigint AS workflow_runs,
+            COUNT(*) FILTER (WHERE source = 'agent' AND succeeded)::bigint AS agent_success,
+            COUNT(*) FILTER (WHERE source = 'workflow' AND succeeded)::bigint AS workflow_success,
+            COUNT(*) FILTER (WHERE timed_out)::bigint AS timeout_count,
+            COALESCE(SUM(tokens), 0)::bigint AS total_tokens,
+            percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms)
+                FILTER (WHERE duration_ms IS NOT NULL) AS p50_ms,
+            percentile_cont(0.90) WITHIN GROUP (ORDER BY duration_ms)
+                FILTER (WHERE duration_ms IS NOT NULL) AS p90_ms,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)
+                FILTER (WHERE duration_ms IS NOT NULL) AS p95_ms,
+            percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms)
+                FILTER (WHERE duration_ms IS NOT NULL) AS p99_ms,
+            percentile_cont(0.50) WITHIN GROUP (ORDER BY first_token_ms)
+                FILTER (WHERE first_token_ms IS NOT NULL) AS ttft_p50_ms,
+            percentile_cont(0.90) WITHIN GROUP (ORDER BY first_token_ms)
+                FILTER (WHERE first_token_ms IS NOT NULL) AS ttft_p90_ms,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY first_token_ms)
+                FILTER (WHERE first_token_ms IS NOT NULL) AS ttft_p95_ms,
+            percentile_cont(0.99) WITHIN GROUP (ORDER BY first_token_ms)
+                FILTER (WHERE first_token_ms IS NOT NULL) AS ttft_p99_ms,
+            COUNT(*) FILTER (
+                WHERE created_at >= ${end_param} - INTERVAL '60 seconds'
+            )::bigint AS recent_count,
+            (SELECT COALESCE(MAX(request_count), 0) FROM hourly) AS peak_hourly_requests
+        FROM events
+        """,
+        params,
+    )
+    return _normalize_row(rows[0]) if rows else {}
+
+
+async def _agent_model_token_rows(
     start_time: datetime | None, end_time: datetime
 ) -> list[dict[str, Any]]:
     where, params = _time_where("m.created_at", start_time, end_time)
     _, rows = await _execute(
         f"""
         SELECT
-            m.created_at,
-            m.duration_ms,
-            m.first_token_ms,
-            m.round_status,
             m.model_used,
-            COALESCE(
-                (m.token_usage->>'total')::bigint,
-                (m.token_usage->>'total_tokens')::bigint,
-                COALESCE((m.token_usage->>'prompt')::bigint, (m.token_usage->>'prompt_tokens')::bigint, 0)
-                  + COALESCE((m.token_usage->>'completion')::bigint, (m.token_usage->>'completion_tokens')::bigint, 0),
-                0
-            ) AS tokens
+            SUM(
+                COALESCE(
+                    (m.token_usage->>'total')::bigint,
+                    (m.token_usage->>'total_tokens')::bigint,
+                    COALESCE((m.token_usage->>'prompt')::bigint, (m.token_usage->>'prompt_tokens')::bigint, 0)
+                      + COALESCE((m.token_usage->>'completion')::bigint, (m.token_usage->>'completion_tokens')::bigint, 0),
+                    0
+                )
+            )::bigint AS tokens
         FROM messages m
         WHERE {where}
           AND m.round_role = 'assistant_final'
           AND m.is_round_canonical = true
+        GROUP BY m.model_used
         """,
         params,
     )
     return [_normalize_row(row) for row in rows]
 
 
-async def _workflow_run_rows(
-    start_time: datetime | None, end_time: datetime
-) -> list[dict[str, Any]]:
+async def _workflow_token_total(start_time: datetime | None, end_time: datetime) -> int:
     where, params = _time_where("wr.created_at", start_time, end_time)
     _, rows = await _execute(
         f"""
         SELECT
-            wr.created_at,
-            wr.total_duration_ms AS duration_ms,
-            wr.status,
             COALESCE(
-                (wr.total_token_usage->>'total')::bigint,
-                (wr.total_token_usage->>'total_tokens')::bigint,
-                COALESCE((wr.total_token_usage->>'prompt')::bigint, (wr.total_token_usage->>'prompt_tokens')::bigint, 0)
-                  + COALESCE((wr.total_token_usage->>'completion')::bigint, (wr.total_token_usage->>'completion_tokens')::bigint, 0),
+                SUM(
+                    COALESCE(
+                        (wr.total_token_usage->>'total')::bigint,
+                        (wr.total_token_usage->>'total_tokens')::bigint,
+                        COALESCE((wr.total_token_usage->>'prompt')::bigint, (wr.total_token_usage->>'prompt_tokens')::bigint, 0)
+                          + COALESCE((wr.total_token_usage->>'completion')::bigint, (wr.total_token_usage->>'completion_tokens')::bigint, 0),
+                        0
+                    )
+                ),
                 0
-            ) AS tokens
+            )::bigint AS tokens
         FROM workflow_runs wr
         WHERE {where}
         """,
         params,
     )
-    return [_normalize_row(row) for row in rows]
+    return int(rows[0].get("tokens") or 0) if rows else 0
 
 
 async def _agent_performance_rows(
