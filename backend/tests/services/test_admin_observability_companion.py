@@ -157,14 +157,14 @@ async def test_health_helpers_cover_success_degradation_and_queue_fallback():
         "connected_clients": 2,
         "instantaneous_ops_per_sec": 5,
     }
-    redis.llen.side_effect = [1, 0, 2]
+    redis.llen.side_effect = [1, 0, 2, 0]
     with patch.object(
         admin_observability, "get_redis", new=AsyncMock(return_value=redis)
     ):
         assert (await admin_observability._redis_health())["hit_rate"] == 75
         assert [
             item["pending"] for item in await admin_observability._queue_lengths()
-        ] == [1, 0, 2]
+        ] == [1, 0, 2, 0]
 
     with patch.object(
         admin_observability,
