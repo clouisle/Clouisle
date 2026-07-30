@@ -89,14 +89,14 @@ jobs:
     needs: build-and-test
 
     steps:
+      - name: Checkout release validation
+        uses: actions/checkout@v7
+
       - name: Download tested release images
         uses: actions/download-artifact@v5
         with:
           pattern: postgres-*
           merge-multiple: true
-
-      - name: Checkout release validation
-        uses: actions/checkout@v7
 
       - name: Load tested release images
         run: |
