@@ -44,6 +44,9 @@ uv run --project backend main.py server
 # In separate terminals, start workers
 uv run --project backend main.py worker
 uv run --project backend main.py beat
+
+# Optional: sandbox worker for code execution features
+uv run --project backend main.py sandbox-worker -c 1
 ```
 
 ## 5. Start Frontend

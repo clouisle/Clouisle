@@ -44,6 +44,9 @@ uv run --project backend main.py server
 # 在单独的终端中启动 Workers
 uv run --project backend main.py worker
 uv run --project backend main.py beat
+
+# 可选：沙箱 Worker（用于代码执行功能）
+uv run --project backend main.py sandbox-worker -c 1
 ```
 
 ## 5. 启动前端
