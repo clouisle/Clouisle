@@ -204,6 +204,7 @@
         "agent": "Agent",
         "workflow": "Workflow",
         "system": "系统",
+        "other": "其他模型调用",
         "unknown": "未知"
       },
       "risk": {
@@ -362,14 +363,44 @@
         "costDriver": "Token 用量是主要成本驱动。",
         "topModel": "最高用量模型",
         "modelCount": "使用模型数",
-        "sourceDesc": "按 Agent 和 Workflow 来源拆分 Token 消耗。",
+        "sourceDesc": "按 Agent、Workflow 和其他模型调用拆分 Token 消耗。",
         "modelDesc": "所选时间范围内 Token 消耗最高的模型。"
       },
       "workers": {
         "count": "Worker 数量",
         "inFlight": "处理中任务",
-        "pendingQueues": "队列等待任务",
-        "queueDesc": "按 Celery 队列查看积压；非零积压可能表示 Worker 容量不足或任务卡住。"
+        "pendingQueues": "等待任务",
+        "taskBacklog": "任务积压",
+        "taskBacklogDesc": "列出每个已注册 Celery 任务的当前等待数量；无积压的任务也会显示。",
+        "tasks": {
+          "createAuditLog": "创建审计日志",
+          "backfillLexicalIndex": "回填词法索引",
+          "embedDocumentChunks": "文档分段向量化",
+          "indexDocumentLexically": "构建文档词法索引",
+          "processDocument": "处理文档",
+          "processUrlDocument": "处理 URL 文档",
+          "rechunkDocument": "重新分段",
+          "reprocessDocument": "重新处理文档",
+          "retryFailedChunk": "重试失败分段",
+          "retryFailedChunks": "重试全部失败分段",
+          "runSandboxJob": "执行沙箱任务",
+          "extractSessionMemory": "提取会话记忆",
+          "cancelWorkflow": "取消工作流",
+          "runWorkflow": "执行工作流",
+          "sendDingTalkNotification": "发送钉钉通知",
+          "sendEmailNotification": "发送邮件通知",
+          "sendFeishuNotification": "发送飞书通知",
+          "sendSlackNotification": "发送 Slack 通知",
+          "sendWebhookNotification": "发送 Webhook 通知",
+          "sendWeChatNotification": "发送企业微信通知",
+          "archiveAuditLogs": "归档历史审计日志",
+          "checkApiKeyExpiration": "检查 API Key 过期",
+          "checkPasswordExpiration": "检查密码过期",
+          "cleanupSandboxSessions": "清理过期沙箱会话",
+          "resetDailyUsage": "重置每日用量",
+          "resetMonthlyUsage": "重置每月用量",
+          "unrecognized": "无法识别的队列消息"
+        }
       },
       "slowQueries": {
         "threshold": "阈值",

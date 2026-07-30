@@ -44,6 +44,7 @@ celery_app.conf.update(
     result_serializer="json",
     timezone=settings.TIMEZONE,
     enable_utc=True,
+    task_default_queue="default",
     # Task execution settings
     task_acks_late=True,
     task_reject_on_worker_lost=True,
@@ -66,7 +67,7 @@ celery_app.conf.update(
 
 # Optional: Configure task routes
 celery_app.conf.task_routes = {
-    "app.tasks.knowledge_base.*": {"queue": "default"},
+    "app.tasks.knowledge_base.*": {"queue": "knowledge"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
     "app.tasks.notification.*": {"queue": "default"},
@@ -83,6 +84,10 @@ celery_app.conf.task_routes = {
     "tasks.reset_monthly_usage": {"queue": "default"},
     "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
+    "send_notification_wechat": {"queue": "default"},
+    "send_notification_feishu": {"queue": "default"},
+    "send_notification_webhook": {"queue": "default"},
+    "send_notification_slack": {"queue": "default"},
 }
 
 # Beat schedule for periodic tasks

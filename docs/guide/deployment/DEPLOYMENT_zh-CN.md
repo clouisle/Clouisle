@@ -72,7 +72,7 @@ Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 
 | 服务 | 命令 | 副本数 |
 |------|------|--------|
 | api | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
-| worker | `python main.py worker -c 4 -Q default,workflow` | 1+ |
+| worker | `python main.py worker -c 4 -Q default,knowledge,workflow` | 1+ |
 | sandbox-worker | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | 1+ |
 | beat | `python main.py beat` | **必须为 1** |
 

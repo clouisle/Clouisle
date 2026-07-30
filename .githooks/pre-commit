@@ -32,9 +32,12 @@ JS_FILES=$(echo "$STAGED_FILES" | grep -E '^frontend/.*\.(ts|tsx|js|jsx)$' || tr
 if [ -n "$JS_FILES" ]; then
   echo "  → Frontend: eslint"
   cd frontend
-  # Only lint changed files; eslint doesn't support stdin paths natively,
-  # so we lint the whole frontend but only fail on errors.
-  bun run lint --quiet --max-warnings=0 || {
+  JS_REL=$(echo "$JS_FILES" | sed 's|^frontend/||')
+  JS_REL_ARGS=()
+  while IFS= read -r file; do
+    JS_REL_ARGS+=("$file")
+  done <<< "$JS_REL"
+  bun run lint --quiet --max-warnings=0 "${JS_REL_ARGS[@]}" || {
     echo "❌ Frontend lint issues found. Run: bun run lint"
     exit 1
   }

@@ -426,7 +426,7 @@ spec:
         - name: worker
           image: clouisle-backend:latest
           imagePullPolicy: IfNotPresent
-          command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
+          command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
           envFrom:
             - configMapRef:
                 name: clouisle-config

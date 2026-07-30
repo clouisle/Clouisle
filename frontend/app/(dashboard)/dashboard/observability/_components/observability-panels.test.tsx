@@ -117,7 +117,7 @@ test('renders health dependency boundaries, worker failure, and slow-query rows'
     cpu: { status: 'healthy', usage_percent: 12 }, memory: { status: 'warning', usage_percent: '75' },
     disk: { status: 'danger', usage_percent: 91 }, database: { status: 'healthy', active_connections: 4 },
     redis: { status: 'unknown', ops_per_sec: 0 },
-    workers: { status: 'unhealthy', worker_count: 0, active_tasks: 0, reserved_tasks: 0, scheduled_tasks: 0, queues: [], error: 'offline' },
+    workers: { status: 'unhealthy', worker_count: 0, active_tasks: 0, reserved_tasks: 0, scheduled_tasks: 0, queues: [], tasks: [], error: 'offline' },
   }
   const slowQueries = { available: true, reason: null, total: 1, page: 1, page_size: 10, items: [{ statement: 'select 1', calls: '2', mean_time: 1200, total_time: 2400 }] }
   const renderer = render(<panels.HealthPanel health={health} trend={{ items: [] }} workers={null} slowQueries={slowQueries} />)
@@ -192,8 +192,9 @@ test('renders throughput chart data and its empty chart boundary', () => {
 })
 
 test('renders token source/model data and both empty-list boundaries', () => {
-  const populated = render(<panels.TokensPanel tokens={{ total_tokens: 3000, by_source: [{ source: 'workflow', tokens: 2000 }, { source: 'agent', tokens: 1000 }], by_model: [{ model: 'model-a', tokens: 3000 }] }} />)
+  const populated = render(<panels.TokensPanel tokens={{ total_tokens: 3000, by_source: [{ source: 'workflow', tokens: 1500 }, { source: 'agent', tokens: 1000 }, { source: 'other', tokens: 500 }], by_model: [{ model: 'model-a', tokens: 3000 }] }} />)
   expect(text(populated)).toContain('model-a')
+  expect(text(populated)).toContain('sources.other')
   expect(text(populated)).toContain('3K')
   const empty = render(<panels.TokensPanel tokens={{ total_tokens: 0, by_source: [], by_model: [] }} />)
   expect(emptyCount(empty)).toBe(2)
@@ -202,10 +203,12 @@ test('renders token source/model data and both empty-list boundaries', () => {
   unmount(empty)
 })
 
-test('renders worker error and queue totals', () => {
-  const renderer = render(<panels.WorkersPanel workers={{ status: 'error', worker_count: 2, active_tasks: 1, reserved_tasks: 2, scheduled_tasks: 3, queues: [{ queue: 'default', pending: 4 }, { queue: 'idle', pending: 0 }], error: 'broker down' }} />)
+test('renders every current task backlog without generic aggregation', () => {
+  const renderer = render(<panels.WorkersPanel workers={{ status: 'error', worker_count: 2, active_tasks: 1, reserved_tasks: 2, scheduled_tasks: 3, queues: [{ queue: 'default', pending: 2 }, { queue: 'knowledge', pending: 4 }, { queue: 'workflow', pending: 0 }, { queue: 'sandbox', pending: 0 }], tasks: [{ task: 'app.tasks.knowledge_base.embed_document_chunks_task', queue: 'knowledge', pending: 4 }, { task: 'send_notification_email', queue: 'default', pending: 2 }, { task: 'app.tasks.workflow.run_workflow_task', queue: 'workflow', pending: 0 }], error: 'broker down' }} />)
   expect(text(renderer)).toContain('broker down')
-  expect(text(renderer)).toContain('default')
+  expect(text(renderer)).toContain('workers.tasks.embedDocumentChunks')
+  expect(text(renderer)).toContain('workers.tasks.sendEmailNotification')
+  expect(text(renderer)).toContain('workers.tasks.runWorkflow')
   expect(text(renderer)).toContain('status.error')
   unmount(renderer)
 })

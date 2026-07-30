@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -67,38 +68,19 @@ async def test_cached_payload_computes_when_redis_fails():
 
 
 @pytest.mark.asyncio
-async def test_overview_reports_ttft_separately_from_total_duration():
-    agent_rows = [
-        {
-            "duration_ms": 30000,
-            "first_token_ms": 900,
-            "round_status": "completed",
-            "tokens": 10,
-            "created_at": "2026-06-05T10:00:00+00:00",
-        },
-        {
-            "duration_ms": 60000,
-            "first_token_ms": 1300,
-            "round_status": "completed",
-            "tokens": 20,
-            "created_at": "2026-06-05T10:01:00+00:00",
-        },
-        {
-            "duration_ms": 90000,
-            "first_token_ms": None,
-            "round_status": "completed",
-            "tokens": 30,
-            "created_at": "2026-06-05T10:02:00+00:00",
-        },
-    ]
-    workflow_rows = [
-        {
-            "duration_ms": 120000,
-            "status": "success",
-            "tokens": 40,
-            "created_at": "2026-06-05T10:03:00+00:00",
-        }
-    ]
+async def test_overview_reports_database_aggregated_latency_and_ttft():
+    stats = {
+        "agent_requests": 3,
+        "workflow_runs": 1,
+        "agent_success": 3,
+        "workflow_success": 1,
+        "timeout_count": 0,
+        "total_tokens": 100,
+        "p95_ms": 115500,
+        "ttft_p95_ms": 1280,
+        "recent_count": 2,
+        "peak_hourly_requests": 4,
+    }
 
     with (
         patch(
@@ -106,18 +88,18 @@ async def test_overview_reports_ttft_separately_from_total_duration():
             return_value=(None, admin_observability.to_utc(admin_observability.now())),
         ),
         patch(
-            "app.services.admin_observability._agent_message_rows",
-            new=AsyncMock(return_value=agent_rows),
-        ),
-        patch(
-            "app.services.admin_observability._workflow_run_rows",
-            new=AsyncMock(return_value=workflow_rows),
+            "app.services.admin_observability._overview_stats_row",
+            new=AsyncMock(return_value=stats),
         ),
     ):
         result = await admin_observability.get_overview("30d")
 
     assert result["latency"]["p95_ms"] == 115500
     assert result["ttft"]["p95_ms"] == 1280
+    assert result["throughput"] == {
+        "current_qps": 0.033,
+        "peak_hourly_requests": 4,
+    }
 
 
 @pytest.mark.asyncio
@@ -135,15 +117,35 @@ async def test_slow_queries_returns_unavailable_when_pg_stat_statements_missing(
 
 
 @pytest.mark.asyncio
-async def test_workers_return_unknown_when_inspect_fails():
-    with patch(
-        "app.services.admin_observability.celery_app.control.inspect",
-        side_effect=RuntimeError("no workers"),
+async def test_workers_preserve_backlog_when_inspect_fails():
+    queues = [{"queue": "knowledge", "pending": 4}]
+    tasks = [
+        {
+            "task": "app.tasks.knowledge_base.embed_document_chunks_task",
+            "queue": "knowledge",
+            "pending": 4,
+        }
+    ]
+    with (
+        patch(
+            "app.services.admin_observability.celery_app.control.inspect",
+            side_effect=RuntimeError("no workers"),
+        ),
+        patch(
+            "app.services.admin_observability._queue_lengths",
+            new=AsyncMock(return_value=queues),
+        ),
+        patch(
+            "app.services.admin_observability._pending_task_rows",
+            new=AsyncMock(return_value=tasks),
+        ),
     ):
         result = await admin_observability.get_workers()
 
     assert result["status"] == "unknown"
     assert result["worker_count"] == 0
+    assert result["queues"] == queues
+    assert result["tasks"] == tasks
 
 
 def test_normalizers_and_pagination_boundaries():
@@ -293,7 +295,7 @@ async def test_timeout_throughput_and_token_aggregations():
             new=AsyncMock(return_value=0.25),
         ),
         patch(
-            "app.services.admin_observability._agent_message_rows",
+            "app.services.admin_observability._agent_model_token_rows",
             new=AsyncMock(
                 return_value=[
                     {"model_used": "model-a", "tokens": 5},
@@ -302,8 +304,12 @@ async def test_timeout_throughput_and_token_aggregations():
             ),
         ),
         patch(
-            "app.services.admin_observability._workflow_run_rows",
-            new=AsyncMock(return_value=[{"tokens": 7}]),
+            "app.services.admin_observability._workflow_token_total",
+            new=AsyncMock(return_value=7),
+        ),
+        patch(
+            "app.services.admin_observability._tracked_model_token_rows",
+            new=AsyncMock(return_value=[]),
         ),
     ):
         timeouts = await admin_observability.get_timeouts("30d", "all", 1, 10)
@@ -326,9 +332,13 @@ async def test_timeout_throughput_and_token_aggregations():
         }
     ]
     assert tokens["total_tokens"] == 14
+    assert tokens["by_source"] == [
+        {"source": "agent", "tokens": 7},
+        {"source": "workflow", "tokens": 7},
+    ]
     assert tokens["by_model"] == [
+        {"model": "unknown", "tokens": 9},
         {"model": "model-a", "tokens": 5},
-        {"model": "unknown", "tokens": 2},
     ]
 
 
@@ -392,8 +402,11 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
         "connected_clients": 2,
         "instantaneous_ops_per_sec": 7,
     }
-    redis.llen.side_effect = [1, None, 3]
+    redis.llen.side_effect = [1, 4, None, 3]
 
+    pending_tasks = [
+        {"task": "send_notification_email", "queue": "default", "pending": 1}
+    ]
     with (
         patch(
             "app.services.admin_observability.celery_app.control.inspect",
@@ -403,15 +416,21 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
             "app.services.admin_observability._queue_lengths",
             new=AsyncMock(return_value=[{"queue": "default", "pending": 1}]),
         ),
+        patch(
+            "app.services.admin_observability._pending_task_rows",
+            new=AsyncMock(return_value=pending_tasks),
+        ),
     ):
         workers = await admin_observability.get_workers()
     assert workers["status"] == "healthy"
     assert workers["active_tasks"] == 1
+    assert workers["tasks"] == pending_tasks
 
     with patch("app.services.admin_observability.get_redis", return_value=redis):
         assert (await admin_observability._redis_health())["hit_rate"] == 75
         assert await admin_observability._queue_lengths() == [
             {"queue": "default", "pending": 1},
+            {"queue": "knowledge", "pending": 4},
             {"queue": "workflow", "pending": 0},
             {"queue": "sandbox", "pending": 3},
         ]
@@ -423,6 +442,124 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
         assert all(
             item["pending"] == 0 for item in await admin_observability._queue_lengths()
         )
+
+
+@pytest.mark.asyncio
+async def test_pending_task_rows_lists_each_registered_task(monkeypatch):
+    email_task = "send_notification_email"
+    vector_task = "app.tasks.knowledge_base.embed_document_chunks_task"
+    workflow_task = "app.tasks.workflow.run_workflow_task"
+
+    def message(task: str) -> bytes:
+        return json.dumps({"headers": {"task": task}}).encode()
+
+    redis = SimpleNamespace(
+        lrange=AsyncMock(
+            side_effect=[
+                [message(email_task)],
+                [message(vector_task), message(vector_task)],
+            ]
+        )
+    )
+    monkeypatch.setattr(admin_observability, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(
+        admin_observability,
+        "_worker_task_catalog",
+        lambda: (
+            (email_task, "default"),
+            (vector_task, "knowledge"),
+            (workflow_task, "workflow"),
+        ),
+    )
+
+    rows = await admin_observability._pending_task_rows(
+        [
+            {"queue": "default", "pending": 1},
+            {"queue": "knowledge", "pending": 2},
+            {"queue": "workflow", "pending": 0},
+            {"queue": "sandbox", "pending": 0},
+        ]
+    )
+
+    assert rows == [
+        {"task": vector_task, "queue": "knowledge", "pending": 2},
+        {"task": email_task, "queue": "default", "pending": 1},
+        {"task": workflow_task, "queue": "workflow", "pending": 0},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pending_task_rows_caps_scans_across_queues(monkeypatch):
+    task = "app.tasks.example"
+
+    def message() -> bytes:
+        return json.dumps({"headers": {"task": task}}).encode()
+
+    redis = SimpleNamespace(
+        lrange=AsyncMock(side_effect=[[message(), message()], [message()]])
+    )
+    monkeypatch.setattr(admin_observability, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(admin_observability, "WORKER_QUEUE_SCAN_LIMIT", 3)
+    monkeypatch.setattr(
+        admin_observability, "_worker_task_catalog", lambda: ((task, "default"),)
+    )
+
+    rows = await admin_observability._pending_task_rows(
+        [
+            {"queue": "default", "pending": 2},
+            {"queue": "knowledge", "pending": 3},
+            {"queue": "workflow", "pending": 4},
+        ]
+    )
+
+    assert {(row["task"], row["queue"]): row["pending"] for row in rows} == {
+        (task, "default"): 2,
+        (task, "knowledge"): 1,
+        ("unscanned:knowledge", "knowledge"): 2,
+        ("unscanned:workflow", "workflow"): 4,
+    }
+    assert [awaited.args for awaited in redis.lrange.await_args_list] == [
+        ("default", 0, 1),
+        ("knowledge", 0, 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pending_task_rows_refreshes_catalog_off_event_loop(monkeypatch):
+    to_thread = AsyncMock(
+        side_effect=[
+            (("task-a", "default"),),
+            (("task-b", "knowledge"),),
+        ]
+    )
+    monkeypatch.setattr(admin_observability.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(
+        admin_observability,
+        "get_redis",
+        AsyncMock(return_value=SimpleNamespace(lrange=AsyncMock())),
+    )
+
+    first = await admin_observability._pending_task_rows([])
+    second = await admin_observability._pending_task_rows([])
+
+    assert first == [{"task": "task-a", "queue": "default", "pending": 0}]
+    assert second == [{"task": "task-b", "queue": "knowledge", "pending": 0}]
+    assert [awaited.args for awaited in to_thread.await_args_list] == [
+        (admin_observability._worker_task_catalog,),
+        (admin_observability._worker_task_catalog,),
+    ]
+
+
+def test_worker_task_catalog_routes_registered_tasks():
+    catalog = dict(admin_observability._worker_task_catalog())
+    assert len(catalog) >= 26
+    assert set(catalog.values()) <= set(admin_observability.WORKER_QUEUES)
+    assert catalog["app.tasks.knowledge_base.embed_document_chunks_task"] == (
+        "knowledge"
+    )
+    assert catalog["app.tasks.workflow.run_workflow_task"] == "workflow"
+    assert catalog["app.tasks.sandbox.run_sandbox_job_task"] == "sandbox"
+    assert catalog["send_notification_email"] == "default"
 
 
 @pytest.mark.asyncio

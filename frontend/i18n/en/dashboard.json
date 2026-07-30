@@ -204,6 +204,7 @@
         "agent": "Agent",
         "workflow": "Workflow",
         "system": "System",
+        "other": "Other model calls",
         "unknown": "Unknown"
       },
       "risk": {
@@ -362,14 +363,44 @@
         "costDriver": "Token volume is the primary cost driver.",
         "topModel": "Top model",
         "modelCount": "Models used",
-        "sourceDesc": "Token consumption split by Agent and Workflow sources.",
+        "sourceDesc": "Token consumption split by Agent, Workflow, and other model calls.",
         "modelDesc": "Top token-consuming models in the selected range."
       },
       "workers": {
         "count": "Worker count",
         "inFlight": "In-flight tasks",
-        "pendingQueues": "Pending queue tasks",
-        "queueDesc": "Queue backlog by Celery queue. Non-zero backlog may indicate worker capacity or stuck tasks."
+        "pendingQueues": "Pending tasks",
+        "taskBacklog": "Task backlog",
+        "taskBacklogDesc": "Current pending count for every registered Celery task. Zero-backlog tasks remain visible.",
+        "tasks": {
+          "createAuditLog": "Create audit log",
+          "backfillLexicalIndex": "Backfill lexical index",
+          "embedDocumentChunks": "Vectorize document chunks",
+          "indexDocumentLexically": "Build document lexical index",
+          "processDocument": "Process document",
+          "processUrlDocument": "Process URL document",
+          "rechunkDocument": "Rechunk document",
+          "reprocessDocument": "Reprocess document",
+          "retryFailedChunk": "Retry failed chunk",
+          "retryFailedChunks": "Retry all failed chunks",
+          "runSandboxJob": "Run sandbox job",
+          "extractSessionMemory": "Extract session memory",
+          "cancelWorkflow": "Cancel workflow",
+          "runWorkflow": "Run workflow",
+          "sendDingTalkNotification": "Send DingTalk notification",
+          "sendEmailNotification": "Send email notification",
+          "sendFeishuNotification": "Send Feishu notification",
+          "sendSlackNotification": "Send Slack notification",
+          "sendWebhookNotification": "Send webhook notification",
+          "sendWeChatNotification": "Send WeChat notification",
+          "archiveAuditLogs": "Archive old audit logs",
+          "checkApiKeyExpiration": "Check API key expiration",
+          "checkPasswordExpiration": "Check password expiration",
+          "cleanupSandboxSessions": "Clean up expired sandbox sessions",
+          "resetDailyUsage": "Reset daily usage",
+          "resetMonthlyUsage": "Reset monthly usage",
+          "unrecognized": "Unrecognized queued message"
+        }
       },
       "slowQueries": {
         "threshold": "Threshold",

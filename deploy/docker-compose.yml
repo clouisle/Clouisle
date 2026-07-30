@@ -93,7 +93,7 @@ services:
       context: ..
       dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
-    command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
+    command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
     env_file: .env
     environment:
       API_BASE_URL: http://api:8000

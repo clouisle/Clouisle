@@ -178,6 +178,7 @@ export interface WorkerResponse {
   reserved_tasks: number
   scheduled_tasks: number
   queues: Array<{ queue: string; pending: number }>
+  tasks: Array<{ task: string; queue: string; pending: number }>
   error?: string
 }
 

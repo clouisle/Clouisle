@@ -16,6 +16,7 @@ from app.core.i18n import t
 from app.core.timezone import now, to_local, to_utc
 from app.models.user import User, Team
 from app.models.agent import Agent, Conversation, Message
+from app.models.model import TeamModel
 from app.models.workflow import Workflow, WorkflowRun
 from app.models.knowledge_base import KnowledgeBase
 from app.schemas.response import Response, success
@@ -320,11 +321,13 @@ async def get_models_distribution(
 
     Returns:
     - model: Model identifier
-    - count: Number of messages using this model
+    - count: Number of tracked model requests
     - percentage: Percentage of total usage
     """
     # Calculate time range
     now_local = now()
+    if time_range not in {"7d", "30d", "90d", "all"}:
+        time_range = "30d"
     if time_range == "7d":
         start_time = now_local - timedelta(days=7)
     elif time_range == "90d":
@@ -334,21 +337,59 @@ async def get_models_distribution(
     else:  # Default to 30d
         start_time = now_local - timedelta(days=30)
 
-    # Build query
-    if start_time:
-        start_time_utc = to_utc(start_time)
+    start_time_utc = to_utc(start_time) if start_time else None
+    if start_time_utc:
         messages_query = Message.filter(
             created_at__gte=start_time_utc, model_used__isnull=False
         )
     else:
         messages_query = Message.filter(model_used__isnull=False)
 
-    # Use database-level GROUP BY for model distribution
-    model_stats = (
+    # Messages provide exact historical attribution for agent conversations.
+    message_stats = (
         await messages_query.annotate(count=Count("id"))
         .group_by("model_used")
         .values("model_used", "count")
     )
+    counts_by_model = {
+        str(item["model_used"]): int(item["count"]) for item in message_stats
+    }
+
+    # Daily/monthly counters cover only the current day/month. Use them for
+    # the matching short windows, while longer ranges rely on event history.
+    tracked_counts: dict[str, int] = {}
+    if time_range in {"7d", "30d"}:
+        if time_range == "7d":
+            usage_field = "daily_requests_used"
+            reset_field = "daily_reset_at"
+            counter_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            usage_field = "monthly_requests_used"
+            reset_field = "monthly_reset_at"
+            counter_start = now_local.replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
+
+        usage_filters: dict[str, Any] = {
+            f"{usage_field}__gt": 0,
+            f"{reset_field}__gte": to_utc(counter_start),
+        }
+        team_models = await TeamModel.filter(**usage_filters).prefetch_related("model")
+        for team_model in team_models:
+            model_id = team_model.model.model_id
+            tracked_counts[model_id] = tracked_counts.get(model_id, 0) + int(
+                getattr(team_model, usage_field)
+            )
+
+        for model_id, tracked_count in tracked_counts.items():
+            counts_by_model[model_id] = max(
+                counts_by_model.get(model_id, 0), tracked_count
+            )
+
+    model_stats = [
+        {"model_used": model_id, "count": count}
+        for model_id, count in counts_by_model.items()
+    ]
 
     # Calculate total and build response
     total_count = sum(item["count"] for item in model_stats)
