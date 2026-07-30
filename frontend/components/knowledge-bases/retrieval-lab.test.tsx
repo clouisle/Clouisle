@@ -255,9 +255,9 @@ describe('RetrievalLab', () => {
     const resultButtons = elements(tree).filter(element => element.type === 'button' && String(element.props['aria-label']).startsWith('selectResult'))
     resultButtons[1].props.onClick()
     tree = render()
-    const detailText = text(elements(tree).find(element => element.type === 'aside')!)
-    expect(detailText).toContain('Content from B')
-    expect(detailText).not.toContain('Content from A')
+    const markdown = find(elements(tree).find(element => element.type === 'aside')!, 'markdown-preview')
+    expect(markdown.props.source).toBe('Content from B')
+    expect(markdown.props.source).not.toBe('Content from A')
 
     find(tree, 'button', props => props['aria-label'] === 'closeResultDetails').props.onClick()
     tree = render()

@@ -250,13 +250,9 @@ function ResultDetail({ result, side, rank, query, authenticatedMarkdown, resolv
           </span>
         </div>
         <div className="min-w-0 rounded-md border bg-muted/20 p-4" data-color-mode={resolvedTheme === 'dark' ? 'dark' : 'light'}>
-          {authenticatedMarkdown ? (
-            <div className="w-full max-w-[75ch] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md [&_img]:object-contain [&_a.anchor]:!ml-0 [&_a]:break-words [&_code]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm [&_li]:text-sm [&_p]:text-sm [&_p]:leading-relaxed [&_pre]:overflow-x-auto [&_pre]:text-xs [&_table]:text-sm">
-              <MDPreview source={result.content} components={{ img: ({ src, alt }) => <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} /> }} />
-            </div>
-          ) : (
-            <p className="max-w-[75ch] whitespace-pre-wrap text-sm leading-relaxed"><Highlight text={result.content} query={query} /></p>
-          )}
+          <div className="w-full max-w-[75ch] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md [&_img]:object-contain [&_a.anchor]:!ml-0 [&_a]:break-words [&_code]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm [&_li]:text-sm [&_p]:text-sm [&_p]:leading-relaxed [&_pre]:overflow-x-auto [&_pre]:text-xs [&_table]:text-sm">
+            <MDPreview source={result.content} components={authenticatedMarkdown ? { img: ({ src, alt }) => <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} /> } : undefined} />
+          </div>
         </div>
         {(result.degradation_reasons?.length || result.rerank_reason) && <p className="text-xs text-amber-700 dark:text-amber-300">{t('fallbackReasons')}: {[...(result.degradation_reasons ?? []).map(reason => `${reason.channel}: ${reason.error}`), result.rerank_reason].filter(Boolean).join('; ')}</p>}
       </div>
