@@ -247,3 +247,11 @@ async def test_fetch_url_content_http_fallback(
     assert text == expected
     assert metadata["content_type"] == content_type
     assert metadata["char_count"] == len(expected)
+
+
+def test_sanitize_content_strips_html_and_handles_empty():
+    from app.services.document_processor import sanitize_content
+
+    assert sanitize_content("") == ""
+    assert sanitize_content("<script>alert(1)</script>") == "alert(1)"
+    assert sanitize_content("**markdown**") == "**markdown**"
