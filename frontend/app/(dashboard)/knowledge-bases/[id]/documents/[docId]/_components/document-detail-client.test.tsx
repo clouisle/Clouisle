@@ -376,5 +376,70 @@ describe('dashboard DocumentDetailClient', () => {
     tree = render()
     await find(tree, 'button', 'retryFailedChunks').props.onClick()
     expect(api.retryFailedChunks).toHaveBeenCalledTimes(2)
+
   })
+
+  test('shows error toast when saving empty chunk content', async () => {
+    let tree = await flush()
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    // Clear the content then try to save
+    find(tree, 'textarea').props.onChange({ target: { value: '' } })
+    tree = await flush()
+    await tooltipButton(tree, 'save').props.onClick()
+    expect(toastError).toHaveBeenCalledWith('chunkContentEmpty')
+    expect(api.updateChunk).not.toHaveBeenCalled()
+  })
+
+  test('silently exits editing when content is unchanged', async () => {
+    let tree = await flush()
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    // Don't change content, just click save
+    await tooltipButton(tree, 'save').props.onClick()
+    tree = await flush()
+    expect(elements(tree).some(item => item.type === 'textarea')).toBe(false)
+    expect(api.updateChunk).not.toHaveBeenCalled()
+  })
+
+  test('enters editing via keyboard Enter on chunk preview', async () => {
+    let tree = await flush()
+    const preview = chunkPreview(tree, 'First chunk')
+    expect(preview.props.role).toBe('button')
+    expect(preview.props.tabIndex).toBe(0)
+
+    preview.props.onKeyDown({ key: 'Enter', preventDefault: mock() })
+    tree = await flush()
+    expect(elements(tree).some(item => item.type === 'textarea')).toBe(true)
+  })
+
+  test('enters editing via keyboard Space on chunk preview', async () => {
+    let tree = await flush()
+    const preview = chunkPreview(tree, 'First chunk')
+
+    preview.props.onKeyDown({ key: ' ', preventDefault: mock() })
+    tree = await flush()
+    expect(elements(tree).some(item => item.type === 'textarea')).toBe(true)
+  })
+
+  test('discards changes and reverts content via unsaved dialog', async () => {
+    let tree = await flush()
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    find(tree, 'textarea').props.onChange({ target: { value: 'Modified content' } })
+    tree = await flush()
+    // Trigger focus exit → shows unsaved dialog
+    dispatchWindow('focusin')
+    tree = render()
+    expect(dialog(tree, 2).props.open).toBe(true)
+
+    // Click Discard
+    await find(dialog(tree, 2), 'alert-action', 'discard').props.onClick()
+    tree = render()
+    // Dialog closed, back to preview with original content
+    expect(dialog(tree, 2).props.open).toBe(false)
+    expect(find(tree, 'chunk-markdown').props.source).toBe('First chunk')
+    expect(api.updateChunk).not.toHaveBeenCalled()
+  })
+
 })

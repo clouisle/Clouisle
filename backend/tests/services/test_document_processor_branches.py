@@ -249,9 +249,126 @@ async def test_fetch_url_content_http_fallback(
     assert metadata["char_count"] == len(expected)
 
 
-def test_sanitize_content_strips_html_and_handles_empty():
-    from app.services.document_processor import sanitize_content
+class TestSanitizeContent:
+    """Comprehensive tests for sanitize_content XSS prevention."""
 
-    assert sanitize_content("") == ""
-    assert sanitize_content("<script>alert(1)</script>") == "alert(1)"
-    assert sanitize_content("**markdown**") == "**markdown**"
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        from app.services.document_processor import sanitize_content
+
+        self.sanitize = sanitize_content
+
+    # ── Empty and falsy ──────────────────────────────────────────
+    def test_empty_string_returns_empty(self):
+        assert self.sanitize("") == ""
+
+    def test_none_returns_none(self):
+        assert self.sanitize(None) is None
+
+    # ── Plain text passes through ────────────────────────────────
+    def test_plain_text_preserved(self):
+        assert self.sanitize("hello world") == "hello world"
+
+    def test_multiline_text_preserved(self):
+        assert self.sanitize("line1\nline2\nline3") == "line1\nline2\nline3"
+
+    # ── Markdown syntax preserved ────────────────────────────────
+    def test_markdown_bold_preserved(self):
+        assert self.sanitize("**bold**") == "**bold**"
+
+    def test_markdown_link_preserved(self):
+        assert (
+            self.sanitize("[link](https://example.com)")
+            == "[link](https://example.com)"
+        )
+
+    def test_markdown_code_preserved(self):
+        assert self.sanitize("`code`") == "`code`"
+
+    def test_markdown_heading_preserved(self):
+        assert self.sanitize("## Heading") == "## Heading"
+
+    # ── Dangerous HTML tags stripped ─────────────────────────────
+    def test_script_tag_stripped(self):
+        assert self.sanitize("<script>alert(1)</script>") == "alert(1)"
+
+    def test_iframe_stripped(self):
+        assert self.sanitize('<iframe src="evil"></iframe>') == ""
+
+    def test_style_tag_content_preserved_but_tag_stripped(self):
+        result = self.sanitize("<style>body{}</style>text")
+        assert "body{}" in result
+        assert "text" in result
+        assert "<style>" not in result
+
+    def test_nested_html_tags_stripped_content_preserved(self):
+        result = self.sanitize("<div><p>nested</p></div>")
+        assert "nested" in result
+        assert "<div>" not in result
+        assert "<p>" not in result
+
+    # ── Event handlers stripped ──────────────────────────────────
+    def test_onclick_stripped(self):
+        result = self.sanitize('<img src=x onerror="alert(1)">')
+        assert "alert" not in result
+        assert "onerror" not in result
+
+    def test_onload_stripped(self):
+        result = self.sanitize('<body onload="evil()">content</body>')
+        assert "onload" not in result
+        assert "evil" not in result
+        assert "content" in result
+
+    # ── Dangerous URL protocols stripped ─────────────────────────
+    def test_javascript_url_stripped(self):
+        result = self.sanitize('<a href="javascript:alert(1)">click</a>')
+        assert "javascript" not in result
+        assert "click" in result
+
+    # ── Mixed content ────────────────────────────────────────────
+    def test_mixed_markdown_and_html(self):
+        result = self.sanitize("**safe** <script>xss</script> `code`")
+        assert "**safe**" in result
+        assert "xss" in result
+        assert "`code`" in result
+        assert "<script>" not in result
+
+    # ── Realistic attack vectors ─────────────────────────────────
+    def test_data_uri_script_stripped(self):
+        result = self.sanitize(
+            '<object data="data:text/html,<script>alert(1)</script>">'
+        )
+        assert "alert" not in result
+
+    def test_svg_onload_stripped(self):
+        result = self.sanitize('<svg onload="alert(1)"></svg>')
+        assert "onload" not in result
+
+
+@pytest.mark.asyncio
+async def test_sanitize_content_through_class_method():
+    """Verify _sanitize_content class method delegates correctly."""
+    from app.services.document_processor import DocumentProcessor
+
+    proc = DocumentProcessor.__new__(DocumentProcessor)
+
+    assert proc._sanitize_content("") == ""
+    assert proc._sanitize_content("<script>x</script>y") == "xy"
+    assert proc._sanitize_content("**md**") == "**md**"
+
+
+@pytest.mark.asyncio
+async def test_clean_text_applies_sanitization():
+    """Verify _clean_text pipeline sanitizes HTML after cleaning."""
+    from app.services.document_processor import DocumentProcessor
+
+    proc = DocumentProcessor.__new__(DocumentProcessor)
+
+    result = proc._clean_text("<script>alert(1)</script>  hello  ", clean=True)
+    assert "alert(1)" in result
+    assert "hello" in result
+    assert "<script>" not in result
+
+    clean = proc._clean_text("<script>x</script>", clean=False)
+    assert "x" in clean
+    assert "<script>" not in clean
