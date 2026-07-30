@@ -204,6 +204,7 @@
         "agent": "Agent",
         "workflow": "Workflow",
         "system": "System",
+        "other": "Other model calls",
         "unknown": "Unknown"
       },
       "risk": {
@@ -362,7 +363,7 @@
         "costDriver": "Token volume is the primary cost driver.",
         "topModel": "Top model",
         "modelCount": "Models used",
-        "sourceDesc": "Token consumption split by Agent and Workflow sources.",
+        "sourceDesc": "Token consumption split by Agent, Workflow, and other model calls.",
         "modelDesc": "Top token-consuming models in the selected range."
       },
       "workers": {

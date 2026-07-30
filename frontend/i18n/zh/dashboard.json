@@ -204,6 +204,7 @@
         "agent": "Agent",
         "workflow": "Workflow",
         "system": "系统",
+        "other": "其他模型调用",
         "unknown": "未知"
       },
       "risk": {
@@ -362,7 +363,7 @@
         "costDriver": "Token 用量是主要成本驱动。",
         "topModel": "最高用量模型",
         "modelCount": "使用模型数",
-        "sourceDesc": "按 Agent 和 Workflow 来源拆分 Token 消耗。",
+        "sourceDesc": "按 Agent、Workflow 和其他模型调用拆分 Token 消耗。",
         "modelDesc": "所选时间范围内 Token 消耗最高的模型。"
       },
       "workers": {

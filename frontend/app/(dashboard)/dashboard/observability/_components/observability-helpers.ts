@@ -38,7 +38,9 @@ export function statusLabel(status: string | null | undefined, t: ObservabilityT
 }
 
 export function sourceLabel(source: string | null | undefined, t: ObservabilityTranslator) {
-  if (source === 'agent' || source === 'workflow' || source === 'system') return translate(t, `sources.${source}`)
+  if (source === 'agent' || source === 'workflow' || source === 'system' || source === 'other') {
+    return translate(t, `sources.${source}`)
+  }
   return translate(t, 'sources.unknown')
 }
 

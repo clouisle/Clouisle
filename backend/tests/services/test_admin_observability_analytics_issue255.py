@@ -206,18 +206,70 @@ async def test_token_analytics_groups_models_and_sources(monkeypatch, period):
     monkeypatch.setattr(
         service, "_workflow_run_rows", AsyncMock(return_value=[{"tokens": 7}])
     )
+    monkeypatch.setattr(
+        service,
+        "_tracked_model_token_rows",
+        AsyncMock(
+            return_value=[
+                {"model_used": "small", "tokens": 4},
+                {"model_used": "large", "tokens": 20},
+            ]
+        ),
+    )
 
     result = await service.get_tokens("30d")
 
-    assert result["total_tokens"] == 12
+    assert result["total_tokens"] == 25
     assert result["by_source"] == [
         {"source": "agent", "tokens": 5},
         {"source": "workflow", "tokens": 7},
+        {"source": "other", "tokens": 13},
     ]
     assert result["by_model"] == [
+        {"model": "large", "tokens": 20},
         {"model": "small", "tokens": 5},
-        {"model": "unknown", "tokens": 0},
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("time_range", "token_field", "reset_field", "counter_start"),
+    [
+        (
+            "7d",
+            "daily_tokens_used",
+            "daily_reset_at",
+            datetime(2026, 7, 22, tzinfo=UTC),
+        ),
+        (
+            "30d",
+            "monthly_tokens_used",
+            "monthly_reset_at",
+            datetime(2026, 7, 1, tzinfo=UTC),
+        ),
+        (
+            "invalid",
+            "monthly_tokens_used",
+            "monthly_reset_at",
+            datetime(2026, 7, 1, tzinfo=UTC),
+        ),
+    ],
+)
+async def test_tracked_model_token_rows_use_current_counter_period(
+    monkeypatch, time_range, token_field, reset_field, counter_start
+):
+    current = datetime(2026, 7, 22, 12, tzinfo=UTC)
+    monkeypatch.setattr(service, "now", lambda: current)
+    execute = AsyncMock(return_value=(1, [{"model_used": "model-a", "tokens": 12}]))
+    monkeypatch.setattr(service, "_execute", execute)
+
+    result = await service._tracked_model_token_rows(time_range)
+
+    assert result == [{"model_used": "model-a", "tokens": 12}]
+    query, params = execute.await_args.args
+    assert f"tm.{token_field}" in query
+    assert f"tm.{reset_field} >= $1" in query
+    assert params == [counter_start]
 
 
 @pytest.mark.asyncio

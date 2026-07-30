@@ -43,6 +43,7 @@ describe('observability helpers', () => {
     expect(statusLabel(null, t)).toBe('translated:status.unknown')
     expect(statusLabel('custom', t)).toBe('custom')
     expect(sourceLabel('agent', t)).toBe('translated:sources.agent')
+    expect(sourceLabel('other', t)).toBe('translated:sources.other')
     expect(sourceLabel('custom', t)).toBe('translated:sources.unknown')
     expect(timeoutTypeLabel('global', t)).toBe('translated:timeoutTypes.global')
     expect(timeoutTypeLabel('custom', t)).toBe('custom')

@@ -192,8 +192,9 @@ test('renders throughput chart data and its empty chart boundary', () => {
 })
 
 test('renders token source/model data and both empty-list boundaries', () => {
-  const populated = render(<panels.TokensPanel tokens={{ total_tokens: 3000, by_source: [{ source: 'workflow', tokens: 2000 }, { source: 'agent', tokens: 1000 }], by_model: [{ model: 'model-a', tokens: 3000 }] }} />)
+  const populated = render(<panels.TokensPanel tokens={{ total_tokens: 3000, by_source: [{ source: 'workflow', tokens: 1500 }, { source: 'agent', tokens: 1000 }, { source: 'other', tokens: 500 }], by_model: [{ model: 'model-a', tokens: 3000 }] }} />)
   expect(text(populated)).toContain('model-a')
+  expect(text(populated)).toContain('sources.other')
   expect(text(populated)).toContain('3K')
   const empty = render(<panels.TokensPanel tokens={{ total_tokens: 0, by_source: [], by_model: [] }} />)
   expect(emptyCount(empty)).toBe(2)

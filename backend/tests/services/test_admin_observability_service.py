@@ -305,6 +305,10 @@ async def test_timeout_throughput_and_token_aggregations():
             "app.services.admin_observability._workflow_run_rows",
             new=AsyncMock(return_value=[{"tokens": 7}]),
         ),
+        patch(
+            "app.services.admin_observability._tracked_model_token_rows",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         timeouts = await admin_observability.get_timeouts("30d", "all", 1, 10)
         throughput = await admin_observability.get_throughput("7d", None)
@@ -326,9 +330,13 @@ async def test_timeout_throughput_and_token_aggregations():
         }
     ]
     assert tokens["total_tokens"] == 14
+    assert tokens["by_source"] == [
+        {"source": "agent", "tokens": 7},
+        {"source": "workflow", "tokens": 7},
+    ]
     assert tokens["by_model"] == [
+        {"model": "unknown", "tokens": 9},
         {"model": "model-a", "tokens": 5},
-        {"model": "unknown", "tokens": 2},
     ]
 
 

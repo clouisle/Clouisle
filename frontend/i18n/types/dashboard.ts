@@ -206,6 +206,7 @@ export type DashboardMessages = {
         agent: string
         workflow: string
         system: string
+        other: string
         unknown: string
       }
       risk: {

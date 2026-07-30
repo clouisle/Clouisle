@@ -347,23 +347,85 @@ async def get_throughput(time_range: str, granularity: str | None) -> dict[str, 
     }
 
 
+async def _tracked_model_token_rows(time_range: str) -> list[dict[str, Any]]:
+    normalized_range = time_range if time_range in VALID_TIME_RANGES else "30d"
+    now_local = now()
+    if normalized_range == "7d":
+        token_field = "daily_tokens_used"
+        reset_field = "daily_reset_at"
+        counter_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        token_field = "monthly_tokens_used"
+        reset_field = "monthly_reset_at"
+        counter_start = now_local.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+
+    _, rows = await _execute(
+        f"""
+        SELECT
+            m.model_id AS model_used,
+            SUM(tm.{token_field})::bigint AS tokens
+        FROM team_models tm
+        JOIN models m ON m.id = tm.model_id
+        WHERE tm.{token_field} > 0
+          AND tm.{reset_field} >= $1
+        GROUP BY m.model_id
+        """,
+        [to_utc(counter_start)],
+    )
+    return [_normalize_row(row) for row in rows]
+
+
 async def get_tokens(time_range: str) -> dict[str, Any]:
     start_time, end_time = normalize_time_range(time_range)
     agent_rows = await _agent_message_rows(start_time, end_time)
     workflow_rows = await _workflow_run_rows(start_time, end_time)
+    tracked_rows = await _tracked_model_token_rows(time_range)
+
     by_model: dict[str, int] = {}
     for row in agent_rows:
-        model = str(row.get("model_used") or "unknown")
-        by_model[model] = by_model.get(model, 0) + int(row.get("tokens") or 0)
+        model = row.get("model_used")
+        tokens = int(row.get("tokens") or 0)
+        if model and tokens > 0:
+            model_key = str(model)
+            by_model[model_key] = by_model.get(model_key, 0) + tokens
+
+    tracked_by_model: dict[str, int] = {}
+    for row in tracked_rows:
+        model = row.get("model_used")
+        tokens = int(row.get("tokens") or 0)
+        if model and tokens > 0:
+            model_key = str(model)
+            tracked_by_model[model_key] = tracked_by_model.get(model_key, 0) + tokens
+
+    # A chat call can be present in both message history and team-model counters.
+    # Keep the larger per-model value rather than double-counting the same usage.
+    for model, tokens in tracked_by_model.items():
+        by_model[model] = max(by_model.get(model, 0), tokens)
+
     agent_tokens = sum(int(row.get("tokens") or 0) for row in agent_rows)
     workflow_tokens = sum(int(row.get("tokens") or 0) for row in workflow_rows)
+    event_total = agent_tokens + workflow_tokens
+    attributed_total = sum(by_model.values())
+    total_tokens = max(event_total, attributed_total)
+
+    unattributed_tokens = total_tokens - attributed_total
+    if unattributed_tokens > 0:
+        by_model["unknown"] = unattributed_tokens
+
+    by_source = [
+        {"source": "agent", "tokens": agent_tokens},
+        {"source": "workflow", "tokens": workflow_tokens},
+    ]
+    other_tokens = total_tokens - event_total
+    if other_tokens > 0:
+        by_source.append({"source": "other", "tokens": other_tokens})
+
     return {
         "time_range": time_range,
-        "total_tokens": agent_tokens + workflow_tokens,
-        "by_source": [
-            {"source": "agent", "tokens": agent_tokens},
-            {"source": "workflow", "tokens": workflow_tokens},
-        ],
+        "total_tokens": total_tokens,
+        "by_source": by_source,
         "by_model": [
             {"model": model, "tokens": tokens}
             for model, tokens in sorted(
