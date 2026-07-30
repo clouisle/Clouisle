@@ -112,11 +112,11 @@ spec:
 **Backend Workers:**
 
 ```yaml
-# Increase Uvicorn workers
-uvicorn app.main:app --workers 8 --host 0.0.0.0 --port 8000
+# Increase backend workers (production mode)
+python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 
 # Or in docker-compose.yml
-command: uvicorn app.main:app --workers 8 --host 0.0.0.0 --port 8000
+command: python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 ```
 
 **Celery Workers:**

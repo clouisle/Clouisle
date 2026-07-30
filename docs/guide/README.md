@@ -7,6 +7,7 @@ Welcome to the user and operator documentation for Clouisle.
 ### Getting started
 - [Introduction](getting-started/introduction.md)
 - [Quick Start](getting-started/quick-start.md)
+- [Development Setup](getting-started/development.md)
 - [Basic Concepts](getting-started/basic-concepts.md)
 
 ### User guide
