@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
 
 const api = Object.fromEntries([
@@ -12,10 +12,21 @@ const router = { push }
 const translate = (key: string, values?: Record<string, unknown>) =>
   values ? `${key}:${Object.values(values).join(',')}` : key
 
+const windowListeners = new Map<string, EventListener>()
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+Object.defineProperty(globalThis, 'window', {
+  configurable: true,
+  value: {
+    addEventListener: (type: string, listener: EventListener) => windowListeners.set(type, listener),
+    removeEventListener: (type: string) => windowListeners.delete(type),
+  },
+})
+
 mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('next/navigation', () => ({ useRouter: () => router }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api', () => ({ knowledgeBasesApi: api }))
+mock.module('@/components/ui/chunk-markdown', () => ({ ChunkMarkdown: 'chunk-markdown' }))
 
 const ui = {
   Button: 'button', Badge: 'badge', Input: 'input', Label: 'label', Textarea: 'textarea',
@@ -59,6 +70,11 @@ beforeAll(async () => {
           : next
       }]
     },
+    useRef(initial: unknown) {
+      const index = cursor++
+      slots[index] ??= { value: { current: initial } }
+      return slots[index].value
+    },
     useCallback(callback: unknown, deps: readonly unknown[]) {
       const index = cursor++
       if (!sameDeps(slots[index]?.deps, deps)) slots[index] = { value: callback, deps }
@@ -99,11 +115,16 @@ beforeEach(() => {
   slots.splice(0)
   effects = []
   for (const fn of [...Object.values(api), push, toastSuccess, toastError]) fn.mockReset()
+  windowListeners.clear()
   api.getKnowledgeBase.mockResolvedValue(knowledgeBase)
   api.getDocument.mockResolvedValue(document)
   api.getDocumentChunks.mockResolvedValue({ items: [chunk], total: 1, page: 1, page_size: 20 })
 })
 afterEach(() => slots.forEach(slot => slot.cleanup?.()))
+afterAll(() => {
+  if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
+  else Reflect.deleteProperty(globalThis, 'window')
+})
 
 function render() {
   cursor = 0
@@ -151,6 +172,28 @@ function tooltipButton(tree: ReactNode, label: string) {
   return find(tooltip.props.children as ReactNode, 'tooltip-trigger').props.render as ReactElement<Record<string, unknown>>
 }
 
+function chunkPreview(tree: ReactNode, source: string) {
+  const preview = elements(tree).find(item =>
+    item.type === 'div' &&
+    typeof item.props.onClick === 'function' &&
+    elements(item).some(child => child.type === 'chunk-markdown' && child.props.source === source)
+  )
+  if (!preview) throw new Error(`Expected chunk preview ${source}`)
+  return preview as ReactElement<Record<string, unknown>>
+}
+
+const outsideTarget = { closest: () => null }
+
+function dispatchWindow(type: string) {
+  const event = {
+    target: outsideTarget,
+    preventDefault: mock(),
+    stopPropagation: mock(),
+  }
+  windowListeners.get(type)?.(event as unknown as Event)
+  return event
+}
+
 function dialog(tree: ReactNode, index: number) {
   return elements(tree).filter(item => item.type === 'alert-dialog')[index] as ReactElement<Record<string, unknown>>
 }
@@ -189,20 +232,20 @@ describe('platform DocumentDetailClient', () => {
     let tree = await flush()
 
     expect(api.getDocumentChunks).toHaveBeenCalledWith('kb-1', 'doc-1', { page: 1, pageSize: 20 })
-    expect(text(tree)).toContain('First chunk')
+    expect(find(tree, 'chunk-markdown').props.source).toBe('First chunk')
     expect(text(tree)).toContain('pageInfo:1,2')
     find(tree, 'button', 'reprocess').props.onClick()
     expect(push).toHaveBeenCalledWith('/app/kb/kb-1/documents/preview?docs=doc-1')
 
-    find(tree, 'p', 'First chunk').props.onClick()
+    chunkPreview(tree, 'First chunk').props.onClick()
     tree = render()
     const editor = find(tree, 'textarea')
     editor.props.onChange({ target: { value: 'Updated chunk' } })
     tree = render()
-    await buttonWithIcon(tree, 'Save')!.props.onClick()
+    await tooltipButton(tree, 'save').props.onClick()
     tree = render()
     expect(api.updateChunk).toHaveBeenCalledWith('kb-1', 'doc-1', 'chunk-1', { content: 'Updated chunk' })
-    expect(text(tree)).toContain('Updated chunk')
+    expect(find(tree, 'chunk-markdown').props.source).toBe('Updated chunk')
     expect(toastSuccess).toHaveBeenCalledWith('chunkUpdated')
 
     await tooltipButton(tree, 'insertChunkAfter').props.onClick()
@@ -234,7 +277,7 @@ describe('platform DocumentDetailClient', () => {
     expect(api.previewChunks).toHaveBeenCalledWith('kb-1', 'doc-1', {
       chunk_size: 700, chunk_overlap: 80, separator: '\n', clean_text: false,
     })
-    expect(text(tree)).toContain('Preview text')
+    expect(find(tree, 'chunk-markdown').props.source).toBe('Preview text')
     expect(text(tree)).toContain('previewStats:1,3')
     expect(toastSuccess).toHaveBeenCalledWith('previewGenerated')
 
@@ -243,6 +286,70 @@ describe('platform DocumentDetailClient', () => {
       chunk_size: 700, chunk_overlap: 80, separator: '\n', clean_text: false,
     })
     expect(toastSuccess).toHaveBeenCalledWith('processStartedSingle')
+  })
+
+  test('exits clean edits and guards dirty mouse and keyboard exits', async () => {
+    let tree = await flush()
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    expect(find(tree, 'textarea').props.autoFocus).toBe(true)
+
+    dispatchWindow('mousedown')
+    tree = await flush()
+    expect(elements(tree).some(item => item.type === 'textarea')).toBe(false)
+
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    find(tree, 'textarea').props.onChange({ target: { value: 'Dirty chunk' } })
+    tree = await flush()
+
+    dispatchWindow('focusin')
+    tree = render()
+    expect(dialog(tree, 2).props.open).toBe(true)
+
+    const click = dispatchWindow('click')
+    expect(click.preventDefault).toHaveBeenCalled()
+    expect(click.stopPropagation).toHaveBeenCalled()
+  })
+
+  test('keeps the unsaved dialog open until saving succeeds', async () => {
+    let resolveUpdate!: (value: typeof chunk) => void
+    api.updateChunk.mockImplementation(() => new Promise(resolve => { resolveUpdate = resolve }))
+    let tree = await flush()
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    find(tree, 'textarea').props.onChange({ target: { value: 'Saved chunk' } })
+    tree = await flush()
+    dispatchWindow('focusin')
+    tree = render()
+
+    const save = find(dialog(tree, 2), 'alert-action', 'save')
+    const saving = save.props.onClick() as Promise<void>
+    tree = render()
+    expect(dialog(tree, 2).props.open).toBe(true)
+    expect(find(dialog(tree, 2), 'alert-action', 'save').props.disabled).toBe(true)
+
+    resolveUpdate({ ...chunk, content: 'Saved chunk' })
+    await saving
+    tree = render()
+    expect(dialog(tree, 2).props.open).toBe(false)
+    expect(find(tree, 'chunk-markdown').props.source).toBe('Saved chunk')
+  })
+
+  test('keeps the unsaved dialog open when saving fails', async () => {
+    api.updateChunk.mockRejectedValue(new Error('offline'))
+    let tree = await flush()
+    chunkPreview(tree, 'First chunk').props.onClick()
+    tree = await flush()
+    find(tree, 'textarea').props.onChange({ target: { value: 'Unsaved chunk' } })
+    tree = await flush()
+    dispatchWindow('focusin')
+    tree = render()
+
+    await find(dialog(tree, 2), 'alert-action', 'save').props.onClick()
+    tree = render()
+    expect(dialog(tree, 2).props.open).toBe(true)
+    expect(find(tree, 'textarea').props.value).toBe('Unsaved chunk')
   })
 
   test('shows document and chunk failures and recovers through retry actions', async () => {

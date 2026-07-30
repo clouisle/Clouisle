@@ -77,7 +77,9 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const [document, setDocument] = React.useState<Document | null>(null)
   const [chunks, setChunks] = React.useState<EditableChunk[]>([])
   const chunksRef = React.useRef(chunks)
-  chunksRef.current = chunks
+  React.useEffect(() => {
+    chunksRef.current = chunks
+  }, [chunks])
   const [pageData, setPageData] = React.useState<PageData<DocumentChunk> | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [isLoadingChunks, setIsLoadingChunks] = React.useState(false)
@@ -91,6 +93,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deleteChunkId, setDeleteChunkId] = React.useState<string | null>(null)
   const [pendingBlurChunkId, setPendingBlurChunkId] = React.useState<string | null>(null)
+  const pendingBlurChunkIdRef = React.useRef<string | null>(null)
 
   // 预览状态
   const [isPreviewMode, setIsPreviewMode] = React.useState(false)
@@ -354,41 +357,72 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
     ))
   }
 
+  // 监听鼠标和键盘离开编辑区域
   React.useEffect(() => {
     if (typeof window === 'undefined') return
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      const currentChunks = chunksRef.current
-      const editingChunk = currentChunks.find(c => c.isEditing)
-      if (!editingChunk) return
-      const editorContainer = target.closest('[data-chunk-editor]')
-      if (editorContainer?.getAttribute('data-chunk-editor') === editingChunk.id) return
-      if (target.closest('[role="alertdialog"]')) return
+
+    const handleEditorExit = (target: EventTarget | null) => {
+      const editingChunk = chunksRef.current.find(c => c.isEditing)
+      if (!editingChunk) return false
+
+      const element = target as HTMLElement | null
+      const editorContainer = element?.closest?.('[data-chunk-editor]')
+      if (editorContainer?.getAttribute('data-chunk-editor') === editingChunk.id) return false
+      if (element?.closest?.('[role="alertdialog"]')) return false
+
       if (editingChunk.editContent === editingChunk.content) {
         setChunks(prev => prev.map(c =>
           c.id === editingChunk.id ? { ...c, isEditing: false } : c
         ))
-        return
+        return false
       }
+
+      pendingBlurChunkIdRef.current = editingChunk.id
       setPendingBlurChunkId(editingChunk.id)
+      return true
     }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!handleEditorExit(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const handleClick = (event: MouseEvent) => {
+      const element = event.target as HTMLElement | null
+      if (element?.closest?.('[role="alertdialog"]')) return
+      if (!pendingBlurChunkIdRef.current && !handleEditorExit(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const handleFocusIn = (event: FocusEvent) => {
+      handleEditorExit(event.target)
+    }
+
     window.addEventListener('mousedown', handleMouseDown, true)
-    return () => { window.removeEventListener('mousedown', handleMouseDown, true) }
+    window.addEventListener('click', handleClick, true)
+    window.addEventListener('focusin', handleFocusIn, true)
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown, true)
+      window.removeEventListener('click', handleClick, true)
+      window.removeEventListener('focusin', handleFocusIn, true)
+    }
   }, [])
+
+  // 放弃修改
   const handleDiscardChanges = () => {
     if (!pendingBlurChunkId) return
     setChunks(prev => prev.map(c =>
       c.id === pendingBlurChunkId ? { ...c, isEditing: false, editContent: c.content } : c
     ))
+    pendingBlurChunkIdRef.current = null
     setPendingBlurChunkId(null)
   }
 
   // 保存修改
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     if (!pendingBlurChunkId) return
     const chunk = chunks.find(c => c.id === pendingBlurChunkId)
-    if (chunk) saveChunk(chunk)
-    setPendingBlurChunkId(null)
+    if (chunk) await saveChunk(chunk)
   }
 
   const updateEditContent = (chunkId: string, content: string) => {
@@ -397,10 +431,14 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
     ))
   }
 
-  const saveChunk = async (chunk: EditableChunk) => {
+  const saveChunk = async (chunk: EditableChunk): Promise<boolean> => {
     if (!chunk.editContent || chunk.editContent === chunk.content) {
       cancelEditing(chunk.id)
-      return
+      if (pendingBlurChunkIdRef.current === chunk.id) {
+        pendingBlurChunkIdRef.current = null
+        setPendingBlurChunkId(null)
+      }
+      return true
     }
 
     setIsSaving(true)
@@ -414,9 +452,15 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       setChunks(prev => prev.map(c =>
         c.id === chunk.id ? { ...updated, isEditing: false, editContent: updated.content } : c
       ))
+      if (pendingBlurChunkIdRef.current === chunk.id) {
+        pendingBlurChunkIdRef.current = null
+        setPendingBlurChunkId(null)
+      }
       toast.success(t('chunkUpdated'))
+      return true
     } catch {
       // 错误已由 API 客户端处理
+      return false
     } finally {
       setIsSaving(false)
     }
@@ -578,9 +622,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
                         {/* 分块内容 */}
                         <div className="p-4 overflow-hidden">
-                          <p className="text-sm whitespace-pre-wrap break-all wrap-anywhere">
-                            {chunk.content}
-                          </p>
+                          <ChunkMarkdown source={chunk.content} />
                         </div>
                       </div>
                     ))}
@@ -657,7 +699,6 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     {chunks.map((chunk) => (
                       <div
                         key={chunk.id}
-                        data-chunk-editor={chunk.id}
                         className="group rounded-lg border bg-card hover:border-primary/50 transition-colors overflow-hidden"
                       >
                         {/* 分块头部 */}
@@ -681,7 +722,10 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div
+                            data-chunk-editor={chunk.id}
+                            className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
                             {chunk.status === 'failed' && !chunk.isEditing && (
                               <Tooltip>
                                 <TooltipTrigger
@@ -730,6 +774,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                                         size="icon"
                                         className="h-7 w-7"
                                         onClick={() => cancelEditing(chunk.id)}
+                                        disabled={isSaving}
                                       >
                                         <RotateCcw className="h-3.5 w-3.5" />
                                       </Button>
@@ -787,9 +832,14 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             {t('chunkErrorMessage', { message: chunk.error_message })}
                           </div>
                         )}
-                        <div className="p-4 overflow-hidden">
+                        <div
+                          data-chunk-editor={chunk.id}
+                          className="p-4 overflow-hidden"
+                        >
                           {chunk.isEditing ? (
                             <Textarea
+                              autoFocus
+                              disabled={isSaving}
                               value={chunk.editContent}
                               onChange={(e) => updateEditContent(chunk.id, e.target.value)}
                               className="min-h-30 font-mono text-sm"
@@ -1049,7 +1099,15 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       </AlertDialog>
 
       {/* 未保存修改确认 */}
-      <AlertDialog open={!!pendingBlurChunkId} onOpenChange={(open) => !open && setPendingBlurChunkId(null)}>
+      <AlertDialog
+        open={!!pendingBlurChunkId}
+        onOpenChange={(open) => {
+          if (!open && !isSaving) {
+            pendingBlurChunkIdRef.current = null
+            setPendingBlurChunkId(null)
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('unsavedChanges')}</AlertDialogTitle>
@@ -1058,11 +1116,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction variant="default" onClick={handleDiscardChanges}>
+            <AlertDialogCancel disabled={isSaving}>{commonT('cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="default" onClick={handleDiscardChanges} disabled={isSaving}>
               {t('discard')}
             </AlertDialogAction>
-            <AlertDialogAction onClick={handleSaveChanges}>
+            <AlertDialogAction onClick={handleSaveChanges} disabled={isSaving}>
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
               {commonT('save')}
             </AlertDialogAction>
           </AlertDialogFooter>

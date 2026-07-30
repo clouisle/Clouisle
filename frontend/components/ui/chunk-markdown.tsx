@@ -3,10 +3,11 @@
 import * as React from 'react'
 import dynamic from 'next/dynamic'
 import { useTheme } from 'next-themes'
+import rehypeSanitize from 'rehype-sanitize'
 import { cn } from '@/lib/utils'
 
 const MarkdownPreview = dynamic(
-  () => import('@uiw/react-md-editor').then((mod) => mod.default.Markdown),
+  () => import('@uiw/react-markdown-preview').then((mod) => mod.default),
   { ssr: false }
 )
 
@@ -28,7 +29,7 @@ export function ChunkMarkdown({ source, className }: ChunkMarkdownProps) {
       className={cn('wmde-markdown text-sm', className)}
       data-color-mode={mounted && resolvedTheme === 'dark' ? 'dark' : 'light'}
     >
-      <MarkdownPreview source={source} />
+      <MarkdownPreview source={source} rehypePlugins={[[rehypeSanitize]]} />
     </div>
   )
 }
