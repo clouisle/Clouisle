@@ -174,6 +174,27 @@ async def test_workflow_tables_create_all_tables_and_indexes(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("dialect, expected_calls", [("postgres", 2), ("sqlite", 0)])
+async def test_observability_indexes_use_brin_for_postgres(
+    monkeypatch: pytest.MonkeyPatch, dialect: str, expected_calls: int
+) -> None:
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect=dialect),
+        execute_query=AsyncMock(return_value=(0, [])),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_observability_indexes()
+
+    assert conn.execute_query.await_count == expected_calls
+    if expected_calls:
+        queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+        assert "USING BRIN (created_at)" in queries[0]
+        assert "round_role = 'assistant_final'" in queries[0]
+        assert "USING BRIN (created_at)" in queries[1]
+
+
+@pytest.mark.asyncio
 async def test_workflow_tables_stop_after_database_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -211,6 +232,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "migrate_registration_settings_category",
         "migrate_storage_settings_category",
         "init_workflow_tables",
+        "init_observability_indexes",
         "init_notification_tables",
         "init_tool_shares_table",
         "init_skills_table",

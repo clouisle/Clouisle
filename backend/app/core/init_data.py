@@ -264,6 +264,26 @@ async def init_workflow_tables():
     logger.info("Workflow tables initialization complete")
 
 
+async def init_observability_indexes():
+    """Create compact time-range indexes for raw observability queries."""
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    if dialect != "postgres":
+        logger.info("Skipping observability indexes for non-PostgreSQL database")
+        return
+
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_messages_observability_created_at
+        ON messages USING BRIN (created_at)
+        WHERE round_role = 'assistant_final' AND is_round_canonical = TRUE
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_workflow_runs_observability_created_at
+        ON workflow_runs USING BRIN (created_at)
+    """)
+    logger.info("Created observability time-range indexes")
+
+
 async def init_scoped_role_assignments_table():
     """Create and backfill team-scoped role assignments."""
     logger.info("Initializing scoped role assignments table...")
@@ -2625,6 +2645,7 @@ async def init_db():
 
     # 4. Initialize workflow tables
     await init_workflow_tables()
+    await init_observability_indexes()
 
     # 5. Initialize notification tables
     await init_notification_tables()
