@@ -299,7 +299,8 @@ def test_reprocess_clamps_stats_and_starts_processing():
         patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
         patch(f"{MODULE}.VectorStore", return_value=vector_store),
         patch(
-            f"{MODULE}.process_document_task", return_value={"status": "success"}
+            f"{MODULE}._process_document",
+            new=AsyncMock(return_value={"status": "success"}),
         ) as process,
     ):
         result = reprocess_document_task.run(str(document.id))
@@ -308,15 +309,17 @@ def test_reprocess_clamps_stats_and_starts_processing():
     assert document.knowledge_base.total_chunks == 0
     assert document.knowledge_base.total_tokens == 0
     assert document.chunk_count == document.token_count == 0
-    process.assert_called_once_with(str(document.id))
+    process.assert_awaited_once_with(str(document.id), None)
 
 
 def test_url_task_delegates_to_process_task():
+    document_id = str(uuid4())
     with patch(
-        f"{MODULE}.process_document_task", return_value={"status": "success"}
+        f"{MODULE}._process_document",
+        new=AsyncMock(return_value={"status": "success"}),
     ) as process:
-        assert process_url_document_task.run("doc-id") == {"status": "success"}
-    process.assert_called_once_with("doc-id")
+        assert process_url_document_task.run(document_id) == {"status": "success"}
+    process.assert_awaited_once_with(document_id, None)
 
 
 def test_rechunk_uses_requested_settings_and_reports_partial_failure():
@@ -704,7 +707,9 @@ def test_lexical_backfill_resumes_and_reconciles():
     store.backfill_batch.return_value = SimpleNamespace(
         indexed=1, checkpoint=str(item.id)
     )
-    store.reconcile.return_value = SimpleNamespace(expected=4, actual=4, matches=True)
+    store.reconcile.return_value = SimpleNamespace(
+        expected=4, actual=4, repaired=0, deleted=0, matches=True
+    )
 
     with (
         patch(f"{MODULE}.DocumentChunk.filter", return_value=query) as chunks,
@@ -715,11 +720,18 @@ def test_lexical_backfill_resumes_and_reconciles():
 
     assert result == {
         "status": "success",
+        "scanned": 1,
+        "affected": 1,
         "indexed": 1,
         "checkpoint": str(item.id),
         "complete": True,
-        "reconciliation": {"expected": 4, "actual": 4, "matches": True},
+        "reconciliation": {
+            "expected": 4,
+            "actual": 4,
+            "repaired": 0,
+            "deleted": 0,
+            "matches": True,
+        },
     }
     assert chunks.call_args_list[0].kwargs["id__gt"] == checkpoint
-    assert "id__gt" not in chunks.call_args_list[1].kwargs
-    store.reconcile.assert_awaited_once_with(4)
+    store.reconcile.assert_awaited_once_with()

@@ -20,8 +20,32 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.value
+
     async def first(self):
         return self.value
+
+
+@pytest.fixture
+def dispatch_transaction(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
 
 
 @pytest.mark.asyncio
@@ -47,16 +71,35 @@ async def test_issue255_upload_limit_normalizes_configured_value(
 
 
 @pytest.mark.asyncio
-async def test_issue255_dispatch_failure_removes_task_metadata(monkeypatch):
-    doc = SimpleNamespace(metadata={"kept": True}, save=AsyncMock())
+async def test_issue255_dispatch_failure_removes_task_metadata(
+    monkeypatch, dispatch_transaction
+):
+    doc = SimpleNamespace(
+        id=uuid4(),
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata={"kept": True},
+        save=AsyncMock(),
+    )
     task = SimpleNamespace(name="process", apply_async=Mock(side_effect=RuntimeError))
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
 
     with pytest.raises(RuntimeError):
-        await knowledge_bases._dispatch_document_task(doc, task, "document-id")
+        await knowledge_bases._dispatch_document_task(
+            doc,
+            task,
+            "document-id",
+            status=knowledge_bases.DocumentStatus.PROCESSING.value,
+        )
 
     assert doc.metadata == {"kept": True}
     assert doc.save.await_count == 2
-    doc.save.assert_awaited_with(update_fields=["metadata"])
+    doc.save.assert_awaited_with(
+        using_db=dispatch_transaction,
+        update_fields=["metadata", "status", "error_message"],
+    )
 
 
 @pytest.mark.asyncio

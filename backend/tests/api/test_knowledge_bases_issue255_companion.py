@@ -36,10 +36,49 @@ async def test_upload_size_setting_is_defaulted_clamped_or_returned(
     assert await knowledge_bases.get_kb_document_max_upload_size_mb() == expected
 
 
+@pytest.fixture
+def dispatch_transaction(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
+
+
+class _DocQuery:
+    def __init__(self, doc):
+        self._doc = doc
+
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self._doc
+
+    async def first(self):
+        return self._doc
+
+
 @pytest.mark.anyio
-async def test_dispatch_document_task_records_task_metadata_then_dispatches():
+async def test_dispatch_document_task_records_task_metadata_then_dispatches(
+    monkeypatch, dispatch_transaction
+):
     saves = []
-    doc = SimpleNamespace(metadata=None)
+    doc = SimpleNamespace(
+        id="doc-1",
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata=None,
+    )
 
     async def save(*args, **kwargs):
         saves.append((args, kwargs, dict(doc.metadata)))
@@ -48,8 +87,13 @@ async def test_dispatch_document_task_records_task_metadata_then_dispatches():
     task = SimpleNamespace(
         name="process_document_task", apply_async=lambda **kwargs: saves.append(kwargs)
     )
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: _DocQuery(doc)
+    )
 
-    task_id = await knowledge_bases._dispatch_document_task(doc, task, "doc-1")
+    task_id = await knowledge_bases._dispatch_document_task(
+        doc, task, "doc-1", status=knowledge_bases.DocumentStatus.PROCESSING.value
+    )
 
     assert doc.metadata == {
         "task_id": task_id,
@@ -61,9 +105,16 @@ async def test_dispatch_document_task_records_task_metadata_then_dispatches():
 
 
 @pytest.mark.anyio
-async def test_dispatch_document_task_rolls_back_metadata_when_dispatch_fails():
+async def test_dispatch_document_task_rolls_back_metadata_when_dispatch_fails(
+    monkeypatch, dispatch_transaction
+):
     saves = []
-    doc = SimpleNamespace(metadata={"kept": "value"})
+    doc = SimpleNamespace(
+        id="doc-1",
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata={"kept": "value"},
+    )
 
     async def save(*args, **kwargs):
         saves.append((args, kwargs, dict(doc.metadata)))
@@ -73,9 +124,17 @@ async def test_dispatch_document_task_rolls_back_metadata_when_dispatch_fails():
 
     doc.save = save
     task = SimpleNamespace(name="process_document_task", apply_async=fail_dispatch)
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: _DocQuery(doc)
+    )
 
     with pytest.raises(RuntimeError, match="worker unavailable"):
-        await knowledge_bases._dispatch_document_task(doc, task, "doc-1")
+        await knowledge_bases._dispatch_document_task(
+            doc, task, "doc-1", status=knowledge_bases.DocumentStatus.PROCESSING.value
+        )
 
     assert doc.metadata == {"kept": "value"}
-    assert saves[-1][1] == {"update_fields": ["metadata"]}
+    assert saves[-1][1] == {
+        "using_db": dispatch_transaction,
+        "update_fields": ["metadata", "status", "error_message"],
+    }

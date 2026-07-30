@@ -26,13 +26,58 @@ def _query_with_first(value):
     return query
 
 
+@pytest.fixture
+def dispatch_transaction(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(knowledge_bases, "in_transaction", Transaction)
+    return connection
+
+
+class _DocQuery:
+    def __init__(self, doc):
+        self._doc = doc
+
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self._doc
+
+    async def first(self):
+        return self._doc
+
+
 @pytest.mark.anyio
-async def test_dispatch_document_task_records_and_rolls_back_metadata(monkeypatch):
-    doc = SimpleNamespace(metadata=None, save=AsyncMock())
+async def test_dispatch_document_task_records_and_rolls_back_metadata(
+    monkeypatch, dispatch_transaction
+):
+    doc = SimpleNamespace(
+        id=uuid4(),
+        status=knowledge_bases.DocumentStatus.PENDING.value,
+        error_message=None,
+        metadata=None,
+        save=AsyncMock(),
+    )
     task = SimpleNamespace(name="process-document", apply_async=MagicMock())
     monkeypatch.setattr(knowledge_bases, "uuid4", lambda: "task-id")
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: _DocQuery(doc)
+    )
 
-    task_id = await knowledge_bases._dispatch_document_task(doc, task, "doc-id")
+    task_id = await knowledge_bases._dispatch_document_task(
+        doc, task, "doc-id", status=knowledge_bases.DocumentStatus.PROCESSING.value
+    )
 
     assert task_id == "task-id"
     assert doc.metadata == {
@@ -44,10 +89,19 @@ async def test_dispatch_document_task_records_and_rolls_back_metadata(monkeypatc
 
     task.apply_async.side_effect = RuntimeError("broker unavailable")
     with pytest.raises(RuntimeError, match="broker unavailable"):
-        await knowledge_bases._dispatch_document_task(doc, task, "doc-id")
+        await knowledge_bases._dispatch_document_task(
+            doc, task, "doc-id", status=knowledge_bases.DocumentStatus.PROCESSING.value
+        )
 
-    assert doc.metadata == {}
-    doc.save.assert_awaited_with(update_fields=["metadata"])
+    assert doc.metadata == {
+        "task_id": "task-id",
+        "task_name": "process-document",
+        "task_args": ["doc-id"],
+    }
+    doc.save.assert_awaited_with(
+        using_db=dispatch_transaction,
+        update_fields=["metadata", "status", "error_message"],
+    )
 
 
 @pytest.mark.anyio

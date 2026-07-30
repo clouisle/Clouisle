@@ -26,6 +26,15 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.first_value
+
     def filter(self, **kwargs):
         self.filters.append(kwargs)
         return self
@@ -154,6 +163,21 @@ def mock_lexical_helpers(monkeypatch):
         monkeypatch.setattr(kb_endpoint, name, AsyncMock())
 
 
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(kb_endpoint, "in_transaction", Transaction)
+    return connection
+
+
 @pytest.mark.asyncio
 async def test_upload_document_rejects_missing_filename_before_storage(monkeypatch):
     save_file = AsyncMock()
@@ -229,7 +253,7 @@ async def test_delete_document_cleans_processing_task_file_vectors_and_stats(
 
 
 @pytest.mark.asyncio
-async def test_process_document_applies_optional_settings_and_ignores_dispatch_failure(
+async def test_process_document_applies_optional_settings_and_raises_on_dispatch_failure(
     monkeypatch,
 ):
     existing_doc = doc(metadata=None)
@@ -242,30 +266,28 @@ async def test_process_document_applies_optional_settings_and_ignores_dispatch_f
         "get",
         lambda **_kwargs: Query(first=existing_doc),
     )
-    monkeypatch.setattr(
-        kb_endpoint, "_dispatch_document_task", AsyncMock(side_effect=RuntimeError)
-    )
+    dispatch = AsyncMock(side_effect=RuntimeError)
+    monkeypatch.setattr(kb_endpoint, "_dispatch_document_task", dispatch)
     monkeypatch.setattr(kb_endpoint.AuditLogService, "log", AsyncMock())
 
-    response = await kb_endpoint.process_document(
-        uuid4(),
-        existing_doc.id,
-        request(),
-        ProcessRequest(
-            chunk_size=200, chunk_overlap=20, separator="\n", clean_text=True
-        ),
-        user(),
-    )
+    with pytest.raises(BusinessError) as exc_info:
+        await kb_endpoint.process_document(
+            uuid4(),
+            existing_doc.id,
+            request(),
+            ProcessRequest(
+                chunk_size=200, chunk_overlap=20, separator="\n", clean_text=True
+            ),
+            user(),
+        )
 
-    assert response["msg"] == "Document processing started"
-    assert existing_doc.metadata == {
+    assert exc_info.value.msg_key == "task_dispatch_failed"
+    assert dispatch.await_args.kwargs["metadata_updates"] == {
         "chunk_size": 200,
         "chunk_overlap": 20,
         "separator": "\n",
         "clean_text": True,
     }
-    assert existing_doc.status == DocumentStatus.PROCESSING.value
-    assert existing_doc.error_message is None
 
 
 @pytest.mark.asyncio
@@ -312,11 +334,13 @@ async def test_update_delete_create_chunk_vector_error_branches(monkeypatch):
     )
     monkeypatch.setattr(kb_endpoint.DocumentChunk, "filter", filter_chunks)
     monkeypatch.setattr(
+        kb_endpoint.KnowledgeBase, "filter", lambda **_kwargs: Query(first=existing_kb)
+    )
+    created_chunk = chunk(content="new chunk", token_count=2, chunk_index=4)
+    monkeypatch.setattr(
         kb_endpoint.DocumentChunk,
         "create",
-        AsyncMock(
-            return_value=chunk(content="new chunk", token_count=2, chunk_index=4)
-        ),
+        AsyncMock(return_value=created_chunk),
     )
 
     class Store:
@@ -359,4 +383,4 @@ async def test_update_delete_create_chunk_vector_error_branches(monkeypatch):
         current_user=user(),
     )
     assert create_response["data"]["content"] == "new chunk"
-    existing_chunk.save.assert_awaited_once()
+    created_chunk.save.assert_awaited_once()

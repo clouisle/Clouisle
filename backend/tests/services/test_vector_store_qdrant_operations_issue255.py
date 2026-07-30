@@ -613,17 +613,16 @@ async def test_fulltext_search_applies_document_filter_scores_and_limit(monkeypa
 async def test_deletion_skips_remote_calls_for_missing_dimensions_and_collections(
     monkeypatch,
 ):
-    query = SimpleNamespace(values_list=AsyncMock(return_value=[KB_ID]))
-    deleted = SimpleNamespace(delete=AsyncMock(return_value=1))
+    chunk_query = SimpleNamespace(values_list=AsyncMock(return_value=[KB_ID]))
     monkeypatch.setattr(
         vector_store.DocumentChunk,
         "filter",
-        Mock(side_effect=[query, deleted]),
+        Mock(return_value=chunk_query),
     )
     monkeypatch.setattr(
         vector_store.Document,
         "filter",
-        Mock(return_value=SimpleNamespace(values_list=AsyncMock(return_value=[]))),
+        Mock(return_value=SimpleNamespace(values_list=AsyncMock(return_value=[KB_ID]))),
     )
     monkeypatch.setattr(
         vector_store, "get_kb_embedding_dimension", AsyncMock(return_value=None)
@@ -631,7 +630,7 @@ async def test_deletion_skips_remote_calls_for_missing_dimensions_and_collection
     delete_points = AsyncMock()
     monkeypatch.setattr(vector_store, "_delete_qdrant_points", delete_points)
 
-    assert await VectorStore().delete_chunk_vector(uuid4()) is True
+    assert await VectorStore().delete_chunk_vector(uuid4()) is False
     delete_points.assert_not_awaited()
 
     documents = SimpleNamespace(values_list=AsyncMock(return_value=[]))

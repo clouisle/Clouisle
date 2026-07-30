@@ -36,6 +36,15 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return self.first_item
+
     def order_by(self, *_args):
         return self
 
@@ -191,6 +200,21 @@ def mock_lexical_helpers(monkeypatch):
         monkeypatch.setattr(kb_api, name, AsyncMock())
 
 
+@pytest.fixture(autouse=True)
+def transaction_context(monkeypatch):
+    connection = object()
+
+    class Transaction:
+        async def __aenter__(self):
+            return connection
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(kb_api, "in_transaction", Transaction)
+    return connection
+
+
 @pytest.mark.anyio
 async def test_admin_dependency_enforces_actions_only_on_admin_routes(user):
     request = SimpleNamespace(url=SimpleNamespace(path="/api/v1/admin/knowledge-bases"))
@@ -266,7 +290,7 @@ async def test_model_authorization_rejects_missing_wrong_type_and_disabled(
 
 
 @pytest.mark.anyio
-async def test_process_document_metadata_and_dispatch_failure_are_tolerated(
+async def test_process_document_metadata_and_dispatch_failure_raise_business_error(
     monkeypatch, user, team, fake_request, auditless
 ):
     kb = kb_obj(team)
@@ -274,24 +298,22 @@ async def test_process_document_metadata_and_dispatch_failure_are_tolerated(
     allow_kb_access(monkeypatch, kb)
     monkeypatch.setattr(kb_api.Document, "filter", lambda **_kwargs: Query(first=doc))
     monkeypatch.setattr(kb_api.Document, "get", lambda **_kwargs: Query(first=doc))
-    monkeypatch.setattr(
-        kb_api,
-        "_dispatch_document_task",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("down")),
-    )
+    dispatch = AsyncMock(side_effect=RuntimeError("down"))
+    monkeypatch.setattr(kb_api, "_dispatch_document_task", dispatch)
 
-    result = await kb_api.process_document(
-        kb.id,
-        doc.id,
-        fake_request,
-        ProcessRequest(
-            chunk_size=200, chunk_overlap=20, separator="\n", clean_text=False
-        ),
-        user,
-    )
+    with pytest.raises(BusinessError) as exc_info:
+        await kb_api.process_document(
+            kb.id,
+            doc.id,
+            fake_request,
+            ProcessRequest(
+                chunk_size=200, chunk_overlap=20, separator="\n", clean_text=False
+            ),
+            user,
+        )
 
-    assert result["data"]["status"] == DocumentStatus.PROCESSING.value
-    assert doc.metadata == {
+    assert exc_info.value.msg_key == "task_dispatch_failed"
+    assert dispatch.await_args.kwargs["metadata_updates"] == {
         "chunk_size": 200,
         "chunk_overlap": 20,
         "separator": "\n",

@@ -57,7 +57,8 @@ async def test_delete_document_vectors_scopes_qdrant_and_deletes_chunks(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_delete_chunk_vector_removes_qdrant_point_and_chunk(monkeypatch):
+async def test_delete_chunk_vector_removes_qdrant_point_only(monkeypatch):
+    """delete_chunk_vector projects only to Qdrant; it must not delete the chunk row."""
     vector_store_module = importlib.import_module("app.services.vector_store")
 
     chunk_id = uuid4()
@@ -65,8 +66,6 @@ async def test_delete_chunk_vector_removes_qdrant_point_and_chunk(monkeypatch):
     kb_id = uuid4()
     chunk_lookup = MagicMock()
     chunk_lookup.values_list = AsyncMock(return_value=[document_id])
-    chunk_delete = MagicMock()
-    chunk_delete.delete = AsyncMock(return_value=1)
     document_query = MagicMock()
     document_query.values_list = AsyncMock(return_value=[kb_id])
     delete_points = AsyncMock()
@@ -74,7 +73,7 @@ async def test_delete_chunk_vector_removes_qdrant_point_and_chunk(monkeypatch):
     monkeypatch.setattr(
         vector_store_module.DocumentChunk,
         "filter",
-        MagicMock(side_effect=[chunk_lookup, chunk_delete]),
+        MagicMock(return_value=chunk_lookup),
     )
     monkeypatch.setattr(
         vector_store_module.Document, "filter", MagicMock(return_value=document_query)
@@ -92,10 +91,5 @@ async def test_delete_chunk_vector_removes_qdrant_point_and_chunk(monkeypatch):
 
     assert await VectorStore().delete_chunk_vector(chunk_id) is True
     delete_points.assert_awaited_once_with("test_3", [str(chunk_id)])
-    vector_store_module.DocumentChunk.filter.assert_has_calls(
-        [
-            ((), {"id": chunk_id}),
-            ((), {"id": chunk_id}),
-        ]
-    )
-    chunk_delete.delete.assert_awaited_once()
+    vector_store_module.DocumentChunk.filter.assert_called_once_with(id=chunk_id)
+    chunk_lookup.delete.assert_not_called()

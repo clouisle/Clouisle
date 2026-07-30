@@ -239,7 +239,9 @@ def test_reprocess_clamps_stats_and_delegates_to_processing():
         patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
         patch.object(kb_tasks, "VectorStore", return_value=vector_store),
         patch.object(
-            kb_tasks.process_document_task, "run", return_value={"status": "success"}
+            kb_tasks,
+            "_process_document",
+            new=AsyncMock(return_value={"status": "success"}),
         ) as process,
     ):
         result = kb_tasks.reprocess_document_task.run(str(document.id))
@@ -250,7 +252,7 @@ def test_reprocess_clamps_stats_and_delegates_to_processing():
         document.knowledge_base.total_tokens,
     ) == (0, 0)
     assert (document.chunk_count, document.token_count) == (0, 0)
-    process.assert_called_once_with(str(document.id))
+    process.assert_awaited_once_with(str(document.id), None)
 
 
 @pytest.mark.asyncio
@@ -315,12 +317,12 @@ async def test_embed_existing_chunks_handles_partial_failure_and_refreshes_stats
 def test_process_url_and_embed_wrappers_forward_arguments():
     document_id = str(uuid4())
     with patch.object(
-        kb_tasks.process_document_task, "run", return_value={"status": "success"}
+        kb_tasks, "_process_document", new=AsyncMock(return_value={"status": "success"})
     ) as process:
         assert kb_tasks.process_url_document_task.run(document_id) == {
             "status": "success"
         }
-    process.assert_called_once_with(document_id)
+    process.assert_awaited_once_with(document_id, None)
 
     with patch.object(
         kb_tasks,
