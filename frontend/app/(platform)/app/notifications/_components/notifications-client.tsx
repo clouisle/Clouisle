@@ -127,20 +127,37 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   const fetchList = React.useCallback(async () => {
     try {
       setIsLoading(true)
+      const unreadOnly = readFilter.has('unread')
       const scope = Array.from(scopeFilter)[0] as NotificationScope | undefined
       const level = Array.from(levelFilter)[0] as NotificationLevel | undefined
-      const listParams = {
-        page,
+      const baseParams = {
         page_size: pageSize,
         scope: scope || undefined,
         level: level || undefined,
         search: debouncedSearchQuery || undefined,
-        unread_only: readFilter.has('unread'),
+        unread_only: unreadOnly,
       }
-      const result = await notificationsApi.list(listParams)
 
-      setItems(result.items)
-      setTotal(result.total)
+      if (unreadOnly) {
+        // Fetch all pages so the user sees the complete unread set.
+        const allItems: NotificationItem[] = []
+        let currentPage = 1
+        let totalCount = 0
+
+        while (true) {
+          const result = await notificationsApi.list({ ...baseParams, page: currentPage })
+          allItems.push(...result.items)
+          totalCount = result.total
+          if (allItems.length >= totalCount) break
+          currentPage += 1
+        }
+        setItems(allItems)
+        setTotal(totalCount)
+      } else {
+        const result = await notificationsApi.list({ ...baseParams, page })
+        setItems(result.items)
+        setTotal(result.total)
+      }
     } catch (error) {
       console.error('Failed to fetch notifications:', error)
     } finally {
@@ -324,27 +341,29 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
         </Table>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-          disabled={page <= 1}
-          className="cursor-pointer"
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-          disabled={page >= totalPages}
-          className="cursor-pointer"
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-      </div>
+      {!readFilter.has('unread') && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            disabled={page <= 1}
+            className="cursor-pointer"
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+            disabled={page >= totalPages}
+            className="cursor-pointer"
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      )}
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-xl">
