@@ -155,6 +155,19 @@ async def test_workers_report_tasks_and_queue_depths(monkeypatch):
         "_queue_lengths",
         AsyncMock(return_value=[{"queue": "default", "pending": 4}]),
     )
+    monkeypatch.setattr(
+        service,
+        "_pending_task_rows",
+        AsyncMock(
+            return_value=[
+                {
+                    "task": "send_notification_email",
+                    "queue": "default",
+                    "pending": 4,
+                }
+            ]
+        ),
+    )
 
     assert await service.get_workers() == {
         "status": "healthy",
@@ -163,13 +176,20 @@ async def test_workers_report_tasks_and_queue_depths(monkeypatch):
         "reserved_tasks": 1,
         "scheduled_tasks": 0,
         "queues": [{"queue": "default", "pending": 4}],
+        "tasks": [
+            {
+                "task": "send_notification_email",
+                "queue": "default",
+                "pending": 4,
+            }
+        ],
     }
 
 
 @pytest.mark.asyncio
 async def test_queue_lengths_and_snapshot_use_redis_boundary(monkeypatch):
     redis = SimpleNamespace(
-        llen=AsyncMock(side_effect=[2, 0, None]),
+        llen=AsyncMock(side_effect=[2, 5, 0, None]),
         lpush=AsyncMock(),
         ltrim=AsyncMock(),
         expire=AsyncMock(),
@@ -179,6 +199,7 @@ async def test_queue_lengths_and_snapshot_use_redis_boundary(monkeypatch):
 
     assert await service._queue_lengths() == [
         {"queue": "default", "pending": 2},
+        {"queue": "knowledge", "pending": 5},
         {"queue": "workflow", "pending": 0},
         {"queue": "sandbox", "pending": 0},
     ]

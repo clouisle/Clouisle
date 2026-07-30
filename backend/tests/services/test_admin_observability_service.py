@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -116,15 +117,35 @@ async def test_slow_queries_returns_unavailable_when_pg_stat_statements_missing(
 
 
 @pytest.mark.asyncio
-async def test_workers_return_unknown_when_inspect_fails():
-    with patch(
-        "app.services.admin_observability.celery_app.control.inspect",
-        side_effect=RuntimeError("no workers"),
+async def test_workers_preserve_backlog_when_inspect_fails():
+    queues = [{"queue": "knowledge", "pending": 4}]
+    tasks = [
+        {
+            "task": "app.tasks.knowledge_base.embed_document_chunks_task",
+            "queue": "knowledge",
+            "pending": 4,
+        }
+    ]
+    with (
+        patch(
+            "app.services.admin_observability.celery_app.control.inspect",
+            side_effect=RuntimeError("no workers"),
+        ),
+        patch(
+            "app.services.admin_observability._queue_lengths",
+            new=AsyncMock(return_value=queues),
+        ),
+        patch(
+            "app.services.admin_observability._pending_task_rows",
+            new=AsyncMock(return_value=tasks),
+        ),
     ):
         result = await admin_observability.get_workers()
 
     assert result["status"] == "unknown"
     assert result["worker_count"] == 0
+    assert result["queues"] == queues
+    assert result["tasks"] == tasks
 
 
 def test_normalizers_and_pagination_boundaries():
@@ -381,8 +402,11 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
         "connected_clients": 2,
         "instantaneous_ops_per_sec": 7,
     }
-    redis.llen.side_effect = [1, None, 3]
+    redis.llen.side_effect = [1, 4, None, 3]
 
+    pending_tasks = [
+        {"task": "send_notification_email", "queue": "default", "pending": 1}
+    ]
     with (
         patch(
             "app.services.admin_observability.celery_app.control.inspect",
@@ -392,15 +416,21 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
             "app.services.admin_observability._queue_lengths",
             new=AsyncMock(return_value=[{"queue": "default", "pending": 1}]),
         ),
+        patch(
+            "app.services.admin_observability._pending_task_rows",
+            new=AsyncMock(return_value=pending_tasks),
+        ),
     ):
         workers = await admin_observability.get_workers()
     assert workers["status"] == "healthy"
     assert workers["active_tasks"] == 1
+    assert workers["tasks"] == pending_tasks
 
     with patch("app.services.admin_observability.get_redis", return_value=redis):
         assert (await admin_observability._redis_health())["hit_rate"] == 75
         assert await admin_observability._queue_lengths() == [
             {"queue": "default", "pending": 1},
+            {"queue": "knowledge", "pending": 4},
             {"queue": "workflow", "pending": 0},
             {"queue": "sandbox", "pending": 3},
         ]
@@ -412,6 +442,62 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
         assert all(
             item["pending"] == 0 for item in await admin_observability._queue_lengths()
         )
+
+
+@pytest.mark.asyncio
+async def test_pending_task_rows_lists_each_registered_task(monkeypatch):
+    email_task = "send_notification_email"
+    vector_task = "app.tasks.knowledge_base.embed_document_chunks_task"
+    workflow_task = "app.tasks.workflow.run_workflow_task"
+
+    def message(task: str) -> bytes:
+        return json.dumps({"headers": {"task": task}}).encode()
+
+    redis = SimpleNamespace(
+        lrange=AsyncMock(
+            side_effect=[
+                [message(email_task)],
+                [message(vector_task), message(vector_task)],
+            ]
+        )
+    )
+    monkeypatch.setattr(admin_observability, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(
+        admin_observability,
+        "_worker_task_catalog",
+        lambda: (
+            (email_task, "default"),
+            (vector_task, "knowledge"),
+            (workflow_task, "workflow"),
+        ),
+    )
+
+    rows = await admin_observability._pending_task_rows(
+        [
+            {"queue": "default", "pending": 1},
+            {"queue": "knowledge", "pending": 2},
+            {"queue": "workflow", "pending": 0},
+            {"queue": "sandbox", "pending": 0},
+        ]
+    )
+
+    assert rows == [
+        {"task": vector_task, "queue": "knowledge", "pending": 2},
+        {"task": email_task, "queue": "default", "pending": 1},
+        {"task": workflow_task, "queue": "workflow", "pending": 0},
+    ]
+
+
+def test_worker_task_catalog_routes_registered_tasks():
+    catalog = dict(admin_observability._worker_task_catalog())
+    assert len(catalog) >= 26
+    assert set(catalog.values()) <= set(admin_observability.WORKER_QUEUES)
+    assert catalog["app.tasks.knowledge_base.embed_document_chunks_task"] == (
+        "knowledge"
+    )
+    assert catalog["app.tasks.workflow.run_workflow_task"] == "workflow"
+    assert catalog["app.tasks.sandbox.run_sandbox_job_task"] == "sandbox"
+    assert catalog["send_notification_email"] == "default"
 
 
 @pytest.mark.asyncio

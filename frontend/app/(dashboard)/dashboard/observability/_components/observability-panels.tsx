@@ -70,6 +70,7 @@ import {
   sourceLabel,
   statusLabel,
   timeoutTypeLabel,
+  workerTaskLabel,
   toneBarClass,
   toneDotClass,
   toneForStatus,
@@ -531,6 +532,7 @@ export function WorkersPanel({ workers }: { workers: WorkerResponse | null }) {
   const t = useTranslations('dashboard.observability')
   if (!workers) return <ObservabilityEmpty />
   const pendingTotal = (workers.queues ?? []).reduce((sum, queue) => sum + queue.pending, 0)
+  const pendingTasks = workers.tasks ?? []
   const statusTone = toneForStatus(workers.status)
 
   return (
@@ -550,11 +552,11 @@ export function WorkersPanel({ workers }: { workers: WorkerResponse | null }) {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>{t('health.workerQueues')}</CardTitle>
-          <CardDescription>{t('workers.queueDesc')}</CardDescription>
+          <CardTitle>{t('workers.taskBacklog')}</CardTitle>
+          <CardDescription>{t('workers.taskBacklogDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <DistributionBarList items={(workers.queues ?? []).map((queue) => ({ label: queue.queue, value: queue.pending, tone: queue.pending > 0 ? 'warning' as Tone : 'neutral' as Tone }))} total={Math.max(pendingTotal, 1)} valueLabel={t('health.pending')} />
+          <DistributionBarList items={pendingTasks.map((task) => ({ label: workerTaskLabel(task.task, t), value: task.pending, tone: task.pending > 0 ? 'warning' as Tone : 'neutral' as Tone }))} total={Math.max(pendingTotal, 1)} valueLabel={t('health.pending')} />
         </CardContent>
       </Card>
     </div>

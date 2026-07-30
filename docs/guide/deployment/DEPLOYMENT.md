@@ -72,7 +72,7 @@ The backend image is shared across three services, and sandbox execution uses a 
 | Service | Command | Replicas |
 |---------|---------|----------|
 | api | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
-| worker | `python main.py worker -c 4 -Q default,workflow` | 1+ |
+| worker | `python main.py worker -c 4 -Q default,knowledge,workflow` | 1+ |
 | sandbox-worker | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | 1+ |
 | beat | `python main.py beat` | **Exactly 1** |
 

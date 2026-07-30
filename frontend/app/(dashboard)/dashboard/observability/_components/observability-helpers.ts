@@ -4,6 +4,35 @@ type ObservabilityTranslator = (key: never) => string
 function translate(t: ObservabilityTranslator, key: string) {
   return t(key as never)
 }
+const WORKER_TASK_KEYS: Record<string, string> = {
+  'app.tasks.audit_log.create_audit_log_task': 'createAuditLog',
+  'app.tasks.knowledge_base.backfill_lexical_index_task': 'backfillLexicalIndex',
+  'app.tasks.knowledge_base.embed_document_chunks_task': 'embedDocumentChunks',
+  'app.tasks.knowledge_base.index_document_lexically_task': 'indexDocumentLexically',
+  'app.tasks.knowledge_base.process_document_task': 'processDocument',
+  'app.tasks.knowledge_base.process_url_document_task': 'processUrlDocument',
+  'app.tasks.knowledge_base.rechunk_document_task': 'rechunkDocument',
+  'app.tasks.knowledge_base.reprocess_document_task': 'reprocessDocument',
+  'app.tasks.knowledge_base.retry_failed_chunk_task': 'retryFailedChunk',
+  'app.tasks.knowledge_base.retry_failed_chunks_task': 'retryFailedChunks',
+  'app.tasks.sandbox.run_sandbox_job_task': 'runSandboxJob',
+  'app.tasks.session_memory.extract_session_memory_task': 'extractSessionMemory',
+  'app.tasks.workflow.cancel_workflow_task': 'cancelWorkflow',
+  'app.tasks.workflow.run_workflow_task': 'runWorkflow',
+  'send_notification_dingtalk': 'sendDingTalkNotification',
+  'send_notification_email': 'sendEmailNotification',
+  'send_notification_feishu': 'sendFeishuNotification',
+  'send_notification_slack': 'sendSlackNotification',
+  'send_notification_webhook': 'sendWebhookNotification',
+  'send_notification_wechat': 'sendWeChatNotification',
+  'tasks.archive_old_audit_logs': 'archiveAuditLogs',
+  'tasks.check_api_key_expiration': 'checkApiKeyExpiration',
+  'tasks.check_password_expiration': 'checkPasswordExpiration',
+  'tasks.cleanup_expired_sandbox_sessions': 'cleanupSandboxSessions',
+  'tasks.reset_daily_usage': 'resetDailyUsage',
+  'tasks.reset_monthly_usage': 'resetMonthlyUsage',
+}
+
 
 export const TONE_STYLES: Record<Tone, string> = {
   neutral: 'bg-muted text-muted-foreground border-border',
@@ -43,6 +72,15 @@ export function sourceLabel(source: string | null | undefined, t: ObservabilityT
   }
   return translate(t, 'sources.unknown')
 }
+
+
+export function workerTaskLabel(task: string | null | undefined, t: ObservabilityTranslator) {
+  if (!task) return '-'
+  if (task.startsWith('unrecognized:')) return translate(t, 'workers.tasks.unrecognized')
+  const key = WORKER_TASK_KEYS[task]
+  return key ? translate(t, `workers.tasks.${key}`) : task
+}
+
 
 export function timeoutTypeLabel(type: string | null | undefined, t: ObservabilityTranslator) {
   const normalized = type || 'unknown'

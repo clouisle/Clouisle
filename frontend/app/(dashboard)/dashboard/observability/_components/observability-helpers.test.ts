@@ -15,6 +15,7 @@ import {
   sourceLabel,
   statusLabel,
   timeoutTypeLabel,
+  workerTaskLabel,
   toneBarClass,
   toneDotClass,
   toneForStatus,
@@ -47,6 +48,9 @@ describe('observability helpers', () => {
     expect(sourceLabel('custom', t)).toBe('translated:sources.unknown')
     expect(timeoutTypeLabel('global', t)).toBe('translated:timeoutTypes.global')
     expect(timeoutTypeLabel('custom', t)).toBe('custom')
+    expect(workerTaskLabel('app.tasks.knowledge_base.embed_document_chunks_task', t)).toBe('translated:workers.tasks.embedDocumentChunks')
+    expect(workerTaskLabel('send_notification_email', t)).toBe('translated:workers.tasks.sendEmailNotification')
+    expect(workerTaskLabel('custom', t)).toBe('custom')
   })
 
   test('reads safe values and formats fallbacks', () => {

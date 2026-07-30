@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import hashlib
 import json
 import logging
@@ -8,6 +9,7 @@ import os
 import platform
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
@@ -30,7 +32,8 @@ CACHE_PREFIX = "admin:observability:v1"
 HEALTH_SNAPSHOT_KEY = f"{CACHE_PREFIX}:system:health:snapshots"
 VALID_TIME_RANGES = {"7d", "30d", "90d", "all"}
 VALID_GRANULARITIES = {"hour", "day"}
-WORKER_QUEUES = ("default", "workflow", "sandbox")
+WORKER_QUEUES = ("default", "knowledge", "workflow", "sandbox")
+WORKER_QUEUE_SCAN_BATCH_SIZE = 500
 
 
 def normalize_time_range(time_range: str) -> tuple[datetime | None, datetime]:
@@ -500,6 +503,8 @@ async def get_slow_queries(
 
 
 async def get_workers() -> dict[str, Any]:
+    queue_lengths = await _queue_lengths()
+    pending_tasks = await _pending_task_rows(queue_lengths)
     try:
         inspect = celery_app.control.inspect(timeout=1.0)
         active, reserved, scheduled, stats = await asyncio.to_thread(
@@ -510,17 +515,14 @@ async def get_workers() -> dict[str, Any]:
                 inspect.stats() or {},
             )
         )
-        active_count = sum(len(tasks) for tasks in active.values())
-        reserved_count = sum(len(tasks) for tasks in reserved.values())
-        scheduled_count = sum(len(tasks) for tasks in scheduled.values())
-        queue_lengths = await _queue_lengths()
         return {
             "status": "healthy" if stats else "unknown",
             "worker_count": len(stats),
-            "active_tasks": active_count,
-            "reserved_tasks": reserved_count,
-            "scheduled_tasks": scheduled_count,
+            "active_tasks": sum(len(tasks) for tasks in active.values()),
+            "reserved_tasks": sum(len(tasks) for tasks in reserved.values()),
+            "scheduled_tasks": sum(len(tasks) for tasks in scheduled.values()),
             "queues": queue_lengths,
+            "tasks": pending_tasks,
         }
     except Exception as exc:
         logger.warning("Celery worker inspection failed: %s", exc)
@@ -530,7 +532,8 @@ async def get_workers() -> dict[str, Any]:
             "active_tasks": 0,
             "reserved_tasks": 0,
             "scheduled_tasks": 0,
-            "queues": [],
+            "queues": queue_lengths,
+            "tasks": pending_tasks,
             "error": str(exc),
         }
 
@@ -1179,6 +1182,79 @@ async def _queue_lengths() -> list[dict[str, Any]]:
     except Exception as exc:
         logger.warning("Worker queue length check failed: %s", exc)
         return [{"queue": queue, "pending": 0} for queue in WORKER_QUEUES]
+
+
+async def _pending_task_rows(
+    queue_lengths: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    catalog = _worker_task_catalog()
+    empty_rows = [
+        {"task": task, "queue": queue, "pending": 0} for task, queue in catalog
+    ]
+    try:
+        redis: Any = await get_redis()
+        counts: Counter[tuple[str, str]] = Counter()
+        for queue_row in queue_lengths:
+            queue = str(queue_row.get("queue") or "")
+            pending = int(queue_row.get("pending") or 0)
+            for start in range(0, pending, WORKER_QUEUE_SCAN_BATCH_SIZE):
+                messages = await redis.lrange(
+                    queue,
+                    start,
+                    min(start + WORKER_QUEUE_SCAN_BATCH_SIZE, pending) - 1,
+                )
+                for message in messages:
+                    task_name = _queued_task_name(message)
+                    if task_name:
+                        counts[(task_name, queue)] += 1
+                    else:
+                        counts[(f"unrecognized:{queue}", queue)] += 1
+    except Exception as exc:
+        logger.warning("Worker task backlog inspection failed: %s", exc)
+        return empty_rows
+
+    rows = [
+        {"task": task, "queue": queue, "pending": pending}
+        for (task, queue), pending in counts.items()
+    ]
+    queued_tasks = {task for task, _queue in counts}
+    rows.extend(
+        {"task": task, "queue": queue, "pending": 0}
+        for task, queue in catalog
+        if task not in queued_tasks
+    )
+    return sorted(rows, key=lambda row: (-row["pending"], row["task"], row["queue"]))
+
+
+@lru_cache(maxsize=1)
+def _worker_task_catalog() -> tuple[tuple[str, str], ...]:
+    celery_app.loader.import_default_modules()
+    default_queue = str(celery_app.conf.task_default_queue or "default")
+    catalog = []
+    for task_name in celery_app.tasks:
+        if task_name.startswith("celery."):
+            continue
+        route = celery_app.amqp.router.route({}, task_name, args=(), kwargs={})
+        queue = route.get("queue")
+        queue_name = str(getattr(queue, "name", queue) or default_queue)
+        catalog.append((task_name, queue_name))
+    return tuple(sorted(catalog))
+
+
+def _queued_task_name(message: Any) -> str | None:
+    try:
+        payload = json.loads(
+            bytes(message) if isinstance(message, memoryview) else message
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    headers = payload.get("headers")
+    if not isinstance(headers, dict):
+        return None
+    task_name = headers.get("task")
+    return str(task_name) if task_name else None
 
 
 async def _store_health_snapshot(health: dict[str, Any]) -> None:

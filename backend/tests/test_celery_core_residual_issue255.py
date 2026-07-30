@@ -67,6 +67,15 @@ def test_configures_celery_with_and_without_redis_password(monkeypatch):
     assert without_password.REDIS_URL == "redis://redis.test:6380"
     assert app.conf.visibility_timeout == 123
     assert app.conf.task_routes["app.tasks.workflow.*"] == {"queue": "workflow"}
+    assert app.conf.task_routes["app.tasks.knowledge_base.*"] == {"queue": "knowledge"}
+    assert app.conf.task_default_queue == "default"
+    for task_name in (
+        "send_notification_wechat",
+        "send_notification_feishu",
+        "send_notification_webhook",
+        "send_notification_slack",
+    ):
+        assert app.conf.task_routes[task_name] == {"queue": "default"}
     assert app.conf.beat_schedule["cleanup-expired-sandbox-sessions"]["options"] == {
         "queue": "sandbox"
     }

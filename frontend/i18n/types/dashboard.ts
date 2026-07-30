@@ -372,7 +372,37 @@ export type DashboardMessages = {
         count: string
         inFlight: string
         pendingQueues: string
-        queueDesc: string
+        taskBacklog: string
+        taskBacklogDesc: string
+        tasks: {
+          createAuditLog: string
+          backfillLexicalIndex: string
+          embedDocumentChunks: string
+          indexDocumentLexically: string
+          processDocument: string
+          processUrlDocument: string
+          rechunkDocument: string
+          reprocessDocument: string
+          retryFailedChunk: string
+          retryFailedChunks: string
+          runSandboxJob: string
+          extractSessionMemory: string
+          cancelWorkflow: string
+          runWorkflow: string
+          sendDingTalkNotification: string
+          sendEmailNotification: string
+          sendFeishuNotification: string
+          sendSlackNotification: string
+          sendWebhookNotification: string
+          sendWeChatNotification: string
+          archiveAuditLogs: string
+          checkApiKeyExpiration: string
+          checkPasswordExpiration: string
+          cleanupSandboxSessions: string
+          resetDailyUsage: string
+          resetMonthlyUsage: string
+          unrecognized: string
+        }
       }
       slowQueries: {
         threshold: string
