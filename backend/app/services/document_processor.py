@@ -23,6 +23,7 @@ from app.models.knowledge_base import (
     DocumentType,
 )
 from app.services.upload_storage import get_upload_storage_backend
+import bleach
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +386,7 @@ class DocumentProcessor:
             )
             if media_assets:
                 metadata[MEDIA_ASSETS_METADATA_KEY] = media_assets
+        text = self._sanitize_content(text)
         text = self._clean_text(text, clean=clean_text)
         metadata["char_count"] = len(text)
 
@@ -415,7 +417,19 @@ class DocumentProcessor:
             # Strip leading/trailing whitespace from the whole text
             text = text.strip()
 
+        text = sanitize_content(text)
         return text
+
+    def _sanitize_content(self, text: str) -> str:
+        """Sanitize text content by stripping all HTML tags to prevent XSS.
+
+        Markdown-rendered content may contain raw HTML. This strips all HTML
+        elements (scripts, iframes, event handlers, etc.) while preserving the
+        text content inside allowed elements.
+        """
+        if not text:
+            return text
+        return bleach.clean(text, tags=[], attributes={}, strip=True)
 
     def _extract_with_markitdown(
         self, path: str, doc_type: str
@@ -589,6 +603,18 @@ def _decode_separator_escapes(separator: str) -> str:
         decoded.append(separator[i])
         i += 1
     return "".join(decoded)
+
+
+def sanitize_content(text: str) -> str:
+    """Sanitize text content by stripping all HTML tags to prevent XSS.
+
+    Markdown-rendered content may contain raw HTML. This strips all HTML
+    elements (scripts, iframes, event handlers, etc.) while preserving the
+    text content inside allowed elements.
+    """
+    if not text:
+        return text
+    return bleach.clean(text, tags=[], attributes={}, strip=True)
 
 
 def chunk_text(

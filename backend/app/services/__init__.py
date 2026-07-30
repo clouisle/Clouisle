@@ -6,6 +6,7 @@ from .document_processor import (
     DocumentProcessor,
     chunk_text,
     document_processor,
+    sanitize_content,
 )
 from .file_parser import (
     FileParserService,
@@ -25,6 +26,7 @@ __all__ = [
     "DocumentProcessor",
     "chunk_text",
     "document_processor",
+    "sanitize_content",
     "FileParserService",
     "FileParseConfig",
     "ParsedFile",

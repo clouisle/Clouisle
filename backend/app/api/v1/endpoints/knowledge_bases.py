@@ -66,7 +66,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.services.document_processor import document_processor
+from app.services.document_processor import document_processor, sanitize_content
 from app.services.lexical_store import (
     delete_document as delete_lexical_document,
     index_chunk as index_lexical_chunk,
@@ -1832,6 +1832,10 @@ async def update_document_chunk(
             msg_key="chunk_not_found",
             status_code=404,
         )
+
+
+    # Sanitize content to prevent XSS in rendered Markdown
+    chunk_in.content = sanitize_content(chunk_in.content)
 
     new_token_count = len(chunk_in.content) // 4
     token_diff = new_token_count - chunk.token_count
