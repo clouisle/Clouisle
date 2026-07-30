@@ -11,17 +11,13 @@ Agent/Workflow → API → Celery Queue (sandbox) → Sandbox Worker
                                                       ↓
                                               Isolated Process
                                               (resource limits)
-                                                      ↓
-                                              Result / Artifacts
-```
-
 Key properties:
-- **Process isolation**: each execution runs in a separate process with CPU, memory, and disk quotas
+- **Process isolation**: each execution runs in a separate subprocess with CPU, memory, and disk quotas
+- **Local filesystem**: each job/session gets an isolated workspace directory under `/tmp/clouisle-sandbox/jobs/` with `input/`, `output/`, `tmp/`, and `logs/` subdirectories
+- **Symlink protection**: path traversal attacks are blocked by symlink detection on all workspace paths
 - **No network access**: sandboxed code cannot reach external networks
-- **Filesystem sandboxing**: restricted to a per-job workspace directory
-- **Timeout enforcement**: configurable execution time limits per session
-
-## Supported Runtimes
+- **Input staging**: files are base64-decoded and written into the workspace before execution
+- **Automatic cleanup**: one-off jobs cleaned immediately after execution; sessions cleaned on TTL expiry
 
 | Runtime | Base Environment |
 |---|---|
