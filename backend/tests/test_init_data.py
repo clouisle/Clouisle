@@ -174,8 +174,8 @@ async def test_workflow_tables_create_all_tables_and_indexes(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dialect, expected_calls", [("postgres", 2), ("sqlite", 0)])
-async def test_observability_indexes_use_brin_for_postgres(
+@pytest.mark.parametrize("dialect, expected_calls", [("postgres", 4), ("sqlite", 0)])
+async def test_observability_indexes_use_btree_for_postgres(
     monkeypatch: pytest.MonkeyPatch, dialect: str, expected_calls: int
 ) -> None:
     conn = SimpleNamespace(
@@ -189,9 +189,38 @@ async def test_observability_indexes_use_brin_for_postgres(
     assert conn.execute_query.await_count == expected_calls
     if expected_calls:
         queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
-        assert "USING BRIN (created_at)" in queries[0]
-        assert "round_role = 'assistant_final'" in queries[0]
-        assert "USING BRIN (created_at)" in queries[1]
+        assert (
+            queries[0] == "DROP INDEX IF EXISTS idx_messages_observability_created_at"
+        )
+        assert "ON messages (created_at)" in queries[1]
+        assert "round_role = 'assistant_final'" in queries[1]
+        assert queries[2] == (
+            "DROP INDEX IF EXISTS idx_workflow_runs_observability_created_at"
+        )
+        assert "ON workflow_runs (created_at)" in queries[3]
+        assert all("USING BRIN" not in query for query in queries)
+
+
+@pytest.mark.asyncio
+async def test_observability_index_creation_failures_are_isolated(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def execute(query: str):
+        if "CREATE INDEX" in query:
+            raise RuntimeError("index unavailable")
+        return 0, []
+
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="postgres"),
+        execute_query=AsyncMock(side_effect=execute),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_observability_indexes()
+
+    queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert len([query for query in queries if "CREATE INDEX" in query]) == 2
+    assert caplog.text.count("Could not create observability index") == 2
 
 
 @pytest.mark.asyncio

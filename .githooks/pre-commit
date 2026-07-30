@@ -33,7 +33,11 @@ if [ -n "$JS_FILES" ]; then
   echo "  → Frontend: eslint"
   cd frontend
   JS_REL=$(echo "$JS_FILES" | sed 's|^frontend/||')
-  bun run lint --quiet --max-warnings=0 $JS_REL || {
+  JS_REL_ARGS=()
+  while IFS= read -r file; do
+    JS_REL_ARGS+=("$file")
+  done <<< "$JS_REL"
+  bun run lint --quiet --max-warnings=0 "${JS_REL_ARGS[@]}" || {
     echo "❌ Frontend lint issues found. Run: bun run lint"
     exit 1
   }

@@ -9,7 +9,6 @@ import os
 import platform
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
-from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
@@ -34,6 +33,7 @@ VALID_TIME_RANGES = {"7d", "30d", "90d", "all"}
 VALID_GRANULARITIES = {"hour", "day"}
 WORKER_QUEUES = ("default", "knowledge", "workflow", "sandbox")
 WORKER_QUEUE_SCAN_BATCH_SIZE = 500
+WORKER_QUEUE_SCAN_LIMIT = 5_000
 
 
 def normalize_time_range(time_range: str) -> tuple[datetime | None, datetime]:
@@ -323,6 +323,8 @@ async def get_throughput(time_range: str, granularity: str | None) -> dict[str, 
 
 async def _tracked_model_token_rows(time_range: str) -> list[dict[str, Any]]:
     normalized_range = time_range if time_range in VALID_TIME_RANGES else "30d"
+    if normalized_range in {"90d", "all"}:
+        return []
     now_local = now()
     if normalized_range == "7d":
         token_field = "daily_tokens_used"
@@ -1187,21 +1189,23 @@ async def _queue_lengths() -> list[dict[str, Any]]:
 async def _pending_task_rows(
     queue_lengths: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    catalog = _worker_task_catalog()
+    catalog = await asyncio.to_thread(_worker_task_catalog)
     empty_rows = [
         {"task": task, "queue": queue, "pending": 0} for task, queue in catalog
     ]
     try:
         redis: Any = await get_redis()
         counts: Counter[tuple[str, str]] = Counter()
+        scan_budget = WORKER_QUEUE_SCAN_LIMIT
         for queue_row in queue_lengths:
             queue = str(queue_row.get("queue") or "")
             pending = int(queue_row.get("pending") or 0)
-            for start in range(0, pending, WORKER_QUEUE_SCAN_BATCH_SIZE):
+            scan_count = min(max(pending, 0), scan_budget)
+            for start in range(0, scan_count, WORKER_QUEUE_SCAN_BATCH_SIZE):
                 messages = await redis.lrange(
                     queue,
                     start,
-                    min(start + WORKER_QUEUE_SCAN_BATCH_SIZE, pending) - 1,
+                    min(start + WORKER_QUEUE_SCAN_BATCH_SIZE, scan_count) - 1,
                 )
                 for message in messages:
                     task_name = _queued_task_name(message)
@@ -1209,6 +1213,12 @@ async def _pending_task_rows(
                         counts[(task_name, queue)] += 1
                     else:
                         counts[(f"unrecognized:{queue}", queue)] += 1
+
+            scan_budget -= scan_count
+            unscanned = max(pending - scan_count, 0)
+            if unscanned:
+                # Queue lengths may change during inspection, so this is approximate.
+                counts[(f"unscanned:{queue}", queue)] += unscanned
     except Exception as exc:
         logger.warning("Worker task backlog inspection failed: %s", exc)
         return empty_rows
@@ -1226,7 +1236,6 @@ async def _pending_task_rows(
     return sorted(rows, key=lambda row: (-row["pending"], row["task"], row["queue"]))
 
 
-@lru_cache(maxsize=1)
 def _worker_task_catalog() -> tuple[tuple[str, str], ...]:
     celery_app.loader.import_default_modules()
     default_queue = str(celery_app.conf.task_default_queue or "default")

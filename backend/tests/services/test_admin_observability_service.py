@@ -488,6 +488,68 @@ async def test_pending_task_rows_lists_each_registered_task(monkeypatch):
     ]
 
 
+@pytest.mark.asyncio
+async def test_pending_task_rows_caps_scans_across_queues(monkeypatch):
+    task = "app.tasks.example"
+
+    def message() -> bytes:
+        return json.dumps({"headers": {"task": task}}).encode()
+
+    redis = SimpleNamespace(
+        lrange=AsyncMock(side_effect=[[message(), message()], [message()]])
+    )
+    monkeypatch.setattr(admin_observability, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(admin_observability, "WORKER_QUEUE_SCAN_LIMIT", 3)
+    monkeypatch.setattr(
+        admin_observability, "_worker_task_catalog", lambda: ((task, "default"),)
+    )
+
+    rows = await admin_observability._pending_task_rows(
+        [
+            {"queue": "default", "pending": 2},
+            {"queue": "knowledge", "pending": 3},
+            {"queue": "workflow", "pending": 4},
+        ]
+    )
+
+    assert {(row["task"], row["queue"]): row["pending"] for row in rows} == {
+        (task, "default"): 2,
+        (task, "knowledge"): 1,
+        ("unscanned:knowledge", "knowledge"): 2,
+        ("unscanned:workflow", "workflow"): 4,
+    }
+    assert [awaited.args for awaited in redis.lrange.await_args_list] == [
+        ("default", 0, 1),
+        ("knowledge", 0, 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pending_task_rows_refreshes_catalog_off_event_loop(monkeypatch):
+    to_thread = AsyncMock(
+        side_effect=[
+            (("task-a", "default"),),
+            (("task-b", "knowledge"),),
+        ]
+    )
+    monkeypatch.setattr(admin_observability.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(
+        admin_observability,
+        "get_redis",
+        AsyncMock(return_value=SimpleNamespace(lrange=AsyncMock())),
+    )
+
+    first = await admin_observability._pending_task_rows([])
+    second = await admin_observability._pending_task_rows([])
+
+    assert first == [{"task": "task-a", "queue": "default", "pending": 0}]
+    assert second == [{"task": "task-b", "queue": "knowledge", "pending": 0}]
+    assert [awaited.args for awaited in to_thread.await_args_list] == [
+        (admin_observability._worker_task_catalog,),
+        (admin_observability._worker_task_catalog,),
+    ]
+
+
 def test_worker_task_catalog_routes_registered_tasks():
     catalog = dict(admin_observability._worker_task_catalog())
     assert len(catalog) >= 26

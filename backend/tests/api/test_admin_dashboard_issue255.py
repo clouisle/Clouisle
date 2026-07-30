@@ -317,23 +317,10 @@ async def test_team_usage_and_model_distribution_cover_empty_and_all_scope(monke
     )
     distribution = await dashboard.get_models_distribution("all", SimpleNamespace())
     assert distribution["data"] == [
-        {"model": "embedding", "count": 4, "percentage": 50.0},
-        {"model": "large", "count": 3, "percentage": 37.5},
-        {"model": "small", "count": 1, "percentage": 12.5},
+        {"model": "large", "count": 3, "percentage": 75.0},
+        {"model": "small", "count": 1, "percentage": 25.0},
     ]
-    assert merged_counter_calls == [
-        (
-            "model_filter",
-            (),
-            {
-                "monthly_requests_used__gt": 0,
-                "monthly_reset_at__gte": FIXED_NOW.replace(
-                    day=1, hour=0, minute=0, second=0, microsecond=0
-                ),
-            },
-        ),
-        ("prefetch_related", ("model",), {}),
-    ]
+    assert merged_counter_calls == []
     assert message_calls[0] == ("model_filter", (), {"model_used__isnull": False})
 
     model(monkeypatch, "Message", filter_results=({"result": []},))
@@ -357,7 +344,7 @@ async def test_team_usage_and_model_distribution_cover_empty_and_all_scope(monke
         filter_results=({"result": fallback_models},),
     )
     fallback_distribution = await dashboard.get_models_distribution(
-        "all", SimpleNamespace()
+        "30d", SimpleNamespace()
     )
     assert fallback_distribution["data"] == [
         {"model": "embedding-model", "count": 5, "percentage": 50.0},
@@ -498,26 +485,29 @@ async def test_dashboard_period_filters_use_expected_boundaries(
         )
 
     if endpoint is dashboard.get_models_distribution:
-        usage_field = (
-            "daily_requests_used" if period == "7d" else "monthly_requests_used"
-        )
-        reset_field = "daily_reset_at" if period == "7d" else "monthly_reset_at"
-        counter_start = (
-            FIXED_NOW.replace(hour=0, minute=0, second=0, microsecond=0)
-            if period == "7d"
-            else FIXED_NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        )
-        assert counter_calls == [
-            (
-                "model_filter",
-                (),
-                {
-                    f"{usage_field}__gt": 0,
-                    f"{reset_field}__gte": counter_start,
-                },
-            ),
-            ("prefetch_related", ("model",), {}),
-        ]
+        if period == "90d":
+            assert counter_calls == []
+        else:
+            usage_field = (
+                "daily_requests_used" if period == "7d" else "monthly_requests_used"
+            )
+            reset_field = "daily_reset_at" if period == "7d" else "monthly_reset_at"
+            counter_start = (
+                FIXED_NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+                if period == "7d"
+                else FIXED_NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            )
+            assert counter_calls == [
+                (
+                    "model_filter",
+                    (),
+                    {
+                        f"{usage_field}__gt": 0,
+                        f"{reset_field}__gte": counter_start,
+                    },
+                ),
+                ("prefetch_related", ("model",), {}),
+            ]
 
 
 @pytest.mark.anyio

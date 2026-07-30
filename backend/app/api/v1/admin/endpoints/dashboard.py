@@ -326,6 +326,8 @@ async def get_models_distribution(
     """
     # Calculate time range
     now_local = now()
+    if time_range not in {"7d", "30d", "90d", "all"}:
+        time_range = "30d"
     if time_range == "7d":
         start_time = now_local - timedelta(days=7)
     elif time_range == "90d":
@@ -353,34 +355,36 @@ async def get_models_distribution(
         str(item["model_used"]): int(item["count"]) for item in message_stats
     }
 
-    # Embedding, rerank, and direct model calls may not create a Message. Their
-    # current counters live on team-model authorizations. Chat calls can appear
-    # in both sources, so keep the larger per-model count instead of adding them.
-    if time_range == "7d":
-        usage_field = "daily_requests_used"
-        reset_field = "daily_reset_at"
-        counter_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    else:
-        usage_field = "monthly_requests_used"
-        reset_field = "monthly_reset_at"
-        counter_start = now_local.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
-
-    usage_filters: dict[str, Any] = {
-        f"{usage_field}__gt": 0,
-        f"{reset_field}__gte": to_utc(counter_start),
-    }
-    team_models = await TeamModel.filter(**usage_filters).prefetch_related("model")
+    # Daily/monthly counters cover only the current day/month. Use them for
+    # the matching short windows, while longer ranges rely on event history.
     tracked_counts: dict[str, int] = {}
-    for team_model in team_models:
-        model_id = team_model.model.model_id
-        tracked_counts[model_id] = tracked_counts.get(model_id, 0) + int(
-            getattr(team_model, usage_field)
-        )
+    if time_range in {"7d", "30d"}:
+        if time_range == "7d":
+            usage_field = "daily_requests_used"
+            reset_field = "daily_reset_at"
+            counter_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            usage_field = "monthly_requests_used"
+            reset_field = "monthly_reset_at"
+            counter_start = now_local.replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
 
-    for model_id, tracked_count in tracked_counts.items():
-        counts_by_model[model_id] = max(counts_by_model.get(model_id, 0), tracked_count)
+        usage_filters: dict[str, Any] = {
+            f"{usage_field}__gt": 0,
+            f"{reset_field}__gte": to_utc(counter_start),
+        }
+        team_models = await TeamModel.filter(**usage_filters).prefetch_related("model")
+        for team_model in team_models:
+            model_id = team_model.model.model_id
+            tracked_counts[model_id] = tracked_counts.get(model_id, 0) + int(
+                getattr(team_model, usage_field)
+            )
+
+        for model_id, tracked_count in tracked_counts.items():
+            counts_by_model[model_id] = max(
+                counts_by_model.get(model_id, 0), tracked_count
+            )
 
     model_stats = [
         {"model_used": model_id, "count": count}

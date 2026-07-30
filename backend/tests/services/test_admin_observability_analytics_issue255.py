@@ -270,6 +270,16 @@ async def test_tracked_model_token_rows_use_current_counter_period(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("time_range", ["90d", "all"])
+async def test_tracked_model_token_rows_skip_long_ranges(monkeypatch, time_range):
+    execute = AsyncMock()
+    monkeypatch.setattr(service, "_execute", execute)
+
+    assert await service._tracked_model_token_rows(time_range) == []
+    execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_query_aggregation_helpers_normalize_bounded_results(monkeypatch, period):
     execute = AsyncMock(
         side_effect=[

@@ -265,23 +265,49 @@ async def init_workflow_tables():
 
 
 async def init_observability_indexes():
-    """Create compact time-range indexes for raw observability queries."""
+    """Create time-range indexes for raw observability queries."""
     conn = Tortoise.get_connection("default")
     dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
     if dialect != "postgres":
         logger.info("Skipping observability indexes for non-PostgreSQL database")
         return
 
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_messages_observability_created_at
-        ON messages USING BRIN (created_at)
-        WHERE round_role = 'assistant_final' AND is_round_canonical = TRUE
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_workflow_runs_observability_created_at
-        ON workflow_runs USING BRIN (created_at)
-    """)
-    logger.info("Created observability time-range indexes")
+    indexes = (
+        (
+            "idx_messages_observability_created_at_btree",
+            "idx_messages_observability_created_at",
+            """
+            CREATE INDEX IF NOT EXISTS idx_messages_observability_created_at_btree
+            ON messages (created_at)
+            WHERE round_role = 'assistant_final' AND is_round_canonical = TRUE
+            """,
+        ),
+        (
+            "idx_workflow_runs_observability_created_at_btree",
+            "idx_workflow_runs_observability_created_at",
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_observability_created_at_btree
+            ON workflow_runs (created_at)
+            """,
+        ),
+    )
+    for index_name, legacy_index_name, query in indexes:
+        try:
+            await conn.execute_query(f"DROP INDEX IF EXISTS {legacy_index_name}")
+        except Exception as exc:
+            logger.warning(
+                "Could not remove legacy observability index %s: %s",
+                legacy_index_name,
+                exc,
+            )
+        try:
+            await conn.execute_query(query)
+        except Exception as exc:
+            logger.warning(
+                "Could not create observability index %s: %s", index_name, exc
+            )
+        else:
+            logger.info("Created observability index %s", index_name)
 
 
 async def init_scoped_role_assignments_table():
