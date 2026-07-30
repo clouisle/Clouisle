@@ -200,6 +200,25 @@ def test_null_kb_global_defaults_fall_back_to_system_defaults():
     assert effective.rrf_k == 60
 
 
+def test_effective_request_rejects_zero_inherited_hybrid_weights(monkeypatch):
+    selected_request = request()
+    object.__setattr__(selected_request, "dense_weight", 0)
+    object.__setattr__(selected_request, "lexical_weight", 0)
+    monkeypatch.setattr(
+        retrieval,
+        "replace",
+        lambda *_args, **_changes: SimpleNamespace(
+            search_mode="hybrid",
+            targets=(SimpleNamespace(search_mode="hybrid", settings=None),),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError, match="at least one retrieval weight must be positive"
+    ):
+        retrieval._effective_request(selected_request)
+
+
 @pytest.mark.asyncio
 async def test_explicit_configuration_overrides_kb_defaults(monkeypatch):
     search = AsyncMock(return_value=[])
@@ -525,6 +544,19 @@ async def test_global_order_and_truncate_are_deterministic(monkeypatch):
     ]
 
 
+def test_fusion_ignores_unweighted_channels_and_unknown_results():
+    dense = [{"kb_id": "kb", "chunk_id": "dense", "dense_rank": 1}]
+    lexical = [{"kb_id": "kb", "chunk_id": "lexical", "lexical_rank": 1}]
+
+    assert [
+        result["chunk_id"]
+        for result in retrieval._weighted_rrf(
+            dense, lexical, dense_weight=0, lexical_weight=1, k=60
+        )
+    ] == ["lexical"]
+    assert retrieval._global_fusion([{"chunk_id": "ignored"}]) == []
+
+
 @pytest.mark.asyncio
 async def test_hybrid_weighted_rrf_preserves_channel_fields_and_ties(monkeypatch):
     dense = AsyncMock(
@@ -584,13 +616,68 @@ async def test_hybrid_fails_when_only_weighted_channel_fails(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_inherited_target_settings_are_validated(monkeypatch):
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("search_mode", "semantic", "unsupported search mode"),
+        ("top_k", -1, "top_k must be positive"),
+    ],
+)
+async def test_inherited_target_settings_are_validated(
+    monkeypatch, field, value, message
+):
     install_store(monkeypatch, AsyncMock(return_value=[]))
+    selected = target()
+    selected_request = request(selected)
+    object.__setattr__(selected, "settings", {field: value})
 
-    with pytest.raises(ValueError, match="unsupported search mode"):
-        await retrieval.retrieve(request(target(settings={"search_mode": "semantic"})))
-    with pytest.raises(ValueError, match="top_k must be positive"):
-        await retrieval.retrieve(request(target(settings={"top_k": -1})))
+    with pytest.raises(ValueError, match=message):
+        await retrieval.retrieve(selected_request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("settings", "message"),
+    [
+        ({"dense_weight": -1}, "retrieval weights must be nonnegative"),
+        ({"rrf_k": 0}, "rrf_k must be positive"),
+    ],
+)
+async def test_target_weight_settings_are_validated_during_recall(
+    monkeypatch, settings, message
+):
+    install_store(monkeypatch, AsyncMock(return_value=[]))
+    selected_request = request(search_mode="vector")
+    object.__setattr__(selected_request.targets[0], "settings", settings)
+    object.__setattr__(selected_request, "dense_weight", 1)
+    object.__setattr__(selected_request, "lexical_weight", 1)
+    object.__setattr__(selected_request, "rrf_k", 60)
+    object.__setattr__(selected_request, "top_k", 5)
+    object.__setattr__(selected_request, "score_threshold", 0)
+    monkeypatch.setattr(retrieval, "_effective_request", lambda current: current)
+
+    with pytest.raises(ValueError, match=message):
+        await retrieval.retrieve(selected_request)
+
+
+@pytest.mark.asyncio
+async def test_zero_target_weights_are_validated_during_recall(monkeypatch):
+    install_store(monkeypatch, AsyncMock(return_value=[]))
+    selected_request = request(search_mode="hybrid")
+    object.__setattr__(
+        selected_request.targets[0], "settings", {"search_mode": "hybrid"}
+    )
+    object.__setattr__(selected_request, "dense_weight", 0)
+    object.__setattr__(selected_request, "lexical_weight", 0)
+    object.__setattr__(selected_request, "rrf_k", 60)
+    object.__setattr__(selected_request, "top_k", 5)
+    object.__setattr__(selected_request, "score_threshold", 0)
+    monkeypatch.setattr(retrieval, "_effective_request", lambda current: current)
+
+    with pytest.raises(
+        ValueError, match="at least one retrieval weight must be positive"
+    ):
+        await retrieval.retrieve(selected_request)
 
 
 @pytest.mark.asyncio
@@ -1115,6 +1202,63 @@ async def test_context_budget_rejects_seed_instead_of_citing_only_neighbor(monke
     )
 
     assert assembled == []
+
+
+@pytest.mark.asyncio
+async def test_context_budget_skips_oversized_neighbor(monkeypatch):
+    document = SimpleNamespace(id=DOC_1, knowledge_base_id=KB_1)
+    seed = SimpleNamespace(
+        id="seed",
+        document_id=DOC_1,
+        document=document,
+        chunk_index=1,
+        content="seed",
+        token_count=1,
+    )
+    neighbor = SimpleNamespace(
+        id="neighbor",
+        document_id=DOC_1,
+        document=document,
+        chunk_index=2,
+        content="neighbor",
+        token_count=2,
+    )
+
+    def filter_chunks(**filters):
+        return ChunkQuery([seed] if "id__in" in filters else [seed, neighbor])
+
+    monkeypatch.setattr(retrieval.DocumentChunk, "filter", filter_chunks)
+    assembled = await retrieval._assemble_context(
+        [
+            {
+                "chunk_id": "seed",
+                "kb_id": str(KB_1),
+                "document_id": str(DOC_1),
+                "score": 1.0,
+            }
+        ],
+        request(expand_adjacent=True, context_token_budget=1),
+    )
+
+    assert assembled[0]["citation_chunk_ids"] == ["seed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [retrieval.RetrievalError, KeyboardInterrupt])
+async def test_external_context_is_not_closed_on_failure(monkeypatch, error_type):
+    context = SimpleNamespace(close=AsyncMock())
+    diagnostics = (retrieval.RetrievalDiagnostic(KB_1, "failed"),)
+    error = (
+        error_type("failed", diagnostics)
+        if error_type is retrieval.RetrievalError
+        else error_type()
+    )
+    monkeypatch.setattr(retrieval, "_retrieve_once", AsyncMock(side_effect=error))
+
+    with pytest.raises(error_type):
+        await retrieval.retrieve(request(search_mode="vector"), context=context)
+
+    context.close.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
