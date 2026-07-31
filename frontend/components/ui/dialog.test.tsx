@@ -92,6 +92,7 @@ describe("dialog wrappers", () => {
     const content = renderContent({ children: "body" })
     const contentChildren = content.props.children as Node[]
     expect(contentChildren[0].type).toBe(dialog.DialogOverlay)
+    expect(contentChildren[1].props.className).toContain("grid-cols-[minmax(0,1fr)]")
     expect((contentChildren[1].props.children as unknown[])[0]).toBe("body")
     expect((contentChildren[1].props.children as Node[])[1].type).toBe(Close)
 
