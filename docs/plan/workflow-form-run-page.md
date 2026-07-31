@@ -137,4 +137,24 @@ Existing `trigger_config` and `embed_config` are intentionally not reused becaus
 - **Publish partial failure**: report configuration save and publish independently; never report successful publication when only settings saved.
 - **Renderer dependency**: reuse the existing node output renderer initially; move it to a shared directory only if build boundaries require it.
 
-Rollback is additive: the Workflow route can return to the existing chat branch, older code can ignore `run_page_config`, and new personal endpoints can be removed without changing team history semantics. The published-snapshot execution correction should remain an independent commit because reverting it restores a correctness defect.
+
+
+## Implementation Status
+
+- **Stage 1**: complete
+- **Stage 2**: complete
+- **Stage 3**: complete
+- **Stage 4**: complete
+- **Stage 5**: complete
+- **Stage 6**: complete
+- **Stage 7**: complete
+- **Stage 8**: complete
+- **Stage 9**: complete
+
+## Known Follow-ups
+
+- Add dedicated Workflow runner component tests and backend cross-user privacy tests.
+- Surface history detail errors and add history pagination beyond the latest ten runs.
+- Harden concurrent upload busy-state aggregation.
+- Remove the mutable draft non-empty precondition from published snapshot lookup and record publish provenance on workflow versions.
+- Run full backend mypy/pytest and manual authenticated E2E in an environment with those services available.

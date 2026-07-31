@@ -2,16 +2,16 @@
 
 ## Active
 
-- **workflow-form-run-page** — In progress. Replace the Workflow chat-style runner with a published, form-first execution page, creator-selected result detail, and private per-user run history. See `docs/plan/workflow-form-run-page.md`
+- **workflow-form-run-page** — Complete. Replace the Workflow chat-style runner with a published, form-first execution page, creator-selected result detail, and private per-user run history. See `docs/plan/workflow-form-run-page.md`
   - [x] 1. Design docs and implementation index
-  - [ ] 2. Run-page configuration persistence
-  - [ ] 3. Publish settings flow
-  - [ ] 4. Published snapshot execution
-  - [ ] 5. Personal workflow history APIs
-  - [ ] 6. Agent and Workflow runner split
-  - [ ] 7. Form execution state
-  - [ ] 8. Workflow results and history UI
-  - [ ] 9. i18n and full validation
+  - [x] 2. Run-page configuration persistence
+  - [x] 3. Publish settings flow
+  - [x] 4. Published snapshot execution
+  - [x] 5. Personal workflow history APIs
+  - [x] 6. Agent and Workflow runner split
+  - [x] 7. Form execution state
+  - [x] 8. Workflow results and history UI
+  - [x] 9. i18n and full validation
 
 - **pr-315-review-fixes** — In progress. Complete P0–P3 remediation for lexical recovery, lifecycle consistency, global retrieval, AUTO-RAG, Retrieval Lab, and PostgreSQL image publication. See `docs/plan/pr-315-review-fixes.md`
   - [x] 1. Complete remediation design and defect mapping

@@ -40,6 +40,8 @@ const ChatContainer = () => null
 const ChatInput = () => null
 const VariableForm = () => null
 const Button = () => null
+const AgentRunPage = () => null
+const WorkflowRunPage = () => null
 
 class ApiError extends Error {
   constructor(public code: number, message: string) {
@@ -97,7 +99,8 @@ mock.module('@/components/chat', () => ({
 }))
 mock.module('@/hooks/use-run', () => ({ useRun }))
 mock.module('@/lib/utils/extract-variables', () => ({ extractVariables: () => variables }))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('./_components/agent-run-page', () => ({ AgentRunPage }))
+mock.module('./_components/workflow-run-page', () => ({ WorkflowRunPage }))
 
 type Page = typeof import('./page').default
 let UnifiedRunPage: Page
@@ -126,13 +129,6 @@ function findByType(node: ReactNode, type: unknown): ReactElement | undefined {
   const element = node as ReactElement<{ children?: ReactNode }>
   if (element.type === type) return element
   return findByType(element.props?.children, type)
-}
-
-function text(node: ReactNode): string {
-  if (node == null || typeof node === 'boolean') return ''
-  if (typeof node === 'string' || typeof node === 'number') return String(node)
-  if (Array.isArray(node)) return node.map(text).join('')
-  return text((node as ReactElement<{ children?: ReactNode }>).props?.children)
 }
 
 beforeAll(async () => {
@@ -164,81 +160,28 @@ beforeEach(() => {
 })
 
 describe('UnifiedRunPage', () => {
-  test('shows loading until params and metadata resolve, then renders the agent callbacks', async () => {
+  test('shows loading until params resolve', () => {
     const pending = Promise.withResolvers<{ id: string }>()
-    let tree = render(pending.promise)
+    const tree = render(pending.promise)
     expect(findByType(tree, 'loader')).toBeDefined()
-
-    await runEffects()
-    pending.resolve({ id: 'agent-1' })
-    await Promise.resolve()
-    tree = render(pending.promise)
-    await runEffects()
-    tree = render(pending.promise)
-
-    expect(getPublicAgent).toHaveBeenCalledWith('agent-1')
-    expect(useRun).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'agent-1', type: 'agent' }))
-    const container = findByType(tree, ChatContainer)
-    expect(text(container?.props.emptyState)).toContain('Welcome')
-    expect(container?.props).toMatchObject({ hideToolCalls: true })
-
-    const input = findByType(tree, ChatInput)
-    await input?.props.onSubmit('  Hello  ')
-    expect(sendMessage).toHaveBeenCalledWith('  Hello  ')
-    input?.props.onStop()
-    expect(stop).toHaveBeenCalledTimes(1)
-
-    const suggestion = findByType(container?.props.emptyState, 'button')
-    await suggestion?.props.onClick()
-    expect(sendMessage).toHaveBeenCalledWith('First question')
-    container?.props.onSelectOption('Selected option')
-    await Promise.resolve()
-    expect(sendMessage).toHaveBeenCalledWith('Selected option')
   })
 
-  test('shows translated API errors and navigates home', async () => {
-    getPublicAgent.mockRejectedValueOnce(new ApiError(404, 'missing'))
-    const params = Promise.resolve({ id: 'missing' })
-    render(params)
-    await runEffects()
+  test('defaults invalid types to the Agent runner', async () => {
+    const params = Promise.resolve({ id: 'agent-1' })
     render(params)
     await runEffects()
     const tree = render(params)
-
-    expect(text(tree)).toContain('run.notFound')
-    findByType(tree, Button)?.props.onClick()
-    expect(push).toHaveBeenCalledWith('/')
+    expect(tree.type).toBe(AgentRunPage)
+    expect(tree.props).toEqual({ id: 'agent-1' })
   })
 
-  test('loads workflows, filters query variables, validates required input, and forwards debug options', async () => {
+  test('routes workflow runs to the form runner and ignores debug query state', async () => {
     search = new Map([['type', 'workflow'], ['debug', 'true']])
-    variables = [
-      { name: 'query', type: 'text', required: true },
-      { name: 'items', type: 'array', required: true },
-    ]
-    variableForm = {
-      ...variableForm,
-      values: { items: '[]' },
-      needsInput: true,
-      isValid: false,
-      validate: mock(() => false),
-    }
     const params = Promise.resolve({ id: 'workflow-1' })
     render(params)
     await runEffects()
-    render(params)
-    await runEffects()
     const tree = render(params)
-
-    expect(getWorkflow).toHaveBeenCalledWith('workflow-1')
-    expect(useRun).toHaveBeenLastCalledWith(expect.objectContaining({
-      id: 'workflow-1', type: 'workflow', isDebug: true, variables: { items: '[]' },
-    }))
-    const variableFormElement = findByType(tree, VariableForm)
-    expect(variableFormElement?.props.variables).toEqual([variables[1]])
-
-    await findByType(tree, ChatInput)?.props.onSubmit('Run it')
-    expect(variableForm.validate).toHaveBeenCalledTimes(1)
-    expect(sendMessage).not.toHaveBeenCalled()
+    expect(tree.type).toBe(WorkflowRunPage)
+    expect(tree.props).toEqual({ id: 'workflow-1' })
   })
 })
