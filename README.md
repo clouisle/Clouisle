@@ -43,6 +43,7 @@ Build, deploy, and manage intelligent AI agents with RAG-powered knowledge retri
 - [Roadmap](#roadmap)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
+- [Contributors](#contributors)
 - [License](#license)
 
 ---
@@ -329,6 +330,15 @@ Configure via the admin dashboard:
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 For development setup and commands (lint, test, build), see the [Development Guide](docs/guide/getting-started/development.md).
+
+## Contributors
+
+Thanks to all the people who have contributed to Clouisle:
+
+<a href="https://github.com/clouisle/Clouisle/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=clouisle/Clouisle" />
+</a>
+
 
 ## License
 
