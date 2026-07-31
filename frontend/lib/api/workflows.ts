@@ -491,6 +491,13 @@ export const workflowsApi = {
   },
 
   /**
+   * 获取当前用户指定运行的节点执行列表
+   */
+  getMyRunNodeExecutions: async (workflowId: string, runId: string): Promise<NodeExecution[]> => {
+    return api.get<NodeExecution[]>(`/workflows/${workflowId}/runs/mine/${runId}/nodes`)
+  },
+
+  /**
    * 获取工作流运行详情
    */
   getWorkflowRun: async (runId: string): Promise<WorkflowRun> => {
