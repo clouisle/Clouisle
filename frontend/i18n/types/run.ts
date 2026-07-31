@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-29T06:20:44.146Z
+// GENERATED — 2026-07-31T20:16:12.112Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
@@ -20,6 +20,28 @@ export type RunMessages = {
     typePlaceholder: string
     workflowInputPlaceholder: string
     poweredBy: string
+    inputs: string
+    noInputs: string
+    result: string
+    noResult: string
+    runFailed: string
+    cancel: string
+    cancelling: string
+    reset: string
+    history: string
+    noHistory: string
+    showTrace: string
+    historyResult: string
+    close: string
+    status: {
+      idle: string
+      pending: string
+      running: string
+      success: string
+      failed: string
+      cancelled: string
+      timeout: string
+    }
     nodeStatus: {
       pending: string
       running: string

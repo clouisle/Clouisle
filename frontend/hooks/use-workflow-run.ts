@@ -501,7 +501,6 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         }
         setStatus('success')
         setIsStreaming(false)
-        onComplete?.()
         break
       }
 
@@ -519,7 +518,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         break
       }
     }
-  }, [onComplete])
+  }, [])
 
   // Store the handler in ref so it can be accessed in start callback
   handleWorkflowEventRef.current = handleWorkflowEvent

@@ -6,6 +6,12 @@ export type RunVariableDefinition = Omit<VariableDefinition, 'type' | 'default'>
   default?: unknown
 }
 
+function normalizeVariableType(type?: string): RunVariableDefinition['type'] {
+  if (type === 'string') return 'text'
+  if (type === 'boolean') return 'boolean'
+  return (type as RunVariableDefinition['type']) || 'text'
+}
+
 /**
  * Extract variable definitions from Agent or Workflow metadata
  */
@@ -45,7 +51,7 @@ export function extractVariables(
     if (workflow.variables && workflow.variables.length > 0) {
       return workflow.variables.map((v) => ({
         name: v.name,
-        type: (v.type as VariableDefinition['type']) || 'text',
+        type: normalizeVariableType(v.type),
         required: v.required ?? true,
         default: v.default ?? null,
         description: v.description,
@@ -65,7 +71,7 @@ export function extractVariables(
 
     return params.map((p) => ({
       name: p.name,
-      type: (p.type as VariableDefinition['type']) || 'text',
+      type: normalizeVariableType(p.type),
       required: p.required ?? true,
       default: p.default ?? null,
       description: p.description || null,
