@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-29T06:20:44.154Z
+// GENERATED — 2026-07-31T18:54:28.587Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -22,6 +22,19 @@ export type WorkflowMessages = {
     published: string
     unpublished: string
     publishFailed: string
+    publishSettings: {
+      title: string
+      description: string
+      simple: {
+        title: string
+        description: string
+      }
+      result_first: {
+        title: string
+        description: string
+      }
+      publish: string
+    }
     showSidebar: string
     hideSidebar: string
     canvasHint: string

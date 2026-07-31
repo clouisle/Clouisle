@@ -20,6 +20,19 @@
     "published": "Published",
     "unpublished": "Unpublished",
     "publishFailed": "Failed to publish",
+    "publishSettings": {
+      "title": "Publish workflow",
+      "description": "Choose how people will view results on the published run page.",
+      "simple": {
+        "title": "Form and result",
+        "description": "Show inputs, run status, and the final result without node-level execution details."
+      },
+      "result_first": {
+        "title": "Result with details",
+        "description": "Prioritize the final result and let people expand the execution trace and run details."
+      },
+      "publish": "Publish workflow"
+    },
     "showSidebar": "Show sidebar",
     "hideSidebar": "Hide sidebar",
     "canvasHint": "Drag nodes from left panel, connect them to build workflow",
