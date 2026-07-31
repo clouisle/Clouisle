@@ -42,6 +42,7 @@
 - [使用场景](#使用场景)
 - [路线图](#路线图)
 - [参与贡献](#参与贡献)
+- [贡献者](#贡献者)
 - [许可证](#许可证)
 
 ---
@@ -316,6 +317,16 @@ docker compose --env-file .env up -d
 我们欢迎贡献！请查看 [贡献指南](../CONTRIBUTING.md) 了解详情。
 
 开发环境搭建和命令（代码检查、测试、构建等）请参考 [开发指南](getting-started/development_zh-CN.md)。
+
+## 贡献者
+
+感谢所有为 Clouisle 做出贡献的人：
+
+<a href="https://github.com/clouisle/Clouisle/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=clouisle/Clouisle" />
+</a>
+
+
 ---
 
 ## 许可证
