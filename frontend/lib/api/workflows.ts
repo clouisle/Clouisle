@@ -464,6 +464,33 @@ export const workflowsApi = {
   },
 
   /**
+   * 获取当前用户的工作流运行历史
+   */
+  getMyWorkflowRuns: async (
+    workflowId: string,
+    params: Omit<WorkflowRunQueryParams, 'isDebug'> = {}
+  ): Promise<PageData<WorkflowRunListItem>> => {
+    const { page = 1, pageSize = 20, status, search, createdAfter, createdBefore } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (status) queryParams.append('status', status)
+    if (search) queryParams.append('search', search)
+    if (createdAfter) queryParams.append('created_after', createdAfter)
+    if (createdBefore) queryParams.append('created_before', createdBefore)
+    return api.get<PageData<WorkflowRunListItem>>(
+      `/workflows/${workflowId}/runs/mine?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取当前用户的工作流运行详情
+   */
+  getMyWorkflowRun: async (workflowId: string, runId: string): Promise<WorkflowRun> => {
+    return api.get<WorkflowRun>(`/workflows/${workflowId}/runs/mine/${runId}`)
+  },
+
+  /**
    * 获取工作流运行详情
    */
   getWorkflowRun: async (runId: string): Promise<WorkflowRun> => {
@@ -483,6 +510,7 @@ export const workflowsApi = {
   deleteWorkflowRun: async (runId: string): Promise<void> => {
     return api.delete<void>(`/workflows/runs/${runId}`)
   },
+
 
   // ============ Workflow Execution API ============
 

@@ -83,7 +83,9 @@ class WorkflowOut(BaseModel):
     trigger_config: dict
     webhook_token: str | None
     embed_config: dict
-    run_page_config: dict
+    run_page_config: dict = Field(
+        default_factory=lambda: {"presentation_mode": "simple"}
+    )
     run_count: int
     success_count: int
     fail_count: int
