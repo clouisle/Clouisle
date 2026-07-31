@@ -18,6 +18,7 @@ from app.models.workflow import (
     RunStatus,
     NodeExecution,
     NodeStatus,
+    WorkflowVersion,
 )
 from app.models.user import Team
 from app.models.notification import AutoNotificationType
@@ -156,8 +157,8 @@ class WorkflowOrchestrator:
         # Load workflow (with cache)
         workflow = await self._load_workflow(workflow_id)
 
-        # Get workflow definition (with cache)
-        workflow_def = await self._get_workflow_definition(workflow)
+        # Get workflow definition from the latest published snapshot.
+        workflow_def = await self._get_workflow_definition(workflow, is_debug=False)
 
         # Create run record
         run = await self._create_run(
@@ -309,7 +310,7 @@ class WorkflowOrchestrator:
             user_id: User UUID triggering the run
             team_id: Optional team UUID
             stream: Whether to enable streaming
-            is_debug: Whether this is a debug run (not used currently)
+            is_debug: Whether this is a debug run (uses the live draft)
 
         Returns:
             Run ID (UUID string)
@@ -319,15 +320,18 @@ class WorkflowOrchestrator:
         # Load workflow
         workflow = await self._load_workflow(workflow_id)
 
-        # Get workflow definition
-        workflow_def = await self._get_workflow_definition(workflow)
-
         # Load existing run record
         run = await WorkflowRun.filter(id=run_id).first()
         if not run:
             raise WorkflowNotFoundError(
                 t("workflow_run_not_found"), msg_key="workflow_run_not_found"
             )
+
+        # The persisted run mode is authoritative, so callers cannot make a
+        # normal run execute the live draft by passing an inconsistent flag.
+        workflow_def = await self._get_workflow_definition(
+            workflow, is_debug=run.is_debug
+        )
 
         # Update run status to running
         run.status = RunStatus.RUNNING
@@ -458,32 +462,64 @@ class WorkflowOrchestrator:
             )
         return workflow
 
-    async def _get_workflow_definition(self, workflow: Workflow) -> dict:
-        """Get workflow definition (with caching)."""
+    async def _get_workflow_definition(
+        self, workflow: Workflow, *, is_debug: bool = True
+    ) -> dict:
+        """Get the live draft for debug runs or the latest published snapshot."""
+        if is_debug:
+            if not workflow.definition:
+                raise WorkflowNotPublishedError(workflow.name)
+
+            # Try cache first for the live draft used by the editor debug drawer.
+            if self._cache:
+                cached = await self._cache.get_workflow(
+                    str(workflow.id),
+                    version=str(workflow.updated_at.timestamp())
+                    if workflow.updated_at
+                    else None,
+                )
+                if cached:
+                    return cached
+
+                await self._cache.set_workflow(
+                    str(workflow.id),
+                    workflow.definition,
+                    version=str(workflow.updated_at.timestamp())
+                    if workflow.updated_at
+                    else None,
+                )
+
+            return workflow.definition
+
+        # Published runs must execute an immutable version snapshot, never the
+        # mutable workflow definition.  This also prevents a published workflow
+        # with an edited draft from silently running the draft.
         if not workflow.definition:
             raise WorkflowNotPublishedError(workflow.name)
 
-        # Try cache first
+        published_version = (
+            await WorkflowVersion.filter(workflow_id=workflow.id)
+            .order_by("-version")
+            .first()
+        )
+        if not published_version or not published_version.definition:
+            raise WorkflowNotPublishedError(workflow.name)
+
+        version_key = f"published:{published_version.version}"
         if self._cache:
             cached = await self._cache.get_workflow(
-                str(workflow.id),
-                version=str(workflow.updated_at.timestamp())
-                if workflow.updated_at
-                else None,
+                str(workflow.id), version=version_key
             )
             if cached:
                 return cached
 
-            # Cache the definition
             await self._cache.set_workflow(
                 str(workflow.id),
-                workflow.definition,
-                version=str(workflow.updated_at.timestamp())
-                if workflow.updated_at
-                else None,
+                published_version.definition,
+                version=version_key,
             )
 
-        return workflow.definition
+        return published_version.definition
 
     async def _get_execution_plan(
         self,
