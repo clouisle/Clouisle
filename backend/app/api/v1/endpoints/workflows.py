@@ -701,6 +701,8 @@ async def update_workflow(
         workflow.visibility = WorkflowVisibility(workflow_in.visibility)
     if workflow_in.embed_config is not None:
         workflow.embed_config = workflow_in.embed_config
+    if workflow_in.run_page_config is not None:
+        workflow.run_page_config = workflow_in.run_page_config
 
     await workflow.save()
 

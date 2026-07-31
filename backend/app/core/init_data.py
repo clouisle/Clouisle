@@ -2167,6 +2167,20 @@ async def init_chunk_status():
     logger.info("Chunk status migration complete")
 
 
+async def init_workflow_run_page_config() -> None:
+    """Add the workflow run-page presentation configuration field."""
+    conn = Tortoise.get_connection("default")
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE workflows
+            ADD COLUMN IF NOT EXISTS run_page_config JSONB NOT NULL
+            DEFAULT '{"presentation_mode": "simple"}'::jsonb
+        """,
+    )
+    logger.info("Workflow run_page_config migration complete")
+
+
 async def init_embed_config():
     """Add embed_config field to agents and workflows tables."""
     logger.info("Initializing embed_config fields...")

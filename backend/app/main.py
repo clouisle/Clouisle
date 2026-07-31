@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):
         init_agent_kb_search_mode,
         init_chunk_status,
         init_embed_config,
+        init_workflow_run_page_config,
         init_model_type_unique_constraint,
         init_kb_rerank_fields,
         init_skills_table,
@@ -219,6 +220,11 @@ async def lifespan(app: FastAPI):
         await init_embed_config()
     except Exception as e:
         logger.warning(f"Embed config migration failed: {e}")
+
+    try:
+        await init_workflow_run_page_config()
+    except Exception as e:
+        logger.warning(f"Workflow run-page config migration failed: {e}")
 
     try:
         await init_model_type_unique_constraint()

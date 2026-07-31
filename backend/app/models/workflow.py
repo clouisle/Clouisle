@@ -129,6 +129,12 @@ class Workflow(models.Model):
         description="Embed configuration (enabled, allowed_domains, theme, bubble)",
     )  # type: ignore[assignment]
 
+    # Public run-page presentation configuration
+    run_page_config: dict = fields.JSONField(
+        default=lambda: {"presentation_mode": "simple"},
+        description="Published workflow run-page presentation configuration",
+    )  # type: ignore[assignment]
+
     # Statistics (累计统计，不会因删除而减少)
     run_count = fields.IntField(default=0, description="Total run count")
     success_count = fields.IntField(default=0, description="Successful run count")

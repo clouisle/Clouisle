@@ -669,6 +669,8 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
             "trigger_config": _sanitize_dict(workflow.trigger_config or {}),
             "visibility": _enum_value(workflow.visibility),
             "embed_config": _copy_json(workflow.embed_config) or {},
+            "run_page_config": _copy_json(workflow.run_page_config)
+            or {"presentation_mode": "simple"},
         }
         return payload, dependencies, workflow.name
 
@@ -1046,6 +1048,8 @@ def _workflow_fields(
         "trigger_type": TriggerType(trigger_type),
         "trigger_config": payload.get("trigger_config") or {},
         "embed_config": payload.get("embed_config") or {},
+        "run_page_config": payload.get("run_page_config")
+        or {"presentation_mode": "simple"},
     }
 
 

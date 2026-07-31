@@ -290,6 +290,9 @@ async def update_workflow(
     if workflow_in.embed_config is not None:
         workflow.embed_config = workflow_in.embed_config
         updated_fields.append("embed_config")
+    if workflow_in.run_page_config is not None:
+        workflow.run_page_config = workflow_in.run_page_config
+        updated_fields.append("run_page_config")
 
     await workflow.save()
     workflow = await Workflow.get(id=workflow_id).prefetch_related("team", "created_by")

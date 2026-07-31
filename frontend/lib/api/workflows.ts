@@ -9,6 +9,12 @@ export type WorkflowVisibility = 'private' | 'team' | 'public'
 export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout'
 export type NodeStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
 
+export type WorkflowRunPagePresentation = 'simple' | 'result_first'
+
+export interface WorkflowRunPageConfig {
+  presentation_mode: WorkflowRunPagePresentation
+}
+
 export interface Workflow {
   id: string
   team_id: string
@@ -30,6 +36,7 @@ export interface Workflow {
   created_at: string
   updated_at: string
   embed_config?: Record<string, unknown>
+  run_page_config: WorkflowRunPageConfig
 }
 
 export interface WorkflowListItem {
@@ -233,6 +240,7 @@ export interface WorkflowUpdateInput {
   trigger_config?: Record<string, unknown> | null
   visibility?: WorkflowVisibility | null
   embed_config?: Record<string, unknown> | null
+  run_page_config?: WorkflowRunPageConfig | null
 }
 
 export interface WorkflowQueryParams {
