@@ -1,4 +1,10 @@
 import type { VariableDefinition } from '@/lib/api/agents'
+import type { VariableDefinition as WorkflowVariableDefinition } from '@/lib/api/workflows'
+
+export type RunVariableDefinition = Omit<VariableDefinition, 'type' | 'default'> & {
+  type: VariableDefinition['type'] | 'boolean'
+  default?: unknown
+}
 
 /**
  * Extract variable definitions from Agent or Workflow metadata
@@ -6,7 +12,7 @@ import type { VariableDefinition } from '@/lib/api/agents'
 export function extractVariables(
   metadata: unknown,
   type: 'agent' | 'workflow'
-): VariableDefinition[] {
+): RunVariableDefinition[] {
   if (!metadata || typeof metadata !== 'object') return []
 
   if (type === 'agent') {
@@ -15,13 +21,7 @@ export function extractVariables(
   } else {
     // Extract from workflow's start node (user_input or trigger)
     const workflow = metadata as {
-      variables?: Array<{
-        name: string
-        type: string
-        required: boolean
-        default?: unknown
-        description?: string | null
-      }>
+      variables?: WorkflowVariableDefinition[]
       definition?: {
         nodes?: Array<{
           data?: {
@@ -47,7 +47,7 @@ export function extractVariables(
         name: v.name,
         type: (v.type as VariableDefinition['type']) || 'text',
         required: v.required ?? true,
-        default: v.default ? String(v.default) : null,
+        default: v.default ?? null,
         description: v.description,
         label: v.name,
       }))
@@ -67,7 +67,7 @@ export function extractVariables(
       name: p.name,
       type: (p.type as VariableDefinition['type']) || 'text',
       required: p.required ?? true,
-      default: p.default ? String(p.default) : null,
+      default: p.default ?? null,
       description: p.description || null,
       label: p.label || p.name,
     }))

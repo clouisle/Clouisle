@@ -16,7 +16,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { ApiError, type VariableDefinition as AgentVariableDefinition } from '@/lib/api'
+import { ApiError } from '@/lib/api'
+import type { RunVariableDefinition } from '@/lib/utils/extract-variables'
 import { clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
@@ -25,7 +26,7 @@ import { uploadApi } from '@/lib/api/upload'
 import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB, BYTES_PER_MB } from '@/lib/constants'
 
 type VariableFieldErrors = Record<string, string>
-type VariableDefinition = Omit<AgentVariableDefinition, 'type'> & { type: AgentVariableDefinition['type'] | 'boolean' }
+type VariableDefinition = RunVariableDefinition
 
 interface VariableFormProps {
   variables: VariableDefinition[]
@@ -34,6 +35,10 @@ interface VariableFormProps {
   onSubmit?: () => void
   className?: string
   fieldErrors?: VariableFieldErrors
+  /** Keep the existing compact layout by default; workflow forms opt into full size. */
+  compact?: boolean
+  disabled?: boolean
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 function getUploadValidationMessage(
@@ -161,6 +166,9 @@ export function VariableForm({
   onSubmit,
   className,
   fieldErrors,
+  compact = true,
+  disabled = false,
+  onUploadingChange,
 }: VariableFormProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
@@ -210,12 +218,14 @@ export function VariableForm({
           value={values[variable.name]}
           error={effectiveFieldErrors[variable.name]}
           onChange={(value) => updateValue(variable.name, value)}
-          compact
+          compact={compact}
+          disabled={disabled}
+          onUploadingChange={onUploadingChange}
         />
       ))}
 
       {onSubmit && (
-        <Button type="submit" className="w-full" disabled={!isValid}>
+        <Button type="submit" className="w-full" disabled={disabled || !isValid}>
           {t('startChat')}
         </Button>
       )}
@@ -229,9 +239,19 @@ interface VariableFieldProps {
   error?: string
   onChange: (value: unknown) => void
   compact?: boolean
+  disabled?: boolean
+  onUploadingChange?: (uploading: boolean) => void
 }
 
-function VariableField({ variable, value, error, onChange, compact = false }: VariableFieldProps) {
+function VariableField({
+  variable,
+  value,
+  error,
+  onChange,
+  compact = false,
+  disabled = false,
+  onUploadingChange,
+}: VariableFieldProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const label = variable.label || variable.name
@@ -241,7 +261,7 @@ function VariableField({ variable, value, error, onChange, compact = false }: Va
   React.useEffect(() => {
     if (value === undefined && variable.default !== undefined && variable.default !== null) {
       if (variable.type === 'checkbox' || variable.type === 'boolean') {
-        onChange(variable.default === 'true')
+        onChange(variable.default === 'true' ? true : variable.default)
       } else if (variable.type === 'number') {
         onChange(Number(variable.default))
       } else {
@@ -258,157 +278,35 @@ function VariableField({ variable, value, error, onChange, compact = false }: Va
     switch (variable.type) {
       case 'text':
         return (
-          <Input
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={variable.description || label}
-            maxLength={variable.maxLength ?? undefined}
-            className={inputClassName}
-            aria-invalid={!!error}
-          />
+          <Input value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={variable.description || label} maxLength={variable.maxLength ?? undefined} className={inputClassName} aria-invalid={!!error} disabled={disabled} />
         )
-
       case 'paragraph':
         return (
-          <Textarea
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={variable.description || label}
-            maxLength={variable.maxLength ?? undefined}
-            rows={compact ? 2 : 3}
-            className={compact ? 'text-xs min-h-12' : ''}
-            aria-invalid={!!error}
-          />
+          <Textarea value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={variable.description || label} maxLength={variable.maxLength ?? undefined} rows={compact ? 2 : 3} className={compact ? 'text-xs min-h-12' : ''} aria-invalid={!!error} disabled={disabled} />
         )
-
       case 'select':
         return (
-          <Select
-            value={(value as string) ?? ''}
-            onValueChange={(v) => onChange(v)}
-          >
-            <SelectTrigger className={selectTriggerClassName} aria-invalid={!!error}>
-              <SelectValue>
-                {(value as string) || t('selectPlaceholder')}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {(variable.options || []).map((option) => (
-                <SelectItem key={option} value={option} className={compact ? 'text-xs' : ''}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
+          <Select value={(value as string) ?? ''} onValueChange={onChange} disabled={disabled}>
+            <SelectTrigger className={selectTriggerClassName} aria-invalid={!!error}><SelectValue>{(value as string) || t('selectPlaceholder')}</SelectValue></SelectTrigger>
+            <SelectContent>{(variable.options || []).map((option) => <SelectItem key={option} value={option} className={compact ? 'text-xs' : ''}>{option}</SelectItem>)}</SelectContent>
           </Select>
         )
-
       case 'number':
-        return (
-          <Input
-            type="number"
-            value={(value as number) ?? ''}
-            onChange={(e) => onChange(e.target.value ? Number(e.target.value) : '')}
-            placeholder={variable.description || label}
-            min={variable.min ?? undefined}
-            max={variable.max ?? undefined}
-            className={inputClassName}
-            aria-invalid={!!error}
-          />
-        )
-
+        return <Input type="number" value={(value as number) ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : '')} placeholder={variable.description || label} min={variable.min ?? undefined} max={variable.max ?? undefined} className={inputClassName} aria-invalid={!!error} disabled={disabled} />
       case 'checkbox':
-        return (
-          <div className="flex items-center space-x-1.5">
-            <Checkbox
-              id={`var-${variable.name}`}
-              checked={(value as boolean) ?? false}
-              onCheckedChange={(checked) => onChange(checked)}
-              className={compact ? 'h-3.5 w-3.5' : ''}
-            />
-            {variable.description && (
-              <label
-                htmlFor={`var-${variable.name}`}
-                className={cn("text-muted-foreground cursor-pointer", compact ? "text-xs" : "text-sm")}
-              >
-                {variable.description}
-              </label>
-            )}
-          </div>
-        )
-
+        return <div className="flex items-center space-x-1.5"><Checkbox id={`var-${variable.name}`} checked={(value as boolean) ?? false} onCheckedChange={onChange} className={compact ? 'h-3.5 w-3.5' : ''} disabled={disabled} />{variable.description && <label htmlFor={`var-${variable.name}`} className={cn('text-muted-foreground cursor-pointer', compact ? 'text-xs' : 'text-sm')}>{variable.description}</label>}</div>
       case 'boolean':
-        return (
-          <Select
-            value={typeof value === 'boolean' ? String(value) : ((value as string) || 'false')}
-            onValueChange={(v) => onChange(v === 'true')}
-          >
-            <SelectTrigger className={selectTriggerClassName} aria-invalid={!!error}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="true" className={compact ? 'text-xs' : ''}>{tCommon('yes')}</SelectItem>
-              <SelectItem value="false" className={compact ? 'text-xs' : ''}>{tCommon('no')}</SelectItem>
-            </SelectContent>
-          </Select>
-        )
-
+        return <Select value={typeof value === 'boolean' ? String(value) : ((value as string) || 'false')} onValueChange={(v) => onChange(v === 'true')} disabled={disabled}><SelectTrigger className={selectTriggerClassName} aria-invalid={!!error}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true" className={compact ? 'text-xs' : ''}>{tCommon('yes')}</SelectItem><SelectItem value="false" className={compact ? 'text-xs' : ''}>{tCommon('no')}</SelectItem></SelectContent></Select>
       case 'array':
-        return (
-          <Textarea
-            value={Array.isArray(value) ? JSON.stringify(value, null, 2) : (value as string) ?? ''}
-            onChange={(e) => {
-              const text = e.target.value
-              try {
-                const parsed = JSON.parse(text)
-                if (Array.isArray(parsed)) {
-                  onChange(parsed)
-                } else {
-                  onChange(text)
-                }
-              } catch {
-                onChange(text)
-              }
-            }}
-            placeholder={variable.description || t('arrayPlaceholder')}
-            rows={compact ? 3 : 4}
-            className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'}
-            aria-invalid={!!error}
-          />
-        )
-
+        return <Textarea value={Array.isArray(value) ? JSON.stringify(value, null, 2) : (value as string) ?? ''} onChange={(e) => { const text = e.target.value; try { const parsed = JSON.parse(text); onChange(Array.isArray(parsed) ? parsed : text) } catch { onChange(text) } }} placeholder={variable.description || t('arrayPlaceholder')} rows={compact ? 3 : 4} className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'} aria-invalid={!!error} disabled={disabled} />
       case 'object':
-        return (
-          <Textarea
-            value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : (value as string) ?? ''}
-            onChange={(e) => {
-              const text = e.target.value
-              try {
-                const parsed = JSON.parse(text)
-                if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-                  onChange(parsed)
-                } else {
-                  onChange(text)
-                }
-              } catch {
-                onChange(text)
-              }
-            }}
-            placeholder={variable.description || t('objectPlaceholder')}
-            rows={compact ? 3 : 4}
-            className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'}
-            aria-invalid={!!error}
-          />
-        )
-
-      // File upload types
+        return <Textarea value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : (value as string) ?? ''} onChange={(e) => { const text = e.target.value; try { const parsed = JSON.parse(text); onChange(typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : text) } catch { onChange(text) } }} placeholder={variable.description || t('objectPlaceholder')} rows={compact ? 3 : 4} className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'} aria-invalid={!!error} disabled={disabled} />
       case 'file':
       case 'image':
-        return <FileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} />
-
+        return <FileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} disabled={disabled} onUploadingChange={onUploadingChange} />
       case 'files':
       case 'images':
-        return <MultiFileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} />
-
+        return <MultiFileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} disabled={disabled} onUploadingChange={onUploadingChange} />
       default:
         return null
     }
@@ -416,15 +314,20 @@ function VariableField({ variable, value, error, onChange, compact = false }: Va
 
   const isUploadField = variable.type === 'file' || variable.type === 'image' || variable.type === 'files' || variable.type === 'images'
 
-  return (
-    <div className={compact ? "space-y-0.5" : "space-y-2"}>
-      <Label className={cn("flex items-center gap-0.5", compact ? "text-xs font-normal" : "")}>
-        {label}
-        {isRequired && <span className="text-destructive text-xs">*</span>}
-      </Label>
-      {renderField()}
-      {!isUploadField && <FieldError>{error}</FieldError>}
-    </div>
+  return <div className={compact ? 'space-y-0.5' : 'space-y-2'}><Label className={cn('flex items-center gap-0.5', compact ? 'text-xs font-normal' : '')}>{label}{isRequired && <span className="text-destructive text-xs">*</span>}</Label>{renderField()}{!isUploadField && <FieldError>{error}</FieldError>}</div>
+}
+
+function getInitialVariableValues(variables: VariableDefinition[]): Record<string, unknown> {
+  return Object.fromEntries(
+    variables
+      .filter((variable) => variable.default !== undefined && variable.default !== null)
+      .map((variable) => {
+        if (variable.type === 'checkbox' || variable.type === 'boolean') {
+          return [variable.name, variable.default === 'true' ? true : variable.default === 'false' ? false : Boolean(variable.default)]
+        }
+        if (variable.type === 'number') return [variable.name, Number(variable.default)]
+        return [variable.name, variable.default]
+      })
   )
 }
 
@@ -433,21 +336,7 @@ function VariableField({ variable, value, error, onChange, compact = false }: Va
  */
 export function useVariableForm(variables: VariableDefinition[]) {
   const tCommon = useTranslations('common')
-  const [values, setValues] = React.useState<Record<string, unknown>>(() => {
-    const initial: Record<string, unknown> = {}
-    variables.forEach((v) => {
-      if (v.default !== undefined && v.default !== null) {
-        if (v.type === 'checkbox') {
-          initial[v.name] = v.default === 'true'
-        } else if (v.type === 'number') {
-          initial[v.name] = Number(v.default)
-        } else {
-          initial[v.name] = v.default
-        }
-      }
-    })
-    return initial
-  })
+  const [values, setValues] = React.useState<Record<string, unknown>>(() => getInitialVariableValues(variables))
 
   const [fieldErrors, setFieldErrors] = React.useState<VariableFieldErrors>({})
 
@@ -493,19 +382,7 @@ export function useVariableForm(variables: VariableDefinition[]) {
   }, [variables, values, tCommon])
 
   const reset = React.useCallback(() => {
-    const initial: Record<string, unknown> = {}
-    variables.forEach((v) => {
-      if (v.default !== undefined && v.default !== null) {
-        if (v.type === 'checkbox') {
-          initial[v.name] = v.default === 'true'
-        } else if (v.type === 'number') {
-          initial[v.name] = Number(v.default)
-        } else {
-          initial[v.name] = v.default
-        }
-      }
-    })
-    setValues(initial)
+    setValues(getInitialVariableValues(variables))
     setFieldErrors({})
   }, [variables])
 
@@ -529,9 +406,11 @@ interface FileUploadInputProps {
   error?: string
   onChange: (value: unknown) => void
   compact?: boolean
+  disabled?: boolean
+  onUploadingChange?: (uploading: boolean) => void
 }
 
-function FileUploadInput({ variable, value, error, onChange, compact }: FileUploadInputProps) {
+function FileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: FileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
@@ -567,6 +446,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
 
     setUploadError(null)
     setUploading(true)
+    onUploadingChange?.(true)
     try {
       const result = await uploadApi.uploadFile(file, 'workflow-input')
       setUploadError(null)
@@ -576,6 +456,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
       setUploadError(getUploadValidationMessage(error, t('fileUploadFailed'), tCommon))
     } finally {
       setUploading(false)
+      onUploadingChange?.(false)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -600,7 +481,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
         accept={accept}
         onChange={handleFileSelect}
         className="hidden"
-        disabled={uploading}
+        disabled={disabled || uploading}
       />
 
       {!fileUrl ? (
@@ -609,7 +490,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
           variant="outline"
           size={compact ? "sm" : "default"}
           onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
+          disabled={disabled || uploading}
           className="w-full"
           aria-invalid={!!(error || uploadError)}
         >
@@ -632,6 +513,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
             variant="ghost"
             size="icon"
             onClick={handleRemove}
+            disabled={disabled}
             className={compact ? "h-5 w-5" : "h-6 w-6"}
           >
             <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
@@ -652,9 +534,11 @@ interface MultiFileUploadInputProps {
   error?: string
   onChange: (value: unknown) => void
   compact?: boolean
+  disabled?: boolean
+  onUploadingChange?: (uploading: boolean) => void
 }
 
-function MultiFileUploadInput({ variable, value, error, onChange, compact }: MultiFileUploadInputProps) {
+function MultiFileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: MultiFileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
@@ -703,6 +587,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
 
     setUploadError(null)
     setUploading(true)
+    onUploadingChange?.(true)
     try {
       const uploadPromises = files.map(file => uploadApi.uploadFile(file, 'workflow-input'))
       const results = await Promise.all(uploadPromises)
@@ -714,6 +599,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
       setUploadError(getUploadValidationMessage(error, t('fileUploadFailed'), tCommon))
     } finally {
       setUploading(false)
+      onUploadingChange?.(false)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -735,7 +621,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
         multiple
         onChange={handleFileSelect}
         className="hidden"
-        disabled={uploading}
+        disabled={disabled || uploading}
       />
 
       <Button
@@ -743,7 +629,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
         variant="outline"
         size={compact ? "sm" : "default"}
         onClick={() => fileInputRef.current?.click()}
-        disabled={uploading || fileUrls.length >= maxFiles}
+        disabled={disabled || uploading || fileUrls.length >= maxFiles}
         className="w-full"
         aria-invalid={!!(error || uploadError)}
       >
@@ -773,7 +659,8 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
                 variant="ghost"
                 size="icon"
                 onClick={() => handleRemove(index)}
-                className={compact ? "h-5 w-5" : "h-6 w-6"}
+                disabled={disabled}
+            className={compact ? "h-5 w-5" : "h-6 w-6"}
               >
                 <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
               </Button>

@@ -12,13 +12,20 @@ export interface UseWorkflowRunOptions {
   onComplete?: () => void
 }
 
+export type WorkflowRunState = 'idle' | 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+
 export interface UseWorkflowRunReturn {
   messages: ChatMessage[]
   executionState: ExecutionState
   isStreaming: boolean
   runId: string | null
+  status: WorkflowRunState
+  outputs: Record<string, unknown> | null
+  submittedInputs: Record<string, unknown> | null
+  error: string | null
+  isCancelling: boolean
   start: (inputs: Record<string, unknown>) => Promise<void>
-  stop: () => void
+  stop: () => Promise<void>
   reset: () => void
 }
 
@@ -59,6 +66,11 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
     progress: { current: 0, total: 0 },
   })
   const [isStreaming, setIsStreaming] = useState(false)
+  const [status, setStatus] = useState<WorkflowRunState>('idle')
+  const [outputs, setOutputs] = useState<Record<string, unknown> | null>(null)
+  const [submittedInputs, setSubmittedInputs] = useState<Record<string, unknown> | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isCancelling, setIsCancelling] = useState(false)
 
   const closeConnectionRef = useRef<(() => void) | null>(null)
   const currentMessageRef = useRef<ChatMessage | null>(null)
@@ -66,35 +78,54 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
   // Track node types to determine token routing (answer vs LLM)
   const nodeTypesRef = useRef<Map<string, string>>(new Map())
 
-  const stop = useCallback(() => {
-    if (closeConnectionRef.current) {
-      closeConnectionRef.current()
-      closeConnectionRef.current = null
+  const stop = useCallback(async () => {
+    const activeRunId = runId
+    if (!activeRunId || status === 'success' || status === 'failed' || status === 'cancelled') {
+      return
     }
-    setIsStreaming(false)
 
-    // Cancel the run if it's still running
-    if (runId) {
-      workflowsApi.cancelWorkflowRun(runId).catch(console.error)
+    closeConnectionRef.current?.()
+    closeConnectionRef.current = null
+    setIsStreaming(false)
+    setIsCancelling(true)
+    try {
+      await workflowsApi.cancelWorkflowRun(activeRunId)
+      setStatus('cancelled')
+    } catch (cancelError) {
+      console.error('Failed to cancel workflow:', cancelError)
+      onError?.(cancelError as Error)
+    } finally {
+      setIsCancelling(false)
     }
-  }, [runId])
+  }, [runId, status, onError])
 
   const reset = useCallback(() => {
-    stop()
+    closeConnectionRef.current?.()
+    closeConnectionRef.current = null
     setRunId(null)
     setMessages([])
     setExecutionState({
       nodes: new Map(),
       progress: { current: 0, total: 0 },
     })
+    setIsStreaming(false)
+    setStatus('idle')
+    setOutputs(null)
+    setSubmittedInputs(null)
+    setError(null)
+    setIsCancelling(false)
     currentMessageRef.current = null
     nodeTypesRef.current.clear()
-  }, [stop])
+  }, [])
 
   const start = useCallback(
     async (inputs: Record<string, unknown>) => {
       try {
         setIsStreaming(true)
+        setStatus('pending')
+        setSubmittedInputs({ ...inputs })
+        setOutputs(null)
+        setError(null)
 
         // Add user message with the query input
         const userQuery = inputs.query as string | undefined
@@ -127,6 +158,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
           onError: (error: Error) => {
             console.error('Workflow SSE error:', error)
             setIsStreaming(false)
+            setError(getApiErrorMessage('requestFailed'))
             onError?.(error)
           },
           onComplete: () => {
@@ -136,10 +168,13 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         })
 
         closeConnectionRef.current = closeConnection
-      } catch (error) {
-        console.error('Failed to start workflow:', error)
+      } catch (startError) {
+        console.error('Failed to start workflow:', startError)
+        const safeError = getApiErrorMessage('requestFailed')
         setIsStreaming(false)
-        onError?.(error as Error)
+        setStatus('failed')
+        setError(safeError)
+        onError?.(startError as Error)
       }
     },
     [workflowId, isDebug, onError, onComplete]
@@ -150,6 +185,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
 
     switch (type) {
       case 'workflow_start': {
+        setStatus('running')
         // Initialize execution state
         const totalNodes = (data.total_nodes as number) || 0
         setExecutionState((prev) => ({
@@ -449,13 +485,23 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
       }
 
       case 'output': {
-        // Final output from workflow - now handled in node_complete for answer nodes
-        // Skip to avoid duplicate output
+        const eventOutputs = data.outputs ?? data.output ?? data
+        if (eventOutputs && typeof eventOutputs === 'object' && !Array.isArray(eventOutputs)) {
+          setOutputs(eventOutputs as Record<string, unknown>)
+        } else {
+          setOutputs({ result: eventOutputs })
+        }
         break
       }
 
       case 'workflow_complete': {
+        const finalOutputs = data.outputs
+        if (finalOutputs && typeof finalOutputs === 'object' && !Array.isArray(finalOutputs)) {
+          setOutputs(finalOutputs as Record<string, unknown>)
+        }
+        setStatus('success')
         setIsStreaming(false)
+        onComplete?.()
         break
       }
 
@@ -467,11 +513,13 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
           parts: [{ type: 'text', text: `${errorMessage}` }],
         }
         setMessages((prev) => [...prev, errorMsg])
+        setError(errorMessage)
+        setStatus('failed')
         setIsStreaming(false)
         break
       }
     }
-  }, [])
+  }, [onComplete])
 
   // Store the handler in ref so it can be accessed in start callback
   handleWorkflowEventRef.current = handleWorkflowEvent
@@ -481,6 +529,11 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
     executionState,
     isStreaming,
     runId,
+    status,
+    outputs,
+    submittedInputs,
+    error,
+    isCancelling,
     start,
     stop,
     reset,
