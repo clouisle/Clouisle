@@ -73,6 +73,8 @@ def agent(**overrides):
         "system_prompt": "Help",
         "max_iterations": 5,
         "hide_tool_calls": False,
+        "hide_token_stats": False,
+        "hide_reasoning": False,
         "tools_config": [],
         "enable_vision": False,
         "enable_file_upload": False,

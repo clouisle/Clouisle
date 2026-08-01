@@ -274,6 +274,8 @@ def test_resource_field_serialization_rewrites_only_mapped_ids():
         "model": {"id": "source-model"},
         "max_iterations": "7",
         "hide_tool_calls": True,
+        "hide_token_stats": False,
+        "hide_reasoning": False,
         "enable_memory": True,
     }
 

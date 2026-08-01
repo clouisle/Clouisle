@@ -128,6 +128,8 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
             messages={messages}
             isStreaming={isStreaming}
             hideToolCalls={Boolean(metadata.hide_tool_calls)}
+            hideTokenStats={Boolean(metadata.hide_token_stats)}
+            hideReasoning={Boolean(metadata.hide_reasoning)}
             className="flex-1 min-h-0 overflow-y-auto"
             onSelectOption={(option) => void handleSendMessage(option)}
             emptyState={

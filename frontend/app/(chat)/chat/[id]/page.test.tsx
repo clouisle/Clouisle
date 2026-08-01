@@ -57,6 +57,14 @@ mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('sonner', () => ({ toast: { error: toastError } }))
 mock.module('@/lib/api', () => ({
   ApiError,
+  agentsApi: {
+    chatStream: mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() })),
+    getConversation: mock(() => Promise.resolve({ messages: [] })),
+    editMessageStream: mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() })),
+    regenerateStream: mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() })),
+    getMessageVersions: mock(() => Promise.resolve([])),
+    switchMessageVersion: mock(() => Promise.resolve()),
+  },
   publicAgentsApi: { getPublicAgent, getConversations, getConversation, deleteConversation, updateConversation },
   uploadApi: { uploadFileWithProgress },
 }))
@@ -118,7 +126,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
-  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false,
+  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false, hide_token_stats: false, hide_reasoning: false,
   created_by: { username: 'owner' },
 }
 const conversations = [

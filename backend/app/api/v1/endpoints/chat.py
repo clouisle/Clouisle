@@ -1008,6 +1008,8 @@ async def get_public_agent_info(
             enable_file_upload=agent.enable_file_upload,
             file_upload_config=agent.file_upload_config,
             hide_tool_calls=agent.hide_tool_calls,
+            hide_token_stats=agent.hide_token_stats,
+            hide_reasoning=agent.hide_reasoning,
             created_by=creator_info,
         )
     )

@@ -185,6 +185,8 @@ async def build_agent_out(agent: Agent) -> dict:
         "system_prompt": agent.system_prompt,
         "max_iterations": agent.max_iterations,
         "hide_tool_calls": agent.hide_tool_calls,
+        "hide_token_stats": agent.hide_token_stats,
+        "hide_reasoning": agent.hide_reasoning,
         "tools_config": agent.tools_config or [],
         "enable_vision": agent.enable_vision,
         "enable_file_upload": agent.enable_file_upload,
@@ -452,6 +454,8 @@ async def create_agent(
         system_prompt=agent_in.system_prompt,
         max_iterations=agent_in.max_iterations,
         hide_tool_calls=agent_in.hide_tool_calls,
+        hide_token_stats=agent_in.hide_token_stats,
+        hide_reasoning=agent_in.hide_reasoning,
         tools_config=[t.model_dump() for t in agent_in.tools_config],
         enable_vision=agent_in.enable_vision,
         enable_file_upload=agent_in.enable_file_upload,
@@ -583,6 +587,12 @@ async def update_agent(
     if agent_in.hide_tool_calls is not None:
         agent.hide_tool_calls = agent_in.hide_tool_calls
         updated_fields.append("hide_tool_calls")
+    if agent_in.hide_token_stats is not None:
+        agent.hide_token_stats = agent_in.hide_token_stats
+        updated_fields.append("hide_token_stats")
+    if agent_in.hide_reasoning is not None:
+        agent.hide_reasoning = agent_in.hide_reasoning
+        updated_fields.append("hide_reasoning")
     if agent_in.opening_message is not None:
         agent.opening_message = agent_in.opening_message
         updated_fields.append("opening_message")

@@ -83,6 +83,12 @@ class Agent(models.Model):
     hide_tool_calls = fields.BooleanField(
         default=False, description="Hide tool call details in chat UI"
     )
+    hide_token_stats = fields.BooleanField(
+        default=False, description="Hide token usage/speed stats in chat UI"
+    )
+    hide_reasoning = fields.BooleanField(
+        default=False, description="Hide reasoning/chain-of-thought in chat UI"
+    )
 
     # Tools configuration (JSON array)
     # [{"type": "builtin", "name": "web_search"}, {"type": "mcp", "server_id": "xxx"}]

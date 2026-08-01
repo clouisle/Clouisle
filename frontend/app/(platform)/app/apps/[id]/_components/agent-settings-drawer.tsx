@@ -67,6 +67,10 @@ interface AgentSettingsDrawerProps {
   onMaxIterationsChange: (value: number) => void
   hideToolCalls: boolean
   onHideToolCallsChange: (value: boolean) => void
+  hideTokenStats: boolean
+  onHideTokenStatsChange: (value: boolean) => void
+  hideReasoning: boolean
+  onHideReasoningChange: (value: boolean) => void
   // Tool-related
   hasToolsEnabled: boolean
 }
@@ -121,6 +125,10 @@ export function AgentSettingsDrawer({
   onMaxIterationsChange,
   hideToolCalls,
   onHideToolCallsChange,
+  hideTokenStats,
+  onHideTokenStatsChange,
+  hideReasoning,
+  onHideReasoningChange,
   hasToolsEnabled,
 }: AgentSettingsDrawerProps) {
   const t = useTranslations('agents')
@@ -321,6 +329,20 @@ export function AgentSettingsDrawer({
                   <p className="text-xs text-muted-foreground">{ts('hideToolCallsDesc')}</p>
                 </div>
                 <Switch checked={hideToolCalls} onCheckedChange={onHideToolCallsChange} />
+              </div>
+              <div data-testid="settings-hide-token-stats" className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{ts('hideTokenStats')}</Label>
+                  <p className="text-xs text-muted-foreground">{ts('hideTokenStatsDesc')}</p>
+                </div>
+                <Switch checked={hideTokenStats} onCheckedChange={onHideTokenStatsChange} />
+              </div>
+              <div data-testid="settings-hide-reasoning" className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{ts('hideReasoning')}</Label>
+                  <p className="text-xs text-muted-foreground">{ts('hideReasoningDesc')}</p>
+                </div>
+                <Switch checked={hideReasoning} onCheckedChange={onHideReasoningChange} />
               </div>
             </SettingsSection>
 

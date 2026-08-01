@@ -421,6 +421,10 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
+  /** Hide token usage/speed stats popover */
+  hideTokenStats?: boolean
+  /** Hide reasoning / chain-of-thought panel */
+  hideReasoning?: boolean
   /** Controlled open state for chain of thought */
   chainOfThoughtOpen?: boolean
   /** Callback when chain of thought open state changes */
@@ -444,6 +448,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onSelectOption,
       onOpenCodePreview,
       hideToolCalls = false,
+      hideTokenStats = false,
+      hideReasoning = false,
       chainOfThoughtOpen,
       onChainOfThoughtOpenChange,
       onRequestScrollIntoView,
@@ -997,7 +1003,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // Only show if there are reasoning parts OR tasks (RAG/generating)
     // Tool calls should only be in ChainOfThought if there's reasoning
     const hasTasks = taskParts.length > 0
-    const hasChainOfThought = hasReasoning || hasTasks
+    const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
 
     // Get text parts to check if content has started
     const hasTextContent = textParts.some(t => t.text && t.text.length > 0)
@@ -1485,7 +1491,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                     <RefreshCw className="h-4 w-4" />
                   </MessageAction>
                 )}
-                {usage && (
+                {usage && !hideTokenStats && (
                   <Popover>
                     <PopoverTrigger
                       render={
@@ -1546,6 +1552,8 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onSelectOption === next.onSelectOption
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls
+    && prev.hideTokenStats === next.hideTokenStats
+    && prev.hideReasoning === next.hideReasoning
     && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
     && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
     && prev.onRequestScrollIntoView === next.onRequestScrollIntoView

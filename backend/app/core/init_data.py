@@ -1797,6 +1797,42 @@ async def init_agent_hide_tool_calls_field():
     logger.info("Agent hide_tool_calls field added successfully")
 
 
+async def init_agent_hide_token_stats_reasoning_fields():
+    """Add hide_token_stats and hide_reasoning fields to agents table."""
+    logger.info("Initializing agent hide_token_stats and hide_reasoning fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping hide_token_stats/hide_reasoning migration"
+        )
+        return
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS hide_token_stats BOOLEAN NOT NULL DEFAULT FALSE
+        """,
+    )
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS hide_reasoning BOOLEAN NOT NULL DEFAULT FALSE
+        """,
+    )
+
+    logger.info("Agent hide_token_stats and hide_reasoning fields added successfully")
+
+
 async def init_agent_memory_fields():
     """
     Add enable_memory and memory_config fields to agents table.
@@ -2710,6 +2746,9 @@ async def init_db():
 
     # 11. Initialize agent hide_tool_calls field
     await init_agent_hide_tool_calls_field()
+
+    # 11.1 Initialize agent hide_token_stats and hide_reasoning fields
+    await init_agent_hide_token_stats_reasoning_fields()
 
     # 12. Initialize agent memory fields
     await init_agent_memory_fields()

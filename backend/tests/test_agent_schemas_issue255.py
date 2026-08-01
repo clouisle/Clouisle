@@ -66,6 +66,8 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.team_id == team_id
     assert agent.max_iterations == 5
     assert agent.hide_tool_calls is False
+    assert agent.hide_token_stats is False
+    assert agent.hide_reasoning is False
     assert agent.rag_mode == "agentic"
     assert agent.visibility == "team"
     assert agent.tools_config == [ToolConfig(type="builtin", name="search")]

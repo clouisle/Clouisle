@@ -73,6 +73,8 @@ def _agent(**overrides):
         "system_prompt": "Helpful",
         "max_iterations": 5,
         "hide_tool_calls": False,
+        "hide_token_stats": False,
+        "hide_reasoning": False,
         "tools_config": [],
         "enable_vision": False,
         "enable_file_upload": False,
@@ -223,6 +225,8 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
         system_prompt="Prompt",
         max_iterations=9,
         hide_tool_calls=True,
+        hide_token_stats=False,
+        hide_reasoning=False,
         opening_message="Hello",
         suggested_questions=["Why?"],
         visibility="private",
@@ -285,7 +289,7 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
     assert item.embed_config == {"theme": "dark"}
     item.save.assert_awaited_once()
     create_kb.assert_awaited_once()
-    assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 27
+    assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 29
 
 
 @pytest.mark.anyio
