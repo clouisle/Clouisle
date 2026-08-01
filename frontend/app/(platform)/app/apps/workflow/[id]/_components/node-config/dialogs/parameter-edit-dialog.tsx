@@ -40,6 +40,7 @@ export function ParameterEditDialog({
       } else {
         setParamForm({
           name: '',
+          label: '',
           type: 'text',
           required: false,
           defaultValue: '',
@@ -80,6 +81,7 @@ export function ParameterEditDialog({
     const param: Parameter = {
       id: editingParam?.id || `param_${Date.now()}`,
       name,
+      label: paramForm.label || undefined,
       type: (paramForm.type as ParameterType) || 'text',
       required: paramForm.required || false,
       defaultValue: paramForm.defaultValue || '',
@@ -115,6 +117,16 @@ export function ParameterEditDialog({
                 <p className="text-[11px] text-destructive">{variableNameError}</p>
               )}
               <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.nameHint')}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="param-label" className="text-xs">{t('dialogs.parameterEdit.displayLabelLabel')}</Label>
+              <Input
+                id="param-label"
+                value={paramForm.label || ''}
+                onChange={(e) => setParamForm({ ...paramForm, label: e.target.value })}
+                placeholder={t('dialogs.parameterEdit.displayLabelPlaceholder')}
+                className="h-9"
+              />
             </div>
             
             <div className="space-y-2">

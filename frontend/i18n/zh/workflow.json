@@ -1023,6 +1023,8 @@
         "nameLabel": "变量名",
         "namePlaceholder": "输入变量名（如：query）",
         "nameHint": "只能包含字母、数字、下划线，且不能以数字开头",
+        "displayLabelLabel": "展示名",
+        "displayLabelPlaceholder": "输入展示名（可选，留空则使用变量名）",
         "nameFormatError": "变量名只能包含字母、数字、下划线，且不能以数字开头",
         "nameDuplicate": "变量名已存在",
         "typeLabel": "类型",

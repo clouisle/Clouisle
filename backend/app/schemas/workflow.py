@@ -234,6 +234,7 @@ class VariableDefinition(BaseModel):
     required: bool = Field(default=False)
     default: Any | None = None
     description: str | None = None
+    label: str | None = None
 
 
 # ============================================================================

@@ -1082,6 +1082,8 @@ export type WorkflowMessages = {
         nameLabel: string
         namePlaceholder: string
         nameHint: string
+        displayLabelLabel: string
+        displayLabelPlaceholder: string
         nameFormatError: string
         nameDuplicate: string
         typeLabel: string

@@ -959,6 +959,7 @@ export function WorkflowEditorContent({
     // 获取参数列表
     const nodeData = startNode.data as { parameters?: Array<{
       name: string
+      label?: string
       type: string
       required: boolean
       defaultValue?: string
@@ -970,6 +971,7 @@ export function WorkflowEditorContent({
     // 转换为 VariableDefinition 格式
     return parameters.map(p => ({
       name: p.name,
+      label: p.label || null,
       type: p.type,
       required: p.required,
       default: p.defaultValue || undefined,

@@ -55,7 +55,7 @@ export function extractVariables(
         required: v.required ?? true,
         default: v.default ?? null,
         description: v.description,
-        label: v.name,
+        label: v.label || v.name,
       }))
     }
 

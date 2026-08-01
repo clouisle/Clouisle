@@ -215,6 +215,7 @@ export interface WorkflowEdge {
 
 export interface VariableDefinition {
   name: string
+  label?: string | null
   type: string
   required: boolean
   default?: unknown

@@ -1023,6 +1023,8 @@
         "nameLabel": "Variable Name",
         "namePlaceholder": "Enter variable name (e.g.: query)",
         "nameHint": "Can only contain letters, numbers, underscores, and cannot start with a number",
+        "displayLabelLabel": "Display Name",
+        "displayLabelPlaceholder": "Enter display name (optional, falls back to variable name)",
         "nameFormatError": "Variable name can only contain letters, numbers, underscores, and cannot start with a number",
         "nameDuplicate": "Variable name already exists",
         "typeLabel": "Type",
