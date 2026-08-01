@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.i18n import t
 from app.llm.tools.builtin.media import (
     _deduplicate_indexes,
     _get_provider_from_model_ref,
@@ -282,4 +283,4 @@ async def test_generate_video_reports_limit_and_manager_errors():
     assert manager_call.await_count == 1
     assert "agent limit" in too_long.display_result["error"].lower()
     assert manager_error.display_result["success"] is False
-    assert "provider unavailable" in manager_error.display_result["error"]
+    assert manager_error.display_result["error"] == t("unknown_error_generic")

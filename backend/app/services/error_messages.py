@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from app.core.i18n import has_translation, t
+from app.schemas.response import BusinessError
 
 
 _TRANSLATION_KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", re.IGNORECASE)
@@ -53,4 +54,21 @@ def resolve_user_visible_error(
     if is_safe_user_visible_error(normalized):
         return normalized
 
+    return t(fallback_key)
+
+
+def exception_to_user_message(
+    e: BaseException,
+    *,
+    fallback_key: str = "tool_execution_failed",
+) -> str:
+    """Map an exception to a user-safe message.
+
+    Never returns raw exception text. Only exceptions carrying an explicit
+    translation key (``BusinessError``) are surfaced to the user; anything
+    else is replaced with the localized fallback. Full details belong in
+    server logs.
+    """
+    if isinstance(e, BusinessError) and e.msg_key:
+        return t(e.msg_key, **e.kwargs)
     return t(fallback_key)

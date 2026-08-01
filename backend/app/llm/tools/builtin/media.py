@@ -18,7 +18,8 @@ from app.core.i18n import t
 from app.llm import model_manager
 from app.llm.adapters.media_utils import parse_image_data_url
 from app.models.model import ModelType
-from app.services.error_messages import resolve_user_visible_error
+from app.schemas.response import BusinessError
+from app.services.error_messages import exception_to_user_message
 from app.llm.types import (
     GeneratedImage,
     ImageContent,
@@ -96,7 +97,9 @@ def _validate_allowed_providers(
 
     provider = model_ref.split("/", 1)[0]
     if provider not in allowed_providers:
-        raise ValueError(t("media_provider_not_allowed_for_agent", provider=provider))
+        raise BusinessError(
+            msg_key="media_provider_not_allowed_for_agent", provider=provider
+        )
 
 
 def _get_provider_from_model_ref(model_ref: str | None) -> str | None:
@@ -130,12 +133,10 @@ async def _normalize_image_quality(
         supported_values = OPENAI_DALLE_IMAGE_QUALITY_VALUES
 
     if mapped_quality is None:
-        raise ValueError(
-            t(
-                "image_generation_invalid_quality",
-                quality=quality,
-                supported=", ".join(supported_values),
-            )
+        raise BusinessError(
+            msg_key="image_generation_invalid_quality",
+            quality=quality,
+            supported=", ".join(supported_values),
         )
     return mapped_quality
 
@@ -172,7 +173,7 @@ def _chat_image_to_generation_image(image: Any, *, index: int) -> ImageContent:
             if path.is_file():
                 return ImageContent(file_path=str(path))
 
-    raise ValueError(t("image_reference_invalid_uploaded_image", index=index))
+    raise BusinessError(msg_key="image_reference_invalid_uploaded_image", index=index)
 
 
 def _deduplicate_indexes(indexes: Sequence[Any]) -> list[int]:
@@ -198,7 +199,7 @@ def _resolve_generation_reference_images(
     current_images: Sequence[Any] | None,
 ) -> list[ImageContent] | None:
     if images and reference_image_indexes:
-        raise ValueError(t("image_reference_images_conflict"))
+        raise BusinessError(msg_key="image_reference_images_conflict")
     if images:
         return [ImageContent.model_validate(image) for image in images]
     if reference_image_indexes is None:
@@ -208,18 +209,16 @@ def _resolve_generation_reference_images(
     if not selected_indexes:
         return None
     if not current_images:
-        raise ValueError(t("image_reference_no_uploaded_images"))
+        raise BusinessError(msg_key="image_reference_no_uploaded_images")
 
     resolved: list[ImageContent] = []
     available_count = len(current_images)
     for index in selected_indexes:
         if index < 1 or index > available_count:
-            raise ValueError(
-                t(
-                    "image_reference_image_index_out_of_range",
-                    index=index,
-                    count=available_count,
-                )
+            raise BusinessError(
+                msg_key="image_reference_image_index_out_of_range",
+                index=index,
+                count=available_count,
             )
         resolved.append(
             _chat_image_to_generation_image(current_images[index - 1], index=index)
@@ -428,7 +427,7 @@ async def generate_image(
     resolved_model_ref: str | None = None
     try:
         if agent and not getattr(agent, "enable_image_generation", False):
-            raise ValueError(t("image_generation_not_enabled_for_agent"))
+            raise BusinessError(msg_key="image_generation_not_enabled_for_agent")
 
         config = _get_agent_module_config(agent, "image_generation_config")
         resolved_model_ref = config.get("default_model_ref") or None
@@ -443,7 +442,7 @@ async def generate_image(
             current_images=current_images,
         )
         if reference_images and not config.get("allow_reference_images", True):
-            raise ValueError(t("image_reference_images_disabled"))
+            raise BusinessError(msg_key="image_reference_images_disabled")
 
         normalized_quality = await _normalize_image_quality(
             quality,
@@ -491,8 +490,8 @@ async def generate_image(
         )
     except Exception as exc:
         logger.exception("Image generation tool failed: %s", exc)
-        error_message = resolve_user_visible_error(
-            str(exc),
+        error_message = exception_to_user_message(
+            exc,
             fallback_key="unknown_error_generic",
         )
         display_result = build_image_tool_result(
@@ -529,7 +528,7 @@ async def generate_video(
 
     try:
         if agent and not getattr(agent, "enable_video_generation", False):
-            raise ValueError(t("video_generation_not_enabled_for_agent"))
+            raise BusinessError(msg_key="video_generation_not_enabled_for_agent")
 
         config = _get_agent_module_config(agent, "video_generation_config")
         resolved_model_ref = config.get("default_model_ref") or None
@@ -538,11 +537,9 @@ async def generate_video(
         final_duration = duration or float(config.get("default_duration", 5.0))
         max_duration = float(config.get("max_duration", 10.0))
         if final_duration > max_duration:
-            raise ValueError(
-                t(
-                    "video_generation_duration_exceeds_agent_limit",
-                    max_duration=f"{max_duration:.1f}",
-                )
+            raise BusinessError(
+                msg_key="video_generation_duration_exceeds_agent_limit",
+                max_duration=f"{max_duration:.1f}",
             )
 
         poll_interval_ms = int(config.get("poll_interval_ms", 3000))
@@ -597,8 +594,8 @@ async def generate_video(
         )
     except Exception as exc:
         logger.exception("Video generation tool failed: %s", exc)
-        error_message = resolve_user_visible_error(
-            str(exc),
+        error_message = exception_to_user_message(
+            exc,
             fallback_key="unknown_error_generic",
         )
         display_result = build_video_tool_result(

@@ -22,7 +22,10 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 
-from app.services.error_messages import resolve_user_visible_error
+from app.services.error_messages import (
+    exception_to_user_message,
+    resolve_user_visible_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,8 +240,8 @@ class McpClient:
             logger.exception("MCP tool execution error")
             return McpToolResult(
                 success=False,
-                error=resolve_user_visible_error(
-                    str(e),
+                error=exception_to_user_message(
+                    e,
                     fallback_key="mcp_tool_execution_failed",
                 ),
             )

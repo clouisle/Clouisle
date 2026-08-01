@@ -14,6 +14,7 @@ from app.llm.tools.executors import (
     execute_http_tool,
     format_http_result_for_llm,
 )
+from app.schemas.response import BusinessError
 
 
 class _Response:
@@ -33,7 +34,7 @@ class _Response:
     ],
 )
 def test_url_validation_rejects_invalid_and_private_hosts(url, error):
-    with pytest.raises(ValueError, match=t(error)):
+    with pytest.raises(BusinessError, match=error):
         _validate_external_http_url(url)
 
 
@@ -47,12 +48,12 @@ def test_url_validation_handles_dns_success_private_result_and_failure():
         )
     with (
         patch("socket.getaddrinfo", return_value=private),
-        pytest.raises(ValueError, match=t("http_tool_url_host_not_allowed")),
+        pytest.raises(BusinessError, match="http_tool_url_host_not_allowed"),
     ):
         _validate_external_http_url("https://example.com")
     with (
         patch("socket.getaddrinfo", side_effect=socket.gaierror),
-        pytest.raises(ValueError, match=t("http_tool_url_host_cannot_be_resolved")),
+        pytest.raises(BusinessError, match="http_tool_url_host_cannot_be_resolved"),
     ):
         _validate_external_http_url("https://missing.example")
 

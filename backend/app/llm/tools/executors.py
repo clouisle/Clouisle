@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.i18n import t
+from app.schemas.response import BusinessError
 
 logger = logging.getLogger(__name__)
 
@@ -44,25 +45,25 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 def _validate_external_http_url(value: str) -> _ValidatedExternalUrl:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError(t("http_tool_url_invalid"))
+        raise BusinessError(msg_key="http_tool_url_invalid")
     host = parsed.hostname.lower().rstrip(".")
     if host in _BLOCKED_HOSTS:
-        raise ValueError(t("http_tool_url_host_not_allowed"))
+        raise BusinessError(msg_key="http_tool_url_host_not_allowed")
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         ip = None
     if ip and _is_blocked_ip(ip):
-        raise ValueError(t("http_tool_url_host_not_allowed"))
+        raise BusinessError(msg_key="http_tool_url_host_not_allowed")
     try:
         resolved = socket.getaddrinfo(
             host, parsed.port or None, type=socket.SOCK_STREAM
         )
     except socket.gaierror as exc:
-        raise ValueError(t("http_tool_url_host_cannot_be_resolved")) from exc
+        raise BusinessError(msg_key="http_tool_url_host_cannot_be_resolved") from exc
     for *_, sockaddr in resolved:
         if _is_blocked_ip(ipaddress.ip_address(sockaddr[0])):
-            raise ValueError(t("http_tool_url_host_not_allowed"))
+            raise BusinessError(msg_key="http_tool_url_host_not_allowed")
     return _ValidatedExternalUrl(value)
 
 
@@ -321,8 +322,10 @@ async def execute_http_tool(
     raw_url = str(http_config.get("url", ""))
     try:
         if _extract_placeholder_name(raw_url) or "{{" in raw_url or "}}" in raw_url:
-            raise ValueError(t("http_tool_url_templates_not_supported"))
+            raise BusinessError(msg_key="http_tool_url_templates_not_supported")
         url = _validate_external_http_url(raw_url)
+    except BusinessError as exc:
+        return {"success": False, "error": t(exc.msg_key, **exc.kwargs)}
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
 

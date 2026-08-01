@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.schemas.response import BusinessError
 from app.services import error_messages
 
 
@@ -69,3 +70,48 @@ def test_resolve_user_visible_error_returns_safe_message(monkeypatch):
         "Provider unavailable"
     )
     translate.assert_not_called()
+
+
+def test_exception_to_user_message_translates_business_error(monkeypatch):
+    translate = MagicMock(return_value="Localized failure")
+    monkeypatch.setattr(error_messages, "t", translate)
+
+    error = BusinessError(msg_key="http_tool_url_invalid", status_code=400)
+
+    assert error_messages.exception_to_user_message(error) == "Localized failure"
+    translate.assert_called_once_with("http_tool_url_invalid")
+
+
+def test_exception_to_user_message_translates_business_error_with_kwargs(monkeypatch):
+    translate = MagicMock(return_value="Localized provider message")
+    monkeypatch.setattr(error_messages, "t", translate)
+
+    error = BusinessError(
+        msg_key="media_provider_not_allowed_for_agent", provider="openai"
+    )
+
+    assert (
+        error_messages.exception_to_user_message(error) == "Localized provider message"
+    )
+    translate.assert_called_once_with(
+        "media_provider_not_allowed_for_agent", provider="openai"
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("Traceback: secret paths"),
+        RuntimeError("sqlite3.OperationalError: no such table: users"),
+        BusinessError(),
+        BusinessError(msg="raw business message"),
+    ],
+)
+def test_exception_to_user_message_never_exposes_exception_text(monkeypatch, error):
+    translate = MagicMock(side_effect=lambda key: f"translated:{key}")
+    monkeypatch.setattr(error_messages, "t", translate)
+
+    assert error_messages.exception_to_user_message(
+        error, fallback_key="tool_execution_failed"
+    ) == ("translated:tool_execution_failed")
+    translate.assert_called_once_with("tool_execution_failed")

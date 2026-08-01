@@ -163,6 +163,7 @@ async def test_execute_tool_returns_structured_success(monkeypatch, content, exp
 async def test_execute_tool_maps_server_timeout_and_connection_errors(monkeypatch):
     resolve_error = MagicMock(side_effect=lambda message, **kwargs: f"safe:{message}")
     monkeypatch.setattr(mcp_client, "resolve_user_visible_error", resolve_error)
+    monkeypatch.setattr(mcp_client, "exception_to_user_message", resolve_error)
     client = mcp_client.McpClient({})
 
     error_session = SimpleNamespace(
