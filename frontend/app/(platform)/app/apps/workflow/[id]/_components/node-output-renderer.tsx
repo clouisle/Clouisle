@@ -93,15 +93,16 @@ function MediaPreview({ imageUrls = [], videoUrl }: { imageUrls?: string[]; vide
 export function renderNodeOutput(
   nodeType: string,
   outputs: Record<string, unknown>,
-  t: (key: string) => string
+  t: (key: string) => string,
+  renderText?: (text: string) => React.ReactNode
 ): React.ReactNode {
   // LLM 节点 - 显示文本内容
   if (nodeType === 'llm') {
     const text = outputs.text || outputs.content || outputs.response || ''
     if (typeof text === 'string' && text) {
       return (
-        <div className="max-h-40 min-w-0 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
-          {text}
+        <div className="max-h-40 min-w-0 overflow-y-auto break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
+          {renderText ? renderText(text) : text}
         </div>
       )
     }
@@ -149,8 +150,8 @@ export function renderNodeOutput(
           {textOutputs.map(({ key, value }) => (
             <div key={key} className="space-y-1">
               <span className="text-[10px] text-muted-foreground">{key}</span>
-              <div className="max-h-32 min-w-0 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
-                {value}
+              <div className="max-h-32 min-w-0 overflow-y-auto break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
+                {renderText ? renderText(value) : value}
               </div>
             </div>
           ))}

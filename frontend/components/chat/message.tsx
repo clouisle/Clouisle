@@ -1960,7 +1960,7 @@ function formatCitationMarker(index: number, sources: SourceDocumentPart[]) {
   return ` [${index}]`
 }
 
-const TextWithCitations = React.memo(function TextWithCitations({
+export const TextWithCitations = React.memo(function TextWithCitations({
   text,
   sources,
   isStreaming = false,

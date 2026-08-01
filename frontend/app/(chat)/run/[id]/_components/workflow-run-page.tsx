@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, GitBranch, History, Loader2, Menu, Play, Plus, RotateCcw, Square } from 'lucide-react'
+import { AlertCircle, GitBranch, Loader2, Menu, Play, RotateCcw, Square, SquarePen } from 'lucide-react'
 import { ApiError, workflowsApi, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
 import { ExecutionTimeline, VariableForm, useVariableForm } from '@/components/chat'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -11,8 +11,8 @@ import { useWorkflowRun } from '@/hooks/use-workflow-run'
 import { extractVariables } from '@/lib/utils/extract-variables'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { WorkflowResultRenderer, type WorkflowResultNode } from './workflow-result-renderer'
 
 type WorkflowWorkspaceView = 'form' | 'live' | 'history'
 
@@ -30,7 +30,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
   const [historyLoading, setHistoryLoading] = React.useState(true)
   const [isUploading, setIsUploading] = React.useState(false)
   const [workspaceView, setWorkspaceView] = React.useState<WorkflowWorkspaceView>('form')
-  const [historyOpen, setHistoryOpen] = React.useState(false)
+  const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [historyDetailLoading, setHistoryDetailLoading] = React.useState(false)
   const [historyDetailError, setHistoryDetailError] = React.useState<string | null>(null)
   const [selectedRun, setSelectedRun] = React.useState<WorkflowRun | null>(null)
@@ -76,6 +76,10 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
   const run = useWorkflowRun({ workflowId: id, onComplete: loadHistory })
   const isRunning = run.status === 'pending' || run.status === 'running'
   const presentationMode = workflow?.run_page_config?.presentation_mode ?? 'simple'
+
+  React.useEffect(() => {
+    setSidebarOpen(window.innerWidth >= 768)
+  }, [])
 
   React.useEffect(() => {
     if (isRunning) {
@@ -125,9 +129,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
     try {
       const [detail, nodes] = await Promise.all([
         workflowsApi.getMyWorkflowRun(id, runId),
-        presentationMode === 'result_first'
-          ? workflowsApi.getMyRunNodeExecutions(id, runId)
-          : Promise.resolve([]),
+        workflowsApi.getMyRunNodeExecutions(id, runId),
       ])
       setSelectedRun(detail)
       setSelectedNodes(nodes)
@@ -136,24 +138,57 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
     } finally {
       setHistoryDetailLoading(false)
     }
-  }, [id, isRunning, presentationMode, t])
+  }, [id, isRunning, t])
 
-  const historyResult = selectedRun?.outputs
-    ? JSON.stringify(selectedRun.outputs, null, 2)
-    : ''
+  const resultNodes = React.useMemo<WorkflowResultNode[]>(() => (
+    Array.from(run.executionState.nodes.values()).map((node, index) => ({
+      nodeType: node.type,
+      outputs: node.output && typeof node.output === 'object' && !Array.isArray(node.output)
+        ? node.output as Record<string, unknown>
+        : null,
+      order: index,
+      status: node.status,
+    }))
+  ), [run.executionState.nodes])
+
+  const historyNodes = React.useMemo<WorkflowResultNode[]>(() => (
+    selectedNodes.map((node) => ({
+      nodeType: node.node_type,
+      outputs: node.outputs,
+      order: node.execution_order,
+      status: node.status,
+    }))
+  ), [selectedNodes])
+
   const selectedHistoryId = workspaceView === 'history' ? selectedRun?.id : null
 
   const historyPanel = (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b p-4">
-        <div className="flex items-center gap-2">
-          <History className="h-4 w-4 text-muted-foreground" />
-          <h2 id="workflow-history-heading" className="font-medium">{t('history')}</h2>
-        </div>
-        <Button className="mt-4 w-full" variant="outline" onClick={handleNewRun} disabled={isRunning}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('newRun')}
+    <div className="flex h-full min-h-0 flex-col bg-muted/50">
+      <div className="flex items-center gap-2 border-b p-3">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={handleNewRun}
+          disabled={isRunning}
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-sm">
+            {workflow?.icon || <GitBranch className="h-4 w-4 text-muted-foreground" />}
+          </span>
+          <span className="truncate text-sm font-medium">{workflow?.name}</span>
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleNewRun}
+          disabled={isRunning}
+          aria-label={t('newRun')}
+          title={t('newRun')}
+        >
+          <SquarePen className="h-4 w-4" />
         </Button>
+      </div>
+      <div className="border-b px-4 py-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        {t('history')}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {historyLoading ? (
@@ -166,15 +201,12 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setHistoryOpen(false)
-                    void handleSelectHistory(item.id)
-                  }}
+                  onClick={() => void handleSelectHistory(item.id)}
                   disabled={isRunning}
                   aria-current={selectedHistoryId === item.id ? 'true' : undefined}
                   className={cn(
-                    'min-h-11 w-full rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                    selectedHistoryId === item.id && 'bg-muted'
+                    'min-h-11 w-full rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+                    selectedHistoryId === item.id && 'bg-accent'
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -195,17 +227,29 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
     </div>
   )
 
-  const result = React.useMemo(() => {
-    const answer = run.messages
+  const renderResult = (nodes: WorkflowResultNode[], resultOutputs: Record<string, unknown> | null, answerText?: string, streaming = false) => (
+    <WorkflowResultRenderer
+      outputs={resultOutputs}
+      nodes={nodes}
+      answerText={answerText}
+      isStreaming={streaming}
+      t={t}
+    />
+  )
+
+  const answerText = React.useMemo(() => (
+    run.messages
       .flatMap((message) => message.role === 'assistant' ? message.parts : [])
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
       .join('')
-    if (answer) return answer
-    if (run.outputs) return JSON.stringify(run.outputs, null, 2)
-    const completed = Array.from(run.executionState.nodes.values()).reverse().find((node) => node.output)
-    return completed?.output ? JSON.stringify(completed.output, null, 2) : ''
-  }, [run.messages, run.outputs, run.executionState])
+  ), [run.messages])
+
+  const liveResult = renderResult(resultNodes, run.outputs, answerText, run.isStreaming)
+  const historicalResult = selectedRun
+    ? renderResult(historyNodes, selectedRun.outputs ?? null)
+    : null
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -232,32 +276,44 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
       <aside
+        id="workflow-history-sidebar"
         aria-labelledby="workflow-history-heading"
-        className="hidden h-full w-80 shrink-0 border-r bg-muted/15 lg:block"
+        className={cn(
+          'h-full shrink-0 overflow-hidden border-r bg-muted/50 transition-all duration-300 ease-in-out',
+          sidebarOpen ? 'w-64' : 'w-0 border-r-0'
+        )}
       >
-        {historyPanel}
+        <div className="h-full w-64">{historyPanel}</div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-h-14 shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-            <SheetTrigger className="lg:hidden">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted">
-                <Menu className="h-4 w-4" />
-                <span className="sr-only">{t('openHistory')}</span>
-              </span>
-            </SheetTrigger>
-            <SheetContent side="left" className="gap-0 p-0">
-              <SheetHeader className="sr-only">
-                <SheetTitle>{t('history')}</SheetTitle>
-              </SheetHeader>
-              {historyPanel}
-            </SheetContent>
-          </Sheet>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-label={t('openHistory')}
+            aria-controls="workflow-history-sidebar"
+            aria-expanded={sidebarOpen}
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+          {!sidebarOpen && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleNewRun}
+              disabled={isRunning}
+              aria-label={t('newRun')}
+              title={t('newRun')}
+            >
+              <SquarePen className="h-4 w-4" />
+            </Button>
+          )}
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-lg">
             {workflow.icon || <GitBranch className="h-4 w-4 text-muted-foreground" />}
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-sm font-medium">{workflow.name}</h1>
             {workflow.description && (
               <p className="line-clamp-1 text-xs text-muted-foreground">
@@ -327,7 +383,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           {t('runAgain')}
                         </Button>
                         <Button variant="ghost" onClick={handleNewRun}>
-                          <Plus className="mr-2 h-4 w-4" />
+                          <SquarePen className="mr-2 h-4 w-4" />
                           {t('newRun')}
                         </Button>
                       </>
@@ -341,10 +397,8 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                     <AlertTitle>{t('runFailed')}</AlertTitle>
                     <AlertDescription>{run.error}</AlertDescription>
                   </Alert>
-                ) : result ? (
-                  <pre className="mt-6 max-h-[calc(100dvh-16rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-5 text-sm leading-6">
-                    {result}
-                  </pre>
+                ) : liveResult ? (
+                  <div className="mt-6 min-w-0">{liveResult}</div>
                 ) : (
                   <div className="mt-12 flex flex-col items-center justify-center py-16 text-center">
                     {isRunning && <Loader2 className="mb-4 h-6 w-6 animate-spin text-muted-foreground" />}
@@ -402,7 +456,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           {t('runAgain')}
                         </Button>
                         <Button variant="ghost" onClick={handleNewRun}>
-                          <Plus className="mr-2 h-4 w-4" />
+                          <SquarePen className="mr-2 h-4 w-4" />
                           {t('newRun')}
                         </Button>
                       </div>
@@ -414,14 +468,12 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                         <AlertDescription>{selectedRun.error_message}</AlertDescription>
                       </Alert>
                     )}
-                    {historyResult ? (
-                      <pre className="mt-6 max-h-[calc(100dvh-18rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-5 text-sm leading-6">
-                        {historyResult}
-                      </pre>
+                    {historicalResult ? (
+                      <div className="mt-6 min-w-0">{historicalResult}</div>
                     ) : !selectedRun.error_message ? (
                       <p className="mt-6 text-sm text-muted-foreground">{t('noResult')}</p>
                     ) : null}
-                    {selectedNodes.length > 0 && (
+                    {presentationMode === 'result_first' && selectedNodes.length > 0 && (
                       <details className="mt-8 border-t pt-5">
                         <summary className="min-h-11 cursor-pointer text-sm font-medium">
                           {t('showTrace')}

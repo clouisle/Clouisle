@@ -2,45 +2,37 @@
 
 ## Background & Goals
 
-The current `/run/[id]?type=workflow` route reuses the Agent chat shell. Workflow parameters are split between a collapsible variable panel and a chat input, and each discrete run is displayed as another message exchange. This obscures structured inputs, execution state, results, and persisted run history.
+The current `/run/[id]?type=workflow` route uses a form-first runner, but its history controls and result presentation still diverge from the Agent Chat workspace. This follow-up aligns the Workflow runner with the existing Agent Chat interaction pattern and provides one semantic result presentation for live and historical runs.
 
-This change will:
-
-- Replace only the Workflow branch with a form-first runner while preserving Agent chat behavior.
-- Let the workflow creator select the published run-page presentation:
-  - `simple`: form, status, and result only.
-  - `result_first`: result first, with progressively disclosed trace and details.
-- Show persistent history limited to the current user's non-debug runs for that workflow.
-- Ensure the external run page always executes the latest published workflow snapshot.
-- Keep editor draft/debug execution in the existing editor runner.
-
-Success means a user can submit typed inputs, understand the active state and final result, revisit their runs after refresh, and never see another member's inputs or outputs.
+Success means users can collapse and reopen the run-history rail, create a new run through the same affordance as a new chat, and read historical Answer Markdown, media, and typed node outputs without seeing JSON unless the output is unsupported.
 
 ## High-Level Design
 
-### Modules and data flow
+- Keep Agent and Workflow route branches, published snapshot execution, authenticated personal history, and discrete `WorkflowRun` persistence unchanged.
+- Use the Agent Chat custom collapsible `w-64` rail pattern for Workflow history. The Workflow identity and ghost `SquarePen` action create a new run; the main header keeps equivalent actions when the rail is collapsed.
+- Resolve both live and historical results through `workflow-result-renderer.tsx` in this order: streamed Answer text, canonical `outputs.answer`, completed Answer-node output, typed/media node output, and JSON fallback.
+- Always load historical node executions for result resolution. `simple` hides Trace, while `result_first` exposes it.
+- Reuse Chat's exported `TextWithCitations` Markdown component and the existing workflow `renderNodeOutput` media/type branches.
 
-1. `/run/[id]` dispatches to an Agent or Workflow component based on `type`; invalid or missing types retain the Agent default.
-2. The Agent component mechanically preserves the current metadata, conversation, chat, variable, and input behavior.
-3. The Workflow component loads workflow metadata and `run_page_config`, uses `extractVariables` plus `useVariableForm`, and calls `useWorkflowRun` directly.
-4. `useWorkflowRun` continues producing legacy chat-compatible messages for existing consumers, while adding explicit status, outputs, submitted-input snapshots, safe errors, and confirmed cancellation for the form page.
-5. SSE events update the live result and optional trace. Completion refreshes the first page of the user's persistent history.
-6. Personal history endpoints derive ownership from the authenticated user and enforce ownership on list, detail, and node-detail access.
-7. Normal orchestration resolves the latest `WorkflowVersion` snapshot; debug orchestration resolves the live draft.
+## Implementation Status
 
-### Page structure
+- **Consistency follow-up**: complete
+- **Original stages 1–9**: complete
 
-Desktop uses a full-height task layout with the current user's run history in a fixed left sidebar and a form/result workspace on the right. Mobile keeps the workspace primary and opens history in a left-side Sheet. The form is shown only while composing a run; after a valid submission, the workspace switches to status and results so the form does not continue occupying the page. No chat bubbles, assistant welcome copy, suggested prompts, or fixed-width result drawers are used.
+## Verification
 
-The `simple` presentation never requests or reveals node details. The `result_first` presentation defaults to the result and exposes Trace and Details through standard tabs or collapsibles. Both modes include personal history, with detail loaded on selection.
+- Focused result renderer tests pass.
+- Dispatcher, `useWorkflowRun`, and `VariableForm` tests pass when run in separate Bun processes.
+- Modified files pass TypeScript, ESLint, translation checks, and production build.
+- Browser/manual visual verification is intentionally left to the user.
 
-### Persistence
+## Files
 
-Add `run_page_config` as a dedicated JSON field with the default:
-
-```json
-{"presentation_mode": "simple"}
-```
+- `frontend/app/(chat)/run/[id]/_components/workflow-run-page.tsx`
+- `frontend/app/(chat)/run/[id]/_components/workflow-result-renderer.tsx`
+- `frontend/app/(chat)/run/[id]/_components/workflow-result-renderer.test.ts`
+- `frontend/components/chat/message.tsx`
+- `frontend/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer.tsx`
 
 Existing `trigger_config` and `embed_config` are intentionally not reused because their current writers replace their entire object and because they belong to different product domains.
 

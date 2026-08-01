@@ -12,6 +12,7 @@
   - [x] 7. Form execution state
   - [x] 8. Workflow results and history UI
   - [x] 9. i18n and full validation
+  - [x] 10. Agent Chat interaction and semantic result consistency
 
 - **pr-315-review-fixes** — In progress. Complete P0–P3 remediation for lexical recovery, lifecycle consistency, global retrieval, AUTO-RAG, Retrieval Lab, and PostgreSQL image publication. See `docs/plan/pr-315-review-fixes.md`
   - [x] 1. Complete remediation design and defect mapping
