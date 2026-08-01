@@ -350,11 +350,11 @@ export function LoopNodeConfig({
                       <TypeIcon className="h-4 w-4 text-primary/70 shrink-0" />
                       <span className="text-xs font-mono font-medium truncate">{loopVar.name}</span>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded border border-border group-hover:hidden">
+                    <div className="relative flex items-center gap-1 shrink-0">
+                      <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded border border-border group-hover:opacity-0">
                         {typeConfig.valueType}
                       </span>
-                      <div className="hidden group-hover:flex items-center gap-0.5">
+                      <div className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 group-hover:opacity-100">
                         <Button
                           variant="ghost"
                           size="icon"
