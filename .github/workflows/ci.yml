@@ -55,14 +55,14 @@ jobs:
 
     - name: Upload backend coverage XML
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: backend-coverage-xml
         path: backend/coverage.xml
 
     - name: Upload backend coverage HTML
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: backend-coverage-html
         path: backend/htmlcov/
@@ -98,7 +98,7 @@ jobs:
 
     - name: Upload frontend coverage LCOV
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: frontend-coverage-lcov
         path: frontend/coverage/lcov.info
