@@ -10,9 +10,9 @@ const states: unknown[] = []
 let stateIndex = 0
 let effectRan = false
 
-const useState = <T,>(initial: T) => {
+const useState = <T,>(initial: T | (() => T)) => {
   const index = stateIndex++
-  if (states.length <= index) states[index] = initial
+  if (states.length <= index) states[index] = typeof initial === 'function' ? (initial as () => T)() : initial
   return [states[index], (value: T | ((current: T) => T)) => {
     states[index] = typeof value === 'function'
       ? (value as (current: T) => T)(states[index] as T)
@@ -49,6 +49,13 @@ const getWorkflowRunStats = mock(async () => workflowResult)
 mock.module('react', () => ({ useState, useEffect }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
+const routerReplace = mock(() => {})
+const urlSearchParams = new URLSearchParams()
+mock.module('next/navigation', () => ({
+  useRouter: () => ({ replace: routerReplace }),
+  usePathname: () => '/activities',
+  useSearchParams: () => urlSearchParams,
+}))
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => `activities.${key}`,
 }))
