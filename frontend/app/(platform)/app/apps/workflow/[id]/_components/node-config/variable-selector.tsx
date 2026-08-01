@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { Input } from '@/components/ui/input'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
@@ -127,21 +128,19 @@ export function VariableSelector({
                         : isAssignable(variable.typeSpec, acceptType)
                     const typeLabel =
                       describeTypeSpec(variable.typeSpec) || variable.type
-                    return (
+                    const typeMismatchMessage = !compatible
+                      ? t('configCommon.typeMismatch', {
+                          expected: describeTypeSpec(acceptType),
+                          actual: typeLabel,
+                        })
+                      : null
+                    const variableButton = (
                       <button
                         key={variable.id}
                         className={cn(
                           'w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md',
                           !compatible && 'opacity-50',
                         )}
-                        title={
-                          !compatible
-                            ? t('configCommon.typeMismatch', {
-                                expected: describeTypeSpec(acceptType),
-                                actual: typeLabel,
-                              })
-                            : undefined
-                        }
                         onClick={() => {
                           onSelect(variable)
                           onOpenChange(false)
@@ -163,6 +162,14 @@ export function VariableSelector({
                         </span>
                         <span className="text-muted-foreground">{typeLabel}</span>
                       </button>
+                    )
+                    return typeMismatchMessage ? (
+                      <Tooltip>
+                        <TooltipTrigger render={variableButton} />
+                        <TooltipContent>{typeMismatchMessage}</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      variableButton
                     )
                   })}
                 </div>

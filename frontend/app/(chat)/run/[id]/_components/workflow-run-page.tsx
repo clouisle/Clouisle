@@ -13,6 +13,7 @@ import { jwtWorkflowRunAdapter, type WorkflowRunAdapter } from '@/lib/workflow/r
 import { extractVariables } from '@/lib/utils/extract-variables'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { WorkflowResultRenderer, type WorkflowResultNode } from './workflow-result-renderer'
 
@@ -207,17 +208,23 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
           </span>
           <span className="truncate text-sm font-medium">{workflow?.name}</span>
         </button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(!allowNew && 'hidden')}
-          onClick={handleNewRun}
-          disabled={isRunning}
-          aria-label={t('newRun')}
-          title={t('newRun')}
-        >
-          <SquarePlay className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleNewRun}
+            disabled={isRunning}
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(!allowNew && 'hidden')}
+                aria-label={t('newRun')}
+              >
+                <SquarePlay className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('newRun')}</TooltipContent>
+        </Tooltip>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {historyLoading ? (
@@ -244,9 +251,12 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                       {new Date(item.created_at).toLocaleString()}
                     </time>
                   </div>
-                  <code className="mt-1 block truncate text-xs text-muted-foreground" title={item.id}>
-                    {item.id}
-                  </code>
+                  <Tooltip>
+                    <TooltipTrigger render={<code />} className="mt-1 block truncate text-xs text-muted-foreground cursor-default">
+                      {item.id}
+                    </TooltipTrigger>
+                    <TooltipContent>{item.id}</TooltipContent>
+                  </Tooltip>
                 </button>
               </li>
             ))}
@@ -332,16 +342,18 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
             )}
           </Button>
           {allowNew && !sidebarOpen && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleNewRun}
-              disabled={isRunning}
-              aria-label={t('newRun')}
-              title={t('newRun')}
-            >
-              <SquarePlay className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                onClick={handleNewRun}
+                disabled={isRunning}
+                render={
+                  <Button variant="ghost" size="icon" aria-label={t('newRun')}>
+                    <SquarePlay className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('newRun')}</TooltipContent>
+            </Tooltip>
           )}
           {!sidebarOpen && (
             <>
@@ -409,9 +421,12 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                       {t(`status.${run.status}`)}
                     </h2>
                     {run.runId && (
-                      <code className="mt-2 block max-w-full truncate text-xs text-muted-foreground" title={run.runId}>
+                    <Tooltip>
+                      <TooltipTrigger render={<code />} className="mt-2 block max-w-full truncate text-xs text-muted-foreground cursor-default">
                         {run.runId}
-                      </code>
+                      </TooltipTrigger>
+                      <TooltipContent>{run.runId}</TooltipContent>
+                    </Tooltip>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -490,9 +505,12 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                         <time className="mt-2 block text-xs text-muted-foreground">
                           {t('time')}{new Date(selectedRun.created_at).toLocaleString()}
                         </time>
-                        <code className="mt-1 block max-w-full truncate text-xs text-muted-foreground" title={selectedRun.id}>
-                          {t('runId')}{selectedRun.id}
-                        </code>
+                        <Tooltip>
+                          <TooltipTrigger render={<code />} className="mt-1 block max-w-full truncate text-xs text-muted-foreground cursor-default">
+                            {t('runId')}{selectedRun.id}
+                          </TooltipTrigger>
+                          <TooltipContent>{selectedRun.id}</TooltipContent>
+                        </Tooltip>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={handleRerunFromHistory}>

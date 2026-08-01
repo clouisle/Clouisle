@@ -48,6 +48,16 @@ mock.module('@/components/ui/alert-dialog', () => ({
   AlertDialogHeader: component('alert-header'), AlertDialogTitle: component('alert-title'),
 }))
 mock.module('@/components/ui/badge', () => ({ Badge: component('badge') }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: (props: Record<string, unknown>) => ({ type: 'tooltip', props }),
+  TooltipTrigger: ({ render, children, ...props }: Record<string, unknown>) => {
+    const element = render as { type?: unknown; props?: Record<string, unknown> } | undefined
+    return element
+      ? { type: element.type, props: { ...element.props, ...props, ...(children !== undefined ? { children } : {}) } }
+      : { type: 'button', props: { ...props, children } }
+  },
+  TooltipContent: (props: Record<string, unknown>) => ({ type: 'tooltip-content', props }),
+}))
 mock.module('./_components/provider-dialog', () => ({ ProviderDialog: component('provider-dialog') }))
 
 const { default: SSOSettingsPage } = await import('./page')
@@ -119,7 +129,7 @@ describe('SSOSettingsPage', () => {
     let dialog = elements(tree).find(item => item.type === 'provider-dialog')!
     expect(dialog.props).toMatchObject({ open: true, provider: null })
 
-    ;(elements(tree).find(item => item.props.title === 'editProvider')!.props.onClick as () => void)()
+    ;(elements(tree).find(item => item.props['aria-label'] === 'editProvider')!.props.onClick as () => void)()
     tree = render()
     dialog = elements(tree).find(item => item.type === 'provider-dialog')!
     expect(dialog.props.provider).toEqual(provider)
@@ -138,7 +148,7 @@ describe('SSOSettingsPage', () => {
   test('reports test outcomes and toggles enabled providers', async () => {
     state = [[provider], false, null, null, false]
     let tree = render()
-    const testButton = elements(tree).find(item => item.props.title === 'testConnection')!
+    const testButton = elements(tree).find(item => item.props['aria-label'] === 'testConnection')!
 
     testConnection.mockResolvedValueOnce({ status: 'success', message: 'connected' })
     await (testButton.props.onClick as () => Promise<void>)()
@@ -150,7 +160,7 @@ describe('SSOSettingsPage', () => {
 
     updateProvider.mockResolvedValue(provider)
     listProviders.mockResolvedValue([provider])
-    const toggle = elements(tree).find(item => item.props.title === 'disable')!
+    const toggle = elements(tree).find(item => item.props['aria-label'] === 'disable')!
     await (toggle.props.onClick as () => Promise<void>)()
     await flush()
     expect(updateProvider).toHaveBeenCalledWith('provider-1', { is_enabled: false })
@@ -164,7 +174,7 @@ describe('SSOSettingsPage', () => {
   test('deletes after confirmation and clears canceled deletion', async () => {
     state = [[provider], false, null, null, false]
     let tree = render()
-    ;(elements(tree).find(item => item.props.title === 'deleteProvider')!.props.onClick as () => void)()
+    ;(elements(tree).find(item => item.props['aria-label'] === 'deleteProvider')!.props.onClick as () => void)()
     tree = render()
     let alert = elements(tree).find(item => item.type === 'alert-dialog')!
     expect(alert.props.open).toBe(true)
@@ -195,8 +205,8 @@ describe('SSOSettingsPage', () => {
     updateProvider.mockRejectedValue(new Error('update failed'))
     const tree = render()
     await (elements(tree).find(item => item.type === 'alert-action')!.props.onClick as () => Promise<void>)()
-    await (elements(tree).find(item => item.props.title === 'testConnection')!.props.onClick as () => Promise<void>)()
-    await (elements(tree).find(item => item.props.title === 'disable')!.props.onClick as () => Promise<void>)()
+    await (elements(tree).find(item => item.props['aria-label'] === 'testConnection')!.props.onClick as () => Promise<void>)()
+    await (elements(tree).find(item => item.props['aria-label'] === 'disable')!.props.onClick as () => Promise<void>)()
 
     expect(success).not.toHaveBeenCalled()
     expect(error).not.toHaveBeenCalled()

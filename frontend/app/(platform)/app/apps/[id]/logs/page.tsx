@@ -8,6 +8,7 @@ import { agentsApi, type Agent, type ConversationListItem, type ConversationWith
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -326,17 +327,20 @@ export default function LogsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <button
-                          type="button"
-                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                          title={`${t('table.conversationId')}: ${conv.id}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRowClick(conv.id)
-                          }}
-                        >
-                          {conv.id.slice(0, 8)}…
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger
+                            type="button"
+                            className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRowClick(conv.id)
+                            }}
+                            render={<button />}
+                          >
+                            {conv.id.slice(0, 8)}…
+                          </TooltipTrigger>
+                          <TooltipContent>{`${t('table.conversationId')}: ${conv.id}`}</TooltipContent>
+                        </Tooltip>
                       </TableCell>
                       <TableCell>{conv.message_count}</TableCell>
                       <TableCell className="text-muted-foreground" suppressHydrationWarning>

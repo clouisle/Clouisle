@@ -204,23 +204,33 @@ function ZoomControl() {
         </div>
         {/* Zoom Controls */}
         <div className="flex items-center gap-1 bg-card border border-border rounded-lg px-1 py-0.5 shadow-sm">
-          <button
-            onClick={() => zoomOut()}
-            className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
-            title={t('editor.zoomOut')}
-          >
-            <Minus className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => zoomOut()}
+              aria-label={t('editor.zoomOut')}
+              render={
+                <button className="p-1 hover:bg-accent rounded cursor-pointer transition-colors">
+                  <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              }
+            />
+            <TooltipContent>{t('editor.zoomOut')}</TooltipContent>
+          </Tooltip>
           <span className="text-xs text-muted-foreground min-w-9 text-center tabular-nums">
             {zoomPercent}%
           </span>
-          <button
-            onClick={() => zoomIn()}
-            className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
-            title={t('editor.zoomIn')}
-          >
-            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => zoomIn()}
+              aria-label={t('editor.zoomIn')}
+              render={
+                <button className="p-1 hover:bg-accent rounded cursor-pointer transition-colors">
+                  <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              }
+            />
+            <TooltipContent>{t('editor.zoomIn')}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </Panel>

@@ -28,6 +28,7 @@ import {
   type ChatFileUrl,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -619,45 +620,50 @@ export default function PublicChatPage({
             {/* Sidebar Header */}
             <div className="flex items-center justify-between p-3 h-14 border-b">
               {/* Agent Info */}
-              <button
-                type="button"
-                className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={handleNewChat}
-                title={t('newChat')}
-              >
-                {displayIcon ? (
-                  isIconUrl ? (
-                    <div className="relative h-6 w-6 overflow-hidden">
-                      <Image
-                        src={displayIcon}
-                        alt={agent.name}
-                        fill
-                        unoptimized
-                        className="object-cover"
-                      />
-                    </div>
+              <Tooltip>
+                <TooltipTrigger
+                  type="button"
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={handleNewChat}
+                  render={<button />}
+                >
+                  {displayIcon ? (
+                    isIconUrl ? (
+                      <div className="relative h-6 w-6 overflow-hidden">
+                        <Image
+                          src={displayIcon}
+                          alt={agent.name}
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{displayIcon}</span>
+                    )
                   ) : (
-                    <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{displayIcon}</span>
-                  )
-                ) : (
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </div>
-                )}
-                <span className="truncate text-sm font-medium text-foreground max-w-[120px]">{agent.name}</span>
-              </button>
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </div>
+                  )}
+                  <span className="truncate text-sm font-medium text-foreground max-w-[120px]">{agent.name}</span>
+                </TooltipTrigger>
+                <TooltipContent>{t('newChat')}</TooltipContent>
+              </Tooltip>
 
               {/* New Chat Button */}
               {allowNew && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9"
-                  onClick={handleNewChat}
-                  title={t('newChat')}
-                >
-                  <SquarePen className="h-5 w-5" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleNewChat}
+                    render={
+                      <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={t('newChat')}>
+                        <SquarePen className="h-5 w-5" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('newChat')}</TooltipContent>
+                </Tooltip>
               )}
             </div>
 
@@ -748,15 +754,17 @@ export default function PublicChatPage({
             </Button>
           )}
           {allowNew && !sidebarOpen && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              onClick={handleNewChat}
-              title={t('newChat')}
-            >
-              <SquarePen className="h-5 w-5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                onClick={handleNewChat}
+                render={
+                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={t('newChat')}>
+                    <SquarePen className="h-5 w-5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('newChat')}</TooltipContent>
+            </Tooltip>
           )}
           {!(showHistory && sidebarOpen) && (
             <>
@@ -785,15 +793,17 @@ export default function PublicChatPage({
             </>
           )}
           {embedMode && mode === 'bubble' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto h-9 w-9"
-              onClick={onClose}
-              title={t('backToHome')}
-            >
-              <span className="text-lg leading-none">&times;</span>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                onClick={onClose}
+                render={
+                  <Button variant="ghost" size="icon" className="ml-auto h-9 w-9" aria-label={t('backToHome')}>
+                    <span className="text-lg leading-none">&times;</span>
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('backToHome')}</TooltipContent>
+            </Tooltip>
           )}
         </header>
         )}

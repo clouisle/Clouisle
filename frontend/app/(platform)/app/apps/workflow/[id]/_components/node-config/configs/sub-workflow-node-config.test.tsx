@@ -29,6 +29,7 @@ for (const [path, names] of [
   ['@/components/ui/label', ['Label']],
   ['@/components/ui/popover', ['Popover', 'PopoverContent', 'PopoverTrigger']],
   ['@/components/ui/scroll-area', ['ScrollArea']],
+  ['@/components/ui/tooltip', ['Tooltip', 'TooltipContent', 'TooltipTrigger']],
 ] as const) mock.module(path, () => Object.fromEntries(names.map(name => [name, component])))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: { id: 'team-1' } }) }))

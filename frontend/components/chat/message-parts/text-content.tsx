@@ -5,6 +5,7 @@ import { memo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Streamdown } from 'streamdown'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { TextPart, SourceDocumentPart } from '../types'
 
 export interface TextContentProps {
@@ -153,20 +154,24 @@ function CitationBadge({ index, source, onClick }: CitationBadgeProps) {
   const title = source?.documentName || t('documentDefault')
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={source ? title : undefined}
-      className={cn(
-        'inline-flex items-center justify-center',
-        'min-w-5 h-5 px-1 mx-0.5',
-        'text-xs font-medium rounded',
-        'bg-primary/10 text-primary hover:bg-primary/20',
-        'transition-colors cursor-pointer',
-        'align-middle'
-      )}
-    >
-      {index}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        onClick={onClick}
+        aria-label={source ? title : undefined}
+        className={cn(
+          'inline-flex items-center justify-center',
+          'min-w-5 h-5 px-1 mx-0.5',
+          'text-xs font-medium rounded',
+          'bg-primary/10 text-primary hover:bg-primary/20',
+          'transition-colors cursor-pointer',
+          'align-middle'
+        )}
+        render={<button />}
+      >
+        {index}
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   )
 }

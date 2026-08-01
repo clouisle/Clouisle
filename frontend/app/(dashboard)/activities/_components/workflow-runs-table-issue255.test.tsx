@@ -40,6 +40,7 @@ for (const [path, names] of [
   ['@/components/ui/alert-dialog', ['AlertDialog', 'AlertDialogAction', 'AlertDialogCancel', 'AlertDialogContent', 'AlertDialogDescription', 'AlertDialogFooter', 'AlertDialogHeader', 'AlertDialogTitle']],
   ['@/components/ui/dropdown-menu', ['DropdownMenu', 'DropdownMenuContent', 'DropdownMenuItem', 'DropdownMenuTrigger']],
   ['@/components/ui/data-table-faceted-filter', ['DataTableFacetedFilter']],
+  ['@/components/ui/tooltip', ['Tooltip', 'TooltipContent', 'TooltipTrigger']],
 ] as const) mock.module(path, () => Object.fromEntries(names.map((name) => [name, component(name)])))
 
 const { WorkflowRunsTable } = await import('./workflow-runs-table')

@@ -120,6 +120,13 @@ mock.module('@/components/chat', () => ({
   useVariableForm: () => ({ values: variableValues, setValues: (values: Record<string, unknown>) => { variableValues = values }, fieldErrors: {}, validate: validateVariables }),
 }))
 
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
+
 const { default: PublicChatPage } = await import('./page')
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -270,7 +277,7 @@ describe('PublicChatPage', () => {
     await act(async () => (chatOptions.onConversationChange?.()))
     expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
 
-    const newChat = renderer!.root.findAllByProps({ title: 'newChat' })[0]
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
     act(() => newChat.props.onClick())
     expect(resetChat).toHaveBeenCalled()
     expect(historyPush).toHaveBeenLastCalledWith({}, '', '/chat/agent-1')

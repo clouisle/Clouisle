@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import {
     Select,
@@ -329,27 +330,33 @@ export function AuditLogsTable() {
                                             <TableCell>{log.resource_name || "-"}</TableCell>
                                             <TableCell>
                                                 {log.resource_type === "workflow_run" && log.resource_id ? (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="h-6 px-2 text-xs font-mono"
-                                                        title={`${t("resourceId")}: ${log.resource_id}`}
+                                                <Tooltip>
+                                                    <TooltipTrigger
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setSelectedRunId(log.resource_id!);
                                                             setRunDrawerOpen(true);
                                                         }}
-                                                    >
-                                                        <Eye className="mr-1 h-3 w-3" />
-                                                        {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
-                                                    </Button>
+                                                        render={
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 px-2 text-xs font-mono"
+                                                            >
+                                                                <Eye className="mr-1 h-3 w-3" />
+                                                                {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
+                                                            </Button>
+                                                        }
+                                                    />
+                                                    <TooltipContent>{`${t("resourceId")}: ${log.resource_id}`}</TooltipContent>
+                                                </Tooltip>
                                                 ) : log.resource_id ? (
-                                                    <span
-                                                        className="font-mono text-[11px] text-muted-foreground"
-                                                        title={`${t("resourceId")}: ${log.resource_id}`}
-                                                    >
-                                                        {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
-                                                    </span>
+                                                    <Tooltip>
+                                                        <TooltipTrigger render={<span />} className="font-mono text-[11px] text-muted-foreground cursor-default">
+                                                            {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>{`${t("resourceId")}: ${log.resource_id}`}</TooltipContent>
+                                                    </Tooltip>
                                                 ) : "-"}
                                             </TableCell>
                                             <TableCell>{getOperationBadge(log.operation)}</TableCell>

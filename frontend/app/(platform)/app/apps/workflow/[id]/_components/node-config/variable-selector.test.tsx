@@ -16,6 +16,16 @@ mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: 
 mock.module('@/components/ui/input', () => ({ Input: component }))
 mock.module('@/components/ui/popover', () => ({ Popover: component, PopoverContent: component, PopoverTrigger: component }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: component }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: (props: Record<string, unknown>) => ({ type: 'tooltip', props }),
+  TooltipTrigger: ({ render, children, ...props }: Record<string, unknown>) => {
+    const element = render as { type?: unknown; props?: Record<string, unknown> } | undefined
+    return element
+      ? { type: element.type, props: { ...element.props, ...props, ...(children !== undefined ? { children } : {}) } }
+      : { type: 'span', props: { ...props, children } }
+  },
+  TooltipContent: (props: Record<string, unknown>) => ({ type: 'tooltip-content', props }),
+}))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 
 const { VariableSelector } = await import('./variable-selector')
@@ -26,7 +36,11 @@ function findAll(node: unknown, predicate: (node: TreeNode) => boolean): TreeNod
   if (Array.isArray(node)) return node.flatMap((child) => findAll(child, predicate))
   if (!node || typeof node !== 'object' || !('props' in node)) return []
   const current = node as TreeNode
-  return [...(predicate(current) ? [current] : []), ...findAll(current.props.children, predicate)]
+  return [
+    ...(predicate(current) ? [current] : []),
+    ...findAll(current.props.children, predicate),
+    ...findAll(current.props.render, predicate),
+  ]
 }
 
 const variables = [
@@ -48,11 +62,11 @@ test('groups variables, renders selection, and forwards selection and close acti
   expect(findAll(tree, (node) => node.props.children === 'input.name')).toHaveLength(1)
   expect(findAll(tree, (node) => node.props.children === 'Input')).toHaveLength(1)
   expect(findAll(tree, (node) => node.props.children === 'System')).toHaveLength(1)
-  const mismatch = findAll(tree, (node) => node.type === 'button' && node.props.title)[0]
+  const mismatch = findAll(tree, (node) => node.type === 'button' && String(node.props.className).includes('opacity-50'))[0]
   expect(mismatch.props.className).toContain('opacity-50')
-  expect(mismatch.props.title).toBe('configCommon.typeMismatch:string:files')
+  expect(findAll(tree, (node) => node.props.children === 'configCommon.typeMismatch:string:files')).toHaveLength(1)
 
-  const selected = findAll(tree, (node) => node.type === 'button' && !node.props.title)[0]
+  const selected = findAll(tree, (node) => node.type === 'button' && !String(node.props.className).includes('opacity-50'))[0]
   ;(selected.props.onClick as () => void)()
   expect(onSelect).toHaveBeenCalledWith(variables[0])
   expect(onOpenChange).toHaveBeenCalledWith(false)

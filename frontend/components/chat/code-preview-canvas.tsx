@@ -8,6 +8,7 @@ import { Streamdown } from 'streamdown'
 import type { MermaidConfig } from 'mermaid'
 import { bundledLanguages } from 'shiki'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import type { CodePreviewPayload } from './types'
@@ -378,46 +379,54 @@ function MermaidPreview({ code }: { code: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-end gap-1 border-b px-4 py-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={handleFitToView}
-          title={t('mermaidFitToView')}
-          disabled={!svg}
-        >
-          <Expand className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => setZoom((current) => clampMermaidZoom(current - MERMAID_ZOOM_STEP))}
-          title={t('mermaidZoomOut')}
-          disabled={zoom <= MERMAID_MIN_ZOOM}
-        >
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => setZoom((current) => clampMermaidZoom(current + MERMAID_ZOOM_STEP))}
-          title={t('mermaidZoomIn')}
-          disabled={zoom >= MERMAID_MAX_ZOOM}
-        >
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={handleDownloadSvg}
-          title={t('mermaidDownload')}
-          disabled={!svg}
-        >
-          <Download className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleFitToView}
+            disabled={!svg}
+            render={
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidFitToView')}>
+                <Expand className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('mermaidFitToView')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={() => setZoom((current) => clampMermaidZoom(current - MERMAID_ZOOM_STEP))}
+            disabled={zoom <= MERMAID_MIN_ZOOM}
+            render={
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidZoomOut')}>
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('mermaidZoomOut')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={() => setZoom((current) => clampMermaidZoom(current + MERMAID_ZOOM_STEP))}
+            disabled={zoom >= MERMAID_MAX_ZOOM}
+            render={
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidZoomIn')}>
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('mermaidZoomIn')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleDownloadSvg}
+            disabled={!svg}
+            render={
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidDownload')}>
+                <Download className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('mermaidDownload')}</TooltipContent>
+        </Tooltip>
       </div>
       <div
         ref={viewportRef}
@@ -483,15 +492,39 @@ export function CodePreviewCanvas({
           <div className="truncate text-xs text-muted-foreground">{preview.language}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy} title={copied ? t('copied') : t('copy')}>
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleDownload} title={t('mermaidDownloadLabel')}>
-            <Download className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} title={t('closeCodePreview')}>
-            <X className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={handleCopy}
+              render={
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={copied ? t('copied') : t('copy')}>
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              }
+            />
+            <TooltipContent>{copied ? t('copied') : t('copy')}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={handleDownload}
+              render={
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidDownloadLabel')}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              }
+            />
+            <TooltipContent>{t('mermaidDownloadLabel')}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={onClose}
+              render={
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('closeCodePreview')}>
+                  <X className="h-4 w-4" />
+                </Button>
+              }
+            />
+            <TooltipContent>{t('closeCodePreview')}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

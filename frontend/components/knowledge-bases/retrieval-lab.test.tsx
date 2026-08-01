@@ -35,6 +35,7 @@ mock.module('@/hooks/use-mobile', () => ({ useIsMobile: () => mobile }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: 'collapsible', CollapsibleContent: 'collapsible-content', CollapsibleTrigger: 'button' }))
 mock.module('@/components/ui/popover', () => ({ Popover: 'popover', PopoverContent: 'popover-content', PopoverTrigger: 'button' }))
 mock.module('@/components/ui/table', () => ({ Table: 'table', TableBody: 'tbody', TableCell: 'td', TableHead: 'th', TableHeader: 'thead', TableRow: 'tr' }))
+mock.module('@/components/ui/tooltip', () => ({ Tooltip: 'tooltip', TooltipContent: 'tooltip-content', TooltipTrigger: 'button' }))
 const Icon = () => null
 mock.module('lucide-react', () => ({ ArrowLeft: Icon, ChevronDown: Icon, ChevronUp: Icon, FileText: Icon, HelpCircle: Icon, Loader2: Icon, Search: Icon, Send: Icon, Settings2: Icon, X: Icon }))
 const toastError = mock()
@@ -296,7 +297,7 @@ describe('RetrievalLab', () => {
 
   test('keeps configuration controls at the default height and displays the selected search mode', async () => {
     let tree = await flush()
-    const settingsButton = find(tree, 'button', props => props.title === 'settings')
+    const settingsButton = find(tree, 'button', props => props['aria-label'] === 'settings')
     expect(settingsButton.props.className).toContain('h-9 w-9')
     expect(find(tree, 'popover-content').props.className).toContain('calc(100vw-1rem)')
     expect(find(tree, 'popover-content').props.className).toContain('calc(100dvh-1rem)')

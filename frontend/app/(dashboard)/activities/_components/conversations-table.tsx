@@ -370,17 +370,20 @@ export function ConversationsTable() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                        title={`${t('conversationId')}: ${conversation.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void handleViewConversation(conversation.id)
-                        }}
-                      >
-                        {conversation.id.slice(0, 8)}…
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleViewConversation(conversation.id)
+                          }}
+                          render={<button />}
+                        >
+                          {conversation.id.slice(0, 8)}…
+                        </TooltipTrigger>
+                        <TooltipContent>{`${t('conversationId')}: ${conversation.id}`}</TooltipContent>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{conversation.agent_name}</Badge>

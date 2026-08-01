@@ -34,6 +34,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -1012,7 +1013,12 @@ export function WorkflowRunDrawer({
                   <span className="text-sm font-medium">{t('runDrawer.metadata')}</span>
                   <div className="grid grid-cols-2 gap-y-2 text-xs">
                     <div className="text-muted-foreground">{t('runDrawer.runIdLabel')}</div>
-                    <div className="font-mono truncate" title={runId}>{runId}</div>
+                    <Tooltip>
+                      <TooltipTrigger render={<div />} className="font-mono truncate cursor-default">
+                        {runId}
+                      </TooltipTrigger>
+                      <TooltipContent>{runId}</TooltipContent>
+                    </Tooltip>
                     {runStartTimeRef.current && (
                       <>
                         <div className="text-muted-foreground">{t('runDrawer.startTime')}</div>

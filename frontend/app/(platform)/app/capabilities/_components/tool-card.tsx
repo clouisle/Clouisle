@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,9 +172,12 @@ export function ToolCard({
                 {tool.display_name}
               </CardTitle>
               {tool.requires_config && (
-                <span title={t('requiresConfig')}>
-                  <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
-                </span>
+                <Tooltip>
+                  <TooltipTrigger render={<span />} className="cursor-help">
+                    <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
+                  </TooltipTrigger>
+                  <TooltipContent>{t('requiresConfig')}</TooltipContent>
+                </Tooltip>
               )}
               {/* 共享状态标识 */}
               {isShared && (
@@ -241,18 +245,20 @@ export function ToolCard({
             </Button>
 
             {showConfig && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
-                title={t('requiresConfig')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onConfigure?.(tool)
-                }}
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onConfigure?.(tool)
+                  }}
+                  render={
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={t('requiresConfig')}>
+                      <Settings className="h-3.5 w-3.5" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{t('requiresConfig')}</TooltipContent>
+              </Tooltip>
             )}
 
             {showMenu && (

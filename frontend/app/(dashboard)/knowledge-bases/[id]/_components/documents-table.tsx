@@ -505,9 +505,12 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {docTypeIcons[doc.doc_type] || <FileText className="h-4 w-4" />}
-                      <span className="font-medium truncate max-w-50" title={doc.name}>
-                        {doc.name}
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger render={<span />} className="font-medium truncate max-w-50 cursor-default">
+                          {doc.name}
+                        </TooltipTrigger>
+                        <TooltipContent>{doc.name}</TooltipContent>
+                      </Tooltip>
                     </div>
                     {doc.error_message && (
                       <Tooltip>

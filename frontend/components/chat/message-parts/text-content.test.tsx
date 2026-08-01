@@ -30,6 +30,16 @@ mock.module("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 mock.module("streamdown", () => ({ Streamdown: () => null }));
+mock.module("@/components/ui/tooltip", () => ({
+  Tooltip: (props: Record<string, unknown>) => jsx("tooltip", props),
+  TooltipTrigger: ({ render, children, ...props }: Record<string, unknown>) => {
+    const element = render as { type?: unknown; props?: Record<string, unknown> } | undefined;
+    return element
+      ? { type: element.type, props: { ...element.props, ...props, ...(children !== undefined ? { children } : {}) } }
+      : jsx("span", { ...props, children });
+  },
+  TooltipContent: (props: Record<string, unknown>) => jsx("tooltip-content", props),
+}));
 
 const { TextContent } = await import("./text-content");
 
@@ -84,11 +94,12 @@ describe("TextContent", () => {
       node: { children: [] },
     }) as Tree;
     const fragment = resolve(rendered.props.children) as Tree;
-    const badge = resolve((fragment.props.children as ReactNode[])[1]) as Tree;
+    const tooltip = resolve((fragment.props.children as ReactNode[])[1]) as Tree;
+    const badge = resolve((tooltip.props.children as ReactNode[])[0]) as Tree;
 
     expect(badge).toMatchObject({
       type: "button",
-      props: { title: "Guide", children: 1 },
+      props: { "aria-label": "Guide", children: 1 },
     });
     badge.props.onClick();
     expect(clicked).toEqual([1]);

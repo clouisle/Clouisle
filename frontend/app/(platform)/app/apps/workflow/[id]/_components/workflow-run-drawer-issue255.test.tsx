@@ -102,6 +102,7 @@ for (const [path, exports] of [
     Tabs, TabsList: component('TabsList'), TabsTrigger: component('TabsTrigger'), TabsContent: component('TabsContent'),
   }],
   ['@/components/ui/field', { FieldError: component('FieldError') }],
+  ['@/components/ui/tooltip', { Tooltip: component('Tooltip'), TooltipContent: component('TooltipContent'), TooltipTrigger: component('TooltipTrigger') }],
 ] as const) mock.module(path, () => exports)
 mock.module('./node-output-renderer', () => ({
   nodeStatusConfig: Object.fromEntries(['running', 'success', 'failed', 'skipped'].map((status) => [status, { icon: icons.Clock, className: status }])),

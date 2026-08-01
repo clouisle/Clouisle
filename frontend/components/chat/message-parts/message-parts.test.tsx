@@ -32,6 +32,13 @@ mock.module('streamdown', () => ({
   },
 }))
 
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
+
 let TextContent: typeof import('./text-content').TextContent
 let ReasoningContent: typeof import('./reasoning-content').ReasoningContent
 let FileContent: typeof import('./file-content').FileContent
@@ -80,7 +87,7 @@ describe('chat message part renderers', () => {
 
     const badges = container.querySelectorAll('button')
     expect(Array.from(badges, (badge) => badge.textContent)).toEqual(['1', '2'])
-    expect(badges[0].getAttribute('title')).toBe('Guide')
+    expect(badges[0].getAttribute('aria-label')).toBe('Guide')
     expect(container.querySelector('.animate-blink')).not.toBeNull()
 
     click(badges[1])
