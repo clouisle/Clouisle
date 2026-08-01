@@ -1,13 +1,23 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
 import { workflowsApi, type WorkflowEvent } from '@/lib/api/workflows'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 
+export interface WorkflowRunApi {
+  runWorkflow: (workflowId: string, body: { inputs: Record<string, unknown> }) => Promise<{ run_id: string }>
+  streamWorkflowRun: (
+    runId: string,
+    handlers: { onEvent: (event: WorkflowEvent) => void; onError: (error: Error) => void; onComplete: () => void }
+  ) => () => void
+  cancelWorkflowRun: (runId: string) => Promise<void>
+}
+
 export interface UseWorkflowRunOptions {
   workflowId: string
   isDebug?: boolean
+  api?: WorkflowRunApi
   onError?: (error: Error) => void
   onComplete?: () => void
 }
@@ -57,7 +67,15 @@ function resolveWorkflowErrorMessage(message: unknown, fallback: string): string
 }
 
 export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunReturn {
-  const { workflowId, isDebug = false, onError, onComplete } = options
+  const { workflowId, isDebug = false, onError, onComplete, api } = options
+
+  const effectiveApi = useMemo(() => api ?? {
+    runWorkflow: (id: string, body: { inputs: Record<string, unknown> }) =>
+      isDebug ? workflowsApi.debugWorkflow(id, body) : workflowsApi.runWorkflow(id, body),
+    streamWorkflowRun: (runId: string, handlers: { onEvent: (event: WorkflowEvent) => void; onError: (error: Error) => void; onComplete: () => void }) =>
+      workflowsApi.streamWorkflowRun(runId, handlers),
+    cancelWorkflowRun: (runId: string) => workflowsApi.cancelWorkflowRun(runId),
+  }, [api, isDebug])
 
   const [runId, setRunId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -89,7 +107,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
     setIsStreaming(false)
     setIsCancelling(true)
     try {
-      await workflowsApi.cancelWorkflowRun(activeRunId)
+      await effectiveApi.cancelWorkflowRun(activeRunId)
       setStatus('cancelled')
     } catch (cancelError) {
       console.error('Failed to cancel workflow:', cancelError)
@@ -97,7 +115,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
     } finally {
       setIsCancelling(false)
     }
-  }, [runId, status, onError])
+  }, [runId, status, onError, effectiveApi])
 
   const reset = useCallback(() => {
     closeConnectionRef.current?.()
@@ -146,12 +164,11 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         nodeTypesRef.current.clear()
 
         // Start workflow run
-        const runApi = isDebug ? workflowsApi.debugWorkflow : workflowsApi.runWorkflow
-        const { run_id } = await runApi(workflowId, { inputs })
+        const { run_id } = await effectiveApi.runWorkflow(workflowId, { inputs })
         setRunId(run_id)
 
         // Connect to SSE stream
-        const closeConnection = workflowsApi.streamWorkflowRun(run_id, {
+        const closeConnection = effectiveApi.streamWorkflowRun(run_id, {
           onEvent: (event: WorkflowEvent) => {
             handleWorkflowEventRef.current?.(event)
           },
@@ -177,7 +194,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         onError?.(startError as Error)
       }
     },
-    [workflowId, isDebug, onError, onComplete]
+    [workflowId, onError, onComplete, effectiveApi]
   )
 
   const handleWorkflowEvent = useCallback((event: WorkflowEvent) => {

@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { AlertCircle, GitBranch, Loader2, PanelLeft, PanelLeftClose, Play, RotateCcw, Square, SquarePlay } from 'lucide-react'
-import { ApiError, workflowsApi, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
+import { ApiError, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
 import { ExecutionTimeline, VariableForm, useVariableForm } from '@/components/chat'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useWorkflowRun } from '@/hooks/use-workflow-run'
+import { jwtWorkflowRunAdapter, type WorkflowRunAdapter } from '@/lib/workflow/run-adapter'
 import { extractVariables } from '@/lib/utils/extract-variables'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -19,9 +20,11 @@ type WorkflowWorkspaceView = 'form' | 'live' | 'history'
 
 interface WorkflowRunPageProps {
   id: string
+  adapter?: WorkflowRunAdapter
+  embedMode?: boolean
 }
 
-export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
+export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode }: WorkflowRunPageProps) {
   const router = useRouter()
   const t = useTranslations('run')
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
@@ -42,7 +45,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
       try {
         setIsLoading(true)
         setError(null)
-        setWorkflow(await workflowsApi.getWorkflow(id))
+        setWorkflow(await adapter.getWorkflow(id))
       } catch (err) {
         const isNotFound =
           err instanceof ApiError &&
@@ -54,19 +57,18 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
     }
 
     void fetchWorkflow()
-  }, [id, t])
+  }, [id, t, adapter])
 
   const loadHistory = React.useCallback(async () => {
     try {
       setHistoryLoading(true)
-      const data = await workflowsApi.getMyWorkflowRuns(id, { pageSize: 10 })
-      setHistory(data.items)
+      setHistory(await adapter.loadHistory(id))
     } catch {
       setHistory([])
     } finally {
       setHistoryLoading(false)
     }
-  }, [id])
+  }, [id, adapter])
 
   React.useEffect(() => {
     void loadHistory()
@@ -74,8 +76,13 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
 
   const variables = React.useMemo(() => extractVariables(workflow, 'workflow'), [workflow])
   const variableForm = useVariableForm(variables)
-  const run = useWorkflowRun({ workflowId: id, onComplete: loadHistory })
+  const runApi = React.useMemo(() => adapter.createRunApi(), [adapter])
+  const run = useWorkflowRun({ workflowId: id, api: runApi, onComplete: loadHistory })
   const isRunning = run.status === 'pending' || run.status === 'running'
+  const embedCfg = (embedMode ? workflow?.embed_config : undefined) as Record<string, unknown> | undefined
+  const showHeader = !embedMode || embedCfg?.show_header !== false
+  const showHistory = !embedMode || embedCfg?.show_history !== false
+  const allowNew = !embedMode || embedCfg?.allow_new !== false
   const presentationMode = workflow?.run_page_config?.presentation_mode ?? 'simple'
 
   React.useEffect(() => {
@@ -128,10 +135,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
     setHistoryDetailLoading(true)
     setHistoryDetailError(null)
     try {
-      const [detail, nodes] = await Promise.all([
-        workflowsApi.getMyWorkflowRun(id, runId),
-        workflowsApi.getMyRunNodeExecutions(id, runId),
-      ])
+      const { run: detail, nodes } = await adapter.loadRunDetail(id, runId)
       setSelectedRun(detail)
       setSelectedNodes(nodes)
     } catch {
@@ -139,7 +143,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
     } finally {
       setHistoryDetailLoading(false)
     }
-  }, [id, isRunning, t])
+  }, [id, isRunning, t, adapter])
 
   const resultNodes = React.useMemo<WorkflowResultNode[]>(() => (
     Array.from(run.executionState.nodes.values()).map((node, index) => ({
@@ -151,6 +155,22 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
       status: node.status,
     }))
   ), [run.executionState.nodes])
+
+  const savedRunRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if ((run.status === 'success' || run.status === 'failed') && run.runId && savedRunRef.current !== run.runId) {
+      savedRunRef.current = run.runId
+      adapter.saveRun(id, {
+        runId: run.runId,
+        status: run.status,
+        outputs: run.outputs,
+        nodes: resultNodes,
+        error: run.error,
+        inputs: run.submittedInputs,
+        createdAt: new Date().toISOString(),
+      })
+    }
+  }, [run.status, run.runId, run.outputs, run.error, run.submittedInputs, resultNodes, adapter, id])
 
   const historyNodes = React.useMemo<WorkflowResultNode[]>(() => (
     selectedNodes.map((node) => ({
@@ -190,6 +210,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
         <Button
           variant="ghost"
           size="icon"
+          className={cn(!allowNew && 'hidden')}
           onClick={handleNewRun}
           disabled={isRunning}
           aria-label={t('newRun')}
@@ -288,17 +309,19 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
         aria-labelledby="workflow-history-heading"
         className={cn(
           'h-full shrink-0 overflow-hidden border-r bg-muted/50 transition-all duration-300 ease-in-out',
-          sidebarOpen ? 'w-64' : 'w-0 border-r-0'
+          sidebarOpen ? 'w-64' : 'w-0 border-r-0',
+          !showHistory && 'hidden',
         )}
       >
         <div className="h-full w-64">{historyPanel}</div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex min-h-14 shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-6">
+        <header className={cn('flex min-h-14 shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-6', !showHeader && 'hidden')}>
           <Button
             variant="ghost"
             size="icon"
+            className={cn(!showHistory && 'hidden')}
             onClick={() => setSidebarOpen((open) => !open)}
             aria-label={t('openHistory')}
           >
@@ -308,7 +331,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
               <PanelLeft className="h-4 w-4" />
             )}
           </Button>
-          {!sidebarOpen && (
+          {allowNew && !sidebarOpen && (
             <Button
               variant="ghost"
               size="icon"
@@ -403,7 +426,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           <RotateCcw className="mr-2 h-4 w-4" />
                           {t('runAgain')}
                         </Button>
-                        <Button variant="ghost" onClick={handleNewRun}>
+                        <Button variant="ghost" onClick={handleNewRun} className={cn(!allowNew && 'hidden')}>
                           <SquarePlay className="mr-2 h-4 w-4" />
                           {t('newRun')}
                         </Button>
@@ -476,7 +499,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           <RotateCcw className="mr-2 h-4 w-4" />
                           {t('runAgain')}
                         </Button>
-                        <Button variant="ghost" onClick={handleNewRun}>
+                        <Button variant="ghost" onClick={handleNewRun} className={cn(!allowNew && 'hidden')}>
                           <SquarePlay className="mr-2 h-4 w-4" />
                           {t('newRun')}
                         </Button>
