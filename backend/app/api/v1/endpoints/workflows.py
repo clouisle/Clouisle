@@ -155,6 +155,10 @@ async def list_all_workflow_runs(
     query = WorkflowRun.filter(workflow_id__in=workflow_ids)
 
     # Apply filters
+    if search_text := (search or "").strip():
+        query = query.filter(
+            Q(id__icontains=search_text) | Q(workflow__name__icontains=search_text)
+        )
     if workflow_id:
         query = query.filter(workflow_id__in=workflow_id)
     if status:

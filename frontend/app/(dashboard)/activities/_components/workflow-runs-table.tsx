@@ -468,7 +468,17 @@ export function WorkflowRunsTable() {
                       />
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs">{run.id.slice(0, 8)}</code>
+                      <button
+                        type="button"
+                        className="font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                        title={`${t('table.runId')}: ${run.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void navigator.clipboard?.writeText(run.id)
+                        }}
+                      >
+                        {run.id.slice(0, 8)}
+                      </button>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

@@ -206,7 +206,7 @@ async def list_all_conversations(
         # Filter conversations with null or empty title
         query = query.filter(Q(title__isnull=True) | Q(title=""))
     if search:
-        query = query.filter(title__icontains=search)
+        query = query.filter(Q(title__icontains=search) | Q(id__icontains=search))
 
     # Get total count
     total = await query.count()

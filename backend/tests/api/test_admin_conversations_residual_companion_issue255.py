@@ -5,6 +5,8 @@ from uuid import uuid4
 
 import pytest
 
+from tortoise.expressions import Q
+
 from app.api.v1.admin.endpoints import conversations
 from app.schemas.response import BusinessError, ResponseCode
 
@@ -138,8 +140,19 @@ async def test_list_conversations_combines_team_agent_title_and_search_filters()
         kwargs == {"agent_id__in": [accessible[1]]} for _, kwargs in query.filters
     )
     assert any(kwargs == {"user_id__in": [item.user_id]} for _, kwargs in query.filters)
-    assert any(kwargs == {"title__icontains": "support"} for _, kwargs in query.filters)
-    assert any(args for args, _kwargs in query.filters)
+
+    def _q_has_filter(node: Q, field: str) -> bool:
+        if field in node.filters:
+            return True
+        return any(_q_has_filter(child, field) for child in node.children)
+
+    assert any(
+        args
+        and isinstance(args[0], Q)
+        and _q_has_filter(args[0], "title__icontains")
+        and _q_has_filter(args[0], "id__icontains")
+        for args, _ in query.filters
+    )
 
 
 @pytest.mark.anyio

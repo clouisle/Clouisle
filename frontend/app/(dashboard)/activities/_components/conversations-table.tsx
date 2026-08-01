@@ -327,6 +327,7 @@ export function ConversationsTable() {
                   />
                 </TableHead>
                 <TableHead>{t('title')}</TableHead>
+                <TableHead>{t('conversationId')}</TableHead>
                 <TableHead>{t('agent')}</TableHead>
                 <TableHead>{t('user')}</TableHead>
                 <TableHead>{t('messageCount')}</TableHead>
@@ -336,18 +337,18 @@ export function ConversationsTable() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
-                    {commonT('loading')}
-                  </TableCell>
-                </TableRow>
-              ) : conversations.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {t('noConversations')}
-                  </TableCell>
-                </TableRow>
-              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="text-center py-8">
+                                    {commonT('loading')}
+                                  </TableCell>
+                                </TableRow>
+                              ) : conversations.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                                    {t('noConversations')}
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
                 conversations.map((conversation) => (
                   <TableRow
                     key={conversation.id}
@@ -367,6 +368,19 @@ export function ConversationsTable() {
                           {conversation.title || t('untitled')}
                         </span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                        title={`${t('conversationId')}: ${conversation.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void navigator.clipboard?.writeText(conversation.id)
+                        }}
+                      >
+                        {conversation.id.slice(0, 8)}…
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{conversation.agent_name}</Badge>

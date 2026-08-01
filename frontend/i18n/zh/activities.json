@@ -70,6 +70,7 @@
       "noNodeExecutions": "暂无节点执行记录"
     },
     "searchPlaceholder": "搜索对话...",
+    "conversationId": "对话 ID",
     "agent": "智能体",
     "user": "用户",
     "messageCount": "消息数",

@@ -72,6 +72,7 @@ export type ActivitiesMessages = {
       noNodeExecutions: string
     }
     searchPlaceholder: string
+    conversationId: string
     agent: string
     user: string
     messageCount: string

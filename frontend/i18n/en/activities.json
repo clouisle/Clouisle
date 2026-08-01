@@ -70,6 +70,7 @@
       "noNodeExecutions": "No node executions yet"
     },
     "searchPlaceholder": "Search conversations...",
+    "conversationId": "Conversation ID",
     "agent": "Agent",
     "user": "User",
     "messageCount": "Messages",
