@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints.chat_tools import execute_tool_call
+from app.core.i18n import t
 from app.models.tool import CustomToolType
 
 
@@ -217,7 +218,7 @@ async def test_custom_http_tool_returns_formatted_result_and_masks_executor_erro
         patch("app.llm.tools.executors.execute_http_tool", executor),
     ):
         error = await execute_tool_call("custom_weather", {})
-    assert json.loads(error) == {"error": "secret provider detail"}
+    assert json.loads(error) == {"error": t("tool_execution_failed")}
 
 
 @pytest.mark.anyio

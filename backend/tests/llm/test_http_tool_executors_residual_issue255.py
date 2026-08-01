@@ -18,6 +18,7 @@ from app.llm.tools.executors import (
     execute_http_tool,
     format_http_result_for_llm,
 )
+from app.schemas.response import BusinessError
 
 
 @pytest.mark.parametrize(
@@ -29,7 +30,7 @@ from app.llm.tools.executors import (
     ],
 )
 def test_url_validation_rejects_invalid_and_blocked_hosts(value, message):
-    with pytest.raises(ValueError, match=t(message)):
+    with pytest.raises(BusinessError, match=message):
         _validate_external_http_url(value)
 
 
@@ -38,7 +39,7 @@ def test_url_validation_checks_dns_results():
         "app.llm.tools.executors.socket.getaddrinfo", side_effect=socket.gaierror
     ):
         with pytest.raises(
-            ValueError, match=t("http_tool_url_host_cannot_be_resolved")
+            BusinessError, match="http_tool_url_host_cannot_be_resolved"
         ):
             _validate_external_http_url("https://missing.example")
 
@@ -46,7 +47,7 @@ def test_url_validation_checks_dns_results():
         "app.llm.tools.executors.socket.getaddrinfo",
         return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
     ):
-        with pytest.raises(ValueError, match=t("http_tool_url_host_not_allowed")):
+        with pytest.raises(BusinessError, match="http_tool_url_host_not_allowed"):
             _validate_external_http_url("https://example.com")
 
     with patch(

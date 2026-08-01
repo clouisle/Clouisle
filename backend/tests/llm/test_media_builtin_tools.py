@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from app.core.i18n import t
 from app.models.model import ModelType
 
 import pytest
@@ -400,7 +401,7 @@ async def test_generate_video_reports_unsupported_start_image_reference():
 
     mock_generate.assert_awaited_once()
     assert result.display_result["success"] is False
-    assert "does not support uploaded images" in result.display_result["error"]
+    assert result.display_result["error"] == t("unknown_error_generic")
 
 
 def test_build_media_llm_summaries_are_compact():

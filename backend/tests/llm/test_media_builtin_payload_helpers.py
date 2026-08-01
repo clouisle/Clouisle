@@ -9,6 +9,7 @@ from app.llm.tools.builtin.media import (
     build_video_tool_result,
     normalize_image_generation_response,
 )
+from app.schemas.response import BusinessError
 from app.llm.types import (
     GeneratedImage,
     ImageContent,
@@ -59,19 +60,21 @@ def test_media_payload_builders_normalize_status_and_serialized_images():
 def test_reference_indexes_discard_invalid_values_and_reject_missing_sources():
     assert _deduplicate_indexes(["2", 2, True, None, "bad", 1.8, 1]) == [2, 1]
 
-    with pytest.raises(ValueError, match="No conversation images"):
+    with pytest.raises(BusinessError) as exc_info:
         _resolve_generation_reference_images(
             images=None,
             reference_image_indexes=[1],
             current_images=None,
         )
+    assert exc_info.value.msg_key == "image_reference_no_uploaded_images"
 
-    with pytest.raises(ValueError, match="not both"):
+    with pytest.raises(BusinessError) as exc_info:
         _resolve_generation_reference_images(
             images=[{"url": "https://example.com/ref.png"}],
             reference_image_indexes=[1],
             current_images=[{"url": "data:image/png;base64,cmVm"}],
         )
+    assert exc_info.value.msg_key == "image_reference_images_conflict"
 
 
 @pytest.mark.anyio

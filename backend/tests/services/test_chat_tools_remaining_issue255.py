@@ -263,7 +263,7 @@ async def test_mcp_routes_invalid_missing_success_and_error():
             new=AsyncMock(side_effect=RuntimeError("network secret")),
         ),
         patch(
-            "app.services.error_messages.resolve_user_visible_error",
+            "app.services.error_messages.exception_to_user_message",
             return_value="MCP unavailable",
         ),
     ):
@@ -313,7 +313,7 @@ async def test_custom_http_routes_success_error_missing_and_unsupported():
             new=AsyncMock(side_effect=RuntimeError("network secret")),
         ),
         patch(
-            "app.services.error_messages.resolve_user_visible_error",
+            "app.services.error_messages.exception_to_user_message",
             return_value="HTTP unavailable",
         ),
     ):
@@ -359,7 +359,7 @@ async def test_download_builtin_and_unknown_route_errors():
             new=AsyncMock(side_effect=RuntimeError("download secret")),
         ),
         patch(
-            "app.services.error_messages.resolve_user_visible_error",
+            "app.services.error_messages.exception_to_user_message",
             return_value="Download unavailable",
         ),
     ):
@@ -377,7 +377,7 @@ async def test_download_builtin_and_unknown_route_errors():
             new=AsyncMock(side_effect=RuntimeError("tool secret")),
         ),
         patch(
-            "app.services.error_messages.resolve_user_visible_error",
+            "app.services.error_messages.exception_to_user_message",
             return_value="Tool unavailable",
         ),
     ):
@@ -452,7 +452,7 @@ async def test_standalone_http_and_code_helpers():
             new=AsyncMock(side_effect=RuntimeError("sandbox secret")),
         ),
         patch(
-            "app.services.error_messages.resolve_user_visible_error",
+            "app.services.error_messages.exception_to_user_message",
             return_value="Code unavailable",
         ),
     ):

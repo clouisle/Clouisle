@@ -27,7 +27,7 @@ async def execute_tool_call(
     from app.core.i18n import t
     from app.models.tool import Tool, CustomToolType
     from app.llm.tools import tool_registry
-    from app.services.error_messages import resolve_user_visible_error
+    from app.services.error_messages import exception_to_user_message
 
     # Initialize default timeouts if not provided
     if tool_timeouts is None:
@@ -127,7 +127,14 @@ async def execute_tool_call(
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:
             logger.exception("Memory tool failed: %s", e)
-            return json.dumps({"error": str(e)}, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "error": exception_to_user_message(
+                        e, fallback_key="memory_tool_execution_failed"
+                    )
+                },
+                ensure_ascii=False,
+            )
 
     # Skill tool (format: skill_<name>_<short_id>)
     if tool_name.startswith("skill_"):
@@ -160,9 +167,8 @@ async def execute_tool_call(
             logger.exception("Skill execution failed: %s", e)
             return json.dumps(
                 {
-                    "error": resolve_user_visible_error(
-                        str(e),
-                        fallback_key="skill_execution_failed",
+                    "error": exception_to_user_message(
+                        e, fallback_key="skill_execution_failed"
                     )
                 },
                 ensure_ascii=False,
@@ -207,8 +213,8 @@ async def execute_tool_call(
                 logger.exception("MCP tool execution failed: %s", e)
                 return json.dumps(
                     {
-                        "error": resolve_user_visible_error(
-                            str(e), fallback_key="mcp_tool_failed"
+                        "error": exception_to_user_message(
+                            e, fallback_key="mcp_tool_execution_failed"
                         )
                     },
                     ensure_ascii=False,
@@ -246,8 +252,8 @@ async def execute_tool_call(
                 logger.exception("HTTP tool execution failed: %s", e)
                 return json.dumps(
                     {
-                        "error": resolve_user_visible_error(
-                            str(e), fallback_key="http_tool_failed"
+                        "error": exception_to_user_message(
+                            e, fallback_key="tool_execution_failed"
                         )
                     },
                     ensure_ascii=False,
@@ -268,8 +274,8 @@ async def execute_tool_call(
                 logger.exception("Code tool execution failed: %s", e)
                 return json.dumps(
                     {
-                        "error": resolve_user_visible_error(
-                            str(e), fallback_key="code_tool_failed"
+                        "error": exception_to_user_message(
+                            e, fallback_key="code_tool_execution_failed"
                         )
                     },
                     ensure_ascii=False,
@@ -298,8 +304,8 @@ async def execute_tool_call(
             logger.exception("File download failed: %s", e)
             return json.dumps(
                 {
-                    "error": resolve_user_visible_error(
-                        str(e), fallback_key="download_failed"
+                    "error": exception_to_user_message(
+                        e, fallback_key="tool_execution_failed"
                     )
                 },
                 ensure_ascii=False,
@@ -330,8 +336,8 @@ async def execute_tool_call(
             logger.exception("Builtin tool execution failed: %s", e)
             return json.dumps(
                 {
-                    "error": resolve_user_visible_error(
-                        str(e), fallback_key="tool_execution_failed"
+                    "error": exception_to_user_message(
+                        e, fallback_key="tool_execution_failed"
                     )
                 },
                 ensure_ascii=False,
@@ -389,6 +395,7 @@ async def _execute_code_tool(
 ) -> dict[str, Any]:
     """Execute a code tool."""
     from app.llm.tools.sandbox import execute_code
+    from app.services.error_messages import exception_to_user_message
 
     code_config = tool.code_config or {}
     language = code_config.get("language", "python")
@@ -416,7 +423,12 @@ async def _execute_code_tool(
         }
     except Exception as e:
         logger.exception("Code tool execution failed: %s", e)
-        return {"error": str(e), "success": False}
+        return {
+            "error": exception_to_user_message(
+                e, fallback_key="code_tool_execution_failed"
+            ),
+            "success": False,
+        }
 
 
 # ============ Additional Tool Functions ============
@@ -470,7 +482,7 @@ async def execute_code_tool(
     """
     from app.core.i18n import t
     from app.llm.tools.sandbox import execute_code
-    from app.services.error_messages import resolve_user_visible_error
+    from app.services.error_messages import exception_to_user_message
 
     code_config = tool.code_config or {}
     language = code_config.get("language", "python")
@@ -513,8 +525,8 @@ async def execute_code_tool(
         logger.exception("Code tool execution error: %s", e)
         return json.dumps(
             {
-                "error": resolve_user_visible_error(
-                    str(e),
+                "error": exception_to_user_message(
+                    e,
                     fallback_key="code_tool_execution_failed",
                 )
             },
