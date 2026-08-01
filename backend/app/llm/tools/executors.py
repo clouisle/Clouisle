@@ -50,15 +50,17 @@ def _validate_external_http_url(value: str) -> _ValidatedExternalUrl:
     if host in _BLOCKED_HOSTS:
         raise BusinessError(msg_key="http_tool_url_host_not_allowed")
     try:
+        port = parsed.port
+    except ValueError:
+        raise BusinessError(msg_key="http_tool_url_invalid")
+    try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         ip = None
     if ip and _is_blocked_ip(ip):
         raise BusinessError(msg_key="http_tool_url_host_not_allowed")
     try:
-        resolved = socket.getaddrinfo(
-            host, parsed.port or None, type=socket.SOCK_STREAM
-        )
+        resolved = socket.getaddrinfo(host, port or None, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise BusinessError(msg_key="http_tool_url_host_cannot_be_resolved") from exc
     for *_, sockaddr in resolved:

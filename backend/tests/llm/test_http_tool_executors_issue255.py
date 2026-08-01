@@ -30,6 +30,7 @@ class _Response:
     "url,error",
     [
         ("ftp://example.com", "http_tool_url_invalid"),
+        ("https://example.com:bad", "http_tool_url_invalid"),
         ("http://127.0.0.1", "http_tool_url_host_not_allowed"),
     ],
 )

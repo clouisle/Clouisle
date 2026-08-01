@@ -162,8 +162,9 @@ async def test_execute_tool_returns_structured_success(monkeypatch, content, exp
 @pytest.mark.asyncio
 async def test_execute_tool_maps_server_timeout_and_connection_errors(monkeypatch):
     resolve_error = MagicMock(side_effect=lambda message, **kwargs: f"safe:{message}")
+    mask_error = MagicMock(return_value="masked:offline")
     monkeypatch.setattr(mcp_client, "resolve_user_visible_error", resolve_error)
-    monkeypatch.setattr(mcp_client, "exception_to_user_message", resolve_error)
+    monkeypatch.setattr(mcp_client, "exception_to_user_message", mask_error)
     client = mcp_client.McpClient({})
 
     error_session = SimpleNamespace(
@@ -196,13 +197,13 @@ async def test_execute_tool_maps_server_timeout_and_connection_errors(monkeypatc
 
     monkeypatch.setattr(client, "connect", failing_context)
     assert await client.execute_tool("fail", {}) == mcp_client.McpToolResult(
-        success=False, error="safe:offline"
+        success=False, error="masked:offline"
     )
 
     assert resolve_error.call_args_list[1].kwargs == {"fallback_key": "request_timeout"}
-    assert resolve_error.call_args_list[2].kwargs == {
-        "fallback_key": "mcp_tool_execution_failed"
-    }
+    mask_error.assert_called_once()
+    assert isinstance(mask_error.call_args.args[0], RuntimeError)
+    assert mask_error.call_args.kwargs == {"fallback_key": "mcp_tool_execution_failed"}
 
 
 @pytest.mark.asyncio
