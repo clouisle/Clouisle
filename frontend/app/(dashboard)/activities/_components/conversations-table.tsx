@@ -361,10 +361,10 @@ export function ConversationsTable() {
                         onCheckedChange={() => toggleSelect(conversation.id)}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-w-[280px]">
                       <div className="flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="font-medium truncate">
                           {conversation.title || t('untitled')}
                         </span>
                       </div>
