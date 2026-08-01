@@ -233,20 +233,30 @@
         return null;
       }
 
-      createStyles();
-      var origin = getOrigin();
+      var run = function () {
+        createStyles();
+        var origin = getOrigin();
 
-      switch (config.mode) {
-        case 'fullscreen':
-          instance = initFullscreen(origin, config);
-          break;
-        case 'mobile':
-          instance = initMobile(origin, config);
-          break;
-        case 'bubble':
-        default:
-          instance = initBubble(origin, config);
-          break;
+        switch (config.mode) {
+          case 'fullscreen':
+            instance = initFullscreen(origin, config);
+            break;
+          case 'mobile':
+            instance = initMobile(origin, config);
+            break;
+          case 'bubble':
+          default:
+            instance = initBubble(origin, config);
+            break;
+        }
+      };
+
+      // The embed snippet may be placed in <head> and call init() before
+      // <body> is parsed; defer DOM manipulation until the body exists.
+      if (document.body) {
+        run();
+      } else {
+        document.addEventListener('DOMContentLoaded', run);
       }
 
       return instance;
