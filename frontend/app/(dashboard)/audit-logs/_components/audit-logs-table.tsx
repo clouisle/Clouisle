@@ -344,18 +344,12 @@ export function AuditLogsTable() {
                                                         {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
                                                     </Button>
                                                 ) : log.resource_id ? (
-                                                    <button
-                                                        type="button"
-                                                        className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                                                    <span
+                                                        className="font-mono text-[11px] text-muted-foreground"
                                                         title={`${t("resourceId")}: ${log.resource_id}`}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            void navigator.clipboard?.writeText(log.resource_id!);
-                                                            toast.success(commonT("copiedToClipboard"));
-                                                        }}
                                                     >
                                                         {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
-                                                    </button>
+                                                    </span>
                                                 ) : "-"}
                                             </TableCell>
                                             <TableCell>{getOperationBadge(log.operation)}</TableCell>

@@ -18,7 +18,6 @@ import {
   Loader,
   Ban,
   AlertTriangle,
-  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -469,31 +468,17 @@ export function WorkflowRunsTable() {
                       />
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          className="font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-                          title={`${t('table.runId')}: ${run.id}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleViewRun(run.id)
-                          }}
-                        >
-                          {run.id.slice(0, 8)}
-                        </button>
-                        <button
-                          type="button"
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity"
-                          title={commonT('copy')}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void navigator.clipboard?.writeText(run.id)
-                            toast.success(commonT('copiedToClipboard'))
-                          }}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                        title={`${t('table.runId')}: ${run.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleViewRun(run.id)
+                        }}
+                      >
+                        {run.id.slice(0, 8)}…
+                      </button>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
