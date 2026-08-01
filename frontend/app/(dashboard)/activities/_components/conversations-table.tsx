@@ -376,7 +376,7 @@ export function ConversationsTable() {
                         title={`${t('conversationId')}: ${conversation.id}`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          void navigator.clipboard?.writeText(conversation.id)
+                          void handleViewConversation(conversation.id)
                         }}
                       >
                         {conversation.id.slice(0, 8)}…

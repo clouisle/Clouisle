@@ -332,7 +332,7 @@ export default function LogsPage() {
                           title={`${t('table.conversationId')}: ${conv.id}`}
                           onClick={(e) => {
                             e.stopPropagation()
-                            void navigator.clipboard?.writeText(conv.id)
+                            handleRowClick(conv.id)
                           }}
                         >
                           {conv.id.slice(0, 8)}…
