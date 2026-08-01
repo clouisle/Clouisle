@@ -552,3 +552,95 @@ async def test_delete_workflow_propagates_delete_error(fake_request, admin):
         pytest.raises(RuntimeError, match="delete failed"),
     ):
         await workflows.delete_workflow(fake_request, item.id, current_user=admin)
+
+
+@pytest.mark.anyio
+async def test_get_workflow_with_detail_prefetches_relations(monkeypatch):
+    from app.api.v1.admin.endpoints import workflows as admin_workflows
+
+    workflow_id = uuid4()
+    query = MagicMock()
+    query.prefetch_related = MagicMock(return_value=query)
+    query.first = AsyncMock(return_value=SimpleNamespace(id=workflow_id))
+
+    monkeypatch.setattr(admin_workflows.Workflow, "filter", lambda **kwargs: query)
+
+    result = await admin_workflows._get_workflow(workflow_id, detail=True)
+    assert result.id == workflow_id
+    query.prefetch_related.assert_called_once_with("team", "created_by")
+
+
+@pytest.mark.anyio
+async def test_admin_update_workflow_applies_run_page_config(monkeypatch):
+    from app.api.v1.admin.endpoints import workflows as admin_workflows
+
+    workflow_id = uuid4()
+
+    class _Visibility:
+        value = "private"
+
+    class _TriggerType:
+        value = "manual"
+
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        team_id=uuid4(),
+        name="Flow",
+        description="old",
+        version=1,
+        visibility=_Visibility(),
+        trigger_type=_TriggerType(),
+        save=AsyncMock(),
+    )
+    workflow_in = SimpleNamespace(
+        name=None,
+        description=None,
+        icon=None,
+        definition=None,
+        variables=None,
+        trigger_type=None,
+        trigger_config=None,
+        visibility=None,
+        embed_config=None,
+        run_page_config={"presentation_mode": "result_first"},
+    )
+
+    query = MagicMock()
+    query.exclude = MagicMock(return_value=query)
+    query.first = AsyncMock(return_value=None)
+    monkeypatch.setattr(admin_workflows.Workflow, "filter", lambda **kwargs: query)
+    monkeypatch.setattr(
+        admin_workflows, "_get_workflow", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        admin_workflows.WorkflowOut,
+        "model_validate",
+        lambda value: SimpleNamespace(model_dump=lambda: {"id": str(workflow_id)}),
+    )
+
+    class _AwaitableQuery:
+        def prefetch_related(self, *_args):
+            return self
+
+        def __await__(self):
+            async def resolve():
+                return workflow
+
+            return resolve().__await__()
+
+    monkeypatch.setattr(
+        admin_workflows.Workflow, "get", lambda **kwargs: _AwaitableQuery()
+    )
+    monkeypatch.setattr(admin_workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(admin_workflows.AuditLogService, "log", AsyncMock())
+
+    response = await admin_workflows.update_workflow(
+        request=SimpleNamespace(),
+        workflow_id=workflow_id,
+        workflow_in=workflow_in,
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+
+    assert workflow.run_page_config == {"presentation_mode": "result_first"}
+    workflow.save.assert_awaited_once()
+    assert response is not None
