@@ -559,7 +559,6 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
   const displayIcon = agent.icon || agent.avatar_url
   const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
-  const hasMessages = messages.length > 0
   
   return (
     <div className="h-full flex overflow-hidden bg-background">
@@ -687,32 +686,53 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           <ResizablePanel defaultSize={activeCodePreview ? '62%' : '100%'} minSize="40%">
             <div className="flex h-full min-w-0 flex-col">
         {/* Header */}
-        <header className="flex items-center justify-between px-3 h-14 shrink-0 border-b">
-          <div className="flex items-center gap-2">
-            {/* Sidebar toggle */}
+        <header className="flex items-center gap-2 px-3 h-14 shrink-0 border-b">
+          {/* Sidebar toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+          </Button>
+          {!sidebarOpen && (
             <Button
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={handleNewChat}
+              title={t('newChat')}
             >
-              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+              <SquarePen className="h-5 w-5" />
             </Button>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            {hasMessages && !sidebarOpen && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                onClick={handleNewChat}
-                title={t('newChat')}
-              >
-                <SquarePen className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
+          )}
+          {!sidebarOpen && (
+            <>
+              {displayIcon ? (
+                isIconUrl ? (
+                  <div className="relative h-6 w-6 shrink-0 overflow-hidden">
+                    <Image
+                      src={displayIcon}
+                      alt={agent.name}
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                  </div>
+                ) : (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center leading-none text-lg">{displayIcon}</span>
+                )
+              ) : (
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
+              </div>
+            </>
+          )}
         </header>
 
         {/* Chat Area */}

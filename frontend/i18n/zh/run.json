@@ -12,7 +12,7 @@
     "configureWorkflow": "配置工作流",
     "configureAgent": "配置智能体",
     "fillParameters": "填写必需参数以开始",
-    "startRun": "开始运行",
+    "startRun": "开始",
     "running": "运行中...",
     "starting": "启动中...",
     "typePlaceholder": "输入您的消息...",
@@ -34,6 +34,8 @@
     "noHistory": "暂无运行记录。",
     "showTrace": "查看执行轨迹",
     "historyResult": "历史运行结果",
+    "runId": "运行ID：",
+    "time": "时间：",
     "close": "关闭",
     "status": {
       "idle": "可以运行",

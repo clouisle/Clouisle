@@ -2,8 +2,9 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, GitBranch, Loader2, Menu, Play, RotateCcw, Square, SquarePen } from 'lucide-react'
+import { AlertCircle, GitBranch, Loader2, PanelLeft, PanelLeftClose, Play, RotateCcw, Square, SquarePlay } from 'lucide-react'
 import { ApiError, workflowsApi, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
 import { ExecutionTimeline, VariableForm, useVariableForm } from '@/components/chat'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -161,18 +162,28 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
   ), [selectedNodes])
 
   const selectedHistoryId = workspaceView === 'history' ? selectedRun?.id : null
+  const displayIcon = workflow?.icon ?? null
+  const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
 
   const historyPanel = (
     <div className="flex h-full min-h-0 flex-col bg-muted/50">
       <div className="flex items-center gap-2 border-b p-3">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={handleNewRun}
           disabled={isRunning}
         >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-sm">
-            {workflow?.icon || <GitBranch className="h-4 w-4 text-muted-foreground" />}
+          <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-sm">
+            {displayIcon ? (
+              isIconUrl ? (
+                <Image src={displayIcon} alt={workflow?.name ?? ''} fill unoptimized className="object-cover" />
+              ) : (
+                displayIcon
+              )
+            ) : (
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
+            )}
           </span>
           <span className="truncate text-sm font-medium">{workflow?.name}</span>
         </button>
@@ -184,11 +195,8 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
           aria-label={t('newRun')}
           title={t('newRun')}
         >
-          <SquarePen className="h-4 w-4" />
+          <SquarePlay className="h-4 w-4" />
         </Button>
-      </div>
-      <div className="border-b px-4 py-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-        {t('history')}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {historyLoading ? (
@@ -293,10 +301,12 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
             size="icon"
             onClick={() => setSidebarOpen((open) => !open)}
             aria-label={t('openHistory')}
-            aria-controls="workflow-history-sidebar"
-            aria-expanded={sidebarOpen}
           >
-            <Menu className="h-4 w-4" />
+            {sidebarOpen ? (
+              <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeft className="h-4 w-4" />
+            )}
           </Button>
           {!sidebarOpen && (
             <Button
@@ -307,20 +317,32 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
               aria-label={t('newRun')}
               title={t('newRun')}
             >
-              <SquarePen className="h-4 w-4" />
+              <SquarePlay className="h-4 w-4" />
             </Button>
           )}
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-lg">
-            {workflow.icon || <GitBranch className="h-4 w-4 text-muted-foreground" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-medium">{workflow.name}</h1>
-            {workflow.description && (
-              <p className="line-clamp-1 text-xs text-muted-foreground">
-                {workflow.description}
-              </p>
-            )}
-          </div>
+          {!sidebarOpen && (
+            <>
+              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-lg">
+                {displayIcon ? (
+                  isIconUrl ? (
+                    <Image src={displayIcon} alt={workflow.name} fill unoptimized className="object-cover" />
+                  ) : (
+                    displayIcon
+                  )
+                ) : (
+                  <GitBranch className="h-4 w-4 text-muted-foreground" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-sm font-medium">{workflow.name}</h1>
+                {workflow.description && (
+                  <p className="line-clamp-1 text-xs text-muted-foreground">
+                    {workflow.description}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
@@ -328,15 +350,14 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
             {workspaceView === 'form' && (
               <section aria-labelledby="workflow-inputs-heading">
                 <div className="mb-8">
-                  <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                    {t('inputs')}
-                  </p>
-                  <h2 id="workflow-inputs-heading" className="mt-2 text-2xl font-semibold tracking-tight">
-                    {t('configureWorkflow')}
+                  <h2 id="workflow-inputs-heading" className="text-2xl font-semibold tracking-tight">
+                    {workflow.name}
                   </h2>
-                  <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-                    {variables.length ? t('fillParameters') : t('noInputs')}
-                  </p>
+                  {workflow.description && (
+                    <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+                      {workflow.description}
+                    </p>
+                  )}
                 </div>
                 <VariableForm
                   variables={variables}
@@ -383,7 +404,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           {t('runAgain')}
                         </Button>
                         <Button variant="ghost" onClick={handleNewRun}>
-                          <SquarePen className="mr-2 h-4 w-4" />
+                          <SquarePlay className="mr-2 h-4 w-4" />
                           {t('newRun')}
                         </Button>
                       </>
@@ -444,10 +465,10 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           {t(`status.${selectedRun.status}`)}
                         </h2>
                         <time className="mt-2 block text-xs text-muted-foreground">
-                          {new Date(selectedRun.created_at).toLocaleString()}
+                          {t('time')}{new Date(selectedRun.created_at).toLocaleString()}
                         </time>
                         <code className="mt-1 block max-w-full truncate text-xs text-muted-foreground" title={selectedRun.id}>
-                          {selectedRun.id}
+                          {t('runId')}{selectedRun.id}
                         </code>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -456,7 +477,7 @@ export function WorkflowRunPage({ id }: WorkflowRunPageProps) {
                           {t('runAgain')}
                         </Button>
                         <Button variant="ghost" onClick={handleNewRun}>
-                          <SquarePen className="mr-2 h-4 w-4" />
+                          <SquarePlay className="mr-2 h-4 w-4" />
                           {t('newRun')}
                         </Button>
                       </div>

@@ -12,7 +12,7 @@
     "configureWorkflow": "Configure Workflow",
     "configureAgent": "Configure Agent",
     "fillParameters": "Fill in the required parameters to start",
-    "startRun": "Start Run",
+    "startRun": "Start",
     "running": "Running...",
     "starting": "Starting...",
     "typePlaceholder": "Type your message...",
@@ -34,6 +34,8 @@
     "noHistory": "No runs yet.",
     "showTrace": "Show execution trace",
     "historyResult": "Historical result",
+    "runId": "Run ID: ",
+    "time": "Time: ",
     "close": "Close",
     "status": {
       "idle": "Ready to run",
