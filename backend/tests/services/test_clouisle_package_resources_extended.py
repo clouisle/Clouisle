@@ -110,6 +110,7 @@ def workflow(**overrides):
         "trigger_config": {"authorization": "secret", "safe": True},
         "visibility": "private",
         "embed_config": {},
+        "run_page_config": {},
         "version": 2,
     }
     values.update(overrides)

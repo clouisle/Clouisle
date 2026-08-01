@@ -35,6 +35,7 @@ mock.module('react', () => ({
     return refs[index]
   },
   useCallback: (callback: unknown) => callback,
+  useMemo: (factory: () => unknown) => factory(),
 }))
 
 mock.module('@/lib/api/workflows', () => ({

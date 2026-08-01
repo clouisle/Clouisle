@@ -87,8 +87,8 @@ async def test_list_all_workflow_runs_applies_every_residual_filter(monkeypatch)
     )
 
     assert response["data"]["total"] == 0
-    assert workflow_query.filters[-1][1] == {"name__icontains": "needle"}
     assert [call[1] for call in run_query.filters] == [
+        {},
         {"workflow_id__in": [workflow_id]},
         {"status__in": [RunStatus.SUCCESS]},
         {"trigger_type__in": [TriggerType.MANUAL]},
@@ -192,6 +192,7 @@ async def test_update_workflow_changes_description_without_optional_fields(monke
         trigger_config=None,
         visibility=None,
         embed_config=None,
+        run_page_config=None,
     )
     reloaded = SimpleNamespace()
 

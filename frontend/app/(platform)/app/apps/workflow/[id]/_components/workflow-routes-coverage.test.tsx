@@ -48,6 +48,15 @@ mock.module('react', () => ({
   useMemo: (factory: () => unknown) => factory(),
   useRef: (value: unknown) => ({ current: value }),
   useState: (value: unknown) => [value, noop],
+  useLayoutEffect: (effect: () => void) => effect(),
+  useId: () => 'react-id',
+  useReducer: (_reducer: unknown, initial: unknown) => [initial, noop],
+  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+  useImperativeHandle: () => {},
+  useTransition: () => [false, (cb: () => void) => cb()],
+  createContext: () => ({ Provider: ({ children }: { children: unknown }) => children }),
+  createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) =>
+    jsx(type, { ...(props ?? {}), ...(children.length ? { children: children.length === 1 ? children[0] : children } : {}) }),
 }))
 mock.module('next/navigation', () => ({
   useParams: () => routeParams,
@@ -275,6 +284,7 @@ mock.module('./nodes/comment-node', () => ({ CommentNode: (props: Record<string,
 mock.module('./start-node-selector', () => ({ StartNodeSelector: (props: Record<string, unknown>) => jsx('start-node-selector', props), StartNodeType: { Trigger: 'trigger' } }))
 mock.module('./workflow-settings-drawer', () => ({ WorkflowSettingsDrawer: (props: Record<string, unknown>) => jsx('workflow-settings-drawer', props) }))
 mock.module('./add-node-popover', () => ({ AddNodePopover: (props: Record<string, unknown>) => jsx('add-node-popover', props) }))
+mock.module('./workflow-publish-dialog', () => ({ WorkflowPublishDialog: (props: Record<string, unknown>) => jsx('workflow-publish-dialog', props) }))
 mock.module('./validation-checklist', () => ({ ValidationChecklist: (props: Record<string, unknown>) => jsx('validation-checklist', props) }))
 mock.module('./workflow-validator', () => ({ validateWorkflow: () => [], ValidationIssue: {} }))
 mock.module('../../[id]/_components/embed-config-dialog', () => ({ EmbedConfigDialog: (props: Record<string, unknown>) => jsx('embed-config-dialog', props) }))

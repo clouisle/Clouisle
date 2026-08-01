@@ -218,6 +218,7 @@ async def test_agent_duplicate_and_workflow_export_permission_skip(monkeypatch):
         trigger_config={},
         visibility="private",
         embed_config={},
+        run_page_config={},
         team_id=uuid4(),
     )
     endpoint(
