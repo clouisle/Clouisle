@@ -351,6 +351,7 @@ export function AuditLogsTable() {
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             void navigator.clipboard?.writeText(log.resource_id!);
+                                                            toast.success(commonT("copiedToClipboard"));
                                                         }}
                                                     >
                                                         {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}

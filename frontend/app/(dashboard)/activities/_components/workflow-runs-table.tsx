@@ -18,6 +18,7 @@ import {
   Loader,
   Ban,
   AlertTriangle,
+  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -458,7 +459,7 @@ export function WorkflowRunsTable() {
                 runs.map((run) => (
                   <TableRow
                     key={run.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="group cursor-pointer hover:bg-muted/50"
                     onClick={() => handleViewRun(run.id)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -468,17 +469,31 @@ export function WorkflowRunsTable() {
                       />
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        className="font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-                        title={`${t('table.runId')}: ${run.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleViewRun(run.id)
-                        }}
-                      >
-                        {run.id.slice(0, 8)}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                          title={`${t('table.runId')}: ${run.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleViewRun(run.id)
+                          }}
+                        >
+                          {run.id.slice(0, 8)}
+                        </button>
+                        <button
+                          type="button"
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity"
+                          title={commonT('copy')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void navigator.clipboard?.writeText(run.id)
+                            toast.success(commonT('copiedToClipboard'))
+                          }}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
-import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
+import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X, Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { agentsApi, type Agent, type ConversationListItem, type ConversationWithMessages } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
@@ -83,6 +84,7 @@ function formatDateTime(dateString: string, locale: string): string {
 
 export default function LogsPage() {
   const t = useTranslations('agents.logs')
+  const tCommon = useTranslations('common')
   const locale = useLocale()
   const router = useRouter()
   const params = useParams()
@@ -314,7 +316,7 @@ export default function LogsPage() {
                   {conversations.map((conv) => (
                     <TableRow
                       key={conv.id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="group cursor-pointer hover:bg-muted/50"
                       onClick={() => handleRowClick(conv.id)}
                     >
                       <TableCell className="max-w-[300px]">
@@ -326,17 +328,31 @@ export default function LogsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <button
-                          type="button"
-                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                          title={`${t('table.conversationId')}: ${conv.id}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRowClick(conv.id)
-                          }}
-                        >
-                          {conv.id.slice(0, 8)}…
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                            title={`${t('table.conversationId')}: ${conv.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRowClick(conv.id)
+                            }}
+                          >
+                            {conv.id.slice(0, 8)}…
+                          </button>
+                          <button
+                            type="button"
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity"
+                            title={tCommon('copy')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void navigator.clipboard?.writeText(conv.id)
+                              toast.success(tCommon('copiedToClipboard'))
+                            }}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        </div>
                       </TableCell>
                       <TableCell>{conv.message_count}</TableCell>
                       <TableCell className="text-muted-foreground" suppressHydrationWarning>

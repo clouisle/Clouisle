@@ -13,6 +13,7 @@ import {
   Trash2,
   MoreHorizontal,
   Eye,
+  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -352,7 +353,7 @@ export function ConversationsTable() {
                 conversations.map((conversation) => (
                   <TableRow
                     key={conversation.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="group cursor-pointer hover:bg-muted/50"
                     onClick={() => handleViewConversation(conversation.id)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -370,17 +371,31 @@ export function ConversationsTable() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                        title={`${t('conversationId')}: ${conversation.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void handleViewConversation(conversation.id)
-                        }}
-                      >
-                        {conversation.id.slice(0, 8)}…
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                          title={`${t('conversationId')}: ${conversation.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleViewConversation(conversation.id)
+                          }}
+                        >
+                          {conversation.id.slice(0, 8)}…
+                        </button>
+                        <button
+                          type="button"
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity"
+                          title={commonT('copy')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void navigator.clipboard?.writeText(conversation.id)
+                            toast.success(commonT('copiedToClipboard'))
+                          }}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{conversation.agent_name}</Badge>

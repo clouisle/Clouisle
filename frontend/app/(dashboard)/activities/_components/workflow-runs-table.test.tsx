@@ -64,7 +64,7 @@ mock.module('./workflow-run-drawer', () => ({
 }))
 mock.module('lucide-react', () => Object.fromEntries([
   'Search', 'Workflow', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2',
-  'MoreHorizontal', 'CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle',
+  'MoreHorizontal', 'CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle', 'Copy',
 ].map((name) => [name, element('svg')])))
 
 const { WorkflowRunsTable } = await import('./workflow-runs-table')
