@@ -76,7 +76,7 @@ def agent(**overrides):
         "enable_file_upload": False,
         "file_upload_config": None,
         "hide_tool_calls": False,
-        "hide_token_stats": False,
+        "hide_message_actions": False,
         "hide_reasoning": False,
     }
     values.update(overrides)

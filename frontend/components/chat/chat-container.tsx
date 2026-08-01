@@ -30,7 +30,7 @@ interface ChatContainerProps {
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean;
   /** Hide token usage/speed stats popover */
-  hideTokenStats?: boolean;
+  hideMessageActions?: boolean;
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean;
 }
@@ -73,7 +73,7 @@ interface ChatMessageRowProps {
   onSelectOption?: (option: string) => void;
   onOpenCodePreview?: (payload: CodePreviewPayload) => void;
   hideToolCalls: boolean;
-  hideTokenStats: boolean;
+  hideMessageActions: boolean;
   hideReasoning: boolean;
   chainOfThoughtOpen?: boolean;
   onChainOfThoughtOpenChange: (messageId: string, open: boolean) => void;
@@ -91,7 +91,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   onSelectOption,
   onOpenCodePreview,
   hideToolCalls,
-  hideTokenStats,
+  hideMessageActions,
   hideReasoning,
   chainOfThoughtOpen,
   onChainOfThoughtOpenChange,
@@ -136,7 +136,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
         onSelectOption={onSelectOption}
         onOpenCodePreview={onOpenCodePreview}
         hideToolCalls={hideToolCalls}
-        hideTokenStats={hideTokenStats}
+        hideMessageActions={hideMessageActions}
         hideReasoning={hideReasoning}
         onRequestScrollIntoView={handleRequestScrollIntoView}
       />
@@ -152,7 +152,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.onSelectOption === next.onSelectOption
   && prev.onOpenCodePreview === next.onOpenCodePreview
   && prev.hideToolCalls === next.hideToolCalls
-  && prev.hideTokenStats === next.hideTokenStats
+  && prev.hideMessageActions === next.hideMessageActions
   && prev.hideReasoning === next.hideReasoning
   && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
   && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
@@ -174,7 +174,7 @@ export function ChatContainer({
   showScrollToBottom = true,
   onOpenCodePreview,
   hideToolCalls = false,
-  hideTokenStats = false,
+  hideMessageActions = false,
   hideReasoning = false,
 }: ChatContainerProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -366,7 +366,7 @@ export function ChatContainer({
                 onSelectOption={onSelectOption}
                 onOpenCodePreview={onOpenCodePreview}
                 hideToolCalls={hideToolCalls}
-                hideTokenStats={hideTokenStats}
+                hideMessageActions={hideMessageActions}
                 hideReasoning={hideReasoning}
                 chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
                 onChainOfThoughtOpenChange={setChainOfThoughtOpen}

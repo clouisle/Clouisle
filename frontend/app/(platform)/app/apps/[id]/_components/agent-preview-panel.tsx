@@ -252,7 +252,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           messages={messages}
           isStreaming={isStreaming}
           hideToolCalls={agent.hide_tool_calls}
-          hideTokenStats={agent.hide_token_stats}
+          hideMessageActions={agent.hide_message_actions}
           hideReasoning={agent.hide_reasoning}
           className="h-full"
           onRegenerate={regenerate}

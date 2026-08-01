@@ -83,7 +83,7 @@ class Agent(models.Model):
     hide_tool_calls = fields.BooleanField(
         default=False, description="Hide tool call details in chat UI"
     )
-    hide_token_stats = fields.BooleanField(
+    hide_message_actions = fields.BooleanField(
         default=False, description="Hide token usage/speed stats in chat UI"
     )
     hide_reasoning = fields.BooleanField(

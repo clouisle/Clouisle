@@ -112,7 +112,7 @@ async def test_agent_export_without_model_tools_or_permission(monkeypatch):
         system_prompt=None,
         max_iterations=5,
         hide_tool_calls=False,
-        hide_token_stats=False,
+        hide_message_actions=False,
         hide_reasoning=False,
         tools_config=[{"name": "ignored"}],
         enable_vision=False,

@@ -33,7 +33,7 @@ export interface EmbedAgentInfo {
   enable_file_upload: boolean
   file_upload_config: Record<string, unknown> | null
   hide_tool_calls: boolean
-  hide_token_stats: boolean
+  hide_message_actions: boolean
   hide_reasoning: boolean
   embed_config: Record<string, unknown>
 }

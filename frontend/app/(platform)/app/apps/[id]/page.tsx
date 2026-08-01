@@ -78,7 +78,7 @@ export function AgentEditor({
   const [systemPrompt, setSystemPrompt] = React.useState('')
   const [maxIterations, setMaxIterations] = React.useState(5)
   const [hideToolCalls, setHideToolCalls] = React.useState(false)
-  const [hideTokenStats, setHideTokenStats] = React.useState(false)
+  const [hideMessageActions, setHideTokenStats] = React.useState(false)
   const [hideReasoning, setHideReasoning] = React.useState(false)
   const [openingMessage, setOpeningMessage] = React.useState('')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>([])
@@ -112,7 +112,7 @@ export function AgentEditor({
       setSystemPrompt(data.system_prompt || '')
       setMaxIterations(data.max_iterations || 5)
       setHideToolCalls(data.hide_tool_calls || false)
-      setHideTokenStats(data.hide_token_stats || false)
+      setHideTokenStats(data.hide_message_actions || false)
       setHideReasoning(data.hide_reasoning || false)
       setOpeningMessage(data.opening_message || '')
       setSuggestedQuestions(data.suggested_questions || [])
@@ -161,7 +161,7 @@ export function AgentEditor({
         system_prompt: systemPrompt || null,
         max_iterations: maxIterations,
         hide_tool_calls: hideToolCalls,
-        hide_token_stats: hideTokenStats,
+        hide_message_actions: hideMessageActions,
         hide_reasoning: hideReasoning,
         opening_message: openingMessage || null,
         suggested_questions: suggestedQuestions.filter((q) => q.trim()),
@@ -205,7 +205,7 @@ export function AgentEditor({
     systemPrompt,
     maxIterations,
     hideToolCalls,
-    hideTokenStats,
+    hideMessageActions,
     hideReasoning,
     openingMessage,
     suggestedQuestions,
@@ -353,7 +353,7 @@ export function AgentEditor({
 
           {/* Preview Panel */}
           <div className="w-95 min-w-95 2xl:w-[clamp(30rem,28vw,42rem)] 2xl:min-w-[30rem] shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
-            <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_token_stats: hideTokenStats, hide_reasoning: hideReasoning }} />
+            <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning }} />
           </div>
         </div>
       </div>
@@ -381,7 +381,7 @@ export function AgentEditor({
         onMaxIterationsChange={setMaxIterations}
         hideToolCalls={hideToolCalls}
         onHideToolCallsChange={setHideToolCalls}
-        hideTokenStats={hideTokenStats}
+        hideMessageActions={hideMessageActions}
         onHideTokenStatsChange={setHideTokenStats}
         hideReasoning={hideReasoning}
         onHideReasoningChange={setHideReasoning}

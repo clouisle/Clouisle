@@ -269,7 +269,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_sso_tables",
         "init_memory_tables",
         "init_agent_hide_tool_calls_field",
-        "init_agent_hide_token_stats_reasoning_fields",
+        "init_agent_hide_message_actions_reasoning_fields",
         "init_agent_memory_fields",
         "init_agent_media_generation_fields",
     ]

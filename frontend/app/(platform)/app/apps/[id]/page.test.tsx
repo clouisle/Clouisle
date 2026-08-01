@@ -57,7 +57,7 @@ const agent = {
   system_prompt: 'Be helpful',
   max_iterations: 5,
   hide_tool_calls: false,
-  hide_token_stats: false,
+  hide_message_actions: false,
   hide_reasoning: false,
   tools_config: [],
   variables: [],

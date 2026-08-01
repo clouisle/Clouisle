@@ -491,7 +491,7 @@ class AgentCreate(AgentBase):
     hide_tool_calls: bool = Field(
         default=False, description="Hide tool call details in chat UI"
     )
-    hide_token_stats: bool = Field(
+    hide_message_actions: bool = Field(
         default=False, description="Hide token usage/speed stats in chat UI"
     )
     hide_reasoning: bool = Field(
@@ -564,7 +564,7 @@ class AgentUpdate(BaseModel):
         None, ge=1, le=200, description="Max tool call iterations"
     )
     hide_tool_calls: bool | None = None
-    hide_token_stats: bool | None = None
+    hide_message_actions: bool | None = None
     hide_reasoning: bool | None = None
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None
@@ -611,7 +611,7 @@ class AgentOut(AgentBase):
     system_prompt: str | None = None
     max_iterations: int = 5
     hide_tool_calls: bool = False
-    hide_token_stats: bool = False
+    hide_message_actions: bool = False
     hide_reasoning: bool = False
     tools_config: list[ToolConfig] = []
     tools_credentials: dict[str, str] = {}
@@ -658,7 +658,7 @@ class AgentPublicOut(BaseModel):
     enable_file_upload: bool = False
     file_upload_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False
-    hide_token_stats: bool = False
+    hide_message_actions: bool = False
     hide_reasoning: bool = False
     created_by: CreatorInfo | None = None
 
@@ -680,7 +680,7 @@ class EmbedAgentInfo(BaseModel):
     enable_file_upload: bool = False
     file_upload_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False
-    hide_token_stats: bool = False
+    hide_message_actions: bool = False
     hide_reasoning: bool = False
     embed_config: dict[str, Any] = {}
 

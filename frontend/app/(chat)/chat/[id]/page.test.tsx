@@ -126,7 +126,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
-  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false, hide_token_stats: false, hide_reasoning: false,
+  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
   created_by: { username: 'owner' },
 }
 const conversations = [

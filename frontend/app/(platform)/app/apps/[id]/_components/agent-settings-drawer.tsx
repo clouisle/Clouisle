@@ -67,7 +67,7 @@ interface AgentSettingsDrawerProps {
   onMaxIterationsChange: (value: number) => void
   hideToolCalls: boolean
   onHideToolCallsChange: (value: boolean) => void
-  hideTokenStats: boolean
+  hideMessageActions: boolean
   onHideTokenStatsChange: (value: boolean) => void
   hideReasoning: boolean
   onHideReasoningChange: (value: boolean) => void
@@ -125,7 +125,7 @@ export function AgentSettingsDrawer({
   onMaxIterationsChange,
   hideToolCalls,
   onHideToolCallsChange,
-  hideTokenStats,
+  hideMessageActions,
   onHideTokenStatsChange,
   hideReasoning,
   onHideReasoningChange,
@@ -330,12 +330,12 @@ export function AgentSettingsDrawer({
                 </div>
                 <Switch checked={hideToolCalls} onCheckedChange={onHideToolCallsChange} />
               </div>
-              <div data-testid="settings-hide-token-stats" className="flex items-start justify-between gap-3 rounded-lg border p-3">
+              <div data-testid="settings-hide-message-actions" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">{ts('hideTokenStats')}</Label>
-                  <p className="text-xs text-muted-foreground">{ts('hideTokenStatsDesc')}</p>
+                  <Label className="text-xs">{ts('hideMessageActions')}</Label>
+                  <p className="text-xs text-muted-foreground">{ts('hideMessageActionsDesc')}</p>
                 </div>
-                <Switch checked={hideTokenStats} onCheckedChange={onHideTokenStatsChange} />
+                <Switch checked={hideMessageActions} onCheckedChange={onHideTokenStatsChange} />
               </div>
               <div data-testid="settings-hide-reasoning" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">

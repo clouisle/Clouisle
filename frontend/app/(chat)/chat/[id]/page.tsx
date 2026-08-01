@@ -856,7 +856,7 @@ export default function PublicChatPage({
               messages={messages}
               isStreaming={isStreaming}
               hideToolCalls={agent.hide_tool_calls}
-              hideTokenStats={agent.hide_token_stats}
+              hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
               className="flex-1 min-h-0 overflow-y-auto"
               onRegenerate={embedMode ? undefined : regenerate}

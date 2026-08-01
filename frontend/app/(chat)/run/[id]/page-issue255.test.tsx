@@ -22,7 +22,7 @@ const getPublicAgent = mock(() => Promise.resolve({
   opening_message: 'Welcome',
   suggested_questions: ['First question'],
   hide_tool_calls: true,
-  hide_token_stats: false,
+  hide_message_actions: false,
   hide_reasoning: false,
   created_by: { username: 'Ada' },
   icon: '✨',
@@ -155,7 +155,7 @@ beforeEach(() => {
   useRun.mockClear()
   getPublicAgent.mockImplementation(() => Promise.resolve({
     name: 'Public agent', description: 'Helpful agent', opening_message: 'Welcome',
-    suggested_questions: ['First question'], hide_tool_calls: true, hide_token_stats: false, hide_reasoning: false,
+    suggested_questions: ['First question'], hide_tool_calls: true, hide_message_actions: false, hide_reasoning: false,
     created_by: { username: 'Ada' }, icon: '✨',
   }))
   getWorkflow.mockImplementation(() => Promise.resolve({ name: 'Workflow', description: 'Workflow description' }))

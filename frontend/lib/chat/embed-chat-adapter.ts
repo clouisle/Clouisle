@@ -55,7 +55,7 @@ function mapAgentInfo(info: EmbedAgentInfo): PublicAgent {
     enable_file_upload: info.enable_file_upload,
     file_upload_config: (info.file_upload_config as FileUploadConfig | null) ?? null,
     hide_tool_calls: info.hide_tool_calls,
-    hide_token_stats: info.hide_token_stats,
+    hide_message_actions: info.hide_message_actions,
     hide_reasoning: info.hide_reasoning,
     embed_config: info.embed_config,
   }

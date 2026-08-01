@@ -422,7 +422,7 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
   /** Hide token usage/speed stats popover */
-  hideTokenStats?: boolean
+  hideMessageActions?: boolean
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean
   /** Controlled open state for chain of thought */
@@ -448,7 +448,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onSelectOption,
       onOpenCodePreview,
       hideToolCalls = false,
-      hideTokenStats = false,
+      hideMessageActions = false,
       hideReasoning = false,
       chainOfThoughtOpen,
       onChainOfThoughtOpenChange,
@@ -1404,7 +1404,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             {messageBody}
 
             {/* Actions for user messages */}
-            {isUser && !isStreaming && !isEditing && textContent && (showCopy || onEditMessage || onSwitchVersion) && (
+            {isUser && !isStreaming && !isEditing && textContent && !hideMessageActions && (showCopy || onEditMessage || onSwitchVersion) && (
               <MessageActions className="transition-opacity opacity-0 group-hover:opacity-100 justify-end">
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
                   <div className="flex items-center gap-0.5 text-muted-foreground">
@@ -1444,7 +1444,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && textContent && (
+            {isAssistant && !isStreaming && textContent && !hideMessageActions && (
            <MessageActions className={cn("transition-opacity", isSpeakingThisMessage ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
@@ -1491,7 +1491,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                     <RefreshCw className="h-4 w-4" />
                   </MessageAction>
                 )}
-                {usage && !hideTokenStats && (
+                {usage && (
                   <Popover>
                     <PopoverTrigger
                       render={
@@ -1552,7 +1552,7 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onSelectOption === next.onSelectOption
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls
-    && prev.hideTokenStats === next.hideTokenStats
+    && prev.hideMessageActions === next.hideMessageActions
     && prev.hideReasoning === next.hideReasoning
     && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
     && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange

@@ -213,7 +213,7 @@ async def create_agent(
         system_prompt=agent_in.system_prompt,
         max_iterations=agent_in.max_iterations,
         hide_tool_calls=agent_in.hide_tool_calls,
-        hide_token_stats=agent_in.hide_token_stats,
+        hide_message_actions=agent_in.hide_message_actions,
         hide_reasoning=agent_in.hide_reasoning,
         tools_config=[tool.model_dump() for tool in agent_in.tools_config],
         enable_vision=agent_in.enable_vision,
@@ -327,9 +327,9 @@ async def update_agent(
     if agent_in.hide_tool_calls is not None:
         agent.hide_tool_calls = agent_in.hide_tool_calls
         updated_fields.append("hide_tool_calls")
-    if agent_in.hide_token_stats is not None:
-        agent.hide_token_stats = agent_in.hide_token_stats
-        updated_fields.append("hide_token_stats")
+    if agent_in.hide_message_actions is not None:
+        agent.hide_message_actions = agent_in.hide_message_actions
+        updated_fields.append("hide_message_actions")
     if agent_in.hide_reasoning is not None:
         agent.hide_reasoning = agent_in.hide_reasoning
         updated_fields.append("hide_reasoning")
@@ -555,7 +555,7 @@ async def duplicate_agent(
         system_prompt=agent.system_prompt,
         max_iterations=agent.max_iterations,
         hide_tool_calls=agent.hide_tool_calls,
-        hide_token_stats=agent.hide_token_stats,
+        hide_message_actions=agent.hide_message_actions,
         hide_reasoning=agent.hide_reasoning,
         tools_config=agent.tools_config,
         enable_vision=agent.enable_vision,

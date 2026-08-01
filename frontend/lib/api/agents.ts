@@ -205,7 +205,7 @@ export interface Agent {
   system_prompt?: string | null
   max_iterations: number
   hide_tool_calls: boolean
-  hide_token_stats: boolean
+  hide_message_actions: boolean
   hide_reasoning: boolean
   tools_config: ToolConfig[]
   variables: VariableDefinition[]
@@ -261,7 +261,7 @@ export interface AgentCreateInput {
   system_prompt?: string | null
   max_iterations?: number
   hide_tool_calls?: boolean
-  hide_token_stats?: boolean
+  hide_message_actions?: boolean
   hide_reasoning?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
@@ -292,7 +292,7 @@ export interface AgentUpdateInput {
   system_prompt?: string | null
   max_iterations?: number
   hide_tool_calls?: boolean
-  hide_token_stats?: boolean
+  hide_message_actions?: boolean
   hide_reasoning?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
@@ -1247,7 +1247,7 @@ export interface PublicAgent {
   enable_file_upload: boolean
   file_upload_config?: FileUploadConfig | null
   hide_tool_calls: boolean
-  hide_token_stats: boolean
+  hide_message_actions: boolean
   hide_reasoning: boolean
   embed_config?: Record<string, unknown> | null
   created_by?: CreatorInfo | null
