@@ -30,7 +30,7 @@ Success means a user can submit typed inputs, understand the active state and fi
 
 ### Page structure
 
-Desktop uses a centered `max-w-6xl` task layout with an input column and a larger result/history column. Mobile stacks inputs, current result, then history. No chat bubbles, assistant welcome copy, suggested prompts, or fixed-width drawers are used.
+Desktop uses a full-height task layout with the current user's run history in a fixed left sidebar and a form/result workspace on the right. Mobile keeps the workspace primary and opens history in a left-side Sheet. The form is shown only while composing a run; after a valid submission, the workspace switches to status and results so the form does not continue occupying the page. No chat bubbles, assistant welcome copy, suggested prompts, or fixed-width result drawers are used.
 
 The `simple` presentation never requests or reveals node details. The `result_first` presentation defaults to the result and exposes Trace and Details through standard tabs or collapsibles. Both modes include personal history, with detail loaded on selection.
 

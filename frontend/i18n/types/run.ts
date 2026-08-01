@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-31T20:16:12.112Z
+// GENERATED — 2026-08-01T03:46:25.140Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
@@ -28,6 +28,10 @@ export type RunMessages = {
     cancel: string
     cancelling: string
     reset: string
+    newRun: string
+    runAgain: string
+    openHistory: string
+    historyDetailError: string
     history: string
     noHistory: string
     showTrace: string
