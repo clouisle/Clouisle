@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import type { BackendMessage } from '@/lib/utils/message-converter'
+import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
 import {
   agentsApi,
   parseSSEStream,
@@ -10,6 +10,7 @@ import {
   type ChatImageContent,
   type ChatFileContent,
   type ChatFileUrl,
+  type MessageVersion,
   type SSEEventType,
   type SSEMessageStart,
   type SSEContentDelta,
@@ -61,10 +62,41 @@ export interface UseChatOptions {
   onStreamStart?: () => void
   /** Callback when message streaming ends */
   onStreamEnd?: () => void
+  /** Injectable chat streaming API (defaults to agentsApi) */
+  api?: ChatStreamApi
+  /** Initial messages (e.g. embed greeting) */
+  initialMessages?: ChatMessage[]
 }
 
 // Re-export for convenience
 export type { ChatImageContent, ChatFileContent, ChatFileUrl }
+
+/**
+ * Injectable chat streaming API used by useChat.
+ * The default wraps agentsApi; embed pages pass an embed-backed implementation.
+ */
+export interface ChatStreamApi {
+  chatStream(agentId: string, request: ChatRequest): { stream: Promise<Response>; abort: () => void }
+  getConversation(conversationId: string): Promise<{ messages: ChatMessage[] }>
+  editMessageStream(agentId: string, messageId: string, content: string): { stream: Promise<Response>; abort: () => void }
+  regenerateStream(agentId: string, messageId: string, variables: Record<string, unknown>): { stream: Promise<Response>; abort: () => void }
+  getMessageVersions(agentId: string, messageId: string): Promise<MessageVersion[]>
+  switchMessageVersion(agentId: string, messageId: string, versionId: string): Promise<void>
+}
+
+const defaultChatApi: ChatStreamApi = {
+  chatStream: (agentId, request) => agentsApi.chatStream(agentId, request),
+  getConversation: async (conversationId) => {
+    const data = await agentsApi.getConversation(conversationId)
+    return { messages: convertBackendMessages(data.messages as BackendMessage[]) }
+  },
+  editMessageStream: (agentId, messageId, content) => agentsApi.editMessageStream(agentId, messageId, content),
+  regenerateStream: (agentId, messageId, variables) => agentsApi.regenerateStream(agentId, messageId, variables),
+  getMessageVersions: (agentId, messageId) => agentsApi.getMessageVersions(agentId, messageId),
+  switchMessageVersion: async (agentId, messageId, versionId) => {
+    await agentsApi.switchMessageVersion(agentId, messageId, versionId)
+  },
+}
 
 export interface UseChatReturn {
   /** Current messages */
@@ -109,11 +141,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     onError,
     onStreamStart,
     onStreamEnd,
+    api: overrideApi,
+    initialMessages = [],
   } = options
+
+  const api = useMemo(() => overrideApi ?? defaultChatApi, [overrideApi])
 
   const tError = useTranslations('errors')
   const tAuth = useTranslations('auth')
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [error, setError] = useState<ChatError | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(
@@ -228,7 +264,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         // Start streaming
-        const { stream, abort } = agentsApi.chatStream(agentId, chatRequest)
+        const { stream, abort } = api.chatStream(agentId, chatRequest)
         abortRef.current = abort
 
         const response = await stream
@@ -982,6 +1018,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
     },
     [
+      api,
       agentId,
       conversationId,
       variables,
@@ -1050,11 +1087,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
    */
   const reset = useCallback(() => {
     stop()
-    setMessages([])
+    setMessages(initialMessages)
     setConversationId(null)
     setError(null)
     setStatus('idle')
-  }, [stop])
+  }, [stop, initialMessages])
 
   /**
    * Switch to a different version of a message using backend API
@@ -1063,11 +1100,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const reloadConversationMessages = useCallback(async () => {
     if (!conversationId) return
 
-    const conversationData = await agentsApi.getConversation(conversationId)
-    const { convertBackendMessages } = await import('@/lib/utils/message-converter')
-    const convertedMessages = convertBackendMessages(conversationData.messages as BackendMessage[])
+    const { messages: convertedMessages } = await api.getConversation(conversationId)
     setMessages(convertedMessages)
-  }, [conversationId])
+  }, [api, conversationId])
 
   const switchVersion = useCallback(
     async (messageId: string, versionIndex: number) => {
@@ -1082,7 +1117,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       try {
         // Fetch all versions from backend
-        const versions = await agentsApi.getMessageVersions(agentId, messageId)
+        const versions = await api.getMessageVersions(agentId, messageId)
 
         if (versionIndex < 0 || versionIndex >= versions.length) {
           console.error('switchVersion: invalid versionIndex', versionIndex, 'versions.length', versions.length)
@@ -1093,7 +1128,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         // Call backend to switch version (this updates is_active in database)
         // Backend will also deactivate messages that came after this message
-        await agentsApi.switchMessageVersion(agentId, messageId, targetVersion.id)
+        await api.switchMessageVersion(agentId, messageId, targetVersion.id)
 
         // Reload the entire conversation to get the correct message history.
         await reloadConversationMessages()
@@ -1101,7 +1136,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         console.error('Failed to switch version:', err)
       }
     },
-    [agentId, messages, isLoading, reloadConversationMessages]
+    [api, agentId, messages, isLoading, reloadConversationMessages]
   )
 
   const editMessage = useCallback(
@@ -1139,7 +1174,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       })
 
       try {
-        const { stream, abort } = agentsApi.editMessageStream(agentId, messageId, content)
+        const { stream, abort } = api.editMessageStream(agentId, messageId, content)
         abortRef.current = abort
         const response = await stream
         if (!response.ok) {
@@ -1231,7 +1266,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         abortRef.current = null
       }
     },
-    [agentId, isLoading, messages, onError, onStreamEnd, onStreamStart, reloadConversationMessages, tAuth, tError]
+    [api, agentId, isLoading, messages, onError, onStreamEnd, onStreamStart, reloadConversationMessages, tAuth, tError]
   )
 
   /**
@@ -1323,7 +1358,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       try {
         // Use backend regenerate API which handles versioning
-        const { stream, abort } = agentsApi.regenerateStream(agentId, messageId, variables)
+        const { stream, abort } = api.regenerateStream(agentId, messageId, variables)
         abortRef.current = abort
 
         const response = await stream
@@ -1975,6 +2010,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
     },
     [
+      api,
       agentId,
       variables,
       messages,

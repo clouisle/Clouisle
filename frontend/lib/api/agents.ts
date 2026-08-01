@@ -1241,6 +1241,7 @@ export interface PublicAgent {
   enable_file_upload: boolean
   file_upload_config?: FileUploadConfig | null
   hide_tool_calls: boolean
+  embed_config?: Record<string, unknown> | null
   created_by?: CreatorInfo | null
 }
 

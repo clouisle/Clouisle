@@ -8,6 +8,7 @@ let refIndex = 0
 
 mock.module('react', () => ({
   useCallback: (fn: unknown) => fn,
+  useMemo: (fn: () => unknown) => fn(),
   useRef: (initialValue: unknown) => refs[refIndex++] ??= { current: initialValue },
   useState: (initialValue: unknown) => {
     const index = stateIndex++
@@ -37,6 +38,9 @@ mock.module('@/lib/api/client', () => ({
 mock.module('@/lib/utils/tool-result', () => ({
   parseToolResultOutput: (output: unknown) => output,
   shouldDisplayMediaResultInBody: () => true,
+}))
+mock.module('@/lib/utils/message-converter', () => ({
+  convertBackendMessages: () => [],
 }))
 
 const { agentsApi, parseSSEStream } = await import('@/lib/api')

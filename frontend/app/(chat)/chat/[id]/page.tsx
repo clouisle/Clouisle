@@ -23,8 +23,6 @@ import {
 } from 'lucide-react'
 import {
   ApiError,
-  publicAgentsApi,
-  uploadApi,
   type PublicAgent,
   type ConversationListItem,
   type ChatFileUrl,
@@ -56,7 +54,7 @@ import {
   type CodePreviewPayload,
 } from '@/components/chat'
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'
-import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
+import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { CodePreviewCanvas } from '@/components/chat/code-preview-canvas'
@@ -67,8 +65,14 @@ import {
 } from '@/components/ui/collapsible'
 import { toast } from 'sonner'
 
-interface PublicChatPageProps {
-  params: Promise<{ id: string }>
+export interface PublicChatPageProps {
+  params?: Promise<{ id: string }>
+  agentId?: string
+  adapter?: ChatPageAdapter
+  embedMode?: boolean
+  mode?: 'fullscreen' | 'bubble'
+  onConversationChange?: (conversationId: string) => void
+  onClose?: () => void
 }
 
 function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof useTranslations>) {
@@ -83,17 +87,25 @@ function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof us
   }
 }
 
-export default function PublicChatPage({ params }: PublicChatPageProps) {
+export default function PublicChatPage({
+  params,
+  agentId: embedAgentId,
+  adapter = defaultChatAdapter,
+  embedMode = false,
+  mode = 'fullscreen',
+  onConversationChange: onExternalConversationChange,
+  onClose,
+}: PublicChatPageProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const t = useTranslations('publicChat')
   const tCommon = useTranslations('common')
-  
+
   const [agent, setAgent] = React.useState<PublicAgent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = React.useState<boolean | null>(null)
-  
+
   // Sidebar state - collapsed by default on mobile
   const [sidebarOpen, setSidebarOpen] = React.useState(() => {
     if (typeof window !== 'undefined') {
@@ -136,27 +148,43 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   } = useVariableForm(variables)
 
   React.useEffect(() => {
-    params.then(setResolvedParams)
-  }, [params])
-  
-  // Check login status first
+    if (embedMode && embedAgentId) {
+      setResolvedParams({ id: embedAgentId })
+    } else if (params) {
+      params.then(setResolvedParams)
+    }
+  }, [params, embedMode, embedAgentId])
+
+  // Check login status first (skipped in embed mode)
   React.useEffect(() => {
+    if (embedMode) {
+      setIsLoggedIn(true)
+      return
+    }
     const token = localStorage.getItem('access_token')
     setIsLoggedIn(!!token)
-  }, [])
+  }, [embedMode])
 
   // Refresh conversations list
   const refreshConversations = React.useCallback(async () => {
     if (!resolvedParams) return
     try {
-      const convData = await publicAgentsApi.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
+      const convData = await adapter.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
       setConversations(convData.items)
       setConversationPage(1)
       setHasMoreConversations(convData.items.length >= 5 && convData.total > convData.items.length)
     } catch {
       // Ignore errors
     }
-  }, [resolvedParams])
+  }, [resolvedParams, adapter])
+
+  // Greeting messages for embed bubble mode
+  const greetingMessages = React.useMemo(() => {
+    if (!embedMode || !agent) return []
+    const greeting = ((agent.embed_config as Record<string, unknown> | undefined)?.bubble as Record<string, unknown> | undefined)?.greeting as string | undefined
+    if (!greeting) return []
+    return [{ id: 'greeting', role: 'assistant' as const, parts: [{ type: 'text' as const, text: greeting }], createdAt: new Date() }]
+  }, [embedMode, agent])
 
   // Use chat hook
   const {
@@ -175,14 +203,25 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   } = useChat({
     agentId: agent?.id || '',
     variables: variableValues,
-    onConversationChange: () => {
+    onConversationChange: (id) => {
       // Refresh conversation list when new conversation is created
       refreshConversations()
+      onExternalConversationChange?.(id)
     },
-    // Don't refresh on every message end - only on conversation creation
-    // This prevents unnecessary sidebar refreshes during chat
+    api: adapter,
+    initialMessages: greetingMessages,
   })
-  
+
+  // Set greeting when agent loads (embed mode, after mount)
+  React.useEffect(() => {
+    if (!embedMode || !agent || conversationId) return
+    if (messages.length > 0) return
+    const greeting = ((agent.embed_config as Record<string, unknown> | undefined)?.bubble as Record<string, unknown> | undefined)?.greeting as string | undefined
+    if (greeting) {
+      setMessages([{ id: 'greeting', role: 'assistant', parts: [{ type: 'text', text: greeting }], createdAt: new Date() }])
+    }
+  }, [embedMode, agent, conversationId, messages.length, setMessages])
+
   React.useEffect(() => {
     if (!agent?.name) return
     document.title = agent.name
@@ -203,13 +242,13 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
         setError(null)
 
         // Fetch agent info
-        const agentData = await publicAgentsApi.getPublicAgent(resolvedParams.id)
+        const agentData = await adapter.getAgent(resolvedParams.id)
         setAgent(agentData)
 
         // Fetch conversations (first page)
         setLoadingConversations(true)
         try {
-          const convData = await publicAgentsApi.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
+          const convData = await adapter.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
           setConversations(convData.items)
           setConversationPage(1)
           setHasMoreConversations(convData.items.length >= 5 && convData.total > convData.items.length)
@@ -227,11 +266,11 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     }
 
     fetchData()
-  }, [resolvedParams, isLoggedIn, t])
+  }, [resolvedParams, isLoggedIn, t, adapter])
 
   const syncConversationUrl = React.useCallback(
     (nextConversationId: string | null, mode: 'push' | 'replace' = 'push') => {
-      if (!resolvedParams) return
+      if (embedMode || !resolvedParams) return
 
       const nextParams = new URLSearchParams(searchParams.toString())
       if (nextConversationId) {
@@ -245,13 +284,13 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       const historyMethod = mode === 'replace' ? window.history.replaceState : window.history.pushState
       historyMethod.call(window.history, {}, '', newUrl)
     },
-    [resolvedParams, searchParams]
+    [resolvedParams, searchParams, embedMode]
   )
 
   // Load conversation from URL parameter
   React.useEffect(() => {
     const loadConversationFromUrl = async () => {
-      if (!resolvedParams || !agent || loadingConversations) return
+      if (embedMode || !resolvedParams || !agent || loadingConversations) return
 
       const conversationParam = searchParams.get('conversation')
       if (!conversationParam) return
@@ -266,8 +305,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
       try {
         setLoadingConversation(true)
-        const data = await publicAgentsApi.getConversation(conversationParam)
-        const chatMessages = convertBackendMessages(data.messages as BackendMessage[])
+        const { messages: chatMessages } = await adapter.getConversation(conversationParam)
         setMessages(chatMessages)
         setConversationId(conversationParam)
       } catch (err) {
@@ -280,16 +318,16 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl])
+  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
     if (!resolvedParams || loadingMore || !hasMoreConversations) return
-    
+
     setLoadingMore(true)
     try {
       const nextPage = conversationPage + 1
-      const convData = await publicAgentsApi.getConversations(resolvedParams.id, { page: nextPage, pageSize: 5 })
+      const convData = await adapter.getConversations(resolvedParams.id, { page: nextPage, pageSize: 5 })
       setConversations(prev => [...prev, ...convData.items])
       setConversationPage(nextPage)
       setHasMoreConversations(convData.items.length >= 5 && (conversations.length + convData.items.length) < convData.total)
@@ -298,7 +336,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     } finally {
       setLoadingMore(false)
     }
-  }, [resolvedParams, conversationPage, loadingMore, hasMoreConversations, conversations.length])
+  }, [resolvedParams, conversationPage, loadingMore, hasMoreConversations, conversations.length, adapter])
 
   // Use IntersectionObserver to detect when sentinel element is visible
   React.useEffect(() => {
@@ -319,6 +357,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   }, [hasMoreConversations, loadingMore, loadingConversations, loadMoreConversations])
 
   const handleNewChat = () => {
+    adapter.saveConversation?.(messages, conversationId)
     suppressUrlConversationReloadRef.current = true
     resetChat()
     setInput('')
@@ -327,6 +366,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     setLoadingConversation(false)
 
     syncConversationUrl(null)
+    refreshConversations()
   }
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
@@ -334,11 +374,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
     try {
       setLoadingConversation(true)
-      const data = await publicAgentsApi.getConversation(conv.id)
-
-      // Convert messages to ChatMessage format using unified converter
-      // This handles text, images, files, reasoning, tool calls, and RAG context
-      const chatMessages = convertBackendMessages(data.messages as BackendMessage[])
+      const { messages: chatMessages } = await adapter.getConversation(conv.id)
 
       setMessages(chatMessages)
       setConversationId(conv.id)
@@ -362,7 +398,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     if (!conversationPendingDelete) return
 
     try {
-      await publicAgentsApi.deleteConversation(conversationPendingDelete.id)
+      await adapter.deleteConversation(conversationPendingDelete.id)
       setConversations(prev => prev.filter(c => c.id !== conversationPendingDelete.id))
 
       // If deleting current conversation, start new chat and clear URL
@@ -389,7 +425,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     if (!renamingConversation || !newTitle.trim()) return
 
     try {
-      await publicAgentsApi.updateConversation(renamingConversation.id, { title: newTitle.trim() })
+      await adapter.updateConversation(renamingConversation.id, { title: newTitle.trim() })
 
       // Update local state
       setConversations(prev =>
@@ -413,7 +449,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       reader.readAsDataURL(file)
     })
   }
-  
+
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim() || chatLoading) return
 
@@ -423,11 +459,11 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     }
 
     const filesToProcess = submittedFiles || files
-    
+
     // Process images and files
     let images: ChatImageContent[] | undefined
     let fileUrls: ChatFileUrl[] | undefined
-    
+
     if (agent && filesToProcess && filesToProcess.length > 0) {
       // Process image files for vision
       if (agent.enable_vision) {
@@ -441,45 +477,45 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           )
         }
       }
-      
+
       // Process document files for file upload - upload to get URLs with progress
       if (agent.enable_file_upload) {
         const documentFiles = filesToProcess.filter(f => f.isDocument)
         if (documentFiles.length > 0) {
           try {
             setIsUploading(true)
-            
+
             // Upload documents with progress tracking
             const uploadPromises = documentFiles.map(async (f) => {
               // Update file progress
               const updateProgress = (progress: { percent: number }) => {
-                setFiles(prev => prev.map(file => 
-                  file.id === f.id 
+                setFiles(prev => prev.map(file =>
+                  file.id === f.id
                     ? { ...file, isUploading: true, uploadProgress: progress.percent }
                     : file
                 ))
               }
-              
+
               // Mark as uploading
-              setFiles(prev => prev.map(file => 
-                file.id === f.id 
+              setFiles(prev => prev.map(file =>
+                file.id === f.id
                   ? { ...file, isUploading: true, uploadProgress: 0 }
                   : file
               ))
-              
-              const result = await uploadApi.uploadFileWithProgress(
-                f.file, 
+
+              const result = await adapter.uploadFile(
+                f.file,
                 'documents',
                 updateProgress
               )
-              
+
               // Mark as complete
-              setFiles(prev => prev.map(file => 
-                file.id === f.id 
+              setFiles(prev => prev.map(file =>
+                file.id === f.id
                   ? { ...file, isUploading: false, uploadProgress: 100 }
                   : file
               ))
-              
+
               return {
                 filename: f.name,
                 url: result.url,
@@ -503,12 +539,12 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
         }
       }
     }
-    
+
     setInput('')
     setFiles([])
     await sendMessage(message, images, fileUrls)
   }
-  
+
   if (isLoading || isLoggedIn === null) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
@@ -516,8 +552,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       </div>
     )
   }
-  
-  // Not logged in - show login prompt
+
+  // Not logged in - show login prompt (JWT only)
   if (!isLoggedIn) {
     return (
       <div className="h-screen flex flex-col items-center justify-center p-4 bg-background">
@@ -536,7 +572,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       </div>
     )
   }
-  
+
   if (error || !agent) {
     return (
       <div className="h-screen flex flex-col items-center justify-center p-4 bg-background">
@@ -545,25 +581,34 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           <AlertTitle>{t('error')}</AlertTitle>
           <AlertDescription>{error || t('agentNotFound')}</AlertDescription>
         </Alert>
-        <Button
-          variant="ghost"
-          className="mt-4"
-          onClick={() => router.push('/')}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          {t('backToHome')}
-        </Button>
+        {!embedMode && (
+          <Button
+            variant="ghost"
+            className="mt-4"
+            onClick={() => router.push('/')}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {t('backToHome')}
+          </Button>
+        )}
       </div>
     )
   }
 
   const displayIcon = agent.icon || agent.avatar_url
   const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
-  
+
+  // Embed config gating
+  const embedCfg = (agent.embed_config ?? {}) as Record<string, unknown>
+  const showHeader = !embedMode || embedCfg.show_header !== false
+  const showHistory = !embedMode || embedCfg.show_history !== false
+  const allowNew = !embedMode || embedCfg.allow_new !== false
+
   return (
     <div className="h-full flex overflow-hidden bg-background">
       {/* Sidebar */}
-      <div 
+      {showHistory && (
+      <div
         className={cn(
           "flex flex-col bg-muted/50 transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
           sidebarOpen ? "w-64" : "w-0"
@@ -601,17 +646,19 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                 )}
                 <span className="truncate text-sm font-medium text-foreground max-w-[120px]">{agent.name}</span>
               </button>
-              
+
               {/* New Chat Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                onClick={handleNewChat}
-                title={t('newChat')}
-              >
-                <SquarePen className="h-5 w-5" />
-              </Button>
+              {allowNew && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={handleNewChat}
+                  title={t('newChat')}
+                >
+                  <SquarePen className="h-5 w-5" />
+                </Button>
+              )}
             </div>
 
             {/* Conversation List */}
@@ -632,8 +679,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                       onClick={() => handleSelectConversation(conv)}
                       className={cn(
                         "group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors",
-                        conv.id === conversationId 
-                          ? "bg-accent" 
+                        conv.id === conversationId
+                          ? "bg-accent"
                           : "hover:bg-accent/50"
                       )}
                     >
@@ -679,6 +726,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           </>
         )}
       </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 min-w-0 min-h-0">
@@ -686,17 +734,20 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           <ResizablePanel defaultSize={activeCodePreview ? '62%' : '100%'} minSize="40%">
             <div className="flex h-full min-w-0 flex-col">
         {/* Header */}
+        {showHeader && (
         <header className="flex items-center gap-2 px-3 h-14 shrink-0 border-b">
           {/* Sidebar toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
-          </Button>
-          {!sidebarOpen && (
+          {showHistory && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+            </Button>
+          )}
+          {allowNew && !sidebarOpen && (
             <Button
               variant="ghost"
               size="icon"
@@ -707,7 +758,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               <SquarePen className="h-5 w-5" />
             </Button>
           )}
-          {!sidebarOpen && (
+          {!(showHistory && sidebarOpen) && (
             <>
               {displayIcon ? (
                 isIconUrl ? (
@@ -733,7 +784,19 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               </div>
             </>
           )}
+          {embedMode && mode === 'bubble' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-9 w-9"
+              onClick={onClose}
+              title={t('backToHome')}
+            >
+              <span className="text-lg leading-none">&times;</span>
+            </Button>
+          )}
         </header>
+        )}
 
         {/* Chat Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -794,9 +857,9 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               isStreaming={isStreaming}
               hideToolCalls={agent.hide_tool_calls}
               className="flex-1 min-h-0 overflow-y-auto"
-              onRegenerate={regenerate}
-              onEditMessage={editMessage}
-              onSwitchVersion={switchVersion}
+              onRegenerate={embedMode ? undefined : regenerate}
+              onEditMessage={embedMode ? undefined : editMessage}
+              onSwitchVersion={embedMode ? undefined : switchVersion}
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
@@ -832,7 +895,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                 <h1 className="text-2xl md:text-3xl font-medium text-foreground text-center mb-4">
                   {agent.opening_message || t('welcomeMessage')}
                 </h1>
-                
+
                 {agent.description && !agent.opening_message && (
                   <p className="text-muted-foreground text-center max-w-lg text-base">
                     {agent.description}
@@ -933,11 +996,13 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               onFilesChange={setFiles}
               isUploading={isUploading}
             />
-            
+
             {/* Footer */}
-            <p className="text-[11px] text-center text-muted-foreground mt-2">
-              {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
-            </p>
+            {!embedMode && (
+              <p className="text-[11px] text-center text-muted-foreground mt-2">
+                {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
+              </p>
+            )}
           </div>
         </div>
             </div>
