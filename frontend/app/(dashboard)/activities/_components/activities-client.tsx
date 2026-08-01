@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Activity, MessageSquare, Workflow } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,10 +14,29 @@ import { WorkflowRunsTable } from './workflow-runs-table'
 
 export function ActivitiesClient() {
   const t = useTranslations('activities')
-  const [activeTab, setActiveTab] = React.useState<'conversations' | 'workflows'>('conversations')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = React.useState<'conversations' | 'workflows'>(() => {
+    const tab = searchParams.get('tab')
+    return tab === 'workflows' ? 'workflows' : 'conversations'
+  })
   const [loading, setLoading] = React.useState(true)
   const [conversationStats, setConversationStats] = React.useState<ConversationStats | null>(null)
   const [workflowStats, setWorkflowStats] = React.useState<WorkflowRunStats | null>(null)
+
+  const handleTabChange = (tab: string) => {
+    const next = tab as 'conversations' | 'workflows'
+    setActiveTab(next)
+    const nextParams = new URLSearchParams(searchParams.toString())
+    if (next === 'conversations') {
+      nextParams.delete('tab')
+    } else {
+      nextParams.set('tab', 'workflows')
+    }
+    const query = nextParams.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+  }
 
   // Load statistics
   React.useEffect(() => {
@@ -48,6 +68,12 @@ export function ActivitiesClient() {
     loadStats()
      
   }, [])
+
+  // Keep the active tab in sync with the URL (back/forward navigation)
+  React.useEffect(() => {
+    const tab = searchParams.get('tab')
+    setActiveTab(tab === 'workflows' ? 'workflows' : 'conversations')
+  }, [searchParams])
 
   return (
     <div className="flex flex-col gap-6">
@@ -109,7 +135,7 @@ export function ActivitiesClient() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'conversations' | 'workflows')}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="conversations">
             <MessageSquare className="mr-2 h-4 w-4" />

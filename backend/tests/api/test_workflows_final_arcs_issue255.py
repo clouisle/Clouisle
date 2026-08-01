@@ -168,6 +168,7 @@ async def test_update_workflow_skips_description_and_updates_icon(monkeypatch):
         trigger_config=None,
         visibility=None,
         embed_config=None,
+        run_page_config=None,
     )
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)

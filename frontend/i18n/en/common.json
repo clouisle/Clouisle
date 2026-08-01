@@ -38,6 +38,7 @@
     "createdBy": "Created By",
     "noResults": "No results found",
     "openMenu": "Open menu",
+    "copy": "Copy",
     "copiedToClipboard": "Copied to clipboard",
     "confirmBulkDelete": "Are you sure you want to delete {count} selected items? This action cannot be undone.",
     "rowsPerPage": "Rows per page",

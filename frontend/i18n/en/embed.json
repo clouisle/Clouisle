@@ -9,6 +9,12 @@
       "allowedDomains": "Allowed Domains",
       "allowedDomainsPlaceholder": "e.g. example.com, *.example.com",
       "allowedDomainsDescription": "Leave empty to allow all domains. Supports wildcard subdomains (*.example.com).",
+      "showHeader": "Show Header",
+      "showHeaderDescription": "Show the app icon and name at the top of the embed",
+      "showHistory": "Show History",
+      "showHistoryDescription": "Show a history sidebar in the embed (stored in the browser)",
+      "allowNew": "Allow New",
+      "allowNewDescription": "Allow users to start a new chat/run",
       "invalidDomain": "Domain \"{value}\" is invalid. Use a hostname like example.com or example.com:3000.",
       "theme": "Theme",
       "themeAuto": "Auto",
@@ -47,7 +53,10 @@
       "invalidToken": "Invalid or missing API key",
       "defaultGreeting": "Hi! How can I help you?",
       "configureVariables": "Configure Variables",
-      "fillRequired": "Please fill in required fields first"
+      "fillRequired": "Please fill in required fields first",
+      "history": "History",
+      "noHistory": "No history yet",
+      "untitled": "Untitled"
     }
   }
 }

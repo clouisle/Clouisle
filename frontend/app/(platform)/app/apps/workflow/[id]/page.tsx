@@ -68,7 +68,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition } from '@/lib/api/workflows'
+import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition, type WorkflowRunPagePresentation } from '@/lib/api/workflows'
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
 import { useTeam } from '@/contexts/team-context'
@@ -107,6 +107,7 @@ import { WorkflowSettingsDrawer } from './_components/workflow-settings-drawer'
 import { AddNodePopover } from './_components/add-node-popover'
 import { ValidationChecklist } from './_components/validation-checklist'
 import { EmbedConfigDialog } from '../../[id]/_components/embed-config-dialog'
+import { WorkflowPublishDialog } from './_components/workflow-publish-dialog'
 import { validateWorkflow, ValidationIssue } from './_components/workflow-validator'
 
 // Define custom node data type
@@ -203,23 +204,33 @@ function ZoomControl() {
         </div>
         {/* Zoom Controls */}
         <div className="flex items-center gap-1 bg-card border border-border rounded-lg px-1 py-0.5 shadow-sm">
-          <button
-            onClick={() => zoomOut()}
-            className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
-            title={t('editor.zoomOut')}
-          >
-            <Minus className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => zoomOut()}
+              aria-label={t('editor.zoomOut')}
+              render={
+                <button className="p-1 hover:bg-accent rounded cursor-pointer transition-colors">
+                  <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              }
+            />
+            <TooltipContent>{t('editor.zoomOut')}</TooltipContent>
+          </Tooltip>
           <span className="text-xs text-muted-foreground min-w-9 text-center tabular-nums">
             {zoomPercent}%
           </span>
-          <button
-            onClick={() => zoomIn()}
-            className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
-            title={t('editor.zoomIn')}
-          >
-            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => zoomIn()}
+              aria-label={t('editor.zoomIn')}
+              render={
+                <button className="p-1 hover:bg-accent rounded cursor-pointer transition-colors">
+                  <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              }
+            />
+            <TooltipContent>{t('editor.zoomIn')}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </Panel>
@@ -285,6 +296,7 @@ export function WorkflowEditorContent({
   const [showValidationChecklist, setShowValidationChecklist] = React.useState(false)
   const [validationIssues, setValidationIssues] = React.useState<ValidationIssue[]>([])
   const [showEmbed, setShowEmbed] = React.useState(false)
+  const [showPublishDialog, setShowPublishDialog] = React.useState(false)
 
   const isWorkflowOwner = Boolean(currentUser?.id && workflow?.created_by_id === currentUser.id)
   const isWorkflowTeamAdmin = Boolean(
@@ -957,6 +969,7 @@ export function WorkflowEditorContent({
     // 获取参数列表
     const nodeData = startNode.data as { parameters?: Array<{
       name: string
+      label?: string
       type: string
       required: boolean
       defaultValue?: string
@@ -968,6 +981,7 @@ export function WorkflowEditorContent({
     // 转换为 VariableDefinition 格式
     return parameters.map(p => ({
       name: p.name,
+      label: p.label || null,
       type: p.type,
       required: p.required,
       default: p.defaultValue || undefined,
@@ -1010,39 +1024,51 @@ export function WorkflowEditorContent({
   }, [workflow, workflowId, api, nodes, edges, t, extractVariablesFromNodes])
 
   // Publish/Unpublish workflow
-  const handlePublish = React.useCallback(async () => {
+  const handlePublish = React.useCallback(async (
+    presentation?: WorkflowRunPagePresentation
+  ) => {
     if (!workflow) return
+
+    if (workflow.status !== 'published' && !presentation) {
+      setShowPublishDialog(true)
+      return
+    }
 
     try {
       setIsPublishing(true)
-      
+
       // 提取开始节点的输入变量
       const variables = extractVariablesFromNodes()
-      
-      // 如果有未保存的更改，先保存
-      if (hasChanges) {
-        await api.updateWorkflow(workflowId, {
-          definition: {
-            nodes: nodes as never[],
-            edges: edges as never[],
-            viewport: { x: 0, y: 0, zoom: 1 },
-          },
-          variables,
-        })
-        setHasChanges(false)
-        setLastSavedAt(new Date())
-      }
-      
-      // 发布或取消发布
+
       if (workflow.status === 'published') {
         const updated = await api.unpublishWorkflow(workflowId)
         setWorkflow(updated)
         toast.success(t('unpublished'))
-      } else {
-        const updated = await api.publishWorkflow(workflowId)
-        setWorkflow(updated)
-        toast.success(t('published'))
+        return
       }
+
+      // 发布设置与未保存的画布一起持久化，再发布该版本。
+      const update: WorkflowUpdateInput = {
+        run_page_config: { presentation_mode: presentation ?? 'simple' },
+      }
+      if (hasChanges) {
+        update.definition = {
+          nodes: nodes as never[],
+          edges: edges as never[],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }
+        update.variables = variables
+      }
+      await api.updateWorkflow(workflowId, update)
+      if (hasChanges) {
+        setHasChanges(false)
+        setLastSavedAt(new Date())
+      }
+
+      const updated = await api.publishWorkflow(workflowId)
+      setWorkflow(updated)
+      setShowPublishDialog(false)
+      toast.success(t('published'))
     } catch {
       // toast handled by API interceptor
     } finally {
@@ -1535,7 +1561,7 @@ export function WorkflowEditorContent({
                   variant={workflow?.status === 'published' ? 'default' : 'outline'}
                   size="sm"
                   className={workflow?.status === 'published' ? 'h-8' : 'bg-card shadow-sm h-8'}
-                  onClick={handlePublish}
+                  onClick={() => void handlePublish()}
                   disabled={isPublishing}
                 >
                   {isPublishing ? (
@@ -1830,6 +1856,16 @@ export function WorkflowEditorContent({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {workflow && (
+        <WorkflowPublishDialog
+          open={showPublishDialog}
+          onOpenChange={setShowPublishDialog}
+          presentation={workflow.run_page_config?.presentation_mode ?? 'simple'}
+          isPublishing={isPublishing}
+          onPublish={handlePublish}
+        />
+      )}
 
       {/* Embed Config Dialog */}
       {workflow && (

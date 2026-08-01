@@ -421,6 +421,12 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
+  /** Hide token usage/speed stats popover */
+  hideMessageActions?: boolean
+  /** Hide reasoning / chain-of-thought panel */
+  hideReasoning?: boolean
+  /** Current conversation ID (shown on errors for debugging) */
+  conversationId?: string | null
   /** Controlled open state for chain of thought */
   chainOfThoughtOpen?: boolean
   /** Callback when chain of thought open state changes */
@@ -444,6 +450,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onSelectOption,
       onOpenCodePreview,
       hideToolCalls = false,
+      hideMessageActions = false,
+      hideReasoning = false,
+      conversationId,
       chainOfThoughtOpen,
       onChainOfThoughtOpenChange,
       onRequestScrollIntoView,
@@ -997,7 +1006,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // Only show if there are reasoning parts OR tasks (RAG/generating)
     // Tool calls should only be in ChainOfThought if there's reasoning
     const hasTasks = taskParts.length > 0
-    const hasChainOfThought = hasReasoning || hasTasks
+    const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
 
     // Get text parts to check if content has started
     const hasTextContent = textParts.some(t => t.text && t.text.length > 0)
@@ -1339,9 +1348,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )
           )}
           {isErroredMessage && (
-            <div className={cn('flex items-start gap-1.5 text-xs text-destructive', !isStandaloneErrorMessage && 'mt-3')}>
-              <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
-              <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+            <div className={cn('flex flex-col gap-1 text-xs', !isStandaloneErrorMessage && 'mt-3')}>
+              <div className="flex items-start gap-1.5 text-destructive">
+                <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
+                <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+              </div>
+              {conversationId && (
+                <div className="flex items-center gap-1.5 pl-5 text-muted-foreground">
+                  <span>{t('conversationId')}:</span>
+                  <code className="font-mono text-[10px]">{conversationId}</code>
+                </div>
+              )}
             </div>
           )}
           {isAssistant && isManuallyStoppedMessage && (
@@ -1361,6 +1378,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       buildChainOfThoughtSteps,
       cancelEdit,
       chainOfThoughtOpen,
+      conversationId,
       editDraft,
       fileParts,
       hasChainOfThought,
@@ -1398,7 +1416,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             {messageBody}
 
             {/* Actions for user messages */}
-            {isUser && !isStreaming && !isEditing && textContent && (showCopy || onEditMessage || onSwitchVersion) && (
+            {isUser && !isStreaming && !isEditing && textContent && !hideMessageActions && (showCopy || onEditMessage || onSwitchVersion) && (
               <MessageActions className="transition-opacity opacity-0 group-hover:opacity-100 justify-end">
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
                   <div className="flex items-center gap-0.5 text-muted-foreground">
@@ -1438,7 +1456,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && textContent && (
+            {isAssistant && !isStreaming && (textContent || isErroredMessage) && !hideMessageActions && (
            <MessageActions className={cn("transition-opacity", isSpeakingThisMessage ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
@@ -1546,6 +1564,9 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onSelectOption === next.onSelectOption
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls
+    && prev.hideMessageActions === next.hideMessageActions
+    && prev.hideReasoning === next.hideReasoning
+    && prev.conversationId === next.conversationId
     && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
     && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
     && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
@@ -1960,7 +1981,7 @@ function formatCitationMarker(index: number, sources: SourceDocumentPart[]) {
   return ` [${index}]`
 }
 
-const TextWithCitations = React.memo(function TextWithCitations({
+export const TextWithCitations = React.memo(function TextWithCitations({
   text,
   sources,
   isStreaming = false,

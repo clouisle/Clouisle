@@ -26,6 +26,7 @@ import {
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SettingsDrawer } from '@/components/settings-drawer'
 import { canAccessRoute } from '@/lib/route-permissions'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -176,10 +177,14 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center gap-2 bg-background px-4 md:rounded-t-xl">
-      <SidebarTrigger 
-        className="-ms-1 size-8 border border-border rounded-md" 
-        title={t('toggleSidebar')}
-      />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarTrigger className="-ms-1 size-8 border border-border rounded-md" />
+          }
+        />
+        <TooltipContent>{t('toggleSidebar')}</TooltipContent>
+      </Tooltip>
       <Separator orientation="vertical" className="h-6! self-center! mx-2" />
       
       {/* Search */}
@@ -244,13 +249,20 @@ export function Header() {
 
       <div className="ms-auto flex items-center gap-1.5">
         {/* Appearance Settings */}
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="rounded-md hover:bg-muted text-muted-foreground hover:text-foreground size-8 inline-flex items-center justify-center transition-colors cursor-pointer"
-          title={t('appearanceSettings')}
-        >
-          <Palette className="h-4 w-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={() => setSettingsOpen(true)}
+            render={
+              <button
+                className="rounded-md hover:bg-muted text-muted-foreground hover:text-foreground size-8 inline-flex items-center justify-center transition-colors cursor-pointer"
+                aria-label={t('appearanceSettings')}
+              >
+                <Palette className="h-4 w-4" />
+              </button>
+            }
+          />
+          <TooltipContent>{t('appearanceSettings')}</TooltipContent>
+        </Tooltip>
       </div>
 
       <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} />

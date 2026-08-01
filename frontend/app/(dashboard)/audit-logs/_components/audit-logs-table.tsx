@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import {
     Select,
@@ -44,6 +45,7 @@ import { auditLogsApi, AuditLog, type AuditLogActionOption } from "@/lib/api/adm
 import { toast } from "sonner";
 import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter";
 import { AuditLogDrawer } from "./audit-log-drawer";
+import { WorkflowRunDrawer } from "@/app/(dashboard)/activities/_components/workflow-run-drawer";
 import { PermissionGuard } from "@/components/permission-guard";
 import { useUrlSearchState } from "@/hooks/use-url-search-state";
 
@@ -57,6 +59,8 @@ export function AuditLogsTable() {
     const [totalPages, setTotalPages] = useState(0);
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+    const [runDrawerOpen, setRunDrawerOpen] = useState(false);
     const [actionOptionsMeta, setActionOptionsMeta] = useState<AuditLogActionOption[]>([]);
 
     // Filters
@@ -285,6 +289,7 @@ export function AuditLogsTable() {
                                     <TableHead>{t("action")}</TableHead>
                                     <TableHead>{t("resourceType")}</TableHead>
                                     <TableHead>{t("resourceName")}</TableHead>
+                                    <TableHead>{t("resourceId")}</TableHead>
                                     <TableHead>{t("operation")}</TableHead>
                                     <TableHead>{t("status")}</TableHead>
                                     <TableHead>{t("ipAddress")}</TableHead>
@@ -294,13 +299,13 @@ export function AuditLogsTable() {
                             <TableBody>
                                 {loading ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="text-center">
+                                        <TableCell colSpan={10} className="text-center">
                                             {t("loading")}
                                         </TableCell>
                                     </TableRow>
                                 ) : logs.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="text-center">
+                                        <TableCell colSpan={10} className="text-center">
                                             {t("noLogs")}
                                         </TableCell>
                                     </TableRow>
@@ -323,6 +328,37 @@ export function AuditLogsTable() {
                                             <TableCell>{getActionLabel(log.action)}</TableCell>
                                             <TableCell>{log.resource_type}</TableCell>
                                             <TableCell>{log.resource_name || "-"}</TableCell>
+                                            <TableCell>
+                                                {log.resource_type === "workflow_run" && log.resource_id ? (
+                                                <Tooltip>
+                                                    <TooltipTrigger
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedRunId(log.resource_id!);
+                                                            setRunDrawerOpen(true);
+                                                        }}
+                                                        render={
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 px-2 text-xs font-mono"
+                                                            >
+                                                                <Eye className="mr-1 h-3 w-3" />
+                                                                {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
+                                                            </Button>
+                                                        }
+                                                    />
+                                                    <TooltipContent>{`${t("resourceId")}: ${log.resource_id}`}</TooltipContent>
+                                                </Tooltip>
+                                                ) : log.resource_id ? (
+                                                    <Tooltip>
+                                                        <TooltipTrigger render={<span />} className="font-mono text-[11px] text-muted-foreground cursor-default">
+                                                            {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>{`${t("resourceId")}: ${log.resource_id}`}</TooltipContent>
+                                                    </Tooltip>
+                                                ) : "-"}
+                                            </TableCell>
                                             <TableCell>{getOperationBadge(log.operation)}</TableCell>
                                             <TableCell>{getStatusBadge(log.status)}</TableCell>
                                             <TableCell className="font-mono text-xs">
@@ -420,6 +456,13 @@ export function AuditLogsTable() {
                 log={selectedLog}
                 open={drawerOpen}
                 onOpenChange={setDrawerOpen}
+            />
+
+            {/* Workflow Run Drawer */}
+            <WorkflowRunDrawer
+                runId={selectedRunId || ""}
+                open={runDrawerOpen}
+                onOpenChange={setRunDrawerOpen}
             />
         </>
     );

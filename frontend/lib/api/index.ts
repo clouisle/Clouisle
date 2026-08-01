@@ -94,6 +94,7 @@ export {
   type ConversationWithMessages,
   type ConversationUpdateInput,
   type Message,
+  type MessageVersion,
   type MessageRole,
   type ChatRequest,
   type ChatImageContent,

@@ -57,6 +57,14 @@ mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('sonner', () => ({ toast: { error: toastError } }))
 mock.module('@/lib/api', () => ({
   ApiError,
+  agentsApi: {
+    chatStream: mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() })),
+    getConversation: mock(() => Promise.resolve({ messages: [] })),
+    editMessageStream: mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() })),
+    regenerateStream: mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() })),
+    getMessageVersions: mock(() => Promise.resolve([])),
+    switchMessageVersion: mock(() => Promise.resolve()),
+  },
   publicAgentsApi: { getPublicAgent, getConversations, getConversation, deleteConversation, updateConversation },
   uploadApi: { uploadFileWithProgress },
 }))
@@ -112,13 +120,20 @@ mock.module('@/components/chat', () => ({
   useVariableForm: () => ({ values: variableValues, setValues: (values: Record<string, unknown>) => { variableValues = values }, fieldErrors: {}, validate: validateVariables }),
 }))
 
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
+
 const { default: PublicChatPage } = await import('./page')
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
-  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false,
+  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
   created_by: { username: 'owner' },
 }
 const conversations = [
@@ -262,7 +277,7 @@ describe('PublicChatPage', () => {
     await act(async () => (chatOptions.onConversationChange?.()))
     expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
 
-    const newChat = renderer!.root.findAllByProps({ title: 'newChat' })[0]
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
     act(() => newChat.props.onClick())
     expect(resetChat).toHaveBeenCalled()
     expect(historyPush).toHaveBeenLastCalledWith({}, '', '/chat/agent-1')

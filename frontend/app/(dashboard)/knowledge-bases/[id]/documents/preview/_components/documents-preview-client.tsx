@@ -27,6 +27,7 @@ import {
   type ChunkPreviewItem,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -698,15 +699,22 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => handleAddChunk(activeDocId, chunk.chunk_index)}
-                                title={t('addChunkAfter')}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  onClick={() => handleAddChunk(activeDocId, chunk.chunk_index)}
+                                  render={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6"
+                                      aria-label={t('addChunkAfter')}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
+                                  }
+                                />
+                                <TooltipContent>{t('addChunkAfter')}</TooltipContent>
+                              </Tooltip>
                             </div>
                           )}
                         </div>

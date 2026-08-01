@@ -269,6 +269,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_sso_tables",
         "init_memory_tables",
         "init_agent_hide_tool_calls_field",
+        "init_agent_hide_message_actions_reasoning_fields",
         "init_agent_memory_fields",
         "init_agent_media_generation_fields",
     ]
@@ -1436,3 +1437,45 @@ async def test_embed_config_migration_handles_missing_existing_and_create(
     statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
     assert any("ALTER TABLE agents" in statement for statement in statements)
     assert any("ALTER TABLE workflows" in statement for statement in statements)
+
+
+@pytest.mark.asyncio
+async def test_postgres_lexical_search_rejects_old_version(monkeypatch) -> None:
+    conn = SimpleNamespace(
+        execute_query_dict=AsyncMock(
+            side_effect=[
+                [{"libraries": "pg_search,pg_stat_statements"}],
+                [{"extversion": "0.22.0"}],
+            ]
+        ),
+        execute_query=AsyncMock(),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="pg_search 0.24.3 is required"):
+        await init_data.init_postgres_lexical_search()
+
+
+@pytest.mark.asyncio
+async def test_migrate_registration_settings_category_already_correct(
+    monkeypatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query_dict=AsyncMock(return_value=[]),
+        execute_query=AsyncMock(),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    setting = SimpleNamespace(category="security", save=AsyncMock())
+    query = SimpleNamespace(first=AsyncMock(return_value=setting))
+    monkeypatch.setattr(
+        init_data.SiteSetting, "filter", lambda **kwargs: query
+    ) if hasattr(init_data, "SiteSetting") else None
+
+    from app.models.site_setting import SiteSetting
+
+    query = SimpleNamespace(first=AsyncMock(return_value=setting))
+    monkeypatch.setattr(SiteSetting, "filter", lambda **kwargs: query)
+
+    await init_data.migrate_registration_settings_category()
+
+    setting.save.assert_not_awaited()

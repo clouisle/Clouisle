@@ -139,6 +139,8 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     current_agent.enable_file_upload = True
     current_agent.file_upload_config = {"max_files": 2}
     current_agent.hide_tool_calls = False
+    current_agent.hide_message_actions = False
+    current_agent.hide_reasoning = False
     monkeypatch.setattr(chat, "get_public_agent", AsyncMock(return_value=current_agent))
 
     result = await chat.get_public_agent_info(current_agent.id, user())

@@ -41,6 +41,7 @@ export type CommonMessages = {
     noResults: string
     openMenu: string
     copiedToClipboard: string
+  copy: string
     confirmBulkDelete: string
     rowsPerPage: string
     deleteSuccess: string

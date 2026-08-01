@@ -9,6 +9,12 @@ export type WorkflowVisibility = 'private' | 'team' | 'public'
 export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout'
 export type NodeStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
 
+export type WorkflowRunPagePresentation = 'simple' | 'result_first'
+
+export interface WorkflowRunPageConfig {
+  presentation_mode: WorkflowRunPagePresentation
+}
+
 export interface Workflow {
   id: string
   team_id: string
@@ -30,6 +36,7 @@ export interface Workflow {
   created_at: string
   updated_at: string
   embed_config?: Record<string, unknown>
+  run_page_config: WorkflowRunPageConfig
 }
 
 export interface WorkflowListItem {
@@ -208,6 +215,7 @@ export interface WorkflowEdge {
 
 export interface VariableDefinition {
   name: string
+  label?: string | null
   type: string
   required: boolean
   default?: unknown
@@ -233,6 +241,7 @@ export interface WorkflowUpdateInput {
   trigger_config?: Record<string, unknown> | null
   visibility?: WorkflowVisibility | null
   embed_config?: Record<string, unknown> | null
+  run_page_config?: WorkflowRunPageConfig | null
 }
 
 export interface WorkflowQueryParams {
@@ -456,6 +465,40 @@ export const workflowsApi = {
   },
 
   /**
+   * 获取当前用户的工作流运行历史
+   */
+  getMyWorkflowRuns: async (
+    workflowId: string,
+    params: Omit<WorkflowRunQueryParams, 'isDebug'> = {}
+  ): Promise<PageData<WorkflowRunListItem>> => {
+    const { page = 1, pageSize = 20, status, search, createdAfter, createdBefore } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (status) queryParams.append('status', status)
+    if (search) queryParams.append('search', search)
+    if (createdAfter) queryParams.append('created_after', createdAfter)
+    if (createdBefore) queryParams.append('created_before', createdBefore)
+    return api.get<PageData<WorkflowRunListItem>>(
+      `/workflows/${workflowId}/runs/mine?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取当前用户的工作流运行详情
+   */
+  getMyWorkflowRun: async (workflowId: string, runId: string): Promise<WorkflowRun> => {
+    return api.get<WorkflowRun>(`/workflows/${workflowId}/runs/mine/${runId}`)
+  },
+
+  /**
+   * 获取当前用户指定运行的节点执行列表
+   */
+  getMyRunNodeExecutions: async (workflowId: string, runId: string): Promise<NodeExecution[]> => {
+    return api.get<NodeExecution[]>(`/workflows/${workflowId}/runs/mine/${runId}/nodes`)
+  },
+
+  /**
    * 获取工作流运行详情
    */
   getWorkflowRun: async (runId: string): Promise<WorkflowRun> => {
@@ -475,6 +518,7 @@ export const workflowsApi = {
   deleteWorkflowRun: async (runId: string): Promise<void> => {
     return api.delete<void>(`/workflows/runs/${runId}`)
   },
+
 
   // ============ Workflow Execution API ============
 

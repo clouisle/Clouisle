@@ -8,6 +8,7 @@ const component = (name: string) => Object.assign(function Component() {}, { dis
 const components = Object.fromEntries([
   'Badge', 'Button', 'Collapsible', 'CollapsibleContent', 'CollapsibleTrigger', 'Input', 'Label',
   'Popover', 'PopoverContent', 'PopoverTrigger', 'ScrollArea',
+  'Tooltip', 'TooltipContent', 'TooltipTrigger',
 ].map(name => [name, component(name)]))
 const icons = Object.fromEntries([
   'Search', 'ChevronDown', 'Bot', 'Check', 'Loader2', 'Trash2', 'ExternalLink',
@@ -38,6 +39,7 @@ for (const [path, names] of [
   ['@/components/ui/label', ['Label']],
   ['@/components/ui/popover', ['Popover', 'PopoverContent', 'PopoverTrigger']],
   ['@/components/ui/scroll-area', ['ScrollArea']],
+  ['@/components/ui/tooltip', ['Tooltip', 'TooltipContent', 'TooltipTrigger']],
 ] as const) mock.module(path, () => Object.fromEntries(names.map(name => [name, components[name]])))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: { id: 'team-1' } }) }))

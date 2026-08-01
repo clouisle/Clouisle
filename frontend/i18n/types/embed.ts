@@ -11,6 +11,12 @@ export type EmbedMessages = {
       allowedDomains: string
       allowedDomainsPlaceholder: string
       allowedDomainsDescription: string
+      showHeader: string
+      showHeaderDescription: string
+      showHistory: string
+      showHistoryDescription: string
+      allowNew: string
+      allowNewDescription: string
       invalidDomain: string
       theme: string
       themeAuto: string
@@ -50,6 +56,9 @@ export type EmbedMessages = {
       defaultGreeting: string
       configureVariables: string
       fillRequired: string
+      history: string
+      noHistory: string
+      untitled: string
     }
   }
 }

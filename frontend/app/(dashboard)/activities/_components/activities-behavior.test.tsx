@@ -22,6 +22,13 @@ const deleteWorkflowRun = mock(() => Promise.resolve())
 const onDelete = mock(() => {})
 const onOpenChange = mock(() => {})
 
+const routerReplace = mock(() => {})
+const urlSearchParams = new URLSearchParams()
+mock.module('next/navigation', () => ({
+  useRouter: () => ({ replace: routerReplace }),
+  usePathname: () => '/activities',
+  useSearchParams: () => urlSearchParams,
+}))
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${Object.values(values).join('/')}` : key,

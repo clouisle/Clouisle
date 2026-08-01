@@ -61,6 +61,7 @@ export type ConversationsMessages = {
       modelUsed: string
       tokenBreakdown: string
       tokenCount: string
+      conversationId: string
       responseDuration: string
       ragContext: string
       segment: string

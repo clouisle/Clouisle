@@ -31,6 +31,9 @@ for (const [path, names] of [
   ['@/components/ui/scroll-area', ['ScrollArea']],
 ] as const) mock.module(path, () => Object.fromEntries(names.map(name => [name, component])))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: component, TooltipContent: component, TooltipTrigger: component,
+}))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: { id: 'team-1' } }) }))
 mock.module('@/lib/api/agents', () => ({ agentsApi: { getAgents, getAgent } }))
 mock.module('../utils', () => ({ isValidVariableName: (name: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) }))

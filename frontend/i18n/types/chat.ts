@@ -109,6 +109,7 @@ export type ChatMessages = {
       stopListening: string
       speechUnavailable: string
       thinking: string
+      conversationId: string
       error: string
       generatedImageAlt: string
       toolExecutionFailed: string

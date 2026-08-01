@@ -69,7 +69,7 @@ mock.module('./conversation-drawer', () => ({
     open ? <aside role="dialog" aria-label={conversation?.id ?? (isLoading ? 'loading' : 'empty')}><button onClick={() => onDelete(conversation?.id ?? 'conversation-1')}>drawer-delete</button></aside> : null,
 }))
 mock.module('lucide-react', () => Object.fromEntries([
-  'Search', 'MessageSquare', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2', 'MoreHorizontal', 'Eye',
+  'Search', 'MessageSquare', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2', 'MoreHorizontal', 'Eye', 'Copy',
 ].map((name) => [name, element('svg')])) )
 
 const { ConversationsTable } = await import('./conversations-table')

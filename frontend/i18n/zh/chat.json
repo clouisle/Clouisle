@@ -107,6 +107,7 @@
       "stopListening": "停止朗读",
       "speechUnavailable": "当前浏览器不支持文字朗读",
       "thinking": "思考中...",
+      "conversationId": "对话 ID",
       "error": "发生错误",
       "generatedImageAlt": "生成的图片",
       "toolExecutionFailed": "工具执行失败",

@@ -34,6 +34,12 @@ mock.module('@/components/ui/separator', () => ({
 mock.module('@/components/ui/input', () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
 mock.module('@/components/settings-drawer', () => ({
   SettingsDrawer: (props: { open: boolean; onOpenChange: (open: boolean) => void }) => (
     <aside data-open={String(props.open)}>
@@ -127,7 +133,7 @@ describe('Header', () => {
     act(() => searchInput().props.onKeyDown({ key: 'Enter' }))
     expect(push).not.toHaveBeenCalled()
 
-    const settingsButton = renderer.root.findByProps({ title: 'common.appearanceSettings' })
+    const settingsButton = renderer.root.findByProps({ 'aria-label': 'common.appearanceSettings' })
     act(() => settingsButton.props.onClick())
     expect(renderer.root.findByType('aside').props['data-open']).toBe('true')
     act(() => renderer.root.findByProps({ children: 'close settings' }).props.onClick())

@@ -95,6 +95,22 @@ const React = {
       cleanups[index] = effect() || undefined
     }
   },
+  useLayoutEffect(effect: () => void | (() => void), deps?: unknown[]) {
+    const index = cursor++
+    if (changed(dependencies[index], deps)) {
+      cleanups[index]?.()
+      dependencies[index] = deps
+      cleanups[index] = effect() || undefined
+    }
+  },
+  useId: () => 'react-id',
+  useReducer: (_reducer: unknown, initial: unknown) => [initial, () => {}],
+  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+  useImperativeHandle: () => {},
+  useTransition: () => [false, (cb: () => void) => cb()],
+  createContext: () => ({ Provider: ({ children }: { children: unknown }) => children }),
+  createElement: (type: unknown, props: Props | null, ...children: unknown[]) =>
+    jsx(type, { ...(props ?? {}), ...(children.length ? { children: children.length === 1 ? children[0] : children } : {}) }),
 }
 
 const setNodes = (value: unknown) => {
@@ -122,12 +138,12 @@ mock.module('@xyflow/react', () => ({
   useReactFlow: () => ({ screenToFlowPosition, getViewport: () => ({ x: 0, y: 0, zoom: 1 }), fitView, setCenter }),
   useViewport: () => ({ zoom: 1 }),
 }))
-mock.module('@xyflow/react/dist/style.css', () => ({}))
 mock.module('lucide-react', () => ({
   ArrowLeft: element, Save: element, Play: element, Settings: element, Loader2: element, Minus: element,
   Plus: element, PlusCircle: element, MousePointer2: element, Hand: element, Sparkles: element, Maximize: element,
   StickyNote: element, ClipboardCheck: element, Globe: element, GlobeLock: element, LayoutGrid: element,
   ExternalLink: element, FileText: element, Activity: element, GitBranch: element, Code: element,
+  XIcon: element, ChevronDownIcon: element, CheckIcon: element, X: element, ChevronDown: element, ChevronUp: element,
 }))
 mock.module('@/lib/api/auth', () => ({ authApi: { getCurrentUser } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => permissionGranted }) }))
@@ -148,6 +164,10 @@ mock.module('@/components/ui/tooltip', () => ({
   TooltipContent: element,
 }))
 
+let publishDialogProps: Props = {}
+mock.module('./_components/workflow-publish-dialog', () => ({
+  WorkflowPublishDialog: (props: Props) => { publishDialogProps = props; return element(props) },
+}))
 mock.module('./_components/nodes/user-input-node', () => ({ UserInputNode: element }))
 mock.module('./_components/nodes/trigger-node', () => ({ TriggerNode: element }))
 mock.module('./_components/nodes/llm-node', () => ({ LLMNode: element }))
@@ -297,7 +317,7 @@ test('protects the start node from removal and saves its input variables', async
   await (save.props.onClick as () => Promise<void>)()
 
   expect(editorApi.updateWorkflow).toHaveBeenCalledWith('workflow-1', expect.objectContaining({
-    variables: [{ name: 'query', type: 'string', required: true, default: 'hello', description: 'Prompt' }],
+    variables: [{ name: 'query', label: null, type: 'string', required: true, default: 'hello', description: 'Prompt' }],
   }))
   expect(toastSuccess).toHaveBeenCalledWith('saved')
 })
@@ -310,7 +330,8 @@ test('saves pending edits before publishing and supports unpublishing', async ()
 
   const publish = findAction(tree, 'publish')
   await (publish.props.onClick as () => Promise<void>)()
-
+  tree = render(editorApi)
+  await (publishDialogProps.onPublish as (presentation: string) => Promise<void>)('simple')
   expect(editorApi.updateWorkflow).toHaveBeenCalledTimes(1)
   expect(editorApi.publishWorkflow).toHaveBeenCalledWith('workflow-1')
   expect(toastSuccess).toHaveBeenCalledWith('published')

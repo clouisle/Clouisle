@@ -139,9 +139,10 @@ async def list_all_workflow_runs(
         )
         workflow_query = workflow_query.filter(team_id__in=memberships)
 
-    # Apply search filter on workflows
-    if search:
-        workflow_query = workflow_query.filter(name__icontains=search)
+    # Apply search filter on workflows (only for non-UUID queries)
+    # Note: run-level search below matches run IDs or workflow names; a
+    # workflow-level name pre-filter would break run-ID lookups (no
+    # workflow name contains a UUID), so it is intentionally omitted.
 
     accessible_workflows = await workflow_query.all()
     workflow_ids = [w.id for w in accessible_workflows]
@@ -155,6 +156,10 @@ async def list_all_workflow_runs(
     query = WorkflowRun.filter(workflow_id__in=workflow_ids)
 
     # Apply filters
+    if search_text := (search or "").strip():
+        query = query.filter(
+            Q(id__icontains=search_text) | Q(workflow__name__icontains=search_text)
+        )
     if workflow_id:
         query = query.filter(workflow_id__in=workflow_id)
     if status:
@@ -701,6 +706,8 @@ async def update_workflow(
         workflow.visibility = WorkflowVisibility(workflow_in.visibility)
     if workflow_in.embed_config is not None:
         workflow.embed_config = workflow_in.embed_config
+    if workflow_in.run_page_config is not None:
+        workflow.run_page_config = workflow_in.run_page_config
 
     await workflow.save()
 
@@ -1333,6 +1340,125 @@ async def cancel_workflow_run(
 
 
 # ============ Workflow Runs ============
+
+
+@router.get(
+    "/{workflow_id}/runs/mine",
+    response_model=Response[PageData[WorkflowRunListItem]],
+)
+async def list_my_workflow_runs(
+    workflow_id: UUID,
+    status: RunStatus | None = None,
+    search: str | None = Query(None),
+    created_after: datetime | None = Query(None),
+    created_before: datetime | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
+) -> Any:
+    """List the current user's published workflow runs."""
+    await check_workflow_access(workflow_id, current_user)
+
+    query = WorkflowRun.filter(
+        workflow_id=workflow_id,
+        triggered_by_id=current_user.id,
+        is_debug=False,
+    )
+    if status:
+        query = query.filter(status=status)
+    if search_text := (search or "").strip():
+        try:
+            query = query.filter(id=UUID(search_text))
+        except ValueError:
+            query = query.filter(id__isnull=True)
+    if created_after:
+        query = query.filter(created_at__gte=created_after)
+    if created_before:
+        query = query.filter(created_at__lte=created_before)
+
+    total = await query.count()
+    skip = (page - 1) * page_size
+    runs = await query.order_by("-created_at").offset(skip).limit(page_size)
+
+    return success(
+        data={
+            "items": [
+                sanitize_workflow_run_payload(
+                    WorkflowRunListItem.model_validate(run).model_dump()
+                )
+                for run in runs
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.get(
+    "/{workflow_id}/runs/mine/{run_id}",
+    response_model=Response[WorkflowRunOut],
+)
+async def get_my_workflow_run(
+    workflow_id: UUID,
+    run_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
+) -> Any:
+    """Get one of the current user's published workflow runs."""
+    await check_workflow_access(workflow_id, current_user)
+    run = await WorkflowRun.filter(
+        id=run_id,
+        workflow_id=workflow_id,
+        triggered_by_id=current_user.id,
+        is_debug=False,
+    ).first()
+    if not run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_run_not_found",
+            status_code=404,
+        )
+
+    return success(
+        data=sanitize_workflow_run_payload(
+            WorkflowRunOut.model_validate(run).model_dump()
+        )
+    )
+
+
+@router.get(
+    "/{workflow_id}/runs/mine/{run_id}/nodes",
+    response_model=Response[list[NodeExecutionOut]],
+)
+async def list_my_run_node_executions(
+    workflow_id: UUID,
+    run_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
+) -> Any:
+    """Get node executions for one of the current user's published runs."""
+    await check_workflow_access(workflow_id, current_user)
+    run_exists = await WorkflowRun.filter(
+        id=run_id,
+        workflow_id=workflow_id,
+        triggered_by_id=current_user.id,
+        is_debug=False,
+    ).exists()
+    if not run_exists:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_run_not_found",
+            status_code=404,
+        )
+
+    executions = await NodeExecution.filter(run_id=run_id).order_by("execution_order")
+    return success(
+        data=[
+            sanitize_node_execution_payload(
+                NodeExecutionOut.model_validate(execution).model_dump()
+            )
+            for execution in executions
+        ]
+    )
 
 
 @router.get(

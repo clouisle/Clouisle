@@ -26,6 +26,7 @@ const agentsApi = {
 
 mock.module('react', () => ({
   useCallback: <T>(callback: T) => callback,
+  useMemo: <T>(factory: () => T) => factory(),
   useRef: <T>(initial: T) => refs[refIndex++] ??= { current: initial },
   useState: <T>(initial: T) => {
     const index = stateIndex++

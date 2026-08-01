@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, TestTube2, Power, PowerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCanPerform } from '@/components/permission-guard'
 import {
   Table,
@@ -190,46 +191,64 @@ export default function SSOSettingsPage() {
                   <TableCell className="text-right">
                     {canUpdate && (
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleToggleEnabled(provider)}
-                          title={
-                            provider.is_enabled
-                              ? t('disable')
-                              : t('enable')
-                          }
-                        >
-                          {provider.is_enabled ? (
-                            <PowerOff className="h-4 w-4" />
-                          ) : (
-                            <Power className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleTest(provider.id)}
-                          title={t('testConnection')}
-                        >
-                          <TestTube2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(provider)}
-                          title={t('editProvider')}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteId(provider.id)}
-                          title={t('deleteProvider')}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger
+                            onClick={() => handleToggleEnabled(provider)}
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={
+                                  provider.is_enabled
+                                    ? t('disable')
+                                    : t('enable')
+                                }
+                              >
+                                {provider.is_enabled ? (
+                                  <PowerOff className="h-4 w-4" />
+                                ) : (
+                                  <Power className="h-4 w-4" />
+                                )}
+                              </Button>
+                            }
+                          />
+                          <TooltipContent>
+                            {provider.is_enabled ? t('disable') : t('enable')}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            onClick={() => handleTest(provider.id)}
+                            render={
+                              <Button variant="ghost" size="icon" aria-label={t('testConnection')}>
+                                <TestTube2 className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                          <TooltipContent>{t('testConnection')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            onClick={() => handleEdit(provider)}
+                            render={
+                              <Button variant="ghost" size="icon" aria-label={t('editProvider')}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                          <TooltipContent>{t('editProvider')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            onClick={() => setDeleteId(provider.id)}
+                            render={
+                              <Button variant="ghost" size="icon" aria-label={t('deleteProvider')}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            }
+                          />
+                          <TooltipContent>{t('deleteProvider')}</TooltipContent>
+                        </Tooltip>
                       </div>
                     )}
                   </TableCell>

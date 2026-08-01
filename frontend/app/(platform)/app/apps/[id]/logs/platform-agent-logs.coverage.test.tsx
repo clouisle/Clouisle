@@ -50,6 +50,7 @@ const element = (tag: string) => ({ children, ...props }: { children?: ReactNode
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: element('skeleton') }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
+mock.module('@/components/ui/tooltip', () => ({ Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('button') }))
 mock.module('@/components/ui/select', () => ({
   Select: element('select'),
   SelectContent: element('select-content'),

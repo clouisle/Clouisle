@@ -37,8 +37,17 @@ mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
 }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: element('button') }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
 mock.module('./audit-log-drawer', () => ({
   AuditLogDrawer: ({ log, open }: { log: { id: string } | null; open: boolean }) => open && log ? <aside role="dialog" aria-label={`log-${log.id}`} /> : null,
+}))
+mock.module('@/app/(dashboard)/activities/_components/workflow-run-drawer', () => ({
+  WorkflowRunDrawer: ({ open }: { open: boolean }) => open ? <aside role="dialog" aria-label="workflow-run" /> : null,
 }))
 mock.module('lucide-react', () => Object.fromEntries([
   'Download', 'Eye', 'Search', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'FileText', 'FileJson',

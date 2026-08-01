@@ -29,6 +29,12 @@ interface ChatContainerProps {
   onOpenCodePreview?: (payload: CodePreviewPayload) => void;
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean;
+  /** Hide token usage/speed stats popover */
+  hideMessageActions?: boolean;
+  /** Hide reasoning / chain-of-thought panel */
+  hideReasoning?: boolean;
+  /** Current conversation ID (shown on errors for debugging) */
+  conversationId?: string | null;
 }
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -69,6 +75,9 @@ interface ChatMessageRowProps {
   onSelectOption?: (option: string) => void;
   onOpenCodePreview?: (payload: CodePreviewPayload) => void;
   hideToolCalls: boolean;
+  hideMessageActions: boolean;
+  hideReasoning: boolean;
+  conversationId?: string | null;
   chainOfThoughtOpen?: boolean;
   onChainOfThoughtOpenChange: (messageId: string, open: boolean) => void;
   onRequestScrollIntoView: (messageId: string) => void;
@@ -85,6 +94,9 @@ const ChatMessageRow = memo(function ChatMessageRow({
   onSelectOption,
   onOpenCodePreview,
   hideToolCalls,
+  hideMessageActions,
+  hideReasoning,
+  conversationId,
   chainOfThoughtOpen,
   onChainOfThoughtOpenChange,
   onRequestScrollIntoView,
@@ -128,6 +140,9 @@ const ChatMessageRow = memo(function ChatMessageRow({
         onSelectOption={onSelectOption}
         onOpenCodePreview={onOpenCodePreview}
         hideToolCalls={hideToolCalls}
+        hideMessageActions={hideMessageActions}
+        hideReasoning={hideReasoning}
+        conversationId={conversationId}
         onRequestScrollIntoView={handleRequestScrollIntoView}
       />
     </div>
@@ -142,6 +157,9 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.onSelectOption === next.onSelectOption
   && prev.onOpenCodePreview === next.onOpenCodePreview
   && prev.hideToolCalls === next.hideToolCalls
+  && prev.hideMessageActions === next.hideMessageActions
+  && prev.hideReasoning === next.hideReasoning
+  && prev.conversationId === next.conversationId
   && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
   && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
   && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
@@ -162,6 +180,9 @@ export function ChatContainer({
   showScrollToBottom = true,
   onOpenCodePreview,
   hideToolCalls = false,
+  hideMessageActions = false,
+  hideReasoning = false,
+  conversationId,
 }: ChatContainerProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -352,6 +373,9 @@ export function ChatContainer({
                 onSelectOption={onSelectOption}
                 onOpenCodePreview={onOpenCodePreview}
                 hideToolCalls={hideToolCalls}
+                hideMessageActions={hideMessageActions}
+                hideReasoning={hideReasoning}
+                conversationId={conversationId}
                 chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
                 onChainOfThoughtOpenChange={setChainOfThoughtOpen}
                 onRequestScrollIntoView={requestMessageScrollIntoView}

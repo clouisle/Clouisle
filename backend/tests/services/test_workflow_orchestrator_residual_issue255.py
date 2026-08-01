@@ -199,3 +199,247 @@ def test_get_child_nodes_preserves_plan_order(orchestrator):
     )
 
     assert orchestrator._get_child_nodes(plan, "loop") == ["first", "later"]
+
+
+@pytest.mark.asyncio
+async def test_run_success_path_streams_metrics_and_profiling(monkeypatch):
+    orchestrator = WorkflowOrchestrator(
+        timeout=10,
+        max_nodes=2,
+        enable_retry=False,
+        enable_cache=False,
+        enable_metrics=True,
+        enable_profiling=True,
+    )
+    workflow = SimpleNamespace(id=uuid4(), name="Flow")
+    run = SimpleNamespace(id=uuid4())
+    plan = MagicMock()
+    plan.validate.return_value = []
+    context = MagicMock()
+    context.set_inputs = AsyncMock()
+    context.set_variable = AsyncMock()
+    metrics = MagicMock(
+        record_workflow_start=AsyncMock(), record_workflow_complete=AsyncMock()
+    )
+    stream = MagicMock(
+        publish_workflow_start=AsyncMock(),
+        publish_workflow_complete=AsyncMock(),
+    )
+    profiler = MagicMock()
+    profiler.to_dict.return_value = {"steps": []}
+    monkeypatch.setattr(
+        orchestrator, "_load_workflow", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        orchestrator, "_get_workflow_definition", AsyncMock(return_value={})
+    )
+    monkeypatch.setattr(orchestrator, "_create_run", AsyncMock(return_value=run))
+    monkeypatch.setattr(
+        orchestrator, "_get_execution_plan", AsyncMock(return_value=plan)
+    )
+    monkeypatch.setattr(orchestrator, "_execute", AsyncMock(return_value=({}, 1)))
+    monkeypatch.setattr(orchestrator, "_complete_run", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_metrics", metrics)
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.get_redis",
+        AsyncMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.ExecutionContext",
+        MagicMock(create=AsyncMock(return_value=context)),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.StreamManager",
+        lambda run_id: stream,
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.ExecutionProfiler",
+        lambda **kwargs: profiler,
+    )
+
+    result = await orchestrator.run(
+        workflow_id=workflow.id,
+        inputs={},
+        user_id=uuid4(),
+        stream=True,
+    )
+
+    assert result == str(run.id)
+    metrics.record_workflow_start.assert_awaited_once()
+    metrics.record_workflow_complete.assert_awaited_once()
+    stream.publish_workflow_start.assert_awaited_once()
+    stream.publish_workflow_complete.assert_awaited_once()
+    profiler.finish.assert_called_once()
+    context.set_variable.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_without_stream_skips_stream_manager(monkeypatch):
+    orchestrator = WorkflowOrchestrator(
+        timeout=10,
+        max_nodes=2,
+        enable_retry=False,
+        enable_cache=False,
+        enable_metrics=False,
+        enable_profiling=False,
+    )
+    workflow = SimpleNamespace(id=uuid4(), name="Flow")
+    run = SimpleNamespace(id=uuid4())
+    plan = MagicMock()
+    plan.validate.return_value = []
+    context = MagicMock()
+    context.set_inputs = AsyncMock()
+    monkeypatch.setattr(
+        orchestrator, "_load_workflow", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        orchestrator, "_get_workflow_definition", AsyncMock(return_value={})
+    )
+    monkeypatch.setattr(orchestrator, "_create_run", AsyncMock(return_value=run))
+    monkeypatch.setattr(
+        orchestrator, "_get_execution_plan", AsyncMock(return_value=plan)
+    )
+    monkeypatch.setattr(orchestrator, "_execute", AsyncMock(return_value=({}, 1)))
+    monkeypatch.setattr(orchestrator, "_complete_run", AsyncMock())
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.get_redis",
+        AsyncMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.ExecutionContext",
+        MagicMock(create=AsyncMock(return_value=context)),
+    )
+
+    result = await orchestrator.run(
+        workflow_id=workflow.id,
+        inputs={},
+        user_id=uuid4(),
+        stream=False,
+    )
+
+    assert result == str(run.id)
+
+
+@pytest.mark.asyncio
+async def test_run_failure_path_streams_error_and_finishes_profiling(monkeypatch):
+    orchestrator = WorkflowOrchestrator(
+        timeout=10,
+        max_nodes=2,
+        enable_retry=False,
+        enable_cache=False,
+        enable_metrics=True,
+        enable_profiling=True,
+    )
+    workflow = SimpleNamespace(id=uuid4(), name="Flow")
+    run = SimpleNamespace(id=uuid4())
+    plan = MagicMock()
+    plan.validate.return_value = []
+    context = MagicMock()
+    context.set_inputs = AsyncMock()
+    metrics = MagicMock(
+        record_workflow_start=AsyncMock(), record_workflow_complete=AsyncMock()
+    )
+    stream = MagicMock(
+        publish_workflow_start=AsyncMock(), publish_workflow_error=AsyncMock()
+    )
+    profiler = MagicMock()
+    error = RuntimeError("boom")
+
+    monkeypatch.setattr(
+        orchestrator, "_load_workflow", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        orchestrator, "_get_workflow_definition", AsyncMock(return_value={})
+    )
+    monkeypatch.setattr(orchestrator, "_create_run", AsyncMock(return_value=run))
+    monkeypatch.setattr(
+        orchestrator, "_get_execution_plan", AsyncMock(return_value=plan)
+    )
+    monkeypatch.setattr(orchestrator, "_execute", AsyncMock(side_effect=error))
+    monkeypatch.setattr(orchestrator, "_fail_run", AsyncMock())
+    monkeypatch.setattr(orchestrator, "_metrics", metrics)
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.get_redis",
+        AsyncMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.ExecutionContext",
+        MagicMock(create=AsyncMock(return_value=context)),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.StreamManager",
+        lambda run_id: stream,
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.ExecutionProfiler",
+        lambda **kwargs: profiler,
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.translate_public_workflow_error",
+        lambda e: {"message": str(e)},
+    )
+
+    with pytest.raises(RuntimeError):
+        await orchestrator.run(
+            workflow_id=workflow.id,
+            inputs={},
+            user_id=uuid4(),
+            stream=True,
+        )
+
+    metrics.record_workflow_complete.assert_awaited_once()
+    profiler.finish.assert_called_once()
+    stream.publish_workflow_error.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_failure_without_stream_skips_stream_manager(monkeypatch):
+    orchestrator = WorkflowOrchestrator(
+        timeout=10,
+        max_nodes=2,
+        enable_retry=False,
+        enable_cache=False,
+        enable_metrics=False,
+        enable_profiling=False,
+    )
+    workflow = SimpleNamespace(id=uuid4(), name="Flow")
+    run = SimpleNamespace(id=uuid4())
+    plan = MagicMock()
+    plan.validate.return_value = []
+    context = MagicMock()
+    context.set_inputs = AsyncMock()
+
+    monkeypatch.setattr(
+        orchestrator, "_load_workflow", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        orchestrator, "_get_workflow_definition", AsyncMock(return_value={})
+    )
+    monkeypatch.setattr(orchestrator, "_create_run", AsyncMock(return_value=run))
+    monkeypatch.setattr(
+        orchestrator, "_get_execution_plan", AsyncMock(return_value=plan)
+    )
+    monkeypatch.setattr(
+        orchestrator, "_execute", AsyncMock(side_effect=RuntimeError("boom"))
+    )
+    monkeypatch.setattr(orchestrator, "_fail_run", AsyncMock())
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.get_redis",
+        AsyncMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.ExecutionContext",
+        MagicMock(create=AsyncMock(return_value=context)),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow.orchestrator.translate_public_workflow_error",
+        lambda e: {"message": str(e)},
+    )
+
+    with pytest.raises(RuntimeError):
+        await orchestrator.run(
+            workflow_id=workflow.id,
+            inputs={},
+            user_id=uuid4(),
+            stream=False,
+        )

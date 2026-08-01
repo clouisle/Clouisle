@@ -531,9 +531,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-              <h1 className="text-xl font-semibold truncate" title={document.name}>
-                {document.name}
-              </h1>
+              <Tooltip>
+                <TooltipTrigger render={<h1 />} className="text-xl font-semibold truncate cursor-default">
+                  {document.name}
+                </TooltipTrigger>
+                <TooltipContent>{document.name}</TooltipContent>
+              </Tooltip>
             </div>
             <p className="text-sm text-muted-foreground truncate mt-0.5">
               {knowledgeBase.name} · {formatSize(document.file_size || 0)}

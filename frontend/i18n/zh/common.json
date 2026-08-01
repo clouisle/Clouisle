@@ -38,6 +38,7 @@
     "createdBy": "创建人",
     "noResults": "未找到相关结果",
     "openMenu": "打开菜单",
+    "copy": "复制",
     "copiedToClipboard": "已复制到剪贴板",
     "confirmBulkDelete": "确定要删除选中的 {count} 项吗？此操作无法撤销。",
     "rowsPerPage": "每页行数",

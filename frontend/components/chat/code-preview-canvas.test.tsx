@@ -64,8 +64,8 @@ function render(preview: Props, initialStates: unknown[] = [], initialRefs: unkn
   return CodePreviewCanvas({ preview, onClose: close })
 }
 
-function findByTitle(tree: unknown, title: string) {
-  return walk(tree).find((node) => resolve(node.props.title) === title)
+function findByAriaLabel(tree: unknown, label: string) {
+  return walk(tree).find((node) => resolve(node.props['aria-label']) === label)
 }
 
 function tabNames(tree: unknown) {
@@ -147,6 +147,16 @@ mock.module('lucide-react', () => ({
 mock.module('streamdown', () => ({ Streamdown }))
 mock.module('shiki', () => ({ bundledLanguages: { javascript: {}, typescript: {}, html: {}, xml: {}, css: {}, markdown: {} } }))
 mock.module('@/components/ui/button', () => ({ Button }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: (props: Props) => jsx('tooltip', props),
+  TooltipTrigger: ({ render, children, ...props }: Props) => {
+    const element = render as Node | undefined
+    return element
+      ? { type: element.type, props: { ...element.props, ...props, ...(children !== undefined ? { children } : {}) } }
+      : jsx('span', { ...props, children })
+  },
+  TooltipContent: (props: Props) => jsx('tooltip-content', props),
+}))
 mock.module('@/components/ui/tabs', () => ({ Tabs, TabsContent, TabsList, TabsTrigger }))
 mock.module('@/components/ai-elements/code-block', () => ({ CodeBlock }))
 const mermaidApi = {
@@ -218,8 +228,8 @@ test('unsupported source language falls back to plain preformatted code', () => 
 test('copy toggles copied state and close delegates to parent', async () => {
   const tree = render({ id: 'html', language: 'html', kind: 'html', code: '<h1>Hi</h1>' })
 
-  await (findByTitle(tree, 'copy')?.props.onClick as () => Promise<void>)()
-  click(findByTitle(tree, 'closeCodePreview'))
+  await (findByAriaLabel(tree, 'copy')?.props.onClick as () => Promise<void>)()
+  click(findByAriaLabel(tree, 'closeCodePreview'))
 
   expect(writeText).toHaveBeenCalledWith('<h1>Hi</h1>')
   expect(stateValues[0]).toBe(false)
@@ -229,7 +239,7 @@ test('copy toggles copied state and close delegates to parent', async () => {
 test('downloads with language extension and revokes object url', () => {
   const tree = render({ id: 'py', language: 'python', kind: 'source', code: 'print("hi")' })
 
-  click(findByTitle(tree, 'mermaidDownloadLabel'))
+  click(findByAriaLabel(tree, 'mermaidDownloadLabel'))
 
   expect(lastBlobParts).toEqual(['print("hi")'])
   expect(appendedLink).toMatchObject({ href: createdUrl, download: 'code.py', clicked: true })
@@ -317,7 +327,7 @@ test('mermaid controls zoom, fit, pan, and download svg', () => {
   )
   const nodes = walk(tree)
   const viewportNode = nodes.find((node) => node.props.onPointerDown)
-  const control = (title: string) => nodes.find((node) => resolve(node.props.title) === title)
+  const control = (label: string) => nodes.find((node) => resolve(node.props['aria-label']) === label)
   const pointerTarget = {
     setPointerCapture: mock(() => {}),
     releasePointerCapture: mock(() => {}),

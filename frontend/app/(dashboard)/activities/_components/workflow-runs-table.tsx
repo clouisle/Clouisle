@@ -33,6 +33,7 @@ import type { Team } from '@/lib/api/teams'
 import type { User } from '@/lib/api/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -458,7 +459,7 @@ export function WorkflowRunsTable() {
                 runs.map((run) => (
                   <TableRow
                     key={run.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="group cursor-pointer hover:bg-muted/50"
                     onClick={() => handleViewRun(run.id)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -468,7 +469,20 @@ export function WorkflowRunsTable() {
                       />
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs">{run.id.slice(0, 8)}</code>
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          className="font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleViewRun(run.id)
+                          }}
+                          render={<button />}
+                        >
+                          {run.id.slice(0, 8)}…
+                        </TooltipTrigger>
+                        <TooltipContent>{`${t('table.runId')}: ${run.id}`}</TooltipContent>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

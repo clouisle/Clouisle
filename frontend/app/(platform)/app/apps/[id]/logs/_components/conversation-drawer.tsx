@@ -53,6 +53,7 @@ export function ConversationDrawer({
               variables={conversation.variables}
               agentName={conversation.agent_name}
               agentIcon={conversation.agent_icon}
+              conversationId={conversation.id}
             />
 
             <div className="flex-1 overflow-y-auto">

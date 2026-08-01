@@ -63,7 +63,7 @@ mock.module('@/hooks/use-chat', () => ({
 const { AgentPreviewPanel } = await import('./agent-preview-panel')
 const baseAgent = {
   id: 'agent-1', variables: [], suggested_questions: ['First?', 'Second?', 'Third?', 'Ignored?'],
-  enable_vision: false, enable_file_upload: false, hide_tool_calls: false,
+  enable_vision: false, enable_file_upload: false, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
 } as never
 
 function descendants(value: unknown): Node[] {

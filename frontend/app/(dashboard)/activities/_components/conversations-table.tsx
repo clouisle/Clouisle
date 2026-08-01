@@ -327,6 +327,7 @@ export function ConversationsTable() {
                   />
                 </TableHead>
                 <TableHead>{t('title')}</TableHead>
+                <TableHead>{t('conversationId')}</TableHead>
                 <TableHead>{t('agent')}</TableHead>
                 <TableHead>{t('user')}</TableHead>
                 <TableHead>{t('messageCount')}</TableHead>
@@ -336,22 +337,22 @@ export function ConversationsTable() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
-                    {commonT('loading')}
-                  </TableCell>
-                </TableRow>
-              ) : conversations.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {t('noConversations')}
-                  </TableCell>
-                </TableRow>
-              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="text-center py-8">
+                                    {commonT('loading')}
+                                  </TableCell>
+                                </TableRow>
+                              ) : conversations.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                                    {t('noConversations')}
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
                 conversations.map((conversation) => (
                   <TableRow
                     key={conversation.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="group cursor-pointer hover:bg-muted/50"
                     onClick={() => handleViewConversation(conversation.id)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -360,13 +361,29 @@ export function ConversationsTable() {
                         onCheckedChange={() => toggleSelect(conversation.id)}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-w-[280px]">
                       <div className="flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="font-medium truncate">
                           {conversation.title || t('untitled')}
                         </span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleViewConversation(conversation.id)
+                          }}
+                          render={<button />}
+                        >
+                          {conversation.id.slice(0, 8)}…
+                        </TooltipTrigger>
+                        <TooltipContent>{`${t('conversationId')}: ${conversation.id}`}</TooltipContent>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{conversation.agent_name}</Badge>

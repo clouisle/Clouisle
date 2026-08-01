@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { X, ZoomIn, ZoomOut, RotateCw, Download, MessageSquareText, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface ImageLightboxProps {
   src: string
@@ -149,17 +150,23 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
       <div className="absolute top-4 right-4 flex items-start gap-2 z-10">
         {alt && (
           <div className="flex flex-col items-end gap-2 max-w-[min(28rem,calc(100vw-2rem))]">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-10 rounded-full bg-white/10 px-3 text-white hover:bg-white/20"
-              onClick={() => setShowPrompt((prev) => !prev)}
-              title={showPrompt ? t('hidePrompt') : t('showPrompt')}
-            >
-              <MessageSquareText className="h-4 w-4" />
-              <span className="ml-2">{showPrompt ? t('hidePrompt') : t('showPrompt')}</span>
-              <ChevronUp className={cn('ml-2 h-4 w-4 transition-transform', !showPrompt && 'rotate-180')} />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                onClick={() => setShowPrompt((prev) => !prev)}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-10 rounded-full bg-white/10 px-3 text-white hover:bg-white/20"
+                  >
+                    <MessageSquareText className="h-4 w-4" />
+                    <span className="ml-2">{showPrompt ? t('hidePrompt') : t('showPrompt')}</span>
+                    <ChevronUp className={cn('ml-2 h-4 w-4 transition-transform', !showPrompt && 'rotate-180')} />
+                  </Button>
+                }
+              />
+              <TooltipContent>{showPrompt ? t('hidePrompt') : t('showPrompt')}</TooltipContent>
+            </Tooltip>
             {showPrompt && (
               <div className="max-h-48 overflow-y-auto rounded-2xl bg-black/65 px-4 py-3 text-sm leading-6 text-white shadow-lg backdrop-blur-sm">
                 {alt}
@@ -167,54 +174,64 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
             )}
           </div>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={handleZoomOut}
-          title={t('zoomOut')}
-        >
-          <ZoomOut className="h-5 w-5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleZoomOut}
+            render={
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20" aria-label={t('zoomOut')}>
+                <ZoomOut className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('zoomOut')}</TooltipContent>
+        </Tooltip>
         <span className="text-white text-sm min-w-15 text-center pt-2">
           {Math.round(scale * 100)}%
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={handleZoomIn}
-          title={t('zoomIn')}
-        >
-          <ZoomIn className="h-5 w-5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={handleRotate}
-          title={t('rotate')}
-        >
-          <RotateCw className="h-5 w-5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={handleDownload}
-          title={t('download')}
-        >
-          <Download className="h-5 w-5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={onClose}
-          title={t('close')}
-        >
-          <X className="h-5 w-5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleZoomIn}
+            render={
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20" aria-label={t('zoomIn')}>
+                <ZoomIn className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('zoomIn')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleRotate}
+            render={
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20" aria-label={t('rotate')}>
+                <RotateCw className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('rotate')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={handleDownload}
+            render={
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20" aria-label={t('download')}>
+                <Download className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('download')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={onClose}
+            render={
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20" aria-label={t('close')}>
+                <X className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('close')}</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Image */}
@@ -281,28 +298,42 @@ export function VideoLightbox({ src, isOpen, onClose }: VideoLightboxProps) {
       onClick={onClose}
     >
       <div className="absolute right-4 top-4 z-10 flex gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={(event) => event.stopPropagation()}
-          render={<a href={src} download />}
-          title={t('download')}
-        >
-          <Download className="h-5 w-5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
-          onClick={(event) => {
-            event.stopPropagation()
-            onClose()
-          }}
-          title={t('close')}
-        >
-          <X className="h-5 w-5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={(event) => event.stopPropagation()}
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
+                aria-label={t('download')}
+                render={<a href={src} download />}
+              >
+                <Download className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('download')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={(event) => {
+              event.stopPropagation()
+              onClose()
+            }}
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
+                aria-label={t('close')}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('close')}</TooltipContent>
+        </Tooltip>
       </div>
       <video
         src={src}

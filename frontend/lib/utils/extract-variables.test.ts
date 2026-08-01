@@ -16,7 +16,7 @@ describe('extractVariables', () => {
         { name: 'topic', type: '', required: true, default: 'AI', description: 'Subject' },
       ],
     }, 'workflow')).toEqual([
-      { name: 'limit', type: 'number', required: false, default: null, description: null, label: 'limit' },
+      { name: 'limit', type: 'number', required: false, default: 0, description: null, label: 'limit' },
       { name: 'topic', type: 'text', required: true, default: 'AI', description: 'Subject', label: 'topic' },
     ])
   })

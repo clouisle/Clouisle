@@ -27,6 +27,7 @@ mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.flat().
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
+mock.module('@/components/ui/tooltip', () => ({ Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('button') }))
 mock.module('@/components/ui/badge', () => ({ Badge: element('badge') }))
 mock.module('@/components/ui/switch', () => ({ Switch: element('switch') }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))

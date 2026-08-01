@@ -62,7 +62,8 @@
       "responseDuration": "响应耗时",
       "ragContext": "{count} 个来源",
       "segment": "片段 {index}",
-      "relevance": "相关度 {score}%"
+      "relevance": "相关度 {score}%",
+      "conversationId": "对话 ID"
     }
   }
 }

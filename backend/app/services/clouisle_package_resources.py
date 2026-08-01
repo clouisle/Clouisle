@@ -530,6 +530,8 @@ class AgentPackageAdapter(ResourcePackageAdapter):
             "system_prompt": agent.system_prompt,
             "max_iterations": agent.max_iterations,
             "hide_tool_calls": agent.hide_tool_calls,
+            "hide_message_actions": agent.hide_message_actions,
+            "hide_reasoning": agent.hide_reasoning,
             "tools_config": _copy_json(agent.tools_config) or [],
             "enable_vision": agent.enable_vision,
             "enable_file_upload": agent.enable_file_upload,
@@ -669,6 +671,8 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
             "trigger_config": _sanitize_dict(workflow.trigger_config or {}),
             "visibility": _enum_value(workflow.visibility),
             "embed_config": _copy_json(workflow.embed_config) or {},
+            "run_page_config": _copy_json(workflow.run_page_config)
+            or {"presentation_mode": "simple"},
         }
         return payload, dependencies, workflow.name
 
@@ -983,6 +987,8 @@ def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str
         "system_prompt": payload.get("system_prompt"),
         "max_iterations": int(payload.get("max_iterations") or 5),
         "hide_tool_calls": bool(payload.get("hide_tool_calls") or False),
+        "hide_message_actions": bool(payload.get("hide_message_actions") or False),
+        "hide_reasoning": bool(payload.get("hide_reasoning") or False),
         "tools_config": tools_config,
         "tools_credentials": {},
         "enable_vision": bool(payload.get("enable_vision") or False),
@@ -1046,6 +1052,8 @@ def _workflow_fields(
         "trigger_type": TriggerType(trigger_type),
         "trigger_config": payload.get("trigger_config") or {},
         "embed_config": payload.get("embed_config") or {},
+        "run_page_config": payload.get("run_page_config")
+        or {"presentation_mode": "simple"},
     }
 
 

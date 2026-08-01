@@ -63,6 +63,7 @@ export function ConversationDrawer({
               agentName={conversation.agent_name}
               agentIcon={conversation.agent_icon}
               userName={conversation.user_name}
+              conversationId={conversation.id}
               action={
                 onDelete && canDeleteConversation ? (
                   <Button

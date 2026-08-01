@@ -116,60 +116,52 @@ class TestWorkflowOrchestratorRun:
                 )
 
     @pytest.mark.asyncio
-    async def test_run_simple_workflow(self, orchestrator, workflow_def):
-        """Test running a simple workflow."""
+    async def test_published_run_uses_latest_snapshot(self, orchestrator, workflow_def):
         workflow_id = uuid4()
-        user_id = uuid4()
-        run_id = uuid4()
+        workflow = MagicMock(id=workflow_id, name="Test", definition={"draft": True})
+        snapshot = MagicMock(version=3, definition=workflow_def)
 
-        mock_wf = MagicMock()
-        mock_wf.id = workflow_id
-        mock_wf.name = "Test Workflow"
-        mock_wf.definition = workflow_def
-        mock_wf.trigger_type = "manual"
+        with patch("app.services.workflow.orchestrator.WorkflowVersion") as versions:
+            versions.filter.return_value.order_by.return_value.first = AsyncMock(
+                return_value=snapshot
+            )
+            result = await orchestrator._get_workflow_definition(
+                workflow, is_debug=False
+            )
 
-        mock_run = MagicMock()
-        mock_run.id = run_id
-        mock_run.workflow_id = workflow_id
-        mock_run.status = "running"
-        mock_run.trigger_type = "manual"
-        mock_run.inputs = {}
-        mock_run.save = AsyncMock()
+        assert result is workflow_def
+        versions.filter.assert_called_once_with(workflow_id=workflow_id)
+        versions.filter.return_value.order_by.assert_called_once_with("-version")
 
-        with patch("app.services.workflow.orchestrator.Workflow") as mock_workflow_cls:
-            with patch(
-                "app.services.workflow.orchestrator.WorkflowRun"
-            ) as mock_run_cls:
-                with patch(
-                    "app.services.workflow.orchestrator.ExecutionContext"
-                ) as mock_ctx_cls:
-                    with patch("app.services.workflow.orchestrator.StreamManager"):
-                        mock_workflow_cls.filter.return_value.first = AsyncMock(
-                            return_value=mock_wf
-                        )
-                        mock_run_cls.create = AsyncMock(return_value=mock_run)
+    @pytest.mark.asyncio
+    async def test_debug_run_uses_live_draft(self, orchestrator):
+        workflow = MagicMock(
+            id=uuid4(),
+            name="Test",
+            definition={"nodes": [{"id": "draft"}]},
+            updated_at=None,
+        )
 
-                        mock_ctx = MagicMock()
-                        mock_ctx.set_inputs = AsyncMock()
-                        mock_ctx.get_inputs = AsyncMock(return_value={"query": "test"})
-                        mock_ctx.set_variable = AsyncMock()
-                        mock_ctx.get_variable = AsyncMock(return_value="test")
-                        mock_ctx.set_node_outputs = AsyncMock()
-                        mock_ctx.get_status = AsyncMock(return_value="running")
-                        mock_ctx_cls.create = AsyncMock(return_value=mock_ctx)
-                        orchestrator._execute = AsyncMock(
-                            return_value=({"answer": "test"}, 2)
-                        )
-                        orchestrator._complete_run = AsyncMock()
+        with patch("app.services.workflow.orchestrator.WorkflowVersion") as versions:
+            result = await orchestrator._get_workflow_definition(
+                workflow, is_debug=True
+            )
 
-                        result = await orchestrator.run(
-                            workflow_id=workflow_id,
-                            inputs={"query": "test"},
-                            user_id=user_id,
-                            stream=False,
-                        )
+        assert result == workflow.definition
+        versions.filter.assert_not_called()
 
-                        assert result == str(run_id)
+    @pytest.mark.asyncio
+    async def test_published_run_without_snapshot_fails_fast(self, orchestrator):
+        workflow = MagicMock(id=uuid4(), name="Test", definition={"draft": True})
+
+        with patch("app.services.workflow.orchestrator.WorkflowVersion") as versions:
+            versions.filter.return_value.order_by.return_value.first = AsyncMock(
+                return_value=None
+            )
+            with pytest.raises(WorkflowNotPublishedError):
+                await orchestrator._get_workflow_definition(workflow, is_debug=False)
+
+        versions.filter.assert_called_once_with(workflow_id=workflow.id)
 
     @pytest.mark.asyncio
     async def test_run_with_existing_run_records_stream_metrics_and_profile(

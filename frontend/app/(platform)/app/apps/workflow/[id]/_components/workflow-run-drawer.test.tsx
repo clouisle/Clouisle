@@ -95,6 +95,11 @@ for (const path of ['button', 'input', 'label', 'textarea', 'scroll-area', 'fiel
   }))
 }
 mock.module('@/components/ui/tabs', () => ({ Tabs: element, TabsList: element, TabsTrigger: element, TabsContent: element }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: element,
+  TooltipContent: element,
+  TooltipTrigger: (props: Props) => (props.render as Node) ?? element(props),
+}))
 
 const { WorkflowRunDrawer } = await import('./workflow-run-drawer')
 

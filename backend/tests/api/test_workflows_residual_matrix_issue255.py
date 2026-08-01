@@ -20,7 +20,7 @@ class Query:
     def all(self):
         return self
 
-    def filter(self, **kwargs):
+    def filter(self, *args, **kwargs):
         self.filters.append(kwargs)
         return self
 
@@ -114,7 +114,6 @@ async def test_global_run_list_applies_access_filters_and_serializes_relations(
 
     access.assert_awaited_once_with(team_id, user)
     assert {"team_id__in": [team_id]} in workflow_query.filters
-    assert {"name__icontains": "flow"} in workflow_query.filters
     assert {"workflow_id__in": [workflow_id]} in run_query.filters
     assert {"status__in": [RunStatus.FAILED]} in run_query.filters
     assert {"trigger_type__in": [TriggerType.WEBHOOK]} in run_query.filters

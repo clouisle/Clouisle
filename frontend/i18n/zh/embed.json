@@ -9,6 +9,12 @@
       "allowedDomains": "允许的域名",
       "allowedDomainsPlaceholder": "例如 example.com, *.example.com",
       "allowedDomainsDescription": "留空则允许所有域名。支持通配符子域名 (*.example.com)。",
+      "showHeader": "展示头部",
+      "showHeaderDescription": "在嵌入页顶部展示应用图标与名称",
+      "showHistory": "查看历史",
+      "showHistoryDescription": "在嵌入页展示历史记录侧栏（保存在浏览器本地）",
+      "allowNew": "允许新建",
+      "allowNewDescription": "允许用户发起新的对话/运行",
       "invalidDomain": "域名 \"{value}\" 无效，请使用 example.com 或 example.com:3000 这类主机名。",
       "theme": "主题",
       "themeAuto": "自动",
@@ -47,7 +53,10 @@
       "invalidToken": "无效或缺少 API 密钥",
       "defaultGreeting": "你好！有什么可以帮你的？",
       "configureVariables": "配置变量",
-      "fillRequired": "请先填写必填项"
+      "fillRequired": "请先填写必填项",
+      "history": "历史",
+      "noHistory": "暂无历史记录",
+      "untitled": "未命名"
     }
   }
 }

@@ -50,7 +50,7 @@ mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacet
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: element('div'), TooltipContent: element('span'), TooltipTrigger: element('button') }))
 mock.module('./conversation-drawer', () => ({ ConversationDrawer: () => null }))
 mock.module('lucide-react', () => Object.fromEntries([
-  'Search', 'MessageSquare', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2', 'MoreHorizontal', 'Eye',
+  'Search', 'MessageSquare', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2', 'MoreHorizontal', 'Eye', 'Copy',
 ].map((name) => [name, element('svg')])))
 
 const { ConversationsTable } = await import('./conversations-table')

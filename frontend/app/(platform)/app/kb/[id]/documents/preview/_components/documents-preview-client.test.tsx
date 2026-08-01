@@ -45,6 +45,16 @@ const element = (tag: string) => ({ children, ...props }: { children?: ReactNode
   props: { ...props, children },
 })
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: element('tooltip'),
+  TooltipContent: element('tooltip-content'),
+  TooltipTrigger: ({ render, children, ...props }: Record<string, unknown>) => {
+    const target = render as { type?: unknown; props?: Record<string, unknown> } | undefined
+    return target
+      ? { type: target.type, props: { ...target.props, ...props, ...(children !== undefined ? { children } : {}) } }
+      : element('button')(props)
+  },
+}))
 mock.module('@/components/ui/badge', () => ({ Badge: element('span') }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))
 mock.module('@/components/ui/label', () => ({ Label: element('label') }))

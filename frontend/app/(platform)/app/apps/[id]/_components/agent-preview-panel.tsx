@@ -76,6 +76,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     error,
     isLoading,
     isStreaming,
+    conversationId,
     sendMessage,
     regenerate,
     switchVersion,
@@ -252,6 +253,9 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           messages={messages}
           isStreaming={isStreaming}
           hideToolCalls={agent.hide_tool_calls}
+          hideMessageActions={agent.hide_message_actions}
+          hideReasoning={agent.hide_reasoning}
+          conversationId={conversationId}
           className="h-full"
           onRegenerate={regenerate}
           onSwitchVersion={switchVersion}

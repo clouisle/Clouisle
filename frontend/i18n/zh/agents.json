@@ -32,6 +32,10 @@
       "maxIterationsHint": "工具调用的最大迭代次数 (1-200)",
       "hideToolCalls": "隐藏工具调用",
       "hideToolCallsDesc": "在对话中隐藏工具调用详情，但不禁用工具执行。",
+      "hideMessageActions": "隐藏消息操作栏",
+      "hideMessageActionsDesc": "隐藏每条消息下方的操作栏。",
+      "hideReasoning": "隐藏思考过程",
+      "hideReasoningDesc": "在对话中隐藏思维链/思考过程。",
       "conversationConfig": "对话配置",
       "suggestedQuestionsPlaceholder": "每行一个问题",
       "promptDesc": "定义 Agent 的角色和行为",
@@ -388,6 +392,7 @@
       },
       "table": {
         "title": "标题",
+        "conversationId": "对话 ID",
         "messageCount": "消息数",
         "userFeedback": "用户反馈",
         "adminFeedback": "管理员反馈",

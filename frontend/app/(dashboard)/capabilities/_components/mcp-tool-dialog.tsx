@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -420,9 +421,12 @@ export function McpToolDialog({
           <div className="space-y-4 border rounded-lg p-4">
             <h4 className="font-medium flex items-center gap-2">
               {t('mcpDialog.mcpConfig')}
-              <span title={t('mcpDialog.mcpConfigHint')}>
-                <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-              </span>
+              <Tooltip>
+                <TooltipTrigger render={<span />} className="cursor-help">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent>{t('mcpDialog.mcpConfigHint')}</TooltipContent>
+              </Tooltip>
             </h4>
 
             {/* 传输类型选择 */}

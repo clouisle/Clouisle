@@ -59,6 +59,7 @@
       "modelUsed": "Model used",
       "tokenBreakdown": "Prompt: {prompt}, Completion: {completion}",
       "tokenCount": "{count} tokens",
+      "conversationId": "Conversation ID",
       "responseDuration": "Response duration",
       "ragContext": "{count} sources",
       "segment": "Segment {index}",

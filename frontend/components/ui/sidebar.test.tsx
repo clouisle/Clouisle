@@ -86,14 +86,16 @@ test('toggles from trigger and rail while preserving click handlers', () => {
   context()
   const onClick = mock(() => {})
   const trigger = sidebar.SidebarTrigger({ onClick }) as { props: Record<string, (event: unknown) => void> }
-  const rail = sidebar.SidebarRail({}) as { props: Record<string, () => void> }
+  const rail = sidebar.SidebarRail({}) as { type: unknown; props: Record<string, unknown> }
+  const railTrigger = (rail.props.children as { props: Record<string, unknown> }[])[0]
+  const railButton = railTrigger.props.render as { props: Record<string, unknown> }
 
   trigger.props.onClick({})
-  rail.props.onClick()
+  ;(railTrigger.props.onClick as () => void)()
 
   expect(onClick).toHaveBeenCalledTimes(1)
   expect(toggleSidebar).toHaveBeenCalledTimes(2)
-  expect(rail.props['aria-label' as never]).toBe('toggleSidebar')
+  expect(railButton.props['aria-label' as never]).toBe('toggleSidebar')
 })
 
 test('provides sidebar state, keyboard toggle, and menu tooltip behavior', () => {

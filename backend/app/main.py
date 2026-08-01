@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI):
         init_conversation_session_memory_table,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
+        init_agent_hide_message_actions_reasoning_fields,
         init_agent_memory_fields,
         init_agent_media_generation_fields,
         init_permission_is_system_field,
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
         init_agent_kb_search_mode,
         init_chunk_status,
         init_embed_config,
+        init_workflow_run_page_config,
         init_model_type_unique_constraint,
         init_kb_rerank_fields,
         init_skills_table,
@@ -176,6 +178,13 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Agent hide_tool_calls migration failed: {e}")
 
     try:
+        await init_agent_hide_message_actions_reasoning_fields()
+    except Exception as e:
+        logger.warning(
+            f"Agent hide_message_actions/hide_reasoning migration failed: {e}"
+        )
+
+    try:
         await init_agent_memory_fields()
     except Exception as e:
         logger.warning(f"Agent memory fields migration failed: {e}")
@@ -219,6 +228,11 @@ async def lifespan(app: FastAPI):
         await init_embed_config()
     except Exception as e:
         logger.warning(f"Embed config migration failed: {e}")
+
+    try:
+        await init_workflow_run_page_config()
+    except Exception as e:
+        logger.warning(f"Workflow run-page config migration failed: {e}")
 
     try:
         await init_model_type_unique_constraint()

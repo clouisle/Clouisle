@@ -4,6 +4,7 @@ export type ParameterType = 'text' | 'paragraph' | 'select' | 'number' | 'checkb
 export interface Parameter {
   id: string
   name: string
+  label?: string  // 展示名（运行页面显示用，缺省回退到 name）
   type: ParameterType
   required: boolean
   defaultValue?: string

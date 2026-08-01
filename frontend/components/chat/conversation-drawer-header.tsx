@@ -13,6 +13,7 @@ interface ConversationDrawerHeaderProps {
   agentName?: string | null
   agentIcon?: string | null
   userName?: string | null
+  conversationId?: string | null
   action?: React.ReactNode
 }
 
@@ -44,6 +45,7 @@ export function ConversationDrawerHeader({
   agentName,
   agentIcon,
   userName,
+  conversationId,
   action,
 }: ConversationDrawerHeaderProps) {
   const t = useTranslations('conversations')
@@ -70,6 +72,12 @@ export function ConversationDrawerHeader({
               <span className="flex items-center gap-1">
                 <User className="h-3.5 w-3.5" />
                 {userName}
+              </span>
+            )}
+            {conversationId && (
+              <span className="flex items-center gap-1">
+                <span className="text-xs">{t('drawer.conversationId')}:</span>
+                <code className="font-mono text-[11px]">{conversationId}</code>
               </span>
             )}
           </SheetDescription>

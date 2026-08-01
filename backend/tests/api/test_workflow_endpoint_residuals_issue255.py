@@ -44,6 +44,9 @@ class _Query:
     async def count(self):
         return self.total
 
+    async def exists(self):
+        return bool(self.rows)
+
     async def first(self):
         return self.rows[0] if self.rows else None
 
@@ -87,8 +90,8 @@ async def test_list_all_workflow_runs_applies_every_residual_filter(monkeypatch)
     )
 
     assert response["data"]["total"] == 0
-    assert workflow_query.filters[-1][1] == {"name__icontains": "needle"}
     assert [call[1] for call in run_query.filters] == [
+        {},
         {"workflow_id__in": [workflow_id]},
         {"status__in": [RunStatus.SUCCESS]},
         {"trigger_type__in": [TriggerType.MANUAL]},
@@ -192,6 +195,7 @@ async def test_update_workflow_changes_description_without_optional_fields(monke
         trigger_config=None,
         visibility=None,
         embed_config=None,
+        run_page_config=None,
     )
     reloaded = SimpleNamespace()
 
@@ -307,3 +311,231 @@ async def test_get_workflow_version_raises_for_missing_version(monkeypatch):
 
     assert exc_info.value.msg_key == "workflow_version_not_found"
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_list_my_workflow_runs_applies_filters_and_handles_invalid_uuid_search(
+    monkeypatch,
+):
+    workflow_id = uuid4()
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    run_query = _Query()
+    access = AsyncMock()
+
+    monkeypatch.setattr(workflows, "check_workflow_access", access)
+    recorded: list[tuple[tuple, dict]] = []
+
+    def filter_mock(**kwargs):
+        recorded.append(((), kwargs))
+        return run_query
+
+    monkeypatch.setattr(workflows.WorkflowRun, "filter", filter_mock)
+
+    response = await workflows.list_my_workflow_runs(
+        workflow_id=workflow_id,
+        status=RunStatus.SUCCESS,
+        search="not-a-uuid",
+        created_after=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_before=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        page=2,
+        page_size=5,
+        current_user=user,
+    )
+
+    access.assert_awaited_once_with(workflow_id, user)
+    kwargs_list = [call[1] for call in run_query.filters]
+    assert {
+        "workflow_id": workflow_id,
+        "triggered_by_id": user.id,
+        "is_debug": False,
+    } in [entry[1] for entry in recorded]
+    assert {"status": RunStatus.SUCCESS} in kwargs_list
+    assert {"id__isnull": True} in kwargs_list
+    assert {"created_at__gte": datetime(2026, 1, 1, tzinfo=timezone.utc)} in kwargs_list
+    assert {"created_at__lte": datetime(2026, 2, 1, tzinfo=timezone.utc)} in kwargs_list
+    assert response["data"]["total"] == 0
+    assert response["data"]["page"] == 2
+
+
+@pytest.mark.anyio
+async def test_list_my_workflow_runs_matches_valid_uuid_search(monkeypatch):
+    workflow_id = uuid4()
+    search_id = uuid4()
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    run_query = _Query()
+    access = AsyncMock()
+
+    monkeypatch.setattr(workflows, "check_workflow_access", access)
+    recorded: list[tuple[tuple, dict]] = []
+
+    def filter_mock(**kwargs):
+        recorded.append(((), kwargs))
+        return run_query
+
+    monkeypatch.setattr(workflows.WorkflowRun, "filter", filter_mock)
+
+    await workflows.list_my_workflow_runs(
+        workflow_id=workflow_id,
+        status=None,
+        search=str(search_id),
+        created_after=None,
+        created_before=None,
+        page=1,
+        page_size=20,
+        current_user=user,
+    )
+
+    kwargs_list = [call[1] for call in run_query.filters]
+    assert {"id": search_id} in kwargs_list
+
+
+@pytest.mark.anyio
+async def test_update_workflow_applies_run_page_config(monkeypatch):
+    workflow_id = uuid4()
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        team_id=uuid4(),
+        name="Flow",
+        description="old",
+        version=1,
+        save=AsyncMock(),
+    )
+    workflow_in = SimpleNamespace(
+        name=None,
+        description=None,
+        icon=None,
+        definition=None,
+        variables=None,
+        trigger_type=None,
+        trigger_config=None,
+        visibility=None,
+        embed_config=None,
+        run_page_config={"presentation_mode": "result_first"},
+    )
+
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
+    monkeypatch.setattr(
+        workflows.Workflow,
+        "filter",
+        lambda **kwargs: _Query(exclude=True) if kwargs.get("exclude") else _Query(),
+    )
+    monkeypatch.setattr(workflows.Workflow, "get", lambda **kwargs: _Query([workflow]))
+    monkeypatch.setattr(
+        workflows.WorkflowOut,
+        "model_validate",
+        lambda value: SimpleNamespace(model_dump=lambda: {"id": str(workflow_id)}),
+    )
+
+    await workflows.update_workflow(
+        workflow_id=workflow_id,
+        workflow_in=workflow_in,
+        request=SimpleNamespace(),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+
+    assert workflow.run_page_config == {"presentation_mode": "result_first"}
+    workflow.save.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_get_my_workflow_run_returns_run_or_404(monkeypatch):
+    workflow_id = uuid4()
+    run_id = uuid4()
+    access = AsyncMock()
+
+    monkeypatch.setattr(workflows, "check_workflow_access", access)
+    monkeypatch.setattr(
+        workflows.WorkflowRun,
+        "filter",
+        lambda **kwargs: _Query([SimpleNamespace(id=run_id)]),
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRunOut,
+        "model_validate",
+        lambda value: SimpleNamespace(model_dump=lambda: {"id": str(run_id)}),
+    )
+
+    response = await workflows.get_my_workflow_run(
+        workflow_id=workflow_id,
+        run_id=run_id,
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    assert response["data"]["id"] == str(run_id)
+
+    monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: _Query())
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.get_my_workflow_run(
+            workflow_id=workflow_id,
+            run_id=run_id,
+            current_user=SimpleNamespace(id=uuid4()),
+        )
+    assert exc_info.value.msg_key == "workflow_run_not_found"
+
+
+@pytest.mark.anyio
+async def test_list_my_run_node_executions_returns_nodes_or_404(monkeypatch):
+    workflow_id = uuid4()
+    run_id = uuid4()
+    access = AsyncMock()
+
+    monkeypatch.setattr(workflows, "check_workflow_access", access)
+    monkeypatch.setattr(
+        workflows.WorkflowRun,
+        "filter",
+        lambda **kwargs: _Query([SimpleNamespace(id=run_id)]),
+    )
+    monkeypatch.setattr(
+        workflows.NodeExecution,
+        "filter",
+        lambda **kwargs: _Query([SimpleNamespace(id="n1")]),
+    )
+    monkeypatch.setattr(
+        workflows.NodeExecutionOut,
+        "model_validate",
+        lambda value: SimpleNamespace(model_dump=lambda: {"id": "n1"}),
+    )
+
+    response = await workflows.list_my_run_node_executions(
+        workflow_id=workflow_id,
+        run_id=run_id,
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    assert response["data"][0]["id"] == "n1"
+
+    monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: _Query())
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.list_my_run_node_executions(
+            workflow_id=workflow_id,
+            run_id=run_id,
+            current_user=SimpleNamespace(id=uuid4()),
+        )
+    assert exc_info.value.msg_key == "workflow_run_not_found"
+
+
+@pytest.mark.anyio
+async def test_list_my_workflow_runs_without_search_skips_search_filter(monkeypatch):
+    workflow_id = uuid4()
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    run_query = _Query()
+    access = AsyncMock()
+
+    monkeypatch.setattr(workflows, "check_workflow_access", access)
+    monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: run_query)
+
+    await workflows.list_my_workflow_runs(
+        workflow_id=workflow_id,
+        status=None,
+        search=None,
+        created_after=None,
+        created_before=None,
+        page=1,
+        page_size=20,
+        current_user=user,
+    )
+
+    kwargs_list = [call[1] for call in run_query.filters]
+    assert not any("id" in kwargs or "id__isnull" in kwargs for kwargs in kwargs_list)

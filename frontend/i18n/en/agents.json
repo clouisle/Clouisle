@@ -32,6 +32,10 @@
       "maxIterationsHint": "Max tool call iterations (1-200)",
       "hideToolCalls": "Hide Tool Calls",
       "hideToolCallsDesc": "Hide tool call details in chat while keeping tools enabled.",
+      "hideMessageActions": "Hide Message Actions",
+      "hideMessageActionsDesc": "Hide the action toolbar under each message.",
+      "hideReasoning": "Hide Reasoning",
+      "hideReasoningDesc": "Hide the thinking process / chain of thought in chat.",
       "conversationConfig": "Conversation Settings",
       "suggestedQuestionsPlaceholder": "One question per line",
       "promptDesc": "Define the agent's role and behavior",
@@ -388,6 +392,7 @@
       },
       "table": {
         "title": "Title",
+        "conversationId": "Conversation ID",
         "messageCount": "Messages",
         "userFeedback": "User Feedback",
         "adminFeedback": "Admin Feedback",

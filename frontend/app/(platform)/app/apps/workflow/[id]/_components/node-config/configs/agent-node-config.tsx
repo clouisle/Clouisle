@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Search, ChevronDown, Bot, Check, Loader2, Trash2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -377,15 +378,17 @@ export function AgentNodeConfig({
               )}
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 shrink-0"
-                onClick={() => window.open(`/app/apps/${selectedAgent.id}`, '_blank')}
-                title={t('configAgent.viewAgent')}
-              >
-                <ExternalLink className="h-3 w-3 text-muted-foreground" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={() => window.open(`/app/apps/${selectedAgent.id}`, '_blank')}
+                  render={
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label={t('configAgent.viewAgent')}>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{t('configAgent.viewAgent')}</TooltipContent>
+              </Tooltip>
               <Button
                 variant="ghost"
                 size="icon"

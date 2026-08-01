@@ -56,6 +56,12 @@ mock.module('@/components/ui/dialog', () => ({
 }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/input', () => ({ Input }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
 mock.module('@/components/ui/label', () => ({ Label: (props: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props} /> }))
 mock.module('@/components/ui/switch', () => ({ Switch: ({ onCheckedChange, ...props }: { onCheckedChange: (value: boolean) => void }) => <button {...props} onClick={() => onCheckedChange(false)} /> }))
 mock.module('@/components/ui/select', () => ({

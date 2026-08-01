@@ -21,6 +21,7 @@ import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, t
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
@@ -295,9 +296,12 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                                 {tool.display_name}
                               </span>
                               {tool.requires_config && (
-                                <span title={t('dialog.requiresConfig')}>
-                                  <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                                </span>
+                                <Tooltip>
+                                  <TooltipTrigger render={<span />} className="cursor-help">
+                                    <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>{t('dialog.requiresConfig')}</TooltipContent>
+                                </Tooltip>
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-1">

@@ -53,6 +53,7 @@ mock.module('@/components/ui/badge', () => ({ Badge: element }))
 mock.module('@/components/ui/card', () => ({ Card: element }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: element }))
 mock.module('@/components/ui/field', () => ({ FieldError: element }))
+mock.module('@/components/ui/tooltip', () => ({ Tooltip: element, TooltipContent: element, TooltipTrigger: element }))
 
 const { McpToolDialog } = await import('./mcp-tool-dialog')
 type Node = { type: unknown; props: Record<string, unknown> }

@@ -34,6 +34,10 @@ export type AgentsMessages = {
       maxIterationsHint: string
       hideToolCalls: string
       hideToolCallsDesc: string
+      hideMessageActions: string
+      hideMessageActionsDesc: string
+      hideReasoning: string
+      hideReasoningDesc: string
       conversationConfig: string
       suggestedQuestionsPlaceholder: string
       promptDesc: string
@@ -390,6 +394,7 @@ export type AgentsMessages = {
       }
       table: {
         title: string
+        conversationId: string
         messageCount: string
         userFeedback: string
         adminFeedback: string

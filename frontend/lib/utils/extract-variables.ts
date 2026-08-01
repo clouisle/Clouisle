@@ -1,4 +1,16 @@
 import type { VariableDefinition } from '@/lib/api/agents'
+import type { VariableDefinition as WorkflowVariableDefinition } from '@/lib/api/workflows'
+
+export type RunVariableDefinition = Omit<VariableDefinition, 'type' | 'default'> & {
+  type: VariableDefinition['type'] | 'boolean'
+  default?: unknown
+}
+
+function normalizeVariableType(type?: string): RunVariableDefinition['type'] {
+  if (type === 'string') return 'text'
+  if (type === 'boolean') return 'boolean'
+  return (type as RunVariableDefinition['type']) || 'text'
+}
 
 /**
  * Extract variable definitions from Agent or Workflow metadata
@@ -6,7 +18,7 @@ import type { VariableDefinition } from '@/lib/api/agents'
 export function extractVariables(
   metadata: unknown,
   type: 'agent' | 'workflow'
-): VariableDefinition[] {
+): RunVariableDefinition[] {
   if (!metadata || typeof metadata !== 'object') return []
 
   if (type === 'agent') {
@@ -15,13 +27,7 @@ export function extractVariables(
   } else {
     // Extract from workflow's start node (user_input or trigger)
     const workflow = metadata as {
-      variables?: Array<{
-        name: string
-        type: string
-        required: boolean
-        default?: unknown
-        description?: string | null
-      }>
+      variables?: WorkflowVariableDefinition[]
       definition?: {
         nodes?: Array<{
           data?: {
@@ -45,11 +51,11 @@ export function extractVariables(
     if (workflow.variables && workflow.variables.length > 0) {
       return workflow.variables.map((v) => ({
         name: v.name,
-        type: (v.type as VariableDefinition['type']) || 'text',
+        type: normalizeVariableType(v.type),
         required: v.required ?? true,
-        default: v.default ? String(v.default) : null,
+        default: v.default ?? null,
         description: v.description,
-        label: v.name,
+        label: v.label || v.name,
       }))
     }
 
@@ -65,9 +71,9 @@ export function extractVariables(
 
     return params.map((p) => ({
       name: p.name,
-      type: (p.type as VariableDefinition['type']) || 'text',
+      type: normalizeVariableType(p.type),
       required: p.required ?? true,
-      default: p.default ? String(p.default) : null,
+      default: p.default ?? null,
       description: p.description || null,
       label: p.label || p.name,
     }))

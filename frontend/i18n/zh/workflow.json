@@ -20,6 +20,19 @@
     "published": "已发布",
     "unpublished": "已取消发布",
     "publishFailed": "发布失败",
+    "publishSettings": {
+      "title": "发布工作流",
+      "description": "选择用户在已发布运行页中查看结果的方式。",
+      "simple": {
+        "title": "表单与结果",
+        "description": "展示输入、运行状态和最终结果，不展示节点级执行详情。"
+      },
+      "result_first": {
+        "title": "结果与详情",
+        "description": "优先展示最终结果，并允许用户展开执行轨迹和运行详情。"
+      },
+      "publish": "发布工作流"
+    },
     "showSidebar": "显示侧边栏",
     "hideSidebar": "隐藏侧边栏",
     "canvasHint": "从左侧面板拖拽节点，连接它们以构建工作流",
@@ -1010,6 +1023,8 @@
         "nameLabel": "变量名",
         "namePlaceholder": "输入变量名（如：query）",
         "nameHint": "只能包含字母、数字、下划线，且不能以数字开头",
+        "displayLabelLabel": "展示名",
+        "displayLabelPlaceholder": "输入展示名（可选，留空则使用变量名）",
         "nameFormatError": "变量名只能包含字母、数字、下划线，且不能以数字开头",
         "nameDuplicate": "变量名已存在",
         "typeLabel": "类型",

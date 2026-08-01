@@ -31,6 +31,13 @@ mock.module('@/components/ui/button', () => ({
   ),
 }))
 
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
+
 let ImageLightbox: typeof import('./image-lightbox').ImageLightbox
 let VideoLightbox: typeof import('./image-lightbox').VideoLightbox
 let useLightbox: typeof import('./image-lightbox').useLightbox
@@ -131,9 +138,11 @@ describe('ImageLightbox', () => {
         onClose: mock(() => {}),
       })
 
-      act(() => document.body.querySelector('button[title="showPrompt"]')!.click())
+      const promptButton = (label: string) =>
+        Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes(label))!
+      act(() => promptButton('showPrompt').click())
       expect(document.body.textContent).toContain('Generated prompt')
-      act(() => document.body.querySelector('button[title="hidePrompt"]')!.click())
+      act(() => promptButton('hidePrompt').click())
       expect(document.body.textContent).not.toContain('Generated prompt')
 
       const image = document.body.querySelector('img')!
@@ -171,7 +180,7 @@ describe('ImageLightbox', () => {
       )
       expect(document.body.textContent).toContain('115%')
 
-      await act(async () => document.body.querySelector('button[title="download"]')!.click())
+      await act(async () => document.body.querySelector('button[aria-label="download"]')!.click())
       expect(fetchImage).toHaveBeenCalledWith('/image.png')
       expect(createObjectUrl).toHaveBeenCalled()
       expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image')
@@ -199,7 +208,7 @@ describe('ImageLightbox', () => {
     keydown('Escape')
     act(() =>
       document.body
-        .querySelector('button:last-child')!
+        .querySelector('button[aria-label="close"]')!
         .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     )
     act(() =>

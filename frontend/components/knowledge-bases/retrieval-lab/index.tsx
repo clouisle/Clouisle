@@ -207,11 +207,10 @@ type Translate = {
   has(key: string): boolean
 }
 
-function ResultDetail({ result, side, rank, query, authenticatedMarkdown, resolvedTheme, t, onClose }: {
+function ResultDetail({ result, side, rank, authenticatedMarkdown, resolvedTheme, t, onClose }: {
   result: SearchResult
   side: 'a' | 'b'
   rank: number
-  query: string
   authenticatedMarkdown: boolean
   resolvedTheme: string | undefined
   t: Translate
@@ -498,7 +497,6 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     result={selectedResult}
     side={selection.side}
     rank={selectedIndex + 1}
-    query={submittedQuery}
     authenticatedMarkdown={authenticatedMarkdown}
     resolvedTheme={resolvedTheme}
     t={t}
@@ -625,18 +623,22 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
               </div>
         </div>
         <Popover open={showConfig} onOpenChange={setShowConfig}>
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  "disabled:pointer-events-none disabled:opacity-50",
-                  "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-                  "h-9 w-9"
-                )}
-                title={t('settings')}
-              >
-                <Settings2 className="h-4 w-4" />
-              </PopoverTrigger>
+              <Tooltip>
+                <TooltipTrigger
+                  aria-label={t('settings')}
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    "disabled:pointer-events-none disabled:opacity-50",
+                    "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+                    "h-9 w-9"
+                  )}
+                  render={<PopoverTrigger />}
+                >
+                  <Settings2 className="h-4 w-4" />
+                </TooltipTrigger>
+                <TooltipContent>{t('settings')}</TooltipContent>
+              </Tooltip>
               <PopoverContent align="end" side="top" className="w-[min(500px,calc(100vw-1rem))] max-h-[calc(100dvh-1rem)] overflow-y-auto">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

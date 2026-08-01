@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, ClassVar
 from uuid import UUID
 
-from pydantic import ConfigDict, BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field, field_validator
 
 from app.models.workflow import (
     WorkflowStatus,
@@ -53,6 +53,17 @@ class WorkflowUpdate(BaseModel):
     trigger_config: dict | None = None
     visibility: str | None = None
     embed_config: dict | None = None
+    run_page_config: dict | None = None
+
+    @field_validator("run_page_config")
+    @classmethod
+    def validate_run_page_config(cls, value: dict | None) -> dict | None:
+        if value is None:
+            return None
+        mode = value.get("presentation_mode", "simple")
+        if mode not in {"simple", "result_first"}:
+            raise ValueError("presentation_mode must be simple or result_first")
+        return {**value, "presentation_mode": mode}
 
 
 class WorkflowOut(BaseModel):
@@ -72,6 +83,9 @@ class WorkflowOut(BaseModel):
     trigger_config: dict
     webhook_token: str | None
     embed_config: dict
+    run_page_config: dict = Field(
+        default_factory=lambda: {"presentation_mode": "simple"}
+    )
     run_count: int
     success_count: int
     fail_count: int
@@ -220,6 +234,7 @@ class VariableDefinition(BaseModel):
     required: bool = Field(default=False)
     default: Any | None = None
     description: str | None = None
+    label: str | None = None
 
 
 # ============================================================================

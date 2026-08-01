@@ -73,6 +73,8 @@ def agent(**overrides):
         "system_prompt": "Help",
         "max_iterations": 5,
         "hide_tool_calls": False,
+        "hide_message_actions": False,
+        "hide_reasoning": False,
         "tools_config": [],
         "enable_vision": False,
         "enable_file_upload": False,
@@ -108,6 +110,7 @@ def workflow(**overrides):
         "trigger_config": {"authorization": "secret", "safe": True},
         "visibility": "private",
         "embed_config": {},
+        "run_page_config": {},
         "version": 2,
     }
     values.update(overrides)

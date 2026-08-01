@@ -112,6 +112,8 @@ async def test_agent_export_without_model_tools_or_permission(monkeypatch):
         system_prompt=None,
         max_iterations=5,
         hide_tool_calls=False,
+        hide_message_actions=False,
+        hide_reasoning=False,
         tools_config=[{"name": "ignored"}],
         enable_vision=False,
         enable_file_upload=False,
@@ -216,6 +218,7 @@ async def test_agent_duplicate_and_workflow_export_permission_skip(monkeypatch):
         trigger_config={},
         visibility="private",
         embed_config={},
+        run_page_config={},
         team_id=uuid4(),
     )
     endpoint(

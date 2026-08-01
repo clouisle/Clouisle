@@ -84,6 +84,8 @@ const baseAgent = {
   name: 'Support bot',
   max_iterations: 3,
   hide_tool_calls: false,
+  hide_message_actions: false,
+  hide_reasoning: false,
   tools_config: [],
   variables: [],
   suggested_questions: [],

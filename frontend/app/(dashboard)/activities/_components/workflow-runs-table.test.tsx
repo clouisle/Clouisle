@@ -58,13 +58,19 @@ mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: element('button'),
 }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: element('button') }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  TooltipTrigger: ({ render, children, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(children !== undefined ? { children } : {}) }) : <button {...props}>{children}</button>,
+}))
 mock.module('./workflow-run-drawer', () => ({
   WorkflowRunDrawer: ({ runId, open }: { runId: string; open: boolean }) =>
     open ? <aside role="dialog" aria-label={`run-${runId}`} /> : null,
 }))
 mock.module('lucide-react', () => Object.fromEntries([
   'Search', 'Workflow', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2',
-  'MoreHorizontal', 'CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle',
+  'MoreHorizontal', 'CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle', 'Copy',
 ].map((name) => [name, element('svg')])))
 
 const { WorkflowRunsTable } = await import('./workflow-runs-table')

@@ -50,6 +50,12 @@ mock.module('@/components/ui/badge', () => ({ Badge: children }))
 mock.module('@/components/ui/card', () => ({ Card: children }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: children }))
 mock.module('@/components/ui/image-upload', () => ({ ImageUpload: ({ onChange }: { onChange: (value: string) => void }) => <button data-image onClick={() => onChange('https://images.test/icon.png')} /> }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children: content }: React.PropsWithChildren) => <>{content}</>,
+  TooltipContent: ({ children: content }: React.PropsWithChildren) => <span>{content}</span>,
+  TooltipTrigger: ({ render, children: content, ...props }: { render?: React.ReactElement } & Record<string, unknown>) =>
+    render ? React.cloneElement(render, { ...props, ...(content !== undefined ? { children: content } : {}) }) : <button {...props}>{content}</button>,
+}))
 mock.module('./tool-category-input', () => ({
   ToolCategoryInput: ({ value, onChange }: { value: string; onChange: (value: string) => void }) =>
     <select data-category value={value} onChange={(event) => onChange(event.target.value)}><option value="api">api</option><option value="data">data</option></select>,
