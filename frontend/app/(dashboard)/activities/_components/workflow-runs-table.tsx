@@ -474,7 +474,7 @@ export function WorkflowRunsTable() {
                         title={`${t('table.runId')}: ${run.id}`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          void navigator.clipboard?.writeText(run.id)
+                          handleViewRun(run.id)
                         }}
                       >
                         {run.id.slice(0, 8)}
