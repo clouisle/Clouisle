@@ -4,13 +4,15 @@ import * as React from 'react'
 import Image from 'next/image'
 import { useSearchParams, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Loader2, Bot, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react'
+import { Loader2, Bot, RotateCcw, ChevronUp, ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChatContainer, ChatInput, VariableForm, useVariableForm } from '@/components/chat'
 import type { ChatMessage } from '@/components/chat/types'
 import type { VariableDefinition, VariableType } from '@/lib/api'
 import { embedApi, resolveEmbedMessage, type EmbedWorkflowInfo } from '@/lib/api/embed'
+import { useEmbedHistory, type EmbedHistoryEntry } from '@/hooks/use-embed-history'
 import { Suspense } from 'react'
 
 function EmbedWorkflowContent() {
@@ -32,6 +34,12 @@ function EmbedWorkflowContent() {
   const currentMessageRef = React.useRef<ChatMessage | null>(null)
   // Track node types to determine token routing (answer vs LLM)
   const nodeTypesRef = React.useRef<Map<string, string>>(new Map())
+  const history = useEmbedHistory(`clouisle:embed:history:workflow:${workflowId}`)
+  const { addEntry } = history
+  const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  const [selectedHistoryId, setSelectedHistoryId] = React.useState<string | null>(null)
+  const messagesRef = React.useRef<ChatMessage[]>([])
+  const currentRunRef = React.useRef<{ runId: string; query: string } | null>(null)
 
   const [apiKey, setApiKey] = React.useState(token)
   React.useEffect(() => {
@@ -44,6 +52,9 @@ function EmbedWorkflowContent() {
     window.parent.postMessage({ type: 'clouisle:ready' }, '*')
     return () => window.removeEventListener('message', handler)
   }, [])
+  React.useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
 
   React.useEffect(() => {
@@ -168,9 +179,15 @@ function EmbedWorkflowContent() {
         // Node errors are not shown as chat messages in embed
         break
 
-      case 'workflow_complete':
+      case 'workflow_complete': {
         setIsStreaming(false)
+        const run = currentRunRef.current
+        if (run) {
+          addEntry({ id: run.runId, title: run.query, createdAt: Date.now(), messages: messagesRef.current })
+          currentRunRef.current = null
+        }
         break
+      }
 
       case 'workflow_error': {
         const errorMessage = resolveEmbedMessage(data.error, t('errorLoading'))
@@ -182,7 +199,7 @@ function EmbedWorkflowContent() {
         break
       }
     }
-  }, [t])
+  }, [t, addEntry])
 
 
   const handleRun = React.useCallback(async (query: string) => {
@@ -205,6 +222,7 @@ function EmbedWorkflowContent() {
 
     try {
       const { run_id } = await embedApi.runWorkflow(workflowId, inputs, apiKey)
+      currentRunRef.current = { runId: run_id, query: query.trim() }
       const close = embedApi.streamWorkflowRun(run_id, apiKey, {
         onEvent: handleWorkflowEvent,
         onError: (err) => { console.error('Workflow SSE error:', err); setIsStreaming(false) },
@@ -236,6 +254,13 @@ function EmbedWorkflowContent() {
     initialMessagesApplied.current = initialMessages.length > 0
     variableForm.reset()
   }, [handleStop, initialMessages, variableForm])
+  const handleSelectHistory = React.useCallback((entry: EmbedHistoryEntry) => {
+    handleStop()
+    setMessages(entry.messages)
+    setSelectedHistoryId(entry.id)
+    currentMessageRef.current = null
+    nodeTypesRef.current.clear()
+  }, [handleStop])
 
   if (loading) {
     return (
@@ -256,6 +281,10 @@ function EmbedWorkflowContent() {
   }
 
   const isIconUrl = workflow.icon && (workflow.icon.startsWith('http') || workflow.icon.startsWith('/'))
+  const embedCfg = (workflow.embed_config || {}) as Record<string, unknown>
+  const showHeader = embedCfg.show_header !== false
+  const showHistory = embedCfg.show_history !== false
+  const allowNew = embedCfg.allow_new !== false
 
   const emptyState = (
     <div className="flex flex-col items-center justify-center gap-4 px-6">
@@ -283,83 +312,141 @@ function EmbedWorkflowContent() {
   )
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 sm:px-4 py-2">
-        <div className="flex items-center gap-2">
-          {workflow.icon && (
-            isIconUrl ? (
-              <div className="relative h-6 w-6 overflow-hidden">
-                <Image
-                  src={workflow.icon}
-                  alt={workflow.name}
-                  fill
-                  unoptimized
-                  className="object-cover"
-                />
-              </div>
-            ) : (
-              <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{workflow.icon}</span>
-            )
+    <div className="flex h-full">
+      {showHistory && (
+        <aside
+          className={cn(
+            'h-full shrink-0 overflow-hidden border-r bg-muted/50 transition-all duration-300',
+            sidebarOpen ? 'w-56' : 'w-0 border-r-0'
           )}
-          <span className="font-medium text-sm">{workflow.name}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {messages.length > 0 && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewChat} title={t('newChat')}>
-              <RotateCcw className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {mode === 'bubble' && (
-            <Button variant="ghost" size="icon" className="h-7 w-7"
-              onClick={() => window.parent.postMessage({ type: 'clouisle:close' }, '*')} title={t('close')}>
-              <span className="text-lg leading-none">&times;</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Chat area */}
-      <div className="flex-1 overflow-hidden">
-        <ChatContainer messages={messages} isStreaming={isStreaming} emptyState={emptyState} />
-      </div>
-
-      {/* Input */}
-      <div className="pb-2 pt-1 sm:pb-3">
-        {hasVisibleVariables && (
-          <div className="mx-auto max-w-3xl px-4">
-            <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-              <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
-                <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    {t('configureVariables')}
-                  </span>
-                  {variablesOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="px-2.5 pb-2.5 pt-0.5">
-                    <VariableForm
-                      variables={formVariables}
-                      values={variableForm.values}
-                      onChange={variableForm.setValues}
-                      fieldErrors={variableForm.fieldErrors}
-                      className="space-y-2"
-                    />
-                  </div>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
+        >
+          <div className="flex h-full w-56 flex-col">
+            <div className="flex h-11 items-center justify-between border-b px-3">
+              <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{t('history')}</span>
+              {allowNew && sidebarOpen && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewChat} title={t('newChat')}>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {history.entries.length === 0 ? (
+                <p className="px-2 py-4 text-xs text-muted-foreground">{t('noHistory')}</p>
+              ) : (
+                <ol className="space-y-1">
+                  {history.entries.map((entry) => (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectHistory(entry)}
+                        className={cn(
+                          'w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50',
+                          selectedHistoryId === entry.id && 'bg-accent'
+                        )}
+                      >
+                        <span className="block truncate text-xs font-medium">{entry.title || t('untitled')}</span>
+                        <time className="mt-0.5 block text-[10px] text-muted-foreground">
+                          {new Date(entry.createdAt).toLocaleString()}
+                        </time>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
           </div>
+        </aside>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {showHeader && (
+          <header className="flex items-center gap-2 border-b px-3 py-2">
+            {showHistory && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setSidebarOpen((open) => !open)}
+                aria-label={t('history')}
+              >
+                {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+              </Button>
+            )}
+            {allowNew && !sidebarOpen && messages.length > 0 && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewChat} title={t('newChat')}>
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {!(showHistory && sidebarOpen) && (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {workflow.icon && (
+                  isIconUrl ? (
+                    <div className="relative h-6 w-6 shrink-0 overflow-hidden">
+                      <Image src={workflow.icon} alt={workflow.name} fill unoptimized className="object-cover" />
+                    </div>
+                  ) : (
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center leading-none text-lg">{workflow.icon}</span>
+                  )
+                )}
+                <span className="truncate font-medium text-sm">{workflow.name}</span>
+              </div>
+            )}
+            {mode === 'bubble' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto h-7 w-7"
+                onClick={() => window.parent.postMessage({ type: 'clouisle:close' }, '*')}
+                title={t('close')}
+              >
+                <span className="text-lg leading-none">&times;</span>
+              </Button>
+            )}
+          </header>
         )}
-        <ChatInput
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={handleRun}
-          onStop={handleStop}
-          isLoading={isStreaming}
-          isStreaming={isStreaming}
-          placeholder={variableForm.needsInput && !variableForm.isValid ? t('fillRequired') : (workflow.description || undefined)}
-        />
+
+        {/* Chat area */}
+        <div className="flex-1 overflow-hidden">
+          <ChatContainer messages={messages} isStreaming={isStreaming} emptyState={emptyState} />
+        </div>
+
+        {/* Input */}
+        <div className="pb-2 pt-1 sm:pb-3">
+          {hasVisibleVariables && (
+            <div className="mx-auto max-w-3xl px-4">
+              <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
+                <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
+                  <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
+                    <span className="text-xs font-medium flex items-center gap-1.5">
+                      {t('configureVariables')}
+                    </span>
+                    {variablesOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-2.5 pb-2.5 pt-0.5">
+                      <VariableForm
+                        variables={formVariables}
+                        values={variableForm.values}
+                        onChange={variableForm.setValues}
+                        fieldErrors={variableForm.fieldErrors}
+                        className="space-y-2"
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            </div>
+          )}
+          <ChatInput
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={handleRun}
+            onStop={handleStop}
+            isLoading={isStreaming}
+            isStreaming={isStreaming}
+            placeholder={variableForm.needsInput && !variableForm.isValid ? t('fillRequired') : (workflow.description || undefined)}
+          />
+        </div>
       </div>
     </div>
   )

@@ -5,13 +5,14 @@ import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Loader2, Bot, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react'
+import { Loader2, Bot, RotateCcw, ChevronUp, ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChatContainer, ChatInput, VariableForm, useVariableForm, type ChatInputFile, type FileUploadConfig } from '@/components/chat'
 import { useEmbedChat } from '@/hooks/use-embed-chat'
 import { embedApi, resolveEmbedMessage, type EmbedAgentInfo } from '@/lib/api/embed'
+import { useEmbedHistory, type EmbedHistoryEntry } from '@/hooks/use-embed-history'
 import type { VariableDefinition, VariableType } from '@/lib/api'
 import { Suspense } from 'react'
 
@@ -117,6 +118,10 @@ function EmbedAgentChatContent() {
       window.parent.postMessage({ type: 'clouisle:conversation', conversationId: convId }, '*')
     },
   })
+  const history = useEmbedHistory(`clouisle:embed:history:agent:${agentId}`)
+  const { addEntry } = history
+  const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  const [selectedHistoryId, setSelectedHistoryId] = React.useState<string | null>(null)
 
   // Check if agent has required visible variables
   const hasVisibleVariables = React.useMemo(() => {
@@ -212,10 +217,28 @@ function EmbedAgentChatContent() {
   }, [files, agent, chat, agentId, apiKey, fileToDataUrl, variableForm])
 
   const handleNewChat = React.useCallback(() => {
+    if (chat.messages.length > 0) {
+      const title = (() => {
+        for (const m of chat.messages) {
+          if (m.role !== 'user') continue
+          for (const p of m.parts) {
+            if (p.type === 'text') return p.text
+          }
+        }
+        return t('untitled')
+      })()
+      addEntry({ id: chat.conversationId || `conv-${Date.now()}`, title, createdAt: Date.now(), messages: chat.messages })
+    }
     chat.reset()
     setFiles([])
     variableForm.reset()
-  }, [chat, variableForm])
+    setSelectedHistoryId(null)
+  }, [chat, variableForm, addEntry, t])
+  const handleSelectHistory = React.useCallback((entry: EmbedHistoryEntry) => {
+    chat.stop()
+    chat.setMessages(entry.messages)
+    setSelectedHistoryId(entry.id)
+  }, [chat])
 
   // Loading state
   if (loading) {
@@ -238,6 +261,10 @@ function EmbedAgentChatContent() {
   }
 
   const isIconUrl = agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))
+  const embedCfg = (agent.embed_config || {}) as Record<string, unknown>
+  const showHeader = embedCfg.show_header !== false
+  const showHistory = embedCfg.show_history !== false
+  const allowNew = embedCfg.allow_new !== false
 
   // Empty state (only shown when no greeting message exists)
   const emptyState = (
@@ -283,136 +310,183 @@ function EmbedAgentChatContent() {
   )
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 sm:px-4 py-2">
-        <div className="flex items-center gap-2">
-          {agent.icon && (
-            isIconUrl ? (
-              <div className="relative h-6 w-6 overflow-hidden">
-                <Image
-                  src={agent.icon}
-                  alt={agent.name}
-                  fill
-                  unoptimized
-                  className="object-cover"
-                />
-              </div>
-            ) : (
-              <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{agent.icon}</span>
-            )
+    <div className="flex h-full">
+      {showHistory && (
+        <aside
+          className={cn(
+            'h-full shrink-0 overflow-hidden border-r bg-muted/50 transition-all duration-300',
+            sidebarOpen ? 'w-56' : 'w-0 border-r-0'
           )}
-          <span className="font-medium text-sm">{agent.name}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {chat.messages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={handleNewChat}
-              title={t('newChat')}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {mode === 'bubble' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => window.parent.postMessage({ type: 'clouisle:close' }, '*')}
-              title={t('close')}
-            >
-              <span className="text-lg leading-none">&times;</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Chat area */}
-      <div className="flex-1 overflow-hidden">
-        <ChatContainer
-          messages={chat.messages}
-          isStreaming={chat.isStreaming}
-          hideToolCalls={agent?.hide_tool_calls ?? false}
-          onSelectOption={(option) => {
-            void handleSend(option)
-          }}
-          emptyState={emptyState}
-        />
-      </div>
-
-      {/* Input */}
-      <div className="pb-2 pt-1 sm:pb-3">
-        {/* Variable Panel - Collapsible above input */}
-        {hasVisibleVariables && (
-          <div className="mx-auto max-w-3xl px-4">
-            <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-              <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
-                <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    {t('configureVariables')}
-                    {(() => {
-                      const variables = (agent.variables || []) as Array<Record<string, unknown>>
-                      const visibleRequired = variables.filter(v => !v.hidden && v.required)
-                      const filledCount = visibleRequired.filter(v => {
-                        const val = variableForm.values[v.name as string]
-                        if (v.type === 'checkbox') return true
-                        if (v.type === 'array') return Array.isArray(val) && val.length > 0
-                        return val !== undefined && val !== null && val !== ''
-                      }).length
-                      if (visibleRequired.length > 0) {
-                        return (
-                          <span className={cn(
-                            "text-[10px] px-1 py-0.5 rounded",
-                            filledCount === visibleRequired.length
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                              : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
-                          )}>
-                            {filledCount}/{visibleRequired.length}
-                          </span>
-                        )
-                      }
-                      return null
-                    })()}
-                  </span>
-                  {variablesOpen ? (
-                    <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="px-2.5 pb-2.5 pt-0.5">
-                    <VariableForm
-                      variables={formVariables}
-                      values={variableForm.values}
-                      onChange={variableForm.setValues}
-                      fieldErrors={variableForm.fieldErrors}
-                      className="space-y-2"
-                    />
-                  </div>
-                </CollapsibleContent>
+        >
+          <div className="flex h-full w-56 flex-col">
+            <div className="flex h-11 items-center justify-between border-b px-3">
+              <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{t('history')}</span>
+              {allowNew && sidebarOpen && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewChat} title={t('newChat')}>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
-          </Collapsible>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {history.entries.length === 0 ? (
+                <p className="px-2 py-4 text-xs text-muted-foreground">{t('noHistory')}</p>
+              ) : (
+                <ol className="space-y-1">
+                  {history.entries.map((entry) => (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectHistory(entry)}
+                        className={cn(
+                          'w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50',
+                          selectedHistoryId === entry.id && 'bg-accent'
+                        )}
+                      >
+                        <span className="block truncate text-xs font-medium">{entry.title || t('untitled')}</span>
+                        <time className="mt-0.5 block text-[10px] text-muted-foreground">
+                          {new Date(entry.createdAt).toLocaleString()}
+                        </time>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
           </div>
+        </aside>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {showHeader && (
+          <header className="flex items-center gap-2 border-b px-3 py-2">
+            {showHistory && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setSidebarOpen((open) => !open)}
+                aria-label={t('history')}
+              >
+                {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+              </Button>
+            )}
+            {allowNew && !sidebarOpen && chat.messages.length > 0 && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewChat} title={t('newChat')}>
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {!(showHistory && sidebarOpen) && (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {agent.icon && (
+                  isIconUrl ? (
+                    <div className="relative h-6 w-6 shrink-0 overflow-hidden">
+                      <Image src={agent.icon} alt={agent.name} fill unoptimized className="object-cover" />
+                    </div>
+                  ) : (
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center leading-none text-lg">{agent.icon}</span>
+                  )
+                )}
+                <span className="truncate font-medium text-sm">{agent.name}</span>
+              </div>
+            )}
+            {mode === 'bubble' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto h-7 w-7"
+                onClick={() => window.parent.postMessage({ type: 'clouisle:close' }, '*')}
+                title={t('close')}
+              >
+                <span className="text-lg leading-none">&times;</span>
+              </Button>
+            )}
+          </header>
         )}
-        <ChatInput
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={handleSend}
-          onStop={chat.stop}
-          isLoading={chat.isLoading}
-          isStreaming={chat.isStreaming}
-          placeholder={variableForm.needsInput && !variableForm.isValid ? t('fillRequired') : (agent.description || undefined)}
-          allowAttachments={agent.enable_vision}
-          enableFileUpload={agent.enable_file_upload}
-          fileUploadConfig={agent.file_upload_config as FileUploadConfig | null}
-          files={files}
-          onFilesChange={setFiles}
-          isUploading={isUploading}
-        />
+
+        {/* Chat area */}
+        <div className="flex-1 overflow-hidden">
+          <ChatContainer
+            messages={chat.messages}
+            isStreaming={chat.isStreaming}
+            hideToolCalls={agent?.hide_tool_calls ?? false}
+            onSelectOption={(option) => {
+              void handleSend(option)
+            }}
+            emptyState={emptyState}
+          />
+        </div>
+
+        {/* Input */}
+        <div className="pb-2 pt-1 sm:pb-3">
+          {/* Variable Panel - Collapsible above input */}
+          {hasVisibleVariables && (
+            <div className="mx-auto max-w-3xl px-4">
+              <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
+                <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
+                  <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
+                    <span className="text-xs font-medium flex items-center gap-1.5">
+                      {t('configureVariables')}
+                      {(() => {
+                        const variables = (agent.variables || []) as Array<Record<string, unknown>>
+                        const visibleRequired = variables.filter(v => !v.hidden && v.required)
+                        const filledCount = visibleRequired.filter(v => {
+                          const val = variableForm.values[v.name as string]
+                          if (v.type === 'checkbox') return true
+                          if (v.type === 'array') return Array.isArray(val) && val.length > 0
+                          return val !== undefined && val !== null && val !== ''
+                        }).length
+                        if (visibleRequired.length > 0) {
+                          return (
+                            <span className={cn(
+                              "text-[10px] px-1 py-0.5 rounded",
+                              filledCount === visibleRequired.length
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                            )}>
+                              {filledCount}/{visibleRequired.length}
+                            </span>
+                          )
+                        }
+                        return null
+                      })()}
+                    </span>
+                    {variablesOpen ? (
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-2.5 pb-2.5 pt-0.5">
+                      <VariableForm
+                        variables={formVariables}
+                        values={variableForm.values}
+                        onChange={variableForm.setValues}
+                        fieldErrors={variableForm.fieldErrors}
+                        className="space-y-2"
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            </div>
+          )}
+          <ChatInput
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={handleSend}
+            onStop={chat.stop}
+            isLoading={chat.isLoading}
+            isStreaming={chat.isStreaming}
+            placeholder={variableForm.needsInput && !variableForm.isValid ? t('fillRequired') : (agent.description || undefined)}
+            allowAttachments={agent.enable_vision}
+            enableFileUpload={agent.enable_file_upload}
+            fileUploadConfig={agent.file_upload_config as FileUploadConfig | null}
+            files={files}
+            onFilesChange={setFiles}
+            isUploading={isUploading}
+          />
+        </div>
       </div>
     </div>
   )

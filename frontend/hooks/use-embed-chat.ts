@@ -38,6 +38,7 @@ export interface UseEmbedChatReturn {
   sendMessage: (message: string, images?: Array<{ type: string; url: string }>, fileUrls?: Array<{ filename: string; url: string; size: number; mime_type: string }>) => Promise<void>
   stop: () => void
   reset: () => void
+  setMessages: (messages: ChatMessage[]) => void
 }
 
 // Content segment types for building message parts
@@ -631,5 +632,6 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
     sendMessage,
     stop,
     reset,
+    setMessages,
   }
 }

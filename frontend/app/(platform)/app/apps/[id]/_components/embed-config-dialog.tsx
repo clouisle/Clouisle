@@ -49,6 +49,9 @@ interface EmbedConfigDialogProps {
 
 interface EmbedConfig {
   enabled: boolean
+  show_header: boolean
+  show_history: boolean
+  allow_new: boolean
   allowed_domains: string[]
   theme: { mode: string; primary_color: string | null }
   bubble: { position: string; icon: string | null; greeting: string | null }
@@ -56,6 +59,9 @@ interface EmbedConfig {
 
 const DEFAULT_EMBED_CONFIG: EmbedConfig = {
   enabled: false,
+  show_header: true,
+  show_history: true,
+  allow_new: true,
   allowed_domains: [],
   theme: { mode: 'auto', primary_color: null },
   bubble: { position: 'bottom-right', icon: null, greeting: null },
@@ -65,6 +71,9 @@ function parseEmbedConfig(raw: Record<string, unknown> | undefined): EmbedConfig
   if (!raw || Object.keys(raw).length === 0) return { ...DEFAULT_EMBED_CONFIG }
   return {
     enabled: (raw.enabled as boolean) || false,
+    show_header: raw.show_header !== false,
+    show_history: raw.show_history !== false,
+    allow_new: raw.allow_new !== false,
     allowed_domains: (raw.allowed_domains as string[]) || [],
     theme: {
       mode: ((raw.theme as Record<string, unknown>)?.mode as string) || 'auto',
@@ -274,6 +283,39 @@ export function EmbedConfigDialog({
                 />
                 <FieldError>{fieldErrors.allowed_domains}</FieldError>
                 <p className="text-xs text-muted-foreground">{t('allowedDomainsDescription')}</p>
+              </div>
+              {/* Display options */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>{t('showHeader')}</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t('showHeaderDescription')}</p>
+                  </div>
+                  <Switch
+                    checked={config.show_header}
+                    onCheckedChange={v => setConfig(prev => ({ ...prev, show_header: v }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>{t('showHistory')}</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t('showHistoryDescription')}</p>
+                  </div>
+                  <Switch
+                    checked={config.show_history}
+                    onCheckedChange={v => setConfig(prev => ({ ...prev, show_history: v }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>{t('allowNew')}</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t('allowNewDescription')}</p>
+                  </div>
+                  <Switch
+                    checked={config.allow_new}
+                    onCheckedChange={v => setConfig(prev => ({ ...prev, allow_new: v }))}
+                  />
+                </div>
               </div>
 
               {/* Theme */}
