@@ -394,6 +394,7 @@ export type AgentsMessages = {
       }
       table: {
         title: string
+        conversationId: string
         messageCount: string
         userFeedback: string
         adminFeedback: string

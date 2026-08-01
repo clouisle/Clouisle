@@ -994,7 +994,9 @@ async def list_agent_conversations(
 
     query = Conversation.filter(agent_id=agent_id, user=current_user)
     if search_text := (search or "").strip():
-        query = query.filter(title__icontains=search_text)
+        query = query.filter(
+            Q(title__icontains=search_text) | Q(id__icontains=search_text)
+        )
     if created_after:
         query = query.filter(created_at__gte=created_after)
     if created_before:

@@ -509,9 +509,11 @@ async def list_audit_logs(
     if end_date:
         query = query.filter(created_at__lte=end_date)
     if search:
-        # 搜索资源名称或IP地址
+        # 搜索资源名称、资源 ID 或 IP 地址
         query = query.filter(
-            Q(resource_name__icontains=search) | Q(ip_address__icontains=search)
+            Q(resource_name__icontains=search)
+            | Q(resource_id__icontains=search)
+            | Q(ip_address__icontains=search)
         )
 
     # 获取总数

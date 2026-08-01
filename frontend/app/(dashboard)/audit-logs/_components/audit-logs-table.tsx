@@ -285,6 +285,7 @@ export function AuditLogsTable() {
                                     <TableHead>{t("action")}</TableHead>
                                     <TableHead>{t("resourceType")}</TableHead>
                                     <TableHead>{t("resourceName")}</TableHead>
+                                    <TableHead>{t("resourceId")}</TableHead>
                                     <TableHead>{t("operation")}</TableHead>
                                     <TableHead>{t("status")}</TableHead>
                                     <TableHead>{t("ipAddress")}</TableHead>
@@ -294,13 +295,13 @@ export function AuditLogsTable() {
                             <TableBody>
                                 {loading ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="text-center">
+                                        <TableCell colSpan={10} className="text-center">
                                             {t("loading")}
                                         </TableCell>
                                     </TableRow>
                                 ) : logs.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="text-center">
+                                        <TableCell colSpan={10} className="text-center">
                                             {t("noLogs")}
                                         </TableCell>
                                     </TableRow>
@@ -323,6 +324,21 @@ export function AuditLogsTable() {
                                             <TableCell>{getActionLabel(log.action)}</TableCell>
                                             <TableCell>{log.resource_type}</TableCell>
                                             <TableCell>{log.resource_name || "-"}</TableCell>
+                                            <TableCell>
+                                                {log.resource_id ? (
+                                                    <button
+                                                        type="button"
+                                                        className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                                                        title={`${t("resourceId")}: ${log.resource_id}`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            void navigator.clipboard?.writeText(log.resource_id!);
+                                                        }}
+                                                    >
+                                                        {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
+                                                    </button>
+                                                ) : "-"}
+                                            </TableCell>
                                             <TableCell>{getOperationBadge(log.operation)}</TableCell>
                                             <TableCell>{getStatusBadge(log.status)}</TableCell>
                                             <TableCell className="font-mono text-xs">

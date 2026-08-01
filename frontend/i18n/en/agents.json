@@ -392,6 +392,7 @@
       },
       "table": {
         "title": "Title",
+        "conversationId": "Conversation ID",
         "messageCount": "Messages",
         "userFeedback": "User Feedback",
         "adminFeedback": "Admin Feedback",

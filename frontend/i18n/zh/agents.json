@@ -392,6 +392,7 @@
       },
       "table": {
         "title": "标题",
+        "conversationId": "对话 ID",
         "messageCount": "消息数",
         "userFeedback": "用户反馈",
         "adminFeedback": "管理员反馈",

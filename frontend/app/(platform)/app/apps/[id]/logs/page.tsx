@@ -304,6 +304,7 @@ export default function LogsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t('table.title')}</TableHead>
+                    <TableHead>{t('table.conversationId')}</TableHead>
                     <TableHead>{t('table.messageCount')}</TableHead>
                     <TableHead>{t('table.updatedAt')}</TableHead>
                     <TableHead>{t('table.createdAt')}</TableHead>
@@ -323,6 +324,19 @@ export default function LogsPage() {
                             {conv.title || t('untitledConversation')}
                           </span>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                          title={`${t('table.conversationId')}: ${conv.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void navigator.clipboard?.writeText(conv.id)
+                          }}
+                        >
+                          {conv.id.slice(0, 8)}…
+                        </button>
                       </TableCell>
                       <TableCell>{conv.message_count}</TableCell>
                       <TableCell className="text-muted-foreground" suppressHydrationWarning>
