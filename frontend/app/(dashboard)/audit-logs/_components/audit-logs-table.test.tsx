@@ -40,6 +40,9 @@ mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacet
 mock.module('./audit-log-drawer', () => ({
   AuditLogDrawer: ({ log, open }: { log: { id: string } | null; open: boolean }) => open && log ? <aside role="dialog" aria-label={`log-${log.id}`} /> : null,
 }))
+mock.module('@/app/(dashboard)/activities/_components/workflow-run-drawer', () => ({
+  WorkflowRunDrawer: ({ open }: { open: boolean }) => open ? <aside role="dialog" aria-label="workflow-run" /> : null,
+}))
 mock.module('lucide-react', () => Object.fromEntries([
   'Download', 'Eye', 'Search', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'FileText', 'FileJson',
 ].map((name) => [name, element('svg')])))

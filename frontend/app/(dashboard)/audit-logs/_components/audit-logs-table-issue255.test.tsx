@@ -29,6 +29,9 @@ mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => [search, setSearch],
 }))
+mock.module('@/app/(dashboard)/activities/_components/workflow-run-drawer', () => ({
+  WorkflowRunDrawer: ({ open }: { open: boolean }) => (open ? React.createElement('aside', { role: 'dialog', 'aria-label': 'workflow-run' }) : null),
+}))
 
 const { AuditLogsTable } = await import('./audit-logs-table')
 
@@ -56,7 +59,7 @@ function elements(node: ReactNode): ReactElement[] {
 function render(values: unknown[], searchValue = '') {
   stateValues = values
   search = searchValue
-  setters = Array.from({ length: 10 }, () => mock(() => {}))
+  setters = Array.from({ length: 12 }, () => mock(() => {}))
   stateIndex = 0
   return elements(AuditLogsTable())
 }
@@ -67,10 +70,10 @@ beforeEach(() => {
 
 describe('AuditLogsTable', () => {
   test('renders empty and populated table branches', () => {
-    const empty = render([[], false, 1, 20, 0, null, false, [], []])
+    const empty = render([[], false, 1, 20, 0, null, false, null, false, [], []])
     expect(empty.some((element) => element.props.children === 'noLogs')).toBe(true)
 
-    const populated = render([[log], false, 1, 20, 2, null, false, [
+    const populated = render([[log], false, 1, 20, 2, null, false, null, false, [
       { value: 'user.created', translation_key: 'auditLogs.actionUserCreated', fallback_label: 'Created user' },
     ], []])
     const text = populated.map((element) => element.props.children).flat()
@@ -83,7 +86,7 @@ describe('AuditLogsTable', () => {
   })
 
   test('updates search and faceted filters and resets them', () => {
-    const rendered = render([[], false, 3, 20, 4, null, false, [], ['failed'], ['user.created']], 'existing')
+    const rendered = render([[], false, 3, 20, 4, null, false, null, false, [], ['failed'], ['user.created']], 'existing')
     const input = rendered.find((element) => element.props.placeholder === 'searchPlaceholder')
     const filters = rendered.filter((element) => typeof element.props.onSelectionChange === 'function')
     const reset = rendered.find((element) => element.props.variant === 'ghost' && element.props.className?.includes('h-8'))
@@ -96,12 +99,12 @@ describe('AuditLogsTable', () => {
     expect(setSearch).toHaveBeenNthCalledWith(1, 'alice')
     expect(setSearch).toHaveBeenNthCalledWith(2, '')
     expect(setters[2]).toHaveBeenCalledWith(1)
-    expect(setters[8]).toHaveBeenCalledWith(['success'])
-    expect(setters[9]).toHaveBeenCalledWith(['role.updated'])
+    expect(setters[10]).toHaveBeenCalledWith(['success'])
+    expect(setters[11]).toHaveBeenCalledWith(['role.updated'])
   })
 
   test('opens details from a row unless text is selected', () => {
-    const rendered = render([[log], false, 1, 20, 2, null, false, [], []])
+    const rendered = render([[log], false, 1, 20, 2, null, false, null, false, [], []])
     const row = rendered.find((element) => element.props.className === 'cursor-pointer hover:bg-muted/50')
 
     globalThis.window = { getSelection: () => ({ toString: () => '' }) } as unknown as Window & typeof globalThis

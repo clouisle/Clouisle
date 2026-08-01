@@ -44,6 +44,7 @@ import { auditLogsApi, AuditLog, type AuditLogActionOption } from "@/lib/api/adm
 import { toast } from "sonner";
 import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter";
 import { AuditLogDrawer } from "./audit-log-drawer";
+import { WorkflowRunDrawer } from "@/app/(dashboard)/activities/_components/workflow-run-drawer";
 import { PermissionGuard } from "@/components/permission-guard";
 import { useUrlSearchState } from "@/hooks/use-url-search-state";
 
@@ -57,6 +58,8 @@ export function AuditLogsTable() {
     const [totalPages, setTotalPages] = useState(0);
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+    const [runDrawerOpen, setRunDrawerOpen] = useState(false);
     const [actionOptionsMeta, setActionOptionsMeta] = useState<AuditLogActionOption[]>([]);
 
     // Filters
@@ -325,7 +328,22 @@ export function AuditLogsTable() {
                                             <TableCell>{log.resource_type}</TableCell>
                                             <TableCell>{log.resource_name || "-"}</TableCell>
                                             <TableCell>
-                                                {log.resource_id ? (
+                                                {log.resource_type === "workflow_run" && log.resource_id ? (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-2 text-xs font-mono"
+                                                        title={`${t("resourceId")}: ${log.resource_id}`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedRunId(log.resource_id!);
+                                                            setRunDrawerOpen(true);
+                                                        }}
+                                                    >
+                                                        <Eye className="mr-1 h-3 w-3" />
+                                                        {log.resource_id.length > 8 ? `${log.resource_id.slice(0, 8)}…` : log.resource_id}
+                                                    </Button>
+                                                ) : log.resource_id ? (
                                                     <button
                                                         type="button"
                                                         className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
@@ -436,6 +454,13 @@ export function AuditLogsTable() {
                 log={selectedLog}
                 open={drawerOpen}
                 onOpenChange={setDrawerOpen}
+            />
+
+            {/* Workflow Run Drawer */}
+            <WorkflowRunDrawer
+                runId={selectedRunId || ""}
+                open={runDrawerOpen}
+                onOpenChange={setRunDrawerOpen}
             />
         </>
     );

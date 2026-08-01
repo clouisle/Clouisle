@@ -53,6 +53,9 @@ mock.module('@/components/ui/dropdown-menu', () => ({ DropdownMenu: component, D
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: component }))
 mock.module('@/components/ui/sheet', () => ({ Sheet: component, SheetContent: component, SheetDescription: component, SheetHeader: component, SheetTitle: component }))
 mock.module('@/components/ui/separator', () => ({ Separator: component }))
+mock.module('@/app/(dashboard)/activities/_components/workflow-run-drawer', () => ({
+  WorkflowRunDrawer: ({ open }: { open: boolean }) => open ? React.createElement('aside', { role: 'dialog', 'aria-label': 'workflow-run' }) : null,
+}))
 mock.module('sonner', () => ({ toast: { success: mock() } }))
 
 const { AuditLogsClient } = await import('./audit-logs-client')
