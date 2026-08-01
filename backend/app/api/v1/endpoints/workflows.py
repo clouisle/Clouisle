@@ -139,9 +139,10 @@ async def list_all_workflow_runs(
         )
         workflow_query = workflow_query.filter(team_id__in=memberships)
 
-    # Apply search filter on workflows
-    if search:
-        workflow_query = workflow_query.filter(name__icontains=search)
+    # Apply search filter on workflows (only for non-UUID queries)
+    # Note: run-level search below matches run IDs or workflow names; a
+    # workflow-level name pre-filter would break run-ID lookups (no
+    # workflow name contains a UUID), so it is intentionally omitted.
 
     accessible_workflows = await workflow_query.all()
     workflow_ids = [w.id for w in accessible_workflows]
