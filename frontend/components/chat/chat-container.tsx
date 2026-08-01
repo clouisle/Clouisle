@@ -33,6 +33,8 @@ interface ChatContainerProps {
   hideMessageActions?: boolean;
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean;
+  /** Current conversation ID (shown on errors for debugging) */
+  conversationId?: string | null;
 }
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -75,6 +77,7 @@ interface ChatMessageRowProps {
   hideToolCalls: boolean;
   hideMessageActions: boolean;
   hideReasoning: boolean;
+  conversationId?: string | null;
   chainOfThoughtOpen?: boolean;
   onChainOfThoughtOpenChange: (messageId: string, open: boolean) => void;
   onRequestScrollIntoView: (messageId: string) => void;
@@ -93,6 +96,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   hideToolCalls,
   hideMessageActions,
   hideReasoning,
+  conversationId,
   chainOfThoughtOpen,
   onChainOfThoughtOpenChange,
   onRequestScrollIntoView,
@@ -138,6 +142,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
         hideToolCalls={hideToolCalls}
         hideMessageActions={hideMessageActions}
         hideReasoning={hideReasoning}
+        conversationId={conversationId}
         onRequestScrollIntoView={handleRequestScrollIntoView}
       />
     </div>
@@ -154,6 +159,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.hideToolCalls === next.hideToolCalls
   && prev.hideMessageActions === next.hideMessageActions
   && prev.hideReasoning === next.hideReasoning
+  && prev.conversationId === next.conversationId
   && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
   && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
   && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
@@ -176,6 +182,7 @@ export function ChatContainer({
   hideToolCalls = false,
   hideMessageActions = false,
   hideReasoning = false,
+  conversationId,
 }: ChatContainerProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -368,6 +375,7 @@ export function ChatContainer({
                 hideToolCalls={hideToolCalls}
                 hideMessageActions={hideMessageActions}
                 hideReasoning={hideReasoning}
+                conversationId={conversationId}
                 chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
                 onChainOfThoughtOpenChange={setChainOfThoughtOpen}
                 onRequestScrollIntoView={requestMessageScrollIntoView}

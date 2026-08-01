@@ -858,6 +858,7 @@ export default function PublicChatPage({
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
+              conversationId={conversationId}
               className="flex-1 min-h-0 overflow-y-auto"
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}

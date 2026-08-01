@@ -425,6 +425,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   hideMessageActions?: boolean
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean
+  /** Current conversation ID (shown on errors for debugging) */
+  conversationId?: string | null
   /** Controlled open state for chain of thought */
   chainOfThoughtOpen?: boolean
   /** Callback when chain of thought open state changes */
@@ -450,6 +452,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       hideToolCalls = false,
       hideMessageActions = false,
       hideReasoning = false,
+      conversationId,
       chainOfThoughtOpen,
       onChainOfThoughtOpenChange,
       onRequestScrollIntoView,
@@ -1345,9 +1348,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )
           )}
           {isErroredMessage && (
-            <div className={cn('flex items-start gap-1.5 text-xs text-destructive', !isStandaloneErrorMessage && 'mt-3')}>
-              <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
-              <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+            <div className={cn('flex flex-col gap-1 text-xs', !isStandaloneErrorMessage && 'mt-3')}>
+              <div className="flex items-start gap-1.5 text-destructive">
+                <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
+                <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+              </div>
+              {conversationId && (
+                <div className="flex items-center gap-1.5 pl-5 text-muted-foreground">
+                  <span>{t('conversationId')}:</span>
+                  <code className="font-mono text-[10px]">{conversationId}</code>
+                </div>
+              )}
             </div>
           )}
           {isAssistant && isManuallyStoppedMessage && (
@@ -1367,6 +1378,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       buildChainOfThoughtSteps,
       cancelEdit,
       chainOfThoughtOpen,
+      conversationId,
       editDraft,
       fileParts,
       hasChainOfThought,
@@ -1444,7 +1456,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && textContent && !hideMessageActions && (
+            {isAssistant && !isStreaming && (textContent || isErroredMessage) && !hideMessageActions && (
            <MessageActions className={cn("transition-opacity", isSpeakingThisMessage ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
@@ -1554,6 +1566,7 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.hideToolCalls === next.hideToolCalls
     && prev.hideMessageActions === next.hideMessageActions
     && prev.hideReasoning === next.hideReasoning
+    && prev.conversationId === next.conversationId
     && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
     && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
     && prev.onRequestScrollIntoView === next.onRequestScrollIntoView

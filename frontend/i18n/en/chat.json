@@ -107,6 +107,7 @@
       "stopListening": "Stop listening",
       "speechUnavailable": "Text-to-speech is unavailable in this browser",
       "thinking": "Thinking...",
+      "conversationId": "Conversation ID",
       "error": "An error occurred",
       "generatedImageAlt": "Generated image",
       "toolExecutionFailed": "Tool execution failed",

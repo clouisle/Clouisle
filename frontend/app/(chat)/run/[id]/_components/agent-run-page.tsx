@@ -75,7 +75,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     return value !== undefined && value !== null && value !== ''
   }).length
 
-  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop } = useRun({
+  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId } = useRun({
     id,
     type: 'agent',
     conversationId: searchParams.get('conversation') || undefined,
@@ -130,6 +130,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
             hideToolCalls={Boolean(metadata.hide_tool_calls)}
             hideMessageActions={Boolean(metadata.hide_message_actions)}
             hideReasoning={Boolean(metadata.hide_reasoning)}
+            conversationId={conversationId}
             className="flex-1 min-h-0 overflow-y-auto"
             onSelectOption={(option) => void handleSendMessage(option)}
             emptyState={
