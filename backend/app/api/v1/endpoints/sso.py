@@ -104,10 +104,11 @@ async def sso_login(
     """Initiate SSO login flow"""
     provider = await SSOProvider.get_or_none(name=provider_name, is_enabled=True)
     if not provider:
-        return await _sso_error_redirect("sso_provider_not_found", redirect)
+        return await _sso_error_redirect("sso_provider_not_found")
 
     session_id = secrets.token_urlsafe(32)
     expires_at = now_utc() + timedelta(minutes=10)
+    safe_redirect = _safe_sso_redirect(redirect)
 
     try:
         provider_instance = SSOService.get_provider_instance(provider)
@@ -131,7 +132,7 @@ async def sso_login(
                 provider=provider,
                 code_verifier=code_verifier,
                 nonce=nonce,
-                redirect_url=redirect,
+                redirect_url=safe_redirect,
                 expires_at=expires_at,
             )
 
@@ -144,7 +145,7 @@ async def sso_login(
             await SSOSession.create(
                 session_id=session_id,
                 provider=provider,
-                redirect_url=redirect,
+                redirect_url=safe_redirect,
                 expires_at=expires_at,
             )
 
@@ -157,7 +158,7 @@ async def sso_login(
             await SSOSession.create(
                 session_id=session_id,
                 provider=provider,
-                redirect_url=redirect,
+                redirect_url=safe_redirect,
                 expires_at=expires_at,
             )
 
@@ -173,7 +174,7 @@ async def sso_login(
         logger.exception(
             "Failed to initialize SSO login for provider %s", provider_name
         )
-        return await _sso_error_redirect("sso_login_failed", redirect)
+        return await _sso_error_redirect("sso_login_failed")
 
 
 @router.get("/callback/{provider_name}")

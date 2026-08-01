@@ -49,6 +49,8 @@ def test_paths_and_media_resource_cleanup(processor):
     for invalid in (
         str(processor._storage_root()),
         str(processor._storage_root() / ".."),
+        "documents/../outside.txt",
+        "s3://bucket/../outside.txt",
     ):
         with pytest.raises(ValueError, match="validation_error"):
             processor._storage_key(invalid)

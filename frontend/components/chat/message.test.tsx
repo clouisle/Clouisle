@@ -642,6 +642,8 @@ describe('message behavior', () => {
 
     const blocked = render(React.createElement(components.img, { src: 'javascript:alert(1)', alt: 'Blocked image' }))
     expect(blocked.textContent).toContain('Blocked image')
+    const vbscript = render(React.createElement(components.img, { src: 'vbscript:alert(1)', alt: 'Blocked vbscript image' }))
+    expect(vbscript.textContent).toContain('Blocked vbscript image')
     const external = render(React.createElement(components.img, { src: 'https://example.test/image.png', alt: 'External image' }))
     expect(external.querySelector('img')?.getAttribute('loading')).toBe('lazy')
   })

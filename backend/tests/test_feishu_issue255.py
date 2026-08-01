@@ -1,3 +1,4 @@
+import ast
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -165,7 +166,8 @@ async def test_app_message_guards_and_posts_card(monkeypatch):
     )
     assert args.kwargs["headers"]["Authorization"] == "Bearer token"
     assert args.kwargs["json"]["receive_id"] == "chat"
-    assert "https://app.test" in args.kwargs["json"]["content"]
+    card = ast.literal_eval(args.kwargs["json"]["content"])["card"]
+    assert card["elements"][1]["actions"][0]["url"] == "https://app.test"
 
 
 @pytest.mark.anyio

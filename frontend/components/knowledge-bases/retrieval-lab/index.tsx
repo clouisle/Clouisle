@@ -117,7 +117,8 @@ function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string; alt?
   React.useEffect(() => {
     let cancelled = false
     setFailed(false)
-    if (!src || src.startsWith('data:') || src.startsWith('javascript:')) {
+    const normalized = src.trim().toLowerCase()
+    if (!src || normalized.startsWith('data:') || normalized.startsWith('javascript:') || normalized.startsWith('vbscript:')) {
       setObjectUrl(null)
       setFailed(Boolean(src))
       return
