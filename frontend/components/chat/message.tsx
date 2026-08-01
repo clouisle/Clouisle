@@ -1260,7 +1260,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     }, [contentParts, isErroredMessage, showPreservedErrorNote, streamErrorMessage])
 
     // Check if this is a loading placeholder message (only show if no ChainOfThought)
-    const isLoadingMessage = message.metadata?.isLoading && visibleContentParts.length === 0 && !hasChainOfThought && !(hideReasoning && hasReasoning)
+    const isLoadingMessage = message.metadata?.isLoading && visibleContentParts.length === 0 && !hasChainOfThought
     const isStandaloneErrorMessage = Boolean(
       isErroredMessage
       && !showPreservedErrorNote
