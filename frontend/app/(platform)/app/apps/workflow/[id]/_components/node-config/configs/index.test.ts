@@ -9,7 +9,7 @@ const modules = [
 ]
 
 for (const name of modules) {
-  const componentName = name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('').replace('Config', 'Config')
+  const componentName = name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('')
   mock.module(`./${name}`, () => ({
     [componentName]: componentName,
     ...(name === 'llm-node-config' ? { LLMNodeConfig: 'LLMNodeConfig', defaultLLMNodeConfig: { model: 'llm' } } : {}),

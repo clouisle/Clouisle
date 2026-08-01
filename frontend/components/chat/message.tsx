@@ -1675,7 +1675,7 @@ function getAuthenticatedApiAssetUrl(src: string): string | null {
 
 function isBlockedImageSrc(src: string): boolean {
   const normalized = src.trim().toLowerCase()
-  return normalized.startsWith('javascript:') || normalized.startsWith('data:')
+  return normalized.startsWith('javascript:') || normalized.startsWith('data:') || normalized.startsWith('vbscript:')
 }
 
 type AuthenticatedMarkdownImageCacheEntry = {

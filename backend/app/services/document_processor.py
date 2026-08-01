@@ -14,7 +14,7 @@ import re
 import shutil
 import tempfile
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 from typing import Any
 from uuid import UUID
@@ -23,6 +23,7 @@ from app.models.knowledge_base import (
     DocumentType,
 )
 from app.services.upload_storage import get_upload_storage_backend
+from app.services.skill_package import resolve_child_path
 import bleach
 
 logger = logging.getLogger(__name__)
@@ -113,17 +114,25 @@ class DocumentProcessor:
     def _storage_key(self, path: str) -> str:
         if path.startswith("s3://"):
             parsed = urlparse(path)
-            key = parsed.path.lstrip("/")
-            if not parsed.netloc or not key:
+            key_path = PurePosixPath(parsed.path.lstrip("/"))
+            if not parsed.netloc or not key_path.parts or ".." in key_path.parts:
                 raise ValueError("validation_error")
-            return key
+            return key_path.as_posix()
         if path.startswith("documents/"):
-            return path
+            key_path = PurePosixPath(path)
+            if key_path.is_absolute() or ".." in key_path.parts:
+                raise ValueError("validation_error")
+            return key_path.as_posix()
         root = self._storage_root()
-        candidate = Path(path).resolve()
-        if candidate == root or root not in candidate.parents:
+        candidate = Path(path)
+        try:
+            relative_parts = candidate.relative_to(root).parts
+        except ValueError as exc:
+            raise ValueError("validation_error") from exc
+        resolved = resolve_child_path(root, PurePosixPath(*relative_parts))
+        if resolved is None or resolved == root or root not in resolved.parents:
             raise ValueError("validation_error")
-        return candidate.relative_to(root).as_posix()
+        return resolved.relative_to(root).as_posix()
 
     def _resolve_storage_path(self, *parts: str) -> Path:
         """Resolve a path under the document upload directory."""
@@ -177,7 +186,7 @@ class DocumentProcessor:
         date_path = datetime.now().strftime("%Y/%m")
 
         # Generate unique filename
-        file_hash = hashlib.md5(
+        file_hash = hashlib.sha256(
             f"{kb_id}{safe_filename}{datetime.now().isoformat()}".encode()
         ).hexdigest()[:8]
         ext = os.path.splitext(safe_filename)[1]
