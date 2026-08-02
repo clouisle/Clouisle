@@ -84,6 +84,15 @@ def test_artifact_result_serializes_download_payload_and_error_output():
         "success": False,
         "result": "Generated 1 downloadable link(s) for the assistant response.",
         "count": 1,
+        "artifacts": [
+            {
+                "path": "/workspace/数据.csv",
+                "filename": "数据.csv",
+                "url": "/files/data.csv",
+                "size": 2,
+                "content_type": "text/csv",
+            }
+        ],
         "error": "missing file",
     }
     assert json.loads(result.llm_result) == {

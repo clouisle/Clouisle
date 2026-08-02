@@ -139,6 +139,7 @@ mock.module('lucide-react', () => ({
   Copy: icon('Copy'),
   Download: icon('Download'),
   Expand: icon('Expand'),
+  FileText: icon('FileText'),
   Loader2: icon('Loader2'),
   ZoomIn: icon('ZoomIn'),
   ZoomOut: icon('ZoomOut'),
@@ -166,6 +167,7 @@ const mermaidApi = {
 
 mock.module('mermaid', () => ({ default: mermaidApi }))
 
+// Dynamic import is required so Bun module mocks are registered before the canvas evaluates.
 const { CodePreviewCanvas } = await import('./code-preview-canvas')
 
 beforeEach(() => {
@@ -258,12 +260,31 @@ test('wraps svg and css previews in runnable documents', () => {
 })
 
 test('resets active tab when preview payload changes', () => {
-  render({ id: 'html', language: 'html', kind: 'html', code: '<p />' })
+  walk(render({ id: 'html', language: 'html', kind: 'html', code: '<p />' }))
   effects.forEach((effect) => effect())
-  render({ id: 'source', language: 'javascript', kind: 'source', code: 'alert(1)' })
+  walk(render({ id: 'source', language: 'javascript', kind: 'source', code: 'alert(1)' }))
   effects.forEach((effect) => effect())
 
   expect(stateValues[1]).toBe('source')
+})
+
+test('renders artifact metadata and keeps unsupported files downloadable', () => {
+  const tree = render({
+    id: 'artifact-1',
+    kind: 'artifact',
+    file: {
+      type: 'file',
+      filename: 'report.docx',
+      url: '/files/report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    },
+  })
+
+  expect(text(tree)).toContain('artifactPreviewCanvasTitle')
+  expect(text(tree)).toContain('report.docx')
+  expect(text(tree)).toContain('artifactPreviewUnavailable')
+  click(findByAriaLabel(tree, 'mermaidDownloadLabel'))
+  expect(appendedLink).toMatchObject({ href: '/files/report.docx', download: 'report.docx', clicked: true })
 })
 
 test('renders mermaid loading state without script iframe', () => {

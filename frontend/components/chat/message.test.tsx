@@ -3,6 +3,7 @@ import { Window } from 'happy-dom'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { ChatMessage } from './types'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -101,7 +102,8 @@ mock.module('streamdown', () => ({
 mock.module('shiki', () => ({ bundledLanguages: { javascript: {} }, codeToTokens }))
 mock.module('@streamdown/math', () => ({ createMathPlugin: () => ({}) }))
 
-const { Message } = await import('./message')
+// Dynamic import is required so Bun module mocks are registered before Message evaluates.
+const { Message, getLatestMessagePreview, getToolArtifacts } = await import('./message')
 
 const roots: Root[] = []
 afterEach(() => {
@@ -311,6 +313,53 @@ describe('message behavior', () => {
     />)
     act(() => button(container, 'Beta').click())
     expect(onSelectOption).toHaveBeenCalledWith('Beta')
+  })
+
+  test('discovers structured artifacts and completed Mermaid previews', () => {
+    expect(getToolArtifacts({
+      artifacts: [
+        { path: '/workspace/report.csv', url: '/files/report.csv', size: 12, content_type: 'text/csv' },
+        { path: '/workspace/missing.csv' },
+      ],
+    })).toEqual([{
+      type: 'file',
+      filename: 'report.csv',
+      url: '/files/report.csv',
+      size: 12,
+      mimeType: 'text/csv',
+    }])
+
+    const artifactMessage: ChatMessage = {
+      id: 'artifact-message',
+      role: 'assistant',
+      parts: [{
+        type: 'tool-result',
+        toolCallId: 'artifact-call',
+        toolName: 'artifact',
+        output: { artifacts: [{ filename: 'report.csv', url: '/files/report.csv', content_type: 'text/csv' }] },
+      }],
+    }
+    expect(getLatestMessagePreview(artifactMessage)).toEqual({
+      id: 'artifact-message:artifact-call:/files/report.csv',
+      kind: 'artifact',
+      file: {
+        type: 'file',
+        filename: 'report.csv',
+        url: '/files/report.csv',
+        mimeType: 'text/csv',
+      },
+    })
+
+    const mermaidMessage: ChatMessage = {
+      id: 'mermaid-message',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'Diagram:\n```mermaid\ngraph TD; A-->B\n```', state: 'done' }],
+    }
+    expect(getLatestMessagePreview(mermaidMessage)).toMatchObject({
+      kind: 'mermaid',
+      language: 'mermaid',
+      code: 'graph TD; A-->B',
+    })
   })
 
   test('renders tool errors, artifacts, MCP results, and media failures', () => {

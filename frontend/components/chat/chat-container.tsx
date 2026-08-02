@@ -5,8 +5,8 @@ import { useTranslations } from 'next-intl';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Message } from './message';
-import type { ChatMessage, CodePreviewPayload, MessagePart } from './types';
+import { getLatestMessagePreview, Message } from './message';
+import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
@@ -26,7 +26,7 @@ interface ChatContainerProps {
   /** Show scroll to bottom button when not at bottom */
   showScrollToBottom?: boolean;
   /** Callback when a previewable code block is opened */
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean;
   /** Hide token usage/speed stats popover */
@@ -73,7 +73,7 @@ interface ChatMessageRowProps {
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
   onSelectOption?: (option: string) => void;
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   hideToolCalls: boolean;
   hideMessageActions: boolean;
   hideReasoning: boolean;
@@ -192,6 +192,9 @@ export function ChatContainer({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
+  const previousConversationIdRef = useRef(conversationId);
+  const wasStreamingRef = useRef(isStreaming);
+  const lastAutoPreviewIdRef = useRef<string | null>(null);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
   const t = useTranslations('chat');
@@ -210,6 +213,22 @@ export function ChatContainer({
     () => messages.slice(Math.max(0, messages.length - renderedMessageCount)),
     [messages, renderedMessageCount]
   );
+
+  useEffect(() => {
+    const streamJustFinished = wasStreamingRef.current && !isStreaming;
+    wasStreamingRef.current = isStreaming;
+    if (!streamJustFinished || !lastMessage || !onOpenCodePreview) {
+      return;
+    }
+
+    const preview = getLatestMessagePreview(lastMessage);
+    if (!preview || lastAutoPreviewIdRef.current === preview.id) {
+      return;
+    }
+
+    lastAutoPreviewIdRef.current = preview.id;
+    onOpenCodePreview(preview);
+  }, [isStreaming, lastMessage, onOpenCodePreview]);
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   useEffect(() => {
@@ -266,9 +285,24 @@ export function ChatContainer({
 
   useIsomorphicLayoutEffect(() => {
     const previousLength = previousMessageLengthRef.current;
+    const conversationChanged = previousConversationIdRef.current !== conversationId;
     previousMessageLengthRef.current = messages.length;
+    previousConversationIdRef.current = conversationId;
+
+    if (conversationChanged) {
+      shouldAutoFollowRef.current = false;
+      return;
+    }
 
     if (!autoScroll || messages.length <= previousLength) {
+      return;
+    }
+
+    const appendedUserMessage = messages
+      .slice(previousLength)
+      .some((message) => message.role === 'user');
+    if (!isStreaming || !appendedUserMessage) {
+      shouldAutoFollowRef.current = false;
       return;
     }
 
@@ -277,11 +311,10 @@ export function ChatContainer({
       showScrollButtonRef.current = false;
       setShowScrollButton(false);
     }
-  }, [autoScroll, messages.length, scrollToBottom]);
+  }, [autoScroll, conversationId, isStreaming, messages, scrollToBottom]);
 
   useIsomorphicLayoutEffect(() => {
     if (!autoScroll || !shouldAutoFollowRef.current) {
-      updateAtBottomState();
       return;
     }
 

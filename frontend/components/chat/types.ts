@@ -246,6 +246,14 @@ export interface CodePreviewPayload {
   kind: CodePreviewKind
 }
 
+export interface ArtifactPreviewPayload {
+  id: string
+  kind: 'artifact'
+  file: FilePart
+}
+
+export type ChatPreviewPayload = CodePreviewPayload | ArtifactPreviewPayload
+
 /**
  * Suggested question/action
  */

@@ -11,8 +11,8 @@ from app.llm.adapters.chat.tool_call_accumulator import (
 def test_accumulate_assembles_indexed_object_deltas_and_clears():
     accumulator = ToolCallAccumulator()
 
-    accumulator.accumulate(SimpleNamespace(tool_calls=None))
-    accumulator.accumulate(
+    assert accumulator.accumulate(SimpleNamespace(tool_calls=None)) == []
+    starts = accumulator.accumulate(
         SimpleNamespace(
             tool_calls=[
                 SimpleNamespace(
@@ -30,7 +30,10 @@ def test_accumulate_assembles_indexed_object_deltas_and_clears():
             ]
         )
     )
-    accumulator.accumulate(
+    assert [
+        (call.id, call.function.name, call.function.arguments) for call in starts
+    ] == [("call_1", "search", "{}")]
+    updates = accumulator.accumulate(
         SimpleNamespace(
             tool_calls=[
                 SimpleNamespace(
@@ -42,6 +45,9 @@ def test_accumulate_assembles_indexed_object_deltas_and_clears():
             ]
         )
     )
+    assert [
+        (call.id, call.function.name, call.function.arguments) for call in updates
+    ] == [("call_1", "search_docs", "{}")]
 
     calls = accumulator.finalize()
 
@@ -60,7 +66,7 @@ def test_accumulate_assembles_indexed_object_deltas_and_clears():
 def test_accumulate_dict_assembles_arguments_and_metadata():
     accumulator = ToolCallAccumulator()
 
-    accumulator.accumulate_dict(
+    starts = accumulator.accumulate_dict(
         [
             {
                 "index": 0,
@@ -71,6 +77,10 @@ def test_accumulate_dict_assembles_arguments_and_metadata():
             {"index": 0, "function": {"name": "user", "arguments": "42}"}},
         ]
     )
+    assert [
+        (item.id, item.function.name, item.function.arguments) for item in starts
+    ] == [("call_2", "get_user", "{}")]
+    assert accumulator.accumulate_dict([{"index": 0, "function": {}}]) == []
 
     call = accumulator.finalize()[0]
 

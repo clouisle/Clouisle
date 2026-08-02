@@ -24,17 +24,18 @@ class ToolCallAccumulator:
     def __init__(self) -> None:
         # index -> partial tool call
         self._tool_calls: dict[int, dict[str, Any]] = {}
+        self._emitted_names: dict[int, str] = {}
 
-    def accumulate(self, delta: Any) -> None:
+    def accumulate(self, delta: Any) -> list[ToolCall]:
         """
-        累加工具调用增量
+        累加工具调用增量，并返回本次首次可识别或名称更新的工具调用。
 
         Args:
             delta: 包含 tool_calls 的 delta 对象
         """
         tool_calls = getattr(delta, "tool_calls", None)
         if not tool_calls:
-            return
+            return []
 
         for tc_delta in tool_calls:
             idx = getattr(tc_delta, "index", 0)
@@ -66,9 +67,11 @@ class ToolCallAccumulator:
                 if func_args:
                     self._tool_calls[idx]["function"]["arguments"] += func_args
 
-    def accumulate_dict(self, tool_calls: list[dict]) -> None:
+        return self._started_calls({getattr(item, "index", 0) for item in tool_calls})
+
+    def accumulate_dict(self, tool_calls: list[dict]) -> list[ToolCall]:
         """
-        累加字典格式的工具调用增量
+        累加字典格式的工具调用增量，并返回本次可显示的工具调用。
 
         Args:
             tool_calls: 工具调用增量列表
@@ -93,6 +96,26 @@ class ToolCallAccumulator:
                 self._tool_calls[idx]["function"]["name"] += function["name"]
             if function.get("arguments"):
                 self._tool_calls[idx]["function"]["arguments"] += function["arguments"]
+
+        return self._started_calls({item.get("index", 0) for item in tool_calls})
+
+    def _started_calls(self, indexes: set[int]) -> list[ToolCall]:
+        started: list[ToolCall] = []
+        for index in sorted(indexes):
+            tool_call = self._tool_calls[index]
+            tool_id = tool_call["id"]
+            name = tool_call["function"]["name"]
+            if not tool_id or not name or self._emitted_names.get(index) == name:
+                continue
+            self._emitted_names[index] = name
+            started.append(
+                ToolCall(
+                    id=tool_id,
+                    type=tool_call["type"],
+                    function=FunctionCall(name=name, arguments="{}"),
+                )
+            )
+        return started
 
     def has_tool_calls(self) -> bool:
         """是否有工具调用"""
@@ -124,6 +147,7 @@ class ToolCallAccumulator:
     def clear(self) -> None:
         """清空累加器"""
         self._tool_calls.clear()
+        self._emitted_names.clear()
 
 
 def extract_tool_calls_from_content(content: Any) -> list[ToolCall] | None:

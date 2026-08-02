@@ -52,7 +52,7 @@ import {
   VariableForm,
   useVariableForm,
   type ChatInputFile,
-  type CodePreviewPayload,
+  type ChatPreviewPayload,
 } from '@/components/chat'
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
@@ -132,7 +132,7 @@ export default function PublicChatPage({
 
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
-  const [activeCodePreview, setActiveCodePreview] = React.useState<CodePreviewPayload | null>(null)
+  const [activePreview, setActivePreview] = React.useState<ChatPreviewPayload | null>(null)
 
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
@@ -737,7 +737,7 @@ export default function PublicChatPage({
       {/* Main Content */}
       <div className="flex-1 min-w-0 min-h-0">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel defaultSize={activeCodePreview ? '62%' : '100%'} minSize="40%">
+          <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize="40%">
             <div className="flex h-full min-w-0 flex-col">
         {/* Header */}
         {showHeader && (
@@ -876,7 +876,7 @@ export default function PublicChatPage({
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
-              onOpenCodePreview={setActiveCodePreview}
+              onOpenCodePreview={setActivePreview}
               emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 {/* Agent Icon */}
@@ -1020,13 +1020,14 @@ export default function PublicChatPage({
         </div>
             </div>
           </ResizablePanel>
-          {activeCodePreview && (
+          {activePreview && (
             <>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize="38%" minSize="25%" maxSize="60%">
                 <CodePreviewCanvas
-                  preview={activeCodePreview}
-                  onClose={() => setActiveCodePreview(null)}
+                  key={activePreview.id}
+                  preview={activePreview}
+                  onClose={() => setActivePreview(null)}
                 />
               </ResizablePanel>
             </>

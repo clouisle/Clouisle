@@ -516,18 +516,20 @@ class GeminiAdapter(BaseChatAdapter):
                 elif hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
                     args = dict(fc.args) if hasattr(fc, "args") and fc.args else {}
-                    accumulated_tool_calls.append(
-                        ToolCall(
-                            id=str(uuid.uuid4()),
-                            type="function",
-                            function=FunctionCall(
-                                name=fc.name if hasattr(fc, "name") else "",
-                                arguments=json.dumps(args),
-                            ),
-                        )
+                    tool_call = ToolCall(
+                        id=str(uuid.uuid4()),
+                        type="function",
+                        function=FunctionCall(
+                            name=fc.name if hasattr(fc, "name") else "",
+                            arguments=json.dumps(args),
+                        ),
                     )
+                    accumulated_tool_calls.append(tool_call)
                     yield self.create_stream_chunk(
                         response_id=response_id,
+                        tool_call_starts=[tool_call]
+                        if tool_call.function.name
+                        else None,
                         stream_activity=True,
                     )
                 # 普通文本

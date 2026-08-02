@@ -310,7 +310,8 @@ You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact
 - Use `edit` for localized replacements and copy each anchor exactly. If an anchor is stale, re-read the file instead of guessing a new line number
 - Keep each `bash` call focused so failures stay attributable
 - Use `read`, `ls -lh`, or `find` to confirm what actually exists before changing the approach
-- Use `artifact` only for final deliverables after the output file has been verified locally
+- Use `artifact` only for final deliverables after the output file has been verified locally. Artifact URLs are snapshots: if `write`, `edit`, or `bash` changes a collected file, verify it again and call `artifact` again before answering; never reuse the earlier URL
+- Before the final response, collect every final user-facing deliverable in its latest state and include every newest Markdown download link returned by `artifact`
 
 ### Avoid These Mistakes
 

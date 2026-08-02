@@ -6,7 +6,13 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import chat as chat_module
-from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason
+from app.llm.types import (
+    ChatStreamChunk,
+    ChatStreamDelta,
+    FinishReason,
+    FunctionCall,
+    ToolCall,
+)
 from app.models.agent import AgentVisibility, MessageRole, MessageRoundStatus
 from app.schemas.agent import (
     ChatRequest,
@@ -134,6 +140,15 @@ def test_dependency_light_helpers_cover_payload_activity_and_error_formatting(
     active = ChatStreamChunk(
         id="2", model="m", delta=ChatStreamDelta(stream_activity=True)
     )
+    tool_call = ToolCall(
+        id="tool-1",
+        function=FunctionCall(name="edit", arguments="{}"),
+    )
+    tool_start = ChatStreamChunk(
+        id="tool-start",
+        model="m",
+        delta=ChatStreamDelta(tool_call_starts=[tool_call]),
+    )
     finished = ChatStreamChunk(
         id="3",
         model="m",
@@ -142,6 +157,14 @@ def test_dependency_light_helpers_cover_payload_activity_and_error_formatting(
     )
     assert chat_module._is_model_stream_activity(quiet) is False
     assert chat_module._is_model_stream_activity(active) is True
+    assert chat_module._is_model_stream_activity(tool_start) is True
+    tool_events = chat_module._build_tool_call_start_sse_events(
+        [tool_call], {"edit": "Edit file"}
+    )
+    assert len(tool_events) == 1
+    assert '"tool_call_id": "tool-1"' in tool_events[0]
+    assert '"tool_display_name": "Edit file"' in tool_events[0]
+    assert '"arguments": {}' in tool_events[0]
     assert chat_module._is_model_stream_activity(finished) is True
 
     provider_error = Exception(

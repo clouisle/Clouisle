@@ -574,7 +574,7 @@ msgid "builtin_tool_artifact"
 msgstr "生成下载链接"
 
 msgid "builtin_tool_artifact_description"
-msgstr "将沙盒中生成的文件整理为可点击的下载链接，方便在回答中直接下载。"
+msgstr "收集 /workspace 中已验证的最终文件，返回最新下载链接和预览信息。如果 write、edit 或 bash 修改了已收集的文件，必须再次调用 artifact；旧链接是过期快照。最终回答只使用最新链接。"
 
 msgid "builtin_tool_bash"
 msgstr "执行命令"

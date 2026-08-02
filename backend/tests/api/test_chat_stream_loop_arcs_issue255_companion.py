@@ -375,11 +375,16 @@ async def test_stream_tool_emits_media_result(monkeypatch):
         "app.llm.model_manager.team_chat_stream",
         lambda **_kwargs: chunks(
             ChatStreamChunk(
+                id="tool-start",
+                model="stub",
+                delta=ChatStreamDelta(tool_call_starts=[tool_call]),
+            ),
+            ChatStreamChunk(
                 id="tool",
                 model="stub",
                 delta=ChatStreamDelta(tool_calls=[tool_call]),
                 finish_reason=FinishReason.TOOL_CALLS,
-            )
+            ),
         ),
     )
     monkeypatch.setattr(
@@ -394,6 +399,8 @@ async def test_stream_tool_emits_media_result(monkeypatch):
     events = await collect(state.response)
 
     assert "event: tool_call" in events
+    assert events.count("event: tool_call\n") == 2
+    assert events.index('"arguments": {}') < events.index('"arguments": {"query": "x"}')
     assert "event: tool_result" in events
     assert "media" in events
     assert "event: iteration_cap_reached" in events

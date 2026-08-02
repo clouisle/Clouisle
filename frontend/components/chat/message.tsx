@@ -49,7 +49,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, CodePreviewPayload, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
+import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -80,6 +80,7 @@ import {
 } from '@/lib/utils/tool-result'
 
 const CODE_FENCE_REGEX = /^```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```$/
+const COMPLETE_CODE_FENCE_REGEX = /```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```/g
 const STREAMING_REHYPE_PLUGINS = [
   defaultRehypePlugins.sanitize,
   defaultRehypePlugins.harden,
@@ -121,14 +122,6 @@ type ParsedCodeFence = {
   code: string
 }
 
-type ToolArtifact = {
-  path?: string
-  url?: string
-  filename?: string
-  size?: number
-  content_type?: string
-  contentType?: string
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -271,7 +264,7 @@ function findSpeechSentence(sentences: SpeechSentence[], charIndex: number) {
   return sentences.find((sentence) => charIndex >= sentence.start && charIndex < sentence.end) ?? sentences.at(-1) ?? null
 }
 
-function getToolArtifacts(output: unknown): FilePart[] {
+export function getToolArtifacts(output: unknown): FilePart[] {
   if (!isRecord(output) || !Array.isArray(output.artifacts)) {
     return []
   }
@@ -279,17 +272,22 @@ function getToolArtifacts(output: unknown): FilePart[] {
   return output.artifacts
     .filter(isRecord)
     .map((artifact): FilePart | null => {
-      const item = artifact as ToolArtifact
-      const filename = item.filename || item.path?.split('/').pop() || item.path || 'artifact'
-      if (!item.url) {
+      const path = typeof artifact.path === 'string' ? artifact.path : undefined
+      const explicitFilename = typeof artifact.filename === 'string' ? artifact.filename : undefined
+      const url = typeof artifact.url === 'string' ? artifact.url : undefined
+      if (!url) {
         return null
       }
       return {
         type: 'file',
-        filename,
-        url: item.url,
-        size: typeof item.size === 'number' ? item.size : undefined,
-        mimeType: item.content_type || item.contentType,
+        filename: explicitFilename || path?.split('/').pop() || path || 'artifact',
+        url,
+        size: typeof artifact.size === 'number' ? artifact.size : undefined,
+        mimeType: typeof artifact.content_type === 'string'
+          ? artifact.content_type
+          : typeof artifact.contentType === 'string'
+            ? artifact.contentType
+            : undefined,
       }
     })
     .filter((file): file is FilePart => file !== null)
@@ -327,6 +325,65 @@ function getPreviewKind(language: string, code: string): CodePreviewPayload['kin
   }
   if (language === 'md' || language === 'markdown') {
     return 'markdown'
+  }
+
+  return null
+}
+
+function getLatestTextPreview(
+  messageId: string,
+  partIndex: number,
+  text: string,
+): CodePreviewPayload | null {
+  let preview: CodePreviewPayload | null = null
+  for (const match of text.matchAll(COMPLETE_CODE_FENCE_REGEX)) {
+    const language = match[1].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+    const code = match[2].replace(/\r\n?/g, '\n')
+    const kind = getPreviewKind(language, code)
+    if (!kind) {
+      continue
+    }
+    preview = {
+      id: `${messageId}:${partIndex}:${kind}:${code.length}:${code.slice(0, 32)}`,
+      language: language || kind,
+      code,
+      kind,
+    }
+  }
+  return preview
+}
+
+export function getLatestMessagePreview(message: ChatMessage): ChatPreviewPayload | null {
+  if (message.role !== 'assistant') {
+    return null
+  }
+
+  for (let index = message.parts.length - 1; index >= 0; index -= 1) {
+    const part = message.parts[index]
+    if (isTextPart(part)) {
+      const preview = getLatestTextPreview(message.id, index, part.text)
+      if (preview) {
+        return preview
+      }
+    }
+    if (isToolResultPart(part)) {
+      const files = getToolArtifacts(parseToolResultOutput(part.output))
+      const file = files.at(-1)
+      if (file?.url) {
+        return {
+          id: `${message.id}:${part.toolCallId}:${file.url}`,
+          kind: 'artifact',
+          file,
+        }
+      }
+    }
+    if (isFilePart(part) && part.url) {
+      return {
+        id: `${message.id}:${index}:${part.url}`,
+        kind: 'artifact',
+        file: part,
+      }
+    }
   }
 
   return null
@@ -418,7 +475,7 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void
   /** Callback when a previewable code block is opened */
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
   /** Hide token usage/speed stats popover */
@@ -712,6 +769,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [isSpeakingThisMessage, onRequestScrollIntoView])
 
+    const handleArtifactPreview = React.useCallback((file: FilePart) => {
+      if (!file.url || !onOpenCodePreview) {
+        return
+      }
+      onOpenCodePreview({
+        id: `${message.id}:artifact:${file.url}`,
+        kind: 'artifact',
+        file,
+      })
+    }, [message.id, onOpenCodePreview])
+
     const renderToolResultContent = React.useCallback((output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
 
@@ -799,7 +867,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (artifactFiles.length > 0) {
         return (
           <div className="space-y-3">
-            <FileListContent files={artifactFiles} />
+            <FileListContent
+              files={artifactFiles}
+              onPreview={onOpenCodePreview ? handleArtifactPreview : undefined}
+            />
             <ToolOutput
               output={parsedOutput}
               errorText={isError ? t('toolExecutionFailed') : undefined}
@@ -814,7 +885,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
-    }, [openLightbox, t])
+    }, [handleArtifactPreview, onOpenCodePreview, openLightbox, t])
 
     // Render a single part
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
@@ -1640,7 +1711,7 @@ function PreviewableMarkdownBlock({
   ...props
 }: React.ComponentProps<typeof Block> & {
   isStreaming: boolean
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void
 }) {
   const parsedFence = !isStreaming && onOpenCodePreview ? parseCodeFence(content) : null
   const previewKind = parsedFence ? getPreviewKind(parsedFence.language, parsedFence.code) : null
@@ -1992,7 +2063,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   sources: SourceDocumentPart[]
   isStreaming?: boolean
   activeSpeechSentence?: string | null
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const hasSources = sources.length > 0

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   Collapsible,
   CollapsibleContent,
@@ -23,6 +24,7 @@ import type { FilePart } from '../types';
 export interface FileContentProps {
   file: FilePart;
   className?: string;
+  onPreview?: (file: FilePart) => void;
 }
 
 const FILE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -70,7 +72,8 @@ function formatFileSize(bytes?: number): string {
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 
-export function FileContent({ file, className }: FileContentProps) {
+export function FileContent({ file, className, onPreview }: FileContentProps) {
+  const t = useTranslations('chat.message');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const category = getFileCategory(file.mimeType);
@@ -124,6 +127,17 @@ export function FileContent({ file, className }: FileContentProps) {
         </div>
 
         {/* Actions */}
+        {file.url && onPreview && (
+          <button
+            type="button"
+            onClick={() => onPreview(file)}
+            className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+            aria-label={`${t('openCodePreview')}: ${file.filename}`}
+          >
+            <Eye className="h-4 w-4" />
+          </button>
+        )}
+
         {file.url && (
           <a
             href={file.url}
@@ -141,9 +155,10 @@ export function FileContent({ file, className }: FileContentProps) {
 interface FileListContentProps {
   files: FilePart[];
   className?: string;
+  onPreview?: (file: FilePart) => void;
 }
 
-export function FileListContent({ files, className }: FileListContentProps) {
+export function FileListContent({ files, className, onPreview }: FileListContentProps) {
   if (!files || files.length === 0) return null;
 
   // Group images separately for grid display
@@ -160,14 +175,14 @@ export function FileListContent({ files, className }: FileListContentProps) {
       {imageFiles.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {imageFiles.map((file, index) => (
-            <ImageThumbnail key={index} file={file} />
+            <ImageThumbnail key={index} file={file} onPreview={onPreview} />
           ))}
         </div>
       )}
 
       {/* Other Files */}
       {otherFiles.map((file, index) => (
-        <FileContent key={index} file={file} />
+        <FileContent key={index} file={file} onPreview={onPreview} />
       ))}
     </div>
   );
@@ -175,10 +190,28 @@ export function FileListContent({ files, className }: FileListContentProps) {
 
 interface ImageThumbnailProps {
   file: FilePart;
+  onPreview?: (file: FilePart) => void;
 }
 
-function ImageThumbnail({ file }: ImageThumbnailProps) {
+function ImageThumbnail({ file, onPreview }: ImageThumbnailProps) {
+  const t = useTranslations('chat.message');
   const [isExpanded, setIsExpanded] = useState(false);
+
+  if (onPreview) {
+    return (
+      <button
+        type="button"
+        onClick={() => onPreview(file)}
+        className="relative h-20 w-20 cursor-pointer overflow-hidden rounded-lg border group"
+        aria-label={`${t('openCodePreview')}: ${file.filename}`}
+      >
+        <img src={file.url} alt={file.filename} className="h-full w-full object-cover" />
+        <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+          <Eye className="h-4 w-4 text-white" />
+        </span>
+      </button>
+    );
+  }
 
   return (
     <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>

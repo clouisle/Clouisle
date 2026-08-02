@@ -369,6 +369,7 @@ class SandboxArtifactTool:
             "success": success,
             "result": f"Generated {len(markdown_links)} downloadable link(s) for the assistant response.",
             "count": len(markdown_links),
+            "artifacts": files,
             "error": error,
         }
         llm_result = {
@@ -638,11 +639,11 @@ def register_sandbox_file_tools() -> None:
     artifact_info = ToolInfo(
         name="artifact",
         description=(
-            "Collect existing files or directories from /workspace and return Markdown download "
-            "links for the assistant's final answer. Use this after generating and verifying final "
-            "user-facing files with bash commands such as `ls`, `find`, or `file`. This tool does "
-            "not render download cards directly; after calling it, include the returned Markdown "
-            "links in the final response body. Relative paths are interpreted from /workspace."
+            "Collect existing files or directories from /workspace and return fresh Markdown "
+            "download links plus preview metadata. Call this only after verifying final user-facing "
+            "files. If write, edit, or bash changes a collected file, call artifact again because "
+            "earlier URLs are stale snapshots. Include the newest returned Markdown links in the "
+            "final response body. Relative paths are interpreted from /workspace."
         ),
         parameters=[
             ToolParameter(

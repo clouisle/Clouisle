@@ -29,6 +29,28 @@ def infer_tool_result_is_error(display_result: str) -> bool:
     return isinstance(error, str) and bool(error.strip())
 
 
+def build_tool_call_sse_event(
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    tool_display_name: str,
+    arguments: dict[str, Any],
+) -> str:
+    """构建工具调用 SSE 事件"""
+    from app.schemas.agent import SSEEventType
+
+    payload = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_display_name": tool_display_name,
+        "arguments": arguments,
+    }
+    return (
+        f"event: {SSEEventType.TOOL_CALL}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    )
+
+
 def build_tool_result_sse_event(
     *,
     tool_call_id: str,

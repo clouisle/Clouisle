@@ -243,6 +243,7 @@ async def test_artifact_tool_rejects_empty_paths():
         "success": False,
         "result": "Generated 0 downloadable link(s) for the assistant response.",
         "count": 0,
+        "artifacts": [],
         "error": "At least one artifact path is required",
     }
     llm_payload = json.loads(result.llm_result)
@@ -288,7 +289,15 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
         )
 
     assert isinstance(result, ToolExecutionResult)
-    assert "artifacts" not in result.display_result
+    assert result.display_result["artifacts"] == [
+        {
+            "path": "/workspace/output/report.docx",
+            "filename": "report.docx",
+            "url": "/api/v1/upload/files/sandbox-artifacts/2026/05/report.docx",
+            "size": 123,
+            "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+    ]
     assert result.display_result["success"] is True
     assert result.display_result["count"] == 1
     llm_payload = json.loads(result.llm_result)

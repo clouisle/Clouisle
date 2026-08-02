@@ -246,8 +246,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "bad_request": {"en": "Bad request", "zh": "错误请求"},
     "builtin_tool_artifact": {"en": "Create Download Link", "zh": "生成下载链接"},
     "builtin_tool_artifact_description": {
-        "en": "Collect existing files or directories from /workspace and return Markdown download links for the assistant's final answer. Use this after generating and verifying final user-facing files with bash commands such as `ls`, `find`, or `file`. This tool does not render download cards directly; after calling it, include the returned Markdown links in the final response body. Relative paths are interpreted from /workspace.",
-        "zh": "将沙盒中生成的文件整理为可点击的下载链接，方便在回答中直接下载。",
+        "en": "Collect existing files or directories from /workspace and return fresh Markdown download links plus preview metadata. Call this only after verifying final user-facing files. If write, edit, or bash changes a collected file, call artifact again because earlier URLs are stale snapshots. Include the newest returned Markdown links in the final response body. Relative paths are interpreted from /workspace.",
+        "zh": "收集 /workspace 中已验证的最终文件，返回最新下载链接和预览信息。如果 write、edit 或 bash 修改了已收集的文件，必须再次调用 artifact；旧链接是过期快照。最终回答只使用最新链接。",
     },
     "builtin_tool_artifact_param_max_size_mb_description": {
         "en": "Maximum allowed size in MB for each collected artifact. Defaults to 10.",

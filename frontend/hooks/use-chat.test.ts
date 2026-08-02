@@ -339,6 +339,7 @@ describe('useChat', () => {
       { event: 'rag_context', data: { contexts: [{ document_id: 'doc-1', document_name: 'Doc', content: 'chunk', kb_id: 'kb-1', kb_name: 'KB', score: 0.8 }] } },
       { event: 'compression_start', data: {} },
       { event: 'compression_end', data: { before_tokens: 20, after_tokens: 10 } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'sea', tool_display_name: 'sea', arguments: {} } },
       { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: { q: 'coverage' } } },
       { event: 'tool_call', data: { tool_call_id: 'tool-2', tool_name: 'lookup', tool_display_name: 'Lookup', arguments: {} } },
       { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', result: { ok: true }, is_error: false } },
@@ -357,6 +358,13 @@ describe('useChat', () => {
     expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc-1' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'task', taskType: 'compression', state: 'completed' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1', state: 'done' }))
+    expect(parts.filter((part) => part.type === 'tool-call' && part.toolCallId === 'tool-1')).toHaveLength(1)
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      toolName: 'search',
+      input: { q: 'coverage' },
+    }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-2', state: 'error' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-result', toolCallId: 'tool-2', isError: true }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
