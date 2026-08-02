@@ -118,6 +118,15 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
     oversized_edit = await SandboxEditTool(
         session_id="session-helper-coverage"
     ).execute("report.txt", [{"line": "1#ZZ", "new": "x" * 1_000_001}])
+    invalid_start = await SandboxReadTool(session_id="session-helper-coverage").execute(
+        "report.txt", start_line=0
+    )
+    reversed_range = await SandboxReadTool(
+        session_id="session-helper-coverage"
+    ).execute("report.txt", start_line=3, end_line=2)
+    empty_search = await SandboxReadTool(session_id="session-helper-coverage").execute(
+        "report.txt", search=""
+    )
 
     assert missing_session == {"success": False, "error": "Sandbox session is required"}
     assert unsafe_path == {
@@ -132,6 +141,18 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
     assert oversized_edit == {
         "success": False,
         "error": "edit content is too large",
+    }
+    assert invalid_start == {
+        "success": False,
+        "error": "start_line must be at least 1",
+    }
+    assert reversed_range == {
+        "success": False,
+        "error": "end_line must be greater than or equal to start_line",
+    }
+    assert empty_search == {
+        "success": False,
+        "error": "search must not be empty",
     }
 
 
@@ -159,4 +180,7 @@ async def test_read_tool_clamps_size_boundaries_in_submitted_payload(
     assert mock_submit.await_args.args[0].metadata["params"] == {
         "path": "report.txt",
         "max_chars": expected,
+        "start_line": 1,
+        "end_line": None,
+        "search": None,
     }

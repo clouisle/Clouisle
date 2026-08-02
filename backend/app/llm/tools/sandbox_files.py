@@ -34,10 +34,13 @@ def _compute_line_hash(lines, index):
     digest = blake2s(context.encode("utf-8"), digest_size=1).digest()[0]
     return _HASHLINE_ALPHABET[digest >> 4] + _HASHLINE_ALPHABET[digest & 0x0f]
 
-def _format_hashlines(lines):
+def _format_hashlines(lines, start_line=1, end_line=None, search=None):
+    start_index = start_line - 1
+    stop_index = len(lines) if end_line is None else min(end_line, len(lines))
     return "\n".join(
-        f"{{index + 1}}#{{_compute_line_hash(lines, index)}}| {{line}}"
-        for index, line in enumerate(lines)
+        f"{{index + 1}}#{{_compute_line_hash(lines, index)}}| {{lines[index]}}"
+        for index in range(start_index, stop_index)
+        if search is None or search in lines[index]
     )
 """.strip()
 
@@ -53,8 +56,19 @@ if not path.is_file():
     raise ValueError(f"not a file: {path}")
 with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
     fcntl.flock(handle, fcntl.LOCK_SH)
-    text = handle.read()
-return _format_hashlines(text.splitlines())[:params["max_chars"]]
+    lines = handle.read().splitlines()
+start_line = params.get("start_line", 1)
+end_line = params.get("end_line")
+if start_line > len(lines) and not (start_line == 1 and not lines):
+    raise ValueError(
+        f"start_line {start_line} exceeds file length {len(lines)}; request an existing line range"
+    )
+return _format_hashlines(
+    lines,
+    start_line,
+    end_line,
+    params.get("search"),
+)[:params["max_chars"]]
 """
 ).strip()
 
@@ -187,13 +201,28 @@ class SandboxReadTool:
         self.team_id = team_id
 
     async def execute(
-        self, path: str, max_chars: int = _MAX_READ_CHARS
+        self,
+        path: str,
+        max_chars: int = _MAX_READ_CHARS,
+        start_line: int = 1,
+        end_line: int | None = None,
+        search: str | None = None,
     ) -> dict[str, Any]:
         if not self.session_id:
             return {"success": False, "error": "Sandbox session is required"}
         try:
             safe_path = _normalize_workspace_path(path)
             limit = max(1, min(int(max_chars), _MAX_READ_CHARS))
+            range_start = int(start_line)
+            range_end = int(end_line) if end_line is not None else None
+            if range_start < 1:
+                raise ValueError("start_line must be at least 1")
+            if range_end is not None and range_end < range_start:
+                raise ValueError("end_line must be greater than or equal to start_line")
+            if search is not None and not isinstance(search, str):
+                raise ValueError("search must be a string")
+            if search == "":
+                raise ValueError("search must not be empty")
             job = SandboxJob(
                 source=SandboxJobSource.TOOL,
                 language="python",
@@ -204,6 +233,9 @@ class SandboxReadTool:
                     "params": {
                         "path": _runtime_workspace_path(safe_path),
                         "max_chars": limit,
+                        "start_line": range_start,
+                        "end_line": range_end,
+                        "search": search,
                     }
                 },
             )
@@ -500,10 +532,10 @@ def register_sandbox_file_tools() -> None:
         name="read",
         description=(
             "Read a UTF-8 text file from the sandbox workspace. Each returned line is prefixed "
-            "with a hashline anchor in the form LINE#ID| content. Copy the LINE#ID value into "
-            "the edit tool for safe localized changes. Paths must stay inside /workspace. For "
-            "binary files such as .docx, .xlsx, images, or archives, inspect metadata with bash "
-            "instead of reading raw binary content."
+            "with a hashline anchor in the form LINE#ID| content. Use start_line and end_line "
+            "for an inclusive range, or search to return lines containing a case-sensitive "
+            "literal string. Range and search can be combined, and results retain the file's "
+            "original line numbers and edit anchors. Paths must stay inside /workspace."
         ),
         parameters=[
             ToolParameter(
@@ -513,9 +545,28 @@ def register_sandbox_file_tools() -> None:
                 required=True,
             ),
             ToolParameter(
+                name="start_line",
+                type="integer",
+                description="First line to inspect, using 1-based file line numbers. Defaults to 1.",
+                required=False,
+                default=1,
+            ),
+            ToolParameter(
+                name="end_line",
+                type="integer",
+                description="Last line to inspect, inclusive. Omit to continue through the end of the file.",
+                required=False,
+            ),
+            ToolParameter(
+                name="search",
+                type="string",
+                description="Optional case-sensitive literal text. Only matching lines in the requested range are returned.",
+                required=False,
+            ),
+            ToolParameter(
                 name="max_chars",
                 type="integer",
-                description="Maximum characters of hashline-formatted text to return. Increase only when you need more of a large file.",
+                description="Maximum characters of hashline-formatted text to return after range and search filtering.",
                 required=False,
                 default=_MAX_READ_CHARS,
             ),

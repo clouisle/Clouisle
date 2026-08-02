@@ -718,7 +718,7 @@ msgid "builtin_tool_read"
 msgstr "读取文件"
 
 msgid "builtin_tool_read_description"
-msgstr "读取沙盒中的 UTF-8 文本文件。返回的每一行都带有 LINE#ID 哈希行锚点，可传给 edit 安全地执行局部修改。"
+msgstr "读取带 LINE#ID 哈希行锚点的 UTF-8 文本文件。可用 start_line 和 end_line 指定闭区间，或用 search 查找区分大小写的字面文本；结果保留原始行号供 edit 使用。"
 
 msgid "builtin_tool_unit_convert"
 msgstr "单位转换"
@@ -766,7 +766,17 @@ msgid "builtin_tool_read_param_path_description"
 msgstr "要读取的文件路径。使用 /workspace/file.txt 或相对路径如 file.txt；/workspace 外的路径会被拒绝。"
 
 msgid "builtin_tool_read_param_max_chars_description"
-msgstr "返回的哈希行格式文本的最大字符数。仅在需要读取大文件的更多内容时增加此值。"
+msgstr "经过行范围和搜索筛选后返回的哈希行格式文本的最大字符数。"
+
+msgid "builtin_tool_read_param_start_line_description"
+msgstr "要检查的第一行，使用从 1 开始的文件行号。默认为 1。"
+
+msgid "builtin_tool_read_param_end_line_description"
+msgstr "要检查的最后一行（包含该行）。省略时读取到文件末尾。"
+
+msgid "builtin_tool_read_param_search_description"
+msgstr "可选的区分大小写字面文本。仅返回指定范围内包含该文本的行。"
+
 
 msgid "builtin_tool_write_param_path_description"
 msgstr "要写入的文件路径。使用 /workspace/script.py、/workspace/output/result.txt 或相对路径；/workspace 外的路径会被拒绝。"

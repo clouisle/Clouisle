@@ -435,16 +435,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "builtin_tool_read": {"en": "Read File", "zh": "读取文件"},
     "builtin_tool_read_description": {
-        "en": "Read a UTF-8 text file from the sandbox workspace. Each returned line is prefixed with a LINE#ID hashline anchor that can be passed to edit for safe localized changes.",
-        "zh": "读取沙盒中的 UTF-8 文本文件。返回的每一行都带有 LINE#ID 哈希行锚点，可传给 edit 安全地执行局部修改。",
+        "en": "Read a UTF-8 text file with LINE#ID hashline anchors. Use start_line and end_line for an inclusive range, or search for case-sensitive literal text; both preserve original line numbers for edit.",
+        "zh": "读取带 LINE#ID 哈希行锚点的 UTF-8 文本文件。可用 start_line 和 end_line 指定闭区间，或用 search 查找区分大小写的字面文本；结果保留原始行号供 edit 使用。",
     },
     "builtin_tool_read_param_max_chars_description": {
-        "en": "Maximum characters of hashline-formatted text to return. Increase this only when you need more content from a large file.",
-        "zh": "返回的哈希行格式文本的最大字符数。仅在需要读取大文件的更多内容时增加此值。",
+        "en": "Maximum characters of hashline-formatted text to return after range and search filtering.",
+        "zh": "经过行范围和搜索筛选后返回的哈希行格式文本的最大字符数。",
     },
     "builtin_tool_read_param_path_description": {
         "en": "File path to read. Use /workspace/file.txt or a relative path such as file.txt; paths outside /workspace are rejected.",
         "zh": "要读取的文件路径。使用 /workspace/file.txt 或相对路径如 file.txt；/workspace 外的路径会被拒绝。",
+    },
+    "builtin_tool_read_param_start_line_description": {
+        "en": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
+        "zh": "要检查的第一行，使用从 1 开始的文件行号。默认为 1。",
+    },
+    "builtin_tool_read_param_end_line_description": {
+        "en": "Last line to inspect, inclusive. Omit to continue through the end of the file.",
+        "zh": "要检查的最后一行（包含该行）。省略时读取到文件末尾。",
+    },
+    "builtin_tool_read_param_search_description": {
+        "en": "Optional case-sensitive literal text. Only matching lines in the requested range are returned.",
+        "zh": "可选的区分大小写字面文本。仅返回指定范围内包含该文本的行。",
     },
     "builtin_tool_unit_convert": {"en": "Unit Convert", "zh": "单位转换"},
     "builtin_tool_unit_convert_description": {

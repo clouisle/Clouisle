@@ -107,7 +107,13 @@ async def test_read_tool_maps_workspace_path_to_session_relative_path():
             )
         ),
     ) as mock_submit:
-        result = await tool.execute("/workspace/秋天的校园.docx", 1000)
+        result = await tool.execute(
+            "/workspace/秋天的校园.docx",
+            1000,
+            start_line=10,
+            end_line=20,
+            search="校园",
+        )
 
     assert result == {
         "success": True,
@@ -120,6 +126,9 @@ async def test_read_tool_maps_workspace_path_to_session_relative_path():
     assert job.metadata["params"] == {
         "path": "秋天的校园.docx",
         "max_chars": 1000,
+        "start_line": 10,
+        "end_line": 20,
+        "search": "校园",
     }
 
 
@@ -152,6 +161,47 @@ def test_hashline_read_anchors_drive_localized_edit_without_rewriting_neighbors(
     assert result["edits"] == 1
     assert result["changed"] == 1
     assert path.read_bytes() == b"alpha\r\nWORLD\r\nmiddle\r\nomega\r\n"
+
+
+def test_hashline_read_combines_inclusive_range_and_literal_search(tmp_path):
+    path = tmp_path / "example.txt"
+    path.write_text(
+        "before\nneedle one\nNeedle case\nneedle two\nafter\n",
+        encoding="utf-8",
+    )
+    full_content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {"path": str(path), "max_chars": 200_000},
+    )
+
+    filtered_content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {
+            "path": str(path),
+            "max_chars": 200_000,
+            "start_line": 2,
+            "end_line": 4,
+            "search": "needle",
+        },
+    )
+
+    full_lines = full_content.splitlines()
+    assert filtered_content.splitlines() == [full_lines[1], full_lines[3]]
+    assert re.fullmatch(r"2#[A-Z]{2}\| needle one", full_lines[1])
+    assert re.fullmatch(r"4#[A-Z]{2}\| needle two", full_lines[3])
+
+    with pytest.raises(
+        ValueError,
+        match="start_line 6 exceeds file length 5",
+    ):
+        _run_sandbox_code(
+            _HASHLINE_READ_CODE,
+            {
+                "path": str(path),
+                "max_chars": 200_000,
+                "start_line": 6,
+            },
+        )
 
 
 def test_hashline_edit_rejects_stale_batch_before_writing_any_change(tmp_path):
@@ -291,6 +341,22 @@ async def test_artifact_tool_allows_custom_limits():
     job = mock_submit.await_args.args[0]
     assert job.artifact_limits.max_size_mb == 2
     assert job.artifact_limits.max_total_size_mb == 3
+
+
+def test_read_tool_schema_exposes_range_and_literal_search_parameters():
+    register_sandbox_file_tools()
+
+    properties = tool_registry.to_openai_sandbox_tools(["read"])[0]["function"][
+        "parameters"
+    ]["properties"]
+
+    assert properties["start_line"] == {
+        "type": "integer",
+        "description": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
+        "default": 1,
+    }
+    assert properties["end_line"]["type"] == "integer"
+    assert properties["search"]["type"] == "string"
 
 
 def test_artifact_tool_schema_is_registered():

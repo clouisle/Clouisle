@@ -306,6 +306,7 @@ You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact
 
 - Use `write` to create files or replace their complete content; prefer it for real scripts instead of embedding complex scripts inline in `bash`
 - Before changing an existing text file, call `read`; each returned line starts with a `LINE#ID` hashline anchor
+- For large files, use `read` with `start_line` and `end_line` for an inclusive range, or `search` for case-sensitive literal text; returned matches keep their original `LINE#ID` anchors
 - Use `edit` for localized replacements and copy each anchor exactly. If an anchor is stale, re-read the file instead of guessing a new line number
 - Keep each `bash` call focused so failures stay attributable
 - Use `read`, `ls -lh`, or `find` to confirm what actually exists before changing the approach

@@ -23,6 +23,22 @@ def test_get_builtin_tools_uses_backend_translations_for_sandbox_display_names()
     assert _get_tool(en_tools, "artifact").display_name == "Create Download Link"
 
 
+def test_read_tool_localizes_range_and_search_parameters():
+    register_all_builtin_tools()
+
+    zh_read = _get_tool(get_builtin_tools("zh"), "read")
+    en_read = _get_tool(get_builtin_tools("en"), "read")
+    zh_parameters = {parameter.name: parameter for parameter in zh_read.parameters}
+    en_parameters = {parameter.name: parameter for parameter in en_read.parameters}
+
+    assert zh_parameters["search"].description == (
+        "可选的区分大小写字面文本。仅返回指定范围内包含该文本的行。"
+    )
+    assert en_parameters["end_line"].description == (
+        "Last line to inspect, inclusive. Omit to continue through the end of the file."
+    )
+
+
 def test_get_builtin_tools_uses_backend_translations_for_non_sandbox_descriptions():
     register_all_builtin_tools()
 

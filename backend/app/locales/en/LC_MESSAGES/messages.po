@@ -718,7 +718,7 @@ msgid "builtin_tool_read"
 msgstr "Read File"
 
 msgid "builtin_tool_read_description"
-msgstr "Read a UTF-8 text file from the sandbox workspace. Each returned line is prefixed with a LINE#ID hashline anchor that can be passed to edit for safe localized changes."
+msgstr "Read a UTF-8 text file with LINE#ID hashline anchors. Use start_line and end_line for an inclusive range, or search for case-sensitive literal text; both preserve original line numbers for edit."
 
 msgid "builtin_tool_unit_convert"
 msgstr "Unit Convert"
@@ -766,7 +766,16 @@ msgid "builtin_tool_read_param_path_description"
 msgstr "File path to read. Use /workspace/file.txt or a relative path such as file.txt; paths outside /workspace are rejected."
 
 msgid "builtin_tool_read_param_max_chars_description"
-msgstr "Maximum characters of hashline-formatted text to return. Increase this only when you need more content from a large file."
+msgstr "Maximum characters of hashline-formatted text to return after range and search filtering."
+
+msgid "builtin_tool_read_param_start_line_description"
+msgstr "First line to inspect, using 1-based file line numbers. Defaults to 1."
+
+msgid "builtin_tool_read_param_end_line_description"
+msgstr "Last line to inspect, inclusive. Omit to continue through the end of the file."
+
+msgid "builtin_tool_read_param_search_description"
+msgstr "Optional case-sensitive literal text. Only matching lines in the requested range are returned."
 
 msgid "builtin_tool_write_param_path_description"
 msgstr "File path to write. Use /workspace/script.py, /workspace/output/result.txt, or a relative path; paths outside /workspace are rejected."
