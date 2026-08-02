@@ -582,6 +582,18 @@ msgstr "执行命令"
 msgid "builtin_tool_bash_description"
 msgstr "让助手在隔离的沙盒环境中运行命令，用于处理文件、运行脚本或生成内容。"
 
+msgid "builtin_tool_edit"
+msgstr "编辑文件"
+
+msgid "builtin_tool_edit_description"
+msgstr "对现有 UTF-8 文本文件执行局部、哈希校验的修改。先调用 read，并原样复制每个 LINE#ID 锚点。任一锚点过期时不会写入任何更改；请重新读取后重试。"
+
+msgid "builtin_tool_edit_param_edits_description"
+msgstr "局部替换列表。每项包含 read 返回的 LINE#ID 锚点和替换内容。"
+
+msgid "builtin_tool_edit_param_path_description"
+msgstr "要编辑的现有文本文件。使用 /workspace 路径或相对路径；/workspace 外的路径会被拒绝。"
+
 msgid "builtin_tool_calculate"
 msgstr "数学计算"
 
@@ -706,7 +718,7 @@ msgid "builtin_tool_read"
 msgstr "读取文件"
 
 msgid "builtin_tool_read_description"
-msgstr "读取沙盒中的文本文件内容，让助手可以查看之前创建或生成的文件。"
+msgstr "读取沙盒中的 UTF-8 文本文件。返回的每一行都带有 LINE#ID 哈希行锚点，可传给 edit 安全地执行局部修改。"
 
 msgid "builtin_tool_unit_convert"
 msgstr "单位转换"
@@ -739,7 +751,7 @@ msgid "builtin_tool_write"
 msgstr "写入文件"
 
 msgid "builtin_tool_write_description"
-msgstr "在沙盒中创建或修改文本文件，常用于保存草稿、脚本或生成结果。"
+msgstr "在沙盒中创建 UTF-8 文本文件或替换其完整内容。对现有文件执行局部修改时，请先 read 再使用 edit。"
 
 msgid "builtin_tool_bash_param_command_description"
 msgstr "要执行的 Shell 命令。示例：`ls -la /workspace`、`python3 -m pip install python-docx`、`python3 /workspace/create_docx.py`、`npm install mammoth`、`node /workspace/convert.js`。引用 read/write 工具创建的文件时使用 /workspace 路径。"
@@ -754,13 +766,13 @@ msgid "builtin_tool_read_param_path_description"
 msgstr "要读取的文件路径。使用 /workspace/file.txt 或相对路径如 file.txt；/workspace 外的路径会被拒绝。"
 
 msgid "builtin_tool_read_param_max_chars_description"
-msgstr "文本文件返回的最大字符数。仅在需要读取大文件的更多内容时增加此值。"
+msgstr "返回的哈希行格式文本的最大字符数。仅在需要读取大文件的更多内容时增加此值。"
 
 msgid "builtin_tool_write_param_path_description"
 msgstr "要写入的文件路径。使用 /workspace/script.py、/workspace/output/result.txt 或相对路径；/workspace 外的路径会被拒绝。"
 
 msgid "builtin_tool_write_param_content_description"
-msgstr "要写入的完整 UTF-8 文本内容。对于脚本，包含完整的 Python 或 JavaScript 源代码。"
+msgstr "要写入的完整 UTF-8 文本内容。仅需修改局部内容时请改用 edit。"
 
 msgid "builtin_tool_artifact_param_paths_description"
 msgstr "要收集用于下载的文件或目录。推荐使用对象格式如 [{\"path\":\"/workspace/output/report.docx\",\"description\":\"生成的报告\"}]。也接受字符串路径如 [\"output/report.docx\"]。"

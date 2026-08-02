@@ -28,6 +28,8 @@ def test_build_system_prompt_injects_sandbox_guidance_for_builtin_sandbox_tools(
     assert "## Sandbox Environment Guidance" in prompt
     assert "## Sandbox Environment Guidance" in prompt
     assert "`/workspace` is the intended working area" in prompt
+    assert "each returned line starts with a `LINE#ID` hashline anchor" in prompt
+    assert "Use `edit` for localized replacements" in prompt
     assert "logical alias used by the sandbox tools" in prompt
     assert (
         "Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...`"

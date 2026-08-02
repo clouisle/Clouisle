@@ -6,6 +6,7 @@ import pytest
 
 from app.llm.tools.sandbox_files import (
     SandboxArtifactTool,
+    SandboxEditTool,
     SandboxReadTool,
     SandboxWriteTool,
     _normalize_workspace_path,
@@ -111,6 +112,12 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
     oversized_content = await SandboxWriteTool(
         session_id="session-helper-coverage"
     ).execute("report.txt", "x" * 1_000_001)
+    empty_edits = await SandboxEditTool(session_id="session-helper-coverage").execute(
+        "report.txt", []
+    )
+    oversized_edit = await SandboxEditTool(
+        session_id="session-helper-coverage"
+    ).execute("report.txt", [{"line": "1#ZZ", "new": "x" * 1_000_001}])
 
     assert missing_session == {"success": False, "error": "Sandbox session is required"}
     assert unsafe_path == {
@@ -118,6 +125,14 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
         "error": "path must stay inside /workspace",
     }
     assert oversized_content == {"success": False, "error": "content is too large"}
+    assert empty_edits == {
+        "success": False,
+        "error": "edits must be a non-empty list",
+    }
+    assert oversized_edit == {
+        "success": False,
+        "error": "edit content is too large",
+    }
 
 
 @pytest.mark.anyio

@@ -16,8 +16,10 @@ def test_get_builtin_tools_uses_backend_translations_for_sandbox_display_names()
     en_tools = get_builtin_tools("en")
 
     assert _get_tool(zh_tools, "bash").display_name == "执行命令"
+    assert _get_tool(zh_tools, "edit").display_name == "编辑文件"
     assert _get_tool(zh_tools, "artifact").display_name == "生成下载链接"
     assert _get_tool(en_tools, "bash").display_name == "Run Command"
+    assert _get_tool(en_tools, "edit").display_name == "Edit File"
     assert _get_tool(en_tools, "artifact").display_name == "Create Download Link"
 
 

@@ -1,4 +1,5 @@
 import json
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -9,11 +10,21 @@ from app.llm.tools.builtin.media import ToolExecutionResult
 from app.llm.tools.registry import tool_registry
 from app.llm.tools.sandbox_files import (
     SandboxArtifactTool,
+    SandboxEditTool,
     SandboxReadTool,
     SandboxWriteTool,
+    _HASHLINE_EDIT_CODE,
+    _HASHLINE_READ_CODE,
     register_sandbox_file_tools,
 )
 from app.services.sandbox.models import SandboxArtifact
+
+
+def _run_sandbox_code(code: str, params: dict):
+    body = "\n".join(f"    {line}" for line in code.splitlines())
+    namespace = {"params": params}
+    exec(f"def execute():\n{body}", namespace)
+    return namespace["execute"]()
 
 
 @pytest.mark.anyio
@@ -49,6 +60,40 @@ async def test_write_tool_maps_workspace_path_to_session_relative_path():
 
 
 @pytest.mark.anyio
+async def test_edit_tool_maps_hashline_edits_to_session_relative_path():
+    tool = SandboxEditTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+
+    with patch(
+        "app.llm.tools.sandbox_files.sandbox_gateway.submit_and_wait",
+        new=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                result={"edits": 1, "changed": 1, "bytes": 11},
+                error=None,
+            )
+        ),
+    ) as mock_submit:
+        result = await tool.execute(
+            "/workspace/example.txt",
+            [{"line": "2#XJ", "new": "replacement"}],
+        )
+
+    assert result == {
+        "success": True,
+        "path": "/workspace/example.txt",
+        "edits": 1,
+        "changed": 1,
+        "bytes": 11,
+        "error": None,
+    }
+    job = mock_submit.await_args.args[0]
+    assert job.metadata["params"] == {
+        "path": "example.txt",
+        "edits": [{"line": "2#XJ", "new": "replacement"}],
+    }
+
+
+@pytest.mark.anyio
 async def test_read_tool_maps_workspace_path_to_session_relative_path():
     tool = SandboxReadTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
 
@@ -76,6 +121,65 @@ async def test_read_tool_maps_workspace_path_to_session_relative_path():
         "path": "秋天的校园.docx",
         "max_chars": 1000,
     }
+
+
+def test_hashline_read_anchors_drive_localized_edit_without_rewriting_neighbors(
+    tmp_path,
+):
+    path = tmp_path / "example.txt"
+    path.write_bytes(b"alpha\r\nworld\r\nomega\r\n")
+
+    content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {"path": str(path), "max_chars": 200_000},
+    )
+    hashline = content.splitlines()[1]
+    assert re.fullmatch(r"2#[A-Z]{2}\| world", hashline)
+
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(path),
+            "edits": [
+                {
+                    "line": hashline.split("|", 1)[0],
+                    "new": "WORLD\nmiddle",
+                }
+            ],
+        },
+    )
+
+    assert result["edits"] == 1
+    assert result["changed"] == 1
+    assert path.read_bytes() == b"alpha\r\nWORLD\r\nmiddle\r\nomega\r\n"
+
+
+def test_hashline_edit_rejects_stale_batch_before_writing_any_change(tmp_path):
+    path = tmp_path / "example.txt"
+    path.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {"path": str(path), "max_chars": 200_000},
+    )
+    anchors = [line.split("|", 1)[0] for line in content.splitlines()]
+    path.write_text("ONE\ntwo\nthree\nfour\n", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=r"stale line reference.*re-read the file before editing",
+    ):
+        _run_sandbox_code(
+            _HASHLINE_EDIT_CODE,
+            {
+                "path": str(path),
+                "edits": [
+                    {"line": anchors[0], "new": "won"},
+                    {"line": anchors[3], "new": "FOUR"},
+                ],
+            },
+        )
+
+    assert path.read_text(encoding="utf-8") == "ONE\ntwo\nthree\nfour\n"
 
 
 @pytest.mark.anyio
@@ -207,3 +311,15 @@ def test_artifact_tool_schema_is_registered():
         properties["max_total_size_mb"]["default"]
         == settings.SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB
     )
+
+
+def test_edit_tool_schema_requires_hashline_replacements():
+    register_sandbox_file_tools()
+
+    schema = tool_registry.to_openai_sandbox_tools(["edit"])[0]["function"]
+
+    assert schema["name"] == "edit"
+    edits_schema = schema["parameters"]["properties"]["edits"]
+    assert edits_schema["type"] == "array"
+    assert edits_schema["items"]["required"] == ["line", "new"]
+    assert edits_schema["items"]["additionalProperties"] is False

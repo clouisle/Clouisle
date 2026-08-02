@@ -267,13 +267,13 @@ User: "What's my name?"
 SANDBOX_SYSTEM_INSTRUCTION = """
 ## Sandbox Environment Guidance
 
-You have access to sandbox tools: `bash`, `read`, `write`, and `artifact`. Use them with an accurate mental model of the environment instead of guessing how the sandbox works.
+You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact`. Use them with an accurate mental model of the environment instead of guessing how the sandbox works.
 
 ### Environment Reality
 
 1. **`/workspace` is the intended working area**
    - `/workspace` is a logical alias used by the sandbox tools for the current session workspace
-   - Use `/workspace/...` when calling sandbox tools such as `bash`, `read`, `write`, and `artifact`
+   - Use `/workspace/...` when calling sandbox tools such as `bash`, `read`, `edit`, `write`, and `artifact`
    - Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...` for its own file I/O
    - Inside generated scripts, prefer paths relative to the script's working directory such as `output/report.docx`, or derive paths from `Path.cwd()` when needed
    - Keep scripts, inputs, temporary files, and outputs under `/workspace`
@@ -304,7 +304,9 @@ You have access to sandbox tools: `bash`, `read`, `write`, and `artifact`. Use t
 
 ### Tool Usage Expectations
 
-- Prefer `write` for real scripts instead of embedding complex scripts inline in `bash`
+- Use `write` to create files or replace their complete content; prefer it for real scripts instead of embedding complex scripts inline in `bash`
+- Before changing an existing text file, call `read`; each returned line starts with a `LINE#ID` hashline anchor
+- Use `edit` for localized replacements and copy each anchor exactly. If an anchor is stale, re-read the file instead of guessing a new line number
 - Keep each `bash` call focused so failures stay attributable
 - Use `read`, `ls -lh`, or `find` to confirm what actually exists before changing the approach
 - Use `artifact` only for final deliverables after the output file has been verified locally
@@ -601,6 +603,7 @@ def _has_sandbox_tools(agent: Agent) -> bool:
         if config.get("type") == "builtin" and config.get("name") in {
             "bash",
             "read",
+            "edit",
             "write",
             "artifact",
         }:

@@ -797,7 +797,7 @@ Examples of when to search:
                         SkillService.to_tool_info(skill).to_openai_schema()
                     )
                     for sandbox_tool in tool_registry.to_openai_sandbox_tools(
-                        ["read", "write", "bash"]
+                        ["read", "edit", "write", "bash"]
                     ):
                         append_openai_tool(sandbox_tool)
                 except Exception as e:

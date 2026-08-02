@@ -464,6 +464,9 @@ class TestHasSandboxTools:
     def test_builtin_read_true(self):
         assert _has_sandbox_tools(self._agent([{"type": "builtin", "name": "read"}]))
 
+    def test_builtin_edit_true(self):
+        assert _has_sandbox_tools(self._agent([{"type": "builtin", "name": "edit"}]))
+
     def test_builtin_artifact_true(self):
         assert _has_sandbox_tools(
             self._agent([{"type": "builtin", "name": "artifact"}])
