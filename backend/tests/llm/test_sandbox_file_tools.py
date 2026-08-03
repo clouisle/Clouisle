@@ -289,6 +289,59 @@ def test_hashline_read_combines_inclusive_range_and_literal_search(tmp_path):
         )
 
 
+def test_hashline_read_never_emits_anchor_for_budget_truncated_line(tmp_path):
+    path = tmp_path / "example.txt"
+    snapshot_dir = tmp_path / "snapshots"
+    long_line = "DUPLICATE " + "X" * 200
+    path.write_text(
+        f"one\ntwo\nthree\nfour\n{long_line}\n{long_line}\n", encoding="utf-8"
+    )
+    common = {"path": str(path), "snapshot_dir": str(snapshot_dir)}
+
+    truncated = _run_sandbox_code(_HASHLINE_READ_CODE, {**common, "max_chars": 80})
+    anchors = [line.split("|", 1)[0] for line in truncated.splitlines()]
+    tag = anchors[0].split("#", 1)[1]
+
+    # A line that did not fit the budget is not fully returned, so its anchor
+    # must never appear: every shown anchor has to be an editable target.
+    assert not any(anchor.startswith("5#") for anchor in anchors)
+    assert len(anchors) == 4
+
+    with pytest.raises(ValueError, match="line 5 was not returned by read"):
+        _run_sandbox_code(
+            _HASHLINE_EDIT_CODE,
+            {**common, "edits": [{"line": f"5#{tag}", "new": "anything"}]},
+        )
+
+    # Reading the duplicates fully registers them, so the collapse edit works.
+    _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {**common, "max_chars": 200_000, "start_line": 5, "end_line": 6},
+    )
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            **common,
+            "edits": [
+                {
+                    "op": "replace",
+                    "line": f"5#{tag}",
+                    "end_line": f"6#{tag}",
+                    "new": long_line,
+                }
+            ],
+        },
+    )
+    assert result["changed"] == 1
+    assert path.read_text(encoding="utf-8").splitlines() == [
+        "one",
+        "two",
+        "three",
+        "four",
+        long_line,
+    ]
+
+
 def test_hashline_edit_rejects_stale_batch_before_writing_any_change(tmp_path):
     path = tmp_path / "example.txt"
     path.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")

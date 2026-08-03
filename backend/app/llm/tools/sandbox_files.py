@@ -146,9 +146,9 @@ def _format_hashlines(lines, tag, max_chars, start_line=1, end_line=None, search
         row = f"{index + 1}#{tag}| {lines[index]}"
         chunk = ("\n" if chunks else "") + row
         remaining = max_chars - length
+        # A line that would exceed the budget is not fully returned; never emit
+        # its anchor, since every shown LINE#ID must be an editable target.
         if len(chunk) > remaining:
-            if remaining > 0:
-                chunks.append(chunk[:remaining])
             break
         chunks.append(chunk)
         seen_lines.append(index + 1)
