@@ -302,6 +302,7 @@ export default function PublicChatPage({
 
       // Don't reload if already loaded
       if (conversationParam === conversationId) return
+      setActivePreview(null)
 
       try {
         setLoadingConversation(true)
