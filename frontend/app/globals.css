@@ -325,6 +325,7 @@
 }
 
 [data-streamdown="table-wrapper"] {
+  position: relative;
   gap: 0;
   overflow: hidden;
   padding: 0;
@@ -332,11 +333,40 @@
   box-shadow: none;
 }
 
-[data-streamdown="table-wrapper"] > div:first-child:not(:last-child) {
+[data-streamdown="table-wrapper"]::before {
+  content: "Table";
+  display: flex;
+  align-items: center;
+  height: 2.5rem;
   min-height: 2.5rem;
   padding: 0 0.75rem;
   background-color: color-mix(in oklch, var(--muted) 70%, var(--background));
   border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  color: var(--muted-foreground);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
+  content: "表格";
+}
+
+[data-streamdown="table-wrapper"] > div:first-child:not(:last-child) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  height: 2.5rem;
+  margin: 0;
+  padding: 0 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: transparent;
+  border: 0;
 }
 
 [data-streamdown="table-wrapper"] > div:last-child {
