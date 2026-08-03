@@ -79,7 +79,7 @@ import {
   shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
-const CODE_FENCE_REGEX = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n([\s\S]*?)\r?\n(`{3,}|~{3,})[ \t\r\n]*$/
+const CODE_FENCE_REGEX = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n([\s\S]*?)(?:\r?\n)?(`{3,}|~{3,})[ \t\r\n]*$/
 const STREAMING_REHYPE_PLUGINS = [
   defaultRehypePlugins.sanitize,
   defaultRehypePlugins.harden,

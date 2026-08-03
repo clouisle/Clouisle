@@ -559,6 +559,24 @@ describe('message behavior', () => {
     })
   })
 
+  test('keeps empty Markdown fences previewable without Streamdown code actions', async () => {
+    rendersCodeActions = false
+    const onOpenCodePreview = mock(() => {})
+    const code = '```markdown\n```'
+    const container = render(<Message message={{ id: 'empty-markdown-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    const header = container.querySelector('[data-streamdown="code-block-header"]')
+    expect(header?.querySelector('[data-chat-code-preview-fallback]')).not.toBeNull()
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'markdown:0:',
+      language: 'markdown',
+      code: '',
+      kind: 'markdown',
+    })
+  })
+
   test('opens source previews without Streamdown code actions', async () => {
     rendersCodeActions = false
     const onOpenCodePreview = mock(() => {})
