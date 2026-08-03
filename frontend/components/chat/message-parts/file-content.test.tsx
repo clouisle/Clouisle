@@ -134,7 +134,8 @@ describe("file message parts", () => {
     expect(onPreview).toHaveBeenCalledWith(file);
   });
 
-  test("renders image previews and separates image files from other attachments", () => {
+  test("renders a visible side-preview action for image files", () => {
+    const onPreview = mock(() => {});
     const files = [
       {
         type: "file" as const,
@@ -148,7 +149,7 @@ describe("file message parts", () => {
         mimeType: "application/zip",
       },
     ];
-    const tree = render(() => FileListContent({ files }));
+    const tree = render(() => FileListContent({ files, onPreview }));
 
     expect(JSON.stringify(tree)).toContain("photo.png");
     expect(JSON.stringify(tree)).toContain("archive.zip");
@@ -158,6 +159,14 @@ describe("file message parts", () => {
         (node) => node.type === "img" && node.props.alt === "photo.png",
       ).props.src,
     ).toBe("https://files.test/photo.png");
+    const previewButton = find(
+      tree,
+      (node) => node.type === "button" && node.props["aria-label"] === "openCodePreview: photo.png",
+    );
+    const onClick = previewButton.props.onClick;
+    if (typeof onClick !== "function") throw new Error("image preview button is not clickable");
+    onClick();
+    expect(onPreview).toHaveBeenCalledWith(files[0]);
   });
 
   test("renders an expandable image attachment preview", () => {

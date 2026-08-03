@@ -80,7 +80,6 @@ import {
 } from '@/lib/utils/tool-result'
 
 const CODE_FENCE_REGEX = /^```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```$/
-const COMPLETE_CODE_FENCE_REGEX = /```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```/g
 const STREAMING_REHYPE_PLUGINS = [
   defaultRehypePlugins.sanitize,
   defaultRehypePlugins.harden,
@@ -330,64 +329,6 @@ function getPreviewKind(language: string, code: string): CodePreviewPayload['kin
   return null
 }
 
-function getLatestTextPreview(
-  messageId: string,
-  partIndex: number,
-  text: string,
-): CodePreviewPayload | null {
-  let preview: CodePreviewPayload | null = null
-  for (const match of text.matchAll(COMPLETE_CODE_FENCE_REGEX)) {
-    const language = match[1].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-    const code = match[2].replace(/\r\n?/g, '\n')
-    const kind = getPreviewKind(language, code)
-    if (!kind) {
-      continue
-    }
-    preview = {
-      id: `${messageId}:${partIndex}:${kind}:${code.length}:${code.slice(0, 32)}`,
-      language: language || kind,
-      code,
-      kind,
-    }
-  }
-  return preview
-}
-
-export function getLatestMessagePreview(message: ChatMessage): ChatPreviewPayload | null {
-  if (message.role !== 'assistant') {
-    return null
-  }
-
-  for (let index = message.parts.length - 1; index >= 0; index -= 1) {
-    const part = message.parts[index]
-    if (isTextPart(part)) {
-      const preview = getLatestTextPreview(message.id, index, part.text)
-      if (preview) {
-        return preview
-      }
-    }
-    if (isToolResultPart(part)) {
-      const files = getToolArtifacts(parseToolResultOutput(part.output))
-      const file = files.at(-1)
-      if (file?.url) {
-        return {
-          id: `${message.id}:${part.toolCallId}:${file.url}`,
-          kind: 'artifact',
-          file,
-        }
-      }
-    }
-    if (isFilePart(part) && part.url) {
-      return {
-        id: `${message.id}:${index}:${part.url}`,
-        kind: 'artifact',
-        file: part,
-      }
-    }
-  }
-
-  return null
-}
 
 function PreviewableCodeBlock({
   content,
@@ -415,7 +356,7 @@ function PreviewableCodeBlock({
     }
 
     const syncToolbar = () => {
-      setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-header"] > div'))
+      setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-actions"]'))
     }
 
     syncToolbar()
@@ -804,7 +745,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                     <button
                       key={`${imageIndex}-${imageUrl}`}
                       type="button"
-                      className="overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
+                      className="relative overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
+                      aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
                       onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
                     >
                       <img
@@ -812,6 +754,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                         alt={parsedOutput.prompt || t('generatedImageAlt')}
                         className="h-auto w-full object-cover"
                       />
+                      <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+                        <Eye className="h-4 w-4" />
+                      </span>
                     </button>
                   )
                 })}
@@ -901,6 +846,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             isStreaming={isStreaming && part.state !== 'done'}
             activeSpeechSentence={activeSpeechSentence}
             onOpenCodePreview={onOpenCodePreview}
+            onOpenImage={openLightbox}
           />
         )
       }
@@ -967,17 +913,22 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isImagePart(part)) {
         const imagePart = part as ImagePart
         return (
-          <div
+          <button
             key={index}
-            className="max-w-xs rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+            type="button"
+            className="relative block max-w-xs overflow-hidden rounded-lg text-left transition-opacity hover:opacity-90"
+            aria-label={`${t('openCodePreview')}: ${imagePart.alt || t('generatedImageAlt')}`}
             onClick={() => openLightbox(imagePart.url, imagePart.alt)}
           >
             <img
               src={imagePart.url}
               alt={imagePart.alt || 'Uploaded image'}
-              className="w-full h-auto object-cover"
+              className="h-auto w-full object-cover"
             />
-          </div>
+            <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+              <Eye className="h-4 w-4" />
+            </span>
+          </button>
         )
       }
 
@@ -1773,6 +1724,7 @@ function setAuthenticatedMarkdownImageCache(src: string, entry: AuthenticatedMar
 type AuthenticatedMarkdownImageProps = Omit<React.ComponentProps<'img'>, 'src' | 'alt'> & {
   src?: string
   alt?: string
+  onPreview?: (src: string, alt?: string) => void
 }
 
 function getCachedAuthenticatedImageUrl(src: string): string | null {
@@ -1818,7 +1770,8 @@ function loadAuthenticatedMarkdownImage(src: string): Promise<string> {
   return promise
 }
 
-function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: AuthenticatedMarkdownImageProps) {
+function AuthenticatedMarkdownImage({ src = '', alt = '', onPreview, ...props }: AuthenticatedMarkdownImageProps) {
+  const t = useTranslations('chat.message')
   const [prevSrc, setPrevSrc] = React.useState(src)
   const [objectUrl, setObjectUrl] = React.useState<string | null>(() => getInitialMarkdownImageUrl(src))
   const [failed, setFailed] = React.useState(() => Boolean(src && isBlockedImageSrc(src)))
@@ -1880,7 +1833,21 @@ function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: Authentica
     return <span className="text-muted-foreground">{alt || src}</span>
   }
 
-  return <img {...props} src={objectUrl} alt={alt} loading="lazy" />
+  return (
+    <span className="relative inline-block max-w-full">
+      <img {...props} src={objectUrl} alt={alt} loading="lazy" />
+      {onPreview && (
+        <button
+          type="button"
+          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${t('openCodePreview')}: ${alt || t('generatedImageAlt')}`}
+          onClick={() => onPreview(objectUrl, alt)}
+        >
+          <Eye className="h-4 w-4" />
+        </button>
+      )}
+    </span>
+  )
 }
 
 function isSameOriginChatLink(url: string) {
@@ -2058,12 +2025,14 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   isStreaming = false,
   activeSpeechSentence,
   onOpenCodePreview,
+  onOpenImage,
 }: {
   text: string
   sources: SourceDocumentPart[]
   isStreaming?: boolean
   activeSpeechSentence?: string | null
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
+  onOpenImage?: (src: string, alt?: string) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const hasSources = sources.length > 0
@@ -2163,7 +2132,12 @@ export const TextWithCitations = React.memo(function TextWithCitations({
 
   const components = React.useMemo(() => ({
     img: ({ src, alt, ...props }: React.ComponentProps<'img'>) => (
-      <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt || ''} {...props} />
+      <AuthenticatedMarkdownImage
+        src={typeof src === 'string' ? src : undefined}
+        alt={alt || ''}
+        onPreview={onOpenImage}
+        {...props}
+      />
     ),
     p: ({ children, node, ...props }: React.ComponentProps<'p'> & {
       node?: {
@@ -2183,7 +2157,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
       }
       return <p {...props}>{children}</p>
     },
-  }), [])
+  }), [onOpenImage])
 
   React.useEffect(() => {
     if (!activeSpeechSentence) {
@@ -2231,6 +2205,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   && prevProps.isStreaming === nextProps.isStreaming
   && prevProps.activeSpeechSentence === nextProps.activeSpeechSentence
   && prevProps.onOpenCodePreview === nextProps.onOpenCodePreview
+  && prevProps.onOpenImage === nextProps.onOpenImage
 ))
 
 export { type ChatMessage }

@@ -3,7 +3,6 @@ import { Window } from 'happy-dom'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ChatMessage } from './types'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -91,7 +90,7 @@ mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: {
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside>, FileListContent: ({ files }: { files: Array<{ filename: string }> }) => <div>artifacts:{files.map((file) => file.filename).join(',')}</div> }))
 mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
-  Block: ({ content }: { content: string }) => <div data-streamdown="code-block"><div data-streamdown="code-block-header"><div /></div><pre>{content}</pre></div>,
+  Block: ({ content }: { content: string }) => <div data-streamdown="code-block"><div data-streamdown="code-block-header"><span /></div><div data-streamdown="code-block-actions" /><pre>{content}</pre></div>,
   Streamdown: (props: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => {
     lastStreamdownProps = props as unknown as Record<string, unknown>
     const content = String(props.children)
@@ -103,7 +102,7 @@ mock.module('shiki', () => ({ bundledLanguages: { javascript: {} }, codeToTokens
 mock.module('@streamdown/math', () => ({ createMathPlugin: () => ({}) }))
 
 // Dynamic import is required so Bun module mocks are registered before Message evaluates.
-const { Message, getLatestMessagePreview, getToolArtifacts } = await import('./message')
+const { Message, getToolArtifacts } = await import('./message')
 
 const roots: Root[] = []
 afterEach(() => {
@@ -315,7 +314,7 @@ describe('message behavior', () => {
     expect(onSelectOption).toHaveBeenCalledWith('Beta')
   })
 
-  test('discovers structured artifacts and completed Mermaid previews', () => {
+  test('discovers structured artifacts', () => {
     expect(getToolArtifacts({
       artifacts: [
         { path: '/workspace/report.csv', url: '/files/report.csv', size: 12, content_type: 'text/csv' },
@@ -328,38 +327,6 @@ describe('message behavior', () => {
       size: 12,
       mimeType: 'text/csv',
     }])
-
-    const artifactMessage: ChatMessage = {
-      id: 'artifact-message',
-      role: 'assistant',
-      parts: [{
-        type: 'tool-result',
-        toolCallId: 'artifact-call',
-        toolName: 'artifact',
-        output: { artifacts: [{ filename: 'report.csv', url: '/files/report.csv', content_type: 'text/csv' }] },
-      }],
-    }
-    expect(getLatestMessagePreview(artifactMessage)).toEqual({
-      id: 'artifact-message:artifact-call:/files/report.csv',
-      kind: 'artifact',
-      file: {
-        type: 'file',
-        filename: 'report.csv',
-        url: '/files/report.csv',
-        mimeType: 'text/csv',
-      },
-    })
-
-    const mermaidMessage: ChatMessage = {
-      id: 'mermaid-message',
-      role: 'assistant',
-      parts: [{ type: 'text', text: 'Diagram:\n```mermaid\ngraph TD; A-->B\n```', state: 'done' }],
-    }
-    expect(getLatestMessagePreview(mermaidMessage)).toMatchObject({
-      kind: 'mermaid',
-      language: 'mermaid',
-      code: 'graph TD; A-->B',
-    })
   })
 
   test('renders tool errors, artifacts, MCP results, and media failures', () => {
@@ -394,8 +361,8 @@ describe('message behavior', () => {
       ],
     }} />)
 
-    act(() => container.querySelector('img[alt="Uploaded chart"]')!.parentElement!.click())
-    act(() => container.querySelector('img[alt="Generated chart"]')!.parentElement!.click())
+    act(() => button(container, 'chat.message.openCodePreview: Uploaded chart').click())
+    act(() => button(container, 'chat.message.openCodePreview: Generated chart').click())
     expect(openLightbox.mock.calls).toEqual([
       ['/uploaded.png', 'Uploaded chart'],
       ['/generated.png', 'Generated chart'],
@@ -552,6 +519,7 @@ describe('message behavior', () => {
     const container = render(<Message message={{ id: 'preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
 
     await act(async () => {})
+    expect(container.querySelector('[data-streamdown="code-block-actions"]')?.textContent).toContain('chat.message.openCodePreview')
     act(() => button(container, 'chat.message.openCodePreview').click())
     expect(onOpenCodePreview).toHaveBeenCalledWith({
       id: 'xml:29:<svg viewBox="0 0 1 1"></svg>',
@@ -688,6 +656,8 @@ describe('message behavior', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(secured.querySelector('img')?.getAttribute('src')).toBe('blob:secured')
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/files/one', { headers: { Authorization: 'Bearer secret' } })
+    act(() => button(secured, 'chat.message.openCodePreview: Secured image').click())
+    expect(openLightbox).toHaveBeenCalledWith('blob:secured', 'Secured image')
 
     const blocked = render(React.createElement(components.img, { src: 'javascript:alert(1)', alt: 'Blocked image' }))
     expect(blocked.textContent).toContain('Blocked image')

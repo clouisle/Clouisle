@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
-import type { ChatMessage, ChatPreviewPayload } from './types'
+import type { ChatMessage } from './types'
 
 let states: unknown[] = []
 let refs: Array<{ current: unknown }> = []
@@ -49,7 +49,6 @@ mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(
 mock.module('@/components/ui/button', () => ({ Button: (props: Record<string, unknown>) => jsx('button', props) }))
 mock.module('./message', () => ({
   Message: (props: Record<string, unknown>) => jsx('message', props),
-  getLatestMessagePreview: (message: ChatMessage) => message.metadata?.preview ?? null,
 }))
 
 const { ChatContainer } = await import('./chat-container')
@@ -168,23 +167,14 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(findAll(render({ messages }), 'message')[1].props.chainOfThoughtOpen).toBe(false)
   })
 
-  test('opens the latest generated preview when streaming finishes', () => {
+  test('does not open previews automatically when streaming finishes', () => {
     const onOpenCodePreview = mock()
-    const preview: ChatPreviewPayload = {
-      id: 'assistant-1:mermaid',
-      kind: 'mermaid',
-      language: 'mermaid',
-      code: 'graph TD; A-->B',
-    }
-    const messages = [{
-      ...message('assistant-1'),
-      metadata: { preview },
-    }]
+    const messages = [message('assistant-1')]
 
     render({ messages, isStreaming: true, onOpenCodePreview }, true)
-    expect(onOpenCodePreview).not.toHaveBeenCalled()
     render({ messages, isStreaming: false, onOpenCodePreview }, true)
-    expect(onOpenCodePreview).toHaveBeenCalledWith(preview)
+
+    expect(onOpenCodePreview).not.toHaveBeenCalled()
   })
 
   test('tracks scrolling, reveals the bottom control, and navigates to messages', () => {

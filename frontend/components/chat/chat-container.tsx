@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { getLatestMessagePreview, Message } from './message';
+import { Message } from './message';
 import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types';
 
 interface ChatContainerProps {
@@ -193,8 +193,6 @@ export function ChatContainer({
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
   const previousConversationIdRef = useRef(conversationId);
-  const wasStreamingRef = useRef(isStreaming);
-  const lastAutoPreviewIdRef = useRef<string | null>(null);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
   const t = useTranslations('chat');
@@ -214,21 +212,6 @@ export function ChatContainer({
     [messages, renderedMessageCount]
   );
 
-  useEffect(() => {
-    const streamJustFinished = wasStreamingRef.current && !isStreaming;
-    wasStreamingRef.current = isStreaming;
-    if (!streamJustFinished || !lastMessage || !onOpenCodePreview) {
-      return;
-    }
-
-    const preview = getLatestMessagePreview(lastMessage);
-    if (!preview || lastAutoPreviewIdRef.current === preview.id) {
-      return;
-    }
-
-    lastAutoPreviewIdRef.current = preview.id;
-    onOpenCodePreview(preview);
-  }, [isStreaming, lastMessage, onOpenCodePreview]);
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   useEffect(() => {

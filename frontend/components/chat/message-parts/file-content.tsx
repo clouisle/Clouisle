@@ -206,8 +206,8 @@ function ImageThumbnail({ file, onPreview }: ImageThumbnailProps) {
         aria-label={`${t('openCodePreview')}: ${file.filename}`}
       >
         <img src={file.url} alt={file.filename} className="h-full w-full object-cover" />
-        <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-          <Eye className="h-4 w-4 text-white" />
+        <span aria-hidden="true" className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+          <Eye className="h-4 w-4" />
         </span>
       </button>
     );
