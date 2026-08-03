@@ -1023,8 +1023,8 @@ export default function PublicChatPage({
         {/* Preview Panel */}
         <div
           className={cn(
-            "h-full shrink-0 overflow-hidden border-l bg-background transition-all duration-300 ease-in-out",
-            activePreview ? "w-1/2" : "w-0"
+            "h-full shrink-0 overflow-hidden bg-background transition-all duration-300 ease-in-out",
+            activePreview ? "w-1/2 border-l" : "w-0"
           )}
         >
           {activePreview && (
