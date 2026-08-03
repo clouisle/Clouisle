@@ -142,7 +142,7 @@
       "mermaidRendering": "正在渲染图表...",
       "mermaidError": "Mermaid 错误：{error}",
       "codePreview": "预览",
-      "codeSource": "源码",
+      "codeSource": "原文",
       "openCodePreview": "预览",
       "closeCodePreview": "关闭预览",
       "codePreviewCanvasTitle": "代码预览",

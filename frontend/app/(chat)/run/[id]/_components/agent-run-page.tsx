@@ -141,10 +141,10 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
                     <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-border"><Image src={displayIcon} alt={metadata.name} fill unoptimized className="object-cover" /></div>
                   ) : <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center ring-2 ring-border"><span className="text-4xl">{displayIcon}</span></div> : <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center"><Sparkles className="h-6 w-6 text-primary" /></div>}
                 </div>
-                <h1 className="text-2xl md:text-3xl font-medium text-foreground text-center mb-4">{metadata.opening_message || t('welcomeMessage')}</h1>
+                <h1 className="text-2xl md:text-3xl font-medium text-foreground text-center mb-4 max-w-3xl">{metadata.opening_message || t('welcomeMessage')}</h1>
                 {metadata.suggested_questions && metadata.suggested_questions.length > 0 && (
-                  <div className="flex flex-wrap justify-center gap-2 max-w-2xl mt-8">
-                    {metadata.suggested_questions.slice(0, 4).map((question, index) => <button key={index} onClick={() => void handleSendMessage(question)} className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-full hover:bg-accent transition-colors cursor-pointer">{question}</button>)}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-3xl mt-8">
+                    {metadata.suggested_questions.slice(0, 4).map((question, index) => <button key={index} onClick={() => void handleSendMessage(question)} className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer w-full text-center">{question}</button>)}
                   </div>
                 )}
               </div>

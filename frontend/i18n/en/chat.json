@@ -142,7 +142,7 @@
       "mermaidRendering": "Rendering diagram...",
       "mermaidError": "Mermaid Error: {error}",
       "codePreview": "Preview",
-      "codeSource": "Source",
+      "codeSource": "Original",
       "openCodePreview": "Preview",
       "closeCodePreview": "Close preview",
       "codePreviewCanvasTitle": "Code preview",

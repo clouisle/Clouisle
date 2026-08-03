@@ -57,7 +57,6 @@ import {
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { CodePreviewCanvas } from '@/components/chat/code-preview-canvas'
 import {
   Collapsible,
@@ -363,6 +362,7 @@ export default function PublicChatPage({
     resetChat()
     setInput('')
     setFiles([])
+    setActivePreview(null)
     setIsUploading(false)
     setLoadingConversation(false)
 
@@ -372,6 +372,7 @@ export default function PublicChatPage({
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
     if (conv.id === conversationId || loadingConversation) return
+    setActivePreview(null)
 
     try {
       setLoadingConversation(true)
@@ -735,10 +736,8 @@ export default function PublicChatPage({
       )}
 
       {/* Main Content */}
-      <div className="flex-1 min-w-0 min-h-0">
-        <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel minSize={500}>
-            <div className="flex h-full min-w-0 flex-col">
+      <div className="flex-1 min-w-0 min-h-0 flex">
+        <div className="flex h-full min-w-0 flex-1 flex-col">
         {/* Header */}
         {showHeader && (
         <header className="flex items-center gap-2 px-3 h-14 shrink-0 border-b">
@@ -906,7 +905,7 @@ export default function PublicChatPage({
                 </div>
 
                 {/* Welcome Message */}
-                <h1 className="text-2xl md:text-3xl font-medium text-foreground text-center mb-4">
+                <h1 className="text-2xl md:text-3xl font-medium text-foreground text-center mb-4 max-w-3xl">
                   {agent.opening_message || t('welcomeMessage')}
                 </h1>
 
@@ -918,12 +917,12 @@ export default function PublicChatPage({
 
                 {/* Suggested Questions */}
                 {agent.suggested_questions && agent.suggested_questions.length > 0 && (
-                  <div className="flex flex-wrap justify-center gap-2 max-w-2xl mt-8">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-3xl mt-8">
                     {agent.suggested_questions.slice(0, 4).map((q, i) => (
                       <button
                         key={i}
                         onClick={() => handleSubmit(q)}
-                        className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-full hover:bg-accent hover:border-border transition-colors cursor-pointer"
+                        className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent hover:border-border transition-colors cursor-pointer w-full text-center"
                       >
                         {q}
                       </button>
@@ -1019,21 +1018,22 @@ export default function PublicChatPage({
             )}
           </div>
         </div>
-            </div>
-          </ResizablePanel>
-          {activePreview && (
-            <>
-              <ResizableHandle withHandle />
-              <ResizablePanel minSize={400}>
-                <CodePreviewCanvas
-                  key={activePreview.id}
-                  preview={activePreview}
-                  onClose={() => setActivePreview(null)}
-                />
-              </ResizablePanel>
-            </>
+        </div>
+        {/* Preview Panel */}
+        <div
+          className={cn(
+            "h-full shrink-0 overflow-hidden border-l bg-background transition-all duration-300 ease-in-out",
+            activePreview ? "w-1/2" : "w-0"
           )}
-        </ResizablePanelGroup>
+        >
+          {activePreview && (
+            <CodePreviewCanvas
+              key={activePreview.id}
+              preview={activePreview}
+              onClose={() => setActivePreview(null)}
+            />
+          )}
+        </div>
       </div>
 
       {/* Delete Dialog */}
