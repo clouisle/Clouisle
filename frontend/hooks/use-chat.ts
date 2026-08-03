@@ -310,7 +310,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           if (existingGroup) {
             existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
               existing.toolCallId === toolCall.toolCallId
-                ? { ...existing, ...toolCall }
+                ? mergeToolCall(existing, toolCall)
                 : existing
             ))
             return existingGroup
@@ -1411,7 +1411,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           if (existingGroup) {
             existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
               existing.toolCallId === toolCall.toolCallId
-                ? { ...existing, ...toolCall }
+                ? mergeToolCall(existing, toolCall)
                 : existing
             ))
             return existingGroup
@@ -2301,6 +2301,25 @@ function finalizeStreamingState(state: {
 
 function appendStoppedPart(parts: MessagePart[]): MessagePart[] {
   return parts.some(part => part.type === 'stopped') ? parts : [...parts, { type: 'stopped' }]
+}
+
+/**
+ * Merge an incoming tool-call update into an existing one without letting
+ * undefined fields clobber defined values, and without regressing a terminal
+ * (done/error) state when a duplicate tool_call event arrives mid-stream.
+ */
+function mergeToolCall(existing: ToolCallPart, incoming: ToolCallPart): ToolCallPart {
+  const merged: ToolCallPart = {
+    ...existing,
+    ...(incoming.toolName !== undefined ? { toolName: incoming.toolName } : {}),
+    ...(incoming.toolDisplayName !== undefined ? { toolDisplayName: incoming.toolDisplayName } : {}),
+    ...(incoming.input !== undefined ? { input: incoming.input } : {}),
+    ...(incoming.state !== undefined ? { state: incoming.state } : {}),
+  }
+  if (existing.state === 'done' || existing.state === 'error') {
+    merged.state = existing.state
+  }
+  return merged
 }
 
 /**
