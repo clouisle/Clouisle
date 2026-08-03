@@ -67,13 +67,20 @@ def _valid_snapshot(data, path, tag, expected_text=None):
     return expected_text is None or text == _normalize_hashline_text(expected_text)
 
 
+def _snapshot_mtime(candidate):
+    try:
+        return candidate.stat().st_mtime_ns
+    except OSError:
+        return -1
+
+
 def _load_snapshot(params, path, tag, expected_text=None):
     directory = _snapshot_directory(params, path)
     if not directory.is_dir():
         return None
     candidates = sorted(
         directory.glob(f"{tag}-*.json"),
-        key=lambda candidate: candidate.stat().st_mtime_ns,
+        key=_snapshot_mtime,
         reverse=True,
     )
     for candidate in candidates:
@@ -123,7 +130,7 @@ def _record_snapshot(params, path, text, seen_lines=()):
 
     snapshots = sorted(
         directory.glob("*.json"),
-        key=lambda candidate: candidate.stat().st_mtime_ns,
+        key=_snapshot_mtime,
         reverse=True,
     )
     for expired in snapshots[_MAX_SNAPSHOT_VERSIONS:]:
