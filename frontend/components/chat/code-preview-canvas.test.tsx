@@ -201,6 +201,8 @@ test('renders iframe previews and escapes javascript closing script tags', () =>
   expect(iframe?.props.sandbox).toBe('allow-scripts')
   expect(iframe?.props.srcDoc).toContain('<\\/script><script>alert(1)')
   expect(text(tree)).toContain('previewScriptsEnabled')
+  expect(text(tree)).not.toContain('codePreviewCanvasTitle')
+  expect(text(tree)).toContain('javascript')
 })
 
 test('shows markdown preview without iframe script notice', () => {
@@ -347,6 +349,9 @@ test('mermaid controls zoom, fit, pan, and download svg', () => {
     [undefined, viewport, diagram]
   )
   const nodes = walk(tree)
+  const controls = nodes.find((node) => node.props['data-slot'] === 'mermaid-preview-controls')
+  expect(controls?.props.className).toContain('absolute')
+  expect(controls?.props.className).not.toContain('border-b')
   const viewportNode = nodes.find((node) => node.props.onPointerDown)
   const control = (label: string) => nodes.find((node) => resolve(node.props['aria-label']) === label)
   const pointerTarget = {
@@ -398,6 +403,54 @@ test('mermaid controls zoom, fit, pan, and download svg', () => {
   walk(settledTree)
   effects.at(-1)?.()
   expect(diagram.style.transform).toBe('translate(30px, 40px) scale(0.5)')
+})
+test('mermaid zooms from wheel scrolling and trackpad pinch gestures', () => {
+  const listeners = new Map<string, (event: Event) => void>()
+  const listenerOptions = new Map<string, unknown>()
+  const removeEventListener = mock(() => {})
+  const viewport = {
+    clientHeight: 148,
+    getBoundingClientRect: () => ({ width: 248, height: 148 }),
+    addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
+      listeners.set(type, listener as (event: Event) => void)
+      listenerOptions.set(type, options)
+    },
+    removeEventListener,
+  }
+  const diagram = {
+    style: { transform: '', transition: '' },
+    querySelector: () => ({ getBoundingClientRect: () => ({ width: 400, height: 200 }) }),
+  }
+
+  const tree = render(
+    { id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' },
+    [false, 'preview', '<svg><text>ok</text></svg>', null, false, 1, { x: 0, y: 0 }, false, '', ''],
+    [undefined, viewport, diagram]
+  )
+  walk(tree)
+  const cleanup = effects.at(-2)?.()
+
+  expect(listenerOptions.get('wheel')).toEqual({ passive: false })
+  const scrollPreventDefault = mock()
+  listeners.get('wheel')?.({ deltaMode: 0, deltaY: 80, preventDefault: scrollPreventDefault } as unknown as Event)
+  expect(scrollPreventDefault).toHaveBeenCalled()
+  expect(stateValues[5]).toBeLessThan(1)
+
+  const pinchPreventDefault = mock()
+  listeners.get('wheel')?.({ ctrlKey: true, deltaMode: 0, deltaY: -80, preventDefault: pinchPreventDefault } as unknown as Event)
+  expect(pinchPreventDefault).toHaveBeenCalled()
+  expect(stateValues[5]).toBeGreaterThan(0.9)
+
+  const gestureStartPreventDefault = mock()
+  listeners.get('gesturestart')?.({ preventDefault: gestureStartPreventDefault } as unknown as Event)
+  const gestureChangePreventDefault = mock()
+  listeners.get('gesturechange')?.({ scale: 1.2, preventDefault: gestureChangePreventDefault } as unknown as Event)
+  expect(gestureStartPreventDefault).toHaveBeenCalled()
+  expect(gestureChangePreventDefault).toHaveBeenCalled()
+  expect(stateValues[5]).toBe(1.2)
+
+  cleanup?.()
+  expect(removeEventListener).toHaveBeenCalledTimes(4)
 })
 
 test('mermaid error state renders translated renderer message', () => {

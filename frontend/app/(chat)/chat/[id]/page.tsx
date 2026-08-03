@@ -737,7 +737,7 @@ export default function PublicChatPage({
       {/* Main Content */}
       <div className="flex-1 min-w-0 min-h-0">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize="40%">
+          <ResizablePanel minSize={500}>
             <div className="flex h-full min-w-0 flex-col">
         {/* Header */}
         {showHeader && (
@@ -1023,7 +1023,7 @@ export default function PublicChatPage({
           {activePreview && (
             <>
               <ResizableHandle withHandle />
-              <ResizablePanel defaultSize="38%" minSize="25%" maxSize="60%">
+              <ResizablePanel minSize={400}>
                 <CodePreviewCanvas
                   key={activePreview.id}
                   preview={activePreview}

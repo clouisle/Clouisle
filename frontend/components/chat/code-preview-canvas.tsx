@@ -228,6 +228,8 @@ function MermaidPreview({ code }: { code: string }) {
   const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 })
   const viewportRef = React.useRef<HTMLDivElement>(null)
   const diagramRef = React.useRef<HTMLDivElement>(null)
+  const zoomRef = React.useRef(1)
+  const gestureStartZoomRef = React.useRef(1)
 
   React.useEffect(() => {
     let cancelled = false
@@ -261,7 +263,71 @@ function MermaidPreview({ code }: { code: string }) {
     setZoom(1)
     setPan({ x: 0, y: 0 })
     setIsDragging(false)
+    zoomRef.current = 1
+    gestureStartZoomRef.current = 1
   }, [code])
+
+  const handleWheel = React.useCallback((event: WheelEvent) => {
+    if (!svg || event.deltaY === 0) {
+      return
+    }
+
+    event.preventDefault()
+    const deltaModeFactor = event.deltaMode === 1
+      ? 16
+      : event.deltaMode === 2
+        ? viewportRef.current?.clientHeight ?? 1
+        : 1
+    const delta = event.deltaY * deltaModeFactor
+    const nextZoom = clampMermaidZoom(zoomRef.current * Math.exp(-delta * 0.0025))
+    zoomRef.current = nextZoom
+    setZoom(nextZoom)
+  }, [svg])
+
+  const handleGestureStart = React.useCallback((event: Event) => {
+    event.preventDefault()
+    gestureStartZoomRef.current = zoomRef.current
+  }, [])
+
+  const handleGestureChange = React.useCallback((event: Event) => {
+    event.preventDefault()
+    if (!svg) {
+      return
+    }
+
+    const scale = (event as Event & { scale?: number }).scale
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
+      return
+    }
+
+    const nextZoom = clampMermaidZoom(gestureStartZoomRef.current * scale)
+    zoomRef.current = nextZoom
+    setZoom(nextZoom)
+  }, [svg])
+
+  const handleGestureEnd = React.useCallback((event: Event) => {
+    event.preventDefault()
+  }, [])
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || !svg) {
+      return
+    }
+
+    const gestureOptions = { passive: false }
+    viewport.addEventListener('wheel', handleWheel, gestureOptions)
+    viewport.addEventListener('gesturestart', handleGestureStart, gestureOptions)
+    viewport.addEventListener('gesturechange', handleGestureChange, gestureOptions)
+    viewport.addEventListener('gestureend', handleGestureEnd, gestureOptions)
+
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel)
+      viewport.removeEventListener('gesturestart', handleGestureStart)
+      viewport.removeEventListener('gesturechange', handleGestureChange)
+      viewport.removeEventListener('gestureend', handleGestureEnd)
+    }
+  }, [handleGestureChange, handleGestureEnd, handleGestureStart, handleWheel, svg])
 
   React.useEffect(() => {
     if (!diagramRef.current) {
@@ -269,6 +335,7 @@ function MermaidPreview({ code }: { code: string }) {
     }
 
     diagramRef.current.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
+    zoomRef.current = zoom
   }, [pan, zoom])
 
   const handleDownloadSvg = React.useCallback(() => {
@@ -297,6 +364,7 @@ function MermaidPreview({ code }: { code: string }) {
       (viewportRect.height - 48) / svgRect.height * zoom
     ))
 
+    zoomRef.current = nextZoom
     setZoom(nextZoom)
     setPan({ x: 0, y: 0 })
     setIsDragging(false)
@@ -377,8 +445,26 @@ function MermaidPreview({ code }: { code: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b px-4 py-2">
+    <div className="relative h-full min-h-0 bg-background">
+      <div
+        ref={viewportRef}
+        className={`flex h-full min-h-0 items-center justify-center overflow-hidden p-6 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <div
+          ref={diagramRef}
+          className="max-w-full origin-center transition-transform will-change-transform"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+      <div
+        data-slot="mermaid-preview-controls"
+        className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-md border bg-background p-1 shadow-sm"
+      >
         <Tooltip>
           <TooltipTrigger
             onClick={handleFitToView}
@@ -428,25 +514,9 @@ function MermaidPreview({ code }: { code: string }) {
           <TooltipContent>{t('mermaidDownload')}</TooltipContent>
         </Tooltip>
       </div>
-      <div
-        ref={viewportRef}
-        className={`flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        <div
-          ref={diagramRef}
-          className="max-w-full origin-center transition-transform will-change-transform"
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-      </div>
     </div>
   )
 }
-
 type ArtifactPreviewMode = 'image' | 'video' | 'audio' | 'pdf' | 'html' | 'markdown' | 'mermaid' | 'text' | 'unsupported'
 
 function getArtifactPreviewMode(file: ArtifactPreviewPayload['file']): ArtifactPreviewMode {
@@ -587,7 +657,7 @@ function ArtifactPreviewCanvas({
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col border-l bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-background">
       <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{t('artifactPreviewCanvasTitle')}</div>
@@ -662,13 +732,24 @@ function CodeContentPreviewCanvas({
   }, [preview])
 
   return (
-    <div className="flex h-full min-w-0 flex-col border-l bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
       <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{t('codePreviewCanvasTitle')}</div>
-          <div className="truncate text-xs text-muted-foreground">{preview.language}</div>
+        <div className="flex min-w-0 items-center gap-3">
+          <TabsList>
+            {preview.kind !== 'source' && (
+              <TabsTrigger value="preview">{t('codePreview')}</TabsTrigger>
+            )}
+            <TabsTrigger value="source">{t('codeSource')}</TabsTrigger>
+          </TabsList>
+          <span className="truncate text-sm font-medium uppercase">{preview.language}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {preview.kind !== 'markdown' && preview.kind !== 'source' && preview.kind !== 'mermaid' && (
+            <span className="mr-2 hidden text-xs text-muted-foreground lg:inline">
+              {t('previewScriptsEnabled')}
+            </span>
+          )}
           <Tooltip>
             <TooltipTrigger
               onClick={handleCopy}
@@ -704,22 +785,6 @@ function CodeContentPreviewCanvas({
           </Tooltip>
         </div>
       </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2">
-          <TabsList>
-            {preview.kind !== 'source' && (
-              <TabsTrigger value="preview">{t('codePreview')}</TabsTrigger>
-            )}
-            <TabsTrigger value="source">{t('codeSource')}</TabsTrigger>
-          </TabsList>
-          {preview.kind !== 'markdown' && preview.kind !== 'source' && preview.kind !== 'mermaid' && (
-            <span className="hidden text-xs text-muted-foreground lg:inline">
-              {t('previewScriptsEnabled')}
-            </span>
-          )}
-        </div>
-
         {preview.kind !== 'source' && (
           <TabsContent value="preview" className="min-h-0 overflow-hidden p-0">
             {preview.kind === 'markdown' ? (
