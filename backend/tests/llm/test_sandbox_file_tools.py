@@ -117,6 +117,39 @@ async def test_edit_tool_maps_hashline_edits_to_session_relative_path():
 
 
 @pytest.mark.anyio
+async def test_edit_tool_requires_session():
+    result = await SandboxEditTool(session_id=None).execute(
+        "/workspace/example.txt", [{"line": 1, "new": "x"}]
+    )
+    assert result == {"success": False, "error": "Sandbox session is required"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("tag", "edits", "error_fragment"),
+    [
+        (123, [{"line": 1, "new": "x"}], "tag must be a string"),
+        ("ZZZZ", [{"line": 1, "new": "x"}], "tag must be the four-hex ID"),
+        (None, [123], "each edit must be an object"),
+        (None, [{"foo": 1}], "unsupported edit field(s)"),
+        (None, [{"op": 1, "line": 1}], "edit op must be a string"),
+        (None, [{"line": 1.5, "new": "x"}], "must be an integer or LINE#ID string"),
+        (None, [{"line": 1, "new": 1}], "edit new content must be a string"),
+        (
+            None,
+            [{"op": "cut", "line": 1, "register": 1}],
+            "edit register must be a string",
+        ),
+    ],
+)
+async def test_edit_tool_rejects_invalid_input(tag, edits, error_fragment):
+    tool = SandboxEditTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+    result = await tool.execute("/workspace/example.txt", edits, tag=tag)
+    assert result["success"] is False
+    assert error_fragment in result["error"]
+
+
+@pytest.mark.anyio
 async def test_read_tool_maps_workspace_path_to_session_relative_path():
     tool = SandboxReadTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
 
