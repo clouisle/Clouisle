@@ -865,6 +865,7 @@ export default function PublicChatPage({
               key={conversationId ?? 'new-chat'}
               messages={messages}
               isStreaming={isStreaming}
+              isLoading={chatLoading}
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}

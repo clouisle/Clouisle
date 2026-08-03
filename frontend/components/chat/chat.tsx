@@ -58,6 +58,7 @@ export function Chat({
       <ChatContainer
         messages={messages}
         isStreaming={isStreaming}
+        isLoading={isLoading}
         autoScroll={autoScroll}
         renderPart={renderPart}
         emptyState={emptyState}

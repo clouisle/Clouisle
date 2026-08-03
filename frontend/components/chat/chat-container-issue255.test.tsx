@@ -198,7 +198,7 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 123, behavior: 'smooth' })
   })
 
-  test('preserves loaded history position but follows a locally sent message', () => {
+  test('preserves loaded history position but follows a locally sent message before streaming starts', () => {
     const scrollTo = mock()
     const attachScroller = (tree: ReactNode, scrollHeight: number) => {
       const ref = findAll(tree, 'div')[1]?.props.ref
@@ -223,7 +223,8 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(scrollTo).not.toHaveBeenCalled()
 
     const sent = [...history, message('user-2', 'user'), message('assistant-2')]
-    tree = render({ messages: sent, conversationId: 'conversation-1', isStreaming: true })
+    tree = render({ messages: sent, conversationId: 'conversation-1', isLoading: true })
+    expect(findAll(tree, 'message')).toHaveLength(sent.length)
     attachScroller(tree, 600)
     effects.forEach((effect) => effect())
     expect(scrollTo).toHaveBeenCalledWith({ top: 601, behavior: 'auto' })

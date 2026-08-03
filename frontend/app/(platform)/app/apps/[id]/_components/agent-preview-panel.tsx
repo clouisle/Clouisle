@@ -252,6 +252,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         <ChatContainer
           messages={messages}
           isStreaming={isStreaming}
+          isLoading={isLoading}
           hideToolCalls={agent.hide_tool_calls}
           hideMessageActions={agent.hide_message_actions}
           hideReasoning={agent.hide_reasoning}

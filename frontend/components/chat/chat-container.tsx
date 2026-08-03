@@ -12,6 +12,7 @@ interface ChatContainerProps {
   messages: ChatMessage[];
   className?: string;
   isStreaming?: boolean;
+  isLoading?: boolean;
   autoScroll?: boolean;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
   emptyState?: React.ReactNode;
@@ -170,6 +171,7 @@ export function ChatContainer({
   messages,
   className,
   isStreaming = false,
+  isLoading = false,
   autoScroll = true,
   renderPart,
   emptyState,
@@ -215,7 +217,7 @@ export function ChatContainer({
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   useEffect(() => {
-    setRenderedMessageCount((count) => Math.min(Math.max(count, INITIAL_RENDERED_MESSAGE_COUNT), messages.length));
+    setRenderedMessageCount((count) => Math.max(Math.min(count, messages.length), INITIAL_RENDERED_MESSAGE_COUNT));
   }, [messages.length]);
   useEffect(() => {
     if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
@@ -284,7 +286,7 @@ export function ChatContainer({
     const appendedUserMessage = messages
       .slice(previousLength)
       .some((message) => message.role === 'user');
-    if (!isStreaming || !appendedUserMessage) {
+    if ((!isLoading && !isStreaming) || !appendedUserMessage) {
       shouldAutoFollowRef.current = false;
       return;
     }
@@ -294,7 +296,7 @@ export function ChatContainer({
       showScrollButtonRef.current = false;
       setShowScrollButton(false);
     }
-  }, [autoScroll, conversationId, isStreaming, messages, scrollToBottom]);
+  }, [autoScroll, conversationId, isLoading, isStreaming, messages, scrollToBottom]);
 
   useIsomorphicLayoutEffect(() => {
     if (!autoScroll || !shouldAutoFollowRef.current) {

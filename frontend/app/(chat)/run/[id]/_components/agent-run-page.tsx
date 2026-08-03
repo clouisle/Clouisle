@@ -127,6 +127,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           <ChatContainer
             messages={messages}
             isStreaming={isStreaming}
+            isLoading={runLoading}
             hideToolCalls={Boolean(metadata.hide_tool_calls)}
             hideMessageActions={Boolean(metadata.hide_message_actions)}
             hideReasoning={Boolean(metadata.hide_reasoning)}
