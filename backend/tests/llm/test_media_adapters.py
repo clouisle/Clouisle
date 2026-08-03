@@ -1074,6 +1074,26 @@ class TestModelManagerVideoRouting:
                 )
             )
 
+    def test_video_adapter_base_guard_allows_missing_start_image(self):
+        adapter = RunwayVideoAdapter(build_model("runway", "gen4.5"))
+        adapter._ensure_reference_images_supported(
+            VideoGenerationRequest(prompt="No reference image")
+        )
+
+    def test_video_factory_rejects_unsupported_provider(self):
+        from app.llm.errors import UnsupportedOperationError
+
+        with pytest.raises(UnsupportedOperationError) as exc_info:
+            create_video_adapter(build_model("unsupported", "nope"))
+
+        assert exc_info.value.operation == "generate_video"
+
+    def test_image_factory_supports_azure_openai_provider(self):
+        assert isinstance(
+            create_image_adapter(build_model("azure_openai", "gpt-image-1")),
+            OpenAIImageAdapter,
+        )
+
 
 class TestRunwayVideoAdapter:
     def test_builds_text_to_video_request_for_supported_model(self):

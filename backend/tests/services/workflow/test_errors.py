@@ -46,6 +46,13 @@ def test_public_error_key_handles_workflow_errors_and_message_boundaries():
     assert get_public_workflow_error_key("internal failure") is None
 
 
+def test_public_error_key_detects_cancelled_message_string():
+    assert (
+        get_public_workflow_error_key("operation cancelled unexpectedly")
+        == "workflow_run_cancelled"
+    )
+
+
 def test_translate_public_error_uses_message_key_and_hides_unsafe_messages():
     error = WorkflowError("internal", msg_key="request_timeout")
 

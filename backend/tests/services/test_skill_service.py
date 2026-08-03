@@ -146,3 +146,8 @@ async def test_validate_agent_skill_configs_requires_skill_id():
 
     assert error.value.code == ResponseCode.BAD_REQUEST
     assert error.value.msg_key == "skill_id_required"
+
+
+def test_skill_create_rejects_invalid_name():
+    with pytest.raises(ValueError, match="skill_invalid_name"):
+        SkillCreate(name="1invalid", display_name="Bad")

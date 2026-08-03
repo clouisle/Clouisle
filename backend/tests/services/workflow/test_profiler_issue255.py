@@ -95,3 +95,14 @@ def test_finish_detects_dominant_node_and_ignores_empty_sequential_stage():
         }
     ]
     assert profile.suggestions == []
+
+
+def test_generate_suggestions_skips_unknown_slow_node_type():
+    profiler = ExecutionProfiler("run", "workflow")
+    profiler._profile.bottlenecks = [
+        {"type": "slow_node", "node_type": "answer", "node_id": "n1"}
+    ]
+
+    profiler._generate_suggestions()
+
+    assert profiler._profile.suggestions == []

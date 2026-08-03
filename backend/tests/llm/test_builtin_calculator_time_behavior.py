@@ -84,5 +84,14 @@ async def test_format_datetime_falls_back_to_utc_for_unknown_timezone():
     }
 
 
+@pytest.mark.anyio
+async def test_format_datetime_uses_current_time_when_timestamp_omitted():
+    result = await format_datetime(None, "%Y", "UTC")
+
+    assert result["timezone"] == "UTC"
+    assert result["timestamp"] > 1_700_000_000
+    assert int(result["formatted"]) >= 2026
+
+
 def test_safe_eval_math_constant_matches_stdlib():
     assert safe_eval("pi") == math.pi

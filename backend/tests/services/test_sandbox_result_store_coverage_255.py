@@ -98,3 +98,15 @@ async def test_status_lookup_and_delete(redis):
     redis.delete.assert_awaited_once_with(
         "sandbox:job:job-1", "sandbox:job:job-1:status"
     )
+
+
+@pytest.mark.asyncio
+async def test_save_result_skips_metadata_status_when_metadata_is_none(redis):
+    store = SandboxResultStore()
+    result = SandboxResult(job_id="job-none", status=SandboxTaskStatus.COMPLETED)
+    result.metadata = None
+
+    await store.save_result(result, ttl_seconds=30)
+
+    assert redis.setex.await_count == 2
+    assert result.metadata is None

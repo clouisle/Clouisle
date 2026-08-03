@@ -52,6 +52,16 @@ def test_reset_password_email_renders_link_and_localized_content() -> None:
     assert "654321" in body_html
 
 
+def test_reset_password_email_without_link_shows_code_only() -> None:
+    body_text, body_html = render_reset_password_email(
+        "Clouisle", "654321", None, locale="en"
+    )
+
+    assert "654321" in body_text
+    assert "654321" in body_html
+    assert "https://" not in body_html
+
+
 @pytest.mark.asyncio
 async def test_send_profile_email_verification_uses_html_template(
     monkeypatch: pytest.MonkeyPatch,
