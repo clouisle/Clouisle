@@ -9,6 +9,7 @@ from app.llm.tools.sandbox_files import (
     SandboxEditTool,
     SandboxReadTool,
     SandboxWriteTool,
+    _HASHLINE_SNAPSHOT_DIR,
     _normalize_workspace_path,
     _runtime_workspace_path,
 )
@@ -126,7 +127,7 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
     )
     oversized_edit = await SandboxEditTool(
         session_id="session-helper-coverage"
-    ).execute("report.txt", [{"line": "1#ZZ", "new": "x" * 1_000_001}])
+    ).execute("report.txt", [{"line": "1#0000", "new": "x" * 1_000_001}])
     invalid_start = await SandboxReadTool(session_id="session-helper-coverage").execute(
         "report.txt", start_line=0
     )
@@ -192,4 +193,5 @@ async def test_read_tool_clamps_size_boundaries_in_submitted_payload(
         "start_line": 1,
         "end_line": None,
         "search": None,
+        "snapshot_dir": _HASHLINE_SNAPSHOT_DIR,
     }

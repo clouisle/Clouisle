@@ -280,12 +280,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "builtin_tool_edit": {"en": "Edit File", "zh": "编辑文件"},
     "builtin_tool_edit_description": {
-        "en": "Apply localized, hash-verified edits to an existing UTF-8 text file. Call read first and copy each LINE#ID anchor exactly. If any anchor is stale, no changes are written; re-read before retrying.",
-        "zh": "对现有 UTF-8 文本文件执行局部、哈希校验的修改。先调用 read，并原样复制每个 LINE#ID 锚点。任一锚点过期时不会写入任何更改；请重新读取后重试。",
+        "en": "Apply compact snapshot-verified replace, block, cut, insert, and paste operations. Cut registers persist across calls, and unchanged targets recover after line shifts.",
+        "zh": "执行经过快照校验的紧凑替换、块、剪切、插入和粘贴操作。剪切寄存器可跨调用保留，行号偏移后会恢复未变化的目标。",
     },
     "builtin_tool_edit_param_edits_description": {
-        "en": "Localized replacements. Each item contains a LINE#ID anchor from read and the replacement content.",
-        "zh": "局部替换列表。每项包含 read 返回的 LINE#ID 锚点和替换内容。",
+        "en": "Ordered compact operations supporting ranges, approximate syntax blocks, persistent cut registers, and positional insert or paste.",
+        "zh": "有序紧凑操作列表，支持范围、近似语法块、持久剪切寄存器以及按位置插入或粘贴。",
     },
     "builtin_tool_edit_param_path_description": {
         "en": "Existing text file to edit. Use a /workspace path or a relative path; paths outside /workspace are rejected.",
@@ -435,8 +435,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "builtin_tool_read": {"en": "Read File", "zh": "读取文件"},
     "builtin_tool_read_description": {
-        "en": "Read a UTF-8 text file with LINE#ID hashline anchors. Use start_line and end_line for an inclusive range, or search for case-sensitive literal text; both preserve original line numbers for edit.",
-        "zh": "读取带 LINE#ID 哈希行锚点的 UTF-8 文本文件。可用 start_line 和 end_line 指定闭区间，或用 search 查找区分大小写的字面文本；结果保留原始行号供 edit 使用。",
+        "en": "Read a UTF-8 text file with LINE#ID anchors bound to a full-file snapshot. Ranges and literal search preserve original line numbers for safe edit recovery.",
+        "zh": "读取带 LINE#ID 锚点的 UTF-8 文本文件；锚点绑定完整文件快照。行范围和字面文本搜索会保留原始行号，以便 edit 安全恢复。",
     },
     "builtin_tool_read_param_max_chars_description": {
         "en": "Maximum characters of hashline-formatted text to return after range and search filtering.",

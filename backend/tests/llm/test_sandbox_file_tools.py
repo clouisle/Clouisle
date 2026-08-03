@@ -15,6 +15,8 @@ from app.llm.tools.sandbox_files import (
     SandboxWriteTool,
     _HASHLINE_EDIT_CODE,
     _HASHLINE_READ_CODE,
+    _HASHLINE_CLIPBOARD_PATH,
+    _HASHLINE_SNAPSHOT_DIR,
     register_sandbox_file_tools,
 )
 from app.services.sandbox.models import SandboxArtifact
@@ -25,6 +27,14 @@ def _run_sandbox_code(code: str, params: dict):
     namespace = {"params": params}
     exec(f"def execute():\n{body}", namespace)
     return namespace["execute"]()
+
+
+def _read_hashline_tag(path, runtime_params):
+    content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {"path": str(path), "max_chars": 200_000, **runtime_params},
+    )
+    return content.splitlines()[0].split("#", 1)[1].split("|", 1)[0]
 
 
 @pytest.mark.anyio
@@ -68,14 +78,20 @@ async def test_edit_tool_maps_hashline_edits_to_session_relative_path():
         new=AsyncMock(
             return_value=SimpleNamespace(
                 success=True,
-                result={"edits": 1, "changed": 1, "bytes": 11},
+                result={
+                    "edits": 1,
+                    "changed": 1,
+                    "bytes": 11,
+                    "tag": "0A3B",
+                    "recovered": False,
+                },
                 error=None,
             )
         ),
     ) as mock_submit:
         result = await tool.execute(
             "/workspace/example.txt",
-            [{"line": "2#XJ", "new": "replacement"}],
+            [{"line": "2#0A3B", "new": "replacement"}],
         )
 
     assert result == {
@@ -84,12 +100,19 @@ async def test_edit_tool_maps_hashline_edits_to_session_relative_path():
         "edits": 1,
         "changed": 1,
         "bytes": 11,
+        "tag": "0A3B",
+        "recovered": False,
+        "results": [],
+        "warnings": [],
         "error": None,
     }
     job = mock_submit.await_args.args[0]
     assert job.metadata["params"] == {
         "path": "example.txt",
-        "edits": [{"line": "2#XJ", "new": "replacement"}],
+        "tag": None,
+        "edits": [{"line": "2#0A3B", "new": "replacement"}],
+        "snapshot_dir": _HASHLINE_SNAPSHOT_DIR,
+        "clipboard_path": _HASHLINE_CLIPBOARD_PATH,
     }
 
 
@@ -129,6 +152,7 @@ async def test_read_tool_maps_workspace_path_to_session_relative_path():
         "start_line": 10,
         "end_line": 20,
         "search": "校园",
+        "snapshot_dir": _HASHLINE_SNAPSHOT_DIR,
     }
 
 
@@ -143,7 +167,7 @@ def test_hashline_read_anchors_drive_localized_edit_without_rewriting_neighbors(
         {"path": str(path), "max_chars": 200_000},
     )
     hashline = content.splitlines()[1]
-    assert re.fullmatch(r"2#[A-Z]{2}\| world", hashline)
+    assert re.fullmatch(r"2#[0-9A-F]{4}\| world", hashline)
 
     result = _run_sandbox_code(
         _HASHLINE_EDIT_CODE,
@@ -161,6 +185,67 @@ def test_hashline_read_anchors_drive_localized_edit_without_rewriting_neighbors(
     assert result["edits"] == 1
     assert result["changed"] == 1
     assert path.read_bytes() == b"alpha\r\nWORLD\r\nmiddle\r\nomega\r\n"
+
+
+def test_hashline_recovers_later_anchor_after_earlier_edit_shifts_lines(tmp_path):
+    path = tmp_path / "example.txt"
+    snapshot_dir = tmp_path / "snapshots"
+    path.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    common_params = {"path": str(path), "snapshot_dir": str(snapshot_dir)}
+    content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {**common_params, "max_chars": 200_000},
+    )
+    anchors = [line.split("|", 1)[0] for line in content.splitlines()]
+
+    first = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            **common_params,
+            "edits": [{"line": anchors[1], "new": "TWO\ninserted"}],
+        },
+    )
+    second = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            **common_params,
+            "edits": [{"line": anchors[3], "new": "FOUR"}],
+        },
+    )
+
+    assert first["recovered"] is False
+    assert second["recovered"] is True
+    assert path.read_text(encoding="utf-8") == "one\nTWO\ninserted\nthree\nFOUR\n"
+
+
+def test_hashline_recovers_unique_final_line_without_unchanged_neighbor(tmp_path):
+    path = tmp_path / "example.txt"
+    snapshot_dir = tmp_path / "snapshots"
+    path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    common_params = {"path": str(path), "snapshot_dir": str(snapshot_dir)}
+    content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {**common_params, "max_chars": 200_000},
+    )
+    anchors = [line.split("|", 1)[0] for line in content.splitlines()]
+
+    _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            **common_params,
+            "edits": [{"line": anchors[1], "new": "TWO\ninserted"}],
+        },
+    )
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            **common_params,
+            "edits": [{"line": anchors[2], "new": "THREE"}],
+        },
+    )
+
+    assert result["recovered"] is True
+    assert path.read_text(encoding="utf-8") == "one\nTWO\ninserted\nTHREE\n"
 
 
 def test_hashline_read_combines_inclusive_range_and_literal_search(tmp_path):
@@ -187,8 +272,8 @@ def test_hashline_read_combines_inclusive_range_and_literal_search(tmp_path):
 
     full_lines = full_content.splitlines()
     assert filtered_content.splitlines() == [full_lines[1], full_lines[3]]
-    assert re.fullmatch(r"2#[A-Z]{2}\| needle one", full_lines[1])
-    assert re.fullmatch(r"4#[A-Z]{2}\| needle two", full_lines[3])
+    assert re.fullmatch(r"2#[0-9A-F]{4}\| needle one", full_lines[1])
+    assert re.fullmatch(r"4#[0-9A-F]{4}\| needle two", full_lines[3])
 
     with pytest.raises(
         ValueError,
@@ -230,6 +315,259 @@ def test_hashline_edit_rejects_stale_batch_before_writing_any_change(tmp_path):
         )
 
     assert path.read_text(encoding="utf-8") == "ONE\ntwo\nthree\nfour\n"
+
+
+def test_compact_edit_supports_range_and_all_insert_positions(tmp_path):
+    path = tmp_path / "range.txt"
+    path.write_text("a\nb\nc\nd\n", encoding="utf-8")
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(tmp_path / "clipboard.json"),
+    }
+    tag = _read_hashline_tag(path, runtime)
+
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(path),
+            "tag": tag,
+            "edits": [
+                {"op": "replace", "line": 2, "end_line": 3, "new": "middle"},
+                {"op": "insert_before", "line": 2, "new": "before"},
+                {"op": "insert_after", "line": 3, "new": "after"},
+                {"op": "insert_head", "new": "head"},
+                {"op": "insert_tail", "new": "tail"},
+            ],
+            **runtime,
+        },
+    )
+
+    assert result["changed"] == 5
+    assert path.read_text(encoding="utf-8") == (
+        "head\na\nbefore\nmiddle\nafter\nd\ntail\n"
+    )
+
+
+def test_compact_edit_supports_block_replace_cut_insert_and_paste(tmp_path):
+    path = tmp_path / "blocks.py"
+    path.write_text(
+        "# header\ndef first():\n    return 1\ndef second():\n    return 2\nprint(first())\n",
+        encoding="utf-8",
+    )
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(tmp_path / "clipboard.json"),
+    }
+    tag = _read_hashline_tag(path, runtime)
+
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(path),
+            "tag": tag,
+            "edits": [
+                {
+                    "op": "replace_block",
+                    "line": 2,
+                    "new": "def first():\n    return 10",
+                },
+                {"op": "cut_block", "line": 4, "register": "function"},
+                {"op": "insert_block_after", "line": 2, "new": "# moved below"},
+                {"op": "paste_block_after", "line": 2, "register": "function"},
+            ],
+            **runtime,
+        },
+    )
+
+    assert result["warnings"] == []
+    assert path.read_text(encoding="utf-8") == (
+        "# header\ndef first():\n    return 10\n# moved below\n"
+        "def second():\n    return 2\nprint(first())\n"
+    )
+
+
+def test_compact_cut_register_persists_for_all_paste_positions(tmp_path):
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(tmp_path / "clipboard.json"),
+    }
+    source = tmp_path / "source.txt"
+    source.write_text("zero\ncut one\ncut two\n", encoding="utf-8")
+    source_tag = _read_hashline_tag(source, runtime)
+    _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(source),
+            "tag": source_tag,
+            "edits": [{"op": "cut", "line": 2, "end_line": 3, "register": "selection"}],
+            **runtime,
+        },
+    )
+
+    destination = tmp_path / "destination.txt"
+    destination.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    destination_tag = _read_hashline_tag(destination, runtime)
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(destination),
+            "tag": destination_tag,
+            "edits": [
+                {"op": "paste_head", "register": "selection"},
+                {"op": "paste_before", "line": 2, "register": "selection"},
+                {"op": "paste_after", "line": 2, "register": "selection"},
+                {"op": "paste_tail", "register": "selection"},
+            ],
+            **runtime,
+        },
+    )
+
+    assert result["changed"] == 4
+    assert destination.read_text(encoding="utf-8") == (
+        "cut one\ncut two\none\ncut one\ncut two\ntwo\n"
+        "cut one\ncut two\nthree\ncut one\ncut two\n"
+    )
+
+
+def test_compact_block_resolution_supports_markdown_and_braces(tmp_path):
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(tmp_path / "clipboard.json"),
+    }
+    markdown = tmp_path / "sections.md"
+    markdown.write_text(
+        "## First\nbody\n### Child\nnested\n## Second\nkeep\n",
+        encoding="utf-8",
+    )
+    _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(markdown),
+            "tag": _read_hashline_tag(markdown, runtime),
+            "edits": [{"op": "replace_block", "line": 1, "new": "## Replacement\nnew"}],
+            **runtime,
+        },
+    )
+    assert markdown.read_text(encoding="utf-8") == (
+        "## Replacement\nnew\n## Second\nkeep\n"
+    )
+
+    javascript = tmp_path / "block.js"
+    javascript.write_text(
+        "function value() {\n  return 1;\n}\nconsole.log(value());\n",
+        encoding="utf-8",
+    )
+    _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(javascript),
+            "tag": _read_hashline_tag(javascript, runtime),
+            "edits": [{"op": "insert_block_after", "line": 1, "new": "// after"}],
+            **runtime,
+        },
+    )
+    assert javascript.read_text(encoding="utf-8") == (
+        "function value() {\n  return 1;\n}\n// after\nconsole.log(value());\n"
+    )
+
+
+def test_compact_range_recovers_after_an_earlier_line_shift(tmp_path):
+    path = tmp_path / "recovery.txt"
+    path.write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(tmp_path / "clipboard.json"),
+    }
+    original_tag = _read_hashline_tag(path, runtime)
+    _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(path),
+            "tag": original_tag,
+            "edits": [{"op": "insert_after", "line": 1, "new": "inserted"}],
+            **runtime,
+        },
+    )
+    result = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(path),
+            "tag": original_tag,
+            "edits": [
+                {"op": "replace", "line": 3, "end_line": 4, "new": "THREE\nFOUR"}
+            ],
+            **runtime,
+        },
+    )
+
+    assert result["recovered"] is True
+    assert path.read_text(encoding="utf-8") == (
+        "one\ninserted\ntwo\nTHREE\nFOUR\nfive\n"
+    )
+
+
+def test_compact_block_replace_only_needs_the_displayed_header(tmp_path):
+    path = tmp_path / "partial.py"
+    path.write_text("def value():\n    return 1\nprint(value())\n", encoding="utf-8")
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(tmp_path / "clipboard.json"),
+    }
+    content = _run_sandbox_code(
+        _HASHLINE_READ_CODE,
+        {
+            "path": str(path),
+            "max_chars": 200_000,
+            "start_line": 1,
+            "end_line": 1,
+            **runtime,
+        },
+    )
+    tag = content.split("#", 1)[1].split("|", 1)[0]
+
+    _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            "path": str(path),
+            "tag": tag,
+            "edits": [
+                {"op": "replace_block", "line": 1, "new": "def value():\n    return 2"}
+            ],
+            **runtime,
+        },
+    )
+
+    assert path.read_text(encoding="utf-8") == (
+        "def value():\n    return 2\nprint(value())\n"
+    )
+
+
+def test_compact_edit_rejects_overlaps_before_file_or_register_changes(tmp_path):
+    path = tmp_path / "overlap.txt"
+    path.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    clipboard_path = tmp_path / "clipboard.json"
+    runtime = {
+        "snapshot_dir": str(tmp_path / "snapshots"),
+        "clipboard_path": str(clipboard_path),
+    }
+    tag = _read_hashline_tag(path, runtime)
+
+    with pytest.raises(ValueError, match="overlaps"):
+        _run_sandbox_code(
+            _HASHLINE_EDIT_CODE,
+            {
+                "path": str(path),
+                "tag": tag,
+                "edits": [
+                    {"op": "replace", "line": 2, "end_line": 3, "new": "changed"},
+                    {"op": "cut", "line": 3, "end_line": 4, "register": "saved"},
+                ],
+                **runtime,
+            },
+        )
+
+    assert path.read_text(encoding="utf-8") == "one\ntwo\nthree\nfour\n"
+    assert not clipboard_path.exists()
 
 
 @pytest.mark.anyio
@@ -394,7 +732,11 @@ def test_edit_tool_schema_requires_hashline_replacements():
     schema = tool_registry.to_openai_sandbox_tools(["edit"])[0]["function"]
 
     assert schema["name"] == "edit"
-    edits_schema = schema["parameters"]["properties"]["edits"]
+    properties = schema["parameters"]["properties"]
+    assert "tag" in properties
+    edits_schema = properties["edits"]
     assert edits_schema["type"] == "array"
-    assert edits_schema["items"]["required"] == ["line", "new"]
+    assert edits_schema["items"]["required"] == []
+    assert "replace_block" in edits_schema["items"]["properties"]["op"]["enum"]
+    assert "paste_block_after" in edits_schema["items"]["properties"]["op"]["enum"]
     assert edits_schema["items"]["additionalProperties"] is False

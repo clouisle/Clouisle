@@ -586,10 +586,10 @@ msgid "builtin_tool_edit"
 msgstr "Edit File"
 
 msgid "builtin_tool_edit_description"
-msgstr "Apply localized, hash-verified edits to an existing UTF-8 text file. Call read first and copy each LINE#ID anchor exactly. If any anchor is stale, no changes are written; re-read before retrying."
+msgstr "Apply compact snapshot-verified replace, block, cut, insert, and paste operations. Cut registers persist across calls, and unchanged targets recover after line shifts."
 
 msgid "builtin_tool_edit_param_edits_description"
-msgstr "Localized replacements. Each item contains a LINE#ID anchor from read and the replacement content."
+msgstr "Ordered compact operations supporting ranges, approximate syntax blocks, persistent cut registers, and positional insert or paste."
 
 msgid "builtin_tool_edit_param_path_description"
 msgstr "Existing text file to edit. Use a /workspace path or a relative path; paths outside /workspace are rejected."
@@ -718,7 +718,7 @@ msgid "builtin_tool_read"
 msgstr "Read File"
 
 msgid "builtin_tool_read_description"
-msgstr "Read a UTF-8 text file with LINE#ID hashline anchors. Use start_line and end_line for an inclusive range, or search for case-sensitive literal text; both preserve original line numbers for edit."
+msgstr "Read a UTF-8 text file with LINE#ID anchors bound to a full-file snapshot. Ranges and literal search preserve original line numbers for safe edit recovery."
 
 msgid "builtin_tool_unit_convert"
 msgstr "Unit Convert"

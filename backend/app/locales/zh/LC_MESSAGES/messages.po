@@ -586,10 +586,10 @@ msgid "builtin_tool_edit"
 msgstr "编辑文件"
 
 msgid "builtin_tool_edit_description"
-msgstr "对现有 UTF-8 文本文件执行局部、哈希校验的修改。先调用 read，并原样复制每个 LINE#ID 锚点。任一锚点过期时不会写入任何更改；请重新读取后重试。"
+msgstr "执行经过快照校验的紧凑替换、块、剪切、插入和粘贴操作。剪切寄存器可跨调用保留，行号偏移后会恢复未变化的目标。"
 
 msgid "builtin_tool_edit_param_edits_description"
-msgstr "局部替换列表。每项包含 read 返回的 LINE#ID 锚点和替换内容。"
+msgstr "有序紧凑操作列表，支持范围、近似语法块、持久剪切寄存器以及按位置插入或粘贴。"
 
 msgid "builtin_tool_edit_param_path_description"
 msgstr "要编辑的现有文本文件。使用 /workspace 路径或相对路径；/workspace 外的路径会被拒绝。"
@@ -718,7 +718,7 @@ msgid "builtin_tool_read"
 msgstr "读取文件"
 
 msgid "builtin_tool_read_description"
-msgstr "读取带 LINE#ID 哈希行锚点的 UTF-8 文本文件。可用 start_line 和 end_line 指定闭区间，或用 search 查找区分大小写的字面文本；结果保留原始行号供 edit 使用。"
+msgstr "读取带 LINE#ID 锚点的 UTF-8 文本文件；锚点绑定完整文件快照。行范围和字面文本搜索会保留原始行号，以便 edit 安全恢复。"
 
 msgid "builtin_tool_unit_convert"
 msgstr "单位转换"

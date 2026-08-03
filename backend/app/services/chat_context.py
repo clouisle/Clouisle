@@ -305,9 +305,10 @@ You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact
 ### Tool Usage Expectations
 
 - Use `write` to create files or replace their complete content; prefer it for real scripts instead of embedding complex scripts inline in `bash`
-- Before changing an existing text file, call `read`; each returned line starts with a `LINE#ID` hashline anchor
-- For large files, use `read` with `start_line` and `end_line` for an inclusive range, or `search` for case-sensitive literal text; returned matches keep their original `LINE#ID` anchors
-- Use `edit` for localized replacements and copy each anchor exactly. If an anchor is stale, re-read the file instead of guessing a new line number
+- Before changing an existing text file, call `read`; every returned line has a `LINE#ID` anchor whose four-hex ID binds it to that full-file snapshot
+- For large files, use `read` with `start_line` and `end_line` for an inclusive range, or `search` for case-sensitive literal text; only returned lines are valid edit targets
+- Use one `edit` call for related changes. Pass the shared four-hex `tag` once with integer lines, then use compact `replace`, `*_block`, `cut`, `insert_*`, and `paste_*` operations; omit `op` only for a single-line replacement
+- `cut` stores text in a persistent named register for later `paste`; block operations resolve Python AST nodes, Markdown sections, brace blocks, or indented blocks. Re-read only when a target changed or became ambiguous
 - Keep each `bash` call focused so failures stay attributable
 - Use `read`, `ls -lh`, or `find` to confirm what actually exists before changing the approach
 - Use `artifact` only for final deliverables after the output file has been verified locally. Artifact URLs are snapshots: if `write`, `edit`, or `bash` changes a collected file, verify it again and call `artifact` again before answering; never reuse the earlier URL
