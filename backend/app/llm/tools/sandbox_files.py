@@ -831,7 +831,10 @@ with path.open("r+", encoding="utf-8", newline="") as handle:
         os.fsync(handle.fileno())
     if registers_changed:
         _save_clipboard(params, path, registers)
-    updated_tag = _record_snapshot(params, path, updated)
+    updated_line_count = len(_normalize_hashline_text(updated).splitlines())
+    updated_tag = _record_snapshot(
+        params, path, updated, range(1, updated_line_count + 1)
+    )
 
 return {
     "edits": len(actions),

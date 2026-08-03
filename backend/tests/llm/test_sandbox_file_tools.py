@@ -218,6 +218,32 @@ def test_hashline_recovers_later_anchor_after_earlier_edit_shifts_lines(tmp_path
     assert path.read_text(encoding="utf-8") == "one\nTWO\ninserted\nthree\nFOUR\n"
 
 
+def test_hashline_edit_returns_tag_reusable_for_followup_anchored_edit(tmp_path):
+    path = tmp_path / "example.txt"
+    snapshot_dir = tmp_path / "snapshots"
+    path.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    common = {"path": str(path), "snapshot_dir": str(snapshot_dir)}
+    content = _run_sandbox_code(_HASHLINE_READ_CODE, {**common, "max_chars": 200_000})
+    anchors = [line.split("|", 1)[0] for line in content.splitlines()]
+
+    first = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {**common, "edits": [{"line": anchors[1], "new": "TWO"}]},
+    )
+
+    second = _run_sandbox_code(
+        _HASHLINE_EDIT_CODE,
+        {
+            **common,
+            "tag": first["tag"],
+            "edits": [{"line": 4, "new": "FOUR"}],
+        },
+    )
+
+    assert second["changed"] == 1
+    assert path.read_text(encoding="utf-8") == "one\nTWO\nthree\nFOUR\n"
+
+
 def test_hashline_recovers_unique_final_line_without_unchanged_neighbor(tmp_path):
     path = tmp_path / "example.txt"
     snapshot_dir = tmp_path / "snapshots"
