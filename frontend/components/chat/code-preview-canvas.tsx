@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CodeBlock } from '@/components/ai-elements/code-block'
-import type { ArtifactPreviewPayload, ChatPreviewPayload, CodePreviewPayload } from './types'
+import type { ArtifactPreviewPayload, ChatPreviewPayload, CodePreviewPayload, SourceDocumentPreviewPayload } from './types'
+import { SegmentItem } from './message-parts'
 import type { BundledLanguage } from 'shiki'
 
 type MermaidTheme = NonNullable<MermaidConfig['theme']>
@@ -21,6 +22,7 @@ let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 const MERMAID_MIN_ZOOM = 0.05
 const MERMAID_MAX_ZOOM = 15
 const MERMAID_ZOOM_STEP = 0.1
+const SOURCE_SEGMENT_BATCH_SIZE = 5
 
 function escapeClosingScriptTag(code: string) {
   return code.replace(/<\/script/gi, '<\\/script')
@@ -821,6 +823,61 @@ function CodeContentPreviewCanvas({
   )
 }
 
+function SourceDocumentPreviewCanvas({
+  preview,
+  onClose,
+}: {
+  preview: SourceDocumentPreviewPayload
+  onClose: () => void
+}) {
+  const t = useTranslations('chat.source')
+  const [visibleSegmentCount, setVisibleSegmentCount] = React.useState(SOURCE_SEGMENT_BATCH_SIZE)
+  const visibleSegments = preview.segments.slice(0, visibleSegmentCount)
+  const hiddenSegmentCount = preview.segments.length - visibleSegments.length
+
+  return (
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
+        <h3 className="flex min-w-0 items-center gap-2 font-semibold">
+          <FileText className="h-4 w-4 shrink-0" />
+          <span className="truncate">{preview.documentName}</span>
+        </h3>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={onClose}
+            render={
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('close')}>
+                <X className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('close')}</TooltipContent>
+        </Tooltip>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="space-y-2">
+          {visibleSegments.map((segment, index) => (
+            <SegmentItem
+              key={segment.sourceId ?? `${preview.documentId}:${segment.metadata?.page ?? index}:${index}`}
+              segment={segment}
+              index={index}
+            />
+          ))}
+          {hiddenSegmentCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setVisibleSegmentCount((count) => count + SOURCE_SEGMENT_BATCH_SIZE)}
+              className="w-full rounded-md border border-dashed py-2 text-sm text-primary hover:bg-muted/50 transition-colors"
+            >
+              {t('showMoreSegments', { count: Math.min(hiddenSegmentCount, SOURCE_SEGMENT_BATCH_SIZE) })}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function CodePreviewCanvas({
   preview,
   onClose,
@@ -828,7 +885,11 @@ export function CodePreviewCanvas({
   preview: ChatPreviewPayload
   onClose: () => void
 }) {
-  return preview.kind === 'artifact'
-    ? <ArtifactPreviewCanvas preview={preview} onClose={onClose} />
-    : <CodeContentPreviewCanvas preview={preview} onClose={onClose} />
+  if (preview.kind === 'artifact') {
+    return <ArtifactPreviewCanvas preview={preview} onClose={onClose} />
+  }
+  if (preview.kind === 'source-document') {
+    return <SourceDocumentPreviewCanvas preview={preview} onClose={onClose} />
+  }
+  return <CodeContentPreviewCanvas preview={preview} onClose={onClose} />
 }

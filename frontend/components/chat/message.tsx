@@ -1411,7 +1411,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         </MessageContent>
 
         {isAssistant && allSources.length > 0 && (
-          <SourceContent sources={allSources} />
+          <SourceContent sources={allSources} onOpenCodePreview={onOpenCodePreview} />
         )}
       </>
     ), [
@@ -1433,6 +1433,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isStandaloneErrorMessage,
       isUser,
       onChainOfThoughtOpenChange,
+      onOpenCodePreview,
       preservedErrorNote,
       renderDefaultPart,
       renderPart,

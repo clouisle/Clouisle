@@ -109,6 +109,7 @@ class TestBlob {
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react', () => ({
+  memo: <T,>(component: T) => component,
   useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | (() => void)) => effects.push(effect),
   useMemo: <T,>(factory: () => T) => {
@@ -144,6 +145,9 @@ mock.module('lucide-react', () => ({
   ZoomIn: icon('ZoomIn'),
   ZoomOut: icon('ZoomOut'),
   X: icon('X'),
+  ChevronDown: icon('ChevronDown'),
+  ChevronRight: icon('ChevronRight'),
+  Link2: icon('Link2'),
 }))
 mock.module('streamdown', () => ({ Streamdown }))
 mock.module('shiki', () => ({ bundledLanguages: { javascript: {}, typescript: {}, html: {}, xml: {}, css: {}, markdown: {} } }))
@@ -160,6 +164,7 @@ mock.module('@/components/ui/tooltip', () => ({
 }))
 mock.module('@/components/ui/tabs', () => ({ Tabs, TabsContent, TabsList, TabsTrigger }))
 mock.module('@/components/ai-elements/code-block', () => ({ CodeBlock }))
+mock.module('./message-parts', () => ({ SegmentItem: (props: Props) => jsx('segment-item', props) }))
 const mermaidApi = {
   initialize: mock(() => {}),
   render: mock(async () => ({ svg: '<svg><text>ok</text></svg>' })),
@@ -259,6 +264,32 @@ test('wraps svg and css previews in runnable documents', () => {
   expect(svgIframe?.props.srcDoc).toContain('<body><svg><circle /></svg></body>')
   expect(cssIframe?.props.srcDoc).toContain('CSS Preview')
   expect(cssIframe?.props.srcDoc).toContain('h1 { color: red; }')
+})
+
+test('source-document preview renders document name, first segment batch, and close', () => {
+  const tree = render({
+    id: 'source-document:doc-1',
+    kind: 'source-document',
+    documentId: 'doc-1',
+    documentName: 'Guide',
+    segments: Array.from({ length: 6 }, (_, i) => ({
+      type: 'source-document',
+      sourceId: `seg-${i}`,
+      documentId: 'doc-1',
+      documentName: 'Guide',
+      content: `Segment ${i + 1}`,
+      metadata: { score: 0.9, page: i + 1 },
+    })),
+  })
+  const segmentItems = walk(tree).filter((node) => node.type === 'segment-item')
+
+  expect(text(tree)).toContain('Guide')
+  expect(segmentItems.length).toBe(5)
+  expect(segmentItems[0]?.props.segment.content).toBe('Segment 1')
+  expect(text(tree)).toContain('showMoreSegments')
+
+  click(findByAriaLabel(tree, 'close'))
+  expect(close).toHaveBeenCalled()
 })
 
 test('resets active tab when preview payload changes', () => {

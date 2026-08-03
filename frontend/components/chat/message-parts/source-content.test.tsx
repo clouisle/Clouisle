@@ -98,9 +98,10 @@ function find(node: ReactNode, predicate: (tree: Tree) => boolean): Tree {
 
 function render(
   sources: React.ComponentProps<typeof SourceContent>["sources"],
+  onOpenCodePreview?: React.ComponentProps<typeof SourceContent>["onOpenCodePreview"],
 ) {
   stateIndex = 0;
-  return SourceContent({ sources });
+  return SourceContent({ sources, onOpenCodePreview });
 }
 
 beforeEach(() => {
@@ -130,7 +131,8 @@ describe("SourceContent", () => {
     ).toBeDefined();
   });
 
-  test("shows document segments after a document is selected", () => {
+  test("opens preview with document segments when a document is selected", () => {
+    const onOpenCodePreview = mock(() => {});
     const sources = Array.from({ length: 6 }, (_, index) => ({
       type: "source-document" as const,
       documentId: "doc-1",
@@ -138,29 +140,28 @@ describe("SourceContent", () => {
       content: index === 0 ? "A".repeat(4001) : `Source segment ${index + 1}`,
       metadata: { score: 0.9, page: index + 1 },
     }));
-    const tree = render(sources);
+    const tree = render(sources, onOpenCodePreview);
     find(tree, (node) => node.props["aria-expanded"] === false).props.onClick();
-    const expanded = render(sources);
+    const expanded = render(sources, onOpenCodePreview);
     find(
       expanded,
       (node) =>
         node.type === "button" &&
         JSON.stringify(node.props.children).includes("Guide"),
     ).props.onClick();
-    render(sources);
-    const selected = render(sources);
 
-    expect(JSON.stringify(selected)).toContain("showMoreSegments:1");
-    expect(JSON.stringify(selected)).toContain("A".repeat(4001));
-    expect(JSON.stringify(selected)).toContain("score");
-
-    find(
-      selected,
-      (node) => node.props.children === "showMoreSegments:1",
-    ).props.onClick();
-    const expandedSegments = render(sources);
-
-    expect(JSON.stringify(expandedSegments)).toContain("Source segment 6");
+    expect(onOpenCodePreview).toHaveBeenCalledTimes(1);
+    const payload = onOpenCodePreview.mock.calls[0][0] as {
+      segments: { content: string }[];
+    };
+    expect(payload).toMatchObject({
+      id: "source-document:doc-1",
+      kind: "source-document",
+      documentId: "doc-1",
+      documentName: "Guide",
+    });
+    expect(payload.segments).toHaveLength(6);
+    expect(payload.segments[0].content).toBe("A".repeat(4001));
   });
 
   test("shows more than the initial source batch", () => {
