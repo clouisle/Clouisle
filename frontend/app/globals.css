@@ -324,6 +324,40 @@
   outline-offset: 2px;
 }
 
+[data-streamdown="table-wrapper"] {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  background-color: var(--background);
+  box-shadow: none;
+}
+
+[data-streamdown="table-wrapper"] > div:first-child:not(:last-child) {
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  background-color: color-mix(in oklch, var(--muted) 70%, var(--background));
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+}
+
+[data-streamdown="table-wrapper"] > div:last-child {
+  border: 0;
+  border-radius: 0;
+  background-color: var(--background);
+}
+
+[data-streamdown="table"] {
+  background-color: var(--background);
+}
+
+[data-streamdown="table"] thead {
+  background-color: color-mix(in oklch, var(--muted) 70%, var(--background));
+}
+
+[data-streamdown="table"] th {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .react-flow__edge:hover .react-flow__edge-path,
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: #3b82f6 !important;
