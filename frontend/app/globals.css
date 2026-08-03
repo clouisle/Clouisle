@@ -214,7 +214,8 @@
   border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
 }
 
-[data-streamdown="code-block"] > [data-streamdown="code-block-header"] + div {
+[data-streamdown="code-block"]
+  > div:has(> [data-streamdown="code-block-actions"]) {
   position: absolute;
   top: 0;
   right: 0;
