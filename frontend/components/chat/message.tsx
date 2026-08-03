@@ -368,7 +368,7 @@ function PreviewableCodeBlock({
   const previewButton = (
     <button
       type="button"
-      className="order-first inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="order-first inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onOpenCodePreview({
         id: `${language}:${parsedFence.code.length}:${parsedFence.code.slice(0, 32)}`,
         language,
