@@ -346,16 +346,18 @@ function PreviewableCodeBlock({
   const t = useTranslations('chat.message')
   const language = parsedFence.language || previewKind || 'text'
   const blockRef = React.useRef<HTMLDivElement>(null)
+  const [header, setHeader] = React.useState<HTMLDivElement | null>(null)
   const [toolbar, setToolbar] = React.useState<HTMLDivElement | null>(null)
-
   React.useLayoutEffect(() => {
     const block = blockRef.current
     if (!block) {
+      setHeader(null)
       setToolbar(null)
       return
     }
 
     const syncToolbar = () => {
+      setHeader(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-header"]'))
       setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-actions"]'))
     }
 
@@ -389,7 +391,16 @@ function PreviewableCodeBlock({
         shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
         {...props}
       />
-      {toolbar ? ReactDOM.createPortal(previewButton, toolbar) : null}
+      {toolbar
+        ? ReactDOM.createPortal(previewButton, toolbar)
+        : header
+          ? ReactDOM.createPortal(
+            <div className="ml-auto flex shrink-0 items-center" data-chat-code-preview-fallback>
+              {previewButton}
+            </div>,
+            header,
+          )
+          : null}
     </div>
   )
 }

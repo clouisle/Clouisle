@@ -24,6 +24,7 @@ const openLightbox = mock(() => {})
 const codeToTokens = mock(async () => ({ tokens: [] }))
 let lastStreamdownProps: Record<string, unknown> = {}
 let lastDialogProps: Record<string, unknown> = {}
+let rendersCodeActions = true
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en-US',
@@ -90,7 +91,13 @@ mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: {
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside>, FileListContent: ({ files }: { files: Array<{ filename: string }> }) => <div>artifacts:{files.map((file) => file.filename).join(',')}</div> }))
 mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
-  Block: ({ content }: { content: string }) => <div data-streamdown="code-block"><div data-streamdown="code-block-header"><span /></div><div data-streamdown="code-block-actions" /><pre>{content}</pre></div>,
+  Block: ({ content }: { content: string }) => (
+    <div data-streamdown="code-block">
+      <div data-streamdown="code-block-header"><span /></div>
+      {rendersCodeActions && <div data-streamdown="code-block-actions" />}
+      <pre>{content}</pre>
+    </div>
+  ),
   Streamdown: (props: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => {
     lastStreamdownProps = props as unknown as Record<string, unknown>
     const content = String(props.children)
@@ -109,6 +116,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount())
   document.body.replaceChildren()
   openLightbox.mockClear()
+  rendersCodeActions = true
 })
 
 function render(element: React.ReactElement) {
@@ -530,6 +538,24 @@ describe('message behavior', () => {
 
     const streaming = renderToStaticMarkup(<Message message={{ id: 'streaming-preview', role: 'assistant', parts: [{ type: 'text', text: code }] }} isStreaming onOpenCodePreview={onOpenCodePreview} />)
     expect(streaming).not.toContain('chat.message.openCodePreview')
+  })
+
+  test('keeps Markdown previews available without Streamdown code actions', async () => {
+    rendersCodeActions = false
+    const onOpenCodePreview = mock(() => {})
+    const code = '```markdown\n# Preview\n```'
+    const container = render(<Message message={{ id: 'markdown-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    const header = container.querySelector('[data-streamdown="code-block-header"]')
+    expect(header?.querySelector('[data-chat-code-preview-fallback]')?.textContent).toContain('chat.message.openCodePreview')
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'markdown:9:# Preview',
+      language: 'markdown',
+      code: '# Preview',
+      kind: 'markdown',
+    })
   })
 
   test('normalizes citations, strong markers, and math outside code', () => {
