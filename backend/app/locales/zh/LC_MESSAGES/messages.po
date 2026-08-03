@@ -2530,9 +2530,6 @@ msgstr "不支持的搜索引擎：{search_engine}"
 msgid "web_search_api_error"
 msgstr "搜索 API 错误：{status_code}"
 
-msgid "fetch_webpage_unsupported_content_type"
-msgstr "不支持的内容类型：{content_type}"
-
 msgid "fetch_webpage_http_error"
 msgstr "HTTP 错误：{status_code}"
 

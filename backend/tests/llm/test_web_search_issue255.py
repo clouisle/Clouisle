@@ -1,4 +1,6 @@
-from unittest.mock import AsyncMock, Mock
+import base64
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
 import pytest
@@ -40,15 +42,14 @@ def http_error(status_code=503):
     return httpx.HTTPStatusError("rejected", request=request, response=response)
 
 
-def test_html_extractor_skips_script_and_style_content():
-    extractor = subject._HTMLTextExtractor()
-    extractor.feed(
-        "<main>Visible<script>hidden<style>also hidden</style></script> tail</main>"
-    )
-    extractor.handle_endtag("script")
-    extractor.handle_data("   ")
-
-    assert extractor.get_text() == "Visible  tail"
+def install_markitdown(monkeypatch, *, text_content="", exc=None):
+    converter = MagicMock()
+    if exc is not None:
+        converter.convert.side_effect = exc
+    else:
+        converter.convert.return_value = SimpleNamespace(text_content=text_content)
+    monkeypatch.setattr(subject, "MarkItDown", lambda: converter)
+    return converter
 
 
 @pytest.mark.anyio
@@ -169,97 +170,67 @@ async def test_tavily_maps_provider_failures(monkeypatch, failure, expected_erro
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("text", "max_length", "expected"),
-    [
-        (
-            "<h1> Title </h1><script>secret</script><p> body text </p>",
-            50,
-            "Title body text",
-        ),
-        ("<p>abcdef</p>", 4, "abcd..."),
-    ],
-)
-async def test_fetch_webpage_extracts_and_limits_html(
-    monkeypatch, text, max_length, expected
-):
-    response = fake_response(text=text)
-    client = FakeClient(get=response)
-    factory = install_client(monkeypatch, client)
+async def test_fetch_webpage_converts_url_via_markitdown_and_truncates(monkeypatch):
+    converter = install_markitdown(monkeypatch, text_content="x" * 100)
 
-    result = await subject.fetch_webpage("https://example.test/page", max_length)
+    result = await subject.fetch_webpage("https://example.test/page", 10)
 
-    factory.assert_called_once_with(timeout=30, follow_redirects=True)
-    client.get.assert_awaited_once_with(
-        "https://example.test/page",
-        headers={"User-Agent": "Mozilla/5.0 (compatible; CloudisleBot/1.0)"},
-    )
+    converter.convert.assert_called_once_with("https://example.test/page")
     assert result == {
         "url": "https://example.test/page",
-        "content": expected,
-        "content_type": "text/html",
+        "content": "xxxxxxxxxx...",
         "success": True,
     }
 
 
 @pytest.mark.anyio
-async def test_fetch_webpage_returns_limited_json(monkeypatch):
-    response = fake_response(
-        text='{"long":"value"}', content_type="application/json; charset=utf-8"
+async def test_fetch_webpage_preserves_images_in_markdown():
+    html = (
+        "<h1>Title</h1><script>secret</script>"
+        "<img src='https://example.test/cat.png' alt='A cat'>"
     )
-    install_client(monkeypatch, FakeClient(get=response))
+    data_uri = (
+        "data:text/html;base64," + base64.b64encode(html.encode("utf-8")).decode()
+    )
 
-    result = await subject.fetch_webpage("https://example.test/data", 7)
+    result = await subject.fetch_webpage(data_uri, 5000)
 
-    assert result == {
-        "url": "https://example.test/data",
-        "content": '{"long"',
-        "content_type": "application/json",
-        "success": True,
-    }
+    assert result["success"] is True
+    content = result["content"]
+    assert "Title" in content
+    assert "https://example.test/cat.png" in content
+    assert "A cat" in content
+    assert "secret" not in content
 
 
 @pytest.mark.anyio
-async def test_fetch_webpage_rejects_unsupported_content(monkeypatch):
-    response = fake_response(content_type="image/png")
-    install_client(monkeypatch, FakeClient(get=response))
+async def test_fetch_webpage_maps_http_errors(monkeypatch):
+    class FakeHTTPError(Exception):
+        def __init__(self, status_code):
+            self.response = SimpleNamespace(status_code=status_code)
+
+    install_markitdown(monkeypatch, exc=FakeHTTPError(404))
     monkeypatch.setattr(subject, "t", lambda key, **kwargs: (key, kwargs))
 
-    result = await subject.fetch_webpage("https://example.test/image")
+    result = await subject.fetch_webpage("https://example.test/missing")
 
     assert result == {
-        "url": "https://example.test/image",
-        "error": (
-            "fetch_webpage_unsupported_content_type",
-            {"content_type": "image/png"},
-        ),
+        "url": "https://example.test/missing",
+        "error": ("fetch_webpage_http_error", {"status_code": 404}),
         "success": False,
     }
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("failure", "expected_error"),
-    [
-        (http_error(404), ("fetch_webpage_http_error", {"status_code": 404})),
-        (httpx.ConnectError("offline"), ("tool_execution_failed", {})),
-    ],
-)
-async def test_fetch_webpage_maps_failures(monkeypatch, failure, expected_error):
-    response = fake_response()
-    if isinstance(failure, httpx.HTTPStatusError):
-        response.raise_for_status.side_effect = failure
-        client = FakeClient(get=response)
-    else:
-        client = FakeClient(get=failure)
-    install_client(monkeypatch, client)
+async def test_fetch_webpage_maps_generic_errors(monkeypatch):
+    install_markitdown(monkeypatch, exc=RuntimeError("boom"))
     monkeypatch.setattr(subject, "t", lambda key, **kwargs: (key, kwargs))
 
     result = await subject.fetch_webpage("https://example.test/page")
 
     assert result == {
         "url": "https://example.test/page",
-        "error": expected_error,
+        "error": ("tool_execution_failed", {}),
         "success": False,
     }
 

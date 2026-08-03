@@ -2529,9 +2529,6 @@ msgstr "Unsupported search engine: {search_engine}"
 msgid "web_search_api_error"
 msgstr "Search API error: {status_code}"
 
-msgid "fetch_webpage_unsupported_content_type"
-msgstr "Unsupported content type: {content_type}"
-
 msgid "fetch_webpage_http_error"
 msgstr "HTTP error: {status_code}"
 
