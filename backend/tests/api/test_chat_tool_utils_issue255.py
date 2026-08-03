@@ -97,7 +97,7 @@ async def test_get_agent_tools_combines_tools_skills_and_unique_sandbox_tools(
     filter_mock.assert_called_once_with(
         id__in=[str(tool_id), agent.tools_config[1]["tool_id"]], is_enabled=True
     )
-    sandbox_mock.assert_called_once_with(["read", "write", "bash"])
+    sandbox_mock.assert_called_once_with(["read", "edit", "write", "bash"])
 
 
 @pytest.mark.anyio

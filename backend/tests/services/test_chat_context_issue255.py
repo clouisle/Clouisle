@@ -37,6 +37,7 @@ from app.llm.types import (
 from app.services.chat_context import (
     FILE_CONTENT_PLACEHOLDER,
     MACRO_SUMMARY_PREFIX,
+    SANDBOX_SYSTEM_INSTRUCTION,
     _append_prompt_section,
     _assess_context_pressure,
     _build_assistant_tool_calls,
@@ -124,6 +125,13 @@ class TestBuildSystemPromptWithLanguage:
         prompt = f"Prefix.\n\n{instruction}"
         result = build_system_prompt_with_language(prompt, "en")
         assert result == prompt
+
+    def test_sandbox_prompt_requires_fresh_artifacts_after_edits(self):
+        assert "Artifact URLs are snapshots" in SANDBOX_SYSTEM_INSTRUCTION
+        assert "call `artifact` again before answering" in SANDBOX_SYSTEM_INSTRUCTION
+        assert (
+            "include every newest Markdown download link" in SANDBOX_SYSTEM_INSTRUCTION
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +471,9 @@ class TestHasSandboxTools:
 
     def test_builtin_read_true(self):
         assert _has_sandbox_tools(self._agent([{"type": "builtin", "name": "read"}]))
+
+    def test_builtin_edit_true(self):
+        assert _has_sandbox_tools(self._agent([{"type": "builtin", "name": "edit"}]))
 
     def test_builtin_artifact_true(self):
         assert _has_sandbox_tools(

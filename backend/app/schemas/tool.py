@@ -553,6 +553,12 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "icon": None,
         "requires_config": False,
     },
+    "edit": {
+        "display_name_key": "builtin_tool_edit",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
     "read": {
         "display_name_key": "builtin_tool_read",
         "category": ToolCategory.SANDBOX,

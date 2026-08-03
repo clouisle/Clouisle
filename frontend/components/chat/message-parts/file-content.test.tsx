@@ -29,6 +29,9 @@ mock.module("react", () => ({
     ] as const;
   },
 }));
+mock.module("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+}));
 mock.module("@/components/ui/collapsible", () => ({
   Collapsible: ({ children }: { children: ReactNode }) => children,
   CollapsibleContent: ({ children }: { children: ReactNode }) => children,
@@ -46,6 +49,7 @@ mock.module("lucide-react", () => ({
   FileVideo: () => null,
 }));
 
+// Dynamic import is required so Bun module mocks are registered before file components evaluate.
 const { FileContent, FileListContent } = await import("./file-content");
 
 type Tree = { type: unknown; props: Record<string, unknown> };
@@ -110,7 +114,28 @@ describe("file message parts", () => {
     });
   });
 
-  test("renders image previews and separates image files from other attachments", () => {
+  test("opens downloadable files in the side preview", () => {
+    const onPreview = mock(() => {});
+    const file = {
+      type: "file" as const,
+      filename: "data.json",
+      url: "https://files.test/data.json",
+      mimeType: "application/json",
+    };
+    const tree = render(() => FileContent({ file, onPreview }));
+    const previewButton = find(
+      tree,
+      (node) => node.type === "button" && node.props["aria-label"] === "openCodePreview: data.json",
+    );
+
+    const onClick = previewButton.props.onClick;
+    if (typeof onClick !== "function") throw new Error("preview button is not clickable");
+    onClick();
+    expect(onPreview).toHaveBeenCalledWith(file);
+  });
+
+  test("renders a visible side-preview action for image files", () => {
+    const onPreview = mock(() => {});
     const files = [
       {
         type: "file" as const,
@@ -124,7 +149,7 @@ describe("file message parts", () => {
         mimeType: "application/zip",
       },
     ];
-    const tree = render(() => FileListContent({ files }));
+    const tree = render(() => FileListContent({ files, onPreview }));
 
     expect(JSON.stringify(tree)).toContain("photo.png");
     expect(JSON.stringify(tree)).toContain("archive.zip");
@@ -134,6 +159,14 @@ describe("file message parts", () => {
         (node) => node.type === "img" && node.props.alt === "photo.png",
       ).props.src,
     ).toBe("https://files.test/photo.png");
+    const previewButton = find(
+      tree,
+      (node) => node.type === "button" && node.props["aria-label"] === "openCodePreview: photo.png",
+    );
+    const onClick = previewButton.props.onClick;
+    if (typeof onClick !== "function") throw new Error("image preview button is not clickable");
+    onClick();
+    expect(onPreview).toHaveBeenCalledWith(files[0]);
   });
 
   test("renders an expandable image attachment preview", () => {

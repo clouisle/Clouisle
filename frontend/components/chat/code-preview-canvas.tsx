@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Check, Copy, Download, Expand, Loader2, ZoomIn, ZoomOut, X } from 'lucide-react'
+import { Check, Copy, Download, Expand, FileText, Loader2, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useTheme } from 'next-themes'
 import { Streamdown } from 'streamdown'
@@ -11,16 +11,18 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CodeBlock } from '@/components/ai-elements/code-block'
-import type { CodePreviewPayload } from './types'
+import type { ArtifactPreviewPayload, ChatPreviewPayload, CodePreviewPayload, SourceDocumentPreviewPayload } from './types'
+import { SegmentItem } from './message-parts'
 import type { BundledLanguage } from 'shiki'
 
 type MermaidTheme = NonNullable<MermaidConfig['theme']>
 
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 
-const MERMAID_MIN_ZOOM = 0.5
-const MERMAID_MAX_ZOOM = 2
+const MERMAID_MIN_ZOOM = 0.05
+const MERMAID_MAX_ZOOM = 15
 const MERMAID_ZOOM_STEP = 0.1
+const SOURCE_SEGMENT_BATCH_SIZE = 5
 
 function escapeClosingScriptTag(code: string) {
   return code.replace(/<\/script/gi, '<\\/script')
@@ -228,6 +230,8 @@ function MermaidPreview({ code }: { code: string }) {
   const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 })
   const viewportRef = React.useRef<HTMLDivElement>(null)
   const diagramRef = React.useRef<HTMLDivElement>(null)
+  const zoomRef = React.useRef(1)
+  const gestureStartZoomRef = React.useRef(1)
 
   React.useEffect(() => {
     let cancelled = false
@@ -261,7 +265,71 @@ function MermaidPreview({ code }: { code: string }) {
     setZoom(1)
     setPan({ x: 0, y: 0 })
     setIsDragging(false)
+    zoomRef.current = 1
+    gestureStartZoomRef.current = 1
   }, [code])
+
+  const handleWheel = React.useCallback((event: WheelEvent) => {
+    if (!svg || event.deltaY === 0) {
+      return
+    }
+
+    event.preventDefault()
+    const deltaModeFactor = event.deltaMode === 1
+      ? 16
+      : event.deltaMode === 2
+        ? viewportRef.current?.clientHeight ?? 1
+        : 1
+    const delta = event.deltaY * deltaModeFactor
+    const nextZoom = clampMermaidZoom(zoomRef.current * Math.exp(-delta * 0.0025))
+    zoomRef.current = nextZoom
+    setZoom(nextZoom)
+  }, [svg])
+
+  const handleGestureStart = React.useCallback((event: Event) => {
+    event.preventDefault()
+    gestureStartZoomRef.current = zoomRef.current
+  }, [])
+
+  const handleGestureChange = React.useCallback((event: Event) => {
+    event.preventDefault()
+    if (!svg) {
+      return
+    }
+
+    const scale = (event as Event & { scale?: number }).scale
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
+      return
+    }
+
+    const nextZoom = clampMermaidZoom(gestureStartZoomRef.current * scale)
+    zoomRef.current = nextZoom
+    setZoom(nextZoom)
+  }, [svg])
+
+  const handleGestureEnd = React.useCallback((event: Event) => {
+    event.preventDefault()
+  }, [])
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || !svg) {
+      return
+    }
+
+    const gestureOptions = { passive: false }
+    viewport.addEventListener('wheel', handleWheel, gestureOptions)
+    viewport.addEventListener('gesturestart', handleGestureStart, gestureOptions)
+    viewport.addEventListener('gesturechange', handleGestureChange, gestureOptions)
+    viewport.addEventListener('gestureend', handleGestureEnd, gestureOptions)
+
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel)
+      viewport.removeEventListener('gesturestart', handleGestureStart)
+      viewport.removeEventListener('gesturechange', handleGestureChange)
+      viewport.removeEventListener('gestureend', handleGestureEnd)
+    }
+  }, [handleGestureChange, handleGestureEnd, handleGestureStart, handleWheel, svg])
 
   React.useEffect(() => {
     if (!diagramRef.current) {
@@ -269,6 +337,7 @@ function MermaidPreview({ code }: { code: string }) {
     }
 
     diagramRef.current.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
+    zoomRef.current = zoom
   }, [pan, zoom])
 
   const handleDownloadSvg = React.useCallback(() => {
@@ -297,6 +366,7 @@ function MermaidPreview({ code }: { code: string }) {
       (viewportRect.height - 48) / svgRect.height * zoom
     ))
 
+    zoomRef.current = nextZoom
     setZoom(nextZoom)
     setPan({ x: 0, y: 0 })
     setIsDragging(false)
@@ -377,8 +447,26 @@ function MermaidPreview({ code }: { code: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b px-4 py-2">
+    <div className="relative h-full min-h-0 bg-background">
+      <div
+        ref={viewportRef}
+        className={`flex h-full min-h-0 items-center justify-center overflow-hidden p-6 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <div
+          ref={diagramRef}
+          className="max-w-full origin-center transition-transform will-change-transform"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+      <div
+        data-slot="mermaid-preview-controls"
+        className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-md border bg-background p-1 shadow-sm"
+      >
         <Tooltip>
           <TooltipTrigger
             onClick={handleFitToView}
@@ -428,26 +516,188 @@ function MermaidPreview({ code }: { code: string }) {
           <TooltipContent>{t('mermaidDownload')}</TooltipContent>
         </Tooltip>
       </div>
-      <div
-        ref={viewportRef}
-        className={`flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        <div
-          ref={diagramRef}
-          className="max-w-full origin-center transition-transform will-change-transform"
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+    </div>
+  )
+}
+type ArtifactPreviewMode = 'image' | 'video' | 'audio' | 'pdf' | 'html' | 'markdown' | 'mermaid' | 'text' | 'unsupported'
+
+function getArtifactPreviewMode(file: ArtifactPreviewPayload['file']): ArtifactPreviewMode {
+  const mimeType = file.mimeType?.toLowerCase() ?? ''
+  const filename = file.filename.toLowerCase()
+  if (mimeType.startsWith('image/') || /\.(?:png|jpe?g|gif|webp|svg)$/.test(filename)) return 'image'
+  if (mimeType.startsWith('video/') || /\.(?:mp4|webm|mov)$/.test(filename)) return 'video'
+  if (mimeType.startsWith('audio/') || /\.(?:mp3|wav|ogg|m4a)$/.test(filename)) return 'audio'
+  if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) return 'pdf'
+  if (mimeType === 'text/html' || /\.x?html?$/.test(filename)) return 'html'
+  if (mimeType === 'text/markdown' || /\.(?:md|markdown)$/.test(filename)) return 'markdown'
+  if (/\.(?:mmd|mermaid)$/.test(filename)) return 'mermaid'
+  if (
+    mimeType.startsWith('text/')
+    || mimeType.includes('json')
+    || mimeType.includes('javascript')
+    || mimeType === 'application/xml'
+    || mimeType.endsWith('+xml')
+    || /\.(?:txt|csv|json|ya?ml|xml|js|jsx|ts|tsx|py|sql|sh)$/.test(filename)
+  ) return 'text'
+  return 'unsupported'
+}
+
+function ArtifactPreviewCanvas({
+  preview,
+  onClose,
+}: {
+  preview: ArtifactPreviewPayload
+  onClose: () => void
+}) {
+  const t = useTranslations('chat.message')
+  const file = preview.file
+  const mode = React.useMemo(() => getArtifactPreviewMode(file), [file])
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
+  const [textContent, setTextContent] = React.useState('')
+  const [isLoading, setIsLoading] = React.useState(mode !== 'unsupported')
+  const [loadFailed, setLoadFailed] = React.useState(false)
+
+  React.useEffect(() => {
+    let cancelled = false
+    let createdObjectUrl: string | null = null
+    setPreviewUrl(null)
+    setTextContent('')
+    setLoadFailed(false)
+
+    if (!file.url || mode === 'unsupported') {
+      if (!file.url) setLoadFailed(true)
+      setIsLoading(false)
+      return
+    }
+
+    let resolvedUrl: URL
+    try {
+      resolvedUrl = new URL(file.url, window.location.href)
+      if (resolvedUrl.origin !== window.location.origin) {
+        throw new Error('Artifact preview URL must be same-origin')
+      }
+    } catch {
+      setIsLoading(false)
+      setLoadFailed(true)
+      return
+    }
+
+    setIsLoading(true)
+    void fetch(resolvedUrl, { credentials: 'same-origin' })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Artifact preview failed with ${response.status}`)
+        }
+        if (mode === 'text' || mode === 'markdown' || mode === 'mermaid') {
+          const content = await response.text()
+          if (!cancelled) setTextContent(content)
+          return
+        }
+        createdObjectUrl = URL.createObjectURL(await response.blob())
+        if (cancelled) {
+          URL.revokeObjectURL(createdObjectUrl)
+          createdObjectUrl = null
+          return
+        }
+        setPreviewUrl(createdObjectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl)
+    }
+  }, [file.url, mode])
+
+  const handleDownload = React.useCallback(() => {
+    if (!file.url) return
+    const link = document.createElement('a')
+    link.href = file.url
+    link.download = file.filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }, [file.filename, file.url])
+
+  let body: React.ReactNode
+  if (isLoading) {
+    body = (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>{t('artifactPreviewLoading')}</span>
       </div>
+    )
+  } else if (loadFailed || mode === 'unsupported') {
+    body = (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-muted-foreground">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
+          <FileText className="h-6 w-6" />
+        </div>
+        <p className="max-w-sm text-sm">{t(loadFailed ? 'artifactPreviewLoadError' : 'artifactPreviewUnavailable')}</p>
+      </div>
+    )
+  } else if (mode === 'image' && previewUrl) {
+    body = <img src={previewUrl} alt={file.filename} className="h-full w-full object-contain p-6" />
+  } else if (mode === 'video' && previewUrl) {
+    body = <video src={previewUrl} controls playsInline className="h-full w-full bg-black object-contain" />
+  } else if (mode === 'audio' && previewUrl) {
+    body = <div className="flex h-full items-center justify-center p-8"><audio src={previewUrl} controls className="w-full max-w-xl" /></div>
+  } else if (mode === 'pdf' && previewUrl) {
+    body = <iframe title={file.filename} src={previewUrl} className="h-full w-full border-0 bg-white" />
+  } else if (mode === 'html' && previewUrl) {
+    body = <iframe title={file.filename} src={previewUrl} sandbox="allow-scripts" className="h-full w-full border-0 bg-white" />
+  } else if (mode === 'markdown') {
+    body = <div className="h-full overflow-auto p-6"><Streamdown>{textContent}</Streamdown></div>
+  } else if (mode === 'mermaid') {
+    body = <MermaidPreview code={textContent} />
+  } else {
+    body = <pre className="h-full overflow-auto p-4 text-sm"><code>{textContent}</code></pre>
+  }
+
+  return (
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">{t('artifactPreviewCanvasTitle')}</div>
+          <div className="truncate text-xs text-muted-foreground">{file.filename}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              onClick={handleDownload}
+              disabled={!file.url}
+              render={
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidDownloadLabel')}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              }
+            />
+            <TooltipContent>{t('mermaidDownloadLabel')}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              onClick={onClose}
+              render={
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('closeCodePreview')}>
+                  <X className="h-4 w-4" />
+                </Button>
+              }
+            />
+            <TooltipContent>{t('closeCodePreview')}</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
     </div>
   )
 }
 
-export function CodePreviewCanvas({
+function CodeContentPreviewCanvas({
   preview,
   onClose,
 }: {
@@ -485,13 +735,24 @@ export function CodePreviewCanvas({
   }, [preview])
 
   return (
-    <div className="flex h-full min-w-0 flex-col border-l bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
       <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{t('codePreviewCanvasTitle')}</div>
-          <div className="truncate text-xs text-muted-foreground">{preview.language}</div>
+        <div className="flex min-w-0 items-center gap-3">
+          <TabsList>
+            {preview.kind !== 'source' && (
+              <TabsTrigger value="preview">{t('codePreview')}</TabsTrigger>
+            )}
+            <TabsTrigger value="source">{t('codeSource')}</TabsTrigger>
+          </TabsList>
+          <span className="truncate text-sm font-medium uppercase">{preview.language}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {preview.kind !== 'markdown' && preview.kind !== 'source' && preview.kind !== 'mermaid' && (
+            <span className="mr-2 hidden text-xs text-muted-foreground lg:inline">
+              {t('previewScriptsEnabled')}
+            </span>
+          )}
           <Tooltip>
             <TooltipTrigger
               onClick={handleCopy}
@@ -527,22 +788,6 @@ export function CodePreviewCanvas({
           </Tooltip>
         </div>
       </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2">
-          <TabsList>
-            {preview.kind !== 'source' && (
-              <TabsTrigger value="preview">{t('codePreview')}</TabsTrigger>
-            )}
-            <TabsTrigger value="source">{t('codeSource')}</TabsTrigger>
-          </TabsList>
-          {preview.kind !== 'markdown' && preview.kind !== 'source' && preview.kind !== 'mermaid' && (
-            <span className="hidden text-xs text-muted-foreground lg:inline">
-              {t('previewScriptsEnabled')}
-            </span>
-          )}
-        </div>
-
         {preview.kind !== 'source' && (
           <TabsContent value="preview" className="min-h-0 overflow-hidden p-0">
             {preview.kind === 'markdown' ? (
@@ -577,4 +822,75 @@ export function CodePreviewCanvas({
       </Tabs>
     </div>
   )
+}
+
+function SourceDocumentPreviewCanvas({
+  preview,
+  onClose,
+}: {
+  preview: SourceDocumentPreviewPayload
+  onClose: () => void
+}) {
+  const t = useTranslations('chat.source')
+  const [visibleSegmentCount, setVisibleSegmentCount] = React.useState(SOURCE_SEGMENT_BATCH_SIZE)
+  const visibleSegments = preview.segments.slice(0, visibleSegmentCount)
+  const hiddenSegmentCount = preview.segments.length - visibleSegments.length
+
+  return (
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
+        <h3 className="flex min-w-0 items-center gap-2 font-semibold">
+          <FileText className="h-4 w-4 shrink-0" />
+          <span className="truncate">{preview.documentName}</span>
+        </h3>
+        <Tooltip>
+          <TooltipTrigger
+            onClick={onClose}
+            render={
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('close')}>
+                <X className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <TooltipContent>{t('close')}</TooltipContent>
+        </Tooltip>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="space-y-2">
+          {visibleSegments.map((segment, index) => (
+            <SegmentItem
+              key={segment.sourceId ?? `${preview.documentId}:${segment.metadata?.page ?? index}:${index}`}
+              segment={segment}
+              index={index}
+            />
+          ))}
+          {hiddenSegmentCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setVisibleSegmentCount((count) => count + SOURCE_SEGMENT_BATCH_SIZE)}
+              className="w-full rounded-md border border-dashed py-2 text-sm text-primary hover:bg-muted/50 transition-colors"
+            >
+              {t('showMoreSegments', { count: Math.min(hiddenSegmentCount, SOURCE_SEGMENT_BATCH_SIZE) })}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function CodePreviewCanvas({
+  preview,
+  onClose,
+}: {
+  preview: ChatPreviewPayload
+  onClose: () => void
+}) {
+  if (preview.kind === 'artifact') {
+    return <ArtifactPreviewCanvas preview={preview} onClose={onClose} />
+  }
+  if (preview.kind === 'source-document') {
+    return <SourceDocumentPreviewCanvas preview={preview} onClose={onClose} />
+  }
+  return <CodeContentPreviewCanvas preview={preview} onClose={onClose} />
 }

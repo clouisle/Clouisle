@@ -148,6 +148,10 @@ export type ChatMessages = {
       openCodePreview: string
       closeCodePreview: string
       codePreviewCanvasTitle: string
+      artifactPreviewCanvasTitle: string
+      artifactPreviewLoading: string
+      artifactPreviewUnavailable: string
+      artifactPreviewLoadError: string
       previewScriptsEnabled: string
       linkSafetyTitle: string
       linkSafetyDescription: string

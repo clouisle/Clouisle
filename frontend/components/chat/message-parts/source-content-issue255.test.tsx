@@ -115,10 +115,13 @@ function find(node: ReactNode, predicate: (tree: Tree) => boolean): Tree {
   throw new Error("Element not found");
 }
 
-function render(sources: ComponentProps<typeof SourceContent>["sources"]) {
+function render(
+  sources: ComponentProps<typeof SourceContent>["sources"],
+  onOpenCodePreview?: ComponentProps<typeof SourceContent>["onOpenCodePreview"],
+) {
   stateIndex = 0;
   effectIndex = 0;
-  return SourceContent({ sources });
+  return SourceContent({ sources, onOpenCodePreview });
 }
 
 beforeEach(() => {
@@ -161,36 +164,8 @@ describe("SourceContent issue #255 coverage", () => {
     expect(JSON.stringify(render(sources))).toContain("https://example.com/19");
   });
 
-  test("cancels deferred segment rendering when the document closes", () => {
-    const sources = [
-      {
-        type: "source-document" as const,
-        documentId: "doc-1",
-        documentName: "Guide",
-        content: "Deferred segment",
-      },
-    ];
-
-    find(render(sources), (node) => node.props["aria-expanded"] === false).props
-      .onClick();
-    find(
-      render(sources),
-      (node) =>
-        node.type === "button" &&
-        JSON.stringify(node.props.children).includes("Guide"),
-    ).props.onClick();
-    const selected = render(sources);
-
-    expect(timers.size).toBe(1);
-    expect(JSON.stringify(selected)).toContain("loadingSources");
-    find(selected, (node) => node.props["aria-label"] === "close").props.onClick();
-    render(sources);
-
-    expect(clearedTimers).toEqual([1]);
-    expect(timers).toHaveLength(0);
-  });
-
-  test("renders, expands, and batches grouped document segments", () => {
+  test("groups document segments and opens preview with all segments", () => {
+    const onOpenCodePreview = mock(() => {});
     const sources = Array.from({ length: 6 }, (_, index) => ({
       type: "source-document" as const,
       documentId: "doc-1",
@@ -199,32 +174,17 @@ describe("SourceContent issue #255 coverage", () => {
       metadata: { score: 0.9, page: index + 1 },
     }));
 
-    find(render(sources), (node) => node.props["aria-expanded"] === false).props
+    find(render(sources, onOpenCodePreview), (node) => node.props["aria-expanded"] === false).props
       .onClick();
     find(
-      render(sources),
+      render(sources, onOpenCodePreview),
       (node) =>
         node.type === "button" &&
         JSON.stringify(node.props.children).includes("Guide"),
     ).props.onClick();
-    render(sources);
-    timers.get(1)?.();
-    const selected = render(sources);
 
-    expect(JSON.stringify(selected)).toContain("showMoreSegments:1");
-    find(selected, (node) => node.props["aria-expanded"] === false).props.onClick();
-    const openSegment = render(sources);
-    expect(
-      find(openSegment, (node) => node.props.children === "contentTruncated"),
-    ).toBeDefined();
-    expect(
-      find(openSegment, (node) => node.props.children === "relevance"),
-    ).toBeDefined();
-
-    find(
-      openSegment,
-      (node) => node.props.children === "showMoreSegments:1",
-    ).props.onClick();
-    expect(JSON.stringify(render(sources))).toContain("Segment 6");
+    expect(onOpenCodePreview).toHaveBeenCalledTimes(1);
+    const payload = onOpenCodePreview.mock.calls[0][0] as { segments: unknown[] };
+    expect(payload.segments).toHaveLength(6);
   });
 });

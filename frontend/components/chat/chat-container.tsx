@@ -6,12 +6,13 @@ import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Message } from './message';
-import type { ChatMessage, CodePreviewPayload, MessagePart } from './types';
+import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
   className?: string;
   isStreaming?: boolean;
+  isLoading?: boolean;
   autoScroll?: boolean;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
   emptyState?: React.ReactNode;
@@ -26,7 +27,7 @@ interface ChatContainerProps {
   /** Show scroll to bottom button when not at bottom */
   showScrollToBottom?: boolean;
   /** Callback when a previewable code block is opened */
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean;
   /** Hide token usage/speed stats popover */
@@ -73,7 +74,7 @@ interface ChatMessageRowProps {
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
   onSelectOption?: (option: string) => void;
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   hideToolCalls: boolean;
   hideMessageActions: boolean;
   hideReasoning: boolean;
@@ -170,6 +171,7 @@ export function ChatContainer({
   messages,
   className,
   isStreaming = false,
+  isLoading = false,
   autoScroll = true,
   renderPart,
   emptyState,
@@ -192,6 +194,7 @@ export function ChatContainer({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
+  const previousConversationIdRef = useRef(conversationId);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
   const t = useTranslations('chat');
@@ -210,10 +213,11 @@ export function ChatContainer({
     () => messages.slice(Math.max(0, messages.length - renderedMessageCount)),
     [messages, renderedMessageCount]
   );
+
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   useEffect(() => {
-    setRenderedMessageCount((count) => Math.min(Math.max(count, INITIAL_RENDERED_MESSAGE_COUNT), messages.length));
+    setRenderedMessageCount((count) => Math.max(Math.min(count, messages.length), INITIAL_RENDERED_MESSAGE_COUNT));
   }, [messages.length]);
   useEffect(() => {
     if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
@@ -266,9 +270,24 @@ export function ChatContainer({
 
   useIsomorphicLayoutEffect(() => {
     const previousLength = previousMessageLengthRef.current;
+    const conversationChanged = previousConversationIdRef.current !== conversationId;
     previousMessageLengthRef.current = messages.length;
+    previousConversationIdRef.current = conversationId;
+
+    if (conversationChanged) {
+      shouldAutoFollowRef.current = false;
+      return;
+    }
 
     if (!autoScroll || messages.length <= previousLength) {
+      return;
+    }
+
+    const appendedUserMessage = messages
+      .slice(previousLength)
+      .some((message) => message.role === 'user');
+    if ((!isLoading && !isStreaming) || !appendedUserMessage) {
+      shouldAutoFollowRef.current = false;
       return;
     }
 
@@ -277,11 +296,10 @@ export function ChatContainer({
       showScrollButtonRef.current = false;
       setShowScrollButton(false);
     }
-  }, [autoScroll, messages.length, scrollToBottom]);
+  }, [autoScroll, conversationId, isLoading, isStreaming, messages, scrollToBottom]);
 
   useIsomorphicLayoutEffect(() => {
     if (!autoScroll || !shouldAutoFollowRef.current) {
-      updateAtBottomState();
       return;
     }
 

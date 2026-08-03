@@ -339,6 +339,7 @@ describe('useChat', () => {
       { event: 'rag_context', data: { contexts: [{ document_id: 'doc-1', document_name: 'Doc', content: 'chunk', kb_id: 'kb-1', kb_name: 'KB', score: 0.8 }] } },
       { event: 'compression_start', data: {} },
       { event: 'compression_end', data: { before_tokens: 20, after_tokens: 10 } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'sea', tool_display_name: 'sea', arguments: {} } },
       { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: { q: 'coverage' } } },
       { event: 'tool_call', data: { tool_call_id: 'tool-2', tool_name: 'lookup', tool_display_name: 'Lookup', arguments: {} } },
       { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', result: { ok: true }, is_error: false } },
@@ -357,12 +358,61 @@ describe('useChat', () => {
     expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc-1' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'task', taskType: 'compression', state: 'completed' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1', state: 'done' }))
+    expect(parts.filter((part) => part.type === 'tool-call' && part.toolCallId === 'tool-1')).toHaveLength(1)
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      toolName: 'search',
+      input: { q: 'coverage' },
+    }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-2', state: 'error' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-result', toolCallId: 'tool-2', isError: true }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
     expect(parts).toContainEqual({ type: 'truncated' })
     expect(parts).toContainEqual({ type: 'iteration-cap-reached' })
     expect(parts).toContainEqual({ type: 'text', text: 'Reached limit', state: 'done' })
+  })
+  it('preserves defined tool-call fields when a duplicate tool_call omits them', async () => {
+    streamEvents = [
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: { q: 'a' } } },
+      // Duplicate tool_call omits tool_display_name -> must not clobber the existing value
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', arguments: { q: 'b' } } },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    const parts = result.messages[1].parts
+    expect(parts.filter((part) => part.type === 'tool-call' && part.toolCallId === 'tool-1')).toHaveLength(1)
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      toolDisplayName: 'Search',
+      input: { q: 'b' },
+      state: 'done',
+    }))
+  })
+
+  it('preserves a terminal tool-call state when a duplicate tool_call arrives after the result', async () => {
+    streamEvents = [
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: {} } },
+      { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'search', result: 'boom', is_error: true } },
+      // Duplicate tool_call carries state 'running' -> must not regress the terminal 'error' state
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', arguments: {} } },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    const parts = result.messages[1].parts
+    expect(parts.filter((part) => part.type === 'tool-call' && part.toolCallId === 'tool-1')).toHaveLength(1)
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      state: 'error',
+    }))
   })
 
   it('finalizes a stream that closes without a terminal event', async () => {

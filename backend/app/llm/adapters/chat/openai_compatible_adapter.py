@@ -377,7 +377,7 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                 raw_tool_calls = getattr(delta, "tool_calls", None)
 
                 # 累加工具调用
-                tool_accumulator.accumulate(delta)
+                tool_call_starts = tool_accumulator.accumulate(delta)
 
                 # 处理完成
                 tool_calls_delta = None
@@ -398,13 +398,29 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                         finish_reason = FinishReason.CONTENT_FILTER
 
                 # 只有有内容时才 yield
-                if content or reasoning_content or tool_calls_delta or finish_reason:
+                if (
+                    content
+                    or reasoning_content
+                    or tool_calls_delta
+                    or tool_call_starts
+                    or finish_reason
+                ):
                     yield self.create_stream_chunk(
                         content=content,
                         reasoning_content=reasoning_content,
                         tool_calls=tool_calls_delta,
+                        tool_call_starts=tool_call_starts,
                         finish_reason=finish_reason,
                         response_id=response_id,
+                        stream_activity=bool(
+                            raw_tool_calls
+                            and not (
+                                content
+                                or reasoning_content
+                                or tool_calls_delta
+                                or finish_reason
+                            )
+                        ),
                     )
                 elif raw_tool_calls:
                     yield self.create_stream_chunk(

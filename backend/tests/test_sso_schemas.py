@@ -44,3 +44,7 @@ def test_update_rejects_non_http_icon_url(icon_url):
 
 def test_update_allows_omitted_name():
     assert SSOProviderUpdate().name is None
+
+
+def test_update_accepts_explicit_none_name():
+    assert SSOProviderUpdate(name=None).name is None

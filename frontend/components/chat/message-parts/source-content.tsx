@@ -1,19 +1,18 @@
 'use client';
 
-import { memo, useCallback, useEffect, useState, useMemo } from 'react';
+import { memo, useCallback, useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { ChevronDown, ChevronRight, FileText, Link2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { SourceUrlPart, SourceDocumentPart } from '../types';
+import type { SourceUrlPart, SourceDocumentPart, ChatPreviewPayload } from '../types';
 
 interface SourceContentProps {
   sources: (SourceUrlPart | SourceDocumentPart)[];
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   className?: string;
 }
 
 const SOURCE_LIST_BATCH_SIZE = 20;
-const SOURCE_SEGMENT_BATCH_SIZE = 5;
-const SOURCE_CONTENT_RENDER_DELAY_MS = 16;
 const SEGMENT_CONTENT_MAX_CHARS = 4000;
 
 // Grouped document with all its segments
@@ -24,7 +23,7 @@ interface GroupedDocument {
 }
 
 // Collapsible segment item component
-const SegmentItem = memo(function SegmentItem({ segment, index }: { segment: SourceDocumentPart; index: number }) {
+export const SegmentItem = memo(function SegmentItem({ segment, index }: { segment: SourceDocumentPart; index: number }) {
   const t = useTranslations('chat.source');
   const [isOpen, setIsOpen] = useState(false);
   const fullContent = segment.content ?? '';
@@ -76,13 +75,10 @@ const SegmentItem = memo(function SegmentItem({ segment, index }: { segment: Sou
   );
 });
 
-export const SourceContent = memo(function SourceContent({ sources, className }: SourceContentProps) {
+export const SourceContent = memo(function SourceContent({ sources, onOpenCodePreview, className }: SourceContentProps) {
   const t = useTranslations('chat.source');
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedDocument, setSelectedDocument] = useState<GroupedDocument | null>(null);
   const [visibleSourceCount, setVisibleSourceCount] = useState(SOURCE_LIST_BATCH_SIZE);
-  const [visibleSegmentCount, setVisibleSegmentCount] = useState(SOURCE_SEGMENT_BATCH_SIZE);
-  const [isDialogRendered, setIsDialogRendered] = useState(false);
 
   const urlSources = useMemo(() => 
     sources?.filter((s): s is SourceUrlPart => s.type === 'source-url') ?? [],
@@ -116,19 +112,6 @@ export const SourceContent = memo(function SourceContent({ sources, className }:
     return Array.from(groups.values());
   }, [sources, documentSources, t]);
 
-  // Defer mounting the source segment list until after the click handler returns.
-  useEffect(() => {
-    if (!selectedDocument) {
-      setIsDialogRendered(false);
-      return;
-    }
-    const handle = window.setTimeout(
-      () => setIsDialogRendered(true),
-      SOURCE_CONTENT_RENDER_DELAY_MS,
-    );
-    return () => window.clearTimeout(handle);
-  }, [selectedDocument]);
-
   if (!sources || sources.length === 0) {
     return null;
   }
@@ -140,12 +123,6 @@ export const SourceContent = memo(function SourceContent({ sources, className }:
     ...groupedDocuments,
   ].slice(0, visibleSourceCount);
   const hiddenSourceCount = uniqueSourceCount - visibleSourceItems.length;
-  const visibleSegments = isDialogRendered
-    ? selectedDocument?.segments.slice(0, visibleSegmentCount) ?? []
-    : [];
-  const hiddenSegmentCount = selectedDocument
-    ? selectedDocument.segments.length - visibleSegments.length
-    : 0;
 
   return (
     <div className={cn('overflow-hidden', className)}>
@@ -180,10 +157,13 @@ export const SourceContent = memo(function SourceContent({ sources, className }:
                 <DocumentSourceItem
                   key={item.documentId}
                   document={item}
-                  onClick={() => {
-                    setSelectedDocument(item);
-                    setVisibleSegmentCount(SOURCE_SEGMENT_BATCH_SIZE);
-                  }}
+                  onClick={() => onOpenCodePreview?.({
+                    id: `source-document:${item.documentId}`,
+                    kind: 'source-document',
+                    documentId: item.documentId,
+                    documentName: item.documentName,
+                    segments: item.segments,
+                  })}
                 />
               )
             ))}
@@ -199,52 +179,6 @@ export const SourceContent = memo(function SourceContent({ sources, className }:
           </div>
         )}
       </div>
-
-      {/* Document Segments */}
-      {selectedDocument && (
-        <div className="mt-3 rounded-xl border bg-background p-4 text-sm">
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <h3 className="flex min-w-0 items-center gap-2 font-semibold">
-              <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{selectedDocument.documentName}</span>
-            </h3>
-            <button
-              type="button"
-              onClick={() => setSelectedDocument(null)}
-              aria-label={t('close')}
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="max-h-[50vh] overflow-y-auto pr-2">
-            {isDialogRendered ? (
-              <div className="space-y-2">
-                {visibleSegments.map((segment, index) => (
-                  <SegmentItem
-                    key={segment.sourceId ?? `${selectedDocument.documentId}:${segment.metadata?.page ?? index}:${index}`}
-                    segment={segment}
-                    index={index}
-                  />
-                ))}
-                {hiddenSegmentCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setVisibleSegmentCount((count) => count + SOURCE_SEGMENT_BATCH_SIZE)}
-                    className="w-full rounded-md border border-dashed py-2 text-sm text-primary hover:bg-muted/50 transition-colors"
-                  >
-                    {t('showMoreSegments', { count: Math.min(hiddenSegmentCount, SOURCE_SEGMENT_BATCH_SIZE) })}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                {t('loadingSources')}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 });

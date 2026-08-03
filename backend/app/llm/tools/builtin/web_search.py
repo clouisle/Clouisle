@@ -5,39 +5,16 @@
 注意：实际使用需要配置搜索 API Key。
 """
 
+import asyncio
 import logging
-from html.parser import HTMLParser
 
 import httpx
+from markitdown import MarkItDown
 
 from app.core.i18n import t
 from ..registry import tool_registry, ToolParameter
 
 logger = logging.getLogger(__name__)
-
-
-class _HTMLTextExtractor(HTMLParser):
-    """Extract visible text while skipping script and style content."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._skip_depth = 0
-        self._chunks: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style"}:
-            self._skip_depth += 1
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style"} and self._skip_depth > 0:
-            self._skip_depth -= 1
-
-    def handle_data(self, data: str) -> None:
-        if self._skip_depth == 0 and data.strip():
-            self._chunks.append(data)
-
-    def get_text(self) -> str:
-        return " ".join(self._chunks)
 
 
 async def web_search(
@@ -157,61 +134,22 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
         网页内容
     """
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            response = await client.get(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; CloudisleBot/1.0)",
-                },
-            )
-            response.raise_for_status()
-
-            content_type = response.headers.get("content-type", "")
-
-            if "text/html" in content_type:
-                extractor = _HTMLTextExtractor()
-                extractor.feed(response.text)
-                extractor.close()
-                text = " ".join(extractor.get_text().split())
-
-                if len(text) > max_length:
-                    text = text[:max_length] + "..."
-
-                return {
-                    "url": url,
-                    "content": text,
-                    "content_type": "text/html",
-                    "success": True,
-                }
-            elif "application/json" in content_type:
-                return {
-                    "url": url,
-                    "content": response.text[:max_length],
-                    "content_type": "application/json",
-                    "success": True,
-                }
-            else:
-                return {
-                    "url": url,
-                    "error": t(
-                        "fetch_webpage_unsupported_content_type",
-                        content_type=content_type,
-                    ),
-                    "success": False,
-                }
-
-    except httpx.HTTPStatusError as e:
-        return {
-            "url": url,
-            "error": t("fetch_webpage_http_error", status_code=e.response.status_code),
-            "success": False,
-        }
-    except Exception:
-        return {
-            "url": url,
-            "error": t("tool_execution_failed"),
-            "success": False,
-        }
+        result = await asyncio.wait_for(
+            asyncio.to_thread(MarkItDown().convert, url), timeout=30
+        )
+        text = (result.text_content or "").strip()
+        if len(text) > max_length:
+            text = text[:max_length] + "..."
+        return {"url": url, "content": text, "success": True}
+    except Exception as e:
+        status_code = getattr(getattr(e, "response", None), "status_code", None)
+        if status_code is not None:
+            return {
+                "url": url,
+                "error": t("fetch_webpage_http_error", status_code=status_code),
+                "success": False,
+            }
+        return {"url": url, "error": t("tool_execution_failed"), "success": False}
 
 
 def register_web_search_tools() -> None:

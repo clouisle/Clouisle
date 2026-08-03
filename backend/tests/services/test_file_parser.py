@@ -168,3 +168,12 @@ def test_format_files_for_prompt_handles_empty_single_and_multiple(monkeypatch):
         "<file_header_indexed:1,a.txt><file_header_truncated_suffix:20>\n\nalpha"
         " | <file_header_indexed:2,b.txt>\n\nbeta"
     )
+
+
+def test_get_markitdown_caches_loaded_instance():
+    parser = FileParserService()
+
+    first = parser._get_markitdown()
+    second = parser._get_markitdown()
+
+    assert first is second

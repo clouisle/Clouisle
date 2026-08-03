@@ -49,7 +49,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, CodePreviewPayload, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
+import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -79,7 +79,7 @@ import {
   shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
-const CODE_FENCE_REGEX = /^```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```$/
+const CODE_FENCE_REGEX = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n([\s\S]*?)(?:\r?\n)?(`{3,}|~{3,})[ \t\r\n]*$/
 const STREAMING_REHYPE_PLUGINS = [
   defaultRehypePlugins.sanitize,
   defaultRehypePlugins.harden,
@@ -121,14 +121,6 @@ type ParsedCodeFence = {
   code: string
 }
 
-type ToolArtifact = {
-  path?: string
-  url?: string
-  filename?: string
-  size?: number
-  content_type?: string
-  contentType?: string
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -271,7 +263,7 @@ function findSpeechSentence(sentences: SpeechSentence[], charIndex: number) {
   return sentences.find((sentence) => charIndex >= sentence.start && charIndex < sentence.end) ?? sentences.at(-1) ?? null
 }
 
-function getToolArtifacts(output: unknown): FilePart[] {
+export function getToolArtifacts(output: unknown): FilePart[] {
   if (!isRecord(output) || !Array.isArray(output.artifacts)) {
     return []
   }
@@ -279,17 +271,22 @@ function getToolArtifacts(output: unknown): FilePart[] {
   return output.artifacts
     .filter(isRecord)
     .map((artifact): FilePart | null => {
-      const item = artifact as ToolArtifact
-      const filename = item.filename || item.path?.split('/').pop() || item.path || 'artifact'
-      if (!item.url) {
+      const path = typeof artifact.path === 'string' ? artifact.path : undefined
+      const explicitFilename = typeof artifact.filename === 'string' ? artifact.filename : undefined
+      const url = typeof artifact.url === 'string' ? artifact.url : undefined
+      if (!url) {
         return null
       }
       return {
         type: 'file',
-        filename,
-        url: item.url,
-        size: typeof item.size === 'number' ? item.size : undefined,
-        mimeType: item.content_type || item.contentType,
+        filename: explicitFilename || path?.split('/').pop() || path || 'artifact',
+        url,
+        size: typeof artifact.size === 'number' ? artifact.size : undefined,
+        mimeType: typeof artifact.content_type === 'string'
+          ? artifact.content_type
+          : typeof artifact.contentType === 'string'
+            ? artifact.contentType
+            : undefined,
       }
     })
     .filter((file): file is FilePart => file !== null)
@@ -302,10 +299,18 @@ function parseCodeFence(content: string): ParsedCodeFence | null {
     return null
   }
 
-  const language = match[1].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  const [, openingFence, info, code, closingFence] = match
+  if (
+    openingFence.charAt(0) !== closingFence.charAt(0)
+    || closingFence.length < openingFence.length
+  ) {
+    return null
+  }
+
+  const language = info.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
   return {
     language,
-    code: match[2].replace(/\r\n?/g, '\n'),
+    code: code.replace(/\r\n?/g, '\n'),
   }
 }
 
@@ -332,6 +337,7 @@ function getPreviewKind(language: string, code: string): CodePreviewPayload['kin
   return null
 }
 
+
 function PreviewableCodeBlock({
   content,
   index,
@@ -348,17 +354,19 @@ function PreviewableCodeBlock({
   const t = useTranslations('chat.message')
   const language = parsedFence.language || previewKind || 'text'
   const blockRef = React.useRef<HTMLDivElement>(null)
+  const [header, setHeader] = React.useState<HTMLDivElement | null>(null)
   const [toolbar, setToolbar] = React.useState<HTMLDivElement | null>(null)
-
   React.useLayoutEffect(() => {
     const block = blockRef.current
     if (!block) {
+      setHeader(null)
       setToolbar(null)
       return
     }
 
     const syncToolbar = () => {
-      setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-header"] > div'))
+      setHeader(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-header"]'))
+      setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-actions"]'))
     }
 
     syncToolbar()
@@ -370,7 +378,7 @@ function PreviewableCodeBlock({
   const previewButton = (
     <button
       type="button"
-      className="order-first inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="order-first inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onOpenCodePreview({
         id: `${language}:${parsedFence.code.length}:${parsedFence.code.slice(0, 32)}`,
         language,
@@ -391,7 +399,16 @@ function PreviewableCodeBlock({
         shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
         {...props}
       />
-      {toolbar ? ReactDOM.createPortal(previewButton, toolbar) : null}
+      {toolbar
+        ? ReactDOM.createPortal(previewButton, toolbar)
+        : header
+          ? ReactDOM.createPortal(
+            <div className="ml-auto flex shrink-0 items-center" data-chat-code-preview-fallback>
+              {previewButton}
+            </div>,
+            header,
+          )
+          : null}
     </div>
   )
 }
@@ -418,7 +435,7 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void
   /** Callback when a previewable code block is opened */
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
   /** Hide token usage/speed stats popover */
@@ -712,6 +729,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [isSpeakingThisMessage, onRequestScrollIntoView])
 
+    const handleArtifactPreview = React.useCallback((file: FilePart) => {
+      if (!file.url || !onOpenCodePreview) {
+        return
+      }
+      onOpenCodePreview({
+        id: `${message.id}:artifact:${file.url}`,
+        kind: 'artifact',
+        file,
+      })
+    }, [message.id, onOpenCodePreview])
+
     const renderToolResultContent = React.useCallback((output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
 
@@ -736,7 +764,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                     <button
                       key={`${imageIndex}-${imageUrl}`}
                       type="button"
-                      className="overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
+                      className="relative overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
+                      aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
                       onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
                     >
                       <img
@@ -744,6 +773,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                         alt={parsedOutput.prompt || t('generatedImageAlt')}
                         className="h-auto w-full object-cover"
                       />
+                      <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+                        <Eye className="h-4 w-4" />
+                      </span>
                     </button>
                   )
                 })}
@@ -799,7 +831,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (artifactFiles.length > 0) {
         return (
           <div className="space-y-3">
-            <FileListContent files={artifactFiles} />
+            <FileListContent
+              files={artifactFiles}
+              onPreview={onOpenCodePreview ? handleArtifactPreview : undefined}
+            />
             <ToolOutput
               output={parsedOutput}
               errorText={isError ? t('toolExecutionFailed') : undefined}
@@ -814,7 +849,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
-    }, [openLightbox, t])
+    }, [handleArtifactPreview, onOpenCodePreview, openLightbox, t])
 
     // Render a single part
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
@@ -830,6 +865,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             isStreaming={isStreaming && part.state !== 'done'}
             activeSpeechSentence={activeSpeechSentence}
             onOpenCodePreview={onOpenCodePreview}
+            onOpenImage={openLightbox}
           />
         )
       }
@@ -896,17 +932,22 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isImagePart(part)) {
         const imagePart = part as ImagePart
         return (
-          <div
+          <button
             key={index}
-            className="max-w-xs rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+            type="button"
+            className="relative block max-w-xs overflow-hidden rounded-lg text-left transition-opacity hover:opacity-90"
+            aria-label={`${t('openCodePreview')}: ${imagePart.alt || t('generatedImageAlt')}`}
             onClick={() => openLightbox(imagePart.url, imagePart.alt)}
           >
             <img
               src={imagePart.url}
               alt={imagePart.alt || 'Uploaded image'}
-              className="w-full h-auto object-cover"
+              className="h-auto w-full object-cover"
             />
-          </div>
+            <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+              <Eye className="h-4 w-4" />
+            </span>
+          </button>
         )
       }
 
@@ -1370,7 +1411,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         </MessageContent>
 
         {isAssistant && allSources.length > 0 && (
-          <SourceContent sources={allSources} />
+          <SourceContent sources={allSources} onOpenCodePreview={onOpenCodePreview} />
         )}
       </>
     ), [
@@ -1392,6 +1433,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isStandaloneErrorMessage,
       isUser,
       onChainOfThoughtOpenChange,
+      onOpenCodePreview,
       preservedErrorNote,
       renderDefaultPart,
       renderPart,
@@ -1640,7 +1682,7 @@ function PreviewableMarkdownBlock({
   ...props
 }: React.ComponentProps<typeof Block> & {
   isStreaming: boolean
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void
 }) {
   const parsedFence = !isStreaming && onOpenCodePreview ? parseCodeFence(content) : null
   const previewKind = parsedFence ? getPreviewKind(parsedFence.language, parsedFence.code) : null
@@ -1702,6 +1744,7 @@ function setAuthenticatedMarkdownImageCache(src: string, entry: AuthenticatedMar
 type AuthenticatedMarkdownImageProps = Omit<React.ComponentProps<'img'>, 'src' | 'alt'> & {
   src?: string
   alt?: string
+  onPreview?: (src: string, alt?: string) => void
 }
 
 function getCachedAuthenticatedImageUrl(src: string): string | null {
@@ -1747,7 +1790,8 @@ function loadAuthenticatedMarkdownImage(src: string): Promise<string> {
   return promise
 }
 
-function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: AuthenticatedMarkdownImageProps) {
+function AuthenticatedMarkdownImage({ src = '', alt = '', onPreview, ...props }: AuthenticatedMarkdownImageProps) {
+  const t = useTranslations('chat.message')
   const [prevSrc, setPrevSrc] = React.useState(src)
   const [objectUrl, setObjectUrl] = React.useState<string | null>(() => getInitialMarkdownImageUrl(src))
   const [failed, setFailed] = React.useState(() => Boolean(src && isBlockedImageSrc(src)))
@@ -1809,7 +1853,21 @@ function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: Authentica
     return <span className="text-muted-foreground">{alt || src}</span>
   }
 
-  return <img {...props} src={objectUrl} alt={alt} loading="lazy" />
+  return (
+    <span className="relative inline-block max-w-full">
+      <img {...props} src={objectUrl} alt={alt} loading="lazy" />
+      {onPreview && (
+        <button
+          type="button"
+          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${t('openCodePreview')}: ${alt || t('generatedImageAlt')}`}
+          onClick={() => onPreview(objectUrl, alt)}
+        >
+          <Eye className="h-4 w-4" />
+        </button>
+      )}
+    </span>
+  )
 }
 
 function isSameOriginChatLink(url: string) {
@@ -1987,12 +2045,14 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   isStreaming = false,
   activeSpeechSentence,
   onOpenCodePreview,
+  onOpenImage,
 }: {
   text: string
   sources: SourceDocumentPart[]
   isStreaming?: boolean
   activeSpeechSentence?: string | null
-  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  onOpenCodePreview?: (payload: ChatPreviewPayload) => void
+  onOpenImage?: (src: string, alt?: string) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const hasSources = sources.length > 0
@@ -2092,7 +2152,12 @@ export const TextWithCitations = React.memo(function TextWithCitations({
 
   const components = React.useMemo(() => ({
     img: ({ src, alt, ...props }: React.ComponentProps<'img'>) => (
-      <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt || ''} {...props} />
+      <AuthenticatedMarkdownImage
+        src={typeof src === 'string' ? src : undefined}
+        alt={alt || ''}
+        onPreview={onOpenImage}
+        {...props}
+      />
     ),
     p: ({ children, node, ...props }: React.ComponentProps<'p'> & {
       node?: {
@@ -2112,7 +2177,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
       }
       return <p {...props}>{children}</p>
     },
-  }), [])
+  }), [onOpenImage])
 
   React.useEffect(() => {
     if (!activeSpeechSentence) {
@@ -2160,6 +2225,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   && prevProps.isStreaming === nextProps.isStreaming
   && prevProps.activeSpeechSentence === nextProps.activeSpeechSentence
   && prevProps.onOpenCodePreview === nextProps.onOpenCodePreview
+  && prevProps.onOpenImage === nextProps.onOpenImage
 ))
 
 export { type ChatMessage }

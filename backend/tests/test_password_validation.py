@@ -76,6 +76,35 @@ async def test_validate_password_rejects_recent_history(
     )
 
 
+@pytest.mark.asyncio
+async def test_validate_password_passes_when_history_check_returns_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.password_expiration import PasswordExpirationService
+
+    async def get_value(key: str, default: object) -> object:
+        return {
+            "min_password_length": 8,
+            "require_uppercase": True,
+            "require_number": True,
+            "require_special_char": False,
+        }.get(key, default)
+
+    async def check_password_history(user: object, new_password: str) -> bool:
+        return False
+
+    user_marker = object()
+    monkeypatch.setattr(password_module.SiteSetting, "get_value", get_value)
+    monkeypatch.setattr(
+        PasswordExpirationService, "check_password_history", check_password_history
+    )
+
+    assert await password_module.validate_password("Abcdef12", user_marker) == (
+        True,
+        [],
+    )
+
+
 def test_translate_password_validation_errors_formats_length_and_generic_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

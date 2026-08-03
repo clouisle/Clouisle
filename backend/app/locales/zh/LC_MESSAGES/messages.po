@@ -574,13 +574,25 @@ msgid "builtin_tool_artifact"
 msgstr "生成下载链接"
 
 msgid "builtin_tool_artifact_description"
-msgstr "将沙盒中生成的文件整理为可点击的下载链接，方便在回答中直接下载。"
+msgstr "收集 /workspace 中已验证的最终文件，返回最新下载链接和预览信息。如果 write、edit 或 bash 修改了已收集的文件，必须再次调用 artifact；旧链接是过期快照。最终回答只使用最新链接。"
 
 msgid "builtin_tool_bash"
 msgstr "执行命令"
 
 msgid "builtin_tool_bash_description"
 msgstr "让助手在隔离的沙盒环境中运行命令，用于处理文件、运行脚本或生成内容。"
+
+msgid "builtin_tool_edit"
+msgstr "编辑文件"
+
+msgid "builtin_tool_edit_description"
+msgstr "执行经过快照校验的紧凑替换、块、剪切、插入和粘贴操作。剪切寄存器可跨调用保留，行号偏移后会恢复未变化的目标。"
+
+msgid "builtin_tool_edit_param_edits_description"
+msgstr "有序紧凑操作列表，支持范围、近似语法块、持久剪切寄存器以及按位置插入或粘贴。"
+
+msgid "builtin_tool_edit_param_path_description"
+msgstr "要编辑的现有文本文件。使用 /workspace 路径或相对路径；/workspace 外的路径会被拒绝。"
 
 msgid "builtin_tool_calculate"
 msgstr "数学计算"
@@ -706,7 +718,7 @@ msgid "builtin_tool_read"
 msgstr "读取文件"
 
 msgid "builtin_tool_read_description"
-msgstr "读取沙盒中的文本文件内容，让助手可以查看之前创建或生成的文件。"
+msgstr "读取带 LINE#ID 锚点的 UTF-8 文本文件；锚点绑定完整文件快照。行范围和字面文本搜索会保留原始行号，以便 edit 安全恢复。"
 
 msgid "builtin_tool_unit_convert"
 msgstr "单位转换"
@@ -739,7 +751,7 @@ msgid "builtin_tool_write"
 msgstr "写入文件"
 
 msgid "builtin_tool_write_description"
-msgstr "在沙盒中创建或修改文本文件，常用于保存草稿、脚本或生成结果。"
+msgstr "在沙盒中创建 UTF-8 文本文件或替换其完整内容。对现有文件执行局部修改时，请先 read 再使用 edit。"
 
 msgid "builtin_tool_bash_param_command_description"
 msgstr "要执行的 Shell 命令。示例：`ls -la /workspace`、`python3 -m pip install python-docx`、`python3 /workspace/create_docx.py`、`npm install mammoth`、`node /workspace/convert.js`。引用 read/write 工具创建的文件时使用 /workspace 路径。"
@@ -754,13 +766,23 @@ msgid "builtin_tool_read_param_path_description"
 msgstr "要读取的文件路径。使用 /workspace/file.txt 或相对路径如 file.txt；/workspace 外的路径会被拒绝。"
 
 msgid "builtin_tool_read_param_max_chars_description"
-msgstr "文本文件返回的最大字符数。仅在需要读取大文件的更多内容时增加此值。"
+msgstr "经过行范围和搜索筛选后返回的哈希行格式文本的最大字符数。"
+
+msgid "builtin_tool_read_param_start_line_description"
+msgstr "要检查的第一行，使用从 1 开始的文件行号。默认为 1。"
+
+msgid "builtin_tool_read_param_end_line_description"
+msgstr "要检查的最后一行（包含该行）。省略时读取到文件末尾。"
+
+msgid "builtin_tool_read_param_search_description"
+msgstr "可选的区分大小写字面文本。仅返回指定范围内包含该文本的行。"
+
 
 msgid "builtin_tool_write_param_path_description"
 msgstr "要写入的文件路径。使用 /workspace/script.py、/workspace/output/result.txt 或相对路径；/workspace 外的路径会被拒绝。"
 
 msgid "builtin_tool_write_param_content_description"
-msgstr "要写入的完整 UTF-8 文本内容。对于脚本，包含完整的 Python 或 JavaScript 源代码。"
+msgstr "要写入的完整 UTF-8 文本内容。仅需修改局部内容时请改用 edit。"
 
 msgid "builtin_tool_artifact_param_paths_description"
 msgstr "要收集用于下载的文件或目录。推荐使用对象格式如 [{\"path\":\"/workspace/output/report.docx\",\"description\":\"生成的报告\"}]。也接受字符串路径如 [\"output/report.docx\"]。"
@@ -2507,9 +2529,6 @@ msgstr "不支持的搜索引擎：{search_engine}"
 
 msgid "web_search_api_error"
 msgstr "搜索 API 错误：{status_code}"
-
-msgid "fetch_webpage_unsupported_content_type"
-msgstr "不支持的内容类型：{content_type}"
 
 msgid "fetch_webpage_http_error"
 msgstr "HTTP 错误：{status_code}"

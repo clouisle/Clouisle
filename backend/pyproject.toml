@@ -34,7 +34,7 @@ dependencies = [
     # MCP (Model Context Protocol)
     "mcp>=1.27.0",
     # Document processing
-    "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.5",
+    "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.6",
     "jieba>=0.42.1",
     # Token counting
     "tiktoken>=0.12.0",

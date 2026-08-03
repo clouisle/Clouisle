@@ -76,3 +76,19 @@ async def test_missing_or_expired_entries_are_not_reported_as_active(monkeypatch
 
     blacklist.assert_not_awaited()
     client.delete.assert_awaited_once_with("user:session:user-2")
+
+
+def test_redis_text_decodes_bytes_and_passes_strings():
+    assert redis_module._redis_text(b"hello") == "hello"
+    assert redis_module._redis_text("hello") == "hello"
+
+
+@pytest.mark.asyncio
+async def test_close_redis_is_noop_when_pool_not_initialized(monkeypatch):
+    get_redis_mock = AsyncMock()
+    monkeypatch.setattr(redis_module, "get_redis", get_redis_mock)
+
+    await redis_module.close_redis()
+
+    get_redis_mock.assert_not_awaited()
+    assert redis_module._redis_pool is None

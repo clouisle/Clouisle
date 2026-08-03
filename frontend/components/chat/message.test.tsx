@@ -24,6 +24,7 @@ const openLightbox = mock(() => {})
 const codeToTokens = mock(async () => ({ tokens: [] }))
 let lastStreamdownProps: Record<string, unknown> = {}
 let lastDialogProps: Record<string, unknown> = {}
+let rendersCodeActions = true
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en-US',
@@ -90,24 +91,33 @@ mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: {
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside>, FileListContent: ({ files }: { files: Array<{ filename: string }> }) => <div>artifacts:{files.map((file) => file.filename).join(',')}</div> }))
 mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
-  Block: ({ content }: { content: string }) => <div data-streamdown="code-block"><div data-streamdown="code-block-header"><div /></div><pre>{content}</pre></div>,
+  Block: ({ content }: { content: string }) => (
+    <div data-streamdown="code-block">
+      <div data-streamdown="code-block-header"><span /></div>
+      {rendersCodeActions && <div data-streamdown="code-block-actions" />}
+      <pre>{content}</pre>
+    </div>
+  ),
   Streamdown: (props: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => {
     lastStreamdownProps = props as unknown as Record<string, unknown>
     const content = String(props.children)
-    return <div>{props.BlockComponent && content.startsWith('```') ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} /> : props.children}</div>
+    const isCodeFence = /^ {0,3}(?:`{3,}|~{3,})/.test(content)
+    return <div>{props.BlockComponent && isCodeFence ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} /> : props.children}</div>
   },
   defaultRehypePlugins: { sanitize: 'sanitize', harden: 'harden' },
 }))
 mock.module('shiki', () => ({ bundledLanguages: { javascript: {} }, codeToTokens }))
 mock.module('@streamdown/math', () => ({ createMathPlugin: () => ({}) }))
 
-const { Message } = await import('./message')
+// Dynamic import is required so Bun module mocks are registered before Message evaluates.
+const { Message, getToolArtifacts } = await import('./message')
 
 const roots: Root[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount())
   document.body.replaceChildren()
   openLightbox.mockClear()
+  rendersCodeActions = true
 })
 
 function render(element: React.ReactElement) {
@@ -313,6 +323,21 @@ describe('message behavior', () => {
     expect(onSelectOption).toHaveBeenCalledWith('Beta')
   })
 
+  test('discovers structured artifacts', () => {
+    expect(getToolArtifacts({
+      artifacts: [
+        { path: '/workspace/report.csv', url: '/files/report.csv', size: 12, content_type: 'text/csv' },
+        { path: '/workspace/missing.csv' },
+      ],
+    })).toEqual([{
+      type: 'file',
+      filename: 'report.csv',
+      url: '/files/report.csv',
+      size: 12,
+      mimeType: 'text/csv',
+    }])
+  })
+
   test('renders tool errors, artifacts, MCP results, and media failures', () => {
     const html = renderToStaticMarkup(<Message message={{
       id: 'tools',
@@ -345,8 +370,8 @@ describe('message behavior', () => {
       ],
     }} />)
 
-    act(() => container.querySelector('img[alt="Uploaded chart"]')!.parentElement!.click())
-    act(() => container.querySelector('img[alt="Generated chart"]')!.parentElement!.click())
+    act(() => button(container, 'chat.message.openCodePreview: Uploaded chart').click())
+    act(() => button(container, 'chat.message.openCodePreview: Generated chart').click())
     expect(openLightbox.mock.calls).toEqual([
       ['/uploaded.png', 'Uploaded chart'],
       ['/generated.png', 'Generated chart'],
@@ -503,6 +528,7 @@ describe('message behavior', () => {
     const container = render(<Message message={{ id: 'preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
 
     await act(async () => {})
+    expect(container.querySelector('[data-streamdown="code-block-actions"]')?.textContent).toContain('chat.message.openCodePreview')
     act(() => button(container, 'chat.message.openCodePreview').click())
     expect(onOpenCodePreview).toHaveBeenCalledWith({
       id: 'xml:29:<svg viewBox="0 0 1 1"></svg>',
@@ -513,6 +539,58 @@ describe('message behavior', () => {
 
     const streaming = renderToStaticMarkup(<Message message={{ id: 'streaming-preview', role: 'assistant', parts: [{ type: 'text', text: code }] }} isStreaming onOpenCodePreview={onOpenCodePreview} />)
     expect(streaming).not.toContain('chat.message.openCodePreview')
+  })
+
+  test('keeps Markdown previews available without Streamdown code actions', async () => {
+    rendersCodeActions = false
+    const onOpenCodePreview = mock(() => {})
+    const code = '  ~~~~markdown\n# Preview\n~~~~~\n'
+    const container = render(<Message message={{ id: 'markdown-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    const header = container.querySelector('[data-streamdown="code-block-header"]')
+    expect(header?.querySelector('[data-chat-code-preview-fallback]')?.textContent).toContain('chat.message.openCodePreview')
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'markdown:9:# Preview',
+      language: 'markdown',
+      code: '# Preview',
+      kind: 'markdown',
+    })
+  })
+
+  test('keeps empty Markdown fences previewable without Streamdown code actions', async () => {
+    rendersCodeActions = false
+    const onOpenCodePreview = mock(() => {})
+    const code = '```markdown\n```'
+    const container = render(<Message message={{ id: 'empty-markdown-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    const header = container.querySelector('[data-streamdown="code-block-header"]')
+    expect(header?.querySelector('[data-chat-code-preview-fallback]')).not.toBeNull()
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'markdown:0:',
+      language: 'markdown',
+      code: '',
+      kind: 'markdown',
+    })
+  })
+
+  test('opens source previews without Streamdown code actions', async () => {
+    rendersCodeActions = false
+    const onOpenCodePreview = mock(() => {})
+    const code = '```python\nprint(1)\n```'
+    const container = render(<Message message={{ id: 'source-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'python:8:print(1)',
+      language: 'python',
+      code: 'print(1)',
+      kind: 'source',
+    })
   })
 
   test('normalizes citations, strong markers, and math outside code', () => {
@@ -639,6 +717,8 @@ describe('message behavior', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(secured.querySelector('img')?.getAttribute('src')).toBe('blob:secured')
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/files/one', { headers: { Authorization: 'Bearer secret' } })
+    act(() => button(secured, 'chat.message.openCodePreview: Secured image').click())
+    expect(openLightbox).toHaveBeenCalledWith('blob:secured', 'Secured image')
 
     const blocked = render(React.createElement(components.img, { src: 'javascript:alert(1)', alt: 'Blocked image' }))
     expect(blocked.textContent).toContain('Blocked image')

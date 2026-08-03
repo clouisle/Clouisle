@@ -427,4 +427,24 @@ describe('PublicChatPage', () => {
     expect(toastError).toHaveBeenCalledWith('invalidFileType')
     console.error = consoleError
   })
+  test('clears the active preview when navigating back/forward to a different conversation', async () => {
+    const params = Promise.resolve({ id: 'agent-1' })
+    query = new URLSearchParams('conversation=conv-1')
+    render(params)
+    await flush()
+
+    // A code preview is open for the current conversation
+    act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'code' }))
+    expect(output()).toContain('data-preview')
+
+    // Simulate browser back/forward: conv-1 is now the active conversation and the
+    // URL changes to conv-2, re-triggering the URL-driven loadConversationFromUrl.
+    chatState.conversationId = 'conv-1'
+    query = new URLSearchParams('conversation=conv-2')
+    act(() => renderer!.update(<PublicChatPage params={params} />))
+    await flush()
+
+    expect(getConversation).toHaveBeenCalledWith('conv-2')
+    expect(output()).not.toContain('data-preview')
+  })
 })

@@ -109,6 +109,7 @@ class TestBlob {
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react', () => ({
+  memo: <T,>(component: T) => component,
   useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | (() => void)) => effects.push(effect),
   useMemo: <T,>(factory: () => T) => {
@@ -139,10 +140,14 @@ mock.module('lucide-react', () => ({
   Copy: icon('Copy'),
   Download: icon('Download'),
   Expand: icon('Expand'),
+  FileText: icon('FileText'),
   Loader2: icon('Loader2'),
   ZoomIn: icon('ZoomIn'),
   ZoomOut: icon('ZoomOut'),
   X: icon('X'),
+  ChevronDown: icon('ChevronDown'),
+  ChevronRight: icon('ChevronRight'),
+  Link2: icon('Link2'),
 }))
 mock.module('streamdown', () => ({ Streamdown }))
 mock.module('shiki', () => ({ bundledLanguages: { javascript: {}, typescript: {}, html: {}, xml: {}, css: {}, markdown: {} } }))
@@ -159,6 +164,7 @@ mock.module('@/components/ui/tooltip', () => ({
 }))
 mock.module('@/components/ui/tabs', () => ({ Tabs, TabsContent, TabsList, TabsTrigger }))
 mock.module('@/components/ai-elements/code-block', () => ({ CodeBlock }))
+mock.module('./message-parts', () => ({ SegmentItem: (props: Props) => jsx('segment-item', props) }))
 const mermaidApi = {
   initialize: mock(() => {}),
   render: mock(async () => ({ svg: '<svg><text>ok</text></svg>' })),
@@ -166,6 +172,7 @@ const mermaidApi = {
 
 mock.module('mermaid', () => ({ default: mermaidApi }))
 
+// Dynamic import is required so Bun module mocks are registered before the canvas evaluates.
 const { CodePreviewCanvas } = await import('./code-preview-canvas')
 
 beforeEach(() => {
@@ -199,6 +206,8 @@ test('renders iframe previews and escapes javascript closing script tags', () =>
   expect(iframe?.props.sandbox).toBe('allow-scripts')
   expect(iframe?.props.srcDoc).toContain('<\\/script><script>alert(1)')
   expect(text(tree)).toContain('previewScriptsEnabled')
+  expect(text(tree)).not.toContain('codePreviewCanvasTitle')
+  expect(text(tree)).toContain('javascript')
 })
 
 test('shows markdown preview without iframe script notice', () => {
@@ -257,13 +266,58 @@ test('wraps svg and css previews in runnable documents', () => {
   expect(cssIframe?.props.srcDoc).toContain('h1 { color: red; }')
 })
 
+test('source-document preview renders document name, first segment batch, and close', () => {
+  const tree = render({
+    id: 'source-document:doc-1',
+    kind: 'source-document',
+    documentId: 'doc-1',
+    documentName: 'Guide',
+    segments: Array.from({ length: 6 }, (_, i) => ({
+      type: 'source-document',
+      sourceId: `seg-${i}`,
+      documentId: 'doc-1',
+      documentName: 'Guide',
+      content: `Segment ${i + 1}`,
+      metadata: { score: 0.9, page: i + 1 },
+    })),
+  })
+  const segmentItems = walk(tree).filter((node) => node.type === 'segment-item')
+
+  expect(text(tree)).toContain('Guide')
+  expect(segmentItems.length).toBe(5)
+  expect(segmentItems[0]?.props.segment.content).toBe('Segment 1')
+  expect(text(tree)).toContain('showMoreSegments')
+
+  click(findByAriaLabel(tree, 'close'))
+  expect(close).toHaveBeenCalled()
+})
+
 test('resets active tab when preview payload changes', () => {
-  render({ id: 'html', language: 'html', kind: 'html', code: '<p />' })
+  walk(render({ id: 'html', language: 'html', kind: 'html', code: '<p />' }))
   effects.forEach((effect) => effect())
-  render({ id: 'source', language: 'javascript', kind: 'source', code: 'alert(1)' })
+  walk(render({ id: 'source', language: 'javascript', kind: 'source', code: 'alert(1)' }))
   effects.forEach((effect) => effect())
 
   expect(stateValues[1]).toBe('source')
+})
+
+test('renders artifact metadata and keeps unsupported files downloadable', () => {
+  const tree = render({
+    id: 'artifact-1',
+    kind: 'artifact',
+    file: {
+      type: 'file',
+      filename: 'report.docx',
+      url: '/files/report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    },
+  })
+
+  expect(text(tree)).toContain('artifactPreviewCanvasTitle')
+  expect(text(tree)).toContain('report.docx')
+  expect(text(tree)).toContain('artifactPreviewUnavailable')
+  click(findByAriaLabel(tree, 'mermaidDownloadLabel'))
+  expect(appendedLink).toMatchObject({ href: '/files/report.docx', download: 'report.docx', clicked: true })
 })
 
 test('renders mermaid loading state without script iframe', () => {
@@ -326,6 +380,9 @@ test('mermaid controls zoom, fit, pan, and download svg', () => {
     [undefined, viewport, diagram]
   )
   const nodes = walk(tree)
+  const controls = nodes.find((node) => node.props['data-slot'] === 'mermaid-preview-controls')
+  expect(controls?.props.className).toContain('absolute')
+  expect(controls?.props.className).not.toContain('border-b')
   const viewportNode = nodes.find((node) => node.props.onPointerDown)
   const control = (label: string) => nodes.find((node) => resolve(node.props['aria-label']) === label)
   const pointerTarget = {
@@ -377,6 +434,54 @@ test('mermaid controls zoom, fit, pan, and download svg', () => {
   walk(settledTree)
   effects.at(-1)?.()
   expect(diagram.style.transform).toBe('translate(30px, 40px) scale(0.5)')
+})
+test('mermaid zooms from wheel scrolling and trackpad pinch gestures', () => {
+  const listeners = new Map<string, (event: Event) => void>()
+  const listenerOptions = new Map<string, unknown>()
+  const removeEventListener = mock(() => {})
+  const viewport = {
+    clientHeight: 148,
+    getBoundingClientRect: () => ({ width: 248, height: 148 }),
+    addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
+      listeners.set(type, listener as (event: Event) => void)
+      listenerOptions.set(type, options)
+    },
+    removeEventListener,
+  }
+  const diagram = {
+    style: { transform: '', transition: '' },
+    querySelector: () => ({ getBoundingClientRect: () => ({ width: 400, height: 200 }) }),
+  }
+
+  const tree = render(
+    { id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' },
+    [false, 'preview', '<svg><text>ok</text></svg>', null, false, 1, { x: 0, y: 0 }, false, '', ''],
+    [undefined, viewport, diagram]
+  )
+  walk(tree)
+  const cleanup = effects.at(-2)?.()
+
+  expect(listenerOptions.get('wheel')).toEqual({ passive: false })
+  const scrollPreventDefault = mock()
+  listeners.get('wheel')?.({ deltaMode: 0, deltaY: 80, preventDefault: scrollPreventDefault } as unknown as Event)
+  expect(scrollPreventDefault).toHaveBeenCalled()
+  expect(stateValues[5]).toBeLessThan(1)
+
+  const pinchPreventDefault = mock()
+  listeners.get('wheel')?.({ ctrlKey: true, deltaMode: 0, deltaY: -80, preventDefault: pinchPreventDefault } as unknown as Event)
+  expect(pinchPreventDefault).toHaveBeenCalled()
+  expect(stateValues[5]).toBeGreaterThan(0.9)
+
+  const gestureStartPreventDefault = mock()
+  listeners.get('gesturestart')?.({ preventDefault: gestureStartPreventDefault } as unknown as Event)
+  const gestureChangePreventDefault = mock()
+  listeners.get('gesturechange')?.({ scale: 1.2, preventDefault: gestureChangePreventDefault } as unknown as Event)
+  expect(gestureStartPreventDefault).toHaveBeenCalled()
+  expect(gestureChangePreventDefault).toHaveBeenCalled()
+  expect(stateValues[5]).toBe(1.2)
+
+  cleanup?.()
+  expect(removeEventListener).toHaveBeenCalledTimes(4)
 })
 
 test('mermaid error state renders translated renderer message', () => {

@@ -6,8 +6,10 @@ import pytest
 
 from app.llm.tools.sandbox_files import (
     SandboxArtifactTool,
+    SandboxEditTool,
     SandboxReadTool,
     SandboxWriteTool,
+    _HASHLINE_SNAPSHOT_DIR,
     _normalize_workspace_path,
     _runtime_workspace_path,
 )
@@ -83,6 +85,15 @@ def test_artifact_result_serializes_download_payload_and_error_output():
         "success": False,
         "result": "Generated 1 downloadable link(s) for the assistant response.",
         "count": 1,
+        "artifacts": [
+            {
+                "path": "/workspace/数据.csv",
+                "filename": "数据.csv",
+                "url": "/files/data.csv",
+                "size": 2,
+                "content_type": "text/csv",
+            }
+        ],
         "error": "missing file",
     }
     assert json.loads(result.llm_result) == {
@@ -111,6 +122,21 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
     oversized_content = await SandboxWriteTool(
         session_id="session-helper-coverage"
     ).execute("report.txt", "x" * 1_000_001)
+    empty_edits = await SandboxEditTool(session_id="session-helper-coverage").execute(
+        "report.txt", []
+    )
+    oversized_edit = await SandboxEditTool(
+        session_id="session-helper-coverage"
+    ).execute("report.txt", [{"line": "1#0000", "new": "x" * 1_000_001}])
+    invalid_start = await SandboxReadTool(session_id="session-helper-coverage").execute(
+        "report.txt", start_line=0
+    )
+    reversed_range = await SandboxReadTool(
+        session_id="session-helper-coverage"
+    ).execute("report.txt", start_line=3, end_line=2)
+    empty_search = await SandboxReadTool(session_id="session-helper-coverage").execute(
+        "report.txt", search=""
+    )
 
     assert missing_session == {"success": False, "error": "Sandbox session is required"}
     assert unsafe_path == {
@@ -118,6 +144,26 @@ async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_p
         "error": "path must stay inside /workspace",
     }
     assert oversized_content == {"success": False, "error": "content is too large"}
+    assert empty_edits == {
+        "success": False,
+        "error": "edits must be a non-empty list",
+    }
+    assert oversized_edit == {
+        "success": False,
+        "error": "edit content is too large",
+    }
+    assert invalid_start == {
+        "success": False,
+        "error": "start_line must be at least 1",
+    }
+    assert reversed_range == {
+        "success": False,
+        "error": "end_line must be greater than or equal to start_line",
+    }
+    assert empty_search == {
+        "success": False,
+        "error": "search must not be empty",
+    }
 
 
 @pytest.mark.anyio
@@ -144,4 +190,8 @@ async def test_read_tool_clamps_size_boundaries_in_submitted_payload(
     assert mock_submit.await_args.args[0].metadata["params"] == {
         "path": "report.txt",
         "max_chars": expected,
+        "start_line": 1,
+        "end_line": None,
+        "search": None,
+        "snapshot_dir": _HASHLINE_SNAPSHOT_DIR,
     }

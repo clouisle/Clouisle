@@ -303,6 +303,19 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         // Helper to add a tool group segment
         const addToolGroupSegment = (toolCall: ToolCallPart): ContentSegment => {
+          const existingGroup = segments.find(segment => (
+            segment.type === 'tool-group'
+            && segment.toolCalls?.some(existing => existing.toolCallId === toolCall.toolCallId)
+          ))
+          if (existingGroup) {
+            existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
+              existing.toolCallId === toolCall.toolCallId
+                ? mergeToolCall(existing, toolCall)
+                : existing
+            ))
+            return existingGroup
+          }
+
           // Check if last segment is a tool-group, if so add to it
           const lastSegment = segments[segments.length - 1]
           if (lastSegment && lastSegment.type === 'tool-group') {
@@ -311,8 +324,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             return lastSegment
           }
           // Create new tool group segment
-          const newSegment: ContentSegment = { 
-            type: 'tool-group', 
+          const newSegment: ContentSegment = {
+            type: 'tool-group',
             toolCalls: [toolCall],
             toolResults: []
           }
@@ -1391,14 +1404,27 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         const addToolGroupSegment = (toolCall: ToolCallPart): ContentSegment => {
+          const existingGroup = segments.find(segment => (
+            segment.type === 'tool-group'
+            && segment.toolCalls?.some(existing => existing.toolCallId === toolCall.toolCallId)
+          ))
+          if (existingGroup) {
+            existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
+              existing.toolCallId === toolCall.toolCallId
+                ? mergeToolCall(existing, toolCall)
+                : existing
+            ))
+            return existingGroup
+          }
+
           const lastSegment = segments[segments.length - 1]
           if (lastSegment && lastSegment.type === 'tool-group') {
             lastSegment.toolCalls = lastSegment.toolCalls || []
             lastSegment.toolCalls.push(toolCall)
             return lastSegment
           }
-          const newSegment: ContentSegment = { 
-            type: 'tool-group', 
+          const newSegment: ContentSegment = {
+            type: 'tool-group',
             toolCalls: [toolCall],
             toolResults: []
           }
@@ -2275,6 +2301,25 @@ function finalizeStreamingState(state: {
 
 function appendStoppedPart(parts: MessagePart[]): MessagePart[] {
   return parts.some(part => part.type === 'stopped') ? parts : [...parts, { type: 'stopped' }]
+}
+
+/**
+ * Merge an incoming tool-call update into an existing one without letting
+ * undefined fields clobber defined values, and without regressing a terminal
+ * (done/error) state when a duplicate tool_call event arrives mid-stream.
+ */
+function mergeToolCall(existing: ToolCallPart, incoming: ToolCallPart): ToolCallPart {
+  const merged: ToolCallPart = {
+    ...existing,
+    ...(incoming.toolName !== undefined ? { toolName: incoming.toolName } : {}),
+    ...(incoming.toolDisplayName !== undefined ? { toolDisplayName: incoming.toolDisplayName } : {}),
+    ...(incoming.input !== undefined ? { input: incoming.input } : {}),
+    ...(incoming.state !== undefined ? { state: incoming.state } : {}),
+  }
+  if (existing.state === 'done' || existing.state === 'error') {
+    merged.state = existing.state
+  }
+  return merged
 }
 
 /**

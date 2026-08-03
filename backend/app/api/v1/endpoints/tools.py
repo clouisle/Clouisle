@@ -74,7 +74,7 @@ from app.schemas.tool import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
-SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "read", "write"}
+SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "edit", "read", "write"}
 
 
 def _serialize_runtime_artifacts(

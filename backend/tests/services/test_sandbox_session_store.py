@@ -186,3 +186,8 @@ async def test_expired_session_ids_uses_explicit_limit(store, redis):
         start=0,
         num=4,
     )
+
+
+def test_redis_text_decodes_bytes_and_passes_strings():
+    assert session_store._redis_text(b"session-id") == "session-id"
+    assert session_store._redis_text("session-id") == "session-id"

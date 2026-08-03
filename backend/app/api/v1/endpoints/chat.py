@@ -56,7 +56,7 @@ from app.schemas.response import (
 )
 from app.llm.errors import ContextLengthError, InsufficientQuotaError
 from app.llm.tools import tool_registry
-from app.llm.types import ChatStreamChunk, Message as LLMChatMessage
+from app.llm.types import ChatStreamChunk, Message as LLMChatMessage, ToolCall
 from app.core.timezone import now_utc
 from app.services.chat_context import (
     build_model_messages,
@@ -103,6 +103,7 @@ from app.api.v1.endpoints.chat_rag import (
 )
 from app.api.v1.endpoints.chat_sse import (
     build_compression_events,
+    build_tool_call_sse_event,
     build_tool_result_sse_event,
     build_media_result_sse_event,
 )
@@ -129,9 +130,30 @@ def _is_model_stream_activity(chunk: ChatStreamChunk) -> bool:
         delta.content
         or delta.reasoning_content
         or delta.tool_calls
+        or delta.tool_call_starts
         or delta.stream_activity
         or chunk.finish_reason
     )
+
+
+def _build_tool_call_start_sse_events(
+    tool_calls: list[ToolCall] | None,
+    display_names: dict[str, str],
+) -> list[str]:
+    events: list[str] = []
+    for tool_call in tool_calls or []:
+        tool_name = tool_call.function.name
+        if not tool_name:
+            continue
+        events.append(
+            build_tool_call_sse_event(
+                tool_call_id=tool_call.id,
+                tool_name=tool_name,
+                tool_display_name=display_names.get(tool_name, tool_name),
+                arguments={},
+            )
+        )
+    return events
 
 
 def _extract_llm_error_message(error: Exception) -> str:
@@ -797,7 +819,7 @@ Examples of when to search:
                         SkillService.to_tool_info(skill).to_openai_schema()
                     )
                     for sandbox_tool in tool_registry.to_openai_sandbox_tools(
-                        ["read", "write", "bash"]
+                        ["read", "edit", "write", "bash"]
                     ):
                         append_openai_tool(sandbox_tool)
                 except Exception as e:
@@ -1970,6 +1992,15 @@ async def chat_stream(
                                     last_event_time = time.time()
                                     emitted_any = True
 
+                                for (
+                                    tool_call_event
+                                ) in _build_tool_call_start_sse_events(
+                                    chunk.delta.tool_call_starts, tool_display_names
+                                ):
+                                    yield tool_call_event
+                                    last_event_time = time.time()
+                                    emitted_any = True
+
                                 # Collect tool calls when they arrive
                                 if chunk.delta.tool_calls:
                                     collected_tool_calls = chunk.delta.tool_calls
@@ -2079,6 +2110,15 @@ async def chat_stream(
                                     if first_token_time is None:
                                         first_token_time = time.time()
                                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                    last_event_time = time.time()
+                                    emitted_any = True
+
+                                for (
+                                    tool_call_event
+                                ) in _build_tool_call_start_sse_events(
+                                    chunk.delta.tool_call_starts, tool_display_names
+                                ):
+                                    yield tool_call_event
                                     last_event_time = time.time()
                                     emitted_any = True
 
@@ -3270,6 +3310,14 @@ async def edit_user_message_stream(
                                         first_token_time = time.time()
                                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                     last_event_time = time.time()
+                                for (
+                                    tool_call_event
+                                ) in _build_tool_call_start_sse_events(
+                                    chunk.delta.tool_call_starts, tool_display_names
+                                ):
+                                    yield tool_call_event
+                                    last_event_time = time.time()
+
                                 if chunk.delta.tool_calls:
                                     collected_tool_calls = chunk.delta.tool_calls
                                 if chunk.finish_reason:
@@ -3366,6 +3414,14 @@ async def edit_user_message_stream(
                                         first_token_time = time.time()
                                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                     last_event_time = time.time()
+                                for (
+                                    tool_call_event
+                                ) in _build_tool_call_start_sse_events(
+                                    chunk.delta.tool_call_starts, tool_display_names
+                                ):
+                                    yield tool_call_event
+                                    last_event_time = time.time()
+
                                 if chunk.delta.tool_calls:
                                     collected_tool_calls = chunk.delta.tool_calls
                                 if chunk.finish_reason:
@@ -4215,6 +4271,14 @@ async def regenerate_message(
                                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                     last_event_time = time.time()
 
+                                for (
+                                    tool_call_event
+                                ) in _build_tool_call_start_sse_events(
+                                    chunk.delta.tool_call_starts, tool_display_names
+                                ):
+                                    yield tool_call_event
+                                    last_event_time = time.time()
+
                                 if chunk.delta.tool_calls:
                                     collected_tool_calls = chunk.delta.tool_calls
 
@@ -4308,6 +4372,14 @@ async def regenerate_message(
                                     if first_token_time is None:
                                         first_token_time = time.time()
                                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                    last_event_time = time.time()
+
+                                for (
+                                    tool_call_event
+                                ) in _build_tool_call_start_sse_events(
+                                    chunk.delta.tool_call_starts, tool_display_names
+                                ):
+                                    yield tool_call_event
                                     last_event_time = time.time()
 
                                 if chunk.delta.tool_calls:

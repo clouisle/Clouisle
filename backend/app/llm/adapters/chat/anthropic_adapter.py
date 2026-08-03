@@ -507,15 +507,30 @@ class AnthropicAdapter(BaseChatAdapter):
                         if content_block:
                             block_type = getattr(content_block, "type", None)
                             if block_type == "tool_use":
+                                tool_call_id = getattr(
+                                    content_block, "id", None
+                                ) or str(uuid.uuid4())
+                                tool_call_name = getattr(content_block, "name", "")
                                 current_tool_use = {
-                                    "id": getattr(
-                                        content_block, "id", str(uuid.uuid4())
-                                    ),
-                                    "name": getattr(content_block, "name", ""),
+                                    "id": tool_call_id,
+                                    "name": tool_call_name,
                                     "input": "",
                                 }
+                                tool_call_starts = None
+                                if tool_call_name:
+                                    tool_call_starts = [
+                                        ToolCall(
+                                            id=tool_call_id,
+                                            type="function",
+                                            function=FunctionCall(
+                                                name=tool_call_name,
+                                                arguments="{}",
+                                            ),
+                                        )
+                                    ]
                                 yield self.create_stream_chunk(
                                     response_id=response_id,
+                                    tool_call_starts=tool_call_starts,
                                     stream_activity=True,
                                 )
                         continue

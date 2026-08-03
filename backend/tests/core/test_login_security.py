@@ -55,6 +55,14 @@ async def test_check_account_locked_resets_only_expired_lock(
 
 
 @pytest.mark.asyncio
+async def test_check_account_locked_returns_false_when_user_not_locked():
+    user = FakeUser()
+
+    assert await login_security.check_account_locked(user) == (False, None)
+    assert user.save_count == 0
+
+
+@pytest.mark.asyncio
 async def test_record_failed_login_locks_at_configured_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

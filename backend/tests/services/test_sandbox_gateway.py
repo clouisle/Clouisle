@@ -125,6 +125,17 @@ class TestSandboxCompiler:
         assert job.python_package_index_url == "https://mirror.example.com/simple"
         assert job.node_package_registry_url == "https://registry.example.com/npm"
 
+    def test_compile_code_config_job_preserves_explicit_command(self):
+        job = compile_code_config_job(
+            code_config={
+                "language": "python",
+                "code": "return 1",
+                "command": ["node", "server.js"],
+            },
+        )
+
+        assert job.command == ["node", "server.js"]
+
 
 class InMemoryResultStore:
     def __init__(self, result: SandboxResult | None = None, *, terminal_after: int = 1):

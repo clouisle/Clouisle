@@ -41,7 +41,7 @@ async def test_skill_selection_exposes_sandbox_tools():
 
     names = {tool["function"]["name"] for tool in tools}
     assert any(name.startswith("skill_demo_skill_") for name in names)
-    assert {"bash", "read", "write"}.issubset(names)
+    assert {"bash", "edit", "read", "write"}.issubset(names)
 
 
 @pytest.mark.anyio
@@ -51,11 +51,12 @@ async def test_selected_sandbox_builtin_tools_are_exposed_independently():
         [
             {"type": "builtin", "name": "bash"},
             {"type": "builtin", "name": "read"},
+            {"type": "builtin", "name": "edit"},
         ]
     )
 
     tools = await get_agent_tools(agent)
 
     names = {tool["function"]["name"] for tool in tools}
-    assert {"bash", "read"}.issubset(names)
+    assert {"bash", "edit", "read"}.issubset(names)
     assert "write" not in names

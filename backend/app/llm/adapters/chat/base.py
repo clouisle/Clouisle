@@ -371,6 +371,7 @@ class BaseChatAdapter(ABC):
         content: str | None = None,
         reasoning_content: str | None = None,
         tool_calls: list[ToolCall] | None = None,
+        tool_call_starts: list[ToolCall] | None = None,
         finish_reason: FinishReason | None = None,
         usage: Usage | None = None,
         response_id: str | None = None,
@@ -383,6 +384,7 @@ class BaseChatAdapter(ABC):
             content: 增量内容
             reasoning_content: 思考内容增量
             tool_calls: 工具调用
+            tool_call_starts: 已识别、尚未完成参数流的工具调用
             finish_reason: 完成原因
             usage: 使用统计
             response_id: 响应 ID
@@ -397,6 +399,7 @@ class BaseChatAdapter(ABC):
                 content=content,
                 reasoning_content=reasoning_content,
                 tool_calls=tool_calls,
+                tool_call_starts=tool_call_starts,
                 stream_activity=stream_activity,
             ),
             finish_reason=finish_reason,

@@ -47,7 +47,9 @@ mock.module('next-intl', () => ({
 mock.module('lucide-react', () => ({ ArrowDown: (props: Record<string, unknown>) => jsx('arrow-down', props) }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({ Button: (props: Record<string, unknown>) => jsx('button', props) }))
-mock.module('./message', () => ({ Message: (props: Record<string, unknown>) => jsx('message', props) }))
+mock.module('./message', () => ({
+  Message: (props: Record<string, unknown>) => jsx('message', props),
+}))
 
 const { ChatContainer } = await import('./chat-container')
 type Props = Parameters<typeof ChatContainer>[0]
@@ -165,6 +167,16 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(findAll(render({ messages }), 'message')[1].props.chainOfThoughtOpen).toBe(false)
   })
 
+  test('does not open previews automatically when streaming finishes', () => {
+    const onOpenCodePreview = mock()
+    const messages = [message('assistant-1')]
+
+    render({ messages, isStreaming: true, onOpenCodePreview }, true)
+    render({ messages, isStreaming: false, onOpenCodePreview }, true)
+
+    expect(onOpenCodePreview).not.toHaveBeenCalled()
+  })
+
   test('tracks scrolling, reveals the bottom control, and navigates to messages', () => {
     const scrollTo = mock()
     const scroller = { scrollHeight: 500, scrollTop: 0, clientHeight: 100, scrollTo }
@@ -184,6 +196,38 @@ describe('ChatContainer issue #255 coverage', () => {
     const renderedMessage = findAll(tree, 'message')[0]
     ;(renderedMessage.props.onRequestScrollIntoView as () => void)()
     expect(scrollTo).toHaveBeenCalledWith({ top: 123, behavior: 'smooth' })
+  })
+
+  test('preserves loaded history position but follows a locally sent message before streaming starts', () => {
+    const scrollTo = mock()
+    const attachScroller = (tree: ReactNode, scrollHeight: number) => {
+      const ref = findAll(tree, 'div')[1]?.props.ref
+      if (!ref || typeof ref !== 'object' || !('current' in ref)) {
+        throw new Error('chat scroller ref was not rendered')
+      }
+      ref.current = { scrollHeight, scrollTop: 0, clientHeight: 100, scrollTo }
+    }
+
+    let tree = render({ messages: [], conversationId: 'conversation-1' })
+    attachScroller(tree, 500)
+    effects.forEach((effect) => effect())
+    scrollTo.mockClear()
+
+    const history = [message('user-1', 'user'), message('assistant-1')]
+    tree = render({ messages: history, conversationId: 'conversation-1' })
+    attachScroller(tree, 500)
+    effects.forEach((effect) => effect())
+    tree = render({ messages: history, conversationId: 'conversation-1' })
+    attachScroller(tree, 500)
+    effects.forEach((effect) => effect())
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    const sent = [...history, message('user-2', 'user'), message('assistant-2')]
+    tree = render({ messages: sent, conversationId: 'conversation-1', isLoading: true })
+    expect(findAll(tree, 'message')).toHaveLength(sent.length)
+    attachScroller(tree, 600)
+    effects.forEach((effect) => effect())
+    expect(scrollTo).toHaveBeenCalledWith({ top: 601, behavior: 'auto' })
   })
 
   test('auto-follows growth and content resize, then cleans up observers', () => {

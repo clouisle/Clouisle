@@ -8,7 +8,7 @@
     "executionFlow": "执行流程",
     "hideFlow": "隐藏流程",
     "showFlow": "显示流程",
-    "welcomeMessage": "有什么可以帮您的吗？",
+    "welcomeMessage": "我们先从哪里开始呢？",
     "configureWorkflow": "配置工作流",
     "configureAgent": "配置智能体",
     "fillParameters": "填写必需参数以开始",
