@@ -79,7 +79,7 @@ import {
   shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
-const CODE_FENCE_REGEX = /^```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```$/
+const CODE_FENCE_REGEX = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n([\s\S]*?)\r?\n(`{3,}|~{3,})[ \t\r\n]*$/
 const STREAMING_REHYPE_PLUGINS = [
   defaultRehypePlugins.sanitize,
   defaultRehypePlugins.harden,
@@ -299,10 +299,18 @@ function parseCodeFence(content: string): ParsedCodeFence | null {
     return null
   }
 
-  const language = match[1].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  const [, openingFence, info, code, closingFence] = match
+  if (
+    openingFence.charAt(0) !== closingFence.charAt(0)
+    || closingFence.length < openingFence.length
+  ) {
+    return null
+  }
+
+  const language = info.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
   return {
     language,
-    code: match[2].replace(/\r\n?/g, '\n'),
+    code: code.replace(/\r\n?/g, '\n'),
   }
 }
 

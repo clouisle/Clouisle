@@ -101,7 +101,8 @@ mock.module('streamdown', () => ({
   Streamdown: (props: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => {
     lastStreamdownProps = props as unknown as Record<string, unknown>
     const content = String(props.children)
-    return <div>{props.BlockComponent && content.startsWith('```') ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} /> : props.children}</div>
+    const isCodeFence = /^ {0,3}(?:`{3,}|~{3,})/.test(content)
+    return <div>{props.BlockComponent && isCodeFence ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} /> : props.children}</div>
   },
   defaultRehypePlugins: { sanitize: 'sanitize', harden: 'harden' },
 }))
@@ -543,7 +544,7 @@ describe('message behavior', () => {
   test('keeps Markdown previews available without Streamdown code actions', async () => {
     rendersCodeActions = false
     const onOpenCodePreview = mock(() => {})
-    const code = '```markdown\n# Preview\n```'
+    const code = '  ~~~~markdown\n# Preview\n~~~~~\n'
     const container = render(<Message message={{ id: 'markdown-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
 
     await act(async () => {})
@@ -555,6 +556,22 @@ describe('message behavior', () => {
       language: 'markdown',
       code: '# Preview',
       kind: 'markdown',
+    })
+  })
+
+  test('opens source previews without Streamdown code actions', async () => {
+    rendersCodeActions = false
+    const onOpenCodePreview = mock(() => {})
+    const code = '```python\nprint(1)\n```'
+    const container = render(<Message message={{ id: 'source-preview', role: 'assistant', parts: [{ type: 'text', text: code, state: 'done' }] }} onOpenCodePreview={onOpenCodePreview} />)
+
+    await act(async () => {})
+    act(() => button(container, 'chat.message.openCodePreview').click())
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'python:8:print(1)',
+      language: 'python',
+      code: 'print(1)',
+      kind: 'source',
     })
   })
 
