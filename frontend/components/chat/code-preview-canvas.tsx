@@ -565,6 +565,7 @@ function ArtifactPreviewCanvas({
     setLoadFailed(false)
 
     if (!file.url || mode === 'unsupported') {
+      if (!file.url) setLoadFailed(true)
       setIsLoading(false)
       return
     }

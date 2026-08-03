@@ -1,4 +1,6 @@
 import math
+import time
+from datetime import datetime, timezone
 
 import pytest
 
@@ -86,11 +88,14 @@ async def test_format_datetime_falls_back_to_utc_for_unknown_timezone():
 
 @pytest.mark.anyio
 async def test_format_datetime_uses_current_time_when_timestamp_omitted():
+    before = int(time.time())
     result = await format_datetime(None, "%Y", "UTC")
+    after = int(time.time())
 
     assert result["timezone"] == "UTC"
-    assert result["timestamp"] > 1_700_000_000
-    assert int(result["formatted"]) >= 2026
+    assert before <= result["timestamp"] <= after
+    expected_year = datetime.fromtimestamp(result["timestamp"], tz=timezone.utc).year
+    assert int(result["formatted"]) == expected_year
 
 
 def test_safe_eval_math_constant_matches_stdlib():

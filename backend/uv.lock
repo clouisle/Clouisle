@@ -749,7 +749,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=1.2.1" },
     { name = "langgraph", specifier = ">=1.1.6" },
     { name = "markdown", specifier = ">=3.10.2" },
-    { name = "markitdown", extras = ["docx", "pdf", "pptx", "xls", "xlsx"], specifier = ">=0.1.5" },
+    { name = "markitdown", extras = ["docx", "pdf", "pptx", "xls", "xlsx"], specifier = ">=0.1.6" },
     { name = "mcp", specifier = ">=1.27.0" },
     { name = "msgpack", specifier = ">=1.2.1" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },

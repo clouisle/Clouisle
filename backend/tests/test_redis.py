@@ -84,6 +84,11 @@ def test_redis_text_decodes_bytes_and_passes_strings():
 
 
 @pytest.mark.asyncio
-async def test_close_redis_is_noop_when_pool_not_initialized():
+async def test_close_redis_is_noop_when_pool_not_initialized(monkeypatch):
+    get_redis_mock = AsyncMock()
+    monkeypatch.setattr(redis_module, "get_redis", get_redis_mock)
+
     await redis_module.close_redis()
+
+    get_redis_mock.assert_not_awaited()
     assert redis_module._redis_pool is None
