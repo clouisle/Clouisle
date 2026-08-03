@@ -18,8 +18,8 @@ type MermaidTheme = NonNullable<MermaidConfig['theme']>
 
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 
-const MERMAID_MIN_ZOOM = 0.5
-const MERMAID_MAX_ZOOM = 2
+const MERMAID_MIN_ZOOM = 0.05
+const MERMAID_MAX_ZOOM = 15
 const MERMAID_ZOOM_STEP = 0.1
 
 function escapeClosingScriptTag(code: string) {
