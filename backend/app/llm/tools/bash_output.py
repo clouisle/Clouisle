@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import re
 
+from app.core.i18n import t
+
 # ---------------------------------------------------------------------------
 # Tunables
 # ---------------------------------------------------------------------------
@@ -38,7 +40,7 @@ _COLLAPSE_THRESHOLD = 4
 #: OSC sequences (title-set, hyperlinks, etc.) terminated by BEL or ST.
 _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 #: CSI sequences (SGR colours, cursor moves, erase, etc.).
-_ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 #: Other two-byte escape sequences (single-char after ESC).
 _ANSI_OTHER_RE = re.compile(r"\x1b[@-_]")
 
@@ -58,9 +60,8 @@ def denoise_output(text: str | None, *, failed: bool = False) -> str | None:
     if not text:
         return text
 
-    structured = _looks_structured(text)
-
     cleaned = _strip_ansi(text)
+    structured = _looks_structured(cleaned)
     cleaned = _fold_progress_overwrites(cleaned)
     cleaned = _compress_blank_lines(cleaned)
 
@@ -149,7 +150,7 @@ def _collapse_repeated_lines(text: str) -> str:
         run_len = run_end - i
         if run_len > _COLLAPSE_THRESHOLD:
             result.append(lines[i])
-            result.append(f"[repeated {run_len} times]")
+            result.append(t("bash_output_repeated_lines", count=run_len))
         else:
             result.extend(lines[i:run_end])
         i = run_end
@@ -162,10 +163,10 @@ def _collapse_repeated_lines(text: str) -> str:
 
 
 def _failure_window(text: str) -> str:
-    lines = text.split("\n")
+    lines = text.splitlines()
     if len(lines) <= _MAX_LINES_BEFORE_WINDOW:
         return text
     head = lines[:_WINDOW_HEAD]
     tail = lines[-_WINDOW_TAIL:]
     omitted = len(lines) - _WINDOW_HEAD - _WINDOW_TAIL
-    return "\n".join([*head, f"... [{omitted} lines omitted] ...", *tail])
+    return "\n".join([*head, t("bash_output_lines_omitted", count=omitted), *tail])

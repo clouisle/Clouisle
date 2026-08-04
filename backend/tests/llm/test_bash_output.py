@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,6 +21,11 @@ from app.services.sandbox.models import SandboxResult, SandboxTaskStatus
 def test_strip_ansi_sgr_colour_codes():
     text = "\x1b[32mok\x1b[0m\n\x1b[1;31merror\x1b[0m"
     assert denoise_output(text) == "ok\nerror"
+
+
+def test_strip_ansi_colon_form_true_color():
+    text = "\x1b[38:2::255:0:0mred\x1b[0m\x1b[38;5;208morange\x1b[0m"
+    assert denoise_output(text) == "redorange"
 
 
 def test_strip_ansi_osc_title_and_hyperlink():
@@ -121,6 +128,12 @@ def test_failure_window_skipped_for_short_output():
     assert result == text
 
 
+def test_failure_window_boundary_200_lines_with_trailing_newline():
+    text = "\n".join(f"line {i}" for i in range(200)) + "\n"
+    result = denoise_output(text, failed=True)
+    assert result == text
+
+
 # ---------------------------------------------------------------------------
 # 6. structured-output guard
 # ---------------------------------------------------------------------------
@@ -141,6 +154,16 @@ def test_structured_json_object_keeps_repeated_values():
 def test_structured_json_with_ansi_still_cleaned():
     text = '\x1b[32m{"ok": true}\x1b[0m'
     assert denoise_output(text) == '{"ok": true}'
+
+
+def test_structured_ansi_wrapped_json_not_windowed_on_failure():
+    # ANSI-wrapped JSON exceeding 200 lines on failure must not be windowed
+    inner = ",\n".join('  {"v": 1}' for _ in range(250))
+    text = "\x1b[32m[\n" + inner + "\n]\x1b[0m"
+    result = denoise_output(text, failed=True)
+    parsed = json.loads(result)
+    assert isinstance(parsed, list)
+    assert len(parsed) == 250
 
 
 def test_non_json_starting_with_brace_not_protected():

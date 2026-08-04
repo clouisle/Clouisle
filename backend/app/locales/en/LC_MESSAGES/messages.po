@@ -570,6 +570,12 @@ msgstr "Backup codes regenerated successfully"
 msgid "bad_request"
 msgstr "Bad request"
 
+msgid "bash_output_lines_omitted"
+msgstr "... [{count} lines omitted] ..."
+
+msgid "bash_output_repeated_lines"
+msgstr "[repeated {count} times]"
+
 msgid "builtin_tool_artifact"
 msgstr "Create Download Link"
 
