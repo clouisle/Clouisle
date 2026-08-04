@@ -37,6 +37,38 @@ from app.services.message_branching import (
     get_visible_conversation_messages,
     is_message_on_active_branch,
 )
+from app.services.system_prompt import (
+    CHAT_MODE,
+    FILE_CONTENT_PLACEHOLDER,
+    LANGUAGE_INSTRUCTIONS,
+    MARKDOWN_IMAGE_DISPLAY_INSTRUCTION,
+    MEMORY_SYSTEM_INSTRUCTION,
+    SANDBOX_SYSTEM_INSTRUCTION,
+    append_prompt_section as _append_prompt_section,
+    build_system_prompt,
+    build_system_prompt_with_language,
+    get_language_instruction,
+    get_user_input_request_instruction,
+    has_sandbox_tools as _has_sandbox_tools,
+)
+
+# Re-exported from ``system_prompt`` so existing imports
+# ``from app.services.chat_context import ...`` keep working.
+__all__ = [
+    "CHAT_MODE",
+    "FILE_CONTENT_PLACEHOLDER",
+    "LANGUAGE_INSTRUCTIONS",
+    "MARKDOWN_IMAGE_DISPLAY_INSTRUCTION",
+    "MEMORY_SYSTEM_INSTRUCTION",
+    "SANDBOX_SYSTEM_INSTRUCTION",
+    "_append_prompt_section",
+    "_build_system_prompt",
+    "_has_sandbox_tools",
+    "build_system_prompt",
+    "build_system_prompt_with_language",
+    "get_language_instruction",
+    "get_user_input_request_instruction",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -70,15 +102,6 @@ AGGRESSIVE_SUMMARY_MAX_CHARS = 2400
 AGGRESSIVE_BLOCK_SUMMARY_CHARS = 220
 DEFAULT_FILE_CONTENT_HEAD_CHARS = 12000
 DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
-FILE_CONTENT_PLACEHOLDER = "{{fileContent}}"
-MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = r"""## Markdown Output
-
-When the user asks you to show or display an image, output the image using normal Markdown image syntax, for example `![alt text](image-url)`. Do not wrap the Markdown image in a code block unless the user explicitly asks for the literal Markdown source.
-
-When writing math, use standard Markdown/LaTeX delimiters that render correctly:
-- Use `$...$` for inline math.
-- Use `$$...$$` on separate lines for display/block math.
-- Do not use nonstandard math delimiters such as `[ ... ]`, `\[ ... \]`, `( ... )`, `\( ... \)`, or bare parenthesized TeX like `(\mathbf{A})`. Write those as `$\mathbf{A}$` inline, or use `$$...$$` for standalone equations. Keep the whole formula inside one delimiter pair; do not put only part of an equation in `$...$`."""
 DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "enabled": True,
     "micro_compaction_enabled": True,
@@ -211,190 +234,6 @@ def _extend_with_original_indexes(
             message.model_copy(deep=True),
             protect=original_index in protected_indexes,
         )
-
-
-LANGUAGE_INSTRUCTIONS = {
-    "en": "## Response Language\nYou MUST respond in English only. Do not use any other language.",
-    "zh": "## 回复语言\n你必须使用中文回复。不要使用其他语言。",
-}
-
-MEMORY_SYSTEM_INSTRUCTION = """
-## Memory System
-
-You have access to these memory tools:
-- `search_memory(query)`: Search what you know about the user
-- `create_memory_entity(name, entity_type, description)`: Save new information
-- `update_memory_entity(entity_name, description)`: Update existing information
-- `create_memory_relation(source, target, relation_type)`: Connect related information
-
-### Required Workflow
-
-1. Before **any** `create_memory_entity()` call, you **must** call `search_memory()` first.
-2. When the user shares information such as a name, preference, or skill:
-   - Step 1: Call `search_memory(query="keywords about the information")`
-   - Step 2: Read the search results carefully
-   - Step 3: Decide based on the results:
-     - Found a similar entity → use `update_memory_entity(entity_name="existing name", ...)`
-     - Found nothing relevant → use `create_memory_entity(name="new name", ...)`
-3. Never skip `search_memory()`, even if you think the information is new.
-4. Never say you do not have access to memory tools.
-
-### Examples
-
-**Wrong**
-
-User: "I'm Alice"
-
-❌ Directly calling `create_memory_entity(name="Alice", ...)` is wrong because no search happened first.
-
-**Correct**
-
-User: "I'm Alice"
-- Call `search_memory(query="user name")`
-- Check results → No "Alice" found
-- Call `create_memory_entity(name="Alice", entity_type="person", description="User's name")`
-
-User: "Actually, I'm Alice Smith"
-- Call `search_memory(query="user name Alice")`
-- Check results → Found entity "Alice"
-- Call `update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")`
-
-User: "What's my name?"
-- Call `search_memory(query="user name")`
-- Then answer using the result
-"""
-
-SANDBOX_SYSTEM_INSTRUCTION = """
-## Sandbox Environment Guidance
-
-You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact`. Use them with an accurate mental model of the environment instead of guessing how the sandbox works.
-
-### Environment Reality
-
-1. **`/workspace` is the intended working area**
-   - `/workspace` is a logical alias used by the sandbox tools for the current session workspace
-   - Use `/workspace/...` when calling sandbox tools such as `bash`, `read`, `edit`, `write`, and `artifact`
-   - Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...` for its own file I/O
-   - Inside generated scripts, prefer paths relative to the script's working directory such as `output/report.docx`, or derive paths from `Path.cwd()` when needed
-   - Keep scripts, inputs, temporary files, and outputs under `/workspace`
-   - Prefer stable locations such as `/workspace/src`, `/workspace/data`, `/workspace/output`, and `/workspace/tmp`
-
-2. **Path behavior must be observed, not assumed**
-   - Do not infer path semantics from one successful command
-   - If a path behaves unexpectedly, inspect it with `pwd`, `ls`, `find`, or a short Python check before changing the script or explanation
-   - Prefer absolute paths for file operations instead of relying on prior `cd` state
-
-3. **Interpreter and package state may differ from your assumptions**
-   - The interpreter that installs a package and the interpreter that runs a script must be treated as concrete facts to verify
-   - If an import fails, first verify interpreter identity, import path, and installed package visibility before changing code
-   - Do not rely on ad-hoc `PYTHONPATH` or `sys.path` hacks unless the task explicitly requires local package loading
-
-4. **Install output can be misleading if filtered**
-   - Do not pipe install output through `tail`, `grep`, or similar filters that can hide errors
-   - Do not assume an install succeeded just because the final lines look harmless
-   - Confirm package availability with a real import check using the same interpreter that will run the script
-
-5. **Command success should be interpreted narrowly**
-   - One successful `touch`, `ls`, or minimal script does not prove the whole environment behaves the same way for another library or another path
-   - Treat each surprising result as something to inspect, not something to explain from guesswork
-
-6. **`artifact` depends on backend connectivity, not just local files**
-   - A file existing locally does not mean artifact upload will succeed
-   - If `artifact` upload fails with a connection or network error, report it clearly instead of retrying with equivalent paths
-
-### Tool Usage Expectations
-
-- Use `write` to create files or replace their complete content; prefer it for real scripts instead of embedding complex scripts inline in `bash`
-- Before changing an existing text file, call `read`; every returned line has a `LINE#ID` anchor whose four-hex ID binds it to that full-file snapshot
-- For large files, use `read` with `start_line` and `end_line` for an inclusive range, or `search` for case-sensitive literal text; only returned lines are valid edit targets
-- Use one `edit` call for related changes. Pass the shared four-hex `tag` once with integer lines, then use compact `replace`, `*_block`, `cut`, `insert_*`, and `paste_*` operations; omit `op` only for a single-line replacement
-- `cut` stores text in a persistent named register for later `paste`; block operations resolve Python AST nodes, Markdown sections, brace blocks, or indented blocks. Re-read only when a target changed or became ambiguous
-- Keep each `bash` call focused so failures stay attributable
-- Use `read`, `ls -lh`, or `find` to confirm what actually exists before changing the approach
-- Use `artifact` only for final deliverables after the output file has been verified locally. Artifact URLs are snapshots: if `write`, `edit`, or `bash` changes a collected file, verify it again and call `artifact` again before answering; never reuse the earlier URL
-- Before the final response, collect every final user-facing deliverable in its latest state and include every newest Markdown download link returned by `artifact`
-
-### Avoid These Mistakes
-
-- Do not explain sandbox behavior from guesswork
-- Do not keep retrying the same install or upload with superficial variations
-- Do not use relative paths that depend on prior shell state
-- Do not mistake filtered output for a successful environment change
-"""
-
-
-def get_language_instruction(user_locale: str | None = None) -> str:
-    """Get language instruction based on user's locale setting."""
-    lang = user_locale or "en"
-    lang = lang.lower().split("-")[0]
-    return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
-
-
-def build_system_prompt_with_language(
-    system_prompt: str | None, user_locale: str | None = None
-) -> str:
-    """Build system prompt with language instruction."""
-    instruction = get_language_instruction(user_locale)
-    if not system_prompt:
-        return instruction
-    if instruction in system_prompt:
-        return system_prompt
-    return f"{system_prompt}\n\n{instruction}"
-
-
-def get_user_input_request_instruction(locale: str = "en") -> str:
-    """Get user input request instruction for system prompt."""
-    if locale == "zh":
-        return """## 用户输入请求功能
-
-当你需要用户从预定义选项中选择时，可以使用以下 XML 格式：
-
-<user_input_request>
-<question>你的问题文本</question>
-<options>
-<option>选项 1</option>
-<option>选项 2</option>
-<option>选项 3</option>
-</options>
-</user_input_request>
-
-**使用规则：**
-- 问题应该清晰简洁
-- 提供 2-6 个选项（超过 6 个也会显示，但建议控制数量以保持界面简洁）
-- 每个选项应该简短（建议不超过 50 字符）
-- 用户可以点击选项或输入自定义文本
-- 在一条消息中只使用一次
-- 不要在 user_input_request 标签外添加其他内容
-
-**使用场景：**
-- 需要用户做出选择时
-- 提供快捷操作选项时
-- 引导对话流程时"""
-    return """## User Input Request Feature
-
-When you need the user to choose from predefined options, use this XML format:
-
-<user_input_request>
-<question>Your question text</question>
-<options>
-<option>Option 1</option>
-<option>Option 2</option>
-<option>Option 3</option>
-</options>
-</user_input_request>
-
-**Rules:**
-- Keep questions clear and concise
-- Provide 2-6 options
-- Keep each option short (recommended max 50 characters)
-- Users can click an option or type custom text
-- Use only once per message
-- Do not add any other content outside the user_input_request tags
-
-**Use cases:**
-- When you need the user to make a choice
-- When offering quick action options
-- When guiding the conversation flow"""
 
 
 def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, str]:
@@ -600,65 +439,26 @@ def _normalize_override_role(role: Any) -> str | None:
     return str(role)
 
 
-def _has_sandbox_tools(agent: Agent) -> bool:
-    tools_config = agent.tools_config or []
-    for config in tools_config:
-        if config.get("type") == "builtin" and config.get("name") in {
-            "bash",
-            "read",
-            "edit",
-            "write",
-            "artifact",
-        }:
-            return True
-        if config.get("type") == "skill":
-            return True
-    return False
-
-
-def _append_prompt_section(base: str, section: str | None) -> str:
-    normalized_section = (section or "").strip()
-    if not normalized_section:
-        return base
-    return f"{base}\n\n{normalized_section}" if base else normalized_section
-
-
 def _build_system_prompt(
     agent: Agent,
     conversation: Conversation,
     user_message: str,
     user_locale: str | None,
 ) -> str:
-    system_prompt = agent.system_prompt or ""
-    if system_prompt:
-        for key, value in conversation.variables.items():
-            system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-        system_prompt = system_prompt.replace("{{query}}", user_message)
-        system_prompt = system_prompt.replace(FILE_CONTENT_PLACEHOLDER, "")
+    """Build the system prompt for the chat endpoint.
 
-    system_prompt = _append_prompt_section(
-        system_prompt, MARKDOWN_IMAGE_DISPLAY_INSTRUCTION
+    Thin adapter over :func:`app.services.system_prompt.build_system_prompt`:
+    extracts conversation template variables and fixes the invocation mode to
+    chat. Kept so existing callers/tests keep their signature.
+    """
+    variables = getattr(conversation, "variables", None)
+    return build_system_prompt(
+        agent,
+        variables=dict(variables) if variables else None,
+        user_message=user_message,
+        user_locale=user_locale,
+        invocation_mode=CHAT_MODE,
     )
-
-    if agent.enable_memory:
-        system_prompt = _append_prompt_section(system_prompt, MEMORY_SYSTEM_INSTRUCTION)
-        logger.info("Added memory instructions to system prompt for agent %s", agent.id)
-
-    if _has_sandbox_tools(agent):
-        system_prompt = _append_prompt_section(
-            system_prompt, SANDBOX_SYSTEM_INSTRUCTION
-        )
-        logger.info(
-            "Added sandbox instructions to system prompt for agent %s", agent.id
-        )
-
-    system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
-    if agent.enable_user_input_request:
-        system_prompt = _append_prompt_section(
-            system_prompt,
-            get_user_input_request_instruction(user_locale or "en"),
-        )
-    return system_prompt
 
 
 def _build_current_user_content(

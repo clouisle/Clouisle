@@ -45,8 +45,12 @@ async def test_build_messages_covers_context_history_and_rag():
         ],
     )
 
-    assert [message.content for message in messages] == [
-        "rules\n\nContext:\n- tenant: acme",
+    contents = [message.content for message in messages]
+    # Workflow mode now injects Markdown/language guidance into the system
+    # prompt; the base prompt still carries the appended runtime context.
+    assert contents[0].startswith("rules\n\nContext:\n- tenant: acme")
+    assert "## Markdown Output" in contents[0]
+    assert contents[1:] == [
         "u",
         "a",
         "s",

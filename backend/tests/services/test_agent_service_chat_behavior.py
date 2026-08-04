@@ -117,8 +117,12 @@ async def test_build_messages_adds_context_history_and_rag_before_current_messag
         ],
     )
 
-    assert [(message.role, message.content) for message in messages] == [
-        (MessageRole.SYSTEM, "Be concise\n\nContext:\n- region: EU"),
+    pairs = [(message.role, message.content) for message in messages]
+    # Workflow mode injects Markdown/language guidance into the system prompt.
+    assert pairs[0][0] is MessageRole.SYSTEM
+    assert pairs[0][1].startswith("Be concise\n\nContext:\n- region: EU")
+    assert "## Markdown Output" in pairs[0][1]
+    assert pairs[1:] == [
         (MessageRole.USER, "Earlier question"),
         (MessageRole.ASSISTANT, "Earlier answer"),
         (MessageRole.SYSTEM, "Additional rule"),

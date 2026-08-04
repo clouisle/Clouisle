@@ -4,6 +4,8 @@ Agent service for AI assistant functionality.
 Provides chat functionality for agents with tools and knowledge bases.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING, cast
@@ -13,6 +15,7 @@ from app.llm import model_manager
 from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
+from app.services.system_prompt import WORKFLOW_MODE, build_system_prompt
 
 if TYPE_CHECKING:
     from app.llm.types.chat import ToolCall
@@ -38,6 +41,7 @@ class AgentService:
         user_id: str | None = None,
         max_turns: int = 10,
         conversation_history: list[dict] | None = None,
+        user_locale: str | None = None,
     ) -> dict[str, Any]:
         """
         Execute a non-streaming chat with the agent.
@@ -58,6 +62,7 @@ class AgentService:
             message=message,
             context=context,
             conversation_history=conversation_history,
+            user_locale=user_locale,
         )
 
         tools = await self._get_agent_tools(agent)
@@ -140,6 +145,7 @@ class AgentService:
         user_id: str | None = None,
         max_turns: int = 10,
         conversation_history: list[dict] | None = None,
+        user_locale: str | None = None,
     ) -> AsyncIterator[str | dict]:
         """
         Execute a streaming chat with the agent.
@@ -153,6 +159,7 @@ class AgentService:
             message=message,
             context=context,
             conversation_history=conversation_history,
+            user_locale=user_locale,
         )
 
         tools = await self._get_agent_tools(agent)
@@ -231,20 +238,28 @@ class AgentService:
         message: str,
         context: dict[str, Any] | None = None,
         conversation_history: list[dict] | None = None,
+        user_locale: str | None = None,
     ) -> list[Message]:
         """Build message list for the chat."""
         messages = []
 
-        # System prompt
-        system_prompt = agent.system_prompt or ""
-
-        # Add context variables to system prompt if provided
+        # System prompt assembled by the unified injection manager. Workflow
+        # mode injects sandbox/markdown/language guidance but skips chat-only
+        # sections (memory tools, user-input-request) that this path does not
+        # wire up.
+        base_prompt = agent.system_prompt or ""
         if context:
-            context_str = "\n\nContext:\n" + "\n".join(
+            base_prompt += "\n\nContext:\n" + "\n".join(
                 f"- {k}: {v}" for k, v in context.items()
             )
-            system_prompt += context_str
 
+        system_prompt = build_system_prompt(
+            agent,
+            base_prompt=base_prompt,
+            user_message=message,
+            user_locale=user_locale,
+            invocation_mode=WORKFLOW_MODE,
+        )
         if system_prompt:
             messages.append(
                 Message(

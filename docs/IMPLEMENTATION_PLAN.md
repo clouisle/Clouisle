@@ -2,6 +2,13 @@
 
 ## Active
 
+- **yun-127-system-prompt-injection-manager** - Complete. Extracted a unified, capability-aware system prompt injection manager shared by the chat endpoint and the workflow Agent path; fixed the workflow sandbox-guidance gap. See `docs/plan/yun-127-system-prompt-injection-manager.md`
+  - [x] 1. Create unified manager `system_prompt.py`
+  - [x] 2. Delegate chat_context to the manager
+  - [x] 3. Align workflow AgentService + locale plumbing
+  - [x] 4. Remove dead message_builder and divergent config helpers
+  - [x] 5. Tests and coverage gate
+
 - **workflow-form-run-page** — Complete. Replace the Workflow chat-style runner with a published, form-first execution page, creator-selected result detail, and private per-user run history. See `docs/plan/workflow-form-run-page.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Run-page configuration persistence

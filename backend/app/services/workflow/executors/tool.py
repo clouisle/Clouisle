@@ -229,6 +229,16 @@ class AgentNodeExecutor(NodeExecutor):
         try:
             agent_service = AgentService()
 
+            # Locale of the triggering user drives the system prompt language
+            # instruction (mirrors the orchestrator's notification locale).
+            # Kept inside the try block so database failures here pass through
+            # translate_public_workflow_error like every other failure.
+            user_locale = "en"
+            if run.triggered_by_id:
+                await run.fetch_related("triggered_by")
+                if run.triggered_by:
+                    user_locale = getattr(run.triggered_by, "locale", None) or "en"
+
             if should_stream:
                 # Streaming mode
                 response_text = ""
@@ -242,6 +252,7 @@ class AgentNodeExecutor(NodeExecutor):
                     context=agent_context,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     max_turns=max_turns,
+                    user_locale=user_locale,
                 ):
                     if isinstance(chunk, dict):
                         if "tool_call" in chunk:
@@ -267,6 +278,7 @@ class AgentNodeExecutor(NodeExecutor):
                     context=agent_context,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     max_turns=max_turns,
+                    user_locale=user_locale,
                 )
 
                 return ExecutionResult(
