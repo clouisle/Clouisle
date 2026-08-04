@@ -3,8 +3,6 @@ Chat helper modules for modular organization.
 """
 
 from .config import (
-    get_language_instruction,
-    build_system_prompt_with_language,
     get_streaming_config,
 )
 from .general import (
@@ -22,7 +20,6 @@ from .stream_utils import (
     iter_with_idle_timeout,
     send_heartbeat_if_needed,
 )
-from .message_builder import build_messages
 from .model_utils import get_model_identifier, get_model_capabilities
 from .tool_utils import get_agent_tools, get_tool_display_names
 from app.api.v1.endpoints.chat_tools import (
@@ -42,8 +39,6 @@ from .version_utils import (
 )
 
 __all__ = [
-    "get_language_instruction",
-    "build_system_prompt_with_language",
     "get_streaming_config",
     "get_item_value",
     "parse_user_input_request",
@@ -56,7 +51,6 @@ __all__ = [
     "StreamIdleTimeoutError",
     "iter_with_idle_timeout",
     "send_heartbeat_if_needed",
-    "build_messages",
     "get_model_identifier",
     "get_model_capabilities",
     "get_agent_tools",

@@ -28,7 +28,10 @@ def context():
 
 @pytest.fixture
 def run():
-    return MagicMock(triggered_by_id="user-1")
+    run = MagicMock(triggered_by_id="user-1")
+    run.fetch_related = AsyncMock()
+    run.triggered_by = MagicMock(locale="en")
+    return run
 
 
 @pytest.fixture
@@ -145,6 +148,7 @@ class TestAgentNodeExecutorBehavior:
             context={},
             user_id=None,
             max_turns=10,
+            user_locale="en",
         )
 
     @pytest.mark.anyio

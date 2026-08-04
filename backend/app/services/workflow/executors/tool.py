@@ -226,6 +226,15 @@ class AgentNodeExecutor(NodeExecutor):
         # Resolve context
         agent_context = await self.resolve_inputs(context, context_mappings)
 
+        # Locale of the triggering user drives the system prompt language
+        # instruction (mirrors the orchestrator's notification locale).
+        user_locale = "en"
+        if run.triggered_by_id:
+            await run.fetch_related("triggered_by")
+            user_locale = (
+                getattr(run.triggered_by, "locale", "en") if run.triggered_by else "en"
+            )
+
         try:
             agent_service = AgentService()
 
@@ -242,6 +251,7 @@ class AgentNodeExecutor(NodeExecutor):
                     context=agent_context,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     max_turns=max_turns,
+                    user_locale=user_locale,
                 ):
                     if isinstance(chunk, dict):
                         if "tool_call" in chunk:
@@ -267,6 +277,7 @@ class AgentNodeExecutor(NodeExecutor):
                     context=agent_context,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     max_turns=max_turns,
+                    user_locale=user_locale,
                 )
 
                 return ExecutionResult(

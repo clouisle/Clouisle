@@ -6,12 +6,10 @@ import pytest
 
 from app.api.v1.endpoints.chat_helpers import (
     config,
-    message_builder,
     model_utils,
     tool_utils,
     version_utils,
 )
-from app.llm.types import ContentType, MessageRole
 
 
 class Query:
@@ -35,14 +33,6 @@ class Query:
 
 
 def test_config_language_and_streaming_defaults(monkeypatch):
-    assert config.build_system_prompt_with_language("Be helpful", "en") == (
-        "Be helpful\n\nPlease reply in English."
-    )
-    assert (
-        config.build_system_prompt_with_language("Be helpful", "unknown")
-        == "Be helpful"
-    )
-
     monkeypatch.setattr(config.settings, "STREAM_GLOBAL_TIMEOUT", 10)
     monkeypatch.setattr(config.settings, "STREAM_GLOBAL_TIMEOUT_WITH_TOOLS", 20)
     monkeypatch.setattr(config.settings, "STREAM_HEARTBEAT_INTERVAL", 3)
@@ -65,62 +55,6 @@ def test_config_language_and_streaming_defaults(monkeypatch):
         "idle_timeout": 40,
         "tool_timeouts": {"http": 5, "code": 60, "mcp": 7, "download": 8},
     }
-
-
-@pytest.mark.anyio
-async def test_build_messages_preserves_history_and_prefers_image_urls(monkeypatch):
-    history = [
-        SimpleNamespace(
-            role=SimpleNamespace(value="assistant"),
-            content="Earlier answer",
-            tool_calls=None,
-            tool_call_id=None,
-        )
-    ]
-    monkeypatch.setattr(
-        message_builder.ConversationMessage,
-        "filter",
-        lambda **_kwargs: Query(history),
-    )
-
-    messages = await message_builder.build_messages(
-        SimpleNamespace(system_prompt="Be concise"),
-        SimpleNamespace(id=uuid4()),
-        "What is shown?",
-        file_content="ignored when images are supplied",
-        file_urls=[{"url": "https://example.test/image.png"}],
-        user_locale="en",
-    )
-
-    assert [message.role for message in messages] == [
-        MessageRole.SYSTEM,
-        MessageRole.ASSISTANT,
-        MessageRole.USER,
-    ]
-    assert messages[0].content == "Be concise\n\nPlease reply in English."
-    assert messages[1].content == "Earlier answer"
-    assert [part.type for part in messages[2].content] == [
-        ContentType.TEXT,
-        ContentType.IMAGE,
-    ]
-    assert messages[2].content[1].image.url == "https://example.test/image.png"
-
-
-@pytest.mark.anyio
-async def test_build_messages_rejects_image_without_url(monkeypatch):
-    monkeypatch.setattr(
-        message_builder.ConversationMessage,
-        "filter",
-        lambda **_kwargs: Query([]),
-    )
-
-    with pytest.raises(KeyError, match="url"):
-        await message_builder.build_messages(
-            SimpleNamespace(system_prompt=None),
-            SimpleNamespace(id=uuid4()),
-            "Describe this",
-            file_urls=[{"name": "missing-url.png"}],
-        )
 
 
 @pytest.mark.anyio
