@@ -93,6 +93,12 @@ def test_mutable_defaults_are_not_shared():
     assert RegenerateRequest().variables == {}
 
 
+def test_context_compression_clamps_legacy_checkpoint_ratio():
+    config = ContextCompressionConfig(auto_compact_trigger_ratio=0.5)
+
+    assert config.checkpoint_target_ratio == 0.375
+
+
 @pytest.mark.parametrize(
     ("schema", "payload"),
     [
@@ -100,10 +106,6 @@ def test_mutable_defaults_are_not_shared():
         (MemoryConfig, {"importance_threshold": "urgent"}),
         (ContextCompressionConfig, {"recent_raw_turns": 0}),
         (ContextCompressionConfig, {"warning_ratio": 1.1}),
-        (
-            ContextCompressionConfig,
-            {"checkpoint_target_ratio": 0.8, "auto_compact_trigger_ratio": 0.8},
-        ),
         (ContextCompressionConfig, {"retention_strategy": "oldest_first"}),
         (ImageGenerationConfig, {"default_width": 255}),
         (ImageGenerationConfig, {"max_images": 11}),

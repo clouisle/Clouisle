@@ -15,6 +15,7 @@ from app.llm.errors import (
     RateLimitError,
 )
 from app.llm.manager import ModelManager
+from app.schemas.response import BusinessError, ResponseCode
 from app.models.model import ModelProvider, ModelType
 
 
@@ -39,7 +40,7 @@ def test_parse_model_identifier_accepts_only_uuid(identifier, expected):
 @pytest.mark.parametrize(
     ("identifier", "expected_filter"),
     [
-        (str(uuid4()), lambda value: {"id": value}),
+        (str(uuid4()), lambda value: {"id": value, "model_type": ModelType.EMBEDDING}),
         (None, lambda _value: {"model_type": ModelType.EMBEDDING, "is_default": True}),
     ],
 )
@@ -75,9 +76,11 @@ async def test_get_model_config_rejects_missing_or_disabled_models(enabled):
 @pytest.mark.asyncio
 async def test_get_model_config_rejects_ambiguous_identifier_without_querying():
     with patch("app.llm.manager.Model.filter") as model_filter:
-        with pytest.raises(ModelNotFoundError, match="Invalid model identifier"):
+        with pytest.raises(BusinessError) as exc_info:
             await ModelManager()._get_model_config("gpt-4o")
 
+    assert exc_info.value.code == ResponseCode.MODEL_NOT_FOUND
+    assert exc_info.value.msg_key == "model_not_found"
     model_filter.assert_not_called()
 
 

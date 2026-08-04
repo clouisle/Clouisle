@@ -23,6 +23,7 @@ from app.models.agent import (
     MessageRole as ConversationMessageRole,
 )
 from app.services.message_branching import is_message_on_active_branch
+from tortoise.transactions import in_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ CHECKPOINT_MAX_LIST_ITEMS = 8
 CHECKPOINT_MAX_LIST_ITEM_CHARS = 320
 CHECKPOINT_MAX_OVERVIEW_CHARS = 800
 
+CHECKPOINT_SUMMARY_TIMEOUT_SECONDS = 60.0
 _SUMMARY_FIELDS = (
     "conversation_goal",
     "established_facts",
@@ -410,17 +412,62 @@ def _message_position(message: ConversationMessage) -> tuple[Any, str]:
 async def _existing_checkpoint_is_newer(
     checkpoint: ConversationContextCheckpoint,
     source_message: ConversationMessage,
+    *,
+    using_db: Any | None = None,
 ) -> bool:
     if not checkpoint.covered_through_message_id:
         return False
-    existing_source = await ConversationMessage.filter(
+    query = ConversationMessage.filter(
         id=checkpoint.covered_through_message_id,
         conversation_id=checkpoint.conversation_id,
-    ).first()
+    )
+    if using_db is not None:
+        query = query.using_db(using_db)
+    existing_source = await query.first()
     return bool(
         existing_source
         and _message_position(existing_source) >= _message_position(source_message)
     )
+
+
+async def _persist_checkpoint_monotonically(
+    *,
+    conversation_id: UUID,
+    source_message: ConversationMessage,
+    summary_text: str,
+    summary_payload: dict[str, Any],
+    summary_tokens: int,
+    summarizer_model: str,
+) -> tuple[ConversationContextCheckpoint, bool]:
+    """Persist a checkpoint while serializing writers for one conversation."""
+    async with in_transaction() as connection:
+        await (
+            Conversation.filter(id=conversation_id)
+            .using_db(connection)
+            .select_for_update()
+            .get()
+        )
+        checkpoint, _ = await ConversationContextCheckpoint.get_or_create(
+            conversation_id=conversation_id,
+            defaults={"status": ConversationContextCheckpointStatus.PENDING},
+            using_db=connection,
+        )
+        if await _existing_checkpoint_is_newer(
+            checkpoint, source_message, using_db=connection
+        ):
+            return checkpoint, False
+
+        checkpoint.covered_through_message_id = source_message.id
+        checkpoint.status = ConversationContextCheckpointStatus.READY
+        checkpoint.summary_text = summary_text
+        checkpoint.summary_payload = summary_payload
+        checkpoint.token_estimate = summary_tokens
+        checkpoint.summarizer_model = summarizer_model
+        checkpoint.failure_count = 0
+        checkpoint.last_error = None  # type: ignore[assignment]
+        checkpoint.last_summarized_at = now_utc()
+        await checkpoint.save(using_db=connection)
+        return checkpoint, True
 
 
 async def _record_generation_failure(
@@ -512,15 +559,18 @@ async def create_context_checkpoint(
     previous_summary = previous_checkpoint.summary_text if previous_checkpoint else ""
 
     try:
-        response = await model_manager.team_chat(
-            team_id=str(agent.team_id),
-            model_id=model_id,
-            messages=_build_summary_messages(
-                previous_payload=previous_payload or {},
-                previous_summary=previous_summary,
-                transcript=transcript,
+        response = await asyncio.wait_for(
+            model_manager.team_chat(
+                team_id=str(agent.team_id),
+                model_id=model_id,
+                messages=_build_summary_messages(
+                    previous_payload=previous_payload or {},
+                    previous_summary=previous_summary,
+                    transcript=transcript,
+                ),
+                response_format={"type": "json_object"},
             ),
-            response_format={"type": "json_object"},
+            timeout=CHECKPOINT_SUMMARY_TIMEOUT_SECONDS,
         )
         payload = normalize_checkpoint_payload(
             _parse_json_object(response.content),
@@ -540,23 +590,16 @@ async def create_context_checkpoint(
         if not summary_text or summary_tokens >= covered_tokens:
             return ContextCheckpointResult()
 
-        checkpoint, _ = await ConversationContextCheckpoint.get_or_create(
+        checkpoint, created = await _persist_checkpoint_monotonically(
             conversation_id=conversation.id,
-            defaults={"status": ConversationContextCheckpointStatus.PENDING},
+            source_message=source_message,
+            summary_text=summary_text,
+            summary_payload=payload,
+            summary_tokens=summary_tokens,
+            summarizer_model=response.model or model_id,
         )
-        if await _existing_checkpoint_is_newer(checkpoint, source_message):
+        if not created:
             return ContextCheckpointResult(checkpoint=checkpoint)
-
-        checkpoint.covered_through_message_id = source_message.id
-        checkpoint.status = ConversationContextCheckpointStatus.READY
-        checkpoint.summary_text = summary_text
-        checkpoint.summary_payload = payload
-        checkpoint.token_estimate = summary_tokens
-        checkpoint.summarizer_model = response.model or model_id
-        checkpoint.failure_count = 0
-        checkpoint.last_error = None  # type: ignore[assignment]
-        checkpoint.last_summarized_at = now_utc()
-        await checkpoint.save()
         return ContextCheckpointResult(
             checkpoint=checkpoint,
             created=True,

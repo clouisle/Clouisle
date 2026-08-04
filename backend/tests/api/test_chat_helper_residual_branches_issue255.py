@@ -128,7 +128,7 @@ async def test_partial_round_error_content_and_persisted_trace_fallbacks(monkeyp
         content_message,
         content="partial",
         reasoning="",
-        model_id=None,
+        model_used=None,
         start_time=1.0,
         fallback_content="ignored",
     )
@@ -142,7 +142,7 @@ async def test_partial_round_error_content_and_persisted_trace_fallbacks(monkeyp
         trace_message,
         content="",
         reasoning="",
-        model_id=None,
+        model_used=None,
         start_time=1.0,
     )
     assert trace_message.content == ""

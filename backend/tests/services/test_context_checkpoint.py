@@ -19,6 +19,42 @@ class QueryResult:
     async def first(self):
         return self.value
 
+    def using_db(self, _connection):
+        return self
+
+
+class _Transaction:
+    def __init__(self, connection):
+        self.connection = connection
+
+    async def __aenter__(self):
+        return self.connection
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class _LockQuery:
+    def using_db(self, _connection):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def get(self):
+        return SimpleNamespace()
+
+
+def _patch_checkpoint_transaction(monkeypatch):
+    connection = object()
+    monkeypatch.setattr(
+        context_checkpoint, "in_transaction", lambda: _Transaction(connection)
+    )
+    monkeypatch.setattr(
+        context_checkpoint.Conversation, "filter", lambda **_kwargs: _LockQuery()
+    )
+    return connection
+
 
 def message(role, content, *, images=None, tool_calls=None, tool_call_id=None):
     return SimpleNamespace(
@@ -215,6 +251,13 @@ async def test_create_context_checkpoint_persists_model_summary(monkeypatch):
         "count_tokens",
         lambda text, model_id, provider=None: len(str(text)),
     )
+    connection = _patch_checkpoint_transaction(monkeypatch)
+
+    async def wait_for_response(awaitable, *, timeout):
+        return await awaitable
+
+    wait_for = AsyncMock(side_effect=wait_for_response)
+    monkeypatch.setattr(context_checkpoint.asyncio, "wait_for", wait_for)
 
     result = await context_checkpoint.create_context_checkpoint(
         agent=agent,
@@ -239,10 +282,14 @@ async def test_create_context_checkpoint_persists_model_summary(monkeypatch):
     assert checkpoint.summary_payload["conversation_goal"] == "finish the migration"
     assert checkpoint.summary_payload["decisions"] == ["use checkpoints"]
     assert checkpoint.summarizer_model == "provider/test-model"
-    checkpoint.save.assert_awaited_once_with()
+    checkpoint.save.assert_awaited_once_with(using_db=connection)
+    assert wait_for.await_args.kwargs["timeout"] == (
+        context_checkpoint.CHECKPOINT_SUMMARY_TIMEOUT_SECONDS
+    )
     get_or_create.assert_awaited_once_with(
         conversation_id=conversation.id,
         defaults={"status": ConversationContextCheckpointStatus.PENDING},
+        using_db=connection,
     )
 
 
@@ -480,6 +527,9 @@ async def test_existing_checkpoint_compares_covered_message_position(monkeypatch
     )
 
     assert await context_checkpoint._existing_checkpoint_is_newer(checkpoint, source)
+    assert await context_checkpoint._existing_checkpoint_is_newer(
+        checkpoint, source, using_db=object()
+    )
     checkpoint.covered_through_message_id = None
     assert not await context_checkpoint._existing_checkpoint_is_newer(
         checkpoint, source
@@ -606,6 +656,7 @@ async def test_create_checkpoint_loses_concurrent_update_race(monkeypatch):
         "get_or_create",
         AsyncMock(return_value=(checkpoint, False)),
     )
+    _patch_checkpoint_transaction(monkeypatch)
     monkeypatch.setattr(
         context_checkpoint,
         "_existing_checkpoint_is_newer",

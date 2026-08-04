@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from app.api.v1.endpoints import chat_sse
 
 from app.api.v1.endpoints.chat_sse import (
     build_compression_events,
@@ -191,6 +192,32 @@ def test_compression_events_identify_summary_strategy(
     assert end is not None
     _, payload = parse_sse(end)
     assert expected_note in payload["note"]
+
+
+@pytest.mark.parametrize(
+    ("actions", "translation_key"),
+    [
+        (["checkpoint_summary"], "chat_context_compaction_checkpoint_summary"),
+        (["macro_summary"], "chat_context_compaction_macro_summary"),
+    ],
+)
+def test_compression_strategy_notes_use_translations(
+    monkeypatch, actions, translation_key
+):
+    monkeypatch.setattr(
+        "app.services.chat_context.get_context_compression_config", lambda _agent: {}
+    )
+    monkeypatch.setattr(chat_sse, "t", lambda key, **_kwargs: key)
+
+    _, end = build_compression_events(
+        agent=object(),
+        compression=compression(actions=actions),
+        trigger="token_pressure",
+    )
+
+    assert end is not None
+    _, payload = parse_sse(end)
+    assert translation_key in payload["note"]
 
 
 def test_final_and_error_event_type_contracts():

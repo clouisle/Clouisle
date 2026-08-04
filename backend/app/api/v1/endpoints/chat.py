@@ -588,7 +588,7 @@ async def persist_partial_round_error(
     *,
     content: str,
     reasoning: str,
-    model_id: str | None,
+    model_used: str | None,
     start_time: float,
     first_token_time: float | None = None,
     fallback_content: str | None = None,
@@ -611,8 +611,8 @@ async def persist_partial_round_error(
         final_content = ""
     message.content = final_content
     message.reasoning_content = reasoning if reasoning else None  # type: ignore[assignment]
-    message.model_used = model_id  # type: ignore[assignment]
-    message.model_used = model_id
+    message.model_used = model_used  # type: ignore[assignment]
+    message.model_used = model_used
     message.duration_ms = int((time.time() - start_time) * 1000)
     message.first_token_ms = _first_token_ms(start_time, first_token_time)
     message.is_manually_stopped = False
@@ -1100,6 +1100,7 @@ async def chat(
     model_max_output_tokens = chat_model.max_output_tokens
     model_provider = chat_model.provider
     tokenizer_model_id = chat_model.tokenizer_model_id
+    model_used = model_id
 
     model_supports_vision = bool(
         chat_in.images and agent.enable_vision and chat_model.supports_vision
@@ -1287,7 +1288,7 @@ async def chat(
                     role=MessageRole.ASSISTANT,
                     content=response.content or "",
                     reasoning_content=response.reasoning_content or None,
-                    model_used=response.model,
+                    model_used=model_used,
                     tool_calls=intermediate_tool_calls,
                     round_id=round_id,
                     round_index=assistant_step_index,
@@ -1428,7 +1429,7 @@ async def chat(
                 if max_iterations_reached
                 else (final_response.reasoning_content if final_response else None)
             ),
-            model_used=(final_response.model if final_response else model_id),
+            model_used=model_used,
             token_usage={
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
@@ -1564,6 +1565,7 @@ async def chat_stream(
         message_id = None
         assistant_msg: Message | None = None
         model_id: str | None = None
+        model_used: str | None = None
         global_timeout: float = 1800.0  # Default 30 minutes
         idle_timeout: float = 300.0  # Default 5 minutes
 
@@ -1705,6 +1707,7 @@ async def chat_stream(
                     model_max_output_tokens = chat_model.max_output_tokens
                     model_provider = chat_model.provider
                     tokenizer_model_id = chat_model.tokenizer_model_id
+                    model_used = model_id
                     model_supports_vision = bool(
                         chat_in.images
                         and agent.enable_vision
@@ -1771,7 +1774,7 @@ async def chat_stream(
                             assistant_msg.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -2120,7 +2123,7 @@ async def chat_stream(
                             assistant_msg.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -2160,7 +2163,7 @@ async def chat_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -2230,7 +2233,7 @@ async def chat_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -2374,7 +2377,7 @@ async def chat_stream(
                         if max_iterations_reached
                         else (full_reasoning if full_reasoning else None)
                     )
-                    assistant_msg.model_used = model_id
+                    assistant_msg.model_used = model_used
                     assistant_msg.duration_ms = duration_ms
                     assistant_msg.first_token_ms = _first_token_ms(
                         start_time, first_token_time
@@ -2472,7 +2475,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2484,7 +2487,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2496,7 +2499,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2508,7 +2511,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2522,7 +2525,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=error_message,
@@ -2539,19 +2542,32 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t("stream_timeout_exceeded"),
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
+                except BusinessError as e:
+                    error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_used=model_used,
+                        start_time=start_time,
+                        first_token_time=first_token_time,
+                        fallback_content=error_message,
+                    )
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
+
                 except Exception:
                     logger.exception("Unexpected error during stream")
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2570,7 +2586,7 @@ async def chat_stream(
                 assistant_msg,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t("stream_timeout_exceeded"),
@@ -2585,7 +2601,7 @@ async def chat_stream(
             if assistant_msg:
                 assistant_msg.content = full_content
                 assistant_msg.reasoning_content = full_reasoning or None
-                assistant_msg.model_used = model_id
+                assistant_msg.model_used = model_used
                 assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
                 assistant_msg.first_token_ms = _first_token_ms(
                     start_time, first_token_time
@@ -2609,7 +2625,7 @@ async def chat_stream(
                     assistant_msg,
                     content=full_content,
                     reasoning=full_reasoning,
-                    model_id=model_id,
+                    model_used=model_used,
                     start_time=start_time,
                     first_token_time=first_token_time,
                     fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2888,6 +2904,7 @@ async def edit_user_message_stream(
         assistant_msg: Message | None = None
         assistant_msg_id: str | None = None
         model_id: str | None = None
+        model_used: str | None = None
         global_timeout: float = 1800.0
         idle_timeout: float = 300.0
 
@@ -3054,6 +3071,7 @@ async def edit_user_message_stream(
                     model_max_output_tokens = chat_model.max_output_tokens
                     model_provider = chat_model.provider
                     tokenizer_model_id = chat_model.tokenizer_model_id
+                    model_used = model_id
                     tools_openai = await get_agent_tools(agent)
                     tool_display_names = await get_tool_display_names(
                         agent, current_user.locale
@@ -3094,7 +3112,7 @@ async def edit_user_message_stream(
                         if not should_continue:
                             assistant_msg.content = full_content
                             assistant_msg.reasoning_content = full_reasoning or None
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -3353,7 +3371,7 @@ async def edit_user_message_stream(
                         if client_disconnected:
                             assistant_msg.content = full_content
                             assistant_msg.reasoning_content = full_reasoning or None
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -3378,7 +3396,7 @@ async def edit_user_message_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning or None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -3437,7 +3455,7 @@ async def edit_user_message_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning or None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -3562,7 +3580,7 @@ async def edit_user_message_stream(
                         if max_iterations_reached
                         else (full_reasoning if full_reasoning else None)
                     )
-                    assistant_msg.model_used = model_id
+                    assistant_msg.model_used = model_used
                     assistant_msg.duration_ms = duration_ms
                     assistant_msg.first_token_ms = _first_token_ms(
                         start_time, first_token_time
@@ -3635,7 +3653,7 @@ async def edit_user_message_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -3657,7 +3675,7 @@ async def edit_user_message_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=error_message,
@@ -3679,7 +3697,7 @@ async def edit_user_message_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t("stream_timeout_exceeded"),
@@ -3700,7 +3718,7 @@ async def edit_user_message_stream(
                 assistant_msg,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t("stream_timeout_exceeded"),
@@ -3718,7 +3736,7 @@ async def edit_user_message_stream(
             if assistant_msg:
                 assistant_msg.content = full_content
                 assistant_msg.reasoning_content = full_reasoning or None
-                assistant_msg.model_used = model_id
+                assistant_msg.model_used = model_used
                 assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
                 assistant_msg.first_token_ms = _first_token_ms(
                     start_time, first_token_time
@@ -3737,13 +3755,34 @@ async def edit_user_message_stream(
                         )
                     await restore_original_path()
             return
+        except BusinessError as e:
+            error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+            preserved_partial = await persist_partial_round_error(
+                assistant_msg,
+                content=full_content,
+                reasoning=full_reasoning,
+                model_used=model_used,
+                start_time=start_time,
+                first_token_time=first_token_time,
+                fallback_content=error_message,
+            )
+            if preserved_partial:
+                await activate_edited_path()
+            else:
+                if assistant_msg_id:
+                    await Message.filter(id=assistant_msg_id).delete()
+                if edited_user_msg:
+                    await Message.filter(id=edited_user_msg.id).update(is_active=False)
+                await restore_original_path()
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
+
         except Exception:
             logger.exception("Unexpected error during message edit")
             preserved_partial = await persist_partial_round_error(
                 assistant_msg,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -3855,6 +3894,7 @@ async def regenerate_message(
         new_message_id = None
         new_message: Message | None = None
         model_id: str | None = None
+        model_used: str | None = None
         global_timeout: float = 1800.0  # Default 30 minutes
         idle_timeout: float = 300.0  # Default 5 minutes
 
@@ -3986,6 +4026,7 @@ async def regenerate_message(
                     model_max_output_tokens = chat_model.max_output_tokens
                     model_provider = chat_model.provider
                     tokenizer_model_id = chat_model.tokenizer_model_id
+                    model_used = model_id
                     working_history_override = None
 
                     # Get model and tools
@@ -4030,7 +4071,7 @@ async def regenerate_message(
                             new_message.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            new_message.model_used = model_id
+                            new_message.model_used = model_used
                             new_message.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -4296,7 +4337,7 @@ async def regenerate_message(
                             new_message.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            new_message.model_used = model_id
+                            new_message.model_used = model_used
                             new_message.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -4323,7 +4364,7 @@ async def regenerate_message(
                                     new_message.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    new_message.model_used = model_id
+                                    new_message.model_used = model_used
                                     new_message.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -4388,7 +4429,7 @@ async def regenerate_message(
                                     new_message.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    new_message.model_used = model_id
+                                    new_message.model_used = model_used
                                     new_message.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -4523,7 +4564,7 @@ async def regenerate_message(
                         if max_iterations_reached
                         else (full_reasoning if full_reasoning else None)
                     )
-                    new_message.model_used = model_id
+                    new_message.model_used = model_used
                     new_message.duration_ms = duration_ms
                     new_message.first_token_ms = _first_token_ms(
                         start_time, first_token_time
@@ -4603,7 +4644,7 @@ async def regenerate_message(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -4622,7 +4663,7 @@ async def regenerate_message(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=error_message,
@@ -4640,7 +4681,7 @@ async def regenerate_message(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t("stream_timeout_exceeded"),
@@ -4658,12 +4699,31 @@ async def regenerate_message(
                         extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
+                except BusinessError as e:
+                    error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+                    preserved_partial = await persist_partial_round_error(
+                        new_message,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_used=model_used,
+                        start_time=start_time,
+                        first_token_time=first_token_time,
+                        fallback_content=error_message,
+                    )
+                    if preserved_partial:
+                        await activate_regenerated_path()
+                    else:
+                        if new_message_id:
+                            await Message.filter(id=new_message_id).delete()
+                        await restore_original_path()
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
+
                 except Exception:
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -4689,7 +4749,7 @@ async def regenerate_message(
                 new_message,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t("stream_timeout_exceeded"),
@@ -4709,7 +4769,7 @@ async def regenerate_message(
             if new_message:
                 new_message.content = full_content
                 new_message.reasoning_content = full_reasoning or None
-                new_message.model_used = model_id
+                new_message.model_used = model_used
                 new_message.duration_ms = int((time.time() - start_time) * 1000)
                 new_message.first_token_ms = _first_token_ms(
                     start_time, first_token_time
@@ -4735,7 +4795,7 @@ async def regenerate_message(
                 new_message,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t(GENERIC_STREAM_ERROR_KEY),

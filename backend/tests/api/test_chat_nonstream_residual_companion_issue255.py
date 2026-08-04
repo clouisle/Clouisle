@@ -47,7 +47,7 @@ def _agent(ids, **overrides):
     return SimpleNamespace(**values)
 
 
-def _team_model():
+def _model_resolution():
     model = SimpleNamespace(
         id=uuid4(),
         is_enabled=True,
@@ -57,7 +57,16 @@ def _team_model():
         context_length=8192,
         max_output_tokens=1024,
     )
-    return SimpleNamespace(model=model)
+    return SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model.id),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
+    )
 
 
 def _message(ids, content="assistant"):
@@ -149,7 +158,9 @@ def _patch_common(monkeypatch, ids, agent=None, conversation=None):
     )
     monkeypatch.setattr(chat_endpoint, "update_message_stats", AsyncMock())
     monkeypatch.setattr(
-        chat_endpoint, "get_agent_chat_model", AsyncMock(return_value=_team_model())
+        chat_endpoint,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_model_resolution()),
     )
     monkeypatch.setattr(
         chat_endpoint, "get_streaming_config", lambda _agent: {"tool_timeouts": {}}

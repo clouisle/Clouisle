@@ -240,8 +240,8 @@ class ContextCompressionConfig(BaseModel):
     @model_validator(mode="after")
     def validate_checkpoint_target_ratio(self) -> "ContextCompressionConfig":
         if self.checkpoint_target_ratio >= self.auto_compact_trigger_ratio:
-            raise ValueError(
-                "checkpoint_target_ratio must be below auto_compact_trigger_ratio"
+            self.checkpoint_target_ratio = max(
+                self.auto_compact_trigger_ratio * 0.75, 0.1
             )
         return self
 

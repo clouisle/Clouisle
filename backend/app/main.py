@@ -242,14 +242,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Workflow run-page config migration failed: {e}")
 
     try:
-        await drop_model_provider_uniqueness()
-    except Exception as e:
-        logger.warning(f"Model provider uniqueness migration failed: {e}")
-
-    try:
         await revert_channel_id_to_model_id()
     except Exception as e:
         logger.warning(f"channel_id revert migration failed: {e}")
+
+    try:
+        await drop_model_provider_uniqueness()
+    except Exception as e:
+        logger.warning(f"Model provider uniqueness migration failed: {e}")
 
     try:
         await init_kb_rerank_fields()

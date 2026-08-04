@@ -72,7 +72,7 @@ def test_llm_error_format_uses_i18n_fallback_and_provider_message(monkeypatch):
 @pytest.mark.asyncio
 async def test_partial_round_error_skips_absent_and_empty_messages(monkeypatch):
     assert not await chat.persist_partial_round_error(
-        None, content="x", reasoning="", model_id=None, start_time=1
+        None, content="x", reasoning="", model_used=None, start_time=1
     )
 
     monkeypatch.setattr(
@@ -80,7 +80,7 @@ async def test_partial_round_error_skips_absent_and_empty_messages(monkeypatch):
     )
     message = SavedMessage(round_id=uuid4())
     assert not await chat.persist_partial_round_error(
-        message, content="", reasoning="", model_id=None, start_time=1
+        message, content="", reasoning="", model_used=None, start_time=1
     )
     assert not hasattr(message, "saved")
 
@@ -106,7 +106,7 @@ async def test_partial_round_error_persists_each_progress_source(
         message,
         content=content,
         reasoning=reasoning,
-        model_id="provider/model",
+        model_used="provider/model",
         start_time=1.0,
         first_token_time=2.0,
         fallback_content=fallback,

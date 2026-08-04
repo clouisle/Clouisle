@@ -242,7 +242,7 @@ async def test_persist_partial_round_error_uses_fallback_and_saves(monkeypatch):
         message,
         content="",
         reasoning="reasoning",
-        model_id="model",
+        model_used="model",
         start_time=10.0,
         first_token_time=10.5,
         fallback_content="request failed",
@@ -268,6 +268,6 @@ async def test_persist_partial_round_error_skips_empty_untraced_round(monkeypatc
         message,
         content="",
         reasoning="",
-        model_id=None,
+        model_used=None,
         start_time=0,
     )

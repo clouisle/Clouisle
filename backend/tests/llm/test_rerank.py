@@ -10,6 +10,7 @@ from app.llm.adapters.rerank.openai_compatible_adapter import (
     OpenAICompatibleRerankAdapter,
 )
 from app.llm.manager import ModelManager
+from app.llm.errors import ModelNotFoundError
 from app.llm.types import ChatResponse, FinishReason, Usage
 from app.models.model import ModelProvider, ModelType
 
@@ -211,6 +212,7 @@ class TestModelManagerModelLookup:
         fake_model = SimpleNamespace(
             id=model_uuid,
             name="Rerank Model",
+            model_type=ModelType.RERANK,
             is_enabled=True,
         )
         query = SimpleNamespace(first=AsyncMock(return_value=fake_model))
@@ -219,7 +221,18 @@ class TestModelManagerModelLookup:
             model = asyncio.run(manager._get_model_config(model_uuid, ModelType.RERANK))
 
         assert model is fake_model
-        mock_filter.assert_called_once_with(id=model_uuid)
+        mock_filter.assert_called_once_with(id=model_uuid, model_type=ModelType.RERANK)
+
+    def test_get_model_config_rejects_uuid_for_mismatched_type(self):
+        manager = ModelManager()
+        model_uuid = "550e8400-e29b-41d4-a716-446655440000"
+        query = SimpleNamespace(first=AsyncMock(return_value=None))
+
+        with patch("app.llm.manager.Model.filter", return_value=query) as mock_filter:
+            with pytest.raises(ModelNotFoundError):
+                asyncio.run(manager._get_model_config(model_uuid, ModelType.RERANK))
+
+        mock_filter.assert_called_once_with(id=model_uuid, model_type=ModelType.RERANK)
 
 
 class TestRerankFactory:

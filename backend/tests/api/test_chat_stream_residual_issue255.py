@@ -73,16 +73,24 @@ def patched_chat_stream(monkeypatch):
     )
     user = SimpleNamespace(id=uuid4(), is_active=True, locale="en")
     conversation = SimpleNamespace(id=uuid4(), title=None)
-    team_model = SimpleNamespace(
-        model=SimpleNamespace(
-            id=uuid4(),
-            is_enabled=True,
-            provider="test",
-            model_id="model",
-            context_length=4096,
-            max_output_tokens=256,
-            capabilities={},
-        )
+    model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
+        provider="test",
+        model_id="model",
+        context_length=4096,
+        max_output_tokens=256,
+        capabilities={},
+    )
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model.id),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
     )
     prepared = SimpleNamespace(
         messages=[LLMMessage(role="user", content="hello")],
@@ -113,7 +121,11 @@ def patched_chat_stream(monkeypatch):
     monkeypatch.setattr(
         chat_endpoint, "build_file_content_for_context", AsyncReturn(("", None))
     )
-    monkeypatch.setattr(chat_endpoint, "get_agent_chat_model", AsyncReturn(team_model))
+    monkeypatch.setattr(
+        chat_endpoint,
+        "resolve_agent_chat_model",
+        AsyncReturn(model_resolution),
+    )
     monkeypatch.setattr(
         chat_endpoint, "get_visible_conversation_messages", AsyncReturn([])
     )

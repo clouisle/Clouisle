@@ -11,7 +11,7 @@ from app.llm.errors import LLMError
 from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message
 from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import RegenerateRequest
-from app.schemas.response import ResponseCode
+from app.schemas.response import BusinessError, ResponseCode
 
 
 class Query:
@@ -91,22 +91,30 @@ async def setup_regeneration(monkeypatch):
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _inventory: text
     )
+    model_uuid = uuid4()
+    model = SimpleNamespace(
+        id=model_uuid,
+        is_enabled=True,
+        capabilities={},
+        provider="stub",
+        model_id="unit-model",
+        context_length=8192,
+        max_output_tokens=1024,
+    )
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model_uuid),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
+    )
     monkeypatch.setattr(
         chat,
-        "get_agent_chat_model",
-        AsyncMock(
-            return_value=SimpleNamespace(
-                model=SimpleNamespace(
-                    id=uuid4(),
-                    is_enabled=True,
-                    capabilities={},
-                    provider="stub",
-                    model_id="unit-model",
-                    context_length=8192,
-                    max_output_tokens=1024,
-                )
-            )
-        ),
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=model_resolution),
     )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
@@ -147,6 +155,7 @@ async def setup_regeneration(monkeypatch):
         agent_stats=agent_stats,
         team_stats=team_stats,
         prefix=prefix,
+        model_id=str(model_uuid),
     )
 
 
@@ -195,7 +204,7 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
     assert start["version_number"] == 3
     assert state.created.content == "new answer"
     assert state.created.reasoning_content == "thinking"
-    assert state.created.model_used  # UUID of the resolved model
+    assert state.created.model_used == state.model_id
     assert state.created.version_number == 3
     assert state.created.round_status == MessageRoundStatus.COMPLETED
     assert state.created.created_at == "completed-at"
@@ -254,6 +263,45 @@ async def test_regenerate_stream_failure_deletes_new_version_and_restores_origin
     assert payload["msg"] == expected_message
     if timeout is not None:
         assert payload["timeout"] == timeout
+    deleted.delete.assert_awaited_once()
+    chat.activate_conversation_branch.assert_awaited_once_with(
+        state.conversation.id, [state.user_message, state.original]
+    )
+    chat.persist_partial_round_error.assert_awaited_once()
+    state.created.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_regenerate_stream_preserves_model_resolution_business_error(
+    monkeypatch,
+):
+    state = await setup_regeneration(monkeypatch)
+    deleted = Query()
+    monkeypatch.setattr(chat.Message, "filter", lambda **_kwargs: deleted)
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.MODEL_NOT_FOUND,
+                msg_key="model_not_found",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        chat, "persist_partial_round_error", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        chat, "find_descendant_branch_from", AsyncMock(return_value=[state.original])
+    )
+    monkeypatch.setattr(chat, "t", lambda key, **_kwargs: key)
+
+    events = [event async for event in state.response.body_iterator]
+
+    assert event_payload(events, chat.SSEEventType.ERROR) == {
+        "code": ResponseCode.MODEL_NOT_FOUND,
+        "msg": "model_not_found",
+    }
     deleted.delete.assert_awaited_once()
     chat.activate_conversation_branch.assert_awaited_once_with(
         state.conversation.id, [state.user_message, state.original]

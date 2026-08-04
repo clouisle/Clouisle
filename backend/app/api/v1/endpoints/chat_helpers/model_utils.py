@@ -47,6 +47,11 @@ async def resolve_agent_chat_model(agent: Agent) -> ChatModelResolution:
                 code=ResponseCode.MODEL_NOT_FOUND,
                 msg_key="model_not_found",
             )
+        if not getattr(agent, "team_id", None):
+            raise BusinessError(
+                code=ResponseCode.MODEL_NOT_FOUND,
+                msg_key="model_not_found",
+            )
         model, team_model = await model_manager.resolve_team_chat_model(
             team_id=str(agent.team_id),
             model_id=None,

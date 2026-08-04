@@ -2,11 +2,11 @@
 
 ## Active
 
-- **default-model-context-budget** — Planned. Align default chat model resolution with context-budget preparation so global model metadata is used before compression. See `docs/plan/default-model-context-budget.md`
-  - [ ] 1. Centralize default team-chat model resolution
-  - [ ] 2. Thread resolved metadata through every Chat path
-  - [ ] 3. Improve compression observability
-  - [ ] 4. Regression, rollout, and cleanup
+- **default-model-context-budget** — Complete. Align default chat model resolution with context-budget preparation so global model metadata is used before compression. See `docs/plan/default-model-context-budget.md`
+  - [x] 1. Centralize default team-chat model resolution
+  - [x] 2. Thread resolved metadata through every Chat path
+  - [x] 3. Improve compression observability
+  - [x] 4. Regression, rollout, and cleanup
 
 - **yun-127-system-prompt-injection-manager** - Complete. Extracted a unified, capability-aware system prompt injection manager shared by the chat endpoint and the workflow Agent path; fixed the workflow sandbox-guidance gap. See `docs/plan/yun-127-system-prompt-injection-manager.md`
   - [x] 1. Create unified manager `system_prompt.py`

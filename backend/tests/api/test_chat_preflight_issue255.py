@@ -15,10 +15,11 @@ def _fake_chat_resolution():
     from types import SimpleNamespace
     from uuid import uuid4
 
+    model_uuid = uuid4()
     return SimpleNamespace(
-        model=SimpleNamespace(id=uuid4()),
+        model=SimpleNamespace(id=model_uuid),
         team_model=SimpleNamespace(),
-        model_id=str(uuid4()),
+        model_id=str(model_uuid),
         tokenizer_model_id="stub-model",
         provider="stub",
         context_length=8192,

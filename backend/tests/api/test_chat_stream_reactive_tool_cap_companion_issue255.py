@@ -121,22 +121,29 @@ async def test_stream_retries_context_then_persists_tool_cap(monkeypatch):
     monkeypatch.setattr(
         chat, "build_file_content_for_context", AsyncMock(return_value=("files", None))
     )
+    model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
+        provider="stub",
+        model_id="unit",
+        context_length=4096,
+        max_output_tokens=512,
+        capabilities={},
+    )
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model.id),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
+    )
     monkeypatch.setattr(
         chat,
-        "get_agent_chat_model",
-        AsyncMock(
-            return_value=SimpleNamespace(
-                model=SimpleNamespace(
-                    id=uuid4(),
-                    is_enabled=True,
-                    provider="stub",
-                    model_id="unit",
-                    context_length=4096,
-                    max_output_tokens=512,
-                    capabilities={},
-                )
-            )
-        ),
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=model_resolution),
     )
     monkeypatch.setattr(
         chat, "get_visible_conversation_messages", AsyncMock(return_value=[])

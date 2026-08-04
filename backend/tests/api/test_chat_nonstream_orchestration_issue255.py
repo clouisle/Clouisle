@@ -79,6 +79,27 @@ async def setup_chat(monkeypatch, *, max_iterations=3, rag_mode=RAGMode.OFF):
         messages=[Message(role="user", content="prepared prompt")]
     )
 
+    model_uuid = uuid4()
+    model = SimpleNamespace(
+        id=model_uuid,
+        is_enabled=True,
+        provider="stub",
+        model_id="unit-model",
+        capabilities={"vision": True},
+        context_length=8192,
+        max_output_tokens=1024,
+    )
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model_uuid),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=True,
+    )
+
     monkeypatch.setattr(chat.deps, "check_api_key_agent_access", AsyncMock())
     monkeypatch.setattr(chat, "check_agent_chat_access", AsyncMock(return_value=agent))
     monkeypatch.setattr(
@@ -91,20 +112,8 @@ async def setup_chat(monkeypatch, *, max_iterations=3, rag_mode=RAGMode.OFF):
     monkeypatch.setattr(chat, "update_message_stats", AsyncMock())
     monkeypatch.setattr(
         chat,
-        "get_agent_chat_model",
-        AsyncMock(
-            return_value=SimpleNamespace(
-                model=SimpleNamespace(
-                    id=uuid4(),
-                    is_enabled=True,
-                    provider="stub",
-                    model_id="unit-model",
-                    capabilities={"vision": True},
-                    context_length=8192,
-                    max_output_tokens=1024,
-                )
-            )
-        ),
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=model_resolution),
     )
     monkeypatch.setattr(
         chat, "get_streaming_config", lambda _agent: {"tool_timeouts": {}}
@@ -152,6 +161,7 @@ async def setup_chat(monkeypatch, *, max_iterations=3, rag_mode=RAGMode.OFF):
         prepared=prepared,
         conversation_query=conversation_query,
         agent_query=agent_query,
+        model_id=str(model_uuid),
     )
 
 
@@ -202,6 +212,7 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
     assert user_message.file_urls == [{"filename": "notes.txt"}]
     user_message.save.assert_awaited_once_with(update_fields=["file_urls"])
     assert assistant.content == "answer"
+    assert assistant.model_used == state.model_id
     assert assistant.token_usage == {"prompt": 3, "completion": 2}
     assert assistant.round_status == MessageRoundStatus.COMPLETED
     assert result["data"].usage == {
@@ -273,6 +284,7 @@ async def test_chat_executes_tool_round_and_aggregates_usage(monkeypatch):
         "arguments": {},
     }
     assert assistant_step.is_round_canonical is False
+    assert assistant_step.model_used == state.model_id
     assert tool_result.content == {"answer": 42}
     assert tool_result.tool_call_id == "call-1"
     assert assistant.content == "final answer"

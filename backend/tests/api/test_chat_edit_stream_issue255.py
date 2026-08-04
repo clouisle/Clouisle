@@ -11,7 +11,7 @@ from app.llm.errors import LLMError
 from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message
 from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import EditMessageRequest
-from app.schemas.response import ResponseCode
+from app.schemas.response import BusinessError, ResponseCode
 
 
 class Query:
@@ -134,22 +134,30 @@ async def setup_edit(monkeypatch, *, rag_mode=RAGMode.OFF):
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _inventory: text
     )
+    model_uuid = uuid4()
+    model = SimpleNamespace(
+        id=model_uuid,
+        is_enabled=True,
+        capabilities={},
+        provider="stub",
+        model_id="unit-model",
+        context_length=8192,
+        max_output_tokens=1024,
+    )
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model_uuid),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
+    )
     monkeypatch.setattr(
         chat,
-        "get_agent_chat_model",
-        AsyncMock(
-            return_value=SimpleNamespace(
-                model=SimpleNamespace(
-                    id=uuid4(),
-                    is_enabled=True,
-                    capabilities={},
-                    provider="stub",
-                    model_id="unit-model",
-                    context_length=8192,
-                    max_output_tokens=1024,
-                )
-            )
-        ),
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=model_resolution),
     )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
@@ -191,6 +199,7 @@ async def setup_edit(monkeypatch, *, rag_mode=RAGMode.OFF):
         agent_stats=agent_stats,
         team_stats=team_stats,
         conversation_stats=conversation_stats,
+        model_id=str(model_uuid),
     )
 
 
@@ -257,7 +266,7 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
     assert state.edited.images == state.original.images
     assert state.assistant.content == "new answer"
     assert state.assistant.reasoning_content == "thinking"
-    assert state.assistant.model_used  # UUID of the resolved model
+    assert state.assistant.model_used == state.model_id
     assert state.assistant.round_status == MessageRoundStatus.COMPLETED
     assert state.assistant.created_at == "completed-at"
     assert state.assistant.token_usage == {"prompt": 3, "completion": 2}
@@ -303,3 +312,34 @@ async def test_edit_stream_failure_removes_branch_and_restores_original(monkeypa
         [state.prefix_message, state.original, state.original_reply],
     )
     state.assistant.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_edit_stream_preserves_model_resolution_business_error(monkeypatch):
+    state = await setup_edit(monkeypatch)
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.MODEL_NOT_FOUND,
+                msg_key="model_not_found",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        chat, "persist_partial_round_error", AsyncMock(return_value=False)
+    )
+
+    events = [event async for event in state.response.body_iterator]
+
+    assert event_payload(events, chat.SSEEventType.ERROR) == {
+        "code": ResponseCode.MODEL_NOT_FOUND,
+        "msg": "model_not_found",
+    }
+    state.cleanup_query.delete.assert_awaited_once()
+    state.cleanup_query.update.assert_awaited_once_with(is_active=False)
+    assert chat.activate_conversation_branch.await_args_list[-1].args == (
+        state.conversation.id,
+        [state.prefix_message, state.original, state.original_reply],
+    )

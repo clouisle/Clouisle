@@ -254,13 +254,20 @@ async def test_extraction_skips_duplicate_and_outdated_tasks(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_extraction_creates_and_saves_ready_snapshot(monkeypatch):
+async def test_extraction_persists_ready_snapshot_with_authorized_model(monkeypatch):
     conversation_id = uuid4()
     source_id = uuid4()
     source = message(id=source_id)
     conversation = SimpleNamespace(agent_id=uuid4())
-    agent = SimpleNamespace(model_id=None, team_id=uuid4())
+    team_model_id = uuid4()
+    agent = SimpleNamespace(model_id=team_model_id, team_id=uuid4())
+    team_model = SimpleNamespace(
+        id=team_model_id,
+        model=SimpleNamespace(provider="openai", model_id="gpt-4o"),
+    )
     snapshot = SimpleNamespace(
+        source_message_id=source_id,
+        status=ConversationSessionMemoryStatus.PENDING,
         snapshot_payload=None,
         summary_text=None,
         failure_count=2,
@@ -289,12 +296,12 @@ async def test_extraction_creates_and_saves_ready_snapshot(monkeypatch):
     monkeypatch.setattr(
         session_memory.ConversationSessionMemory,
         "filter",
-        MagicMock(return_value=Query(None)),
+        MagicMock(return_value=Query(snapshot)),
     )
     monkeypatch.setattr(
-        session_memory.ConversationSessionMemory,
-        "create",
-        AsyncMock(return_value=snapshot),
+        session_memory.TeamModel,
+        "filter",
+        MagicMock(return_value=Query(team_model)),
     )
     monkeypatch.setattr(
         session_memory.model_manager,
@@ -321,7 +328,10 @@ async def test_extraction_creates_and_saves_ready_snapshot(monkeypatch):
     assert result["status"] == "success"
     assert result["token_estimate"] == 12
     assert snapshot.status == ConversationSessionMemoryStatus.READY
-    assert snapshot.extractor_model is None
+    assert snapshot.extractor_model == str(team_model_id)
+    assert session_memory.model_manager.team_chat.await_args.kwargs["model_id"] == str(
+        team_model_id
+    )
     snapshot.save.assert_awaited_once_with()
 
 
@@ -399,14 +409,18 @@ async def test_extraction_records_model_failure(monkeypatch, summary, expected_s
 def test_payload_transcript_and_text_helpers_cover_edge_branches(monkeypatch):
     assert session_memory._get_model_identifier(None) is None
     assert session_memory._get_model_identifier(SimpleNamespace(model=None)) is None
-    model_uuid = uuid4()
+    team_model_id = uuid4()
     team_model = SimpleNamespace(
-        model=SimpleNamespace(id=model_uuid, provider="openai", model_id="gpt-4o")
+        id=team_model_id,
+        model=SimpleNamespace(id=uuid4(), provider="openai", model_id="gpt-4o"),
     )
-    assert session_memory._get_model_identifier(team_model) == str(model_uuid)
+    assert session_memory._get_model_identifier(team_model) == str(team_model_id)
 
     assert session_memory._parse_json_object(None) == {}
     assert session_memory._parse_json_object('```json\n{"overview": "ok"}\n```') == {
+        "overview": "ok"
+    }
+    assert session_memory._parse_json_object('```\n{"overview": "ok"}\n```') == {
         "overview": "ok"
     }
     with pytest.raises(ValueError, match="JSON object"):
@@ -435,6 +449,13 @@ def test_payload_transcript_and_text_helpers_cover_edge_branches(monkeypatch):
     second = message(MessageRole.USER, content="next")
     blocks = session_memory._split_turn_blocks([first, assistant, second])
     assert len(blocks) == 2
+    assert session_memory._split_turn_blocks([]) == []
+    assert (
+        session_memory._render_transcript(
+            [[message(content="", tool_calls=[{"name": ""}])]]
+        )
+        == "## Turn 1"
+    )
     transcript = session_memory._render_transcript(blocks)
     assert "ASSISTANT_TOOL_CALLS: search" in transcript
 

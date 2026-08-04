@@ -2370,7 +2370,9 @@ async def revert_channel_id_to_model_id():
 
     _, channel_col = await conn.execute_query("""
         SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'models' AND column_name = 'channel_id'
+        WHERE table_name = 'models'
+          AND column_name = 'channel_id'
+          AND table_schema = 'public'
     """)
 
     if not channel_col:

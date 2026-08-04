@@ -97,6 +97,16 @@ async def test_chat_tool_loop_terminal_message_when_max_iterations_reached(monke
         max_output_tokens=512,
     )
     prepared_context = SimpleNamespace(messages=[])
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model.id),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
+    )
     response = LLMChatResponse(
         id="resp-1",
         model="openai/gpt-test",
@@ -125,8 +135,8 @@ async def test_chat_tool_loop_terminal_message_when_max_iterations_reached(monke
     monkeypatch.setattr(chat_endpoint, "update_message_stats", _noop)
     monkeypatch.setattr(
         chat_endpoint,
-        "get_agent_chat_model",
-        lambda agent: _awaitable(SimpleNamespace(model=model)),
+        "resolve_agent_chat_model",
+        lambda agent: _awaitable(model_resolution),
     )
     monkeypatch.setattr(
         chat_endpoint,

@@ -26,6 +26,10 @@ MODEL_ENCODING_MAP = {
     "default": "cl100k_base",
 }
 
+MODEL_ENCODING_PREFIXES = tuple(
+    sorted(MODEL_ENCODING_MAP.items(), key=lambda item: len(item[0]), reverse=True)
+)
+
 # Provider-level defaults
 PROVIDER_ENCODING_MAP = {
     "openai": "cl100k_base",
@@ -50,7 +54,7 @@ def get_encoding_for_model(
     """Get the appropriate token encoding without inventing a model ID."""
     if model_id:
         model_lower = model_id.lower()
-        for model_prefix, encoding_name in MODEL_ENCODING_MAP.items():
+        for model_prefix, encoding_name in MODEL_ENCODING_PREFIXES:
             if model_lower.startswith(model_prefix):
                 return get_encoding(encoding_name)
 

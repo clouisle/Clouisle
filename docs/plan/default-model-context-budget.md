@@ -74,9 +74,9 @@ resolved TeamModel
 2. `Agent.model_id` 为空：按 `Model.model_type=chat AND is_default=True AND is_enabled=True` 读取全局默认模型。
 3. 用 `team_id + model.id` 查找团队授权的 `TeamModel`。
 4. 团队未授权或授权禁用时，沿用 `team_chat` 当前的模型不可用/未授权错误。
-5. 将解析结果传给上下文准备和后续 `team_chat`，禁止前者使用 `None` 回退值。
+5. 将解析结果传给上下文准备和后续 `team_chat`，其中 `model_id` 是模型配置 UUID；`tokenizer_model_id` 仅用于 tokenizer 选择，另行传递 provider、context length 和 max output metadata。
 
-推荐由 `LLMManager` 复用 `_get_team_model` 的规则，避免 `chat.py` 自己复制默认模型和授权逻辑。为避免两次解析产生不一致，endpoint 可以保留一次解析结果，并将解析后的模型句柄显式传给 `team_chat`；如暂时无法传递对象，至少保证两次查询使用同一个全局默认模型与模型 ID。
+解析结果中的 UUID 是所有 `team_chat` 路由调用使用的唯一模型配置标识；provider 模型名不作为路由句柄传入。
 
 ## Implementation Plan
 
@@ -87,10 +87,10 @@ resolved TeamModel
   - `backend/app/api/v1/endpoints/chat.py`
   - 可能的 `backend/app/api/v1/endpoints/chat_helpers/model_utils.py`
 - **Specific logic**:
-  - 抽取可供 endpoint 使用的团队聊天模型解析方法，复用 `_get_model_config` 和团队授权校验。
   - 显式 Agent 模型保持现有 `TeamModel.id` 语义。
   - Agent 未设置模型时解析全局默认 chat Model，再查当前团队的 TeamModel 授权。
-  - 统一返回 provider/model handle/context length/max output metadata。
+  - 返回独立的模型配置 UUID、tokenizer model name、provider、context length 和 max output metadata。
+  - `team_chat` 路由只使用模型配置 UUID；tokenizer model name 仅用于 tokenizer 选择。
   - 没有默认模型、模型禁用、团队未授权时在上下文准备前快速失败。
 - **Validation**:
   - 显式 Agent 模型仍解析原绑定模型。

@@ -154,7 +154,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "init_agent_kb_search_mode",
         "init_chunk_status",
         "init_embed_config",
-        "init_model_type_unique_constraint",
+        "drop_model_provider_uniqueness",
         "init_kb_rerank_fields",
         "init_skills_table",
         "init_clouisle_import_sessions_table",

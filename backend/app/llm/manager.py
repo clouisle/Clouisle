@@ -23,6 +23,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.i18n import t
 from app.models.model import Model, ModelType, TeamModel, ModelProvider
+from app.schemas.response import BusinessError, ResponseCode
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
 from .adapters import (
@@ -119,14 +120,11 @@ class ModelManager:
         if model_id:
             parsed_uuid = self._parse_model_identifier(model_id)
             if parsed_uuid is None:
-                raise ModelNotFoundError(
-                    message=(
-                        f"Invalid model identifier format: '{model_id}'. "
-                        "Use the model configuration UUID."
-                    ),
-                    model=model_id,
+                raise BusinessError(
+                    code=ResponseCode.MODEL_NOT_FOUND,
+                    msg_key="model_not_found",
                 )
-            model = await Model.filter(id=parsed_uuid).first()
+            model = await Model.filter(id=parsed_uuid, model_type=model_type).first()
         else:
             model = await Model.filter(model_type=model_type, is_default=True).first()
 

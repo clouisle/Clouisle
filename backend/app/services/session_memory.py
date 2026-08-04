@@ -282,7 +282,7 @@ async def extract_session_memory_for_message(
 def _get_model_identifier(team_model: TeamModel | None) -> str | None:
     if not team_model or not getattr(team_model, "model", None):
         return None
-    return str(team_model.model.id)
+    return str(team_model.id)
 
 
 def _build_extraction_messages(

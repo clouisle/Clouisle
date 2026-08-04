@@ -114,7 +114,7 @@ Prompt 约束：保留数字、ID、文件路径、接口、工具结论和未�
   - `backend/tests/services/test_chat_context_compression.py`
 - **Specific logic**:
   - 添加每 conversation 一条的 `ConversationContextCheckpoint`，含 active-branch watermark、摘要、结构化 payload、token estimate、提取模型与失败状态；
-  - 服务负责读取有效 checkpoint、选择完整 turn cut point、调用团队模型总结、裁剪 summary 到预算、原子 upsert、失效检查；
+  - 服务负责读取有效 checkpoint、选择完整 turn cut point、调用团队模型总结、裁剪 summary 到预算，并在按 conversation 加锁的事务中以 watermark 单调性校验写入；
   - 根据 checkpoint watermark 读取 active-path tail，避免处理覆盖历史及其附件；
   - `prepare_model_context` 在高水位执行 checkpoint 生成并立即用新 checkpoint 重建上下文；
   - 新增并校验 `checkpoint_target_ratio`、`checkpoint_summary_enabled`、`checkpoint_min_new_turns`。

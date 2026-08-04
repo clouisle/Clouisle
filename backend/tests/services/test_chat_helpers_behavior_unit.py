@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -85,6 +86,32 @@ async def test_model_utils_handle_unset_missing_and_capable_models(monkeypatch):
     monkeypatch.setattr(model_utils.TeamModel, "filter", lambda **_kwargs: Query(None))
     assert await model_utils.get_model_identifier(agent) is None
     assert await model_utils.get_model_capabilities(agent) == {"supports_vision": False}
+
+
+@pytest.mark.anyio
+async def test_model_resolution_rejects_missing_team_before_default_lookup(monkeypatch):
+    from app.api.v1.endpoints import chat
+    from app.llm import model_manager
+    from app.schemas.response import BusinessError, ResponseCode
+
+    get_agent_chat_model = AsyncMock(return_value=None)
+    resolve_team_chat_model = AsyncMock()
+    monkeypatch.setattr(chat, "get_agent_chat_model", get_agent_chat_model)
+    monkeypatch.setattr(
+        model_manager,
+        "resolve_team_chat_model",
+        resolve_team_chat_model,
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await model_utils.resolve_agent_chat_model(
+            SimpleNamespace(model_id=None, team_id=None)
+        )
+
+    assert exc_info.value.code == ResponseCode.MODEL_NOT_FOUND
+    assert exc_info.value.msg_key == "model_not_found"
+    get_agent_chat_model.assert_awaited_once()
+    resolve_team_chat_model.assert_not_awaited()
 
 
 @pytest.mark.anyio

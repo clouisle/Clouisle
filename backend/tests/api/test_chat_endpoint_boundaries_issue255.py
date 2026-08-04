@@ -365,7 +365,7 @@ async def test_persist_partial_round_error_covers_no_progress_and_saved_fallback
 ):
     assert (
         await chat_module.persist_partial_round_error(
-            None, content="", reasoning="", model_id=None, start_time=1
+            None, content="", reasoning="", model_used=None, start_time=1
         )
         is False
     )
@@ -373,7 +373,7 @@ async def test_persist_partial_round_error_covers_no_progress_and_saved_fallback
     empty = message(round_id=None)
     assert (
         await chat_module.persist_partial_round_error(
-            empty, content="", reasoning="", model_id=None, start_time=1
+            empty, content="", reasoning="", model_used=None, start_time=1
         )
         is False
     )
@@ -387,7 +387,7 @@ async def test_persist_partial_round_error_covers_no_progress_and_saved_fallback
             saved,
             content="",
             reasoning="trace",
-            model_id="provider/model",
+            model_used="provider/model",
             start_time=2.0,
             first_token_time=2.125,
             fallback_content="failed",
