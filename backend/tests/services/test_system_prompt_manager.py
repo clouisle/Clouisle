@@ -9,7 +9,9 @@ from app.services.system_prompt import (
     FILE_CONTENT_PLACEHOLDER,
     WORKFLOW_MODE,
     build_system_prompt,
+    get_user_input_request_instruction,
     has_sandbox_tools,
+    normalize_locale,
 )
 
 
@@ -51,6 +53,26 @@ def test_has_sandbox_tools_false_for_non_sandbox_tools():
     )
     assert not has_sandbox_tools(_agent(tools_config=[]))
     assert not has_sandbox_tools(_agent(tools_config=None))
+
+
+# ---------------------------------------------------------------------------
+# Locale normalization
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_locale_returns_base_subtag():
+    assert normalize_locale("zh-CN") == "zh"
+    assert normalize_locale("ZH") == "zh"
+    assert normalize_locale("en-US") == "en"
+    assert normalize_locale("") == "en"
+    assert normalize_locale(None) == "en"
+
+
+def test_user_input_instruction_normalizes_region_and_case():
+    assert "用户输入请求功能" in get_user_input_request_instruction("zh-CN")
+    assert "用户输入请求功能" in get_user_input_request_instruction("ZH")
+    assert "User Input Request Feature" in get_user_input_request_instruction("en-US")
+    assert "User Input Request Feature" in get_user_input_request_instruction("en")
 
 
 # ---------------------------------------------------------------------------

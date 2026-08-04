@@ -163,11 +163,16 @@ _LOGGED_SECTIONS = frozenset({"memory", "sandbox"})
 # ---------------------------------------------------------------------------
 
 
+def normalize_locale(user_locale: str | None) -> str:
+    """Return the base language subtag, defaulting to ``en``."""
+    return (user_locale or "en").lower().split("-")[0]
+
+
 def get_language_instruction(user_locale: str | None = None) -> str:
     """Get language instruction based on user's locale setting."""
-    lang = user_locale or "en"
-    lang = lang.lower().split("-")[0]
-    return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
+    return LANGUAGE_INSTRUCTIONS.get(
+        normalize_locale(user_locale), LANGUAGE_INSTRUCTIONS["en"]
+    )
 
 
 def build_system_prompt_with_language(
@@ -184,7 +189,7 @@ def build_system_prompt_with_language(
 
 def get_user_input_request_instruction(locale: str = "en") -> str:
     """Get user input request instruction for system prompt."""
-    if locale == "zh":
+    if normalize_locale(locale) == "zh":
         return """## 用户输入请求功能
 
 当你需要用户从预定义选项中选择时，可以使用以下 XML 格式：

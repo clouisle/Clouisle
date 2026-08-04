@@ -49,7 +49,7 @@ Agent 系统提示词的"条件注入"(沙箱指引、记忆指引、Markdown �
 base + 模板替换(`{{key}}`/`{{query}}`/`{{fileContent}}`) -> Markdown -> Memory -> Sandbox -> 语言 -> UserInput
 
 ### 调用关系
-```
+```text
 chat.py -> chat_context._build_messages_with_file_content -> _build_system_prompt(agent, conversation, ...) [chat 适配器]
                                                               └─► system_prompt.build_system_prompt(..., mode="chat")
 
