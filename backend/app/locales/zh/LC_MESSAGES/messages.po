@@ -570,6 +570,12 @@ msgstr "备份码已重新生成"
 msgid "bad_request"
 msgstr "错误请求"
 
+msgid "bash_output_lines_omitted"
+msgstr "... [已省略 {count} 行] ..."
+
+msgid "bash_output_repeated_lines"
+msgstr "[重复 {count} 次]"
+
 msgid "builtin_tool_artifact"
 msgstr "生成下载链接"
 

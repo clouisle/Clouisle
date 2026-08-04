@@ -244,6 +244,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "备份码已重新生成",
     },
     "bad_request": {"en": "Bad request", "zh": "错误请求"},
+    "bash_output_lines_omitted": {
+        "en": "... [{count} lines omitted] ...",
+        "zh": "... [已省略 {count} 行] ...",
+    },
+    "bash_output_repeated_lines": {
+        "en": "[repeated {count} times]",
+        "zh": "[重复 {count} 次]",
+    },
     "builtin_tool_artifact": {"en": "Create Download Link", "zh": "生成下载链接"},
     "builtin_tool_artifact_description": {
         "en": "Collect existing files or directories from /workspace and return fresh Markdown download links plus preview metadata. Call this only after verifying final user-facing files. If write, edit, or bash changes a collected file, call artifact again because earlier URLs are stale snapshots. Include the newest returned Markdown links in the final response body. Relative paths are interpreted from /workspace.",

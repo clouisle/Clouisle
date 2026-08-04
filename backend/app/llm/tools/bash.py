@@ -16,6 +16,7 @@ from app.services.sandbox.models import (
 )
 
 from .registry import ToolInfo, ToolParameter, tool_registry
+from .bash_output import denoise_output
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +74,20 @@ class BashSandboxTool:
                 timeout_seconds=timeout + 5,
             )
 
+            failed = not result.success
             return {
                 "success": result.success,
-                "stdout": self._restore_workspace_paths(
-                    result.stdout, runtime_workspace_root
+                "stdout": denoise_output(
+                    self._restore_workspace_paths(
+                        result.stdout, runtime_workspace_root
+                    ),
+                    failed=failed,
                 ),
-                "stderr": self._restore_workspace_paths(
-                    result.stderr, runtime_workspace_root
+                "stderr": denoise_output(
+                    self._restore_workspace_paths(
+                        result.stderr, runtime_workspace_root
+                    ),
+                    failed=failed,
                 ),
                 "exit_code": result.metadata.exit_code,
                 "timed_out": result.status == SandboxTaskStatus.FAILED
