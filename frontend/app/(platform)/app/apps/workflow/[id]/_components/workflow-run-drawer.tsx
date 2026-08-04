@@ -152,6 +152,34 @@ const nodeTypeColors: Record<string, string> = {
   parameter_extractor: 'bg-blue-500',
 }
 
+interface NormalizedTokenUsage {
+  prompt: number
+  completion: number
+  total: number
+}
+
+function toTokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : 0
+}
+
+function normalizeTokenUsage(value: unknown): NormalizedTokenUsage | null {
+  if (typeof value === 'number') {
+    return { prompt: 0, completion: 0, total: toTokenCount(value) }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  const usage = value as Record<string, unknown>
+  const prompt = toTokenCount(usage.prompt ?? usage.prompt_tokens)
+  const completion = toTokenCount(usage.completion ?? usage.completion_tokens)
+  const total = toTokenCount(usage.total ?? usage.total_tokens) || prompt + completion
+
+  return { prompt, completion, total }
+}
+
 const statusConfig: Record<
   RunStatus,
   { label: string; icon: React.ReactNode; className: string }
@@ -458,6 +486,8 @@ export function WorkflowRunDrawer({
             }))
           }
           
+          const tokenUsage = normalizeTokenUsage(nodeOutputs?.usage)
+
           // 更新节点追踪
           setNodeTraces((prev) => {
             const next = new Map(prev)
@@ -471,15 +501,13 @@ export function WorkflowRunDrawer({
               endTime: event.timestamp,
               durationMs: data.duration_ms as number,
               outputs: nodeOutputs,
-              tokens: existing?.tokens,
+              tokens: tokenUsage ?? existing?.tokens,
             })
             return next
           })
-          
-          // 累加 tokens
-          if (nodeOutputs?.usage) {
-            const usage = nodeOutputs.usage as number
-            setTotalTokens((prev) => prev + usage)
+
+          if (tokenUsage) {
+            setTotalTokens((prev) => prev + tokenUsage.total)
           }
         }
         break

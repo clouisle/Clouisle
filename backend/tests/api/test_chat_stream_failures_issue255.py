@@ -15,7 +15,21 @@ from app.llm.errors import (
 )
 from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import ChatRequest
-from app.schemas.response import ResponseCode
+from app.schemas.response import BusinessError, ResponseCode
+
+
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
 
 
 def _user():
@@ -84,7 +98,11 @@ async def _start_stream(monkeypatch):
     monkeypatch.setattr(
         chat, "build_file_content_for_context", AsyncMock(return_value=(None, None))
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat, "get_visible_conversation_messages", AsyncMock(return_value=[])
     )
@@ -146,6 +164,33 @@ async def test_stream_maps_provider_and_idle_failures(
     assert payload["msg"] == expected_message
     if isinstance(error, chat.StreamIdleTimeoutError):
         assert payload["timeout"] == 3
+    persist.assert_awaited_once()
+    assert persist.await_args.args[0] is assistant_message
+
+
+@pytest.mark.anyio
+async def test_stream_preserves_model_resolution_business_error(monkeypatch):
+    response, assistant_message = await _start_stream(monkeypatch)
+    persist = AsyncMock(return_value=True)
+    monkeypatch.setattr(chat, "persist_partial_round_error", persist)
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.MODEL_NOT_FOUND,
+                msg_key="model_not_found",
+            )
+        ),
+    )
+    monkeypatch.setattr(chat, "t", lambda key, **_kwargs: key)
+
+    events = [event async for event in response.body_iterator]
+
+    assert _error_event(events) == {
+        "code": ResponseCode.MODEL_NOT_FOUND,
+        "msg": "model_not_found",
+    }
     persist.assert_awaited_once()
     assert persist.await_args.args[0] is assistant_message
 

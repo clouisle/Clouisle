@@ -2,12 +2,25 @@
 
 ## Active
 
+- **default-model-context-budget** — Complete. Align default chat model resolution with context-budget preparation so global model metadata is used before compression. See `docs/plan/default-model-context-budget.md`
+  - [x] 1. Centralize default team-chat model resolution
+  - [x] 2. Thread resolved metadata through every Chat path
+  - [x] 3. Improve compression observability
+  - [x] 4. Regression, rollout, and cleanup
+
 - **yun-127-system-prompt-injection-manager** - Complete. Extracted a unified, capability-aware system prompt injection manager shared by the chat endpoint and the workflow Agent path; fixed the workflow sandbox-guidance gap. See `docs/plan/yun-127-system-prompt-injection-manager.md`
   - [x] 1. Create unified manager `system_prompt.py`
   - [x] 2. Delegate chat_context to the manager
   - [x] 3. Align workflow AgentService + locale plumbing
   - [x] 4. Remove dead message_builder and divergent config helpers
   - [x] 5. Tests and coverage gate
+
+- **yun-126-optimize-context-compaction** — Complete. Replace repeated request-local history compaction with model-generated, active-branch-aware Context Checkpoints and a low-watermark budget target. See `docs/plan/yun-126-optimize-context-compaction.md`
+  - [x] 1. Repair repeated session-memory compaction semantics and SSE no-op behavior
+  - [x] 2. Context Checkpoint model, migration, and service
+  - [x] 3. Checkpoint-aware context assembly and target-ratio policy
+  - [x] 4. Cut over macro/session-memory paths and remove dead configuration
+  - [x] 5. Focused and full regression validation
 
 - **workflow-form-run-page** — Complete. Replace the Workflow chat-style runner with a published, form-first execution page, creator-selected result detail, and private per-user run history. See `docs/plan/workflow-form-run-page.md`
   - [x] 1. Design docs and implementation index

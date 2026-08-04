@@ -175,3 +175,13 @@ def test_helper_boundary_behaviors_use_mocked_compression_config():
         get_compression_trigger(SimpleNamespace(stage="normal"))
         == "proactive_threshold"
     )
+    assert (
+        get_compression_trigger(
+            SimpleNamespace(
+                stage="macro",
+                pressure_level="normal",
+                actions=["checkpoint_summary"],
+            )
+        )
+        == "proactive_threshold"
+    )

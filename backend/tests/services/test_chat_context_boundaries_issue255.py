@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -310,7 +309,7 @@ async def test_session_memory_compacts_old_unprotected_turns(monkeypatch):
         "protected answer",
         "recent question",
     ]
-    assert protected == {2}
+    assert protected == {1, 2}
 
 
 @pytest.mark.anyio
@@ -343,7 +342,11 @@ async def test_prepare_model_context_emergency_fallback_boundary(
     monkeypatch.setattr(chat_context, "_estimate_message_tokens", estimate)
 
     call = chat_context.prepare_model_context(
-        agent=_agent(micro_compaction_enabled=False, macro_compaction_enabled=False),
+        agent=_agent(
+            micro_compaction_enabled=False,
+            macro_compaction_enabled=False,
+            checkpoint_summary_enabled=False,
+        ),
         conversation=_conversation(),
         user_message="current question",
         model_id="test-model",
@@ -370,54 +373,6 @@ async def test_prepare_model_context_emergency_fallback_boundary(
     assert prepared.compression.stage == "macro"
     assert prepared.compression.actions == ["emergency_fallback"]
     assert prepared.compression.after_tokens == emergency_tokens
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("existing", [False, True])
-async def test_persist_compacted_context_snapshot_creates_or_updates(
-    monkeypatch, existing
-):
-    source_message_id = uuid4()
-    snapshot = SimpleNamespace(save=AsyncMock()) if existing else None
-    query = SimpleNamespace(first=AsyncMock(return_value=snapshot))
-    created = SimpleNamespace(save=AsyncMock())
-    model = SimpleNamespace(
-        filter=lambda **kwargs: query,
-        create=AsyncMock(return_value=created),
-    )
-
-    monkeypatch.setattr("app.models.agent.ConversationSessionMemory", model)
-    monkeypatch.setattr("app.llm.token_counter.count_tokens", lambda *args, **kwargs: 7)
-    monkeypatch.setattr("app.core.timezone.now_utc", lambda: "now")
-
-    await chat_context.persist_compacted_context_snapshot(
-        conversation=_conversation(),
-        source_message_id=source_message_id,
-        summary_text="summary",
-        model_id="test-model",
-    )
-
-    target = snapshot or created
-    assert target.source_message_id == source_message_id
-    assert target.status.value == "ready"
-    assert target.snapshot_payload["overview"] == "summary"
-    assert target.token_estimate == 7
-    assert target.extractor_model == "test-model"
-    assert target.last_extracted_at == "now"
-    target.save.assert_awaited_once()
-    assert model.create.await_count == (0 if existing else 1)
-
-
-@pytest.mark.anyio
-async def test_persist_compacted_context_snapshot_ignores_blank_summary(monkeypatch):
-    model = SimpleNamespace(filter=lambda **kwargs: pytest.fail("unexpected query"))
-    monkeypatch.setattr("app.models.agent.ConversationSessionMemory", model)
-
-    await chat_context.persist_compacted_context_snapshot(
-        conversation=_conversation(),
-        source_message_id=uuid4(),
-        summary_text="   ",
-    )
 
 
 def test_budget_compaction_handles_noop_clone_and_macro_summary(monkeypatch):

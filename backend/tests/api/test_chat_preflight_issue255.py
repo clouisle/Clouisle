@@ -10,6 +10,24 @@ from app.schemas.agent import ChatRequest
 from app.schemas.response import ResponseCode
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    model_uuid = uuid4()
+    return SimpleNamespace(
+        model=SimpleNamespace(id=model_uuid),
+        team_model=SimpleNamespace(),
+        model_id=str(model_uuid),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class Query:
     def __init__(self, *, first=None, exists=False):
         self._first = first
@@ -286,7 +304,11 @@ async def test_nonstream_attachment_failure_stops_before_context_and_provider(
     )
     monkeypatch.setattr(chat.Message, "create", AsyncMock(return_value=user_message))
     monkeypatch.setattr(chat, "update_message_stats", AsyncMock())
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat, "get_streaming_config", lambda _agent: {"tool_timeouts": {}}
     )

@@ -62,7 +62,6 @@ from app.services.chat_context import (
     _truncate_text,
     build_system_prompt_with_language,
     build_uploaded_image_reference_text,
-    extract_macro_summary_text,
     get_context_compression_config,
     get_language_instruction,
     get_user_input_request_instruction,
@@ -716,20 +715,6 @@ class TestTurnBlocksAndSummaries:
         assert message is not None
         assert message.role == MessageRole.ASSISTANT
         assert message.content.startswith(MACRO_SUMMARY_PREFIX)
-
-    def test_extract_macro_summary_skips_other_messages(self):
-        messages = [
-            Message(
-                role=MessageRole.USER, content=f"{MACRO_SUMMARY_PREFIX} not assistant"
-            ),
-            Message(role=MessageRole.ASSISTANT, content="ordinary answer"),
-        ]
-        assert extract_macro_summary_text(messages) is None
-
-    def test_extract_macro_summary_returns_first_match(self):
-        summary = f"{MACRO_SUMMARY_PREFIX}\n- Turn 1: hello"
-        messages = [Message(role=MessageRole.ASSISTANT, content=summary)]
-        assert extract_macro_summary_text(messages) == summary
 
 
 # ---------------------------------------------------------------------------

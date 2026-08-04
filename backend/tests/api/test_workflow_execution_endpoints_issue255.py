@@ -34,7 +34,7 @@ class Query:
 def test_public_error_sanitizers_hide_internal_details(monkeypatch, message, expected):
     monkeypatch.setattr(workflows, "t", lambda _key: "safe error")
     monkeypatch.setattr(workflows, "get_public_workflow_error_key", lambda _msg: None)
-
+    monkeypatch.setattr(workflows, "is_safe_user_visible_error", lambda _msg: False)
     assert (
         workflows.sanitize_workflow_run_payload({"error_message": message})[
             "error_message"

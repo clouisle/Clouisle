@@ -112,14 +112,25 @@ def chat_harness(monkeypatch):
     )
     conversation = SimpleNamespace(id=uuid4(), title=None)
     user = SimpleNamespace(id=uuid4(), is_active=True, locale="en", is_superuser=False)
-    team_model = SimpleNamespace(
-        model=SimpleNamespace(
-            provider="fake",
-            model_id="chat",
-            context_length=4096,
-            max_output_tokens=1024,
-            capabilities={"vision": True},
-        )
+    model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
+        provider="fake",
+        model_id="chat",
+        context_length=4096,
+        max_output_tokens=1024,
+        capabilities={"vision": True},
+    )
+    team_model = SimpleNamespace(model=model, is_enabled=True)
+    model_resolution = SimpleNamespace(
+        model=model,
+        team_model=team_model,
+        model_id=str(model.id),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=True,
     )
     prepared_context = SimpleNamespace(
         messages=[LLMMessage(role=LLMMessageRole.USER, content="prepared")]
@@ -138,7 +149,9 @@ def chat_harness(monkeypatch):
     )
     monkeypatch.setattr(chat_endpoint, "update_message_stats", _AsyncCallable())
     monkeypatch.setattr(
-        chat_endpoint, "get_agent_chat_model", _AsyncCallable(team_model)
+        chat_endpoint,
+        "resolve_agent_chat_model",
+        _AsyncCallable(model_resolution),
     )
     monkeypatch.setattr(
         chat_endpoint,
@@ -185,9 +198,7 @@ def chat_harness(monkeypatch):
     monkeypatch.setattr(chat_endpoint, "append_generated_images", lambda *a, **k: None)
     monkeypatch.setattr(chat_endpoint, "get_prefix_path_before", _AsyncCallable([]))
     monkeypatch.setattr(chat_endpoint, "activate_conversation_branch", _AsyncCallable())
-    monkeypatch.setattr(
-        chat_endpoint, "persist_macro_summary_best_effort", _AsyncCallable()
-    )
+
     monkeypatch.setattr(
         chat_endpoint, "enqueue_session_memory_extraction", lambda *a: None
     )

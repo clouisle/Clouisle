@@ -30,11 +30,13 @@ from app.llm.types import (
 from app.models.agent import (
     Agent,
     Conversation,
+    ConversationContextCheckpoint,
     Message as ConversationMessage,
     MessageRole as ConversationMessageRole,
 )
 from app.services.message_branching import (
     get_visible_conversation_messages,
+    get_visible_conversation_messages_after,
     is_message_on_active_branch,
 )
 from app.services.system_prompt import (
@@ -89,12 +91,12 @@ DEFAULT_RETENTION_STRATEGY = "recent_raw_and_tool_first"
 DEFAULT_KEEP_RECENT_TOOL_RESULTS = 2
 DEFAULT_KEEP_RECENT_TOOL_RESULT_MINUTES = 20
 DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS = 256
+DEFAULT_CHECKPOINT_TARGET_RATIO = 0.6
+DEFAULT_CHECKPOINT_MIN_NEW_TURNS = 2
 DEFAULT_SESSION_MEMORY_MAX_TOKENS = 400
 DEFAULT_SESSION_MEMORY_MIN_TURNS = 4
 DEFAULT_SESSION_MEMORY_FAILURE_THRESHOLD = 3
 DEFAULT_SESSION_MEMORY_COOLDOWN_SECONDS = 600
-DEFAULT_LEGACY_COMPACT_FAILURE_THRESHOLD = 2
-DEFAULT_LEGACY_COMPACT_COOLDOWN_SECONDS = 600
 AGGRESSIVE_RECENT_REASONING_MESSAGES = 0
 AGGRESSIVE_RECENT_RAW_TURNS = 2
 AGGRESSIVE_RECENT_TOOL_TURNS = 1
@@ -118,21 +120,20 @@ DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "warning_ratio": DEFAULT_WARNING_RATIO,
     "auto_compact_trigger_ratio": DEFAULT_AUTO_COMPACT_TRIGGER_RATIO,
     "blocking_ratio": DEFAULT_BLOCKING_RATIO,
-    "compaction_policy": DEFAULT_COMPACTION_POLICY,
     "macro_on_trigger": False,
     "retention_strategy": DEFAULT_RETENTION_STRATEGY,
     "keep_recent_tool_results": DEFAULT_KEEP_RECENT_TOOL_RESULTS,
     "keep_recent_tool_result_minutes": DEFAULT_KEEP_RECENT_TOOL_RESULT_MINUTES,
     "tool_result_compact_min_tokens": DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
+    "checkpoint_summary_enabled": True,
+    "checkpoint_target_ratio": DEFAULT_CHECKPOINT_TARGET_RATIO,
+    "checkpoint_min_new_turns": DEFAULT_CHECKPOINT_MIN_NEW_TURNS,
     "session_memory_enabled": True,
     "session_memory_async_extract": True,
     "session_memory_max_tokens": DEFAULT_SESSION_MEMORY_MAX_TOKENS,
     "session_memory_min_turns": DEFAULT_SESSION_MEMORY_MIN_TURNS,
     "session_memory_failure_threshold": DEFAULT_SESSION_MEMORY_FAILURE_THRESHOLD,
     "session_memory_cooldown_seconds": DEFAULT_SESSION_MEMORY_COOLDOWN_SECONDS,
-    "legacy_compact_enabled": True,
-    "legacy_compact_failure_threshold": DEFAULT_LEGACY_COMPACT_FAILURE_THRESHOLD,
-    "legacy_compact_cooldown_seconds": DEFAULT_LEGACY_COMPACT_COOLDOWN_SECONDS,
 }
 
 
@@ -934,6 +935,7 @@ async def _apply_session_memory_compaction(
         compacted,
         compacted_protected_indexes,
         Message(role=MessageRole.ASSISTANT, content=snapshot.summary_text),
+        protect=True,
     )
 
     for index, block in enumerate(blocks):
@@ -945,6 +947,14 @@ async def _apply_session_memory_compaction(
                 block_indexes[index],
                 protected_indexes,
             )
+
+    if _estimate_message_tokens(
+        compacted, model_id=model_id, provider=provider
+    ) >= _estimate_message_tokens(messages, model_id=model_id, provider=provider):
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
+        return cloned_messages, False, cloned_protected_indexes
 
     return compacted, True, compacted_protected_indexes
 
@@ -966,6 +976,7 @@ async def _build_messages_with_file_content(
     tool_timeouts: dict[str, Any] | None = None,
     user: Any = None,
     protected_round_id: UUID | str | None = None,
+    context_checkpoint: ConversationContextCheckpoint | None = None,
 ) -> tuple[list[Message], set[int]]:
     messages: list[Message] = []
     protected_indexes: set[int] = set()
@@ -983,6 +994,20 @@ async def _build_messages_with_file_content(
             ),
         ),
     )
+    if (
+        history_override is None
+        and context_checkpoint
+        and context_checkpoint.summary_text
+    ):
+        _append_message(
+            messages,
+            protected_indexes,
+            Message(
+                role=MessageRole.ASSISTANT,
+                content=context_checkpoint.summary_text,
+            ),
+            protect=True,
+        )
 
     current_content = _append_file_content_to_user_content(
         _build_current_user_content(
@@ -1088,11 +1113,28 @@ async def _build_messages_with_file_content(
             )
         return messages, protected_indexes
 
-    history = await get_visible_conversation_messages(
-        conversation.id,
-        before_created_at=history_before_message_created_at,
-        exclude_message_ids=exclude_message_ids,
-    )
+    if context_checkpoint and context_checkpoint.covered_through_message_id:
+        checkpoint_history = await get_visible_conversation_messages_after(
+            conversation.id,
+            after_message_id=context_checkpoint.covered_through_message_id,
+            before_created_at=history_before_message_created_at,
+            exclude_message_ids=exclude_message_ids,
+        )
+        history = (
+            checkpoint_history
+            if checkpoint_history is not None
+            else await get_visible_conversation_messages(
+                conversation.id,
+                before_created_at=history_before_message_created_at,
+                exclude_message_ids=exclude_message_ids,
+            )
+        )
+    else:
+        history = await get_visible_conversation_messages(
+            conversation.id,
+            before_created_at=history_before_message_created_at,
+            exclude_message_ids=exclude_message_ids,
+        )
     historical_file_content_tasks = {
         msg.id: asyncio.create_task(
             _build_file_content_for_user_message(
@@ -1430,6 +1472,7 @@ async def _apply_micro_compaction(
     trigger_budget: int | None = None,
     protected_indexes: set[int] | None = None,
     before_created_at=None,
+    skip_session_memory: bool = False,
 ) -> tuple[list[Message], CompressionMeta, set[int]]:
     protected_indexes = protected_indexes or set()
     before_tokens = _estimate_message_tokens(
@@ -1483,20 +1526,25 @@ async def _apply_micro_compaction(
             protected_indexes=reasoning_protected_indexes,
         )
     )
-    (
-        session_memory_messages,
-        session_memory_compacted,
-        session_memory_protected_indexes,
-    ) = await _apply_session_memory_compaction(
-        tool_compacted,
-        conversation=conversation,
-        model_id=model_id,
-        provider=provider,
-        recent_raw_turns=recent_raw_turns,
-        recent_tool_turns=recent_tool_turns,
-        protected_indexes=tool_protected_indexes,
-        before_created_at=before_created_at,
-    )
+    if skip_session_memory:
+        session_memory_messages = tool_compacted
+        session_memory_compacted = False
+        session_memory_protected_indexes = tool_protected_indexes
+    else:
+        (
+            session_memory_messages,
+            session_memory_compacted,
+            session_memory_protected_indexes,
+        ) = await _apply_session_memory_compaction(
+            tool_compacted,
+            conversation=conversation,
+            model_id=model_id,
+            provider=provider,
+            recent_raw_turns=recent_raw_turns,
+            recent_tool_turns=recent_tool_turns,
+            protected_indexes=tool_protected_indexes,
+            before_created_at=before_created_at,
+        )
     after_tokens = _estimate_message_tokens(
         session_memory_messages,
         model_id=model_id,
@@ -1545,57 +1593,6 @@ async def _apply_micro_compaction(
     )
 
 
-def extract_macro_summary_text(messages: Sequence[Message]) -> str | None:
-    for message in messages:
-        if message.role != MessageRole.ASSISTANT:
-            continue
-        content = _stringify_content(message.content).strip()
-        if content.startswith(MACRO_SUMMARY_PREFIX):
-            return content
-    return None
-
-
-async def persist_compacted_context_snapshot(
-    *,
-    conversation: Conversation,
-    source_message_id: UUID,
-    summary_text: str,
-    model_id: str | None = None,
-) -> None:
-    from app.core.timezone import now_utc
-    from app.llm.token_counter import count_tokens
-    from app.models.agent import (
-        ConversationSessionMemory,
-        ConversationSessionMemoryStatus,
-    )
-    from app.services.session_memory import MACRO_COMPACTION_ORIGIN
-
-    if not summary_text.strip():
-        return
-
-    snapshot = await ConversationSessionMemory.filter(
-        conversation_id=conversation.id,
-    ).first()
-    if snapshot is None:
-        snapshot = await ConversationSessionMemory.create(
-            conversation_id=conversation.id,
-        )
-
-    snapshot.source_message_id = source_message_id
-    snapshot.status = ConversationSessionMemoryStatus.READY
-    snapshot.summary_text = summary_text
-    snapshot.snapshot_payload = {
-        "overview": summary_text,
-        "origin": MACRO_COMPACTION_ORIGIN,
-    }
-    snapshot.token_estimate = count_tokens(summary_text, model_id=model_id or "gpt-4")
-    snapshot.extractor_model = model_id
-    snapshot.failure_count = 0
-    snapshot.last_error = None  # type: ignore[assignment]
-    snapshot.last_extracted_at = now_utc()
-    await snapshot.save()
-
-
 def _apply_budget_compaction(
     *,
     messages: Sequence[Message],
@@ -1618,12 +1615,11 @@ def _apply_budget_compaction(
     summary_max_chars: int = DEFAULT_SUMMARY_MAX_CHARS,
     block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
     protected_indexes: set[int] | None = None,
+    target_budget: int | None = None,
 ) -> tuple[list[Message], CompressionMeta, set[int]]:
     protected_indexes = protected_indexes or set()
-    if (
-        compression.after_tokens <= token_budget.input_budget
-        and pressure_level != "blocking"
-    ):
+    required_budget = target_budget or token_budget.input_budget
+    if compression.after_tokens <= required_budget and pressure_level != "blocking":
         cloned_messages, cloned_protected_indexes = _clone_messages(
             messages, protected_indexes
         )
@@ -1728,6 +1724,17 @@ async def build_model_messages(
     protected_round_id: UUID | str | None = None,
 ) -> list[Message]:
     """Build model-ready messages for agent chat flows."""
+    context_checkpoint = None
+    if history_override is None and get_context_compression_config(agent).get(
+        "checkpoint_summary_enabled", True
+    ):
+        from app.services.context_checkpoint import get_valid_context_checkpoint
+
+        context_checkpoint = await get_valid_context_checkpoint(
+            conversation.id,
+            before_created_at=history_before_message_created_at,
+        )
+
     messages, _ = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
@@ -1744,6 +1751,7 @@ async def build_model_messages(
         tool_timeouts=tool_timeouts,
         user=user,
         protected_round_id=protected_round_id,
+        context_checkpoint=context_checkpoint,
     )
     return messages
 
@@ -1754,6 +1762,7 @@ async def prepare_model_context(
     conversation: Conversation,
     user_message: str,
     model_id: str,
+    tokenizer_model_id: str | None = None,
     model_context_limit: int | None,
     model_max_output_tokens: int | None,
     provider: str | None = None,
@@ -1772,6 +1781,10 @@ async def prepare_model_context(
     protected_round_id: UUID | str | None = None,
 ) -> PreparedModelContext:
     compression_config = get_context_compression_config(agent)
+    compression_enabled = bool(compression_config.get("enabled", True))
+    checkpoint_summary_enabled = bool(
+        compression_config.get("checkpoint_summary_enabled", True)
+    )
     token_budget = _build_token_budget(
         context_limit=model_context_limit,
         model_max_output_tokens=model_max_output_tokens,
@@ -1794,9 +1807,19 @@ async def prepare_model_context(
     blocking_ratio = float(
         compression_config.get("blocking_ratio", DEFAULT_BLOCKING_RATIO)
     )
-    policy_used = str(
-        compression_config.get("compaction_policy", DEFAULT_COMPACTION_POLICY)
+    checkpoint_target_ratio = float(
+        compression_config.get(
+            "checkpoint_target_ratio", DEFAULT_CHECKPOINT_TARGET_RATIO
+        )
     )
+    if checkpoint_target_ratio >= trigger_ratio:
+        checkpoint_target_ratio = max(trigger_ratio * 0.75, 0.01)
+    checkpoint_min_new_turns = int(
+        compression_config.get(
+            "checkpoint_min_new_turns", DEFAULT_CHECKPOINT_MIN_NEW_TURNS
+        )
+    )
+    policy_used = DEFAULT_COMPACTION_POLICY
     macro_on_trigger = bool(compression_config.get("macro_on_trigger", False))
     keep_recent_tool_results = int(
         compression_config.get(
@@ -1829,6 +1852,14 @@ async def prepare_model_context(
         trigger_ratio=trigger_ratio,
         blocking_ratio=blocking_ratio,
     )
+    context_checkpoint = None
+    if compression_enabled and checkpoint_summary_enabled and history_override is None:
+        from app.services.context_checkpoint import get_valid_context_checkpoint
+
+        context_checkpoint = await get_valid_context_checkpoint(
+            conversation.id,
+            before_created_at=history_before_message_created_at,
+        )
 
     (
         untrimmed_messages,
@@ -1849,56 +1880,37 @@ async def prepare_model_context(
         tool_timeouts=tool_timeouts,
         user=user,
         protected_round_id=protected_round_id,
+        context_checkpoint=context_checkpoint,
     )
-
-    compression_enabled = bool(compression_config.get("enabled", True))
-    preflight_guard_enabled = bool(
-        compression_config.get("preflight_guard_enabled", True)
-    )
-    if compression_enabled and preflight_guard_enabled:
-        (
-            baseline_messages,
-            baseline_session_memory_compacted,
-            baseline_protected_indexes,
-        ) = await _apply_session_memory_compaction(
-            untrimmed_messages,
-            conversation=conversation,
-            model_id=model_id,
-            provider=provider,
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
-            protected_indexes=untrimmed_protected_indexes,
-            before_created_at=history_before_message_created_at,
-        )
-        if baseline_session_memory_compacted:
-            untrimmed_messages = baseline_messages
-            untrimmed_protected_indexes = baseline_protected_indexes
-
-    untrimmed_tokens = _estimate_message_tokens(
+    source_tokens = _estimate_message_tokens(
         untrimmed_messages,
-        model_id=model_id,
+        model_id=tokenizer_model_id,
         provider=provider,
     )
-    initial_pressure = _assess_context_pressure(
-        before_tokens=untrimmed_tokens,
+    source_pressure = _assess_context_pressure(
+        before_tokens=source_tokens,
         token_budget=token_budget,
         thresholds=thresholds,
     )
-    utilization_before = (
-        untrimmed_tokens / token_budget.input_budget
-        if token_budget.input_budget
-        else 0.0
+
+    preflight_guard_enabled = bool(
+        compression_config.get("preflight_guard_enabled", True)
     )
     if not compression_enabled or not preflight_guard_enabled:
+        utilization_before = (
+            source_tokens / token_budget.input_budget
+            if token_budget.input_budget
+            else 0.0
+        )
         return PreparedModelContext(
             messages=untrimmed_messages,
             token_budget=token_budget,
             compression=CompressionMeta(
                 stage="none",
-                before_tokens=untrimmed_tokens,
-                after_tokens=untrimmed_tokens,
+                before_tokens=source_tokens,
+                after_tokens=source_tokens,
                 input_budget=token_budget.input_budget,
-                pressure_level=initial_pressure,
+                pressure_level=source_pressure,
                 trigger_ratio=trigger_ratio,
                 warning_ratio=warning_ratio,
                 blocking_ratio=blocking_ratio,
@@ -1911,7 +1923,35 @@ async def prepare_model_context(
             ),
             protected_indexes=untrimmed_protected_indexes,
         )
+    if compression_enabled and preflight_guard_enabled:
+        (
+            baseline_messages,
+            baseline_session_memory_compacted,
+            baseline_protected_indexes,
+        ) = await _apply_session_memory_compaction(
+            untrimmed_messages,
+            conversation=conversation,
+            model_id=tokenizer_model_id,
+            provider=provider,
+            recent_raw_turns=configured_recent_raw_turns,
+            recent_tool_turns=configured_recent_tool_turns,
+            protected_indexes=untrimmed_protected_indexes,
+            before_created_at=history_before_message_created_at,
+        )
+        if baseline_session_memory_compacted:
+            untrimmed_messages = baseline_messages
+            untrimmed_protected_indexes = baseline_protected_indexes
 
+    untrimmed_tokens = _estimate_message_tokens(
+        untrimmed_messages,
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
+    utilization_before = (
+        untrimmed_tokens / token_budget.input_budget
+        if token_budget.input_budget
+        else 0.0
+    )
     needs_file_trim = (
         bool(file_content) and untrimmed_tokens > thresholds.trigger_input_budget
     )
@@ -1943,6 +1983,7 @@ async def prepare_model_context(
             tool_timeouts=tool_timeouts,
             user=user,
             protected_round_id=protected_round_id,
+            context_checkpoint=context_checkpoint,
         )
         (
             base_messages,
@@ -1951,7 +1992,7 @@ async def prepare_model_context(
         ) = await _apply_session_memory_compaction(
             base_messages,
             conversation=conversation,
-            model_id=model_id,
+            model_id=tokenizer_model_id,
             provider=provider,
             recent_raw_turns=configured_recent_raw_turns,
             recent_tool_turns=configured_recent_tool_turns,
@@ -1961,7 +2002,7 @@ async def prepare_model_context(
 
     base_tokens = _estimate_message_tokens(
         base_messages,
-        model_id=model_id,
+        model_id=tokenizer_model_id,
         provider=provider,
     )
     pressure_level = _assess_context_pressure(
@@ -1992,7 +2033,136 @@ async def prepare_model_context(
         actions=["trim_file_content"] if file_content_trimmed else [],
     )
 
-    should_run_micro = pressure_level in {"auto_compact", "blocking", "over_budget"}
+    checkpoint_created = False
+    checkpoint_fallback_required = False
+    checkpoint_target_budget = max(
+        int(token_budget.input_budget * checkpoint_target_ratio), 1
+    )
+    if (
+        checkpoint_summary_enabled
+        and history_override is None
+        and source_pressure in {"auto_compact", "blocking", "over_budget"}
+    ):
+        from app.services.context_checkpoint import create_context_checkpoint
+
+        checkpoint_exclude_ids = set(exclude_message_ids or ())
+        if current_user_message_id:
+            checkpoint_exclude_ids.add(current_user_message_id)
+        checkpoint_source_messages = None
+        try:
+            if context_checkpoint and context_checkpoint.covered_through_message_id:
+                checkpoint_source_messages = (
+                    await get_visible_conversation_messages_after(
+                        conversation.id,
+                        after_message_id=context_checkpoint.covered_through_message_id,
+                        before_created_at=history_before_message_created_at,
+                        exclude_message_ids=checkpoint_exclude_ids,
+                    )
+                )
+            if checkpoint_source_messages is None:
+                checkpoint_source_messages = await get_visible_conversation_messages(
+                    conversation.id,
+                    before_created_at=history_before_message_created_at,
+                    exclude_message_ids=checkpoint_exclude_ids,
+                )
+        except Exception:
+            logger.warning(
+                "Skipping context checkpoint because history could not be loaded for %s",
+                conversation.id,
+                exc_info=True,
+            )
+            checkpoint_source_messages = []
+        checkpoint_result = await create_context_checkpoint(
+            agent=agent,
+            conversation=conversation,
+            messages=checkpoint_source_messages,
+            previous_checkpoint=context_checkpoint,
+            model_id=model_id,
+            tokenizer_model_id=tokenizer_model_id,
+            provider=provider,
+            summary_max_tokens=int(
+                compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)
+            ),
+            recent_raw_turns=configured_recent_raw_turns,
+            recent_tool_turns=configured_recent_tool_turns,
+            min_new_turns=checkpoint_min_new_turns,
+            input_budget=token_budget.input_budget,
+        )
+        if checkpoint_result.created and checkpoint_result.checkpoint:
+            context_checkpoint = checkpoint_result.checkpoint
+            (
+                base_messages,
+                base_protected_indexes,
+            ) = await _build_messages_with_file_content(
+                agent=agent,
+                conversation=conversation,
+                user_message=user_message,
+                file_content=effective_file_content,
+                user_locale=user_locale,
+                history_override=history_override,
+                current_images=current_images,
+                model_supports_vision=model_supports_vision,
+                current_user_message_id=current_user_message_id,
+                include_current_user_message=include_current_user_message,
+                exclude_message_ids=exclude_message_ids,
+                history_before_message_created_at=history_before_message_created_at,
+                tool_timeouts=tool_timeouts,
+                user=user,
+                protected_round_id=protected_round_id,
+                context_checkpoint=context_checkpoint,
+            )
+            base_tokens = _estimate_message_tokens(
+                base_messages,
+                model_id=tokenizer_model_id,
+                provider=provider,
+            )
+            pressure_level = _assess_context_pressure(
+                before_tokens=base_tokens,
+                token_budget=token_budget,
+                thresholds=thresholds,
+            )
+            compacted_messages = base_messages
+            compacted_protected_indexes = set(base_protected_indexes)
+            checkpoint_created = True
+            checkpoint_actions = ["checkpoint_summary"]
+            if file_content_trimmed:
+                checkpoint_actions.insert(0, "trim_file_content")
+            compression = CompressionMeta(
+                stage="macro",
+                before_tokens=max(source_tokens, untrimmed_tokens),
+                after_tokens=base_tokens,
+                input_budget=token_budget.input_budget,
+                file_content_trimmed=file_content_trimmed,
+                summary_turns=checkpoint_result.covered_turns,
+                pressure_level=pressure_level,
+                trigger_ratio=trigger_ratio,
+                warning_ratio=warning_ratio,
+                blocking_ratio=blocking_ratio,
+                trigger_budget=thresholds.trigger_input_budget,
+                hard_budget=token_budget.input_budget,
+                utilization_before=(
+                    source_tokens / token_budget.input_budget
+                    if token_budget.input_budget
+                    else 0.0
+                ),
+                utilization_after=(
+                    base_tokens / token_budget.input_budget
+                    if token_budget.input_budget
+                    else 0.0
+                ),
+                policy_used=policy_used,
+                actions=checkpoint_actions,
+                retained_recent_turns=checkpoint_result.retained_turns,
+                compacted_blocks=checkpoint_result.covered_turns,
+            )
+        else:
+            checkpoint_fallback_required = True
+
+    should_run_micro = not checkpoint_created and pressure_level in {
+        "auto_compact",
+        "blocking",
+        "over_budget",
+    }
     if compression_config.get("micro_compaction_enabled", True) and should_run_micro:
         keep_recent_reasoning_messages = (
             DEFAULT_RECENT_REASONING_MESSAGES
@@ -2008,7 +2178,7 @@ async def prepare_model_context(
         ) = await _apply_micro_compaction(
             messages=base_messages,
             conversation=conversation,
-            model_id=model_id,
+            model_id=tokenizer_model_id,
             provider=provider,
             token_budget=token_budget,
             keep_recent_reasoning_messages=keep_recent_reasoning_messages,
@@ -2024,6 +2194,8 @@ async def prepare_model_context(
             trigger_budget=thresholds.trigger_input_budget,
             protected_indexes=base_protected_indexes,
             before_created_at=history_before_message_created_at,
+            # Preflight has already checked the same base context for a ready snapshot.
+            skip_session_memory=True,
         )
         compression.file_content_trimmed = file_content_trimmed
         if file_content_trimmed and "trim_file_content" not in (
@@ -2037,10 +2209,12 @@ async def prepare_model_context(
         if (
             not should_run_macro
             and pressure_level == "auto_compact"
-            and macro_on_trigger
+            and (macro_on_trigger or checkpoint_fallback_required)
         ):
             should_run_macro = True
         if compression.after_tokens > token_budget.input_budget:
+            should_run_macro = True
+        if checkpoint_created and compression.after_tokens > checkpoint_target_budget:
             should_run_macro = True
 
     if should_run_macro:
@@ -2053,7 +2227,7 @@ async def prepare_model_context(
         compacted_messages, compression, compacted_protected_indexes = (
             _apply_budget_compaction(
                 messages=compacted_messages,
-                model_id=model_id,
+                model_id=tokenizer_model_id,
                 provider=provider,
                 token_budget=token_budget,
                 compression=compression,
@@ -2082,6 +2256,9 @@ async def prepare_model_context(
                     else AGGRESSIVE_BLOCK_SUMMARY_CHARS
                 ),
                 protected_indexes=compacted_protected_indexes,
+                target_budget=(
+                    checkpoint_target_budget if checkpoint_created else None
+                ),
             )
         )
 
@@ -2106,10 +2283,20 @@ async def prepare_model_context(
         )
         emergency_messages: list[Message] = []
         emergency_protected_indexes: set[int] = set()
-        current_round_messages = [
+        current_user_message = next(
+            (
+                compacted_messages[index].model_copy(deep=True)
+                for index in range(len(compacted_messages) - 1, -1, -1)
+                if index in compacted_protected_indexes
+                and compacted_messages[index].role == MessageRole.USER
+            ),
+            None,
+        )
+        protected_round_messages = [
             compacted_messages[index].model_copy(deep=True)
             for index in sorted(compacted_protected_indexes)
             if 0 <= index < len(compacted_messages)
+            and compacted_messages[index].role != MessageRole.USER
         ]
         if compacted_messages and compacted_messages[0].role == MessageRole.SYSTEM:
             _append_message(
@@ -2117,24 +2304,24 @@ async def prepare_model_context(
                 emergency_protected_indexes,
                 compacted_messages[0].model_copy(deep=True),
             )
-        if current_round_messages:
-            for message in current_round_messages:
-                _append_message(
-                    emergency_messages,
-                    emergency_protected_indexes,
-                    message,
-                    protect=True,
-                )
-        elif compacted_messages and compacted_messages[-1].role == MessageRole.USER:
+        if current_user_message is not None:
             _append_message(
                 emergency_messages,
                 emergency_protected_indexes,
-                compacted_messages[-1].model_copy(deep=True),
+                current_user_message,
+                protect=True,
+            )
+        for message in protected_round_messages:
+            _append_message(
+                emergency_messages,
+                emergency_protected_indexes,
+                message,
+                protect=True,
             )
 
         emergency_tokens = _estimate_message_tokens(
             emergency_messages,
-            model_id=model_id,
+            model_id=tokenizer_model_id,
             provider=provider,
         )
 
@@ -2198,6 +2385,7 @@ async def retry_prepare_model_context(
     conversation: Conversation,
     user_message: str,
     model_id: str,
+    tokenizer_model_id: str | None = None,
     model_context_limit: int | None,
     model_max_output_tokens: int | None,
     provider: str | None = None,
@@ -2219,6 +2407,7 @@ async def retry_prepare_model_context(
         conversation=conversation,
         user_message=user_message,
         model_id=model_id,
+        tokenizer_model_id=tokenizer_model_id,
         model_context_limit=model_context_limit,
         model_max_output_tokens=model_max_output_tokens,
         provider=provider,

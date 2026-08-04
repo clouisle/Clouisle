@@ -13,6 +13,24 @@ from app.schemas.agent import ChatRequest, RegenerateRequest
 from app.schemas.response import ResponseCode
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    model_uuid = uuid4()
+    return SimpleNamespace(
+        model=SimpleNamespace(id=model_uuid),
+        team_model=SimpleNamespace(),
+        model_id=str(model_uuid),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class Query:
     def __init__(self, value=None):
         self.value = value
@@ -74,7 +92,11 @@ async def setup_send_until_prepare(monkeypatch, prepare_error):
     )
     monkeypatch.setattr(chat.Message, "create", AsyncMock(return_value=user_message))
     monkeypatch.setattr(chat, "update_message_stats", AsyncMock())
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat, "get_streaming_config", lambda _agent: {"tool_timeouts": {}}
     )
@@ -241,7 +263,11 @@ async def setup_regenerate(monkeypatch, generator_error, *, preserved):
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
     monkeypatch.setattr(

@@ -164,7 +164,7 @@ async def test_prepare_context_emergency_budget_edges(monkeypatch, emergency_tok
         "_apply_session_memory_compaction",
         AsyncMock(return_value=(messages, False, {2})),
     )
-    token_counts = iter([20, 20, emergency_tokens])
+    token_counts = iter([20, 20, 20, emergency_tokens, emergency_tokens])
     monkeypatch.setattr(
         chat_context,
         "_estimate_message_tokens",
@@ -175,6 +175,7 @@ async def test_prepare_context_emergency_budget_edges(monkeypatch, emergency_tok
         agent=_agent(
             micro_compaction_enabled=False,
             macro_compaction_enabled=False,
+            checkpoint_summary_enabled=False,
             output_token_reserve=5,
             safety_margin_tokens=5,
         ),

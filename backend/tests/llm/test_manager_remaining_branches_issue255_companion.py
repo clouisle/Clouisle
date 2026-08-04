@@ -21,19 +21,14 @@ class SplitlessIdentifier(str):
         return [str(self)]
 
 
-def test_parse_model_identifier_handles_supported_and_defensive_split_paths():
+def test_parse_model_identifier_accepts_only_uuid():
     manager = ModelManager()
 
-    assert manager._parse_model_identifier("openai/gpt-4o") == (
-        None,
-        "openai",
-        "gpt-4o",
+    assert manager._parse_model_identifier("550e8400-e29b-41d4-a716-446655440000") == (
+        "550e8400-e29b-41d4-a716-446655440000"
     )
-    assert manager._parse_model_identifier(SplitlessIdentifier("openai/gpt-4o")) == (
-        None,
-        None,
-        None,
-    )
+    assert manager._parse_model_identifier("openai/gpt-4o") is None
+    assert manager._parse_model_identifier(SplitlessIdentifier("openai/gpt-4o")) is None
 
 
 @pytest.mark.anyio

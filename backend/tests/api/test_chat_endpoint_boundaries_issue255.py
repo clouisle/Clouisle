@@ -23,6 +23,20 @@ from app.schemas.agent import (
 from app.schemas.response import BusinessError, ResponseCode
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class Query:
     def __init__(self, result=None):
         self.result = result
@@ -351,7 +365,7 @@ async def test_persist_partial_round_error_covers_no_progress_and_saved_fallback
 ):
     assert (
         await chat_module.persist_partial_round_error(
-            None, content="", reasoning="", model_id=None, start_time=1
+            None, content="", reasoning="", model_used=None, start_time=1
         )
         is False
     )
@@ -359,7 +373,7 @@ async def test_persist_partial_round_error_covers_no_progress_and_saved_fallback
     empty = message(round_id=None)
     assert (
         await chat_module.persist_partial_round_error(
-            empty, content="", reasoning="", model_id=None, start_time=1
+            empty, content="", reasoning="", model_used=None, start_time=1
         )
         is False
     )
@@ -373,7 +387,7 @@ async def test_persist_partial_round_error_covers_no_progress_and_saved_fallback
             saved,
             content="",
             reasoning="trace",
-            model_id="provider/model",
+            model_used="provider/model",
             start_time=2.0,
             first_token_time=2.125,
             fallback_content="failed",
@@ -684,7 +698,9 @@ async def test_chat_stream_client_disconnect_persists_manual_stop(monkeypatch):
         AsyncMock(return_value=(None, None)),
     )
     monkeypatch.setattr(
-        chat_module, "get_agent_chat_model", AsyncMock(return_value=None)
+        chat_module,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
     )
     monkeypatch.setattr(
         chat_module, "get_visible_conversation_messages", AsyncMock(return_value=[])

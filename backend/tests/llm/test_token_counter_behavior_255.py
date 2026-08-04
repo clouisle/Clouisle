@@ -26,7 +26,7 @@ def test_empty_text_skips_tokenizer_lookup() -> None:
 @pytest.mark.parametrize(
     ("model_id", "provider", "encoding_name"),
     [
-        ("GPT-4o-mini-2024-07-18", None, "cl100k_base"),
+        ("GPT-4o-mini-2024-07-18", None, "o200k_base"),
         ("gpt-4-turbo-preview", "anthropic", "cl100k_base"),
         ("unknown-model", "AZURE", "cl100k_base"),
         ("unknown-model", "unknown-provider", "cl100k_base"),

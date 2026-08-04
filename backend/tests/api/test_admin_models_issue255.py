@@ -148,29 +148,30 @@ async def test_list_models_applies_filters_and_pagination(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_create_model_rejects_duplicate(monkeypatch):
-    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(model())))
+async def test_create_model_allows_duplicate_provider_model_id(monkeypatch):
+    """Same provider/model_id may be configured multiple times."""
+    created = model()
+    create = AsyncMock(return_value=created)
+    monkeypatch.setattr(models.Model, "create", create)
 
-    with pytest.raises(BusinessError) as caught:
-        await models.create_model(
-            model_in=ModelCreate(
-                name="GPT",
-                provider=ModelProvider.OPENAI,
-                model_id="gpt-4o",
-                model_type=ModelType.CHAT,
-            ),
-            current_user=SimpleNamespace(),
-        )
+    response = await models.create_model(
+        model_in=ModelCreate(
+            name="GPT",
+            provider=ModelProvider.OPENAI,
+            model_id="gpt-4o",
+            model_type=ModelType.CHAT,
+        ),
+        current_user=SimpleNamespace(),
+    )
 
-    assert caught.value.code == ResponseCode.ALREADY_EXISTS
+    assert response["data"].id == created.id
 
 
 @pytest.mark.anyio
 async def test_create_default_model_clears_old_default_and_persists(monkeypatch):
-    existing_query = Query(None)
     default_query = Query()
     created = model(is_default=True)
-    filters = MagicMock(side_effect=[existing_query, default_query])
+    filters = MagicMock(side_effect=[default_query])
     create = AsyncMock(return_value=created)
     monkeypatch.setattr(models.Model, "filter", filters)
     monkeypatch.setattr(models.Model, "create", create)

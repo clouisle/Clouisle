@@ -5,6 +5,11 @@
 根据模型类型分发到对应的适配器。
 
 支持团队级调用，自动追踪 token 用量和配额检查。
+
+模型标识符格式:
+    所有方法的 model_id 参数只接受以下形式：
+    - UUID: 模型配置主键 (e.g., "550e8400-e29b-41d4-a716-446655440000")
+    - None: 使用该类型的默认模型
 """
 
 import logging
@@ -18,6 +23,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.i18n import t
 from app.models.model import Model, ModelType, TeamModel, ModelProvider
+from app.schemas.response import BusinessError, ResponseCode
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
 from .adapters import (
@@ -99,85 +105,27 @@ class ModelManager:
 
     # ==================== 内部辅助方法 ====================
 
-    def _parse_model_identifier(
-        self, identifier: str
-    ) -> tuple[str | None, str | None, str | None]:
-        """
-        解析模型标识符
-
-        支持的格式:
-        - UUID: 数据库主键 (e.g., "550e8400-e29b-41d4-a716-446655440000")
-        - 句柄: provider/model_id (e.g., "openai/gpt-4o")
-
-        Args:
-            identifier: 模型标识符
-
-        Returns:
-            (uuid, provider, model_id) 元组，未匹配的字段为 None
-        """
-        # 尝试解析为 UUID
+    def _parse_model_identifier(self, identifier: str) -> str | None:
+        """Return a valid model configuration UUID, or ``None``."""
         try:
             uuid.UUID(identifier)
-            return (identifier, None, None)
-        except ValueError:
-            pass
-
-        # 尝试解析为 provider/model_id 句柄
-        if "/" in identifier:
-            parts = identifier.split("/", 1)
-            if len(parts) == 2:
-                provider, model_id = parts
-                return (None, provider, model_id)
-
-        # 不支持单独的 model_id，因为它不是唯一的
-        return (None, None, None)
+        except (TypeError, ValueError, AttributeError):
+            return None
+        return identifier
 
     async def _get_model_config(
         self, model_id: str | None = None, model_type: ModelType = ModelType.CHAT
     ) -> Model:
-        """
-        获取模型配置
-
-        Args:
-            model_id: 模型标识符，支持以下格式：
-                - UUID: 数据库主键
-                - 句柄: "provider/model_id" 格式 (e.g., "openai/gpt-4o")
-                - None: 使用该类型的默认模型
-            model_type: 模型类型，仅在获取默认模型时使用
-
-        Returns:
-            Model: 模型配置对象
-
-        Raises:
-            ModelNotFoundError: 找不到模型或标识符格式无效
-            ModelDisabledError: 模型已禁用
-        """
-        model: Model | None = None
-
+        """Load an enabled model configuration by UUID or type default."""
         if model_id:
-            parsed_uuid, provider, parsed_model_id = self._parse_model_identifier(
-                model_id
-            )
-
-            if parsed_uuid:
-                # 按 UUID 查找
-                model = await Model.filter(id=parsed_uuid).first()
-            elif provider and parsed_model_id:
-                # 按 provider/model_id 句柄查找
-                model = await Model.filter(
-                    provider=provider,
-                    model_id=parsed_model_id,
-                    model_type=model_type,
-                ).first()
-            else:
-                # 无效的标识符格式
-                raise ModelNotFoundError(
-                    message=f"Invalid model identifier format: '{model_id}'. "
-                    f"Use UUID or 'provider/model_id' format (e.g., 'openai/gpt-4o')",
-                    model=model_id,
+            parsed_uuid = self._parse_model_identifier(model_id)
+            if parsed_uuid is None:
+                raise BusinessError(
+                    code=ResponseCode.MODEL_NOT_FOUND,
+                    msg_key="model_not_found",
                 )
+            model = await Model.filter(id=parsed_uuid, model_type=model_type).first()
         else:
-            # 获取该类型的默认模型
             model = await Model.filter(model_type=model_type, is_default=True).first()
 
         if not model:
@@ -352,6 +300,21 @@ class ModelManager:
             )
 
         return model_config, team_model
+
+    async def resolve_team_chat_model(
+        self,
+        team_id: str,
+        model_id: str | None = None,
+    ) -> tuple[Model, TeamModel]:
+        """Resolve a team-authorized chat model for both context budgeting and calls.
+
+        Mirrors ``team_chat`` model resolution so callers that need model
+        metadata (e.g. ``context_length``) before the LLM call use the same
+        model that ``team_chat`` will actually invoke. ``model_id`` follows
+        the same convention as ``team_chat``: ``None`` resolves the global
+        default chat model.
+        """
+        return await self._get_team_model(team_id, model_id, ModelType.CHAT)
 
     async def _check_and_record_usage(
         self,

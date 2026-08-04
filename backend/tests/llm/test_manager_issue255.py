@@ -15,6 +15,7 @@ from app.llm.errors import (
     RateLimitError,
 )
 from app.llm.manager import ModelManager
+from app.schemas.response import BusinessError, ResponseCode
 from app.models.model import ModelProvider, ModelType
 
 
@@ -22,27 +23,24 @@ from app.models.model import ModelProvider, ModelType
     ("identifier", "expected"),
     [
         (str(uuid4()), "uuid"),
-        ("openai/gpt-4o", "handle"),
+        ("openai/gpt-4o", "invalid"),
         ("gpt-4o", "invalid"),
     ],
 )
-def test_parse_model_identifier_supports_only_uuid_and_handle(identifier, expected):
-    parsed_uuid, provider, model_id = ModelManager()._parse_model_identifier(identifier)
+def test_parse_model_identifier_accepts_only_uuid(identifier, expected):
+    result = ModelManager()._parse_model_identifier(identifier)
 
     if expected == "uuid":
-        assert parsed_uuid == identifier
-        assert provider is model_id is None
-    elif expected == "handle":
-        assert (parsed_uuid, provider, model_id) == (None, "openai", "gpt-4o")
+        assert result == identifier
     else:
-        assert (parsed_uuid, provider, model_id) == (None, None, None)
+        assert result is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("identifier", "expected_filter"),
     [
-        (str(uuid4()), lambda value: {"id": value}),
+        (str(uuid4()), lambda value: {"id": value, "model_type": ModelType.EMBEDDING}),
         (None, lambda _value: {"model_type": ModelType.EMBEDDING, "is_default": True}),
     ],
 )
@@ -78,9 +76,11 @@ async def test_get_model_config_rejects_missing_or_disabled_models(enabled):
 @pytest.mark.asyncio
 async def test_get_model_config_rejects_ambiguous_identifier_without_querying():
     with patch("app.llm.manager.Model.filter") as model_filter:
-        with pytest.raises(ModelNotFoundError, match="Invalid model identifier"):
+        with pytest.raises(BusinessError) as exc_info:
             await ModelManager()._get_model_config("gpt-4o")
 
+    assert exc_info.value.code == ResponseCode.MODEL_NOT_FOUND
+    assert exc_info.value.msg_key == "model_not_found"
     model_filter.assert_not_called()
 
 

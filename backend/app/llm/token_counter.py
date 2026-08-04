@@ -26,6 +26,10 @@ MODEL_ENCODING_MAP = {
     "default": "cl100k_base",
 }
 
+MODEL_ENCODING_PREFIXES = tuple(
+    sorted(MODEL_ENCODING_MAP.items(), key=lambda item: len(item[0]), reverse=True)
+)
+
 # Provider-level defaults
 PROVIDER_ENCODING_MAP = {
     "openai": "cl100k_base",
@@ -45,25 +49,15 @@ def get_encoding(encoding_name: str) -> tiktoken.Encoding:
 
 
 def get_encoding_for_model(
-    model_id: str, provider: str | None = None
+    model_id: str | None, provider: str | None = None
 ) -> tiktoken.Encoding:
-    """
-    Get the appropriate tiktoken encoding for a model.
+    """Get the appropriate token encoding without inventing a model ID."""
+    if model_id:
+        model_lower = model_id.lower()
+        for model_prefix, encoding_name in MODEL_ENCODING_PREFIXES:
+            if model_lower.startswith(model_prefix):
+                return get_encoding(encoding_name)
 
-    Args:
-        model_id: Model identifier (e.g., "gpt-4", "gpt-4o-mini")
-        provider: Optional provider name for fallback
-
-    Returns:
-        tiktoken.Encoding: The appropriate encoding
-    """
-    # Try exact model match first
-    model_lower = model_id.lower()
-    for model_prefix, encoding_name in MODEL_ENCODING_MAP.items():
-        if model_lower.startswith(model_prefix):
-            return get_encoding(encoding_name)
-
-    # Try provider-level match
     if provider:
         provider_lower = provider.lower()
         encoding_name = PROVIDER_ENCODING_MAP.get(
@@ -71,24 +65,18 @@ def get_encoding_for_model(
         )
         return get_encoding(encoding_name)
 
-    # Fall back to default
     return get_encoding(MODEL_ENCODING_MAP["default"])
 
 
 def count_tokens(
-    text: str, model_id: str = "gpt-4", provider: str | None = None
+    text: str, model_id: str | None = None, provider: str | None = None
 ) -> int:
-    """
-    Count tokens in a text string.
+    """Count tokens using the supplied model/provider, if available.
 
-    Args:
-        text: Text to count tokens for
-        model_id: Model identifier for tokenizer selection
-        provider: Optional provider name
-
-    Returns:
-        int: Number of tokens
+    Falls back to the provider or generic token encoding when neither maps to
+    a known model family.
     """
+
     if not text:
         return 0
 
@@ -103,26 +91,18 @@ def count_tokens(
 
 def count_message_tokens(
     messages: list[dict],
-    model_id: str = "gpt-4",
+    model_id: str | None = None,
     provider: str | None = None,
 ) -> int:
+    """Count chat-message tokens without fabricating a model identifier.
+
+    A provider or generic encoding is used when no model identifier exists.
     """
-    Count tokens in a list of chat messages.
 
-    Accounts for message overhead (role tokens, separators, etc.)
-
-    Args:
-        messages: List of message dicts with 'role' and 'content'
-        model_id: Model identifier
-        provider: Optional provider name
-
-    Returns:
-        int: Total token count
-    """
     try:
         encoding = get_encoding_for_model(model_id, provider)
 
-        # Token overhead per message (varies by model, using GPT-4 defaults)
+        # Approximate overhead for a generic chat-message envelope.
         tokens_per_message = 3  # <|start|>{role/name}\n{content}<|end|>\n
         tokens_per_name = 1
 

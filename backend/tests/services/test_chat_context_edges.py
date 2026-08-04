@@ -204,6 +204,7 @@ async def test_prepare_context_uses_protected_round_for_emergency_fallback(monke
         agent=_agent(
             micro_compaction_enabled=False,
             macro_compaction_enabled=False,
+            checkpoint_summary_enabled=False,
             output_token_reserve=10,
             safety_margin_tokens=10,
         ),
@@ -257,6 +258,7 @@ async def test_prepare_context_raises_when_emergency_messages_exceed_budget(
             agent=_agent(
                 micro_compaction_enabled=False,
                 macro_compaction_enabled=False,
+                checkpoint_summary_enabled=False,
                 output_token_reserve=10,
                 safety_margin_tokens=10,
             ),

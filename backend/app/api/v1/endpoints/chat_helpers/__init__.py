@@ -20,7 +20,12 @@ from .stream_utils import (
     iter_with_idle_timeout,
     send_heartbeat_if_needed,
 )
-from .model_utils import get_model_identifier, get_model_capabilities
+from .model_utils import (
+    ChatModelResolution,
+    get_model_capabilities,
+    get_model_identifier,
+    resolve_agent_chat_model,
+)
 from .tool_utils import get_agent_tools, get_tool_display_names
 from app.api.v1.endpoints.chat_tools import (
     execute_tool_call,
@@ -51,6 +56,8 @@ __all__ = [
     "StreamIdleTimeoutError",
     "iter_with_idle_timeout",
     "send_heartbeat_if_needed",
+    "ChatModelResolution",
+    "resolve_agent_chat_model",
     "get_model_identifier",
     "get_model_capabilities",
     "get_agent_tools",

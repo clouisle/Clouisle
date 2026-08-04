@@ -252,7 +252,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_user_locale_field",
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
-        "init_model_type_unique_constraint",
+        "drop_model_provider_uniqueness",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
@@ -341,7 +341,7 @@ async def test_init_db_continues_after_optional_migration_failures(
         "init_user_locale_field",
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
-        "init_model_type_unique_constraint",
+        "drop_model_provider_uniqueness",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
@@ -459,22 +459,23 @@ async def test_simple_startup_migrations_propagate_schema_change_failure(
 
 
 @pytest.mark.asyncio
-async def test_model_unique_constraint_skips_or_runs_both_migrations(
+async def test_model_provider_uniqueness_migration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
-    await init_data.init_model_type_unique_constraint()
+    await init_data.drop_model_provider_uniqueness()
     conn.execute_query.assert_awaited_once()
 
     conn.execute_query.reset_mock()
-    conn.execute_query.side_effect = [(1, ["models"]), (0, []), (0, [])]
-    await init_data.init_model_type_unique_constraint()
+    conn.execute_query.side_effect = [(1, ["models"]), (0, [])]
+    await init_data.drop_model_provider_uniqueness()
 
-    assert conn.execute_query.await_count == 3
+    assert conn.execute_query.await_count == 2
     queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
+    assert "pg_constraint" in queries[1]
     assert "UNIQUE (provider, model_id)" in queries[1]
-    assert "UNIQUE (provider, model_id, model_type)" in queries[2]
+    assert "UNIQUE (provider, model_id, model_type)" in queries[1]
 
 
 @pytest.mark.asyncio
@@ -984,6 +985,29 @@ async def test_message_round_and_session_memory_migrations(
         "idx_conversation_session_memories_status_updated"
         in conn.execute_query.await_args.args[0]
     )
+
+
+@pytest.mark.asyncio
+async def test_context_checkpoint_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(1, ["table"])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_conversation_context_checkpoint_table()
+    conn.execute_query.assert_awaited_once()
+
+    conn.execute_query.reset_mock()
+    conn.execute_query.return_value = (0, [])
+    await init_data.init_conversation_context_checkpoint_table()
+
+    assert conn.execute_query.await_count == 3
+    statements = [call.args[0] for call in conn.execute_query.await_args_list]
+    assert (
+        "CREATE TABLE IF NOT EXISTS conversation_context_checkpoints" in statements[1]
+    )
+    assert "covered_through_message_id" in statements[1]
+    assert "idx_conversation_context_checkpoints_status_updated" in statements[2]
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from app.llm.errors import (
     TaskNotFoundError,
 )
 from app.llm.manager import ModelManager
+from app.schemas.response import BusinessError, ResponseCode
 from app.models.model import ModelProvider, ModelType
 from app.services.usage_tracker import QuotaExceededError
 
@@ -46,10 +47,10 @@ def query(result):
     [
         (
             "550e8400-e29b-41d4-a716-446655440000",
-            ("550e8400-e29b-41d4-a716-446655440000", None, None),
+            "550e8400-e29b-41d4-a716-446655440000",
         ),
-        ("openai/gpt-4o/preview", (None, "openai", "gpt-4o/preview")),
-        ("gpt-4o", (None, None, None)),
+        ("openai/gpt-4o/preview", None),
+        ("gpt-4o", None),
     ],
 )
 def test_parse_model_identifier_matrix(identifier, expected):
@@ -66,14 +67,18 @@ async def test_model_lookup_uuid_default_and_failure_matrix():
             await manager._get_model_config(str("550e8400-e29b-41d4-a716-446655440000"))
             is enabled
         )
-        mocked.assert_called_once_with(id="550e8400-e29b-41d4-a716-446655440000")
+        mocked.assert_called_once_with(
+            id="550e8400-e29b-41d4-a716-446655440000",
+            model_type=ModelType.CHAT,
+        )
 
     with patch("app.llm.manager.Model.filter", return_value=query(enabled)) as mocked:
         assert await manager._get_model_config(None, ModelType.EMBEDDING) is enabled
         mocked.assert_called_once_with(model_type=ModelType.EMBEDDING, is_default=True)
-
-    with pytest.raises(ModelNotFoundError, match="Invalid model identifier"):
+    with pytest.raises(BusinessError) as exc_info:
         await manager._get_model_config("ambiguous-model")
+    assert exc_info.value.code == ResponseCode.MODEL_NOT_FOUND
+    assert exc_info.value.msg_key == "model_not_found"
 
     with patch("app.llm.manager.Model.filter", return_value=query(None)):
         with pytest.raises(ModelNotFoundError, match="No model found"):

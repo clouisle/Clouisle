@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.agent import Agent
 
 from app.api.v1.endpoints.chat_helpers.general import _safe_json_loads
+from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -123,23 +124,29 @@ def build_compression_events(
 
     note_parts: list[str] = []
     if trigger == "context_length_error" or stage == "reactive_retry":
-        note_parts.append("Retried with more aggressive context compaction")
+        note_parts.append(t("chat_context_compaction_retried"))
     elif trigger == "blocking_threshold":
-        note_parts.append(
-            "Applied blocking-level compaction before the next model call"
-        )
+        note_parts.append(t("chat_context_compaction_blocking"))
     else:
-        note_parts.append(
-            "Applied proactive context compaction before the next model call"
-        )
+        note_parts.append(t("chat_context_compaction_proactive"))
+    actions = getattr(compression, "actions", None) or []
+    if "checkpoint_summary" in actions:
+        note_parts.append(t("chat_context_compaction_checkpoint_summary"))
+    elif "macro_summary" in actions:
+        note_parts.append(t("chat_context_compaction_macro_summary"))
     if compression.summary_turns:
-        note_parts.append(f"summarized {compression.summary_turns} older turns")
+        note_parts.append(
+            t(
+                "chat_context_compaction_summarized_turns",
+                count=compression.summary_turns,
+            )
+        )
     if compression.reasoning_trimmed:
-        note_parts.append("trimmed historical reasoning")
+        note_parts.append(t("chat_context_compaction_reasoning_trimmed"))
     if compression.tool_results_trimmed:
-        note_parts.append("compacted older tool results")
+        note_parts.append(t("chat_context_compaction_tool_results_trimmed"))
     if compression.file_content_trimmed:
-        note_parts.append("trimmed file content")
+        note_parts.append(t("chat_context_compaction_file_content_trimmed"))
 
     # Start event - minimal info
     start_payload = {

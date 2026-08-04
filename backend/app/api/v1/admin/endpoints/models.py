@@ -80,16 +80,6 @@ async def create_model(
     model_in: ModelCreate,
     current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
-    existing = await Model.filter(
-        provider=model_in.provider.value,
-        model_id=model_in.model_id,
-        model_type=model_in.model_type.value,
-    ).first()
-    if existing:
-        raise BusinessError(
-            code=ResponseCode.ALREADY_EXISTS,
-            msg_key="model_already_exists",
-        )
 
     if model_in.is_default:
         await Model.filter(

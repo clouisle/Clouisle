@@ -868,6 +868,33 @@ msgstr "本轮已达到最大工具调用轮次。"
 msgid "chat_success"
 msgstr "对话完成"
 
+msgid "chat_context_compaction_blocking"
+msgstr "已在下一次模型调用前执行阻断级上下文压缩"
+
+msgid "chat_context_compaction_checkpoint_summary"
+msgstr "已生成模型上下文检查点"
+
+msgid "chat_context_compaction_file_content_trimmed"
+msgstr "已裁剪文件内容"
+
+msgid "chat_context_compaction_macro_summary"
+msgstr "已应用确定性宏摘要回退"
+
+msgid "chat_context_compaction_proactive"
+msgstr "已在下一次模型调用前执行主动上下文压缩"
+
+msgid "chat_context_compaction_reasoning_trimmed"
+msgstr "已裁剪历史推理内容"
+
+msgid "chat_context_compaction_retried"
+msgstr "已使用更激进的上下文压缩重试"
+
+msgid "chat_context_compaction_summarized_turns"
+msgstr "已摘要 {count} 个较早轮次"
+
+msgid "chat_context_compaction_tool_results_trimmed"
+msgstr "已压缩较早的工具结果"
+
 msgid "chunk_created"
 msgstr "分块创建成功"
 

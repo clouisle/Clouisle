@@ -201,7 +201,7 @@ test('renders streamed answer output, completion metadata, traces, and clipboard
   handlers.onEvent({ type: 'node_start', timestamp: '2026-01-02T03:04:06Z', data: { node_id: 'answer-1', node_type: 'answer', node_label: 'Answer' } })
   handlers.onEvent({ type: 'token', timestamp: '2026-01-02T03:04:07Z', data: { node_id: 'answer-1', token: 'Hello ' } })
   handlers.onEvent({ type: 'token', timestamp: '2026-01-02T03:04:08Z', data: { node_id: 'answer-1', token: 'world' } })
-  handlers.onEvent({ type: 'node_complete', timestamp: '2026-01-02T03:04:09Z', data: { node_id: 'answer-1', node_type: 'answer', is_streaming: true, outputs: { answer: 'Hello world', usage: 7 }, duration_ms: 12 } })
+  handlers.onEvent({ type: 'node_complete', timestamp: '2026-01-02T03:04:09Z', data: { node_id: 'answer-1', node_type: 'answer', is_streaming: true, outputs: { answer: 'Hello world', usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 } }, duration_ms: 12 } })
   handlers.onEvent({ type: 'workflow_complete', timestamp: '2026-01-02T03:04:10Z', data: { outputs: { answer: 'Hello world' }, duration_ms: 1500 } })
   tree = render({ variables: [], onNodeTracesChange })
 
@@ -209,7 +209,11 @@ test('renders streamed answer output, completion metadata, traces, and clipboard
   expect(text(tree)).toContain('1.500s')
   expect(text(tree)).toContain('7')
   expect(text(tree)).toContain('Answer')
-  expect(onNodeTracesChange.mock.calls.at(-1)?.[0].get('answer-1')).toMatchObject({ status: 'success', streamingContent: 'Hello world' })
+  expect(onNodeTracesChange.mock.calls.at(-1)?.[0].get('answer-1')).toMatchObject({
+    status: 'success',
+    streamingContent: 'Hello world',
+    tokens: { prompt: 3, completion: 4, total: 7 },
+  })
 
   await (button(tree, 'copy').props.onClick as () => Promise<void>)()
   expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Hello world')

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -20,6 +20,20 @@ from app.llm.types import (
 )
 from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import ChatRequest, EditMessageRequest, RegenerateRequest
+
+
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
 
 
 class Query:
@@ -142,7 +156,11 @@ async def test_send_retries_context_and_caps_tool_iterations(monkeypatch):
     )
     monkeypatch.setattr(chat.Message, "create", AsyncMock(side_effect=create_message))
     monkeypatch.setattr(chat, "update_message_stats", AsyncMock())
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat, "get_streaming_config", lambda _agent: {"tool_timeouts": {}}
     )
@@ -195,7 +213,7 @@ async def test_send_retries_context_and_caps_tool_iterations(monkeypatch):
     monkeypatch.setattr(chat, "append_generated_images", Mock())
     monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.Conversation, "filter", Mock(return_value=update_query))
     monkeypatch.setattr(chat.Agent, "filter", Mock(return_value=update_query))
@@ -255,7 +273,11 @@ async def test_chat_stream_persists_reasoning_content_and_usage(monkeypatch):
     )
     monkeypatch.setattr(chat.Message, "create", AsyncMock(side_effect=create_message))
     monkeypatch.setattr(chat, "update_message_stats", AsyncMock())
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat,
         "get_streaming_config",
@@ -312,7 +334,7 @@ async def test_chat_stream_persists_reasoning_content_and_usage(monkeypatch):
     monkeypatch.setattr("app.llm.model_manager.record_stream_usage", record_usage)
     monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.Conversation, "filter", Mock(return_value=update_query))
     monkeypatch.setattr(chat.Agent, "filter", Mock(return_value=update_query))
@@ -339,7 +361,7 @@ async def test_chat_stream_persists_reasoning_content_and_usage(monkeypatch):
     chat.activate_conversation_branch.assert_awaited_once()
     record_usage.assert_awaited_once_with(
         team_id=str(agent.team_id),
-        model_id=None,
+        model_id=ANY,
         input_text_length=5,
         output_text_length=14,
     )
@@ -402,14 +424,18 @@ async def setup_regenerate(monkeypatch, *, rag_mode=RAGMode.OFF, branch_parent_i
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat, "now_utc", lambda: "now")
 
@@ -582,7 +608,11 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
     monkeypatch.setattr(
@@ -618,7 +648,7 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(chat, "now_utc", lambda: "now")
@@ -646,9 +676,3 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     assert assistant.token_usage == {"prompt": 2, "completion": 1}
     assistant.save.assert_awaited_once()
     assert chat.activate_conversation_branch.await_count == 2
-    chat.persist_macro_summary_best_effort.assert_awaited_once_with(
-        conversation=conversation,
-        source_message_id=assistant.id,
-        messages=prepared.messages,
-        model_id=None,
-    )

@@ -52,14 +52,17 @@ async def test_model_and_stats_helpers_mock_database_boundaries(monkeypatch):
     assert await chat.get_agent_chat_model(agent()) is None
 
     model_id = uuid4()
+    model_uuid = uuid4()
     team_model = SimpleNamespace(
-        model=SimpleNamespace(provider="test-provider", model_id="test-model")
+        model=SimpleNamespace(
+            id=model_uuid, provider="test-provider", model_id="test-model"
+        )
     )
     model_query = Query(team_model)
     monkeypatch.setattr(chat.TeamModel, "filter", lambda **_kwargs: model_query)
     configured = agent(model_id=model_id)
 
-    assert await chat.get_model_identifier(configured) == "test-provider/test-model"
+    assert await chat.get_model_identifier(configured) == str(model_uuid)
     assert await chat.get_agent_chat_model(configured) is team_model
 
     agent_query = Query()
@@ -71,48 +74,6 @@ async def test_model_and_stats_helpers_mock_database_boundaries(monkeypatch):
 
     agent_query.update.assert_awaited_once()
     team_query.update.assert_awaited_once()
-
-
-@pytest.mark.anyio
-async def test_macro_summary_persistence_is_best_effort(monkeypatch):
-    conversation = SimpleNamespace(id=uuid4())
-    source_id = uuid4()
-    persist = AsyncMock()
-    monkeypatch.setattr(chat, "persist_compacted_context_snapshot", persist)
-    monkeypatch.setattr(chat, "extract_macro_summary_text", lambda _messages: None)
-
-    await chat.persist_macro_summary_best_effort(
-        conversation=conversation,
-        source_message_id=source_id,
-        messages=[],
-        model_id=None,
-    )
-    persist.assert_not_awaited()
-
-    monkeypatch.setattr(
-        chat, "extract_macro_summary_text", lambda _messages: "compact summary"
-    )
-    await chat.persist_macro_summary_best_effort(
-        conversation=conversation,
-        source_message_id=source_id,
-        messages=[object()],
-        model_id="test/model",
-    )
-    persist.assert_awaited_once_with(
-        conversation=conversation,
-        source_message_id=source_id,
-        summary_text="compact summary",
-        model_id="test/model",
-    )
-
-    persist.reset_mock(side_effect=True)
-    persist.side_effect = RuntimeError("disposable failure")
-    await chat.persist_macro_summary_best_effort(
-        conversation=conversation,
-        source_message_id=source_id,
-        messages=[object()],
-        model_id=None,
-    )
 
 
 @pytest.mark.anyio

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ============ Enums ============
@@ -136,10 +136,6 @@ class ContextCompressionConfig(BaseModel):
         le=1.0,
         description="Utilization ratio that escalates to blocking-level macro compaction",
     )
-    compaction_policy: Literal["staged", "hard_budget_only"] = Field(
-        default="staged",
-        description="How request-time compaction policy is selected",
-    )
     macro_on_trigger: bool = Field(
         default=False,
         description="Allow macro compaction immediately when proactive trigger ratio is reached",
@@ -165,6 +161,22 @@ class ContextCompressionConfig(BaseModel):
         ge=32,
         le=16000,
         description="Only compact older tool results at or above this estimated token size",
+    )
+    checkpoint_summary_enabled: bool = Field(
+        default=True,
+        description="Enable model-generated active-branch context checkpoints",
+    )
+    checkpoint_target_ratio: float = Field(
+        default=0.6,
+        ge=0.1,
+        le=0.9,
+        description="Target input-budget utilization after checkpoint compaction",
+    )
+    checkpoint_min_new_turns: int = Field(
+        default=2,
+        ge=1,
+        le=50,
+        description="Minimum newly covered turn blocks before generating a checkpoint",
     )
     session_memory_enabled: bool = Field(
         default=True,
@@ -198,22 +210,6 @@ class ContextCompressionConfig(BaseModel):
         le=86400,
         description="Cooldown window for session memory extractor failures",
     )
-    legacy_compact_enabled: bool = Field(
-        default=True,
-        description="Enable last-resort LLM legacy compaction when deterministic compaction still exceeds budget",
-    )
-    legacy_compact_failure_threshold: int = Field(
-        default=2,
-        ge=1,
-        le=20,
-        description="Failures before opening the legacy compact breaker",
-    )
-    legacy_compact_cooldown_seconds: int = Field(
-        default=600,
-        ge=60,
-        le=86400,
-        description="Cooldown window for legacy compact failures",
-    )
     output_token_reserve: int = Field(
         default=4000,
         ge=256,
@@ -241,13 +237,21 @@ class ContextCompressionConfig(BaseModel):
         description="Emit streaming compression SSE events when compaction is applied",
     )
 
+    @model_validator(mode="after")
+    def validate_checkpoint_target_ratio(self) -> "ContextCompressionConfig":
+        if self.checkpoint_target_ratio >= self.auto_compact_trigger_ratio:
+            self.checkpoint_target_ratio = max(
+                self.auto_compact_trigger_ratio * 0.75, 0.1
+            )
+        return self
+
 
 class ImageGenerationConfig(BaseModel):
     """Agent image generation configuration"""
 
     default_model_ref: str | None = Field(
         default=None,
-        description="Default image model reference (UUID or provider/model_id)",
+        description="Default image model reference (model UUID)",
     )
     default_width: int = Field(
         default=1024,
@@ -286,7 +290,7 @@ class VideoGenerationConfig(BaseModel):
 
     default_model_ref: str | None = Field(
         default=None,
-        description="Default video model reference (UUID or provider/model_id)",
+        description="Default video model reference (model UUID)",
     )
     default_duration: float = Field(
         default=5.0,

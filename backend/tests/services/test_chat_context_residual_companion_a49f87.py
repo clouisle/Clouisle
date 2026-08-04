@@ -262,7 +262,7 @@ async def test_session_memory_compaction_respects_active_branch_and_compacts_whe
         "memory summary",
         "five",
     ]
-    assert compacted_protected == {2}
+    assert compacted_protected == {1, 2}
 
 
 @pytest.mark.anyio
@@ -305,6 +305,7 @@ async def test_prepare_context_macro_on_trigger_without_micro_runs_budget_compac
             context_compression_config={
                 "micro_compaction_enabled": False,
                 "macro_on_trigger": True,
+                "checkpoint_summary_enabled": False,
                 "output_token_reserve": 0,
                 "safety_margin_tokens": 0,
                 "warning_ratio": 0.5,

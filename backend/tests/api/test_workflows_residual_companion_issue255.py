@@ -86,6 +86,7 @@ async def test_list_runs_bad_search_forces_empty_filter_and_sanitizes_errors(
         Mock(return_value=Dump({"id": str(uuid4()), "error_message": "raw"})),
     )
     monkeypatch.setattr(workflows, "get_public_workflow_error_key", lambda _msg: None)
+    monkeypatch.setattr(workflows, "is_safe_user_visible_error", lambda _msg: False)
     monkeypatch.setattr(workflows, "t", lambda _key: "safe")
 
     response = await workflows.list_workflow_runs(

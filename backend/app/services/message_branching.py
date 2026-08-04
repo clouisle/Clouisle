@@ -63,6 +63,41 @@ async def get_visible_conversation_messages(
     return visible
 
 
+async def get_visible_conversation_messages_after(
+    conversation_id: UUID,
+    *,
+    after_message_id: UUID,
+    before_created_at=None,
+    exclude_message_ids: Iterable[UUID] | None = None,
+) -> list[Message] | None:
+    """Load visible active-branch messages strictly after a checkpoint watermark."""
+    anchor = await Message.filter(
+        conversation_id=conversation_id,
+        id=after_message_id,
+        is_active=True,
+    ).first()
+    if not anchor:
+        return None
+    if before_created_at is not None and anchor.created_at >= before_created_at:
+        return []
+
+    query = Message.filter(
+        conversation_id=conversation_id,
+        is_active=True,
+        created_at__gte=anchor.created_at,
+    )
+    if before_created_at is not None:
+        query = query.filter(created_at__lt=before_created_at)
+    if exclude_message_ids:
+        query = query.exclude(id__in=list(exclude_message_ids))
+
+    messages = await query.order_by("created_at", "id")
+    for index, message in enumerate(messages):
+        if message.id == after_message_id:
+            return messages[index + 1 :]
+    return None
+
+
 async def get_last_active_canonical_message(conversation_id: UUID) -> Message | None:
     path = await get_active_canonical_path(conversation_id)
     return path[-1] if path else None

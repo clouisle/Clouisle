@@ -254,7 +254,6 @@ class Model(models.Model):
 
     class Meta:
         table = "models"
-        unique_together = (("provider", "model_id", "model_type"),)
         ordering = ["sort_order", "-created_at"]
 
     def __str__(self):

@@ -19,49 +19,50 @@ from app.llm.errors import (
 )
 from app.llm.manager import ModelManager
 from app.models.model import ModelProvider, ModelType
+from app.schemas.response import BusinessError, ResponseCode
 from app.services.usage_tracker import QuotaExceededError
 
 
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [
-        (str(uuid4()), ("uuid", None, None)),
-        ("openai/gpt-4o", (None, "openai", "gpt-4o")),
-        ("openai/", (None, "openai", "")),
-        ("gpt-4o", (None, None, None)),
+        (str(uuid4()), "uuid"),
+        ("openai/gpt-4o", "invalid"),
+        ("openai/", "invalid"),
+        ("gpt-4o", "invalid"),
     ],
 )
-def test_parse_model_identifier_accepts_only_uuid_or_provider_handle(
-    identifier: str, expected: tuple[str | None, str | None, str | None]
+def test_parse_model_identifier_accepts_only_uuid(
+    identifier: str, expected: str
 ) -> None:
     parsed = ModelManager()._parse_model_identifier(identifier)
 
-    if expected[0] == "uuid":
-        assert parsed == (identifier, None, None)
+    if expected == "uuid":
+        assert parsed == identifier
     else:
-        assert parsed == expected
+        assert parsed is None
 
 
 @pytest.mark.anyio
-async def test_get_model_config_looks_up_handle_and_rejects_disabled_model(
+async def test_get_model_config_looks_up_uuid_and_rejects_disabled_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    model_uuid = str(uuid4())
     model = SimpleNamespace(
-        id=uuid4(),
+        id=model_uuid,
         name="GPT-4o",
         is_enabled=False,
+        model_type=ModelType.CHAT,
     )
     query = SimpleNamespace(first=AsyncMock(return_value=model))
     filter_models = Mock(return_value=query)
     monkeypatch.setattr(manager_module.Model, "filter", filter_models)
 
     with pytest.raises(ModelDisabledError) as exc_info:
-        await ModelManager()._get_model_config("openai/gpt-4o", ModelType.CHAT)
+        await ModelManager()._get_model_config(model_uuid, ModelType.CHAT)
 
-    assert exc_info.value.model == str(model.id)
-    filter_models.assert_called_once_with(
-        provider="openai", model_id="gpt-4o", model_type=ModelType.CHAT
-    )
+    assert exc_info.value.model == model_uuid
+    filter_models.assert_called_once_with(id=model_uuid, model_type=ModelType.CHAT)
     query.first.assert_awaited_once_with()
 
 
@@ -71,8 +72,10 @@ async def test_get_model_config_rejects_invalid_and_missing_identifiers(
 ) -> None:
     manager = ModelManager()
 
-    with pytest.raises(ModelNotFoundError, match="Invalid model identifier format"):
+    with pytest.raises(BusinessError) as exc_info:
         await manager._get_model_config("gpt-4o")
+    assert exc_info.value.code == ResponseCode.MODEL_NOT_FOUND
+    assert exc_info.value.msg_key == "model_not_found"
 
     query = SimpleNamespace(first=AsyncMock(return_value=None))
     filter_models = Mock(return_value=query)
@@ -172,6 +175,35 @@ async def test_chat_converts_messages_and_translates_provider_timeout(
 
 
 @pytest.mark.anyio
+async def test_generate_image_converts_dictionary_request(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    manager = ModelManager()
+    config = SimpleNamespace(provider="openai", model_id="image-model")
+    adapter = SimpleNamespace(generate=AsyncMock(return_value="generated"))
+    get_config = AsyncMock(return_value=config)
+    monkeypatch.setattr(manager, "_get_model_config", get_config)
+    monkeypatch.setattr(manager_module, "create_image_adapter", lambda _config: adapter)
+
+    assert await manager.generate_image({"prompt": "sunrise"}) == "generated"
+    get_config.assert_awaited_once_with(None, ModelType.TEXT_TO_IMAGE)
+    assert adapter.generate.await_args.args[0].prompt == "sunrise"
+
+
+@pytest.mark.anyio
+async def test_generate_image_preserves_typed_request(monkeypatch: pytest.MonkeyPatch):
+    manager = ModelManager()
+    request = object()
+    config = SimpleNamespace(provider="openai", model_id="image-model")
+    adapter = SimpleNamespace(generate=AsyncMock(return_value="generated"))
+    monkeypatch.setattr(manager, "_get_model_config", AsyncMock(return_value=config))
+    monkeypatch.setattr(manager_module, "create_image_adapter", lambda _config: adapter)
+
+    assert await manager.generate_image(request) == "generated"
+    adapter.generate.assert_awaited_once_with(request)
+
+
+@pytest.mark.anyio
 async def test_generate_video_rejects_removed_image_inputs_before_model_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -203,7 +235,7 @@ async def test_get_model_config_supports_uuid_and_enabled_default(
     assert await manager._get_model_config(str(model.id)) is model
     assert await manager._get_model_config(None, ModelType.RERANK) is model
     assert filter_models.call_args_list == [
-        call(id=str(model.id)),
+        call(id=str(model.id), model_type=ModelType.CHAT),
         call(model_type=ModelType.RERANK, is_default=True),
     ]
 

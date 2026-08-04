@@ -107,7 +107,8 @@ async def test_prepare_context_disabled_preserves_provider_model_and_pressure(
         ),
         conversation=SimpleNamespace(id=uuid4(), variables={}),
         user_message="request",
-        model_id="claude-opus-4-8",
+        model_id="model-uuid",
+        tokenizer_model_id="claude-opus-4-8",
         model_context_limit=100,
         model_max_output_tokens=10,
         provider="anthropic",
@@ -137,7 +138,7 @@ async def test_prepare_context_emergency_fallback_boundary(
     async def no_session_memory(messages, protected_indexes, **_kwargs):
         return list(messages), False, set(protected_indexes)
 
-    estimates = iter([101, 101, emergency_tokens])
+    estimates = iter([101, 101, 101, emergency_tokens, emergency_tokens])
     monkeypatch.setattr(
         chat_context, "_build_messages_with_file_content", build_messages
     )
@@ -155,6 +156,7 @@ async def test_prepare_context_emergency_fallback_boundary(
             {
                 "micro_compaction_enabled": False,
                 "macro_compaction_enabled": False,
+                "checkpoint_summary_enabled": False,
                 "output_token_reserve": 0,
                 "safety_margin_tokens": 0,
             }

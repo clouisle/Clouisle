@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI):
         init_message_round_fields,
         init_message_branch_parent_field,
         init_conversation_session_memory_table,
+        init_conversation_context_checkpoint_table,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
@@ -99,7 +100,8 @@ async def lifespan(app: FastAPI):
         init_chunk_status,
         init_embed_config,
         init_workflow_run_page_config,
-        init_model_type_unique_constraint,
+        drop_model_provider_uniqueness,
+        revert_channel_id_to_model_id,
         init_kb_rerank_fields,
         init_skills_table,
         init_clouisle_import_sessions_table,
@@ -166,6 +168,11 @@ async def lifespan(app: FastAPI):
         await init_conversation_session_memory_table()
     except Exception as e:
         logger.warning(f"Conversation session memory migration failed: {e}")
+
+    try:
+        await init_conversation_context_checkpoint_table()
+    except Exception as e:
+        logger.warning(f"Conversation context checkpoint migration failed: {e}")
 
     try:
         await init_agent_user_input_request()
@@ -235,9 +242,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Workflow run-page config migration failed: {e}")
 
     try:
-        await init_model_type_unique_constraint()
+        await revert_channel_id_to_model_id()
     except Exception as e:
-        logger.warning(f"Model unique constraint migration failed: {e}")
+        logger.warning(f"channel_id revert migration failed: {e}")
+
+    try:
+        await drop_model_provider_uniqueness()
+    except Exception as e:
+        logger.warning(f"Model provider uniqueness migration failed: {e}")
 
     try:
         await init_kb_rerank_fields()

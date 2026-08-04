@@ -88,15 +88,25 @@ def _agent(**overrides):
     return SimpleNamespace(**values)
 
 
-def _team_model():
+def _model_resolution():
+    model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
+        provider="test-provider",
+        model_id="test-model",
+        context_length=1000,
+        max_output_tokens=100,
+        capabilities={},
+    )
     return SimpleNamespace(
-        model=SimpleNamespace(
-            provider="test-provider",
-            model_id="test-model",
-            context_length=1000,
-            max_output_tokens=100,
-            capabilities={},
-        )
+        model=model,
+        team_model=SimpleNamespace(model=model, is_enabled=True),
+        model_id=str(model.id),
+        tokenizer_model_id=model.model_id,
+        provider=model.provider,
+        context_length=model.context_length,
+        max_output_tokens=model.max_output_tokens,
+        supports_vision=False,
     )
 
 
@@ -113,7 +123,9 @@ def _install_common(monkeypatch, agent, conversation, user):
     )
     monkeypatch.setattr(chat_module, "update_message_stats", AsyncMock())
     monkeypatch.setattr(
-        chat_module, "get_agent_chat_model", AsyncMock(return_value=_team_model())
+        chat_module,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_model_resolution()),
     )
     monkeypatch.setattr(
         chat_module,
@@ -149,7 +161,7 @@ def _install_common(monkeypatch, agent, conversation, user):
         chat_module, "get_prefix_path_before", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(chat_module, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat_module, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(
         chat_module, "enqueue_session_memory_extraction", lambda *a, **k: None
     )

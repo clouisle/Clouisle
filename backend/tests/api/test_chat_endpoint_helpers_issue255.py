@@ -103,7 +103,7 @@ async def test_persist_partial_round_error_skips_empty_unstarted_message(monkeyp
         message,
         content="",
         reasoning="",
-        model_id="test/model",
+        model_used="test/model",
         start_time=1.0,
     )
 
@@ -125,7 +125,7 @@ async def test_persist_partial_round_error_uses_fallback_and_marks_error(monkeyp
         message,
         content="",
         reasoning="",
-        model_id="test/model",
+        model_used="test/model",
         start_time=1.0,
         first_token_time=2.0,
         fallback_content="stream failed",

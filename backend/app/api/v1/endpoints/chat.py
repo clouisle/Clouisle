@@ -61,8 +61,6 @@ from app.core.timezone import now_utc
 from app.services.chat_context import (
     build_model_messages,
     get_context_compression_config,
-    extract_macro_summary_text,
-    persist_compacted_context_snapshot,
     prepare_model_context,
     retry_prepare_model_context,
 )
@@ -82,6 +80,7 @@ from app.services.audit_log import AuditLogService
 from app.api.v1.endpoints.chat_helpers import (
     get_streaming_config,
     parse_user_input_request,
+    resolve_agent_chat_model,
     should_retry_context_length,
     get_compression_trigger,
     get_tool_execution_payloads,
@@ -491,22 +490,27 @@ async def build_messages(
 
 
 async def get_model_identifier(agent: Agent) -> str | None:
-    """Get model identifier for the agent."""
-    if not agent.model_id:
+    """Get the database UUID of the agent's bound model, if any."""
+    if not getattr(agent, "model_id", None):
         return None
 
     team_model = (
         await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
     )
-    if team_model:
-        return f"{team_model.model.provider}/{team_model.model.model_id}"
+    if team_model and getattr(team_model, "model", None):
+        return str(team_model.model.id)
 
     return None
 
 
 async def get_agent_chat_model(agent: Agent) -> TeamModel | None:
-    """Get the chat TeamModel for an agent."""
-    if not agent.model_id:
+    """Get the chat TeamModel for an agent.
+
+    Kept as a backward-compatible seam for tests that inject a fake TeamModel.
+    Production code resolves the full chat model (including the global default)
+    via ``resolve_agent_chat_model``.
+    """
+    if not getattr(agent, "model_id", None):
         return None
 
     return await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
@@ -538,34 +542,6 @@ def enqueue_session_memory_extraction(
             conversation.id,
             assistant_message.id,
             e,
-        )
-
-
-async def persist_macro_summary_best_effort(
-    *,
-    conversation: Conversation,
-    source_message_id: UUID,
-    messages: list[Any],
-    model_id: str | None,
-) -> None:
-    """Best-effort persistence for prompt-derived macro compaction summaries."""
-    macro_summary = extract_macro_summary_text(messages)
-    if not macro_summary:
-        return
-    try:
-        await persist_compacted_context_snapshot(
-            conversation=conversation,
-            source_message_id=source_message_id,
-            summary_text=macro_summary,
-            model_id=model_id,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to persist compacted context snapshot for conversation %s "
-            "message %s",
-            conversation.id,
-            source_message_id,
-            exc_info=True,
         )
 
 
@@ -612,7 +588,7 @@ async def persist_partial_round_error(
     *,
     content: str,
     reasoning: str,
-    model_id: str | None,
+    model_used: str | None,
     start_time: float,
     first_token_time: float | None = None,
     fallback_content: str | None = None,
@@ -635,8 +611,8 @@ async def persist_partial_round_error(
         final_content = ""
     message.content = final_content
     message.reasoning_content = reasoning if reasoning else None  # type: ignore[assignment]
-    message.model_used = model_id  # type: ignore[assignment]
-    message.model_used = model_id
+    message.model_used = model_used  # type: ignore[assignment]
+    message.model_used = model_used
     message.duration_ms = int((time.time() - start_time) * 1000)
     message.first_token_ms = _first_token_ms(start_time, first_token_time)
     message.is_manually_stopped = False
@@ -1116,19 +1092,18 @@ async def chat(
     # Update message stats (user message, no tokens)
     await update_message_stats(agent, token_usage=None)
 
-    # Get model identifier
-    team_model = await get_agent_chat_model(agent)
-    model_id = (
-        f"{team_model.model.provider}/{team_model.model.model_id}"
-        if team_model
-        else None
-    )
+    # Resolve the chat model up front so context budgeting uses the same
+    # metadata as the eventual team_chat call (including the global default).
+    chat_model = await resolve_agent_chat_model(agent)
+    model_id = chat_model.model_id
+    model_context_limit = chat_model.context_length
+    model_max_output_tokens = chat_model.max_output_tokens
+    model_provider = chat_model.provider
+    tokenizer_model_id = chat_model.tokenizer_model_id
+    model_used = model_id
 
     model_supports_vision = bool(
-        chat_in.images
-        and agent.enable_vision
-        and team_model
-        and (team_model.model.capabilities or {}).get("vision")
+        chat_in.images and agent.enable_vision and chat_model.supports_vision
     )
 
     streaming_config = get_streaming_config(agent)
@@ -1203,14 +1178,11 @@ async def chat(
                     agent=agent,
                     conversation=conversation,
                     user_message=model_message,
-                    model_id=model_id or "gpt-4",
-                    model_context_limit=team_model.model.context_length
-                    if team_model
-                    else None,
-                    model_max_output_tokens=team_model.model.max_output_tokens
-                    if team_model
-                    else None,
-                    provider=team_model.model.provider if team_model else None,
+                    model_id=model_id,
+                    tokenizer_model_id=tokenizer_model_id,
+                    model_context_limit=model_context_limit,
+                    model_max_output_tokens=model_max_output_tokens,
+                    provider=model_provider,
                     file_content=file_content_str,
                     user_locale=current_user.locale,
                     history_override=working_history_override,
@@ -1228,14 +1200,11 @@ async def chat(
                     agent=agent,
                     conversation=conversation,
                     user_message=model_message,
-                    model_id=model_id or "gpt-4",
-                    model_context_limit=team_model.model.context_length
-                    if team_model
-                    else None,
-                    model_max_output_tokens=team_model.model.max_output_tokens
-                    if team_model
-                    else None,
-                    provider=team_model.model.provider if team_model else None,
+                    model_id=model_id,
+                    tokenizer_model_id=tokenizer_model_id,
+                    model_context_limit=model_context_limit,
+                    model_max_output_tokens=model_max_output_tokens,
+                    provider=model_provider,
                     file_content=file_content_str,
                     user_locale=current_user.locale,
                     history_override=working_history_override,
@@ -1261,14 +1230,11 @@ async def chat(
                     agent=agent,
                     conversation=conversation,
                     user_message=model_message,
-                    model_id=model_id or "gpt-4",
-                    model_context_limit=team_model.model.context_length
-                    if team_model
-                    else None,
-                    model_max_output_tokens=team_model.model.max_output_tokens
-                    if team_model
-                    else None,
-                    provider=team_model.model.provider if team_model else None,
+                    model_id=model_id,
+                    tokenizer_model_id=tokenizer_model_id,
+                    model_context_limit=model_context_limit,
+                    model_max_output_tokens=model_max_output_tokens,
+                    provider=model_provider,
                     file_content=file_content_str,
                     user_locale=current_user.locale,
                     history_override=working_history_override,
@@ -1322,7 +1288,7 @@ async def chat(
                     role=MessageRole.ASSISTANT,
                     content=response.content or "",
                     reasoning_content=response.reasoning_content or None,
-                    model_used=response.model,
+                    model_used=model_used,
                     tool_calls=intermediate_tool_calls,
                     round_id=round_id,
                     round_index=assistant_step_index,
@@ -1463,7 +1429,7 @@ async def chat(
                 if max_iterations_reached
                 else (final_response.reasoning_content if final_response else None)
             ),
-            model_used=(final_response.model if final_response else model_id),
+            model_used=model_used,
             token_usage={
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
@@ -1508,12 +1474,6 @@ async def chat(
         await activate_conversation_branch(
             conversation.id,
             [*branch_prefix, user_msg, assistant_msg],
-        )
-        await persist_macro_summary_best_effort(
-            conversation=conversation,
-            source_message_id=assistant_msg.id,
-            messages=prepared_context.messages,
-            model_id=model_id,
         )
         enqueue_session_memory_extraction(agent, conversation, assistant_msg)
 
@@ -1605,6 +1565,7 @@ async def chat_stream(
         message_id = None
         assistant_msg: Message | None = None
         model_id: str | None = None
+        model_used: str | None = None
         global_timeout: float = 1800.0  # Default 30 minutes
         idle_timeout: float = 300.0  # Default 5 minutes
 
@@ -1740,17 +1701,17 @@ async def chat_stream(
                         user_msg.file_urls = updated_file_urls
                         await user_msg.save(update_fields=["file_urls"])
 
-                    team_model = await get_agent_chat_model(agent)
-                    model_id = (
-                        f"{team_model.model.provider}/{team_model.model.model_id}"
-                        if team_model
-                        else None
-                    )
+                    chat_model = await resolve_agent_chat_model(agent)
+                    model_id = chat_model.model_id
+                    model_context_limit = chat_model.context_length
+                    model_max_output_tokens = chat_model.max_output_tokens
+                    model_provider = chat_model.provider
+                    tokenizer_model_id = chat_model.tokenizer_model_id
+                    model_used = model_id
                     model_supports_vision = bool(
                         chat_in.images
                         and agent.enable_vision
-                        and team_model
-                        and (team_model.model.capabilities or {}).get("vision")
+                        and chat_model.supports_vision
                     )
                     working_history_override = (
                         [
@@ -1813,7 +1774,7 @@ async def chat_stream(
                             assistant_msg.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -1848,16 +1809,11 @@ async def chat_stream(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 file_content=file_content_str,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
@@ -1892,16 +1848,11 @@ async def chat_stream(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 file_content=file_content_str,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
@@ -2022,16 +1973,11 @@ async def chat_stream(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 file_content=file_content_str,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
@@ -2177,7 +2123,7 @@ async def chat_stream(
                             assistant_msg.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -2217,7 +2163,7 @@ async def chat_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -2287,7 +2233,7 @@ async def chat_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -2431,7 +2377,7 @@ async def chat_stream(
                         if max_iterations_reached
                         else (full_reasoning if full_reasoning else None)
                     )
-                    assistant_msg.model_used = model_id
+                    assistant_msg.model_used = model_used
                     assistant_msg.duration_ms = duration_ms
                     assistant_msg.first_token_ms = _first_token_ms(
                         start_time, first_token_time
@@ -2445,14 +2391,11 @@ async def chat_stream(
                         agent=agent,
                         conversation=conversation,
                         user_message=model_message,
-                        model_id=model_id or "gpt-4",
-                        model_context_limit=team_model.model.context_length
-                        if team_model
-                        else None,
-                        model_max_output_tokens=team_model.model.max_output_tokens
-                        if team_model
-                        else None,
-                        provider=team_model.model.provider if team_model else None,
+                        model_id=model_id,
+                        tokenizer_model_id=tokenizer_model_id,
+                        model_context_limit=model_context_limit,
+                        model_max_output_tokens=model_max_output_tokens,
+                        provider=model_provider,
                         file_content=file_content_str,
                         user_locale=current_user.locale,
                         history_override=working_history_override,
@@ -2488,12 +2431,6 @@ async def chat_stream(
                     await activate_conversation_branch(
                         conversation.id,
                         [*branch_prefix, user_msg, assistant_msg],
-                    )
-                    await persist_macro_summary_best_effort(
-                        conversation=conversation,
-                        source_message_id=assistant_msg.id,
-                        messages=final_prepared_context.messages,
-                        model_id=model_id,
                     )
                     enqueue_session_memory_extraction(
                         agent, conversation, assistant_msg
@@ -2538,7 +2475,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2550,7 +2487,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2562,7 +2499,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2574,7 +2511,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2588,7 +2525,7 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=error_message,
@@ -2605,19 +2542,32 @@ async def chat_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t("stream_timeout_exceeded"),
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
+                except BusinessError as e:
+                    error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_used=model_used,
+                        start_time=start_time,
+                        first_token_time=first_token_time,
+                        fallback_content=error_message,
+                    )
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
+
                 except Exception:
                     logger.exception("Unexpected error during stream")
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2636,7 +2586,7 @@ async def chat_stream(
                 assistant_msg,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t("stream_timeout_exceeded"),
@@ -2651,7 +2601,7 @@ async def chat_stream(
             if assistant_msg:
                 assistant_msg.content = full_content
                 assistant_msg.reasoning_content = full_reasoning or None
-                assistant_msg.model_used = model_id
+                assistant_msg.model_used = model_used
                 assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
                 assistant_msg.first_token_ms = _first_token_ms(
                     start_time, first_token_time
@@ -2675,7 +2625,7 @@ async def chat_stream(
                     assistant_msg,
                     content=full_content,
                     reasoning=full_reasoning,
-                    model_id=model_id,
+                    model_used=model_used,
                     start_time=start_time,
                     first_token_time=first_token_time,
                     fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -2954,6 +2904,7 @@ async def edit_user_message_stream(
         assistant_msg: Message | None = None
         assistant_msg_id: str | None = None
         model_id: str | None = None
+        model_used: str | None = None
         global_timeout: float = 1800.0
         idle_timeout: float = 300.0
 
@@ -3114,12 +3065,13 @@ async def edit_user_message_stream(
                     yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': assistant_msg_id, 'edited_message_id': str(edited_user_msg.id), 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number, 'edited_parent_id': str(root_id)})}\n\n"
                     last_event_time = time.time()
 
-                    team_model = await get_agent_chat_model(agent)
-                    model_id = (
-                        f"{team_model.model.provider}/{team_model.model.model_id}"
-                        if team_model
-                        else None
-                    )
+                    chat_model = await resolve_agent_chat_model(agent)
+                    model_id = chat_model.model_id
+                    model_context_limit = chat_model.context_length
+                    model_max_output_tokens = chat_model.max_output_tokens
+                    model_provider = chat_model.provider
+                    tokenizer_model_id = chat_model.tokenizer_model_id
+                    model_used = model_id
                     tools_openai = await get_agent_tools(agent)
                     tool_display_names = await get_tool_display_names(
                         agent, current_user.locale
@@ -3160,7 +3112,7 @@ async def edit_user_message_stream(
                         if not should_continue:
                             assistant_msg.content = full_content
                             assistant_msg.reasoning_content = full_reasoning or None
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -3190,16 +3142,11 @@ async def edit_user_message_stream(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=edited_user_msg.id,
@@ -3231,16 +3178,11 @@ async def edit_user_message_stream(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=edited_user_msg.id,
@@ -3335,16 +3277,11 @@ async def edit_user_message_stream(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=edited_user_msg.id,
@@ -3434,7 +3371,7 @@ async def edit_user_message_stream(
                         if client_disconnected:
                             assistant_msg.content = full_content
                             assistant_msg.reasoning_content = full_reasoning or None
-                            assistant_msg.model_used = model_id
+                            assistant_msg.model_used = model_used
                             assistant_msg.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -3459,7 +3396,7 @@ async def edit_user_message_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning or None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -3518,7 +3455,7 @@ async def edit_user_message_stream(
                                     assistant_msg.reasoning_content = (
                                         full_reasoning or None
                                     )
-                                    assistant_msg.model_used = model_id
+                                    assistant_msg.model_used = model_used
                                     assistant_msg.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -3643,7 +3580,7 @@ async def edit_user_message_stream(
                         if max_iterations_reached
                         else (full_reasoning if full_reasoning else None)
                     )
-                    assistant_msg.model_used = model_id
+                    assistant_msg.model_used = model_used
                     assistant_msg.duration_ms = duration_ms
                     assistant_msg.first_token_ms = _first_token_ms(
                         start_time, first_token_time
@@ -3662,12 +3599,6 @@ async def edit_user_message_stream(
                     }
                     await assistant_msg.save()
                     await activate_edited_path()
-                    await persist_macro_summary_best_effort(
-                        conversation=conversation,
-                        source_message_id=assistant_msg.id,
-                        messages=prepared_context.messages,
-                        model_id=model_id,
-                    )
                     enqueue_session_memory_extraction(
                         agent, conversation, assistant_msg
                     )
@@ -3722,7 +3653,7 @@ async def edit_user_message_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -3744,7 +3675,7 @@ async def edit_user_message_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=error_message,
@@ -3766,7 +3697,7 @@ async def edit_user_message_stream(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t("stream_timeout_exceeded"),
@@ -3787,7 +3718,7 @@ async def edit_user_message_stream(
                 assistant_msg,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t("stream_timeout_exceeded"),
@@ -3805,7 +3736,7 @@ async def edit_user_message_stream(
             if assistant_msg:
                 assistant_msg.content = full_content
                 assistant_msg.reasoning_content = full_reasoning or None
-                assistant_msg.model_used = model_id
+                assistant_msg.model_used = model_used
                 assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
                 assistant_msg.first_token_ms = _first_token_ms(
                     start_time, first_token_time
@@ -3824,13 +3755,34 @@ async def edit_user_message_stream(
                         )
                     await restore_original_path()
             return
+        except BusinessError as e:
+            error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+            preserved_partial = await persist_partial_round_error(
+                assistant_msg,
+                content=full_content,
+                reasoning=full_reasoning,
+                model_used=model_used,
+                start_time=start_time,
+                first_token_time=first_token_time,
+                fallback_content=error_message,
+            )
+            if preserved_partial:
+                await activate_edited_path()
+            else:
+                if assistant_msg_id:
+                    await Message.filter(id=assistant_msg_id).delete()
+                if edited_user_msg:
+                    await Message.filter(id=edited_user_msg.id).update(is_active=False)
+                await restore_original_path()
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
+
         except Exception:
             logger.exception("Unexpected error during message edit")
             preserved_partial = await persist_partial_round_error(
                 assistant_msg,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -3942,6 +3894,7 @@ async def regenerate_message(
         new_message_id = None
         new_message: Message | None = None
         model_id: str | None = None
+        model_used: str | None = None
         global_timeout: float = 1800.0  # Default 30 minutes
         idle_timeout: float = 300.0  # Default 5 minutes
 
@@ -4067,12 +4020,13 @@ async def regenerate_message(
                     model_message = append_conversation_image_inventory(
                         final_message, image_inventory
                     )
-                    team_model = await get_agent_chat_model(agent)
-                    model_id = (
-                        f"{team_model.model.provider}/{team_model.model.model_id}"
-                        if team_model
-                        else None
-                    )
+                    chat_model = await resolve_agent_chat_model(agent)
+                    model_id = chat_model.model_id
+                    model_context_limit = chat_model.context_length
+                    model_max_output_tokens = chat_model.max_output_tokens
+                    model_provider = chat_model.provider
+                    tokenizer_model_id = chat_model.tokenizer_model_id
+                    model_used = model_id
                     working_history_override = None
 
                     # Get model and tools
@@ -4117,7 +4071,7 @@ async def regenerate_message(
                             new_message.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            new_message.model_used = model_id
+                            new_message.model_used = model_used
                             new_message.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -4149,16 +4103,11 @@ async def regenerate_message(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=user_message.id,
@@ -4190,16 +4139,11 @@ async def regenerate_message(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=user_message.id,
@@ -4297,16 +4241,11 @@ async def regenerate_message(
                                 agent=agent,
                                 conversation=conversation,
                                 user_message=model_message,
-                                model_id=model_id or "gpt-4",
-                                model_context_limit=team_model.model.context_length
-                                if team_model
-                                else None,
-                                model_max_output_tokens=team_model.model.max_output_tokens
-                                if team_model
-                                else None,
-                                provider=team_model.model.provider
-                                if team_model
-                                else None,
+                                model_id=model_id,
+                                tokenizer_model_id=tokenizer_model_id,
+                                model_context_limit=model_context_limit,
+                                model_max_output_tokens=model_max_output_tokens,
+                                provider=model_provider,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=user_message.id,
@@ -4398,7 +4337,7 @@ async def regenerate_message(
                             new_message.reasoning_content = (
                                 full_reasoning if full_reasoning else None
                             )
-                            new_message.model_used = model_id
+                            new_message.model_used = model_used
                             new_message.duration_ms = int(
                                 (time.time() - start_time) * 1000
                             )
@@ -4425,7 +4364,7 @@ async def regenerate_message(
                                     new_message.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    new_message.model_used = model_id
+                                    new_message.model_used = model_used
                                     new_message.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -4490,7 +4429,7 @@ async def regenerate_message(
                                     new_message.reasoning_content = (
                                         full_reasoning if full_reasoning else None
                                     )
-                                    new_message.model_used = model_id
+                                    new_message.model_used = model_used
                                     new_message.duration_ms = int(
                                         (time.time() - start_time) * 1000
                                     )
@@ -4625,7 +4564,7 @@ async def regenerate_message(
                         if max_iterations_reached
                         else (full_reasoning if full_reasoning else None)
                     )
-                    new_message.model_used = model_id
+                    new_message.model_used = model_used
                     new_message.duration_ms = duration_ms
                     new_message.first_token_ms = _first_token_ms(
                         start_time, first_token_time
@@ -4638,14 +4577,11 @@ async def regenerate_message(
                         agent=agent,
                         conversation=conversation,
                         user_message=model_message,
-                        model_id=model_id or "gpt-4",
-                        model_context_limit=team_model.model.context_length
-                        if team_model
-                        else None,
-                        model_max_output_tokens=team_model.model.max_output_tokens
-                        if team_model
-                        else None,
-                        provider=team_model.model.provider if team_model else None,
+                        model_id=model_id,
+                        tokenizer_model_id=tokenizer_model_id,
+                        model_context_limit=model_context_limit,
+                        model_max_output_tokens=model_max_output_tokens,
+                        provider=model_provider,
                         user_locale=current_user.locale,
                         history_override=working_history_override,
                         current_user_message_id=user_message.id,
@@ -4682,12 +4618,6 @@ async def regenerate_message(
                     await stale_session_memory_if_source_outside_active_branch(
                         conversation.id
                     )
-                    await persist_macro_summary_best_effort(
-                        conversation=conversation,
-                        source_message_id=new_message.id,
-                        messages=final_prepared_context.messages,
-                        model_id=model_id,
-                    )
                     enqueue_session_memory_extraction(agent, conversation, new_message)
 
                     # Update agent and team stats for regenerated message
@@ -4714,7 +4644,7 @@ async def regenerate_message(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -4733,7 +4663,7 @@ async def regenerate_message(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=error_message,
@@ -4751,7 +4681,7 @@ async def regenerate_message(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t("stream_timeout_exceeded"),
@@ -4769,12 +4699,31 @@ async def regenerate_message(
                         extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
+                except BusinessError as e:
+                    error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+                    preserved_partial = await persist_partial_round_error(
+                        new_message,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_used=model_used,
+                        start_time=start_time,
+                        first_token_time=first_token_time,
+                        fallback_content=error_message,
+                    )
+                    if preserved_partial:
+                        await activate_regenerated_path()
+                    else:
+                        if new_message_id:
+                            await Message.filter(id=new_message_id).delete()
+                        await restore_original_path()
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
+
                 except Exception:
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
-                        model_id=model_id,
+                        model_used=model_used,
                         start_time=start_time,
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
@@ -4800,7 +4749,7 @@ async def regenerate_message(
                 new_message,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t("stream_timeout_exceeded"),
@@ -4820,7 +4769,7 @@ async def regenerate_message(
             if new_message:
                 new_message.content = full_content
                 new_message.reasoning_content = full_reasoning or None
-                new_message.model_used = model_id
+                new_message.model_used = model_used
                 new_message.duration_ms = int((time.time() - start_time) * 1000)
                 new_message.first_token_ms = _first_token_ms(
                     start_time, first_token_time
@@ -4846,7 +4795,7 @@ async def regenerate_message(
                 new_message,
                 content=full_content,
                 reasoning=full_reasoning,
-                model_id=model_id,
+                model_used=model_used,
                 start_time=start_time,
                 first_token_time=first_token_time,
                 fallback_content=t(GENERIC_STREAM_ERROR_KEY),

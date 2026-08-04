@@ -124,7 +124,7 @@ async def test_crud_and_listing_residual_branches():
     assert sum(call[0] == "distinct" for call in listing.calls) == 2
 
     with (
-        patch.object(models.Model, "filter", side_effect=[Query(None), default_query]),
+        patch.object(models.Model, "filter", side_effect=[default_query]),
         patch.object(models.Model, "create", AsyncMock(return_value=created)) as create,
     ):
         response = await models.create_model(
@@ -146,17 +146,6 @@ async def test_crud_and_listing_residual_branches():
 @pytest.mark.anyio
 async def test_crud_rejections_and_update_variants():
     item = make_model()
-    duplicate = ModelCreate(
-        name="Duplicate",
-        provider=ModelProvider.OPENAI,
-        model_id="gpt-4o",
-        model_type=ModelType.CHAT,
-    )
-    with (
-        patch.object(models.Model, "filter", return_value=Query(item)),
-        pytest.raises(BusinessError),
-    ):
-        await models.create_model(model_in=duplicate, current_user=SimpleNamespace())
 
     for endpoint, args in [
         (models.get_model, (uuid4(),)),
