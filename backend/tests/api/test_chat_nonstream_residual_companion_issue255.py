@@ -49,6 +49,8 @@ def _agent(ids, **overrides):
 
 def _team_model():
     model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
         provider="openai",
         model_id="gpt-4o-mini",
         capabilities={},
@@ -187,7 +189,7 @@ def _patch_common(monkeypatch, ids, agent=None, conversation=None):
         chat_endpoint, "get_prefix_path_before", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(chat_endpoint, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat_endpoint, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(
         chat_endpoint, "enqueue_session_memory_extraction", lambda *_, **__: None
     )

@@ -34,7 +34,6 @@ MAX_TRANSCRIPT_CHARS_PER_MESSAGE = 1200
 MAX_LIST_ITEMS = 6
 MAX_LIST_ITEM_CHARS = 240
 MAX_OVERVIEW_CHARS = 600
-MACRO_COMPACTION_ORIGIN = "macro_compaction"
 
 
 def _should_skip_already_extracted_snapshot(
@@ -43,11 +42,7 @@ def _should_skip_already_extracted_snapshot(
 ) -> bool:
     if not snapshot or snapshot.source_message_id != source_uuid:
         return False
-    snapshot_origin = (snapshot.snapshot_payload or {}).get("origin")
-    return (
-        snapshot.status == ConversationSessionMemoryStatus.READY
-        and snapshot_origin != MACRO_COMPACTION_ORIGIN
-    )
+    return snapshot.status == ConversationSessionMemoryStatus.READY
 
 
 async def get_ready_session_memory(
@@ -57,13 +52,25 @@ async def get_ready_session_memory(
     import asyncio
 
     try:
-        return await asyncio.wait_for(
+        snapshot = await asyncio.wait_for(
             ConversationSessionMemory.filter(
                 conversation_id=conversation_id,
                 status=ConversationSessionMemoryStatus.READY,
             ).first(),
             timeout=2.0,
         )
+        snapshot_payload = getattr(snapshot, "snapshot_payload", None)
+        if (
+            snapshot
+            and isinstance(snapshot_payload, dict)
+            and snapshot_payload.get("origin") == "macro_compaction"
+        ):
+            logger.info(
+                "Ignoring legacy macro-compaction snapshot for conversation %s",
+                conversation_id,
+            )
+            return None
+        return snapshot
     except asyncio.TimeoutError:
         logger.warning(
             "Session memory query timed out for conversation %s",
@@ -186,7 +193,7 @@ async def extract_session_memory_for_message(
             await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
         )
     model_identifier = _get_model_identifier(team_model)
-    tokenizer_model_id = team_model.model.model_id if team_model else "gpt-4"
+    tokenizer_model_id = team_model.model.model_id if team_model else None
     tokenizer_provider = team_model.model.provider if team_model else None
 
     try:
@@ -275,7 +282,7 @@ async def extract_session_memory_for_message(
 def _get_model_identifier(team_model: TeamModel | None) -> str | None:
     if not team_model or not getattr(team_model, "model", None):
         return None
-    return f"{team_model.model.provider}/{team_model.model.model_id}"
+    return str(team_model.model.id)
 
 
 def _build_extraction_messages(

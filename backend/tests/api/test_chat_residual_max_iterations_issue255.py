@@ -88,6 +88,8 @@ async def test_chat_tool_loop_terminal_message_when_max_iterations_reached(monke
     )
     conversation = SimpleNamespace(id=uuid4(), title="Existing")
     model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
         provider="openai",
         model_id="gpt-test",
         capabilities={},
@@ -178,7 +180,7 @@ async def test_chat_tool_loop_terminal_message_when_max_iterations_reached(monke
         chat_endpoint, "get_prefix_path_before", lambda message: _awaitable([])
     )
     monkeypatch.setattr(chat_endpoint, "activate_conversation_branch", _noop)
-    monkeypatch.setattr(chat_endpoint, "persist_macro_summary_best_effort", _noop)
+
     monkeypatch.setattr(
         chat_endpoint, "enqueue_session_memory_extraction", lambda *a: None
     )

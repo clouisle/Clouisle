@@ -8,7 +8,6 @@ import pytest
 from app.models.agent import ConversationSessionMemoryStatus, MessageRole
 from app.services import session_memory
 from app.services.session_memory import (
-    MACRO_COMPACTION_ORIGIN,
     _fit_summary_to_budget,
     _normalize_list,
     _parse_json_object,
@@ -28,17 +27,6 @@ class QueryResult:
         if isinstance(self.value, Exception):
             raise self.value
         return self.value
-
-
-def test_macro_compaction_snapshot_does_not_skip_extractor_refresh():
-    source_id = uuid4()
-    snapshot = SimpleNamespace(
-        source_message_id=source_id,
-        status=ConversationSessionMemoryStatus.READY,
-        snapshot_payload={"origin": MACRO_COMPACTION_ORIGIN},
-    )
-
-    assert _should_skip_already_extracted_snapshot(snapshot, source_id) is False
 
 
 def test_extracted_ready_snapshot_skips_duplicate_extraction():
@@ -63,6 +51,21 @@ async def test_get_ready_session_memory_returns_none_on_query_failure(
         session_memory.ConversationSessionMemory,
         "filter",
         lambda **kwargs: QueryResult(failure),
+    )
+
+    assert await session_memory.get_ready_session_memory(uuid4()) is None
+
+
+@pytest.mark.anyio
+async def test_get_ready_session_memory_ignores_legacy_macro_snapshot(monkeypatch):
+    snapshot = SimpleNamespace(
+        status=ConversationSessionMemoryStatus.READY,
+        snapshot_payload={"origin": "macro_compaction"},
+    )
+    monkeypatch.setattr(
+        session_memory.ConversationSessionMemory,
+        "filter",
+        lambda **kwargs: QueryResult(snapshot),
     )
 
     assert await session_memory.get_ready_session_memory(uuid4()) is None

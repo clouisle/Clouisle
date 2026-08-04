@@ -46,10 +46,10 @@ def query(result):
     [
         (
             "550e8400-e29b-41d4-a716-446655440000",
-            ("550e8400-e29b-41d4-a716-446655440000", None, None),
+            "550e8400-e29b-41d4-a716-446655440000",
         ),
-        ("openai/gpt-4o/preview", (None, "openai", "gpt-4o/preview")),
-        ("gpt-4o", (None, None, None)),
+        ("openai/gpt-4o/preview", None),
+        ("gpt-4o", None),
     ],
 )
 def test_parse_model_identifier_matrix(identifier, expected):

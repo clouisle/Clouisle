@@ -127,6 +127,8 @@ async def test_stream_retries_context_then_persists_tool_cap(monkeypatch):
         AsyncMock(
             return_value=SimpleNamespace(
                 model=SimpleNamespace(
+                    id=uuid4(),
+                    is_enabled=True,
                     provider="stub",
                     model_id="unit",
                     context_length=4096,
@@ -230,7 +232,7 @@ async def test_stream_retries_context_then_persists_tool_cap(monkeypatch):
     )
     monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.Conversation, "filter", Mock(return_value=updates))
     monkeypatch.setattr(chat.Agent, "filter", Mock(return_value=updates))

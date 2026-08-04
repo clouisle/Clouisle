@@ -119,6 +119,36 @@ async def test_visible_messages_skips_empty_optional_filters():
 
 
 @pytest.mark.anyio
+async def test_visible_messages_after_keeps_active_tool_steps():
+    conversation_id = uuid4()
+    anchor = message(conversation_id=conversation_id)
+    tool_step = message(
+        conversation_id=conversation_id,
+        round_id=uuid4(),
+        is_round_canonical=False,
+        created_at=anchor.created_at + timedelta(seconds=1),
+    )
+    follow_up = message(
+        conversation_id=conversation_id,
+        created_at=anchor.created_at + timedelta(seconds=2),
+    )
+    anchor_query = query(first=anchor)
+    tail_query = query(order_by=[anchor, tool_step, follow_up])
+
+    with patch.object(
+        branching.Message,
+        "filter",
+        side_effect=[anchor_query, tail_query],
+    ):
+        result = await branching.get_visible_conversation_messages_after(
+            conversation_id,
+            after_message_id=anchor.id,
+        )
+
+    assert result == [tool_step, follow_up]
+
+
+@pytest.mark.anyio
 async def test_last_active_canonical_message_handles_empty_and_nonempty_paths():
     last = message()
     with patch.object(

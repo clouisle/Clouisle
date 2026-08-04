@@ -956,6 +956,46 @@ async def init_conversation_session_memory_table():
     logger.info("Conversation session memory table initialization complete")
 
 
+async def init_conversation_context_checkpoint_table():
+    """Create the conversation_context_checkpoints table if it does not exist."""
+    logger.info("Initializing conversation context checkpoint table...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'conversation_context_checkpoints' AND table_schema = 'public'
+    """)
+
+    if tables:
+        logger.info("conversation_context_checkpoints table already exists")
+        return
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS conversation_context_checkpoints (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
+            covered_through_message_id UUID,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            summary_text TEXT NOT NULL DEFAULT '',
+            summary_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            token_estimate INT NOT NULL DEFAULT 0,
+            summarizer_model VARCHAR(255),
+            failure_count INT NOT NULL DEFAULT 0,
+            last_error TEXT,
+            last_summarized_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_conversation_context_checkpoints_status_updated
+        ON conversation_context_checkpoints(status, updated_at DESC)
+    """)
+
+    logger.info("Conversation context checkpoint table initialization complete")
+
+
 async def init_permission_is_system_field():
     """
     Add is_system field to permissions table if it doesn't exist.
@@ -2260,12 +2300,14 @@ async def init_embed_config():
     logger.info("Embed config migration complete")
 
 
-async def init_model_type_unique_constraint():
+async def drop_model_provider_uniqueness():
+    """Drop legacy unique constraints on models(provider, model_id[, model_type]).
+
+    The same provider/model_id may be configured multiple times (e.g., different
+    API keys or base URLs). Model identity is carried by the primary-key UUID,
+    not the provider/model_id pair.
     """
-    Update models unique constraint to include model_type.
-    This allows the same provider/model_id to be configured for multiple model types.
-    """
-    logger.info("Initializing model unique constraint with model_type...")
+    logger.info("Dropping legacy model provider uniqueness constraints...")
 
     conn = Tortoise.get_connection("default")
 
@@ -2280,49 +2322,63 @@ async def init_model_type_unique_constraint():
 
     await conn.execute_query("""
         DO $$
-        DECLARE old_constraint_name text;
+        DECLARE constraint_name text;
         BEGIN
-            SELECT c.conname
-            INTO old_constraint_name
-            FROM pg_constraint c
-            JOIN pg_class t ON t.oid = c.conrelid
-            JOIN pg_namespace n ON n.oid = t.relnamespace
-            WHERE t.relname = 'models'
-              AND n.nspname = 'public'
-              AND c.contype = 'u'
-              AND pg_get_constraintdef(c.oid) = 'UNIQUE (provider, model_id)';
-
-            IF old_constraint_name IS NOT NULL THEN
-                EXECUTE format(
-                    'ALTER TABLE models DROP CONSTRAINT %I',
-                    old_constraint_name
-                );
-            END IF;
-        END $$;
-    """)
-
-    await conn.execute_query("""
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
+            FOR constraint_name IN
+                SELECT c.conname
                 FROM pg_constraint c
                 JOIN pg_class t ON t.oid = c.conrelid
                 JOIN pg_namespace n ON n.oid = t.relnamespace
                 WHERE t.relname = 'models'
                   AND n.nspname = 'public'
                   AND c.contype = 'u'
-                  AND pg_get_constraintdef(c.oid) =
-                      'UNIQUE (provider, model_id, model_type)'
-            ) THEN
-                ALTER TABLE models
-                ADD CONSTRAINT models_provider_model_id_model_type_key
-                UNIQUE (provider, model_id, model_type);
-            END IF;
+                  AND (
+                      pg_get_constraintdef(c.oid) = 'UNIQUE (provider, model_id)'
+                      OR pg_get_constraintdef(c.oid) =
+                          'UNIQUE (provider, model_id, model_type)'
+                  )
+            LOOP
+                EXECUTE format(
+                    'ALTER TABLE models DROP CONSTRAINT %I',
+                    constraint_name
+                );
+            END LOOP;
         END $$;
     """)
 
-    logger.info("Model unique constraint migration complete")
+    logger.info("Model provider uniqueness constraints dropped")
+
+
+async def revert_channel_id_to_model_id():
+    """Rename models.channel_id back to models.model_id if needed.
+
+    A previous migration incorrectly renamed the column; this reverses it
+    so the ORM model definition (which uses ``model_id``) matches the schema.
+    """
+    logger.info("Checking for models.channel_id to revert...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'models' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("models table does not exist yet, skipping revert")
+        return
+
+    _, channel_col = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'models' AND column_name = 'channel_id'
+    """)
+
+    if not channel_col:
+        logger.info("models.channel_id not found, no revert needed")
+        return
+
+    await conn.execute_query("ALTER TABLE models RENAME COLUMN channel_id TO model_id")
+    logger.info("models.channel_id renamed back to model_id")
 
 
 async def init_kb_rerank_fields():
@@ -2465,10 +2521,10 @@ async def init_db():
         logger.warning(f"Permission is_system migration failed (may be first run): {e}")
 
     try:
-        await init_model_type_unique_constraint()
+        await drop_model_provider_uniqueness()
     except Exception as e:
         logger.warning(
-            f"Model unique constraint migration failed (may be first run): {e}"
+            f"Model provider uniqueness migration failed (may be first run): {e}"
         )
 
     try:

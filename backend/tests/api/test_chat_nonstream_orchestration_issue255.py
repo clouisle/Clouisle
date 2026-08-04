@@ -95,6 +95,8 @@ async def setup_chat(monkeypatch, *, max_iterations=3, rag_mode=RAGMode.OFF):
         AsyncMock(
             return_value=SimpleNamespace(
                 model=SimpleNamespace(
+                    id=uuid4(),
+                    is_enabled=True,
                     provider="stub",
                     model_id="unit-model",
                     capabilities={"vision": True},
@@ -138,7 +140,7 @@ async def setup_chat(monkeypatch, *, max_iterations=3, rag_mode=RAGMode.OFF):
     monkeypatch.setattr(chat.Agent, "filter", lambda **_kwargs: agent_query)
     monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat, "append_generated_images", Mock())
 
@@ -210,7 +212,7 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
     chat.activate_conversation_branch.assert_awaited_once_with(
         state.conversation.id, [user_message, assistant]
     )
-    chat.persist_macro_summary_best_effort.assert_awaited_once()
+
     chat.enqueue_session_memory_extraction.assert_called_once_with(
         state.agent, state.conversation, assistant
     )
@@ -350,4 +352,3 @@ async def test_chat_maps_provider_failure_without_final_persistence(monkeypatch)
     assert error.value.status_code == 500
     assert len(state.created) == 1
     chat.activate_conversation_branch.assert_not_awaited()
-    chat.persist_macro_summary_best_effort.assert_not_awaited()

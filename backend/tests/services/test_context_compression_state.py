@@ -19,7 +19,7 @@ async def test_is_breaker_open_handles_missing_and_threshold_counts(
 
     assert (
         await state.is_breaker_open(
-            breaker_type="legacy_compact",
+            breaker_type="session_memory_extractor",
             conversation_id="conversation-1",
             failure_threshold=threshold,
             cooldown_seconds=60,
@@ -27,7 +27,7 @@ async def test_is_breaker_open_handles_missing_and_threshold_counts(
         is expected
     )
     redis.get.assert_awaited_once_with(
-        "compression_breaker:legacy_compact:conversation-1"
+        "compression_breaker:session_memory_extractor:conversation-1"
     )
 
 
@@ -72,7 +72,7 @@ async def test_record_breaker_failure_swallows_storage_errors(monkeypatch, opera
     monkeypatch.setattr(state, "get_redis", AsyncMock(return_value=redis))
 
     await state.record_breaker_failure(
-        breaker_type="legacy_compact",
+        breaker_type="session_memory_extractor",
         conversation_id="conversation-4",
         cooldown_seconds=10,
     )
@@ -83,12 +83,12 @@ async def test_record_and_reset_are_noops_without_redis(monkeypatch):
     monkeypatch.setattr(state, "get_redis", AsyncMock(return_value=None))
 
     await state.record_breaker_failure(
-        breaker_type="legacy_compact",
+        breaker_type="session_memory_extractor",
         conversation_id="conversation-5",
         cooldown_seconds=10,
     )
     await state.reset_breaker(
-        breaker_type="legacy_compact", conversation_id="conversation-5"
+        breaker_type="session_memory_extractor", conversation_id="conversation-5"
     )
 
 
@@ -98,11 +98,11 @@ async def test_reset_breaker_deletes_persisted_count(monkeypatch):
     monkeypatch.setattr(state, "get_redis", AsyncMock(return_value=redis))
 
     await state.reset_breaker(
-        breaker_type="legacy_compact", conversation_id="conversation-6"
+        breaker_type="session_memory_extractor", conversation_id="conversation-6"
     )
 
     redis.delete.assert_awaited_once_with(
-        "compression_breaker:legacy_compact:conversation-6"
+        "compression_breaker:session_memory_extractor:conversation-6"
     )
 
 
@@ -113,5 +113,5 @@ async def test_reset_breaker_swallows_storage_error(monkeypatch):
     monkeypatch.setattr(state, "get_redis", AsyncMock(return_value=redis))
 
     await state.reset_breaker(
-        breaker_type="legacy_compact", conversation_id="conversation-7"
+        breaker_type="session_memory_extractor", conversation_id="conversation-7"
     )

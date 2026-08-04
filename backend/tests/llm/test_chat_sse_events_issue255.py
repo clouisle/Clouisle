@@ -168,6 +168,31 @@ def test_compression_end_omits_optional_note_fragments(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("actions", "expected_note"),
+    [
+        (["checkpoint_summary"], "generated a model context checkpoint"),
+        (["macro_summary"], "applied deterministic macro-summary fallback"),
+    ],
+)
+def test_compression_events_identify_summary_strategy(
+    monkeypatch, actions, expected_note
+):
+    monkeypatch.setattr(
+        "app.services.chat_context.get_context_compression_config", lambda _agent: {}
+    )
+
+    _, end = build_compression_events(
+        agent=object(),
+        compression=compression(actions=actions),
+        trigger="token_pressure",
+    )
+
+    assert end is not None
+    _, payload = parse_sse(end)
+    assert expected_note in payload["note"]
+
+
 def test_final_and_error_event_type_contracts():
     assert SSEEventType.MESSAGE_END == "message_end"
     assert SSEEventType.ERROR == "error"

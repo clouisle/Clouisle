@@ -22,20 +22,17 @@ from app.models.model import ModelProvider, ModelType
     ("identifier", "expected"),
     [
         (str(uuid4()), "uuid"),
-        ("openai/gpt-4o", "handle"),
+        ("openai/gpt-4o", "invalid"),
         ("gpt-4o", "invalid"),
     ],
 )
-def test_parse_model_identifier_supports_only_uuid_and_handle(identifier, expected):
-    parsed_uuid, provider, model_id = ModelManager()._parse_model_identifier(identifier)
+def test_parse_model_identifier_accepts_only_uuid(identifier, expected):
+    result = ModelManager()._parse_model_identifier(identifier)
 
     if expected == "uuid":
-        assert parsed_uuid == identifier
-        assert provider is model_id is None
-    elif expected == "handle":
-        assert (parsed_uuid, provider, model_id) == (None, "openai", "gpt-4o")
+        assert result == identifier
     else:
-        assert (parsed_uuid, provider, model_id) == (None, None, None)
+        assert result is None
 
 
 @pytest.mark.asyncio

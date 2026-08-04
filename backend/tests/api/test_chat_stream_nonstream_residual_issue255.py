@@ -91,6 +91,8 @@ def _agent(**overrides):
 def _team_model():
     return SimpleNamespace(
         model=SimpleNamespace(
+            id=uuid4(),
+            is_enabled=True,
             provider="test-provider",
             model_id="test-model",
             context_length=1000,
@@ -149,7 +151,7 @@ def _install_common(monkeypatch, agent, conversation, user):
         chat_module, "get_prefix_path_before", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(chat_module, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat_module, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(
         chat_module, "enqueue_session_memory_extraction", lambda *a, **k: None
     )

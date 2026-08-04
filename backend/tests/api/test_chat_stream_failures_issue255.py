@@ -18,6 +18,20 @@ from app.schemas.agent import ChatRequest
 from app.schemas.response import ResponseCode
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 def _user():
     return SimpleNamespace(id=uuid4(), is_active=True, locale="en")
 
@@ -84,7 +98,11 @@ async def _start_stream(monkeypatch):
     monkeypatch.setattr(
         chat, "build_file_content_for_context", AsyncMock(return_value=(None, None))
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat, "get_visible_conversation_messages", AsyncMock(return_value=[])
     )

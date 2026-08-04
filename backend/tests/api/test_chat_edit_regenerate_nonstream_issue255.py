@@ -301,6 +301,8 @@ async def test_nonstream_model_selection_reaches_sandbox_boundary(has_team_model
     conversation = SimpleNamespace(id=uuid4())
     user_message = SimpleNamespace(id=uuid4(), file_urls=None)
     model = SimpleNamespace(
+        id=uuid4(),
+        is_enabled=True,
         provider="provider",
         model_id="model",
         capabilities={"vision": True},
@@ -308,6 +310,16 @@ async def test_nonstream_model_selection_reaches_sandbox_boundary(has_team_model
         max_output_tokens=512,
     )
     team_model = SimpleNamespace(model=model) if has_team_model else None
+    chat_resolution = SimpleNamespace(
+        model=model,
+        team_model=team_model,
+        model_id=str(model.id),
+        tokenizer_model_id="model",
+        provider="provider",
+        context_length=4096,
+        max_output_tokens=512,
+        supports_vision=True,
+    )
 
     with (
         patch.object(chat_module.deps, "check_api_key_agent_access", new=AsyncMock()),
@@ -329,7 +341,9 @@ async def test_nonstream_model_selection_reaches_sandbox_boundary(has_team_model
         ),
         patch.object(chat_module, "update_message_stats", new=AsyncMock()),
         patch.object(
-            chat_module, "get_agent_chat_model", new=AsyncMock(return_value=team_model)
+            chat_module,
+            "resolve_agent_chat_model",
+            new=AsyncMock(return_value=chat_resolution),
         ),
         patch.object(
             chat_module, "get_streaming_config", return_value={"tool_timeouts": {}}

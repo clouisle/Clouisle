@@ -195,8 +195,10 @@ def test_blocking_pressure_builds_macro_summary(monkeypatch):
     assert meta.stage == "macro"
     assert meta.summary_turns == 3
     assert meta.actions == ["trim_reasoning", "macro_summary"]
-    assert chat_context.extract_macro_summary_text(compacted).startswith(
-        chat_context.MACRO_SUMMARY_PREFIX
+    assert any(
+        message.role == MessageRole.ASSISTANT
+        and str(message.content).startswith(chat_context.MACRO_SUMMARY_PREFIX)
+        for message in compacted
     )
     assert compacted[-2].content == "question 3"
 
@@ -252,6 +254,7 @@ async def test_emergency_fallback_keeps_system_and_protected_round(monkeypatch):
         {
             "micro_compaction_enabled": False,
             "macro_compaction_enabled": False,
+            "checkpoint_summary_enabled": False,
             "output_token_reserve": 10,
             "safety_margin_tokens": 10,
         }
@@ -308,6 +311,7 @@ async def test_emergency_fallback_raises_when_current_round_cannot_fit(monkeypat
         {
             "micro_compaction_enabled": False,
             "macro_compaction_enabled": False,
+            "checkpoint_summary_enabled": False,
             "output_token_reserve": 10,
             "safety_margin_tokens": 10,
         }

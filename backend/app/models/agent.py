@@ -308,6 +308,15 @@ class ConversationSessionMemoryStatus(str, Enum):
     STALE = "stale"
 
 
+class ConversationContextCheckpointStatus(str, Enum):
+    """Persistent context-checkpoint status."""
+
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+    STALE = "stale"
+
+
 class Conversation(models.Model):
     """
     Conversation session.
@@ -353,6 +362,7 @@ class Conversation(models.Model):
     # Relations
     messages: fields.ReverseRelation["Message"]
     session_memory_snapshots: fields.ReverseRelation["ConversationSessionMemory"]
+    context_checkpoints: fields.ReverseRelation["ConversationContextCheckpoint"]
 
     class Meta:
         table = "conversations"
@@ -541,3 +551,65 @@ class ConversationSessionMemory(models.Model):
 
     def __str__(self):
         return f"ConversationSessionMemory {self.conversation_id} ({self.status})"
+
+
+class ConversationContextCheckpoint(models.Model):
+    """Active-branch context summary with an exact message watermark."""
+
+    id = fields.UUIDField(primary_key=True)
+
+    conversation: fields.ForeignKeyRelation[Conversation] = fields.ForeignKeyField(
+        "models.Conversation",
+        related_name="context_checkpoints",
+        on_delete=fields.CASCADE,
+        unique=True,
+    )
+    conversation_id: UUID  # type: ignore[assignment]
+
+    covered_through_message_id = fields.UUIDField(
+        null=True,
+        description="Last active-branch message represented by this summary",
+    )
+    status = fields.CharEnumField(
+        ConversationContextCheckpointStatus,
+        default=ConversationContextCheckpointStatus.PENDING,
+        description="Checkpoint generation status",
+    )
+    summary_text = fields.TextField(
+        default="",
+        description="Rendered summary injected into model context",
+    )
+    summary_payload: dict = fields.JSONField(
+        default=dict,
+        description="Structured model-generated checkpoint payload",
+    )  # type: ignore[assignment]
+    token_estimate = fields.IntField(
+        default=0,
+        description="Estimated token count of the rendered summary",
+    )
+    summarizer_model = fields.CharField(
+        max_length=255,
+        null=True,
+        description="Model identifier used to generate the checkpoint",
+    )
+    failure_count = fields.IntField(
+        default=0,
+        description="Consecutive checkpoint generation failures",
+    )
+    last_error = fields.TextField(
+        null=True,
+        description="Last checkpoint generation error",
+    )
+    last_summarized_at = fields.DatetimeField(
+        null=True,
+        description="When this checkpoint was most recently generated",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "conversation_context_checkpoints"
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"ConversationContextCheckpoint {self.conversation_id} ({self.status})"

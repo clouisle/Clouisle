@@ -140,6 +140,9 @@ async def setup_edit(monkeypatch, *, rag_mode=RAGMode.OFF):
         AsyncMock(
             return_value=SimpleNamespace(
                 model=SimpleNamespace(
+                    id=uuid4(),
+                    is_enabled=True,
+                    capabilities={},
                     provider="stub",
                     model_id="unit-model",
                     context_length=8192,
@@ -161,7 +164,7 @@ async def setup_edit(monkeypatch, *, rag_mode=RAGMode.OFF):
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(chat, "now_utc", lambda: "completed-at")
@@ -254,7 +257,7 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
     assert state.edited.images == state.original.images
     assert state.assistant.content == "new answer"
     assert state.assistant.reasoning_content == "thinking"
-    assert state.assistant.model_used == "stub/unit-model"
+    assert state.assistant.model_used  # UUID of the resolved model
     assert state.assistant.round_status == MessageRoundStatus.COMPLETED
     assert state.assistant.created_at == "completed-at"
     assert state.assistant.token_usage == {"prompt": 3, "completion": 2}
@@ -263,12 +266,7 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
     chat.stale_session_memory_if_source_outside_active_branch.assert_awaited_once_with(
         state.conversation.id
     )
-    chat.persist_macro_summary_best_effort.assert_awaited_once_with(
-        conversation=state.conversation,
-        source_message_id=state.assistant.id,
-        messages=prepared.messages,
-        model_id="stub/unit-model",
-    )
+
     chat.enqueue_session_memory_extraction.assert_called_once_with(
         state.agent, state.conversation, state.assistant
     )

@@ -75,6 +75,8 @@ def patched_chat_stream(monkeypatch):
     conversation = SimpleNamespace(id=uuid4(), title=None)
     team_model = SimpleNamespace(
         model=SimpleNamespace(
+            id=uuid4(),
+            is_enabled=True,
             provider="test",
             model_id="model",
             context_length=4096,
@@ -156,7 +158,7 @@ def patched_chat_stream(monkeypatch):
     )
     monkeypatch.setattr(chat_endpoint, "get_prefix_path_before", AsyncReturn([]))
     monkeypatch.setattr(chat_endpoint, "activate_conversation_branch", noop)
-    monkeypatch.setattr(chat_endpoint, "persist_macro_summary_best_effort", noop)
+
     monkeypatch.setattr(
         chat_endpoint, "enqueue_session_memory_extraction", lambda *a, **k: None
     )

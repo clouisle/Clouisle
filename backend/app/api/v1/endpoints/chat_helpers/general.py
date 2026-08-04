@@ -204,6 +204,12 @@ def should_retry_context_length(agent: "Agent") -> bool:
 def get_compression_trigger(compression: Any) -> str:
     """Determine compression trigger type based on compression state."""
     pressure_level = getattr(compression, "pressure_level", None)
+    actions = getattr(compression, "actions", None) or []
+    if "checkpoint_summary" in actions and pressure_level not in {
+        "blocking",
+        "over_budget",
+    }:
+        return "proactive_threshold"
     if (
         pressure_level in {"blocking", "over_budget"}
         or getattr(compression, "stage", None) == "macro"

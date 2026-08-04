@@ -7,7 +7,7 @@ from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
-BreakerType = Literal["session_memory_extractor", "legacy_compact"]
+BreakerType = Literal["session_memory_extractor"]
 
 
 async def is_breaker_open(

@@ -222,6 +222,7 @@ async def test_prepare_model_context_raises_when_emergency_fallback_is_still_too
                     "safety_margin_tokens": 1,
                     "recent_raw_turns": 1,
                     "recent_tool_turns": 0,
+                    "checkpoint_summary_enabled": False,
                 }
             ),
             conversation=_conversation(),

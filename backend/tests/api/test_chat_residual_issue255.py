@@ -114,6 +114,8 @@ def chat_harness(monkeypatch):
     user = SimpleNamespace(id=uuid4(), is_active=True, locale="en", is_superuser=False)
     team_model = SimpleNamespace(
         model=SimpleNamespace(
+            id=uuid4(),
+            is_enabled=True,
             provider="fake",
             model_id="chat",
             context_length=4096,
@@ -185,9 +187,7 @@ def chat_harness(monkeypatch):
     monkeypatch.setattr(chat_endpoint, "append_generated_images", lambda *a, **k: None)
     monkeypatch.setattr(chat_endpoint, "get_prefix_path_before", _AsyncCallable([]))
     monkeypatch.setattr(chat_endpoint, "activate_conversation_branch", _AsyncCallable())
-    monkeypatch.setattr(
-        chat_endpoint, "persist_macro_summary_best_effort", _AsyncCallable()
-    )
+
     monkeypatch.setattr(
         chat_endpoint, "enqueue_session_memory_extraction", lambda *a: None
     )

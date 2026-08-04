@@ -55,7 +55,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
             "tools_config": [{"type": "builtin", "name": "search"}],
             "file_upload_config": {"parser": {"type": "builtin"}},
             "memory_config": {"importance_threshold": "high"},
-            "context_compression_config": {"compaction_policy": "hard_budget_only"},
+            "context_compression_config": {"checkpoint_target_ratio": 0.6},
             "image_generation_config": {"allowed_providers": ["image-provider"]},
             "video_generation_config": {"default_duration": 8},
             "knowledge_base_configs": [{"knowledge_base_id": str(knowledge_base_id)}],
@@ -73,7 +73,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.tools_config == [ToolConfig(type="builtin", name="search")]
     assert agent.file_upload_config.max_files == 5
     assert agent.memory_config.max_memories_per_retrieval == 10
-    assert agent.context_compression_config.compaction_policy == "hard_budget_only"
+    assert agent.context_compression_config.checkpoint_target_ratio == 0.6
     assert agent.image_generation_config.default_width == 1024
     assert agent.video_generation_config.default_duration == 8
     assert agent.knowledge_base_configs[0].knowledge_base_id == knowledge_base_id
@@ -100,7 +100,10 @@ def test_mutable_defaults_are_not_shared():
         (MemoryConfig, {"importance_threshold": "urgent"}),
         (ContextCompressionConfig, {"recent_raw_turns": 0}),
         (ContextCompressionConfig, {"warning_ratio": 1.1}),
-        (ContextCompressionConfig, {"compaction_policy": "always"}),
+        (
+            ContextCompressionConfig,
+            {"checkpoint_target_ratio": 0.8, "auto_compact_trigger_ratio": 0.8},
+        ),
         (ContextCompressionConfig, {"retention_strategy": "oldest_first"}),
         (ImageGenerationConfig, {"default_width": 255}),
         (ImageGenerationConfig, {"max_images": 11}),

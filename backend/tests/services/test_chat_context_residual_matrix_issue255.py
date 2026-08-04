@@ -194,7 +194,6 @@ def test_tool_call_building_and_turn_summaries_cover_role_matrix():
         "Conversation turn preserved in compact summary."
     )
     assert chat_context._build_macro_summary_message([]) is None
-    assert chat_context.extract_macro_summary_text(block) is None
 
 
 def test_budget_pressure_and_reasoning_compaction_matrix():
@@ -285,15 +284,6 @@ async def test_file_content_builder_skips_empty_and_unchanged_metadata(monkeypat
 
 
 @pytest.mark.anyio
-async def test_persist_snapshot_skips_blank_summary():
-    with patch("app.models.agent.ConversationSessionMemory.filter") as filter_mock:
-        await chat_context.persist_compacted_context_snapshot(
-            conversation=_conversation(), source_message_id=uuid4(), summary_text="  "
-        )
-    filter_mock.assert_not_called()
-
-
-@pytest.mark.anyio
 async def test_retry_prepare_model_context_enables_aggressive_mode():
     prepared = MagicMock()
     with patch(
@@ -358,6 +348,7 @@ async def test_emergency_fallback_raises_when_protected_context_still_exceeds_bu
                 context_compression_config={
                     "output_token_reserve": 1,
                     "safety_margin_tokens": 1,
+                    "checkpoint_summary_enabled": False,
                 }
             ),
             conversation=_conversation(),

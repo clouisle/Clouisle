@@ -198,7 +198,7 @@ async def test_extraction_skips_duplicate_and_outdated_tasks(monkeypatch):
     outdated = SimpleNamespace(
         source_message_id=newer_id,
         status=ConversationSessionMemoryStatus.READY,
-        snapshot_payload={"origin": session_memory.MACRO_COMPACTION_ORIGIN},
+        snapshot_payload={},
     )
 
     monkeypatch.setattr(
@@ -399,10 +399,11 @@ async def test_extraction_records_model_failure(monkeypatch, summary, expected_s
 def test_payload_transcript_and_text_helpers_cover_edge_branches(monkeypatch):
     assert session_memory._get_model_identifier(None) is None
     assert session_memory._get_model_identifier(SimpleNamespace(model=None)) is None
+    model_uuid = uuid4()
     team_model = SimpleNamespace(
-        model=SimpleNamespace(provider="openai", model_id="gpt-4o")
+        model=SimpleNamespace(id=model_uuid, provider="openai", model_id="gpt-4o")
     )
-    assert session_memory._get_model_identifier(team_model) == "openai/gpt-4o"
+    assert session_memory._get_model_identifier(team_model) == str(model_uuid)
 
     assert session_memory._parse_json_object(None) == {}
     assert session_memory._parse_json_object('```json\n{"overview": "ok"}\n```') == {

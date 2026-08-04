@@ -15,6 +15,23 @@ from app.schemas.agent import ChatRequest, RegenerateRequest
 from app.schemas.response import BusinessError, ResponseCode
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class Query:
     def __init__(self, result=None):
         self.result = result
@@ -100,17 +117,6 @@ async def test_round_model_stats_and_macro_helpers_cover_empty_boundaries(monkey
     agent.model_id = None
     assert await chat.get_model_identifier(agent) is None
     assert await chat.get_agent_chat_model(agent) is None
-
-    monkeypatch.setattr(chat, "extract_macro_summary_text", lambda _messages: None)
-    persist = AsyncMock()
-    monkeypatch.setattr(chat, "persist_compacted_context_snapshot", persist)
-    await chat.persist_macro_summary_best_effort(
-        conversation=conversation,
-        source_message_id=uuid4(),
-        messages=[],
-        model_id=None,
-    )
-    persist.assert_not_awaited()
 
     assert not await chat.round_has_persisted_trace(None)
     assert not await chat.round_has_persisted_trace(SimpleNamespace(round_id=None))
@@ -216,7 +222,11 @@ async def setup_regeneration(monkeypatch):
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
     monkeypatch.setattr(
@@ -229,7 +239,7 @@ async def setup_regeneration(monkeypatch):
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
 
     response = await chat.regenerate_message(
@@ -455,7 +465,11 @@ async def test_chat_stream_auto_rag_emits_context(monkeypatch):
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
     prepared = SimpleNamespace(
@@ -481,7 +495,7 @@ async def test_chat_stream_auto_rag_emits_context(monkeypatch):
     monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.Conversation, "filter", Mock(return_value=Query()))
     monkeypatch.setattr(chat.Agent, "filter", Mock(return_value=Query()))

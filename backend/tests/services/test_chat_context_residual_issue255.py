@@ -176,7 +176,7 @@ async def test_session_memory_compaction_keeps_media_and_recent_tool_turns(monke
 
     contents = [message.content for message in compacted]
     assert did_compact is True
-    assert protected == set()
+    assert protected == {1}
     assert "SESSION MEMORY SUMMARY" in contents
     assert "old user" not in contents
     assert "media [image]" in contents
@@ -344,6 +344,7 @@ async def test_prepare_model_context_raises_when_emergency_fallback_still_exceed
                     "safety_margin_tokens": 1,
                     "micro_compaction_enabled": False,
                     "macro_compaction_enabled": True,
+                    "checkpoint_summary_enabled": False,
                 }
             ),
             conversation=_conversation(),

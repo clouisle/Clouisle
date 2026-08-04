@@ -13,6 +13,23 @@ from app.schemas.agent import ChatRequest
 from app.schemas.response import BusinessError
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class UpdateQuery:
     def __init__(self):
         self.update = AsyncMock(return_value=1)
@@ -108,7 +125,11 @@ async def setup_chat(monkeypatch, *, max_iterations=2, history_override=None):
     )
     monkeypatch.setattr(chat.Message, "create", AsyncMock(side_effect=create_message))
     monkeypatch.setattr(chat, "update_message_stats", AsyncMock())
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat, "get_streaming_config", lambda _agent: {"tool_timeouts": {}}
     )
@@ -133,7 +154,7 @@ async def setup_chat(monkeypatch, *, max_iterations=2, history_override=None):
     monkeypatch.setattr(chat.Agent, "filter", Mock(return_value=UpdateQuery()))
     monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
 
     request = ChatRequest(message="hello", history_override=history_override)

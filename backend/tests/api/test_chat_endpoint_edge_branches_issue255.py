@@ -9,6 +9,23 @@ from app.schemas.agent import ChatRequest
 from app.schemas.response import BusinessError, ResponseCode
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class _AsyncStream:
     def __init__(self, chunks):
         self._chunks = list(chunks)
@@ -90,7 +107,9 @@ def chat_env(monkeypatch):
     monkeypatch.setattr(chat_endpoint.Message, "create", create_message)
     monkeypatch.setattr(chat_endpoint, "update_message_stats", AsyncMock())
     monkeypatch.setattr(
-        chat_endpoint, "get_agent_chat_model", AsyncMock(return_value=None)
+        chat_endpoint,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
     )
     monkeypatch.setattr(
         chat_endpoint,
@@ -138,7 +157,7 @@ def chat_env(monkeypatch):
         chat_endpoint, "get_prefix_path_before", AsyncMock(return_value=[])
     )
     monkeypatch.setattr(chat_endpoint, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat_endpoint, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(
         chat_endpoint, "enqueue_session_memory_extraction", lambda *args: None
     )

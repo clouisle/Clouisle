@@ -65,8 +65,12 @@ async def test_model_utils_handle_unset_missing_and_capable_models(monkeypatch):
         "supports_vision": False
     }
 
+    model_uuid = uuid4()
     model = SimpleNamespace(
-        provider="acme", model_id="vision-1", capabilities={"vision": 1}
+        id=model_uuid,
+        provider="acme",
+        model_id="vision-1",
+        capabilities={"vision": 1},
     )
     monkeypatch.setattr(
         model_utils.TeamModel,
@@ -75,7 +79,7 @@ async def test_model_utils_handle_unset_missing_and_capable_models(monkeypatch):
     )
     agent = SimpleNamespace(model_id=uuid4())
 
-    assert await model_utils.get_model_identifier(agent) == "acme/vision-1"
+    assert await model_utils.get_model_identifier(agent) == str(model_uuid)
     assert await model_utils.get_model_capabilities(agent) == {"supports_vision": True}
 
     monkeypatch.setattr(model_utils.TeamModel, "filter", lambda **_kwargs: Query(None))

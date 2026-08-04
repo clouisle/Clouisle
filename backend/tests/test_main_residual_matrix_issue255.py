@@ -141,6 +141,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "init_message_round_fields",
         "init_message_branch_parent_field",
         "init_conversation_session_memory_table",
+        "init_conversation_context_checkpoint_table",
         "init_agent_user_input_request",
         "init_agent_hide_tool_calls_field",
         "init_agent_hide_message_actions_reasoning_fields",

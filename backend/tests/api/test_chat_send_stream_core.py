@@ -83,6 +83,8 @@ def core_chat(monkeypatch):
     )
     team_model = SimpleNamespace(
         model=SimpleNamespace(
+            id=uuid4(),
+            is_enabled=True,
             provider="mock",
             model_id="unit",
             capabilities={},
@@ -139,7 +141,7 @@ def core_chat(monkeypatch):
     )
     monkeypatch.setattr(chat_api, "get_prefix_path_before", AsyncMock(return_value=[]))
     monkeypatch.setattr(chat_api, "activate_conversation_branch", AsyncMock())
-    monkeypatch.setattr(chat_api, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat_api, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(
         chat_api.Conversation, "filter", Mock(return_value=update_query)
@@ -194,7 +196,6 @@ async def test_chat_success_persists_round_and_usage(core_chat, monkeypatch):
     assert assistant_message.token_usage == {"prompt": 7, "completion": 3}
     assert assistant_message.round_status == MessageRoundStatus.COMPLETED
     chat_api.activate_conversation_branch.assert_awaited_once()
-    chat_api.persist_macro_summary_best_effort.assert_awaited_once()
 
 
 @pytest.mark.asyncio

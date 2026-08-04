@@ -19,6 +19,20 @@ from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import EditMessageRequest
 
 
+def _fake_chat_resolution():
+    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
+    return SimpleNamespace(
+        model=SimpleNamespace(id=uuid4()),
+        team_model=SimpleNamespace(),
+        model_id=str(uuid4()),
+        tokenizer_model_id="stub-model",
+        provider="stub",
+        context_length=8192,
+        max_output_tokens=1024,
+        supports_vision=False,
+    )
+
+
 class Query:
     def __init__(self, value=None, *, count=0, exists=True):
         self.value = value
@@ -138,7 +152,11 @@ async def setup_edit(monkeypatch, *, max_iterations=2, active=True):
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _inventory: text
     )
-    monkeypatch.setattr(chat, "get_agent_chat_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        chat,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=_fake_chat_resolution()),
+    )
     monkeypatch.setattr(
         chat,
         "get_agent_tools",
@@ -165,7 +183,7 @@ async def setup_edit(monkeypatch, *, max_iterations=2, active=True):
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat, "now_utc", lambda: "now")
     monkeypatch.setattr(chat, "t", lambda key, **_kwargs: key)

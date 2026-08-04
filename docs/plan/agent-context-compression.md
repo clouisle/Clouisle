@@ -94,12 +94,9 @@
 - 使用更激进参数
 - 最多只重试一次
 
-#### Stage D: Phase 2 Session Memory / SM Compact
+#### Stage D: Semantic memory and model checkpoints
 
-在 selective micro 与 legacy macro 之间插入结构化 session memory compact：
-
-- 先做 request-time ephemeral memory compact
-- 后续再考虑持久化 extractor / snapshot
+`ConversationSessionMemory` retains long-lived semantic context. At high token pressure, a model-generated context checkpoint records an active-branch watermark and replaces only the covered history; deterministic macro compaction remains request-local fallback.
 
 ## Implementation Plan
 
@@ -117,7 +114,6 @@
     - `warning_ratio`
     - `auto_compact_trigger_ratio`
     - `blocking_ratio`
-    - `compaction_policy`
     - `macro_on_trigger`
     - `retention_strategy`
   - 在 `backend/app/services/chat_context.py` 中新增：

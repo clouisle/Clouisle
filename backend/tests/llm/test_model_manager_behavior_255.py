@@ -25,29 +25,30 @@ from app.services.usage_tracker import QuotaExceededError
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [
-        (str(uuid4()), ("uuid", None, None)),
-        ("openai/gpt-4o", (None, "openai", "gpt-4o")),
-        ("openai/", (None, "openai", "")),
-        ("gpt-4o", (None, None, None)),
+        (str(uuid4()), "uuid"),
+        ("openai/gpt-4o", "invalid"),
+        ("openai/", "invalid"),
+        ("gpt-4o", "invalid"),
     ],
 )
-def test_parse_model_identifier_accepts_only_uuid_or_provider_handle(
-    identifier: str, expected: tuple[str | None, str | None, str | None]
+def test_parse_model_identifier_accepts_only_uuid(
+    identifier: str, expected: str
 ) -> None:
     parsed = ModelManager()._parse_model_identifier(identifier)
 
-    if expected[0] == "uuid":
-        assert parsed == (identifier, None, None)
+    if expected == "uuid":
+        assert parsed == identifier
     else:
-        assert parsed == expected
+        assert parsed is None
 
 
 @pytest.mark.anyio
-async def test_get_model_config_looks_up_handle_and_rejects_disabled_model(
+async def test_get_model_config_looks_up_uuid_and_rejects_disabled_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    model_uuid = str(uuid4())
     model = SimpleNamespace(
-        id=uuid4(),
+        id=model_uuid,
         name="GPT-4o",
         is_enabled=False,
     )
@@ -56,12 +57,10 @@ async def test_get_model_config_looks_up_handle_and_rejects_disabled_model(
     monkeypatch.setattr(manager_module.Model, "filter", filter_models)
 
     with pytest.raises(ModelDisabledError) as exc_info:
-        await ModelManager()._get_model_config("openai/gpt-4o", ModelType.CHAT)
+        await ModelManager()._get_model_config(model_uuid, ModelType.CHAT)
 
-    assert exc_info.value.model == str(model.id)
-    filter_models.assert_called_once_with(
-        provider="openai", model_id="gpt-4o", model_type=ModelType.CHAT
-    )
+    assert exc_info.value.model == model_uuid
+    filter_models.assert_called_once_with(id=model_uuid)
     query.first.assert_awaited_once_with()
 
 

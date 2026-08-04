@@ -97,6 +97,9 @@ async def setup_regeneration(monkeypatch):
         AsyncMock(
             return_value=SimpleNamespace(
                 model=SimpleNamespace(
+                    id=uuid4(),
+                    is_enabled=True,
+                    capabilities={},
                     provider="stub",
                     model_id="unit-model",
                     context_length=8192,
@@ -122,7 +125,7 @@ async def setup_regeneration(monkeypatch):
         "stale_session_memory_if_source_outside_active_branch",
         AsyncMock(),
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat, "now_utc", lambda: "completed-at")
 
@@ -192,7 +195,7 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
     assert start["version_number"] == 3
     assert state.created.content == "new answer"
     assert state.created.reasoning_content == "thinking"
-    assert state.created.model_used == "stub/unit-model"
+    assert state.created.model_used  # UUID of the resolved model
     assert state.created.version_number == 3
     assert state.created.round_status == MessageRoundStatus.COMPLETED
     assert state.created.created_at == "completed-at"
@@ -204,12 +207,7 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
     chat.stale_session_memory_if_source_outside_active_branch.assert_awaited_once_with(
         state.conversation.id
     )
-    chat.persist_macro_summary_best_effort.assert_awaited_once_with(
-        conversation=state.conversation,
-        source_message_id=state.created.id,
-        messages=prepared.messages,
-        model_id="stub/unit-model",
-    )
+
     chat.enqueue_session_memory_extraction.assert_called_once_with(
         state.agent, state.conversation, state.created
     )

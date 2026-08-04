@@ -4,9 +4,8 @@ Clouisle LLM 调用模块
 提供统一的 LLM 调用接口。
 
 模型标识符格式:
-    所有方法的 model_id 参数支持以下格式：
-    - UUID: 数据库主键 (e.g., "550e8400-e29b-41d4-a716-446655440000")
-    - 句柄: "provider/model_id" (e.g., "openai/gpt-4o", "anthropic/claude-3-opus")
+    所有方法的 model_id 参数只接受以下形式：
+    - UUID: 模型配置主键 (e.g., "550e8400-e29b-41d4-a716-446655440000")
     - None: 使用该类型的默认模型
 
 使用示例:
@@ -17,10 +16,10 @@ Clouisle LLM 调用模块
         messages=[{"role": "user", "content": "Hello!"}]
     )
 
-    # Chat 调用 (指定模型句柄)
+    # Chat 调用 (指定模型 UUID)
     response = await model_manager.chat(
         messages=[{"role": "user", "content": "Hello!"}],
-        model_id="openai/gpt-4o"
+        model_id="550e8400-e29b-41d4-a716-446655440000"
     )
 
     # 流式调用
@@ -36,14 +35,8 @@ Clouisle LLM 调用模块
     # 视频生成
     video_task = await model_manager.generate_video({"prompt": "A cinematic flying car"})
 
-    # TTS
-    audio = await model_manager.text_to_speech({"text": "Hello!"})
-
-    # STT
-    text = await model_manager.speech_to_text({"audio": {...}})
-
-    # 获取 LangChain 原生模型 (用于 LangGraph 等高级场景)
-    chat_model = await model_manager.get_chat_model("anthropic/claude-3-opus")
+    # 获取模型
+    chat_model = await model_manager.get_chat_model()
 """
 
 from .manager import model_manager, ModelManager

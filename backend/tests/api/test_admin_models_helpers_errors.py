@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
@@ -160,8 +161,30 @@ def test_api_key_requirement_depends_on_provider(provider, required):
 
 
 @pytest.mark.anyio
-async def test_create_model_rejects_duplicate_with_mocked_query():
-    query = SimpleNamespace(first=AsyncMock(return_value=SimpleNamespace()))
+async def test_create_model_allows_duplicate_provider_model_id():
+    """Same provider/model_id may be configured multiple times."""
+    created = SimpleNamespace(
+        id=uuid4(),
+        name="Duplicate",
+        provider="openai",
+        model_id="duplicate-model",
+        model_type="chat",
+        base_url=None,
+        api_key=None,
+        has_api_key=False,
+        context_length=None,
+        max_output_tokens=None,
+        input_price=None,
+        output_price=None,
+        default_params=None,
+        capabilities=None,
+        config=None,
+        is_enabled=True,
+        is_default=False,
+        sort_order=0,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
     model_in = ModelCreate(
         name="Duplicate",
         provider=ModelProvider.OPENAI,
@@ -169,14 +192,12 @@ async def test_create_model_rejects_duplicate_with_mocked_query():
         model_type=ModelType.CHAT,
     )
 
-    with patch.object(models_endpoint.Model, "filter", return_value=query):
-        with pytest.raises(BusinessError) as exc_info:
-            await models_endpoint.create_model(
-                model_in=model_in, current_user=SimpleNamespace()
-            )
+    with patch.object(models_endpoint.Model, "create", AsyncMock(return_value=created)):
+        response = await models_endpoint.create_model(
+            model_in=model_in, current_user=SimpleNamespace()
+        )
 
-    assert exc_info.value.code == ResponseCode.ALREADY_EXISTS
-    assert exc_info.value.msg_key == "model_already_exists"
+    assert response["data"].id == created.id
 
 
 @pytest.mark.parametrize(

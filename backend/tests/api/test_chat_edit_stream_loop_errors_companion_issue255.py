@@ -134,6 +134,9 @@ async def setup_edit(monkeypatch):
         AsyncMock(
             return_value=SimpleNamespace(
                 model=SimpleNamespace(
+                    id=uuid4(),
+                    is_enabled=True,
+                    capabilities={},
                     provider="stub",
                     model_id="unit-model",
                     context_length=8192,
@@ -148,7 +151,7 @@ async def setup_edit(monkeypatch):
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
     )
-    monkeypatch.setattr(chat, "persist_macro_summary_best_effort", AsyncMock())
+
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
     monkeypatch.setattr(chat.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(chat, "now_utc", lambda: "now")

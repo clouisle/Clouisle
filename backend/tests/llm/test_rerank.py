@@ -205,26 +205,21 @@ class TestOpenAICompatibleRerankAdapter:
 
 
 class TestModelManagerModelLookup:
-    def test_get_model_config_filters_handle_by_model_type(self):
+    def test_get_model_config_filters_by_uuid(self):
         manager = ModelManager()
+        model_uuid = "550e8400-e29b-41d4-a716-446655440000"
         fake_model = SimpleNamespace(
-            id="model-1",
+            id=model_uuid,
             name="Rerank Model",
             is_enabled=True,
         )
         query = SimpleNamespace(first=AsyncMock(return_value=fake_model))
 
         with patch("app.llm.manager.Model.filter", return_value=query) as mock_filter:
-            model = asyncio.run(
-                manager._get_model_config("openai/gpt-4o-mini", ModelType.RERANK)
-            )
+            model = asyncio.run(manager._get_model_config(model_uuid, ModelType.RERANK))
 
         assert model is fake_model
-        mock_filter.assert_called_once_with(
-            provider="openai",
-            model_id="gpt-4o-mini",
-            model_type=ModelType.RERANK,
-        )
+        mock_filter.assert_called_once_with(id=model_uuid)
 
 
 class TestRerankFactory:

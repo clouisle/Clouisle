@@ -132,6 +132,11 @@ def build_compression_events(
         note_parts.append(
             "Applied proactive context compaction before the next model call"
         )
+    actions = getattr(compression, "actions", None) or []
+    if "checkpoint_summary" in actions:
+        note_parts.append("generated a model context checkpoint")
+    elif "macro_summary" in actions:
+        note_parts.append("applied deterministic macro-summary fallback")
     if compression.summary_turns:
         note_parts.append(f"summarized {compression.summary_turns} older turns")
     if compression.reasoning_trimmed:
