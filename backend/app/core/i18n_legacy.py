@@ -278,6 +278,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Execution timeout in seconds. Increase this value for package installation, builds, or document conversion tasks.",
         "zh": "执行超时时间（秒）。对于包安装、构建或文档转换任务，请增加此值。",
     },
+    "builtin_tool_calculate": {"en": "Calculate", "zh": "数学计算"},
+    "builtin_tool_calculate_description": {
+        "en": "Evaluate math expressions. Supports basic operators (+, -, *, /, //, %, **), math functions (sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil), and constants (pi, e).",
+        "zh": "计算数学表达式。支持基本运算（+, -, *, /, //, %, **）和数学函数（sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil）以及常量（pi, e）。",
+    },
+    "builtin_tool_calculate_param_expression_description": {
+        "en": "Math expression, e.g. '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
+        "zh": "数学表达式，如 '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
+    },
     "builtin_tool_edit": {"en": "Edit File", "zh": "编辑文件"},
     "builtin_tool_edit_description": {
         "en": "Apply compact snapshot-verified replace, block, cut, insert, and paste operations. Cut registers persist across calls, and unchanged targets recover after line shifts.",
@@ -290,15 +299,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "builtin_tool_edit_param_path_description": {
         "en": "Existing text file to edit. Use a /workspace path or a relative path; paths outside /workspace are rejected.",
         "zh": "要编辑的现有文本文件。使用 /workspace 路径或相对路径；/workspace 外的路径会被拒绝。",
-    },
-    "builtin_tool_calculate": {"en": "Calculate", "zh": "数学计算"},
-    "builtin_tool_calculate_description": {
-        "en": "Evaluate math expressions. Supports basic operators (+, -, *, /, //, %, **), math functions (sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil), and constants (pi, e).",
-        "zh": "计算数学表达式。支持基本运算（+, -, *, /, //, %, **）和数学函数（sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil）以及常量（pi, e）。",
-    },
-    "builtin_tool_calculate_param_expression_description": {
-        "en": "Math expression, e.g. '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
-        "zh": "数学表达式，如 '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
     },
     "builtin_tool_fetch_webpage": {"en": "Fetch Webpage", "zh": "获取网页内容"},
     "builtin_tool_fetch_webpage_description": {
@@ -438,6 +438,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Read a UTF-8 text file with LINE#ID anchors bound to a full-file snapshot. Ranges and literal search preserve original line numbers for safe edit recovery.",
         "zh": "读取带 LINE#ID 锚点的 UTF-8 文本文件；锚点绑定完整文件快照。行范围和字面文本搜索会保留原始行号，以便 edit 安全恢复。",
     },
+    "builtin_tool_read_param_end_line_description": {
+        "en": "Last line to inspect, inclusive. Omit to continue through the end of the file.",
+        "zh": "要检查的最后一行（包含该行）。省略时读取到文件末尾。",
+    },
     "builtin_tool_read_param_max_chars_description": {
         "en": "Maximum characters of hashline-formatted text to return after range and search filtering.",
         "zh": "经过行范围和搜索筛选后返回的哈希行格式文本的最大字符数。",
@@ -446,17 +450,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "File path to read. Use /workspace/file.txt or a relative path such as file.txt; paths outside /workspace are rejected.",
         "zh": "要读取的文件路径。使用 /workspace/file.txt 或相对路径如 file.txt；/workspace 外的路径会被拒绝。",
     },
-    "builtin_tool_read_param_start_line_description": {
-        "en": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
-        "zh": "要检查的第一行，使用从 1 开始的文件行号。默认为 1。",
-    },
-    "builtin_tool_read_param_end_line_description": {
-        "en": "Last line to inspect, inclusive. Omit to continue through the end of the file.",
-        "zh": "要检查的最后一行（包含该行）。省略时读取到文件末尾。",
-    },
     "builtin_tool_read_param_search_description": {
         "en": "Optional case-sensitive literal text. Only matching lines in the requested range are returned.",
         "zh": "可选的区分大小写字面文本。仅返回指定范围内包含该文本的行。",
+    },
+    "builtin_tool_read_param_start_line_description": {
+        "en": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
+        "zh": "要检查的第一行，使用从 1 开始的文件行号。默认为 1。",
     },
     "builtin_tool_unit_convert": {"en": "Unit Convert", "zh": "单位转换"},
     "builtin_tool_unit_convert_description": {
@@ -576,6 +576,42 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "captcha_required": {
         "en": "Human verification is required",
         "zh": "请完成人机验证",
+    },
+    "chat_context_compaction_blocking": {
+        "en": "Applied blocking-level compaction before the next model call",
+        "zh": "已在下一次模型调用前执行阻断级上下文压缩",
+    },
+    "chat_context_compaction_checkpoint_summary": {
+        "en": "generated a model context checkpoint",
+        "zh": "已生成模型上下文检查点",
+    },
+    "chat_context_compaction_file_content_trimmed": {
+        "en": "trimmed file content",
+        "zh": "已裁剪文件内容",
+    },
+    "chat_context_compaction_macro_summary": {
+        "en": "applied deterministic macro-summary fallback",
+        "zh": "已应用确定性宏摘要回退",
+    },
+    "chat_context_compaction_proactive": {
+        "en": "Applied proactive context compaction before the next model call",
+        "zh": "已在下一次模型调用前执行主动上下文压缩",
+    },
+    "chat_context_compaction_reasoning_trimmed": {
+        "en": "trimmed historical reasoning",
+        "zh": "已裁剪历史推理内容",
+    },
+    "chat_context_compaction_retried": {
+        "en": "Retried with more aggressive context compaction",
+        "zh": "已使用更激进的上下文压缩重试",
+    },
+    "chat_context_compaction_summarized_turns": {
+        "en": "summarized {count} older turns",
+        "zh": "已摘要 {count} 个较早轮次",
+    },
+    "chat_context_compaction_tool_results_trimmed": {
+        "en": "compacted older tool results",
+        "zh": "已压缩较早的工具结果",
     },
     "chat_file_upload_instruction": {
         "en": "[The user uploaded the following files, please use the markitdown tool to parse the file content:]",
