@@ -76,7 +76,7 @@ def make_request_result(
     )
 
 
-def test_public_error_sanitizers_cover_empty_known_and_unknown(monkeypatch):
+def test_public_error_sanitizers_cover_empty_known_safe_and_unsafe(monkeypatch):
     monkeypatch.setattr(
         workflows, "get_public_workflow_error_key", lambda value: value == "known"
     )
@@ -84,9 +84,17 @@ def test_public_error_sanitizers_cover_empty_known_and_unknown(monkeypatch):
         workflows, "translate_public_workflow_error", lambda _value: "translated"
     )
     monkeypatch.setattr(workflows, "t", lambda key: f"safe:{key}")
+    monkeypatch.setattr(
+        workflows,
+        "is_safe_user_visible_error",
+        lambda value: value == "safe message",
+    )
 
     assert workflows.sanitize_public_workflow_error(None) is None
     assert workflows.sanitize_public_workflow_error("known") == "translated"
+    # Safe messages pass through unchanged
+    assert workflows.sanitize_public_workflow_error("safe message") == "safe message"
+    # Unsafe messages are replaced with generic error
     assert (
         workflows.sanitize_public_workflow_error("secret")
         == "safe:workflow_execution_error"

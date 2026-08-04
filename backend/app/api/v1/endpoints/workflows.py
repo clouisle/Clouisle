@@ -51,6 +51,7 @@ from app.schemas.response import (
     success,
 )
 from app.services.audit_log import AuditLogService
+from app.services.error_messages import is_safe_user_visible_error
 from app.services.workflow.errors import (
     get_public_workflow_error_key,
     translate_public_workflow_error,
@@ -80,6 +81,9 @@ def sanitize_public_workflow_error(error_message: str | None) -> str | None:
 
     if get_public_workflow_error_key(error_message):
         return translate_public_workflow_error(error_message)
+
+    if is_safe_user_visible_error(error_message):
+        return error_message
 
     return t("workflow_execution_error")
 
