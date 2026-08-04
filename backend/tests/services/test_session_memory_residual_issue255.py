@@ -260,10 +260,15 @@ async def test_extraction_persists_ready_snapshot_with_authorized_model(monkeypa
     source = message(id=source_id)
     conversation = SimpleNamespace(agent_id=uuid4())
     team_model_id = uuid4()
+    resolved_model_id = uuid4()
     agent = SimpleNamespace(model_id=team_model_id, team_id=uuid4())
     team_model = SimpleNamespace(
         id=team_model_id,
-        model=SimpleNamespace(provider="openai", model_id="gpt-4o"),
+        model=SimpleNamespace(
+            id=resolved_model_id,
+            provider="openai",
+            model_id="gpt-4o",
+        ),
     )
     snapshot = SimpleNamespace(
         source_message_id=source_id,
@@ -328,9 +333,9 @@ async def test_extraction_persists_ready_snapshot_with_authorized_model(monkeypa
     assert result["status"] == "success"
     assert result["token_estimate"] == 12
     assert snapshot.status == ConversationSessionMemoryStatus.READY
-    assert snapshot.extractor_model == str(team_model_id)
+    assert snapshot.extractor_model == str(resolved_model_id)
     assert session_memory.model_manager.team_chat.await_args.kwargs["model_id"] == str(
-        team_model_id
+        resolved_model_id
     )
     snapshot.save.assert_awaited_once_with()
 
@@ -410,11 +415,16 @@ def test_payload_transcript_and_text_helpers_cover_edge_branches(monkeypatch):
     assert session_memory._get_model_identifier(None) is None
     assert session_memory._get_model_identifier(SimpleNamespace(model=None)) is None
     team_model_id = uuid4()
+    resolved_model_id = uuid4()
     team_model = SimpleNamespace(
         id=team_model_id,
-        model=SimpleNamespace(id=uuid4(), provider="openai", model_id="gpt-4o"),
+        model=SimpleNamespace(
+            id=resolved_model_id,
+            provider="openai",
+            model_id="gpt-4o",
+        ),
     )
-    assert session_memory._get_model_identifier(team_model) == str(team_model_id)
+    assert session_memory._get_model_identifier(team_model) == str(resolved_model_id)
 
     assert session_memory._parse_json_object(None) == {}
     assert session_memory._parse_json_object('```json\n{"overview": "ok"}\n```') == {
