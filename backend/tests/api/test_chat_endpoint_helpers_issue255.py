@@ -151,8 +151,12 @@ async def test_get_version_count_counts_children_from_root(monkeypatch):
         async def count(self):
             return 2
 
-    def fake_filter(**kwargs):
-        requested_filters.append(kwargs)
+        def filter(self, *args, **kwargs):
+            requested_filters.append((args, kwargs))
+            return self
+
+    def fake_filter(*args, **kwargs):
+        requested_filters.append((args, kwargs))
         return Query()
 
     monkeypatch.setattr(chat.Message, "filter", fake_filter)
@@ -160,7 +164,18 @@ async def test_get_version_count_counts_children_from_root(monkeypatch):
     count = await chat.get_version_count(SimpleNamespace(id=root_id, parent_id=None))
 
     assert count == 3
-    assert requested_filters == [{"parent_id": root_id}]
+    # Version count must exclude round steps (tool calls/results) that carry
+    # parent_id=root, so the query chains a canonical filter.
+    assert len(requested_filters) == 2
+    assert requested_filters[0] == ((), {"parent_id": root_id})
+    canonical_q = requested_filters[1][0][0]
+    leaf_filters: dict = {}
+    for child in canonical_q.children:
+        leaf_filters.update(child.filters)
+    assert leaf_filters == {
+        "round_id__isnull": True,
+        "is_round_canonical": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -173,8 +188,12 @@ async def test_get_version_count_counts_siblings_from_child_parent(monkeypatch):
         async def count(self):
             return 4
 
-    def fake_filter(**kwargs):
-        requested_filters.append(kwargs)
+        def filter(self, *args, **kwargs):
+            requested_filters.append((args, kwargs))
+            return self
+
+    def fake_filter(*args, **kwargs):
+        requested_filters.append((args, kwargs))
         return Query()
 
     monkeypatch.setattr(chat.Message, "filter", fake_filter)
@@ -184,4 +203,13 @@ async def test_get_version_count_counts_siblings_from_child_parent(monkeypatch):
     )
 
     assert count == 5
-    assert requested_filters == [{"parent_id": root_id}]
+    assert len(requested_filters) == 2
+    assert requested_filters[0] == ((), {"parent_id": root_id})
+    canonical_q = requested_filters[1][0][0]
+    leaf_filters: dict = {}
+    for child in canonical_q.children:
+        leaf_filters.update(child.filters)
+    assert leaf_filters == {
+        "round_id__isnull": True,
+        "is_round_canonical": True,
+    }

@@ -170,7 +170,10 @@ async def setup_regeneration(monkeypatch):
     )
     conversation = SimpleNamespace(id=uuid4(), agent_id=agent.id)
     user_message = SimpleNamespace(
-        id=uuid4(), role=MessageRole.USER, content="question"
+        id=uuid4(),
+        role=MessageRole.USER,
+        content="question",
+        created_at=datetime.now(UTC),
     )
     original = SimpleNamespace(
         id=uuid4(),
@@ -393,7 +396,7 @@ async def test_chat_stream_auto_rag_emits_context(monkeypatch):
         team_id=team.id,
         team=team,
         rag_mode=RAGMode.AUTO,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )

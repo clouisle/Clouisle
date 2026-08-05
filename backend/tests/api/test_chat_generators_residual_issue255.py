@@ -92,7 +92,7 @@ async def test_send_retries_context_and_caps_tool_iterations(monkeypatch):
         team_id=uuid4(),
         team=SimpleNamespace(id=uuid4()),
         rag_mode=RAGMode.OFF,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )
@@ -213,6 +213,7 @@ async def test_send_retries_context_and_caps_tool_iterations(monkeypatch):
         user=user,
         session_id="session",
         current_images=[],
+        conversation_id=conversation.id,
     )
 
 
@@ -224,7 +225,10 @@ async def setup_regenerate(monkeypatch, *, rag_mode=RAGMode.OFF, branch_parent_i
     )
     conversation = SimpleNamespace(id=uuid4(), agent_id=agent.id)
     user_message = SimpleNamespace(
-        id=uuid4(), role=MessageRole.USER, content="question"
+        id=uuid4(),
+        role=MessageRole.USER,
+        content="question",
+        created_at=datetime.now(UTC),
     )
     original = SimpleNamespace(
         id=uuid4(),

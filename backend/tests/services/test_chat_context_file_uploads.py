@@ -20,8 +20,8 @@ def _agent():
         enable_memory=False,
         enable_user_input_request=False,
         tools_config=[],
-        enable_file_upload=True,
-        file_upload_config={
+        enable_attachments=True,
+        attachment_config={
             "parser": {"type": "builtin", "name": "markitdown"},
             "max_content_length": 100000,
             "truncate_strategy": "end",

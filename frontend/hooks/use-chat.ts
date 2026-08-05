@@ -411,6 +411,17 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 setConversationId(data.conversation_id)
                 onConversationChange?.(data.conversation_id)
               }
+              const persistedUserMessageId = data.user_message_id
+              if (persistedUserMessageId) {
+                const optimisticUserMessageId = userMessage.id
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === optimisticUserMessageId
+                      ? { ...msg, id: persistedUserMessageId }
+                      : msg
+                  )
+                )
+              }
               // Update assistant message ID to the real database ID
               if (data.message_id) {
                 const oldId = assistantMessageId
@@ -1197,7 +1208,46 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         setStatus('streaming')
         onStreamStart?.()
         let assistantMessageId = placeholderId
-        let assistantText = ''
+        const streamState = createAssistantStreamState()
+
+        const syncStreamingState = () => {
+          streamingStateRef.current = {
+            assistantMessageId,
+            visibleMessageId: assistantMessageId,
+            backendMessageId: assistantMessageId === placeholderId ? null : assistantMessageId,
+            segments: streamState.segments,
+            reasoningBlocks: streamState.reasoningBlocks,
+            currentReasoningIndex: streamState.currentReasoningIndex,
+            ragSources: streamState.ragSources,
+            taskState: streamState.taskState,
+          }
+        }
+
+        const renderAssistantProgress = (streaming: boolean, endData?: SSEMessageEnd) => {
+          const parts = buildMessageParts(
+            streamState.segments,
+            streamState.reasoningBlocks,
+            streamState.ragSources,
+            streaming,
+            streamState.taskState
+          )
+          setMessages((prev) => prev.map((message) => (
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  parts,
+                  metadata: {
+                    ...message.metadata,
+                    isLoading: false,
+                    isError: false,
+                    ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
+                  },
+                }
+              : message
+          )))
+        }
+
+        syncStreamingState()
         for await (const event of parseSSEStream(response)) {
           if (event.event === 'error') {
             const data = event.data as SSEError
@@ -1207,6 +1257,27 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               quotaType: data.quota_type,
             }
             onError?.(chatError)
+
+            const errorText = getErrorMessage(chatError, tError, tAuth)
+            const { parts, preservedProgress } = buildErroredMessageParts({
+              ...streamState,
+              errorText,
+            })
+            setMessages((prev) => prev.map((message) => (
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    parts,
+                    metadata: {
+                      ...message.metadata,
+                      isLoading: false,
+                      isError: true,
+                      errorMessage: errorText,
+                      preservedPartialProgress: preservedProgress,
+                    },
+                  }
+                : message
+            )))
             await reloadConversationMessages().catch(() => undefined)
             setStatus('idle')
             return
@@ -1218,9 +1289,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               edited_version_number?: number
               edited_version_count?: number
             }
-            if (data.message_id) {
-              assistantMessageId = data.message_id
-            }
+            const previousAssistantMessageId = assistantMessageId
+            if (data.message_id) assistantMessageId = data.message_id
+            syncStreamingState()
             setMessages((prev) => prev.map((message) => {
               if (message.id === messageId) {
                 return {
@@ -1230,7 +1301,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   versionCount: data.edited_version_count ?? message.versionCount,
                 }
               }
-              if (message.id === placeholderId) {
+              if (message.id === previousAssistantMessageId) {
                 return { ...message, id: assistantMessageId }
               }
               return message
@@ -1238,27 +1309,18 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             continue
           }
 
-          if (event.event === 'content_delta') {
-            const data = event.data as SSEContentDelta
-            assistantText += data.delta
-            setMessages((prev) => prev.map((message) => (
-              message.id === assistantMessageId
-                ? {
-                    ...message,
-                    parts: [{ type: 'text' as const, text: assistantText }],
-                    metadata: { ...message.metadata, isLoading: false },
-                  }
-                : message
-            )))
+          if (event.event === 'message_end') {
+            finalizeStreamingState(streamState)
+            syncStreamingState()
+            renderAssistantProgress(false, event.data as SSEMessageEnd)
             continue
           }
 
-          if (event.event === 'message_end') {
-            setMessages((prev) => prev.map((message) => (
-              message.id === assistantMessageId
-                ? { ...message, metadata: { ...message.metadata, isLoading: false } }
-                : message
-            )))
+          if (applyAssistantStreamEvent(streamState, event)) {
+            syncStreamingState()
+            renderAssistantProgress(true)
+          } else {
+            syncStreamingState()
           }
         }
         await reloadConversationMessages()
@@ -2101,6 +2163,238 @@ interface ContentSegment {
   userInputRequest?: UserInputRequestPart
   // For media-result type
   mediaResult?: MediaResultPart
+}
+
+interface AssistantStreamState {
+  segments: ContentSegment[]
+  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
+  currentReasoningIndex: number
+  ragSources: SourceDocumentPart[]
+  taskState: TaskState
+}
+
+function createAssistantStreamState(): AssistantStreamState {
+  return {
+    segments: [],
+    reasoningBlocks: [],
+    currentReasoningIndex: -1,
+    ragSources: [],
+    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
+  }
+}
+
+function applyAssistantStreamEvent(
+  state: AssistantStreamState,
+  event: { event: string; data: unknown }
+): boolean {
+  const getCurrentTextSegment = (): ContentSegment => {
+    const lastSegment = state.segments[state.segments.length - 1]
+    if (lastSegment?.type === 'text') return lastSegment
+    const segment: ContentSegment = { type: 'text', text: '' }
+    state.segments.push(segment)
+    return segment
+  }
+
+  const addToolCall = (toolCall: ToolCallPart) => {
+    const existingGroup = state.segments.find(segment => (
+      segment.type === 'tool-group'
+      && segment.toolCalls?.some(existing => existing.toolCallId === toolCall.toolCallId)
+    ))
+    if (existingGroup) {
+      existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
+        existing.toolCallId === toolCall.toolCallId ? mergeToolCall(existing, toolCall) : existing
+      ))
+      return
+    }
+
+    const lastSegment = state.segments[state.segments.length - 1]
+    if (lastSegment?.type === 'tool-group') {
+      lastSegment.toolCalls = [...(lastSegment.toolCalls || []), toolCall]
+      return
+    }
+    state.segments.push({ type: 'tool-group', toolCalls: [toolCall], toolResults: [] })
+  }
+
+  switch (event.event as SSEEventType) {
+    case 'rag_start':
+      state.taskState.rag = 'running'
+      return true
+
+    case 'reasoning_start':
+      state.reasoningBlocks.push({ text: '', startTime: Date.now(), state: 'streaming' })
+      state.currentReasoningIndex = state.reasoningBlocks.length - 1
+      state.segments.push({
+        type: 'reasoning',
+        reasoningText: '',
+        reasoningState: 'streaming',
+        reasoningStartTime: Date.now(),
+      })
+      return false
+
+    case 'reasoning_delta': {
+      const data = event.data as { delta: string }
+      const block = state.reasoningBlocks[state.currentReasoningIndex]
+      if (!block) return false
+      block.text += data.delta
+      const reasoningSegment = state.segments.findLast(segment => segment.type === 'reasoning')
+      if (reasoningSegment) reasoningSegment.reasoningText = block.text
+      return true
+    }
+
+    case 'reasoning_end': {
+      const block = state.reasoningBlocks[state.currentReasoningIndex]
+      if (!block) return false
+      block.duration = Date.now() - block.startTime
+      block.state = 'done'
+      const reasoningSegment = state.segments.findLast(segment => segment.type === 'reasoning')
+      if (reasoningSegment) {
+        reasoningSegment.reasoningState = 'done'
+        reasoningSegment.reasoningDuration = block.duration
+      }
+      return true
+    }
+
+    case 'content_delta': {
+      const data = event.data as SSEContentDelta
+      const textSegment = getCurrentTextSegment()
+      textSegment.text = (textSegment.text || '') + data.delta
+
+      const allText = state.segments
+        .filter(segment => segment.type === 'text')
+        .map(segment => segment.text || '')
+        .join('')
+      const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
+      if (xmlMatch) {
+        const question = xmlMatch[1].match(/<question>([\s\S]*?)<\/question>/)?.[1].trim()
+        const options = Array.from(
+          xmlMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g),
+          match => match[1].trim()
+        )
+        if (question && options.length >= 2) {
+          const start = allText.indexOf('<user_input_request>')
+          const end = allText.indexOf('</user_input_request>') + '</user_input_request>'.length
+          const cleanedText = `${allText.slice(0, start)}${allText.slice(end)}`.trim()
+          state.segments = state.segments.filter(segment => (
+            segment.type !== 'text' && segment.type !== 'user-input-request'
+          ))
+          if (cleanedText) state.segments.push({ type: 'text', text: cleanedText })
+          state.segments.push({
+            type: 'user-input-request',
+            userInputRequest: { type: 'user-input-request', question, options, state: 'pending' },
+          })
+        }
+      }
+
+      if (state.taskState.generating === 'pending') {
+        if (state.taskState.rag === 'running') state.taskState.rag = 'completed'
+        state.taskState.generating = 'running'
+      }
+      return true
+    }
+
+    case 'rag_context': {
+      const data = event.data as SSERagContext
+      state.ragSources = data.contexts.map(context => ({
+        type: 'source-document' as const,
+        sourceId: context.document_id,
+        documentId: context.document_id,
+        documentName: context.document_name,
+        content: context.content,
+        metadata: {
+          kb_id: context.kb_id,
+          kb_name: context.kb_name,
+          score: context.score,
+        },
+      }))
+      state.taskState.rag = 'completed'
+      state.taskState.ragSourceCount = state.ragSources.length
+      return true
+    }
+
+    case 'compression_start':
+      state.taskState.compression = 'running'
+      return true
+
+    case 'compression_end':
+      state.taskState.compression = 'completed'
+      state.taskState.compressionInfo = event.data as SSECompression as unknown as Record<string, unknown>
+      return true
+
+    case 'tool_call': {
+      const data = event.data as SSEToolCall
+      addToolCall({
+        type: 'tool-call',
+        toolCallId: data.tool_call_id,
+        toolName: data.tool_name,
+        toolDisplayName: data.tool_display_name,
+        input: data.arguments,
+        state: 'running',
+      })
+      state.taskState.toolCalling = 'running'
+      state.taskState.toolCallCount = state.segments
+        .filter(segment => segment.type === 'tool-group')
+        .reduce((count, segment) => count + (segment.toolCalls?.length || 0), 0)
+      return true
+    }
+
+    case 'tool_result': {
+      const data = event.data as SSEToolResult
+      const toolGroup = state.segments.find(segment => (
+        segment.type === 'tool-group'
+        && segment.toolCalls?.some(toolCall => toolCall.toolCallId === data.tool_call_id)
+      ))
+      if (toolGroup) {
+        toolGroup.toolResults = [
+          ...(toolGroup.toolResults || []),
+          {
+            type: 'tool-result',
+            toolCallId: data.tool_call_id,
+            toolName: data.tool_name,
+            toolDisplayName: data.tool_display_name,
+            output: parseToolResultOutput(data.result),
+            isError: data.is_error,
+          },
+        ]
+        toolGroup.toolCalls = toolGroup.toolCalls?.map(toolCall => (
+          toolCall.toolCallId === data.tool_call_id
+            ? { ...toolCall, state: data.is_error ? 'error' as const : 'done' as const }
+            : toolCall
+        ))
+      }
+      const toolCalls = state.segments.flatMap(segment => segment.toolCalls || [])
+      if (
+        toolCalls.every(toolCall => toolCall.state === 'done' || toolCall.state === 'error')
+        && state.taskState.toolCalling === 'running'
+      ) {
+        state.taskState.toolCalling = 'completed'
+      }
+      return true
+    }
+
+    case 'media_result': {
+      const data = event.data as SSEMediaResult
+      if (!shouldDisplayMediaResultInBody(data)) return false
+      state.segments.push({
+        type: 'media-result',
+        mediaResult: { type: 'media-result', output: data },
+      })
+      return true
+    }
+
+    case 'output_truncated':
+      state.segments.push({ type: 'truncated' })
+      return true
+
+    case 'iteration_cap_reached': {
+      const data = event.data as SSEIterationCapReached
+      state.segments.push({ type: 'iteration-cap-reached' })
+      if (data.content) state.segments.push({ type: 'text', text: data.content })
+      return true
+    }
+
+    default:
+      return false
+  }
 }
 
 /**

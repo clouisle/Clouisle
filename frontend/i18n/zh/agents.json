@@ -289,29 +289,14 @@
           }
         }
       },
-      "vision": {
-        "title": "视觉",
-        "tooltip": "启用视觉能力，允许 Agent 理解和分析图片",
-        "description": "启用后，Agent 可以接收和理解图片输入。需要选择支持视觉的模型（如 GPT-4V、Claude 3）。"
-      },
-      "fileUpload": {
-        "title": "文件上传",
-        "tooltip": "允许用户上传文档供 Agent 分析",
-        "description": "启用后，用户可以上传文档（PDF、Word、Excel、PPT 等）。文件内容会被解析并附加到对话上下文中。",
-        "parser": "文件解析器",
-        "selectParser": "选择文件解析器",
-        "parserHint": "选择用于解析上传文件的工具。您也可以创建自定义的文件解析工具。",
-        "customParser": "(自定义)",
+      "attachments": {
+        "title": "文件与图片",
+        "tooltip": "允许用户在对话中附加文件和图片",
+        "description": "附件会保存为 Asset，Agent 可按需查看或解析。仅当所选聊天模型支持视觉时，图片才会直接传给模型理解。",
         "maxContentLength": "最大内容长度",
-        "maxContentLengthHint": "每个文件解析后的最大字符数（1,000-500,000）",
+        "maxContentLengthHint": "Agent 显式解析文件时可返回的最大字符数（1,000-500,000）",
         "characters": "字符",
-        "truncateStrategy": "截断策略",
-        "selectStrategy": "选择截断策略",
-        "truncateEnd": "保留开头（截断结尾）",
-        "truncateStart": "保留结尾（截断开头）",
-        "truncateMiddle": "保留首尾（截断中间）",
-        "contextHint": "上传文件会自动作为对话上下文传给模型，无需在提示词中插入变量。",
-        "supportedFormats": "支持的格式：PDF、Word (.docx/.doc)、Excel (.xlsx/.xls)、PowerPoint (.pptx/.ppt)、文本文件 (.txt/.md/.csv/.json/.html)"
+        "contextHint": "附件会作为 Asset 保留，不会自动解析并写入对话上下文。"
       },
       "userInputRequest": {
         "title": "用户输入请求",

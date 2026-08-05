@@ -27,6 +27,9 @@ class Query:
         self.update = AsyncMock(return_value=1)
         self.delete = AsyncMock(return_value=1)
 
+    def filter(self, *_args, **_kwargs):
+        return self
+
     def prefetch_related(self, *_args):
         return self
 
@@ -274,6 +277,7 @@ async def test_edit_stream_reactive_retry_executes_tool_and_caps_iteration(monke
         user=user,
         session_id="sandbox-session",
         current_images=[],
+        conversation_id=conversation.id,
     )
     assert [item.role for item in created_steps] == [
         MessageRole.ASSISTANT,

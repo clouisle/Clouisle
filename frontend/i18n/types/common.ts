@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-29T06:20:44.133Z
+// GENERATED — 2026-08-05T06:10:25.288Z
 // Source: i18n/en/common.json
 export type CommonMessages = {
   common: {
@@ -40,8 +40,8 @@ export type CommonMessages = {
     createdBy: string
     noResults: string
     openMenu: string
+    copy: string
     copiedToClipboard: string
-  copy: string
     confirmBulkDelete: string
     rowsPerPage: string
     deleteSuccess: string

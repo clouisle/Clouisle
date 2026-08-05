@@ -102,6 +102,34 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Archive task started successfully",
         "zh": "归档任务已启动",
     },
+    "asset_tool_inspect": {"en": "Inspect Attachment", "zh": "查看附件"},
+    "asset_tool_inspect_description": {
+        "en": "Inspect metadata and capabilities for an attachment in this conversation.",
+        "zh": "查看当前对话中附件的元数据和可用操作。",
+    },
+    "asset_tool_materialize": {"en": "Materialize Attachment", "zh": "物化附件"},
+    "asset_tool_materialize_description": {
+        "en": "Write the raw bytes of a conversation attachment into the sandbox workspace so it can be read, edited, or collected as a download link. Only works when a sandbox session is available.",
+        "zh": "将当前对话中的附件原始字节写入沙箱工作区，以便后续读取、编辑或生成下载链接。仅在沙箱会话可用时生效。",
+    },
+    "asset_tool_materialize_path_description": {
+        "en": "Destination path inside the sandbox workspace, e.g. /workspace/report.xlsx.",
+        "zh": "沙箱工作区内的目标路径，例如 /workspace/report.xlsx。",
+    },
+    "asset_tool_parse": {"en": "Parse Attachment", "zh": "解析附件"},
+    "asset_tool_parse_description": {
+        "en": "Parse a supported attachment on demand while preserving its raw bytes.",
+        "zh": "按需解析支持的附件，同时保留原始文件内容。",
+    },
+    "asset_tool_read": {"en": "Read Attachment", "zh": "读取附件"},
+    "asset_tool_read_description": {
+        "en": "Read bounded text from an attachment in this conversation.",
+        "zh": "读取当前对话中附件的有限文本内容。",
+    },
+    "asset_tool_ref_description": {
+        "en": "Exact reference from available attachments.",
+        "zh": "从可用附件列表中使用精确引用。",
+    },
     "audit_log_activate_user": {"en": "Activate user", "zh": "激活用户"},
     "audit_log_admin_disable_totp": {
         "en": "Admin disable user 2FA",
@@ -1983,6 +2011,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Sandbox disk limit exceeded during {stage}: {usage_bytes} > {limit_bytes}",
         "zh": "沙箱在 {stage} 阶段超出磁盘限制：{usage_bytes} > {limit_bytes}",
     },
+    "sandbox_input_checksum_mismatch": {
+        "en": "Sandbox input checksum does not match Asset metadata",
+        "zh": "沙箱输入文件校验和与资源元数据不匹配",
+    },
+    "sandbox_input_size_mismatch": {
+        "en": "Sandbox input size does not match Asset metadata",
+        "zh": "沙箱输入文件大小与资源元数据不匹配",
+    },
     "sandbox_missing_executable_payload": {
         "en": "Sandbox job has no executable payload",
         "zh": "沙箱任务缺少可执行内容",
@@ -1990,6 +2026,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "sandbox_process_exit_code": {
         "en": "Process exited with code {exit_code}",
         "zh": "进程退出码：{exit_code}",
+    },
+    "sandbox_session_required": {
+        "en": "Sandbox session is required",
+        "zh": "需要沙箱会话",
     },
     "search_completed": {"en": "Search completed", "zh": "搜索完成"},
     "session_expired_new_login": {

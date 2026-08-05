@@ -54,7 +54,12 @@ async def test_upload_file_rejects_unsupported_file():
     file = _file(filename="payload.exe", content_type="application/octet-stream")
 
     with (
-        patch.object(upload.file_parser_service, "is_supported", return_value=False),
+        patch.object(
+            upload.file_parser_service,
+            "is_supported",
+            create=True,
+            return_value=False,
+        ),
         pytest.raises(BusinessError) as exc_info,
     ):
         await upload.upload_file(SimpleNamespace(), file, "general", SimpleNamespace())
@@ -67,16 +72,26 @@ async def test_upload_file_rejects_unsupported_file():
 async def test_upload_file_infers_type_saves_and_audits():
     storage = SimpleNamespace(save=AsyncMock(return_value="s3://uploads/docs/file.txt"))
     audit = AsyncMock()
+    register = AsyncMock(return_value=SimpleNamespace(id="asset-1"))
     file = _file(content=b"document", content_type="application/octet-stream")
     user = SimpleNamespace(id="user-1")
 
     with (
         patch.object(upload, "_upload_storage", AsyncMock(return_value=storage)),
-        patch.object(upload.file_parser_service, "is_supported", return_value=True),
         patch.object(
-            upload.file_parser_service, "get_mime_type", return_value="text/plain"
+            upload.file_parser_service,
+            "is_supported",
+            create=True,
+            return_value=True,
+        ),
+        patch.object(
+            upload.file_parser_service,
+            "get_mime_type",
+            create=True,
+            return_value="text/plain",
         ),
         patch.object(upload.AuditLogService, "log", audit),
+        patch.object(upload.asset_service, "register_bytes", register),
     ):
         result = await upload.upload_file(SimpleNamespace(), file, "docs", user)
 

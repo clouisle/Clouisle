@@ -80,6 +80,7 @@ async def test_upload_file_infers_supported_filename_type_and_audits(monkeypatch
     saved = AsyncMock(
         return_value={
             "path": "documents/2026/07/saved.md",
+            "storage_key": "documents/2026/07/saved.md",
             "url": "/api/v1/upload/files/documents/2026/07/saved.md",
             "filename": "saved.md",
             "size": 7,
@@ -87,6 +88,7 @@ async def test_upload_file_infers_supported_filename_type_and_audits(monkeypatch
         }
     )
     audit = AsyncMock()
+    register = AsyncMock(return_value=SimpleNamespace(id="asset"))
     monkeypatch.setattr(
         upload.file_parser_service, "is_supported", lambda _: True, raising=False
     )
@@ -97,6 +99,7 @@ async def test_upload_file_infers_supported_filename_type_and_audits(monkeypatch
         raising=False,
     )
     monkeypatch.setattr(upload, "save_generated_upload", saved)
+    monkeypatch.setattr(upload.asset_service, "register_bytes", register)
     monkeypatch.setattr(upload.AuditLogService, "log", audit)
 
     response = await upload.upload_file(

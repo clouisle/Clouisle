@@ -9,8 +9,6 @@ import {
   ChevronRight,
   Database,
   Wrench,
-  Eye,
-  Variable,
   FileUp,
   MessageSquare,
   Brain,
@@ -27,7 +25,7 @@ import {
   type VariableDefinition,
   type AgentKnowledgeBaseConfig,
   type RAGMode,
-  type FileUploadConfig,
+  type AttachmentConfig,
   type PromptGenerateContext,
   type ImageGenerationConfig,
   type VideoGenerationConfig,
@@ -198,8 +196,7 @@ export function AgentOrchestrationForm({
   const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>(
     agent.tools_config || []
   )
-  const [enableVision, setEnableVision] = React.useState(agent.enable_vision || false)
-  const [enableFileUpload, setEnableFileUpload] = React.useState(agent.enable_file_upload || false)
+  const [enableAttachments, setEnableAttachments] = React.useState(agent.enable_attachments || false)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
   const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
   const [memoryConfig, setMemoryConfig] = React.useState(
@@ -221,9 +218,8 @@ export function AgentOrchestrationForm({
   const [videoGenerationConfig, setVideoGenerationConfig] = React.useState<VideoGenerationConfig>(
     agent.video_generation_config || DEFAULT_VIDEO_GENERATION_CONFIG
   )
-  const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig>(
-    agent.file_upload_config || {
-      parser: { type: 'builtin', name: 'markitdown' },  // default parser
+  const [attachmentConfig, setAttachmentConfig] = React.useState<AttachmentConfig>(
+    agent.attachment_config || {
       max_file_size: 10 * 1024 * 1024,
       max_files: 5,
       max_content_length: 100000,
@@ -246,8 +242,7 @@ export function AgentOrchestrationForm({
       }))
     )
     setToolsConfig(agent.tools_config || [])
-    setEnableVision(agent.enable_vision || false)
-    setEnableFileUpload(agent.enable_file_upload || false)
+    setEnableAttachments(agent.enable_attachments || false)
     setEnableUserInputRequest(agent.enable_user_input_request || false)
     setEnableMemory(agent.enable_memory || false)
     setMemoryConfig(
@@ -265,9 +260,8 @@ export function AgentOrchestrationForm({
     setVideoGenerationConfig(
       agent.video_generation_config || DEFAULT_VIDEO_GENERATION_CONFIG
     )
-    setFileUploadConfig(
-      agent.file_upload_config || {
-        parser: { type: 'builtin', name: 'markitdown' },
+    setAttachmentConfig(
+      agent.attachment_config || {
         max_file_size: 10 * 1024 * 1024,
         max_files: 5,
         max_content_length: 100000,
@@ -282,8 +276,7 @@ export function AgentOrchestrationForm({
   const [variablesCollapsed, setVariablesCollapsed] = React.useState(true)
   const [kbCollapsed, setKbCollapsed] = React.useState(true)
   const [toolsCollapsed, setToolsCollapsed] = React.useState(true)
-  const [visionCollapsed, setVisionCollapsed] = React.useState(true)
-  const [fileUploadCollapsed, setFileUploadCollapsed] = React.useState(true)
+  const [attachmentsCollapsed, setAttachmentsCollapsed] = React.useState(true)
   const [userInputRequestCollapsed, setUserInputRequestCollapsed] = React.useState(true)
   const [memoryCollapsed, setMemoryCollapsed] = React.useState(true)
   const [imageGenerationCollapsed, setImageGenerationCollapsed] = React.useState(true)
@@ -294,7 +287,6 @@ export function AgentOrchestrationForm({
 
   // Data loading
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
-  const [fileParsers, setFileParsers] = React.useState<import('@/lib/api').Tool[]>([])
   const [imageModels, setImageModels] = React.useState<TeamModel[]>([])
   const [videoModels, setVideoModels] = React.useState<TeamModel[]>([])
   const { tools: availableTools } = useTools()
@@ -309,22 +301,20 @@ export function AgentOrchestrationForm({
     t('videoGeneration.defaultModel')
   )
 
-  // Load knowledge bases and file parsers
+  // Load knowledge bases and media models
   React.useEffect(() => {
     const loadData = async () => {
       if (!currentTeam) return
 
       try {
-        const [kbs, parsers, imageTeamModels, videoTeamModels] = await Promise.all([
+        const [kbs, imageTeamModels, videoTeamModels] = await Promise.all([
           knowledgeBasesApi.getKnowledgeBases(),
-          import('@/lib/api').then(m => m.toolsApi.listFileParsers(currentTeam.id)),
           teamModelsApi.getTeamModels(currentTeam.id, 'text_to_image'),
           teamModelsApi.getTeamModels(currentTeam.id, 'text_to_video'),
         ])
         setKnowledgeBases(
           kbs.items.filter((kb) => kb.team.id === currentTeam.id)
         )
-        setFileParsers(parsers)
         setImageModels(imageTeamModels)
         setVideoModels(videoTeamModels)
       } catch {
@@ -341,8 +331,7 @@ export function AgentOrchestrationForm({
       tools_config: toolsConfig,
       variables: variables,
       knowledge_base_configs: knowledgeBaseConfigs,
-      enable_vision: enableVision,
-      enable_file_upload: enableFileUpload,
+      enable_attachments: enableAttachments,
       enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
       memory_config: enableMemory ? memoryConfig : null,
@@ -350,10 +339,10 @@ export function AgentOrchestrationForm({
       image_generation_config: enableImageGeneration ? imageGenerationConfig : null,
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
-      file_upload_config: enableFileUpload ? fileUploadConfig : null,
+      attachment_config: enableAttachments ? attachmentConfig : null,
       rag_mode: ragMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, fileUploadConfig, ragMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, ragMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -389,9 +378,8 @@ export function AgentOrchestrationForm({
     variables,
     rag_mode: ragMode,
     capabilities: {
-      enable_vision: enableVision,
-      enable_file_upload: enableFileUpload,
-      file_upload_config: enableFileUpload ? fileUploadConfig : null,
+      enable_attachments: enableAttachments,
+      attachment_config: enableAttachments ? attachmentConfig : null,
       enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
       memory_config: enableMemory ? memoryConfig : null,
@@ -400,7 +388,7 @@ export function AgentOrchestrationForm({
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
     },
-  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, ragMode, enableVision, enableFileUpload, fileUploadConfig, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
+  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, ragMode, enableAttachments, attachmentConfig, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
 
   return (
     <div className="space-y-3">
@@ -456,7 +444,7 @@ export function AgentOrchestrationForm({
               setVariables([...variables, newVar])
             }}
             placeholder={t('prompt.placeholder')}
-            enableFileUpload={enableFileUpload}
+            enableFileUpload={enableAttachments}
           />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-primary/10">
             <span className="text-xs text-muted-foreground">
@@ -472,7 +460,7 @@ export function AgentOrchestrationForm({
       {/* Variables Section */}
       <ConfigCard
         data-testid="agent-variables-section"
-        icon={Variable}
+        icon={FileUp}
         iconColor="text-blue-500"
         title={t('variables.title')}
         tooltip={t('variables.tooltip')}
@@ -650,138 +638,40 @@ export function AgentOrchestrationForm({
         />
       </ConfigCard>
 
-      {/* Vision Section */}
+      {/* Attachments Section */}
       <ConfigCard
-        data-testid="agent-vision-section"
-        icon={Eye}
-        iconColor="text-purple-500"
-        title={t('vision.title')}
-        tooltip={t('vision.tooltip')}
-        action={
-          <Switch
-            checked={enableVision}
-            onCheckedChange={setEnableVision}
-          />
-        }
-        collapsed={visionCollapsed}
-        onToggle={() => setVisionCollapsed(!visionCollapsed)}
-      >
-        <p className="text-xs text-muted-foreground py-2">
-          {t('vision.description')}
-        </p>
-      </ConfigCard>
-
-      {/* File Upload Section */}
-      <ConfigCard
-        data-testid="agent-file-upload-section"
+        data-testid="agent-attachments-section"
         icon={FileUp}
         iconColor="text-cyan-500"
-        title={t('fileUpload.title')}
-        tooltip={t('fileUpload.tooltip')}
+        title={t('attachments.title')}
+        tooltip={t('attachments.tooltip')}
         action={
           <Switch
-            checked={enableFileUpload}
-            onCheckedChange={setEnableFileUpload}
+            checked={enableAttachments}
+            onCheckedChange={setEnableAttachments}
           />
         }
-        collapsed={fileUploadCollapsed}
-        onToggle={() => setFileUploadCollapsed(!fileUploadCollapsed)}
+        collapsed={attachmentsCollapsed}
+        onToggle={() => setAttachmentsCollapsed(!attachmentsCollapsed)}
       >
         <div className="space-y-4 py-2">
           <p className="text-xs text-muted-foreground">
-            {t('fileUpload.description')}
+            {t('attachments.description')}
           </p>
-          
-          {enableFileUpload && (
-            <div className="space-y-4 pt-2 border-t">
-              {/* Parser Selection */}
-              <div className="space-y-2">
-                <Label className="text-xs">{t('fileUpload.parser')}</Label>
-                <Select
-                  value={
-                    fileUploadConfig.parser
-                      ? fileUploadConfig.parser.type === 'builtin'
-                        ? `builtin:${fileUploadConfig.parser.name}`
-                        : `custom:${fileUploadConfig.parser.tool_id}`
-                      : ''
-                  }
-                  onValueChange={(value) => {
-                    if (!value) {
-                      setFileUploadConfig({
-                        ...fileUploadConfig,
-                        parser: null,
-                      })
-                    } else {
-                      const [type, id] = value.split(':')
-                      if (type === 'builtin') {
-                        setFileUploadConfig({
-                          ...fileUploadConfig,
-                          parser: { type: 'builtin', name: id },
-                        })
-                      } else {
-                        setFileUploadConfig({
-                          ...fileUploadConfig,
-                          parser: { type: 'custom', tool_id: id },
-                        })
-                      }
-                    }
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-full text-sm bg-background">
-                    <SelectValue>
-                      {(value: string) => {
-                        if (!value) {
-                          return <span className="text-muted-foreground">{t('fileUpload.selectParser')}</span>
-                        }
-                        const selectedParser = fileParsers.find(p => 
-                          (p.type === 'builtin' ? `builtin:${p.name}` : `custom:${p.id}`) === value
-                        )
-                        if (!selectedParser) {
-                          return <span className="text-muted-foreground">{t('fileUpload.selectParser')}</span>
-                        }
-                        return (
-                          <div className="flex items-center gap-2">
-                            <span>{selectedParser.icon}</span>
-                            <span>{selectedParser.display_name}</span>
-                          </div>
-                        )
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {fileParsers.map((parser) => (
-                      <SelectItem
-                        key={parser.type === 'builtin' ? `builtin:${parser.name}` : `custom:${parser.id}`}
-                        value={parser.type === 'builtin' ? `builtin:${parser.name}` : `custom:${parser.id}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span>{parser.icon}</span>
-                          <span>{parser.display_name}</span>
-                          {parser.type === 'custom' && (
-                            <span className="text-xs text-muted-foreground">{t('fileUpload.customParser')}</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {t('fileUpload.parserHint')}
-                </p>
-              </div>
 
-              {/* Max Content Length */}
+          {enableAttachments && (
+            <div className="space-y-4 pt-2 border-t">
               <div className="space-y-2">
-                <Label className="text-xs">{t('fileUpload.maxContentLength')}</Label>
+                <Label className="text-xs">{t('attachments.maxContentLength')}</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     type="number"
-                    value={fileUploadConfig.max_content_length}
+                    value={attachmentConfig.max_content_length}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value) || 100000
-                      setFileUploadConfig({
-                        ...fileUploadConfig,
-                        max_content_length: Math.min(Math.max(val, 1000), 500000),
+                      const value = parseInt(e.target.value) || 100000
+                      setAttachmentConfig({
+                        ...attachmentConfig,
+                        max_content_length: Math.min(Math.max(value, 1000), 500000),
                       })
                     }}
                     className="w-28 h-8 text-sm bg-background"
@@ -789,48 +679,16 @@ export function AgentOrchestrationForm({
                     max={500000}
                     step={10000}
                   />
-                  <span className="text-xs text-muted-foreground">{t('fileUpload.characters')}</span>
+                  <span className="text-xs text-muted-foreground">{t('attachments.characters')}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {t('fileUpload.maxContentLengthHint')}
+                  {t('attachments.maxContentLengthHint')}
                 </p>
-              </div>
-
-              {/* Truncate Strategy */}
-              <div className="space-y-2">
-                <Label className="text-xs">{t('fileUpload.truncateStrategy')}</Label>
-                <Select
-                  value={fileUploadConfig.truncate_strategy}
-                  onValueChange={(value) => {
-                    if (value && (value === 'end' || value === 'start' || value === 'middle')) {
-                      setFileUploadConfig({
-                        ...fileUploadConfig,
-                        truncate_strategy: value,
-                      })
-                    }
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-48 text-sm bg-background">
-                    <SelectValue>
-                      {(value: string) => {
-                        if (value === 'end') return t('fileUpload.truncateEnd')
-                        if (value === 'start') return t('fileUpload.truncateStart')
-                        if (value === 'middle') return t('fileUpload.truncateMiddle')
-                        return t('fileUpload.truncateEnd')
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="w-48">
-                    <SelectItem value="end">{t('fileUpload.truncateEnd')}</SelectItem>
-                    <SelectItem value="start">{t('fileUpload.truncateStart')}</SelectItem>
-                    <SelectItem value="middle">{t('fileUpload.truncateMiddle')}</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
                 <p className="text-xs text-cyan-700 dark:text-cyan-300">
-                  {t('fileUpload.contextHint')}
+                  {t('attachments.contextHint')}
                 </p>
               </div>
             </div>

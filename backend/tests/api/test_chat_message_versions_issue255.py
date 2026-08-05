@@ -14,6 +14,11 @@ class _Query:
         self._first = first
         self._all = all or []
         self._count = count
+        self.filter_calls = []
+
+    def filter(self, *_args, **_kwargs):
+        self.filter_calls.append((_args, _kwargs))
+        return self
 
     def prefetch_related(self, *_args):
         return self
@@ -45,10 +50,11 @@ async def test_get_message_versions_returns_root_and_children_in_version_order()
     root = _message(version_number=1, content="original")
     third = _message(parent_id=root.id, version_number=3, content="third")
     second = _message(parent_id=root.id, version_number=2, content="second")
+    child_query = _Query(all=[third, second])
     message_model = MagicMock()
     message_model.filter.side_effect = [
         _Query(all=[root]),
-        _Query(all=[third, second]),
+        child_query,
     ]
 
     with patch.object(chat, "Message", message_model):
@@ -58,6 +64,7 @@ async def test_get_message_versions_returns_root_and_children_in_version_order()
     assert [version.content for version in versions] == ["original", "second", "third"]
     message_model.filter.assert_any_call(id=root.id)
     message_model.filter.assert_any_call(parent_id=root.id)
+    assert len(child_query.filter_calls) == 1
 
 
 @pytest.mark.anyio

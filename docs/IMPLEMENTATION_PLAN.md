@@ -2,6 +2,15 @@
 
 ## Active
 
+- **yun-129-sandbox-oriented-asset-handling** — Complete. Replace parser- and URL-centric chat attachments with durable Assets that support on-demand parsing, stable conversation refs, Sandbox materialization, reusable media, and one Agent-level attachment capability. See `docs/plan/yun-129-sandbox-oriented-asset-handling.md`
+  - [x] 1. Design and implementation index
+  - [x] 2. Durable Asset domain and scoped references
+  - [x] 3. Chat attachments, manifests, and on-demand tools
+  - [x] 4. Conversation Sandbox materialization and artifact registration
+  - [x] 5. Image reference lifecycle and frontend Asset UX
+  - [x] 6. Workflow boundary, compatibility migration, and full validation
+  - [x] 7. One-time Agent attachment capability cutover
+
 - **default-model-context-budget** — Complete. Align default chat model resolution with context-budget preparation so global model metadata is used before compression. See `docs/plan/default-model-context-budget.md`
   - [x] 1. Centralize default team-chat model resolution
   - [x] 2. Thread resolved metadata through every Chat path

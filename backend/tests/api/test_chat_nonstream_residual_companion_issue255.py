@@ -39,7 +39,7 @@ def _agent(ids, **overrides):
         "id": ids.agent_id,
         "team_id": ids.team_id,
         "rag_mode": RAGMode.OFF,
-        "enable_vision": False,
+        "enable_attachments": False,
         "enable_user_input_request": False,
         "max_iterations": 5,
     }

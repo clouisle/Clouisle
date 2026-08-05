@@ -74,7 +74,7 @@ async def setup_send_until_prepare(monkeypatch, prepare_error):
         team_id=team.id,
         team=team,
         rag_mode=RAGMode.OFF,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )
@@ -207,7 +207,10 @@ async def setup_regenerate(monkeypatch, generator_error, *, preserved):
     )
     conversation = SimpleNamespace(id=uuid4(), agent_id=agent.id)
     user_message = SimpleNamespace(
-        id=uuid4(), role=MessageRole.USER, content="question"
+        id=uuid4(),
+        role=MessageRole.USER,
+        content="question",
+        created_at=datetime.now(UTC),
     )
     original = SimpleNamespace(
         id=uuid4(),

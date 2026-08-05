@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import shutil
@@ -10,8 +11,10 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from app.core.config import settings
+from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
@@ -92,6 +95,8 @@ class SandboxManager:
             )
         )
 
+        asset_team_id: UUID | None = None
+        asset_user_id: UUID | None = None
         if session_id:
             session = await sandbox_session_store.get(session_id)
             if session is None:
@@ -100,20 +105,33 @@ class SandboxManager:
                 raise ValueError("Sandbox session not found or expired")
             if session_team_id is not None and session.team_id != session_team_id:
                 raise ValueError("Sandbox session not found or expired")
+            asset_team_id = UUID(session.team_id) if session.team_id else None
+            asset_user_id = UUID(session.user_id) if session.user_id else None
             workspace = self.workspace_manager.prepare_session(session_id)
             should_cleanup = False
         else:
             workspace = self.workspace_manager.prepare(job.job_id)
             should_cleanup = self.cleanup_workspaces
 
-        self._stage_input_files(job, workspace)
+        await self._stage_input_files(
+            job,
+            workspace,
+            team_id=asset_team_id,
+            user_id=asset_user_id,
+        )
         self._enforce_disk_limit(job, workspace, stage="prepare")
         metadata.mark_prepare_completed(datetime.now(UTC))
 
         try:
             result = await self._run_job(job, workspace, metadata)
             self._enforce_disk_limit(job, workspace, stage="execution")
-            artifacts = await self._collect_artifacts(job, workspace, metadata)
+            artifacts = await self._collect_artifacts(
+                job,
+                workspace,
+                metadata,
+                team_id=asset_team_id,
+                user_id=asset_user_id,
+            )
         finally:
             if session_id:
                 await sandbox_session_store.touch(
@@ -209,7 +227,14 @@ class SandboxManager:
             error=t("sandbox_missing_executable_payload"),
         )
 
-    def _stage_input_files(self, job: SandboxJob, workspace: SandboxWorkspace) -> None:
+    async def _stage_input_files(
+        self,
+        job: SandboxJob,
+        workspace: SandboxWorkspace,
+        *,
+        team_id: UUID | None = None,
+        user_id: UUID | None = None,
+    ) -> None:
         for input_file in job.input_files:
             target = self.workspace_manager.resolve_workspace_path(
                 workspace, input_file.target_path
@@ -218,9 +243,47 @@ class SandboxManager:
                 raise FileExistsError(
                     f"Sandbox input target already exists: {input_file.target_path}"
                 )
-            content = base64.b64decode(input_file.content_base64, validate=True)
+            if input_file.asset_id is not None:
+                from app.api.v1.endpoints.upload import UPLOAD_ROOT
+                from app.services.asset import asset_service
+                from app.services.upload_storage import get_upload_storage_backend
+
+                asset = await asset_service.get_authorized(
+                    input_file.asset_id,
+                    team_id=team_id,
+                    user_id=user_id,
+                )
+                storage = await get_upload_storage_backend(UPLOAD_ROOT)
+                content = await asset_service.read(asset, storage=storage)
+            else:
+                assert input_file.content_base64 is not None
+                content = base64.b64decode(input_file.content_base64, validate=True)
+
+            if (
+                input_file.expected_size is not None
+                and len(content) != input_file.expected_size
+            ):
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR,
+                    msg_key="sandbox_input_size_mismatch",
+                )
+            checksum = hashlib.sha256(content).hexdigest()
+            if (
+                input_file.expected_checksum is not None
+                and checksum != input_file.expected_checksum
+            ):
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR,
+                    msg_key="sandbox_input_checksum_mismatch",
+                )
+
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
+            partial = target.with_name(f".{target.name}.partial")
+            try:
+                partial.write_bytes(content)
+                partial.replace(target)
+            finally:
+                partial.unlink(missing_ok=True)
             if input_file.mode is not None:
                 target.chmod(input_file.mode)
 
@@ -518,6 +581,9 @@ async function __execute__() {{
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
+        *,
+        team_id: UUID | None = None,
+        user_id: UUID | None = None,
     ):
         if not job.artifacts:
             metadata.collect_ms = 0
@@ -537,8 +603,56 @@ async function __execute__() {{
             workspace=workspace,
             artifact_limits=job.artifact_limits,
         )
+        await self._register_artifact_assets(
+            artifacts,
+            job=job,
+            team_id=team_id,
+            user_id=user_id,
+        )
         metadata.mark_collect_completed(datetime.now(UTC))
         return artifacts
+
+    async def _register_artifact_assets(
+        self,
+        artifacts: list[Any],
+        *,
+        job: SandboxJob,
+        team_id: UUID | None,
+        user_id: UUID | None,
+    ) -> None:
+        from app.models.asset import AssetSource
+        from app.services.asset import asset_service
+
+        if team_id is None and user_id is None:
+            return
+        for artifact in artifacts:
+            if artifact.file_type != "file":
+                continue
+            storage_key = self._artifact_storage_key(artifact.url)
+            if storage_key is None or not artifact.checksum:
+                continue
+            asset = await asset_service.register(
+                storage_key=storage_key,
+                original_filename=artifact.filename,
+                content_type=artifact.content_type or "application/octet-stream",
+                size=artifact.size,
+                checksum=artifact.checksum,
+                source=AssetSource.SANDBOX_ARTIFACT,
+                team_id=team_id,
+                created_by_id=user_id,
+                provenance={
+                    "job_id": job.job_id,
+                    "workspace_path": artifact.path,
+                },
+            )
+            artifact.asset_id = asset.id
+
+    @staticmethod
+    def _artifact_storage_key(url: str) -> str | None:
+        marker = "/api/v1/upload/files/"
+        if marker not in url:
+            return None
+        return url.split(marker, 1)[1]
 
     async def _load_or_create_metadata(self, job_id: str) -> SandboxExecutionMetadata:
         get_result = getattr(self.result_store, "get_result", None)

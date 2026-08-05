@@ -62,7 +62,7 @@ async def test_stream_retries_context_then_persists_tool_cap(monkeypatch):
         team_id=team.id,
         team=team,
         rag_mode=RAGMode.AUTO,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )
@@ -275,6 +275,7 @@ async def test_stream_retries_context_then_persists_tool_cap(monkeypatch):
         user=user,
         session_id="session",
         current_images=[],
+        conversation_id=conversation.id,
     )
     assert [message.role for message in created] == [
         MessageRole.USER,

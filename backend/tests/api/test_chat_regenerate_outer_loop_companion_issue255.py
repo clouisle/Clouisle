@@ -59,7 +59,10 @@ async def setup_regeneration(monkeypatch, *, max_iterations=2, disconnect=None):
     )
     conversation = SimpleNamespace(id=uuid4(), agent_id=agent.id)
     user_message = SimpleNamespace(
-        id=uuid4(), role=MessageRole.USER, content="question"
+        id=uuid4(),
+        role=MessageRole.USER,
+        content="question",
+        created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
     )
     original = SimpleNamespace(
         id=uuid4(),

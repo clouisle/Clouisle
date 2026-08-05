@@ -82,7 +82,7 @@ async def test_chat_tool_loop_terminal_message_when_max_iterations_reached(monke
         id=agent_id,
         team_id=uuid4(),
         rag_mode=RAGMode.OFF,
-        enable_vision=False,
+        enable_attachments=False,
         max_iterations=1,
         enable_user_input_request=False,
     )

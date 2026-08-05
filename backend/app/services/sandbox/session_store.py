@@ -41,6 +41,7 @@ class SandboxSessionStore:
         conversation_id: str | None = None,
         agent_id: str | None = None,
         team_id: str | None = None,
+        user_id: str | None = None,
         ttl_hours: int | None = None,
     ) -> SandboxSession:
         created_at = now()
@@ -50,6 +51,7 @@ class SandboxSessionStore:
             conversation_id=conversation_id,
             agent_id=agent_id,
             team_id=team_id,
+            user_id=user_id,
             created_at=created_at,
             expires_at=expires_at,
             last_accessed_at=created_at,

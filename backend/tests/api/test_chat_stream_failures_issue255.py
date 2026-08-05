@@ -44,7 +44,7 @@ def _agent():
         team=SimpleNamespace(id=team_id),
         rag_mode=RAGMode.OFF,
         max_iterations=1,
-        enable_vision=False,
+        enable_attachments=False,
     )
 
 

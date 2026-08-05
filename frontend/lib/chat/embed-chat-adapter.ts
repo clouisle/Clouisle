@@ -5,7 +5,7 @@ import type {
   ConversationListItem,
   VariableDefinition,
   VariableType,
-  FileUploadConfig,
+  AttachmentConfig,
 } from '@/lib/api'
 import type { ChatMessage } from '@/components/chat'
 
@@ -51,9 +51,8 @@ function mapAgentInfo(info: EmbedAgentInfo): PublicAgent {
     opening_message: info.opening_message,
     suggested_questions: info.suggested_questions,
     variables: normalizeVariables(info.variables),
-    enable_vision: info.enable_vision,
-    enable_file_upload: info.enable_file_upload,
-    file_upload_config: (info.file_upload_config as FileUploadConfig | null) ?? null,
+    enable_attachments: info.enable_attachments,
+    attachment_config: (info.attachment_config as AttachmentConfig | null) ?? null,
     hide_tool_calls: info.hide_tool_calls,
     hide_message_actions: info.hide_message_actions,
     hide_reasoning: info.hide_reasoning,

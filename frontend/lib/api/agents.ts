@@ -103,15 +103,7 @@ export interface AgentKnowledgeBaseConfig {
   search_mode: 'vector' | 'fulltext' | 'hybrid'
 }
 
-/** File parser configuration - which tool to use for parsing files */
-export interface FileParserConfig {
-  type: 'builtin' | 'custom'
-  name?: string       // for builtin, e.g., 'markitdown'
-  tool_id?: string    // for custom tools
-}
-
-export interface FileUploadConfig {
-  parser?: FileParserConfig | null  // null means no parser selected
+export interface AttachmentConfig {
   max_file_size: number  // bytes
   max_files: number
   max_content_length: number  // characters
@@ -212,9 +204,8 @@ export interface Agent {
   opening_message?: string | null
   suggested_questions: string[]
   knowledge_bases: AgentKnowledgeBaseOut[]
-  enable_vision: boolean
-  enable_file_upload: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments: boolean
+  attachment_config?: AttachmentConfig | null
   enable_user_input_request: boolean
   enable_memory: boolean
   memory_config?: MemoryConfig | null
@@ -268,9 +259,8 @@ export interface AgentCreateInput {
   variables?: VariableDefinition[]
   opening_message?: string | null
   suggested_questions?: string[]
-  enable_vision?: boolean
-  enable_file_upload?: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments?: boolean
+  attachment_config?: AttachmentConfig | null
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
@@ -299,9 +289,8 @@ export interface AgentUpdateInput {
   variables?: VariableDefinition[]
   opening_message?: string | null
   suggested_questions?: string[]
-  enable_vision?: boolean
-  enable_file_upload?: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments?: boolean
+  attachment_config?: AttachmentConfig | null
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
@@ -398,8 +387,8 @@ export interface Message {
   role: MessageRole
   content: string
   // Attachments (for user messages)
-  images?: Array<{ type: string; url: string }> | null
-  file_urls?: Array<{ filename: string; url: string; size: number; mime_type: string }> | null
+  images?: Array<{ asset_id?: string | null; asset_ref?: string | null; type: string; url: string }> | null
+  file_urls?: Array<{ asset_id?: string | null; filename: string; url: string; size: number; mime_type: string }> | null
   // Tool calls
   tool_calls?: Record<string, unknown>[] | null
   tool_call_id?: string | null
@@ -444,6 +433,8 @@ export interface ConversationWithMessages extends Conversation {
 // ============ Chat Types ============
 
 export interface ChatImageContent {
+  asset_id?: string | null
+  asset_ref?: string | null
   type: 'image_url'
   url: string
 }
@@ -459,6 +450,7 @@ export interface ChatFileContent {
 
 /** File URL for backend file parsing and injection into {{fileContent}} */
 export interface ChatFileUrl {
+  asset_id?: string | null
   filename: string
   url: string
   size: number
@@ -528,6 +520,7 @@ export type SSEEventType =
 export interface SSEMessageStart {
   conversation_id: string
   message_id: string
+  user_message_id?: string
 }
 
 export interface SSEContentDelta {
@@ -1243,9 +1236,8 @@ export interface PublicAgent {
   opening_message?: string | null
   suggested_questions: string[]
   variables: VariableDefinition[]
-  enable_vision: boolean
-  enable_file_upload: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments: boolean
+  attachment_config?: AttachmentConfig | null
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean

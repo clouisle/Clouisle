@@ -188,10 +188,9 @@ async def build_agent_out(agent: Agent) -> dict:
         "hide_message_actions": agent.hide_message_actions,
         "hide_reasoning": agent.hide_reasoning,
         "tools_config": agent.tools_config or [],
-        "enable_vision": agent.enable_vision,
-        "enable_file_upload": agent.enable_file_upload,
-        "file_upload_config": agent.file_upload_config
-        if agent.file_upload_config
+        "enable_attachments": agent.enable_attachments,
+        "attachment_config": agent.attachment_config
+        if agent.attachment_config
         else None,
         "enable_user_input_request": agent.enable_user_input_request,
         "enable_memory": agent.enable_memory,
@@ -457,10 +456,9 @@ async def create_agent(
         hide_message_actions=agent_in.hide_message_actions,
         hide_reasoning=agent_in.hide_reasoning,
         tools_config=[t.model_dump() for t in agent_in.tools_config],
-        enable_vision=agent_in.enable_vision,
-        enable_file_upload=agent_in.enable_file_upload,
-        file_upload_config=agent_in.file_upload_config.model_dump()
-        if agent_in.file_upload_config
+        enable_attachments=agent_in.enable_attachments,
+        attachment_config=agent_in.attachment_config.model_dump()
+        if agent_in.attachment_config
         else {},
         enable_user_input_request=agent_in.enable_user_input_request,
         enable_memory=agent_in.enable_memory,
@@ -631,23 +629,18 @@ async def update_agent(
         agent.tools_config = tools_config
         updated_fields.append("tools_config")
 
-    # Update enable_vision
-    if agent_in.enable_vision is not None:
-        agent.enable_vision = agent_in.enable_vision
-        updated_fields.append("enable_vision")
-
-    # Update enable_file_upload and file_upload_config
-    if agent_in.enable_file_upload is not None:
-        agent.enable_file_upload = agent_in.enable_file_upload
-        updated_fields.append("enable_file_upload")
-    if agent_in.file_upload_config is not None:
-        file_upload_config = (
-            agent_in.file_upload_config.model_dump()
-            if hasattr(agent_in.file_upload_config, "model_dump")
-            else agent_in.file_upload_config
+    # Update attachment configuration
+    if agent_in.enable_attachments is not None:
+        agent.enable_attachments = agent_in.enable_attachments
+        updated_fields.append("enable_attachments")
+    if agent_in.attachment_config is not None:
+        attachment_config = (
+            agent_in.attachment_config.model_dump()
+            if hasattr(agent_in.attachment_config, "model_dump")
+            else agent_in.attachment_config
         )
-        agent.file_upload_config = cast(dict[str, Any], file_upload_config)
-        updated_fields.append("file_upload_config")
+        agent.attachment_config = cast(dict[str, Any], attachment_config)
+        updated_fields.append("attachment_config")
 
     # Update enable_user_input_request
     if agent_in.enable_user_input_request is not None:
@@ -872,9 +865,8 @@ async def duplicate_agent(
         system_prompt=agent.system_prompt,
         max_iterations=agent.max_iterations,
         tools_config=agent.tools_config,
-        enable_vision=agent.enable_vision,
-        enable_file_upload=agent.enable_file_upload,
-        file_upload_config=agent.file_upload_config,
+        enable_attachments=agent.enable_attachments,
+        attachment_config=agent.attachment_config,
         enable_user_input_request=agent.enable_user_input_request,
         enable_memory=agent.enable_memory,
         memory_config=agent.memory_config,
@@ -1101,9 +1093,10 @@ async def get_conversation(
     # Batch query version counts using GROUP BY
     version_counts: dict[str, int] = {}
     if root_ids:
-        # Count children for each parent_id
+        # Count children for each parent_id (canonical only - round steps are not versions)
         child_counts = (
             await Message.filter(parent_id__in=list(root_ids))
+            .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
             .annotate(count=Count("id"))
             .group_by("parent_id")
             .values("parent_id", "count")

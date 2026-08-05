@@ -10,6 +10,7 @@ from app.models.agent import (
     ConversationSessionMemory,
     ConversationSessionMemoryStatus,
     Message,
+    MessageRoundRole,
 )
 
 
@@ -19,14 +20,24 @@ def get_version_root_id(message: Message) -> UUID:
 
 async def get_message_version_group(message: Message) -> list[Message]:
     root_id = get_version_root_id(message)
-    versions = await Message.filter(Q(id=root_id) | Q(parent_id=root_id)).all()
+    versions = await _version_group_query(root_id).all()
     versions.sort(key=lambda item: item.version_number)
     return versions
 
 
 async def get_version_count(message: Message) -> int:
     root_id = get_version_root_id(message)
-    return await Message.filter(Q(id=root_id) | Q(parent_id=root_id)).count()
+    return await _version_group_query(root_id).count()
+
+
+def _version_group_query(root_id: UUID):
+    """Messages that are real versions of a group: the root plus canonical
+    children. Excludes round steps (tool calls/results) that carry
+    parent_id=root, which would otherwise inflate version counts."""
+    return Message.filter(
+        Q(id=root_id) | Q(parent_id=root_id),
+        Q(round_id__isnull=True) | Q(is_round_canonical=True),
+    )
 
 
 def _is_canonical_visible(message: Message) -> bool:
@@ -126,7 +137,42 @@ async def get_prefix_path_before(
 
         if prefix:
             prefix.reverse()
-            return prefix
+            # Legacy conversations can contain a non-empty but truncated parent
+            # chain. Preserve the active canonical history before the oldest
+            # linked message instead of treating that partial chain as complete.
+            oldest_created_at = prefix[0].created_at
+            earlier_candidates = [
+                item
+                for item in all_messages
+                if item.id not in seen
+                and _is_canonical_visible(item)
+                and item.created_at < oldest_created_at
+            ]
+            earlier_prefix = [item for item in earlier_candidates if item.is_active]
+
+            # A previous faulty switch may already have deactivated that history.
+            # Recover the newest pre-gap branch through its remaining parent links.
+            if not earlier_prefix and earlier_candidates:
+                current = max(
+                    earlier_candidates,
+                    key=lambda item: (item.created_at, str(item.id)),
+                )
+                recovered: list[Message] = []
+                recovered_seen = set(seen)
+                while current.id not in recovered_seen:
+                    recovered_seen.add(current.id)
+                    recovered.append(current)
+                    if current.branch_parent_id is None:
+                        break
+                    parent = message_by_id.get(current.branch_parent_id)
+                    if parent is None or not _is_canonical_visible(parent):
+                        break
+                    current = parent
+                recovered.reverse()
+                earlier_prefix = recovered
+
+            earlier_prefix.sort(key=lambda item: (item.created_at, str(item.id)))
+            return [*earlier_prefix, *prefix]
 
         path = await get_active_canonical_path(message.conversation_id)
         return [item for item in path if item.created_at < message.created_at]
@@ -153,6 +199,9 @@ async def get_prefix_path_before(
 
         if prefix:
             prefix.reverse()
+            if len(prefix) < limit:
+                full_prefix = await get_prefix_path_before(message)
+                return full_prefix[-limit:]
             return prefix
 
     return await get_visible_conversation_messages(
@@ -194,8 +243,15 @@ async def activate_conversation_branch(
     using_db: BaseDBAsyncClient | None = None,
 ) -> None:
     canonical_ids = [message.id for message in canonical_path]
+    # Only activate round steps that belong to an assistant-final message in the
+    # path. The user message shares its round with the (now-deactivated) old
+    # assistant reply; including that round would re-activate the previous
+    # version's tool calls/results as residue.
     round_ids = [
-        message.round_id for message in canonical_path if message.round_id is not None
+        message.round_id
+        for message in canonical_path
+        if message.round_id is not None
+        and message.round_role == MessageRoundRole.ASSISTANT_FINAL
     ]
 
     active_ids = set(canonical_ids)

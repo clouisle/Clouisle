@@ -127,10 +127,6 @@ def test_tool_helpers_cover_credentials_and_display():
     assert not chat_tools._tool_accepts_credentials(lambda: None)
     assert chat_tools._get_item_value({"name": "value"}, "name") == "value"
     assert chat_tools._get_item_value(SimpleNamespace(name="value"), "name") == "value"
-    assert chat_tools._get_tool_result_display({"ok": True}) == '{"ok": true}'
-    assert chat_tools._get_tool_result_display("text") == "text"
-    assert chat_tools._get_tool_result_display(4) == "4"
-    assert chat_tools._get_tool_result_display(None) is None
 
 
 @pytest.mark.anyio

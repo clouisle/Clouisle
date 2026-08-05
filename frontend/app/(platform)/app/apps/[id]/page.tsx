@@ -15,7 +15,7 @@ import {
   type AgentKnowledgeBaseConfig,
   type RAGMode,
   type ToolConfig,
-  type FileUploadConfig,
+  type AttachmentConfig,
   type MemoryConfig,
   type ImageGenerationConfig,
   type VideoGenerationConfig,
@@ -87,12 +87,11 @@ export function AgentEditor({
   const [variables, setVariables] = React.useState<VariableDefinition[]>([])
   const [knowledgeBaseConfigs, setKnowledgeBaseConfigs] = React.useState<AgentKnowledgeBaseConfig[]>([])
   const [ragMode, setRagMode] = React.useState<RAGMode>('agentic')
-  const [enableVision, setEnableVision] = React.useState(false)
-  const [enableFileUpload, setEnableFileUpload] = React.useState(false)
+  const [enableAttachments, setEnableAttachments] = React.useState(false)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(false)
   const [enableMemory, setEnableMemory] = React.useState(false)
   const [memoryConfig, setMemoryConfig] = React.useState<MemoryConfig | null>(null)
-  const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
+  const [attachmentConfig, setAttachmentConfig] = React.useState<AttachmentConfig | null>(null)
   const [enableImageGeneration, setEnableImageGeneration] = React.useState(false)
   const [imageGenerationConfig, setImageGenerationConfig] = React.useState<ImageGenerationConfig | null>(null)
   const [enableVideoGeneration, setEnableVideoGeneration] = React.useState(false)
@@ -126,12 +125,11 @@ export function AgentEditor({
         search_mode: akb.search_mode || 'hybrid',
       })))
       setRagMode(data.rag_mode || 'agentic')
-      setEnableVision(data.enable_vision || false)
-      setEnableFileUpload(data.enable_file_upload || false)
+      setEnableAttachments(data.enable_attachments || false)
       setEnableUserInputRequest(data.enable_user_input_request || false)
       setEnableMemory(data.enable_memory || false)
       setMemoryConfig(data.memory_config || null)
-      setFileUploadConfig(data.file_upload_config || null)
+      setAttachmentConfig(data.attachment_config || null)
       setEnableImageGeneration(data.enable_image_generation || false)
       setImageGenerationConfig(data.image_generation_config || null)
       setEnableVideoGeneration(data.enable_video_generation || false)
@@ -170,8 +168,7 @@ export function AgentEditor({
         variables: variables,
         knowledge_base_configs: knowledgeBaseConfigs,
         rag_mode: ragMode,
-        enable_vision: enableVision,
-        enable_file_upload: enableFileUpload,
+        enable_attachments: enableAttachments,
         enable_user_input_request: enableUserInputRequest,
         enable_memory: enableMemory,
         memory_config: enableMemory ? memoryConfig : null,
@@ -179,7 +176,7 @@ export function AgentEditor({
         image_generation_config: enableImageGeneration ? imageGenerationConfig : null,
         enable_video_generation: enableVideoGeneration,
         video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
-        file_upload_config: enableFileUpload ? fileUploadConfig : null,
+        attachment_config: enableAttachments ? attachmentConfig : null,
       })
       setAgent(updated)
       toast.success(t('agentSaved'))
@@ -214,12 +211,11 @@ export function AgentEditor({
     variables,
     knowledgeBaseConfigs,
     ragMode,
-    enableVision,
-    enableFileUpload,
+    enableAttachments,
     enableUserInputRequest,
     enableMemory,
     memoryConfig,
-    fileUploadConfig,
+    attachmentConfig,
     enableImageGeneration,
     imageGenerationConfig,
     enableVideoGeneration,
@@ -263,11 +259,8 @@ export function AgentEditor({
     if (data.rag_mode !== undefined) {
       setRagMode(data.rag_mode)
     }
-    if (data.enable_vision !== undefined) {
-      setEnableVision(data.enable_vision)
-    }
-    if (data.enable_file_upload !== undefined) {
-      setEnableFileUpload(data.enable_file_upload)
+    if (data.enable_attachments !== undefined) {
+      setEnableAttachments(data.enable_attachments)
     }
     if (data.enable_user_input_request !== undefined) {
       setEnableUserInputRequest(data.enable_user_input_request)
@@ -290,8 +283,8 @@ export function AgentEditor({
     if (data.video_generation_config !== undefined) {
       setVideoGenerationConfig(data.video_generation_config || null)
     }
-    if (data.file_upload_config !== undefined) {
-      setFileUploadConfig(data.file_upload_config || null)
+    if (data.attachment_config !== undefined) {
+      setAttachmentConfig(data.attachment_config || null)
     }
   }
 

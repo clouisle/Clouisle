@@ -12,6 +12,7 @@ class MediaContent(BaseModel):
     url: str | None = Field(default=None, description="远程 URL")
     base64: str | None = Field(default=None, description="Base64 编码数据")
     file_path: str | None = Field(default=None, description="本地文件路径")
+    asset_ref: str | None = Field(default=None, description="Scoped Asset reference")
 
     def has_content(self) -> bool:
         """是否有内容"""

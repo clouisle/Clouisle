@@ -256,6 +256,7 @@
 [data-streamdown="code-block-body"] {
   max-height: 420px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border: 0;
   border-radius: 0;
   background-color: var(--background);

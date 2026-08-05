@@ -85,7 +85,7 @@ async def setup_stream(monkeypatch, *, max_iterations=1, disconnected=False):
         team_id=team.id,
         team=team,
         rag_mode=RAGMode.OFF,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=max_iterations,
     )

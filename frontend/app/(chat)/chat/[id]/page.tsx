@@ -132,9 +132,26 @@ export default function PublicChatPage({
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
   const [activePreview, setActivePreview] = React.useState<ChatPreviewPayload | null>(null)
+  const [previewContentVisible, setPreviewContentVisible] = React.useState(false)
+
+  const dismissPreview = React.useCallback(() => {
+    setPreviewContentVisible(false)
+    setActivePreview(null)
+  }, [])
+
+  const handlePreviewTransitionEnd = React.useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
+    if (
+      event.target !== event.currentTarget
+      || event.propertyName !== 'width'
+      || !activePreview
+    ) return
+
+    setPreviewContentVisible(true)
+  }, [activePreview])
 
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
+  const [selectedImageRefs, setSelectedImageRefs] = React.useState<ChatImageContent[]>([])
   const [isUploading, setIsUploading] = React.useState(false)
 
   // Variable form state
@@ -302,7 +319,8 @@ export default function PublicChatPage({
 
       // Don't reload if already loaded
       if (conversationParam === conversationId) return
-      setActivePreview(null)
+      setSelectedImageRefs([])
+      dismissPreview()
 
       try {
         setLoadingConversation(true)
@@ -319,7 +337,7 @@ export default function PublicChatPage({
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode])
+  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode, dismissPreview])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
@@ -363,7 +381,8 @@ export default function PublicChatPage({
     resetChat()
     setInput('')
     setFiles([])
-    setActivePreview(null)
+    setSelectedImageRefs([])
+    dismissPreview()
     setIsUploading(false)
     setLoadingConversation(false)
 
@@ -373,7 +392,8 @@ export default function PublicChatPage({
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
     if (conv.id === conversationId || loadingConversation) return
-    setActivePreview(null)
+    setSelectedImageRefs([])
+    dismissPreview()
 
     try {
       setLoadingConversation(true)
@@ -443,16 +463,6 @@ export default function PublicChatPage({
     }
   }
 
-  // Helper function to convert File to base64 data URL
-  const fileToDataUrl = async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim() || chatLoading) return
 
@@ -464,87 +474,88 @@ export default function PublicChatPage({
     const filesToProcess = submittedFiles || files
 
     // Process images and files
-    let images: ChatImageContent[] | undefined
+    let images: ChatImageContent[] | undefined = agent?.enable_attachments && selectedImageRefs.length > 0
+      ? selectedImageRefs
+      : undefined
     let fileUrls: ChatFileUrl[] | undefined
 
     if (agent && filesToProcess && filesToProcess.length > 0) {
-      // Process image files for vision
-      if (agent.enable_vision) {
-        const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
-        if (imageFiles.length > 0) {
-          images = await Promise.all(
-            imageFiles.map(async (f) => ({
-              type: 'image_url' as const,
-              url: await fileToDataUrl(f.file),
-            }))
-          )
+      const uploadFiles = async (items: ChatInputFile[], category: string) => {
+        const results = await Promise.allSettled(
+          items.map(async (f) => {
+            const updateProgress = (progress: { percent: number }) => {
+              setFiles(prev => prev.map(file =>
+                file.id === f.id
+                  ? { ...file, isUploading: true, uploadProgress: progress.percent }
+                  : file
+              ))
+            }
+            setFiles(prev => prev.map(file =>
+              file.id === f.id
+                ? { ...file, isUploading: true, uploadProgress: 0 }
+                : file
+            ))
+            const result = await adapter.uploadFile(f.file, category, updateProgress)
+            setFiles(prev => prev.map(file =>
+              file.id === f.id
+                ? { ...file, isUploading: false, uploadProgress: 100 }
+                : file
+            ))
+            return { file: f, result }
+          })
+        )
+        const failed = results.find((result) => result.status === 'rejected')
+        if (failed?.status === 'rejected') {
+          throw failed.reason
         }
+        return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
       }
 
-      // Process document files for file upload - upload to get URLs with progress
-      if (agent.enable_file_upload) {
-        const documentFiles = filesToProcess.filter(f => f.isDocument)
-        if (documentFiles.length > 0) {
-          try {
-            setIsUploading(true)
-
-            // Upload documents with progress tracking
-            const uploadPromises = documentFiles.map(async (f) => {
-              // Update file progress
-              const updateProgress = (progress: { percent: number }) => {
-                setFiles(prev => prev.map(file =>
-                  file.id === f.id
-                    ? { ...file, isUploading: true, uploadProgress: progress.percent }
-                    : file
-                ))
-              }
-
-              // Mark as uploading
-              setFiles(prev => prev.map(file =>
-                file.id === f.id
-                  ? { ...file, isUploading: true, uploadProgress: 0 }
-                  : file
-              ))
-
-              const result = await adapter.uploadFile(
-                f.file,
-                'documents',
-                updateProgress
-              )
-
-              // Mark as complete
-              setFiles(prev => prev.map(file =>
-                file.id === f.id
-                  ? { ...file, isUploading: false, uploadProgress: 100 }
-                  : file
-              ))
-
-              return {
-                filename: f.name,
+      try {
+        setIsUploading(true)
+        if (agent.enable_attachments) {
+          const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
+          if (imageFiles.length > 0) {
+            const uploaded = await uploadFiles(imageFiles, 'images')
+            images = [
+              ...(images || []),
+              ...uploaded.map(({ result }) => ({
+                asset_id: result.asset_id,
+                type: 'image_url' as const,
                 url: result.url,
-                size: f.size,
-                mime_type: f.type,
-              }
-            })
-            fileUrls = await Promise.all(uploadPromises)
-          } catch (err) {
-            console.error('Failed to upload files:', err)
-            showUploadValidationError(err, tCommon)
-            // Reset upload state on error
-            setFiles(prev => prev.map(file => ({
-              ...file,
-              isUploading: false,
-              uploadProgress: undefined
-            })))
-          } finally {
-            setIsUploading(false)
+              })),
+            ]
+          }
+
+          const documentFiles = filesToProcess.filter(f => f.isDocument)
+          if (documentFiles.length > 0) {
+            const uploaded = await uploadFiles(documentFiles, 'documents')
+            fileUrls = uploaded.map(({ file, result }) => ({
+              asset_id: result.asset_id,
+              filename: file.name,
+              url: result.url,
+              size: file.size,
+              mime_type: file.type,
+            }))
           }
         }
+      } catch (err) {
+        console.error('Failed to upload files:', err)
+        showUploadValidationError(err, tCommon)
+        setFiles(prev => prev.map(file => ({
+          ...file,
+          isUploading: false,
+          uploadProgress: undefined
+        })))
+        return
+      } finally {
+        setIsUploading(false)
       }
     }
 
     setInput('')
     setFiles([])
+    setSelectedImageRefs([])
     await sendMessage(message, images, fileUrls)
   }
 
@@ -877,6 +888,11 @@ export default function PublicChatPage({
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
+              onSelectImageReference={agent.enable_attachments ? ({ asset_ref, url }) => {
+                setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
+                  ? current
+                  : [...current, { asset_ref, type: 'image_url', url }])
+              } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -1003,9 +1019,9 @@ export default function PublicChatPage({
               disabled={chatLoading && !isStreaming}
               isLoading={chatLoading}
               isStreaming={isStreaming}
-              allowAttachments={agent.enable_vision}
-              enableFileUpload={agent.enable_file_upload}
-              fileUploadConfig={agent.file_upload_config}
+              allowAttachments={agent.enable_attachments}
+              enableFileUpload={agent.enable_attachments}
+              fileUploadConfig={agent.attachment_config}
               files={files}
               onFilesChange={setFiles}
               isUploading={isUploading}
@@ -1022,16 +1038,19 @@ export default function PublicChatPage({
         </div>
         {/* Preview Panel */}
         <div
+          data-chat-preview-panel
+          aria-hidden={!previewContentVisible}
+          onTransitionEnd={handlePreviewTransitionEnd}
           className={cn(
             "h-full shrink-0 overflow-hidden bg-background transition-all duration-300 ease-in-out",
             activePreview ? "w-1/2 border-l" : "w-0"
           )}
         >
-          {activePreview && (
+          {activePreview && previewContentVisible && (
             <CodePreviewCanvas
               key={activePreview.id}
               preview={activePreview}
-              onClose={() => setActivePreview(null)}
+              onClose={dismissPreview}
             />
           )}
         </div>

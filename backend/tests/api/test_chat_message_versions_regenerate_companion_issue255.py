@@ -16,6 +16,9 @@ class Query:
         self.items = items or []
         self.total = count
 
+    def filter(self, *_args, **_kwargs):
+        return self
+
     def prefetch_related(self, *_relations):
         return self
 

@@ -64,7 +64,7 @@ def core_chat(monkeypatch):
         team_id=uuid4(),
         team=SimpleNamespace(id=uuid4()),
         rag_mode=RAGMode.AGENTIC,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )
@@ -266,6 +266,7 @@ async def test_chat_stream_generator_persists_completed_assistant(
 
     user_message, assistant_message = core_chat.created
     assert "event: message_start" in events
+    assert f'"user_message_id": "{user_message.id}"' in events
     assert 'data: {"delta": "think"}' in events
     assert 'data: {"delta": "answer"}' in events
     assert "event: message_end" in events

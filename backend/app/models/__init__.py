@@ -1,3 +1,11 @@
+from .asset import (
+    Asset,
+    AssetScopeRef,
+    AssetScopeType,
+    AssetSource,
+    AssetStatus,
+    MessageAsset,
+)
 from .user import Permission, Role, ScopedRoleAssignment, Team, TeamMember, User
 from .site_setting import (
     SiteSetting,
@@ -81,6 +89,12 @@ from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
 
 __all__ = [
+    "Asset",
+    "AssetScopeRef",
+    "AssetScopeType",
+    "AssetSource",
+    "AssetStatus",
+    "MessageAsset",
     "User",
     "Role",
     "Permission",

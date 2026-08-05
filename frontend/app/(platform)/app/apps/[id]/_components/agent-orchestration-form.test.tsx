@@ -111,8 +111,8 @@ const agent = {
   variables: [],
   knowledge_bases: [],
   tools_config: [],
-  enable_vision: false,
-  enable_file_upload: false,
+
+  enable_attachments: false,
   enable_user_input_request: false,
   enable_memory: false,
   enable_image_generation: false,
@@ -168,8 +168,8 @@ describe('AgentOrchestrationForm', () => {
       tools_config: [],
       enable_memory: false,
       memory_config: null,
-      enable_file_upload: false,
-      file_upload_config: null,
+      enable_attachments: false,
+      attachment_config: null,
       image_generation_config: null,
       video_generation_config: null,
       rag_mode: 'agentic',
@@ -193,7 +193,6 @@ describe('AgentOrchestrationForm', () => {
     const { tree } = render()
 
     expect(getKnowledgeBases).toHaveBeenCalledTimes(1)
-    expect(listFileParsers).toHaveBeenCalledWith('team-1')
     expect(getTeamModels.mock.calls).toEqual([
       ['team-1', 'text_to_image'],
       ['team-1', 'text_to_video'],
@@ -254,16 +253,16 @@ describe('AgentOrchestrationForm', () => {
     expect(onUpdate.mock.calls.at(-1)?.[0].tools_config).not.toContainEqual({ type: 'mcp', server_id: 'mcp-1' })
   })
 
-  test('clamps enabled capability inputs and ignores invalid truncate values', () => {
+  test('clamps enabled capability inputs', () => {
     const enabledAgent = {
       ...agent,
-      enable_file_upload: true,
+      enable_attachments: true,
       enable_memory: true,
       enable_image_generation: true,
       enable_video_generation: true,
     } as never
     const onUpdate = mock(() => undefined)
-    let tree = render(onUpdate, enabledAgent).tree
+    const tree = render(onUpdate, enabledAgent).tree
     const inputs = find(tree, Input)
     const byBounds = (min: number, max: number) => inputs.find((node) => node.props.min === min && node.props.max === max)!
 
@@ -272,13 +271,10 @@ describe('AgentOrchestrationForm', () => {
     ;(byBounds(256, 4096).props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '100' } })
     ;(byBounds(500, 30000).props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '99999' } })
 
-    tree = render(onUpdate, enabledAgent).tree
-    const truncateSelect = find(tree, Select).find((node) => node.props.value === 'end')!
-    ;(truncateSelect.props.onValueChange as (value: string) => void)('invalid')
     render(onUpdate, enabledAgent)
 
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({
-      file_upload_config: expect.objectContaining({ max_content_length: 500000, truncate_strategy: 'end' }),
+      attachment_config: expect.objectContaining({ max_content_length: 500000 }),
       memory_config: expect.objectContaining({ max_memories_per_retrieval: 10 }),
       image_generation_config: expect.objectContaining({ default_width: 256 }),
       video_generation_config: expect.objectContaining({ poll_interval_ms: 30000 }),
@@ -294,7 +290,7 @@ describe('AgentOrchestrationForm', () => {
     const enabledAgent = {
       ...agent,
       knowledge_bases: [{ knowledge_base: { id: 'kb-1' }, retrieval_top_k: 3, score_threshold: 0.3, search_mode: 'hybrid' }],
-      enable_file_upload: true,
+      enable_attachments: true,
       enable_memory: true,
       enable_image_generation: true,
       enable_video_generation: true,
@@ -314,8 +310,8 @@ describe('AgentOrchestrationForm', () => {
     let tree = render(onUpdate, enabledAgent).tree
 
     for (const testId of [
-      'agent-variables-section', 'agent-kb-section', 'agent-tools-section', 'agent-vision-section',
-      'agent-file-upload-section', 'agent-user-input-section', 'agent-memory-section',
+      'agent-variables-section', 'agent-kb-section', 'agent-tools-section', 'agent-attachments-section',
+      'agent-user-input-section', 'agent-memory-section',
       'agent-image-generation-section', 'agent-video-generation-section',
     ]) {
       const card = findByTestId(tree, testId)
@@ -344,11 +340,7 @@ describe('AgentOrchestrationForm', () => {
 
     choose('agentic', 'auto')
     expect(onUpdate.mock.calls.at(-1)?.[0].rag_mode).toBe('auto')
-    choose('builtin:markitdown', 'custom:parser-1')
-    expect(onUpdate.mock.calls.at(-1)?.[0].file_upload_config.parser).toEqual({ type: 'custom', tool_id: 'parser-1' })
-    choose('custom:parser-1', '')
-    choose('end', 'middle')
-    expect(onUpdate.mock.calls.at(-1)?.[0].file_upload_config).toEqual(expect.objectContaining({ parser: null, truncate_strategy: 'middle' }))
+    enter(1000, 500000, '150000')
     choose('missing-image', 'image-1')
     choose('missing-video', '__default__')
     choose('16:9', '9:16')
@@ -363,7 +355,7 @@ describe('AgentOrchestrationForm', () => {
     expect(payload).toEqual(expect.objectContaining({
       rag_mode: 'auto',
       variables: [{ name: 'region', type: 'text' }],
-      file_upload_config: expect.objectContaining({ parser: null, truncate_strategy: 'middle' }),
+      attachment_config: expect.objectContaining({ max_content_length: 150000 }),
       image_generation_config: expect.objectContaining({ default_model_ref: 'image-1', default_height: 4096, max_images: 1 }),
       video_generation_config: expect.objectContaining({ default_model_ref: null, default_duration: 30, max_duration: 1, default_aspect_ratio: '9:16', poll_timeout_s: 600 }),
     }))
@@ -403,7 +395,7 @@ describe('AgentOrchestrationForm', () => {
       variables: [{ name: 'query', type: 'text' }],
       knowledge_bases: [{ knowledge_base: { id: 'kb-2' }, retrieval_top_k: 7, score_threshold: 0.8, search_mode: null }],
       tools_config: [{ type: 'skill', skill_id: 'skill-1', name: 'writer' }],
-      enable_vision: true,
+
       rag_mode: 'off',
     } as never
     tree = render(onUpdate, replacement).tree
@@ -413,7 +405,7 @@ describe('AgentOrchestrationForm', () => {
       variables: [{ name: 'query', type: 'text' }],
       knowledge_base_configs: [{ knowledge_base_id: 'kb-2', retrieval_top_k: 7, score_threshold: 0.8, search_mode: 'hybrid' }],
       tools_config: [{ type: 'skill', skill_id: 'skill-1', name: 'writer' }],
-      enable_vision: true,
+
       rag_mode: 'off',
     }))
   })

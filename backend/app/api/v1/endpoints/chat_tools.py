@@ -5,13 +5,170 @@ from __future__ import annotations
 import json
 import logging
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
     from app.models.tool import Tool
 
 logger = logging.getLogger(__name__)
+
+
+async def _execute_asset_tool(
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    agent: "Agent | None",
+    user: Any,
+    conversation_id: Any,
+    session_id: str | None = None,
+) -> str:
+    from uuid import UUID
+
+    from app.models.asset import AssetScopeType
+    from app.schemas.response import BusinessError
+    from app.services.asset import asset_service
+    from app.services.file_parser import FileParseConfig, file_parser_service
+    from app.services.upload_storage import get_upload_storage_backend
+    from app.api.v1.endpoints.upload import UPLOAD_ROOT
+
+    from app.core.i18n import t
+
+    if not agent or not user:
+        return json.dumps({"error": t("agent_context_required")}, ensure_ascii=False)
+    ref = arguments.get("ref")
+    if not isinstance(ref, str):
+        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+    if not conversation_id:
+        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+    try:
+        scope_id = UUID(str(conversation_id))
+    except (ValueError, AttributeError):
+        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+    try:
+        asset = await asset_service.resolve_ref(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=scope_id,
+            ref=ref,
+            team_id=getattr(agent, "team_id", None),
+            user_id=user.id,
+        )
+    except BusinessError as exc:
+        if exc.status_code == 403:
+            return json.dumps({"error": t("access_denied")}, ensure_ascii=False)
+        return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
+    try:
+        if tool_name == "materialize_asset":
+            path = arguments.get("path")
+            if not isinstance(path, str) or not path.strip():
+                return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+            if not session_id:
+                return json.dumps(
+                    {"error": t("sandbox_session_required")}, ensure_ascii=False
+                )
+            from app.llm.tools.sandbox_paths import normalize_workspace_path
+            from app.services.sandbox.gateway import sandbox_gateway
+            from app.services.sandbox.models import (
+                SandboxInputFileSpec,
+                SandboxJob,
+                SandboxJobSource,
+                SandboxLimits,
+            )
+
+            try:
+                safe_path = normalize_workspace_path(path)
+            except ValueError:
+                return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+            job = SandboxJob(
+                source=SandboxJobSource.TOOL,
+                language="python",
+                code="return {'materialized': True}",
+                cwd="/workspace",
+                limits=SandboxLimits(timeout_seconds=30, disk_mb=512),
+                input_files=[
+                    SandboxInputFileSpec(
+                        target_path=safe_path,
+                        asset_id=asset.id,
+                        expected_checksum=asset.checksum,
+                        expected_size=asset.size,
+                    )
+                ],
+            )
+            result = await sandbox_gateway.submit_and_wait(
+                job,
+                session_id=session_id,
+                agent_id=str(agent.id),
+                team_id=str(agent.team_id) if agent.team_id else None,
+                timeout_seconds=60,
+            )
+            if not result.success:
+                return json.dumps(
+                    {"error": result.error or t("tool_execution_failed")},
+                    ensure_ascii=False,
+                )
+            return json.dumps(
+                {
+                    "ref": ref,
+                    "path": safe_path,
+                    "filename": asset.display_filename,
+                    "size": asset.size,
+                },
+                ensure_ascii=False,
+            )
+        if tool_name == "inspect_asset":
+            return json.dumps(
+                {
+                    "ref": ref,
+                    "filename": asset.display_filename,
+                    "content_type": asset.content_type,
+                    "size": asset.size,
+                    "source": asset.source.value,
+                    "capabilities": asset_service.capabilities(asset),
+                },
+                ensure_ascii=False,
+            )
+        storage = await get_upload_storage_backend(UPLOAD_ROOT)
+        if tool_name == "read_asset":
+            if "read" not in asset_service.capabilities(asset):
+                return json.dumps(
+                    {"error": t("unsupported_file_type")}, ensure_ascii=False
+                )
+            content = await asset_service.read(asset, storage=storage)
+            max_chars = min(max(int(arguments.get("max_chars", 12000)), 1), 50000)
+            text = content.decode("utf-8", errors="replace")[:max_chars]
+            return json.dumps(
+                {
+                    "ref": ref,
+                    "filename": asset.display_filename,
+                    "content": text,
+                },
+                ensure_ascii=False,
+            )
+        if "parse" not in asset_service.capabilities(asset):
+            return json.dumps({"error": t("unsupported_file_type")}, ensure_ascii=False)
+        content = await asset_service.read(asset, storage=storage)
+        parse_config = FileParseConfig.model_validate(
+            getattr(agent, "attachment_config", None) or {}
+        )
+        parsed = await file_parser_service.parse_file(
+            content,
+            asset.original_filename,
+            parse_config,
+        )
+        return json.dumps(
+            {
+                "ref": ref,
+                "filename": parsed.filename,
+                "content": parsed.content,
+                "truncated": parsed.truncated,
+            },
+            ensure_ascii=False,
+        )
+    except RuntimeError as exc:
+        logger.warning("Asset tool storage error: %s", exc)
+        return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
+    except Exception as exc:
+        logger.exception("Asset tool failed: %s", exc)
+        return json.dumps({"error": t("tool_execution_failed")}, ensure_ascii=False)
 
 
 async def execute_tool_call(
@@ -22,6 +179,7 @@ async def execute_tool_call(
     user: Any = None,
     session_id: str | None = None,
     current_images: list[Any] | None = None,
+    conversation_id: Any = None,
 ) -> Any:
     """Execute a tool and return the result payload."""
     from app.core.i18n import t
@@ -29,7 +187,16 @@ async def execute_tool_call(
     from app.llm.tools import tool_registry
     from app.services.error_messages import exception_to_user_message
 
-    # Initialize default timeouts if not provided
+    if tool_name in {"inspect_asset", "read_asset", "parse_asset", "materialize_asset"}:
+        return await _execute_asset_tool(
+            tool_name,
+            arguments,
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+            session_id=session_id,
+        )
+
     if tool_timeouts is None:
         tool_timeouts = {
             "http": 30,
@@ -331,6 +498,7 @@ async def execute_tool_call(
                 agent=agent,
                 user=user,
                 current_images=current_images,
+                conversation_id=conversation_id,
             )
         except Exception as e:
             logger.exception("Builtin tool execution failed: %s", e)
@@ -561,167 +729,31 @@ async def build_file_content_for_context(
     tool_timeouts: dict[str, Any] | None,
     user: Any,
 ) -> tuple[str, list[dict[str, Any]] | None]:
-    """Build uploaded file content and return cache metadata updates."""
-    from app.core.i18n import t
-    from app.services.file_parser import (
-        file_parser_service,
-        ParsedFile,
-        FileParseConfig,
-    )
+    """Format only deprecated pre-parsed file payloads for the prompt."""
+    from app.services.file_parser import file_parser_service, ParsedFile
 
-    if not agent.enable_file_upload:
+    if not agent.enable_attachments:
         return "", None
 
     parsed_files: list[ParsedFile] = []
-    updated_file_urls: list[dict[str, Any]] | None = None
-    file_config = agent.file_upload_config or {}
-    parser_config = file_config.get("parser")
-    parse_config = FileParseConfig(
-        max_content_length=file_config.get("max_content_length", 100000),
-        truncate_strategy=file_config.get("truncate_strategy", "end"),
-    )
-
-    if file_urls and parser_config:
-        parser_type = parser_config.get("type", "builtin")
-        parser_name = parser_config.get("name", "markitdown")
-        parser_tool_id = parser_config.get("tool_id")
-
-        if parser_type == "builtin" and parser_name == "markitdown":
-            from app.api.v1.endpoints.upload import UPLOAD_ROOT, _resolve_upload_path
-            from app.services.file_parse_cache import (
-                build_parser_hash,
-                read_cached_file,
-                write_cached_file,
+    for file_item in legacy_files or []:
+        parsed_files.append(
+            ParsedFile(
+                filename=_get_item_value(file_item, "filename", ""),
+                content=_get_item_value(file_item, "content", ""),
+                mime_type=_get_item_value(file_item, "mime_type", "text/plain"),
+                size=_get_item_value(file_item, "size", 0),
+                truncated=bool(_get_item_value(file_item, "truncated", False)),
+                original_length=_get_item_value(file_item, "original_length"),
             )
-
-            parser_hash = build_parser_hash(parser_config, parse_config)
-            updated_file_urls = []
-            for f in file_urls:
-                file_item = (
-                    dict(f)
-                    if isinstance(f, dict)
-                    else {
-                        "filename": _get_item_value(f, "filename", ""),
-                        "url": _get_item_value(f, "url", ""),
-                        "size": _get_item_value(f, "size", 0),
-                        "mime_type": _get_item_value(
-                            f, "mime_type", "application/octet-stream"
-                        ),
-                    }
-                )
-                filename = _get_item_value(file_item, "filename", "")
-                mime_type = _get_item_value(
-                    file_item, "mime_type", "application/octet-stream"
-                )
-                size = _get_item_value(file_item, "size", 0)
-                url = _get_item_value(file_item, "url", "")
-                if not url:
-                    updated_file_urls.append(file_item)
-                    continue
-                try:
-                    prefix = "/api/v1/upload/files/"
-                    if not url.startswith(prefix):
-                        raise ValueError("only_upload_file_urls_are_allowed")
-                    relative_parts = [
-                        unquote(part) for part in url[len(prefix) :].split("/")
-                    ]
-                    if len(relative_parts) != 4:
-                        raise ValueError("invalid_upload_file_url")
-                    file_path = _resolve_upload_path(*relative_parts)
-                    if not file_path.is_file():
-                        raise ValueError("upload_file_not_found")
-                    file_path.relative_to(UPLOAD_ROOT)
-                    parsed_file = await read_cached_file(
-                        file_item,
-                        file_path=file_path,
-                        url=url,
-                        parser_hash=parser_hash,
-                    )
-                    if parsed_file is None:
-                        parsed_file = await file_parser_service.parse_file(
-                            file_path.read_bytes(),
-                            filename,
-                            parse_config,
-                        )
-                        file_item = await write_cached_file(
-                            file_item,
-                            parsed_file,
-                            file_path=file_path,
-                            url=url,
-                            parser_hash=parser_hash,
-                        )
-                    parsed_files.append(parsed_file)
-                except Exception as e:
-                    logger.warning("Failed to parse file %s: %s", filename, e)
-                    parsed_files.append(
-                        ParsedFile(
-                            filename=filename,
-                            content=t("file_parse_failed_placeholder"),
-                            mime_type=mime_type,
-                            size=size,
-                        )
-                    )
-                updated_file_urls.append(file_item)
-        elif parser_type == "custom" and parser_tool_id:
-            from app.models.tool import Tool
-
-            custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
-            if custom_tool:
-                try:
-                    urls = [_get_item_value(f, "url", "") for f in file_urls]
-                    result = await execute_tool_call(
-                        f"custom_{custom_tool.name}",
-                        {"files_url": [url for url in urls if url]},
-                        agent=agent,
-                        tool_timeouts=tool_timeouts,
-                        user=user,
-                    )
-                    display_result = _get_tool_result_display(result)
-                    if display_result:
-                        parsed_files.append(
-                            ParsedFile(
-                                filename=t("custom_parser_filename"),
-                                content=display_result,
-                                mime_type="text/plain",
-                                size=len(display_result),
-                            )
-                        )
-                except Exception as e:
-                    logger.warning("Custom parser failed: %s", e)
-                    parsed_files.append(
-                        ParsedFile(
-                            filename=t("custom_parser_filename"),
-                            content=t("custom_parser_failed_placeholder"),
-                            mime_type="text/plain",
-                            size=0,
-                        )
-                    )
-
-    if not parsed_files and legacy_files:
-        for f in legacy_files:
-            filename = _get_item_value(f, "filename", "")
-            content = _get_item_value(f, "content", "")
-            mime_type = _get_item_value(f, "mime_type", "text/plain")
-            size = _get_item_value(f, "size", 0)
-            truncated = _get_item_value(f, "truncated", False)
-            original_length = _get_item_value(f, "original_length")
-            parsed_files.append(
-                ParsedFile(
-                    filename=filename,
-                    content=content,
-                    mime_type=mime_type,
-                    size=size,
-                    truncated=bool(truncated),
-                    original_length=original_length,
-                )
-            )
+        )
 
     if not parsed_files:
-        return "", updated_file_urls
+        return "", None
 
     return (
         file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale),
-        updated_file_urls,
+        None,
     )
 
 
@@ -730,12 +762,3 @@ def _get_item_value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
     return getattr(item, key, default)
-
-
-def _get_tool_result_display(result: Any) -> str | None:
-    """Extract display string from tool execution result."""
-    if isinstance(result, dict):
-        return json.dumps(result, ensure_ascii=False)
-    if isinstance(result, str):
-        return result
-    return str(result) if result is not None else None

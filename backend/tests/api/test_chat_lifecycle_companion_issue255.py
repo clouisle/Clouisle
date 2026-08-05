@@ -14,6 +14,9 @@ class _Query:
         self.rows = rows or []
         self.value = count
 
+    def filter(self, *_args, **_kwargs):
+        return self
+
     def order_by(self, *_args):
         return self
 

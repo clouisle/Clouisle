@@ -230,3 +230,30 @@ async def test_tool_display_names_use_local_metadata_and_mocked_models(monkeypat
     assert names["known"] == "translated:known_key"
     assert names["plain"] == "Plain tool"
     assert names["custom_lookup"] == "Lookup tool"
+
+
+@pytest.mark.anyio
+async def test_tool_display_names_localize_asset_tools_when_attachments_enabled(
+    monkeypatch,
+):
+    current_agent = agent(enable_attachments=True, tools_config=[])
+    monkeypatch.setattr("app.core.i18n.t", lambda key, **_kwargs: f"translated:{key}")
+
+    names = await chat.get_tool_display_names(current_agent, "en")
+
+    assert names["inspect_asset"] == "translated:asset_tool_inspect"
+    assert names["read_asset"] == "translated:asset_tool_read"
+    assert names["parse_asset"] == "translated:asset_tool_parse"
+    assert names["materialize_asset"] == "translated:asset_tool_materialize"
+
+
+@pytest.mark.anyio
+async def test_tool_display_names_omit_asset_tools_when_attachments_disabled(
+    monkeypatch,
+):
+    current_agent = agent(enable_attachments=False, tools_config=[])
+    monkeypatch.setattr("app.core.i18n.t", lambda key, **_kwargs: f"translated:{key}")
+
+    names = await chat.get_tool_display_names(current_agent, "en")
+
+    assert "parse_asset" not in names

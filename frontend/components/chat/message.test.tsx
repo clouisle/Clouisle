@@ -95,14 +95,24 @@ mock.module('streamdown', () => ({
     <div data-streamdown="code-block">
       <div data-streamdown="code-block-header"><span /></div>
       {rendersCodeActions && <div data-streamdown="code-block-actions" />}
-      <pre>{content}</pre>
+      <pre data-streamdown="code-block-body">{content}</pre>
     </div>
   ),
-  Streamdown: (props: { children: React.ReactNode; BlockComponent?: React.ComponentType<{ content: string; index: number; shouldParseIncompleteMarkdown: boolean }> }) => {
+  Streamdown: (props: {
+    children: React.ReactNode
+    isAnimating?: boolean
+    BlockComponent?: React.ComponentType<{
+      content: string
+      index: number
+      shouldParseIncompleteMarkdown: boolean
+      isIncomplete: boolean
+    }>
+  }) => {
     lastStreamdownProps = props as unknown as Record<string, unknown>
     const content = String(props.children)
     const isCodeFence = /^ {0,3}(?:`{3,}|~{3,})/.test(content)
-    return <div>{props.BlockComponent && isCodeFence ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} /> : props.children}</div>
+    const hasClosingFence = /(?:^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*$/.test(content)
+    return <div>{props.BlockComponent && isCodeFence ? <props.BlockComponent content={content} index={0} shouldParseIncompleteMarkdown={false} isIncomplete={Boolean(props.isAnimating && !hasClosingFence)} /> : props.children}</div>
   },
   defaultRehypePlugins: { sanitize: 'sanitize', harden: 'harden' },
 }))
@@ -235,6 +245,35 @@ describe('message rendering', () => {
 
     expect(html.match(/chat\.message\.iterationCapReached/g)?.length).toBe(1)
     expect(html).toContain('chat.message.manuallyStopped')
+  })
+
+  test('shows assistant actions for reasoning-only messages and respects hide flags', () => {
+    const parts = [{ type: 'reasoning' as const, text: 'Only thinking', state: 'done' as const }]
+    const onRegenerate = mock(() => {})
+
+    const visible = renderToStaticMarkup(<Message
+      message={{ id: 'reasoning-only', role: 'assistant', parts }}
+      onRegenerate={onRegenerate}
+    />)
+    expect(visible).toContain('chat.message.regenerate')
+    expect(visible).toContain('chat.message.copy')
+
+    // hideReasoning hides the chain-of-thought panel, not the actions
+    const noChain = renderToStaticMarkup(<Message
+      message={{ id: 'reasoning-hidden', role: 'assistant', parts }}
+      hideReasoning
+      onRegenerate={onRegenerate}
+    />)
+    expect(noChain).toContain('chat.message.regenerate')
+
+    // hideMessageActions suppresses the bar entirely
+    const noActions = renderToStaticMarkup(<Message
+      message={{ id: 'actions-hidden', role: 'assistant', parts }}
+      hideMessageActions
+      onRegenerate={onRegenerate}
+    />)
+    expect(noActions).not.toContain('chat.message.regenerate')
+    expect(noActions).not.toContain('chat.message.copy')
   })
 })
 
@@ -539,6 +578,42 @@ describe('message behavior', () => {
 
     const streaming = renderToStaticMarkup(<Message message={{ id: 'streaming-preview', role: 'assistant', parts: [{ type: 'text', text: code }] }} isStreaming onOpenCodePreview={onOpenCodePreview} />)
     expect(streaming).not.toContain('chat.message.openCodePreview')
+  })
+
+  test('keeps incomplete streaming code pinned to its own scroll bottom', () => {
+    const container = render(<Message
+      message={{ id: 'streaming-code', role: 'assistant', parts: [{ type: 'text', text: '```typescript\nconst value = 1', state: 'streaming' }] }}
+      isStreaming
+    />)
+    const body = container.querySelector<HTMLElement>('[data-streamdown="code-block-body"]')!
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 900 })
+    body.scrollTop = 0
+
+    const root = roots.at(-1)!
+    act(() => root.render(<Message
+      message={{ id: 'streaming-code', role: 'assistant', parts: [{ type: 'text', text: '```typescript\nconst value = 1\nconst value2 = 2', state: 'streaming' }] }}
+      isStreaming
+    />))
+
+    expect(container.querySelector('[data-chat-code-autoscroll]')).not.toBeNull()
+    expect(container.querySelector('[data-streamdown="code-block-body"]')).toBe(body)
+    expect(body.scrollTop).toBe(900)
+    expect(container.querySelector('[data-chat-code-loading]')).toBeNull()
+
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 1200 })
+    body.scrollTop = 200
+    act(() => root.render(<Message
+      message={{ id: 'streaming-code', role: 'assistant', parts: [{ type: 'text', text: '```typescript\nconst value = 1\nconst value2 = 2\nconst value3 = 3', state: 'streaming' }] }}
+      isStreaming
+    />))
+    expect(container.querySelector('[data-streamdown="code-block-body"]')).toBe(body)
+    expect(body.scrollTop).toBe(1200)
+
+    act(() => root.render(<Message
+      message={{ id: 'streaming-code', role: 'assistant', parts: [{ type: 'text', text: '```typescript\nconst value = 1\nconst value2 = 2\n```', state: 'streaming' }] }}
+      isStreaming
+    />))
+    expect(container.querySelector('[data-chat-code-autoscroll]')).toBeNull()
   })
 
   test('keeps Markdown previews available without Streamdown code actions', async () => {

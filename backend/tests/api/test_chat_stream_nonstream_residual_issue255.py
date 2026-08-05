@@ -77,7 +77,7 @@ def _agent(**overrides):
         "team": SimpleNamespace(id=uuid4()),
         "rag_mode": RAGMode.AGENTIC,
         "max_iterations": 5,
-        "enable_vision": False,
+        "enable_attachments": False,
         "enable_user_input_request": False,
         "streaming_config": {},
         "tools_config": [],

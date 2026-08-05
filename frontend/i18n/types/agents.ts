@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-29T06:20:44.130Z
+// GENERATED — 2026-08-05T06:10:25.285Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -291,29 +291,14 @@ export type AgentsMessages = {
           }
         }
       }
-      vision: {
+      attachments: {
         title: string
         tooltip: string
         description: string
-      }
-      fileUpload: {
-        title: string
-        tooltip: string
-        description: string
-        parser: string
-        selectParser: string
-        parserHint: string
-        customParser: string
         maxContentLength: string
         maxContentLengthHint: string
         characters: string
-        truncateStrategy: string
-        selectStrategy: string
-        truncateEnd: string
-        truncateStart: string
-        truncateMiddle: string
         contextHint: string
-        supportedFormats: string
       }
       userInputRequest: {
         title: string

@@ -250,6 +250,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
 ) -> None:
     migration_names = [
         "init_user_locale_field",
+        "init_agent_attachment_fields",
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
@@ -339,6 +340,7 @@ async def test_init_db_continues_after_optional_migration_failures(
 ) -> None:
     optional_names = [
         "init_user_locale_field",
+        "init_agent_attachment_fields",
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
@@ -541,6 +543,64 @@ async def test_scoped_role_assignments_backfills_supported_memberships(
     assert "NOW(), NOW()" in statements[4]
     assert all("user-viewer" not in statement for statement in statements)
     assert all("user-legacy" not in statement for statement in statements)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("columns", "expected_fragments"),
+    [
+        (
+            {"enable_vision", "enable_file_upload", "file_upload_config"},
+            (
+                "ADD COLUMN enable_attachments",
+                "ADD COLUMN attachment_config",
+                "COALESCE(enable_vision, FALSE) OR COALESCE(enable_file_upload, FALSE)",
+                "file_upload_config",
+                "DROP COLUMN enable_vision, DROP COLUMN enable_file_upload, DROP COLUMN file_upload_config",
+            ),
+        ),
+        (
+            {"enable_attachments", "attachment_config"},
+            ("attachment_config - 'parser'",),
+        ),
+    ],
+)
+async def test_agent_attachment_migration_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    columns: set[str],
+    expected_fragments: tuple[str, ...],
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, [{"table_name": "agents"}]),
+                (len(columns), [{"column_name": column} for column in columns]),
+            ]
+        )
+    )
+    execute = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
+
+    await init_data.init_agent_attachment_fields()
+
+    statements = [awaited.args[1] for awaited in execute.await_args_list]
+    for fragment in expected_fragments:
+        assert any(fragment in statement for statement in statements)
+
+
+@pytest.mark.asyncio
+async def test_agent_attachment_migration_skips_missing_agents_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    execute = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
+
+    await init_data.init_agent_attachment_fields()
+
+    execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio

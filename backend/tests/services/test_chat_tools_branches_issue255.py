@@ -263,6 +263,7 @@ async def test_builtin_credentials_fall_back_from_team_to_global_configuration()
         agent=SimpleNamespace(team_id="team-1"),
         user=None,
         current_images=None,
+        conversation_id=None,
     )
 
 

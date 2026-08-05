@@ -12,6 +12,7 @@ from uuid import UUID
 from tortoise import fields, models
 
 if TYPE_CHECKING:
+    from app.models.asset import MessageAsset
     from app.models.user import Team, User
     from app.models.model import TeamModel
     from app.models.knowledge_base import KnowledgeBase
@@ -102,17 +103,12 @@ class Agent(models.Model):
         default=dict, description="Tools credentials (API keys, tokens, etc.)"
     )  # type: ignore[assignment]
 
-    # Vision configuration
-    enable_vision = fields.BooleanField(
-        default=False, description="Enable vision/image understanding"
+    # Attachment configuration
+    enable_attachments = fields.BooleanField(
+        default=False, description="Enable file and image attachments"
     )
-
-    # File upload configuration
-    enable_file_upload = fields.BooleanField(
-        default=False, description="Enable file upload and parsing"
-    )
-    file_upload_config: dict = fields.JSONField(
-        default=dict, description="File upload configuration"
+    attachment_config: dict = fields.JSONField(
+        default=dict, description="Attachment limits and accepted file types"
     )  # type: ignore[assignment]
 
     # User input request configuration
@@ -417,6 +413,7 @@ class Message(models.Model):
     file_urls: list | None = fields.JSONField(
         null=True, description="File URLs for uploaded files"
     )  # type: ignore[assignment]
+    asset_links: fields.ReverseRelation["MessageAsset"]
 
     # Tool call related (for assistant tool calls and tool responses)
     tool_calls: list | None = fields.JSONField(

@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
+        init_agent_attachment_fields,
         init_user_locale_field,
         fix_cascade_delete_policies,
         init_workflow_visibility_field,
@@ -87,6 +88,7 @@ async def lifespan(app: FastAPI):
         init_message_branch_parent_field,
         init_conversation_session_memory_table,
         init_conversation_context_checkpoint_table,
+        init_assets_tables,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
@@ -113,6 +115,11 @@ async def lifespan(app: FastAPI):
         await init_user_locale_field()
     except Exception as e:
         logger.warning(f"User locale migration failed: {e}")
+
+    try:
+        await init_agent_attachment_fields()
+    except Exception as e:
+        logger.warning(f"Agent attachment migration failed: {e}")
 
     try:
         await init_agent_tools_credentials()
@@ -215,6 +222,11 @@ async def lifespan(app: FastAPI):
         await init_totp_fields()
     except Exception as e:
         logger.warning(f"TOTP fields migration failed: {e}")
+
+    try:
+        await init_assets_tables()
+    except Exception as e:
+        logger.warning(f"Asset table migration failed: {e}")
 
     try:
         await init_permission_is_system_field()

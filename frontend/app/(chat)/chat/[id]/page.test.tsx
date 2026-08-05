@@ -133,7 +133,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
-  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+ enable_attachments: false, attachment_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
   created_by: { username: 'owner' },
 }
 const conversations = [
@@ -158,6 +158,14 @@ function buttons(text: string) {
 }
 async function click(text: string, index = 0) {
   await act(async () => { await buttons(text)[index].props.onClick({ stopPropagation: mock() }) })
+}
+function previewPanel() {
+  return renderer!.root.findByProps({ 'data-chat-preview-panel': true })
+}
+function endPreviewWidthTransition() {
+  const panel = previewPanel()
+  const target = {}
+  act(() => panel.props.onTransitionEnd({ target, currentTarget: target, propertyName: 'width' }))
 }
 
 beforeEach(() => {
@@ -285,6 +293,57 @@ describe('PublicChatPage', () => {
     expect(disconnect).toHaveBeenCalled()
     renderer = undefined
   })
+  test('does not carry generated image references into another conversation', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    render()
+    await flush()
+
+    act(() => {
+      ;(chatContainerProps.onSelectImageReference as (image: { asset_ref: string; url: string }) => void)({
+        asset_ref: 'generated-image',
+        url: 'https://files.example.test/generated.png',
+      })
+    })
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
+    act(() => newChat.props.onClick())
+    await act(async () => (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('after switch', []))
+
+    expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined)
+  })
+
+  test('waits for every upload to settle before aborting submission', async () => {
+    const consoleError = console.error
+    console.error = mock()
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    let rejectFirst!: (reason?: unknown) => void
+    let resolveSecond!: (value: { asset_id: string; url: string }) => void
+    uploadFileWithProgress
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+    render()
+    await flush()
+    const first = { id: 'first', name: 'first.pdf', size: 5, type: 'application/pdf', file: new File(['first'], 'first.pdf'), isDocument: true }
+    const second = { id: 'second', name: 'second.pdf', size: 6, type: 'application/pdf', file: new File(['second'], 'second.pdf'), isDocument: true }
+
+    let settled = false
+    let submission!: Promise<void>
+    await act(async () => {
+      submission = (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('upload', [first, second])
+      submission.then(() => { settled = true }, () => { settled = true })
+      await Promise.resolve()
+    })
+    expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
+
+    rejectFirst(new Error('first upload failed'))
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    resolveSecond({ asset_id: 'second-asset', url: 'https://files.example.test/second.pdf' })
+    await act(async () => { await submission })
+    expect(settled).toBe(true)
+    expect(sendMessage).not.toHaveBeenCalled()
+    console.error = consoleError
+  })
 
   test('sends suggested and option messages while enforcing variable validation', async () => {
     getPublicAgent.mockResolvedValueOnce({
@@ -307,7 +366,7 @@ describe('PublicChatPage', () => {
   })
 
   test('converts image attachments and uploads documents with progress', async () => {
-    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_vision: true, enable_file_upload: true })
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     class MockFileReader {
       result: string | ArrayBuffer | null = null
       onload: (() => void) | null = null
@@ -323,27 +382,32 @@ describe('PublicChatPage', () => {
 
     const image = { id: 'image', name: 'safe.png', size: 4, type: 'image/png', file: new File(['safe'], 'safe.png', { type: 'image/png' }), isDocument: false }
     const documentFile = { id: 'doc', name: 'safe.pdf', size: 4, type: 'application/pdf', file: new File(['safe'], 'safe.pdf', { type: 'application/pdf' }), isDocument: true }
-    uploadFileWithProgress.mockImplementationOnce(async (_file, _category, onProgress) => {
+    uploadFileWithProgress.mockImplementation(async (file, category, onProgress) => {
       onProgress({ percent: 50 })
-      return { url: 'https://files.example.test/safe.pdf' }
+      return {
+        asset_id: category === 'images' ? 'image-asset' : 'document-asset',
+        url: `https://files.example.test/${file.name}`,
+      }
     })
     act(() => (chatInputProps.onFilesChange as (files: unknown[]) => void)([image, documentFile]))
     await act(async () => (chatInputProps.onSubmit as (message: string) => Promise<void>)('with files'))
 
-    expect(uploadFileWithProgress).toHaveBeenCalledTimes(1)
-    expect(uploadFileWithProgress.mock.calls[0][0]).toBe(documentFile.file)
-    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('documents')
+    expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
+    expect(uploadFileWithProgress.mock.calls[0][0]).toBe(image.file)
+    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('images')
+    expect(uploadFileWithProgress.mock.calls[1][0]).toBe(documentFile.file)
+    expect(uploadFileWithProgress.mock.calls[1][1]).toBe('documents')
     expect(sendMessage).toHaveBeenCalledWith(
       'with files',
-      [{ type: 'image_url', url: 'data:image/png;base64,c2FmZQ==' }],
-      [{ filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
+      [{ asset_id: 'image-asset', type: 'image_url', url: 'https://files.example.test/safe.png' }],
+      [{ asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
     )
   })
 
-  test('reports allowed upload types without leaking upload failures', async () => {
+  test('reports allowed upload types and aborts submission without leaking upload failures', async () => {
     const consoleError = console.error
     console.error = mock()
-    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_file_upload: true })
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     uploadFileWithProgress.mockRejectedValueOnce(new ApiError(1001, 'private storage failure', { allowed: ['pdf', 'txt'] }))
     render()
     await flush()
@@ -351,7 +415,7 @@ describe('PublicChatPage', () => {
 
     await act(async () => (chatInputProps.onSubmit as (message: string, files: unknown[]) => Promise<void>)('upload', [documentFile]))
     expect(toastError).toHaveBeenCalledWith('invalidFileTypeWithAllowed:{"allowed":"pdf, txt"}')
-    expect(sendMessage).toHaveBeenCalledWith('upload', undefined, undefined)
+    expect(sendMessage).not.toHaveBeenCalled()
     expect(output()).not.toContain('private storage failure')
     console.error = consoleError
   })
@@ -412,7 +476,7 @@ describe('PublicChatPage', () => {
   test('cleans delete selection when the dialog closes and ignores invalid upload types without allowed values', async () => {
     const consoleError = console.error
     console.error = mock()
-    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_file_upload: true })
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     uploadFileWithProgress.mockRejectedValueOnce(new ApiError(1001))
     render()
     await flush()
@@ -427,6 +491,30 @@ describe('PublicChatPage', () => {
     expect(toastError).toHaveBeenCalledWith('invalidFileType')
     console.error = consoleError
   })
+  test('shows preview content only after opening and hides it before closing', async () => {
+    render()
+    await flush()
+
+    act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'source' }))
+    expect(previewPanel().props['aria-hidden']).toBe(true)
+    expect(output()).not.toContain('data-preview')
+
+    const panel = previewPanel()
+    const target = {}
+    act(() => panel.props.onTransitionEnd({ target, currentTarget: target, propertyName: 'border-left-width' }))
+    expect(output()).not.toContain('data-preview')
+    act(() => panel.props.onTransitionEnd({ target: {}, currentTarget: target, propertyName: 'width' }))
+    expect(output()).not.toContain('data-preview')
+
+    endPreviewWidthTransition()
+    expect(previewPanel().props['aria-hidden']).toBe(false)
+    expect(output()).toContain('data-preview')
+
+    await click('preview')
+    expect(previewPanel().props['aria-hidden']).toBe(true)
+    expect(output()).not.toContain('data-preview')
+  })
+
   test('clears the active preview when navigating back/forward to a different conversation', async () => {
     const params = Promise.resolve({ id: 'agent-1' })
     query = new URLSearchParams('conversation=conv-1')
@@ -435,6 +523,7 @@ describe('PublicChatPage', () => {
 
     // A code preview is open for the current conversation
     act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'code' }))
+    endPreviewWidthTransition()
     expect(output()).toContain('data-preview')
 
     // Simulate browser back/forward: conv-1 is now the active conversation and the

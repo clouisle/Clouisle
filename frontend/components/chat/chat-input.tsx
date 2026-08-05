@@ -34,7 +34,7 @@ export interface ChatInputFile {
   isUploading?: boolean;
 }
 
-export interface FileUploadConfig {
+export interface AttachmentConfig {
   max_file_size: number;  // bytes
   max_files: number;
   max_content_length: number;  // characters
@@ -56,7 +56,7 @@ interface ChatInputProps {
   /** Enable document file upload */
   enableFileUpload?: boolean;
   /** Document file upload configuration */
-  fileUploadConfig?: FileUploadConfig | null;
+  fileUploadConfig?: AttachmentConfig | null;
   acceptedFileTypes?: string;
   maxFiles?: number;
   className?: string;

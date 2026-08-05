@@ -19,12 +19,14 @@ from app.api import deps
 from app.core.config import settings
 from app.core.i18n import t
 from app.models.api_key import APIKey
+from app.models.asset import AssetSource
 from app.models.user import User
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.file_parser import (
     file_parser_service,
     FileParseConfig,
 )
+from app.services.asset import asset_service
 from app.services.audit_log import AuditLogService
 from app.services.upload_storage import get_upload_storage_backend
 
@@ -220,6 +222,7 @@ async def save_generated_upload(
 
     return {
         "path": storage_path,
+        "storage_key": storage_key,
         "url": get_file_url(safe_category, date_path, unique_filename),
         "filename": unique_filename,
         "size": len(content),
@@ -339,6 +342,16 @@ async def upload_image(
         content_type=content_type,
         filename=file.filename,
     )
+    asset = await asset_service.register_bytes(
+        storage_key=upload_info["storage_key"],
+        original_filename=file.filename or upload_info["filename"],
+        content_type=content_type,
+        content=content,
+        source=AssetSource.UPLOAD,
+        team_id=None,
+        created_by_id=current_user.id,
+        provenance={"category": category},
+    )
 
     await AuditLogService.log(
         user=current_user,
@@ -359,6 +372,7 @@ async def upload_image(
 
     return success(
         data={
+            "asset_id": str(asset.id),
             "url": upload_info["url"],
             "filename": upload_info["filename"],
             "original_name": file.filename,
@@ -401,6 +415,16 @@ async def upload_file(
         content_type=content_type,
         filename=file.filename,
     )
+    asset = await asset_service.register_bytes(
+        storage_key=upload_info["storage_key"],
+        original_filename=file.filename or upload_info["filename"],
+        content_type=content_type,
+        content=content,
+        source=AssetSource.UPLOAD,
+        team_id=None,
+        created_by_id=current_user.id,
+        provenance={"category": category},
+    )
 
     await AuditLogService.log(
         user=current_user,
@@ -421,6 +445,7 @@ async def upload_file(
 
     return success(
         data={
+            "asset_id": str(asset.id),
             "url": upload_info["url"],
             "filename": upload_info["filename"],
             "original_name": file.filename,

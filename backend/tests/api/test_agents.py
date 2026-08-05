@@ -108,9 +108,8 @@ def agent(**overrides):
         "hide_message_actions": False,
         "hide_reasoning": False,
         "tools_config": [],
-        "enable_vision": False,
-        "enable_file_upload": False,
-        "file_upload_config": {},
+        "enable_attachments": False,
+        "attachment_config": {},
         "enable_user_input_request": False,
         "enable_memory": False,
         "memory_config": {},
@@ -377,8 +376,8 @@ async def test_update_agent_updates_config_tools_and_kb(monkeypatch):
         description="New",
         max_iterations=8,
         tools_config=[{"type": "builtin", "name": "clock"}],
-        enable_vision=True,
-        file_upload_config={"max_files": 2},
+        enable_attachments=True,
+        attachment_config={"max_files": 2},
         enable_memory=True,
         memory_config={"max_memories_per_retrieval": 4},
         enable_image_generation=True,
@@ -756,7 +755,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         suggested_questions=["Help?"],
         visibility="public",
         model_id=model_id,
-        enable_file_upload=True,
+        enable_attachments=True,
         enable_user_input_request=True,
         context_compression_config={"enabled": True},
         enable_video_generation=True,
@@ -782,7 +781,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
 
     assert result["data"]["visibility"] == AgentVisibility.TEAM
     assert item.model_id == model_id
-    assert item.enable_file_upload is True
+    assert item.enable_attachments is True
     assert item.enable_user_input_request is True
     assert item.video_generation_config["default_model_ref"] == "dummy/model"
     fields = agents.AuditLogService.log.await_args.kwargs["metadata"]["fields_updated"]

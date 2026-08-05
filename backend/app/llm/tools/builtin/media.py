@@ -9,10 +9,12 @@ for frontend rendering.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 from collections.abc import Sequence
 from typing import Any
+from uuid import UUID
 
 from app.core.i18n import t
 from app.llm import model_manager
@@ -226,6 +228,51 @@ def _resolve_generation_reference_images(
     return resolved
 
 
+async def _resolve_generation_reference_refs(
+    *,
+    refs: Sequence[str],
+    conversation_id: Any,
+    agent: Any,
+    user: Any,
+) -> list[ImageContent] | None:
+    from app.api.v1.endpoints.upload import UPLOAD_ROOT
+    from app.models.asset import AssetScopeType
+    from app.services.asset import asset_service
+    from app.services.upload_storage import get_upload_storage_backend
+
+    if not conversation_id or not agent or not user:
+        raise BusinessError(msg_key="validation_error")
+    try:
+        scope_id = UUID(str(conversation_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise BusinessError(msg_key="validation_error") from exc
+
+    selected_refs = list(dict.fromkeys(refs))
+    if not selected_refs:
+        return None
+
+    storage = await get_upload_storage_backend(UPLOAD_ROOT)
+    resolved: list[ImageContent] = []
+    for ref in selected_refs:
+        asset = await asset_service.resolve_ref(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=scope_id,
+            ref=ref,
+            team_id=getattr(agent, "team_id", None),
+            user_id=user.id,
+        )
+        if not asset.content_type.lower().startswith("image/"):
+            raise BusinessError(msg_key="unsupported_file_type")
+        content = await asset_service.read(asset, storage=storage)
+        image_format = asset.content_type.split("/", 1)[1].lower()
+        if image_format == "jpeg":
+            image_format = "jpg"
+        resolved.append(
+            ImageContent(base64=base64.b64encode(content).decode(), format=image_format)
+        )
+    return resolved
+
+
 def _resolve_start_image_reference(
     *,
     start_image_index: Any,
@@ -258,13 +305,22 @@ class ToolExecutionResult(dict):
 
 async def normalize_image_generation_response(
     response: ImageGenerationResponse | None,
+    *,
+    team_id: UUID | None = None,
+    created_by_id: UUID | None = None,
+    conversation_id: UUID | None = None,
 ) -> ImageGenerationResponse | None:
     if response is None:
         return None
 
     normalized_images: list[GeneratedImage] = []
     for generated in response.images:
-        normalized_image = await media_asset_service.normalize_image(generated.image)
+        normalized_image = await media_asset_service.normalize_image(
+            generated.image,
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
+        )
         if normalized_image is None:
             continue
         normalized_images.append(
@@ -418,10 +474,13 @@ async def generate_image(
     negative_prompt: str | None = None,
     seed: int | None = None,
     images: list[dict[str, Any]] | None = None,
+    reference_image_refs: list[str] | None = None,
     reference_image_indexes: list[int] | None = None,
     extra_params: dict[str, Any] | None = None,
     agent: Any | None = None,
+    user: Any | None = None,
     current_images: list[Any] | None = None,
+    conversation_id: Any = None,
 ) -> dict[str, Any]:
     """Generate images through the unified model manager."""
     resolved_model_ref: str | None = None
@@ -436,11 +495,21 @@ async def generate_image(
         max_images = int(config.get("max_images", 4))
         final_num_images = min(num_images, max_images)
 
-        reference_images = _resolve_generation_reference_images(
-            images=images,
-            reference_image_indexes=reference_image_indexes,
-            current_images=current_images,
-        )
+        if reference_image_refs:
+            if images or reference_image_indexes:
+                raise BusinessError(msg_key="image_reference_images_conflict")
+            reference_images = await _resolve_generation_reference_refs(
+                refs=reference_image_refs,
+                conversation_id=conversation_id,
+                agent=agent,
+                user=user,
+            )
+        else:
+            reference_images = _resolve_generation_reference_images(
+                images=images,
+                reference_image_indexes=reference_image_indexes,
+                current_images=current_images,
+            )
         if reference_images and not config.get("allow_reference_images", True):
             raise BusinessError(msg_key="image_reference_images_disabled")
 
@@ -478,7 +547,15 @@ async def generate_image(
             request,
             model_id=resolved_model_ref,
         )
-        response = await normalize_image_generation_response(image_response)
+        normalized_conversation_id = (
+            UUID(str(conversation_id)) if conversation_id is not None else None
+        )
+        response = await normalize_image_generation_response(
+            image_response,
+            team_id=getattr(agent, "team_id", None),
+            created_by_id=getattr(user, "id", None),
+            conversation_id=normalized_conversation_id,
+        )
         display_result = build_image_tool_result(
             prompt,
             response,
@@ -622,8 +699,8 @@ def register_media_tools() -> None:
         description=(
             "Generate one or more images from a prompt. Use this when the user asks "
             "you to create illustrations, product shots, mockups, concept art, "
-            "or edit/reference-based image outputs. Available conversation images "
-            "are listed with 1-based indexes; use reference_image_indexes for only "
+            "or edit/reference-based image outputs. Available image Assets are "
+            "listed with stable four-character refs; use reference_image_refs for "
             "the specific images the user wants to reference."
         ),
         parameters=[
@@ -672,18 +749,26 @@ def register_media_tools() -> None:
                 name="images",
                 type="array",
                 description=(
-                    "Optional explicit reference image objects. For images listed in "
-                    "the conversation inventory, use reference_image_indexes instead."
+                    "Optional explicit reference image objects. Prefer "
+                    "reference_image_refs for images listed in available_assets."
                 ),
                 items={"type": "object"},
+            ),
+            ToolParameter(
+                name="reference_image_refs",
+                type="array",
+                description=(
+                    "Exact four-character refs of image Assets from available_assets. "
+                    "Choose only the specific images needed."
+                ),
+                items={"type": "string"},
             ),
             ToolParameter(
                 name="reference_image_indexes",
                 type="array",
                 description=(
-                    "1-based indexes of available conversation images to use as "
-                    "references. Choose only the specific images needed, e.g. [3] "
-                    "for image #3 or [5] when five images are available."
+                    "Deprecated: 1-based indexes of legacy conversation images. Use "
+                    "reference_image_refs when available."
                 ),
                 items={"type": "integer"},
             ),

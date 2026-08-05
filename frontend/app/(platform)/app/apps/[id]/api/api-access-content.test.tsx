@@ -90,8 +90,8 @@ const baseAgent = {
   variables: [],
   suggested_questions: [],
   knowledge_bases: [],
-  enable_vision: false,
-  enable_file_upload: false,
+
+  enable_attachments: false,
   enable_user_input_request: false,
   enable_memory: false,
   enable_image_generation: false,

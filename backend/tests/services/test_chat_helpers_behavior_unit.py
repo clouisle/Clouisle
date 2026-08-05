@@ -20,6 +20,9 @@ class Query:
     def order_by(self, *_args):
         return self
 
+    def filter(self, *_args, **_kwargs):
+        return self
+
     def prefetch_related(self, *_args):
         return self
 

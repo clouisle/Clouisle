@@ -110,6 +110,7 @@
       "conversationId": "Conversation ID",
       "error": "An error occurred",
       "generatedImageAlt": "Generated image",
+      "useAsReference": "Use as reference",
       "toolExecutionFailed": "Tool execution failed",
       "videoPreviewUnavailable": "Video generated but no preview URL is available.",
       "videoProcessing": "Video is still being generated.",

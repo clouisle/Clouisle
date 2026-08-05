@@ -424,6 +424,96 @@ async def init_user_locale_field():
     logger.info("User locale migration complete")
 
 
+async def init_agent_attachment_fields() -> None:
+    """Replace legacy agent vision and file-upload fields with attachments."""
+    logger.info("Initializing agent attachment fields...")
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        logger.info("Agents table does not exist yet, skipping attachment migration")
+        return
+
+    _, rows = await conn.execute_query(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND table_schema = 'public'
+        """
+    )
+    columns = {row["column_name"] for row in rows}
+
+    if "enable_attachments" not in columns:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE agents
+            ADD COLUMN enable_attachments BOOLEAN NOT NULL DEFAULT FALSE
+            """,
+        )
+
+    if "attachment_config" not in columns:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE agents
+            ADD COLUMN attachment_config JSONB NOT NULL DEFAULT '{}'::jsonb
+            """,
+        )
+
+    if {"enable_vision", "enable_file_upload"} & columns:
+        vision = (
+            "COALESCE(enable_vision, FALSE)" if "enable_vision" in columns else "FALSE"
+        )
+        uploads = (
+            "COALESCE(enable_file_upload, FALSE)"
+            if "enable_file_upload" in columns
+            else "FALSE"
+        )
+        await execute_startup_migration_query(
+            conn,
+            f"""
+            UPDATE agents
+            SET enable_attachments = {vision} OR {uploads}
+            """,
+        )
+
+    if "file_upload_config" in columns:
+        await execute_startup_migration_query(
+            conn,
+            """
+            UPDATE agents
+            SET attachment_config = COALESCE(file_upload_config, '{}'::jsonb) - 'parser'
+            """,
+        )
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        UPDATE agents
+        SET attachment_config = attachment_config - 'parser'
+        WHERE attachment_config ? 'parser'
+        """,
+    )
+
+    legacy_columns = [
+        column
+        for column in ("enable_vision", "enable_file_upload", "file_upload_config")
+        if column in columns
+    ]
+    if legacy_columns:
+        await execute_startup_migration_query(
+            conn,
+            f"ALTER TABLE agents DROP COLUMN {', DROP COLUMN '.join(legacy_columns)}",
+        )
+
+    logger.info("Agent attachment fields migration complete")
+
+
 async def init_agent_tools_credentials():
     """
     Initialize tools_credentials field for existing agents.
@@ -994,6 +1084,73 @@ async def init_conversation_context_checkpoint_table():
     """)
 
     logger.info("Conversation context checkpoint table initialization complete")
+
+
+async def init_assets_tables() -> None:
+    """Create durable Asset metadata and scoped reference tables."""
+    logger.info("Initializing Asset tables...")
+    conn = Tortoise.get_connection("default")
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS assets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            parent_id UUID REFERENCES assets(id) ON DELETE SET NULL,
+            storage_key VARCHAR(1000) NOT NULL UNIQUE,
+            original_filename VARCHAR(500) NOT NULL,
+            display_filename VARCHAR(500) NOT NULL,
+            content_type VARCHAR(255) NOT NULL,
+            size BIGINT NOT NULL CHECK (size >= 0),
+            checksum VARCHAR(64) NOT NULL,
+            source VARCHAR(32) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'available',
+            provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
+            expires_at TIMESTAMPTZ,
+            deleted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_assets_team_status_created
+        ON assets(team_id, status, created_at)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_assets_checksum ON assets(checksum)
+    """)
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS message_assets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            role VARCHAR(30) NOT NULL DEFAULT 'attachment',
+            position INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(message_id, asset_id, role)
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_message_assets_message_position
+        ON message_assets(message_id, position, created_at)
+    """)
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS asset_scope_refs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            scope_type VARCHAR(20) NOT NULL,
+            scope_id UUID NOT NULL,
+            asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            ref VARCHAR(4) NOT NULL CHECK (ref ~ '^[0-9a-f]{4}$'),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(scope_type, scope_id, asset_id),
+            UNIQUE(scope_type, scope_id, ref)
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_asset_scope_refs_scope
+        ON asset_scope_refs(scope_type, scope_id)
+    """)
+    logger.info("Asset table initialization complete")
 
 
 async def init_permission_is_system_field():
@@ -2509,6 +2666,11 @@ async def init_db():
         await init_user_locale_field()
     except Exception as e:
         logger.warning(f"User locale migration failed (may be first run): {e}")
+
+    try:
+        await init_agent_attachment_fields()
+    except Exception as e:
+        logger.warning(f"Agent attachment migration failed (may be first run): {e}")
 
     try:
         await init_agent_tools_credentials()

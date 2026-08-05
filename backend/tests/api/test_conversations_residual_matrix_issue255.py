@@ -21,7 +21,7 @@ class Query:
 
         return resolve().__await__()
 
-    def filter(self, **_kwargs):
+    def filter(self, *_args, **_kwargs):
         return self
 
     def prefetch_related(self, *_args):

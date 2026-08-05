@@ -62,7 +62,7 @@ async def setup_chat(monkeypatch, *, max_iterations=3, rag_mode=RAGMode.OFF):
         team=SimpleNamespace(id=team_id),
         rag_mode=rag_mode,
         max_iterations=max_iterations,
-        enable_vision=True,
+        enable_attachments=True,
         enable_user_input_request=False,
     )
     conversation = SimpleNamespace(id=uuid4(), title=None)
@@ -208,7 +208,14 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
     user_message, assistant = state.created
     assert user_message.content == "explain the notes"
     assert user_message.rag_context == rag
-    assert user_message.images == [{"type": "image_url", "url": "current.png"}]
+    assert user_message.images == [
+        {
+            "asset_id": None,
+            "asset_ref": None,
+            "type": "image_url",
+            "url": "current.png",
+        }
+    ]
     assert user_message.file_urls == [{"filename": "notes.txt"}]
     user_message.save.assert_awaited_once_with(update_fields=["file_urls"])
     assert assistant.content == "answer"
@@ -230,6 +237,36 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
     provider_message = provider.await_args.kwargs["messages"][0]
     assert provider_message["role"] == "user"
     assert provider_message["content"] == "prepared prompt"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("field", ["asset_id", "asset_ref"])
+async def test_chat_does_not_persist_message_for_invalid_attachment(monkeypatch, field):
+    state = await setup_chat(monkeypatch)
+    resolver = "get_authorized" if field == "asset_id" else "resolve_ref"
+    monkeypatch.setattr(
+        chat.asset_service,
+        resolver,
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="file_not_found",
+                status_code=404,
+            )
+        ),
+    )
+    attachment = ImageContent(
+        url="current.png", **{field: uuid4() if field == "asset_id" else "a1b2"}
+    )
+
+    with pytest.raises(BusinessError, match="file_not_found"):
+        await chat.chat(
+            state.agent.id,
+            ChatRequest(message="invalid attachment", images=[attachment]),
+            (state.user, None),
+        )
+
+    assert state.created == []
 
 
 @pytest.mark.anyio
@@ -298,6 +335,7 @@ async def test_chat_executes_tool_round_and_aggregates_usage(monkeypatch):
         user=state.user,
         session_id="sandbox-session",
         current_images=[{"url": "old.png"}],
+        conversation_id=state.conversation.id,
     )
     second_context = chat.prepare_model_context.await_args_list[1].kwargs
     assert [entry["role"] for entry in second_context["history_override"]] == [
@@ -364,3 +402,71 @@ async def test_chat_maps_provider_failure_without_final_persistence(monkeypatch)
     assert error.value.status_code == 500
     assert len(state.created) == 1
     chat.activate_conversation_branch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_append_asset_manifest_formats_when_connection_available(monkeypatch):
+    from app.models.asset import MessageAsset
+
+    monkeypatch.setattr(MessageAsset._meta, "default_connection", object())
+    build_manifest = AsyncMock(return_value=[])
+    format_manifest = Mock(return_value="")
+    monkeypatch.setattr(
+        chat.asset_service, "build_conversation_manifest", build_manifest
+    )
+    monkeypatch.setattr(chat.asset_service, "format_manifest", format_manifest)
+    agent = SimpleNamespace(id=uuid4(), team_id=None)
+    user = SimpleNamespace(id=uuid4())
+
+    result = await chat._append_asset_manifest(
+        "original message",
+        conversation_id=uuid4(),
+        agent=agent,
+        user=user,
+    )
+
+    assert result == "original message"
+    build_manifest.assert_awaited_once()
+
+    format_manifest.return_value = "<available_assets>...</available_assets>"
+    result = await chat._append_asset_manifest(
+        "original message",
+        conversation_id=uuid4(),
+        agent=agent,
+        user=user,
+    )
+
+    assert result == "original message\n\n<available_assets>...</available_assets>"
+
+
+@pytest.mark.asyncio
+async def test_message_asset_transaction_uses_db_transaction(monkeypatch):
+    from app.models.asset import MessageAsset
+
+    monkeypatch.setattr(MessageAsset._meta, "default_connection", object())
+    transaction_cm = AsyncMock()
+    in_transaction = Mock(return_value=transaction_cm)
+    monkeypatch.setattr("app.api.v1.endpoints.chat.in_transaction", in_transaction)
+
+    async with chat._message_asset_transaction(True):
+        pass
+
+    in_transaction.assert_called_once_with()
+    transaction_cm.__aenter__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_attach_message_assets_persists_links(monkeypatch):
+    attach = AsyncMock()
+    monkeypatch.setattr(chat.asset_service, "attach_to_message", attach)
+    asset = SimpleNamespace(id=uuid4())
+
+    await chat._attach_message_assets(
+        message_id=uuid4(),
+        assets=[(asset, "attachment", 0)],
+    )
+
+    attach.assert_awaited_once()
+    assert attach.await_args.kwargs["asset"] is asset
+    assert attach.await_args.kwargs["role"] == "attachment"
+    assert attach.await_args.kwargs["position"] == 0

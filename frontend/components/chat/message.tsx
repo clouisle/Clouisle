@@ -434,6 +434,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onSwitchVersion?: (versionIndex: number) => void
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void
+  /** Callback when a generated image is selected as a later reference */
+  onSelectImageReference?: (image: { asset_ref: string; url: string }) => void
   /** Callback when a previewable code block is opened */
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   /** Hide tool call cards and tool execution details */
@@ -465,6 +467,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onFeedback,
       onSwitchVersion,
       onSelectOption,
+      onSelectImageReference,
       onOpenCodePreview,
       hideToolCalls = false,
       hideMessageActions = false,
@@ -761,22 +764,40 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   const imageUrl = getImageAssetUrl(item.image)
                   if (!imageUrl) return null
                   return (
-                    <button
+                    <div
                       key={`${imageIndex}-${imageUrl}`}
-                      type="button"
-                      className="relative overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
-                      aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
-                      onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
+                      className="relative overflow-hidden rounded-lg border bg-background"
                     >
-                      <img
-                        src={imageUrl}
-                        alt={parsedOutput.prompt || t('generatedImageAlt')}
-                        className="h-auto w-full object-cover"
-                      />
-                      <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
-                        <Eye className="h-4 w-4" />
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        className="block w-full text-left transition-opacity hover:opacity-90"
+                        aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
+                        onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
+                      >
+                        <img
+                          src={imageUrl}
+                          alt={parsedOutput.prompt || t('generatedImageAlt')}
+                          className="h-auto w-full object-cover"
+                        />
+                        <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+                          <Eye className="h-4 w-4" />
+                        </span>
+                      </button>
+                      {item.image.asset_ref && onSelectImageReference && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="absolute bottom-2 left-2"
+                          onClick={() => onSelectImageReference({
+                            asset_ref: item.image.asset_ref as string,
+                            url: imageUrl,
+                          })}
+                        >
+                          {t('useAsReference')}
+                        </Button>
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -849,7 +870,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
-    }, [handleArtifactPreview, onOpenCodePreview, openLightbox, t])
+    }, [handleArtifactPreview, onOpenCodePreview, onSelectImageReference, openLightbox, t])
 
     // Render a single part
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
@@ -1051,6 +1072,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
     // Get text parts to check if content has started
     const hasTextContent = textParts.some(t => t.text && t.text.length > 0)
+
+    // A finished assistant turn is actionable whenever it produced any visible
+    // content - text, reasoning, tool activity, or an error - so regenerate/copy
+    // stay available for reasoning-only messages even when the chain of thought
+    // is hidden. hideMessageActions still suppresses the bar entirely.
+    const hasMessageContent = hasTextContent
+      || reasoningParts.length > 0
+      || toolCallParts.length > 0
+      || isErroredMessage
 
     // Check if any step is still active (streaming)
     // Chain of thought is streaming until content starts appearing
@@ -1332,7 +1362,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               defaultOpen={false}
             >
               <ChainOfThoughtHeader title={tReasoning('thought')} />
-              <ChainOfThoughtContent containScroll className="max-h-80 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+              <ChainOfThoughtContent>
                 {buildChainOfThoughtSteps()}
               </ChainOfThoughtContent>
             </ChainOfThought>
@@ -1498,7 +1528,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && (textContent || isErroredMessage) && !hideMessageActions && (
+            {isAssistant && !isStreaming && hasMessageContent && !hideMessageActions && (
            <MessageActions className={cn("transition-opacity", isSpeakingThisMessage ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
@@ -1604,6 +1634,7 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onFeedback === next.onFeedback
     && prev.onSwitchVersion === next.onSwitchVersion
     && prev.onSelectOption === next.onSelectOption
+    && prev.onSelectImageReference === next.onSelectImageReference
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls
     && prev.hideMessageActions === next.hideMessageActions
@@ -1668,6 +1699,7 @@ function TokenStatsContent({
   )
 }
 
+
 /**
  * Text content with lightweight inline citation markers.
  * Keep citation handling in string preprocessing so message rendering does not
@@ -1684,6 +1716,14 @@ function PreviewableMarkdownBlock({
   isStreaming: boolean
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
 }) {
+  const blockRef = React.useRef<HTMLDivElement>(null)
+
+  React.useLayoutEffect(() => {
+    if (!isStreaming || !props.isIncomplete) return
+
+    const body = blockRef.current?.querySelector<HTMLElement>('[data-streamdown="code-block-body"]')
+    if (body) body.scrollTop = body.scrollHeight
+  }, [content, isStreaming, props.isIncomplete])
   const parsedFence = !isStreaming && onOpenCodePreview ? parseCodeFence(content) : null
   const previewKind = parsedFence ? getPreviewKind(parsedFence.language, parsedFence.code) : null
 
@@ -1701,13 +1741,23 @@ function PreviewableMarkdownBlock({
     )
   }
 
-  return (
+  const block = (
     <Block
       content={content}
       index={index}
       shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
       {...props}
     />
+  )
+
+  if (!isStreaming || !props.isIncomplete) {
+    return block
+  }
+
+  return (
+    <div ref={blockRef} data-chat-code-autoscroll="true">
+      {block}
+    </div>
   )
 }
 
@@ -2179,6 +2229,14 @@ export const TextWithCitations = React.memo(function TextWithCitations({
     },
   }), [onOpenImage])
 
+  const renderMarkdownBlock = React.useCallback((props: React.ComponentProps<typeof Block>) => (
+    <PreviewableMarkdownBlock
+      {...props}
+      isStreaming={isStreaming}
+      onOpenCodePreview={onOpenCodePreview}
+    />
+  ), [isStreaming, onOpenCodePreview])
+
   React.useEffect(() => {
     if (!activeSpeechSentence) {
       clearSpeechHighlight()
@@ -2207,13 +2265,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
           onLinkCheck: (url) => isSameOriginChatLink(url),
           renderModal: (props) => <LinkSafetyModal {...props} />,
         }}
-        BlockComponent={(props) => (
-          <PreviewableMarkdownBlock
-            {...props}
-            isStreaming={isStreaming}
-            onOpenCodePreview={onOpenCodePreview}
-          />
-        )}
+        BlockComponent={renderMarkdownBlock}
       >
         {processedText}
       </Streamdown>
