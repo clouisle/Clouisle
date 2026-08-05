@@ -132,6 +132,22 @@ export default function PublicChatPage({
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
   const [activePreview, setActivePreview] = React.useState<ChatPreviewPayload | null>(null)
+  const [previewContentVisible, setPreviewContentVisible] = React.useState(false)
+
+  const dismissPreview = React.useCallback(() => {
+    setPreviewContentVisible(false)
+    setActivePreview(null)
+  }, [])
+
+  const handlePreviewTransitionEnd = React.useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
+    if (
+      event.target !== event.currentTarget
+      || event.propertyName !== 'width'
+      || !activePreview
+    ) return
+
+    setPreviewContentVisible(true)
+  }, [activePreview])
 
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
@@ -303,7 +319,7 @@ export default function PublicChatPage({
 
       // Don't reload if already loaded
       if (conversationParam === conversationId) return
-      setActivePreview(null)
+      dismissPreview()
 
       try {
         setLoadingConversation(true)
@@ -320,7 +336,7 @@ export default function PublicChatPage({
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode])
+  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode, dismissPreview])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
@@ -364,7 +380,7 @@ export default function PublicChatPage({
     resetChat()
     setInput('')
     setFiles([])
-    setActivePreview(null)
+    dismissPreview()
     setIsUploading(false)
     setLoadingConversation(false)
 
@@ -374,7 +390,7 @@ export default function PublicChatPage({
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
     if (conv.id === conversationId || loadingConversation) return
-    setActivePreview(null)
+    dismissPreview()
 
     try {
       setLoadingConversation(true)
@@ -1011,16 +1027,19 @@ export default function PublicChatPage({
         </div>
         {/* Preview Panel */}
         <div
+          data-chat-preview-panel
+          aria-hidden={!previewContentVisible}
+          onTransitionEnd={handlePreviewTransitionEnd}
           className={cn(
             "h-full shrink-0 overflow-hidden bg-background transition-all duration-300 ease-in-out",
             activePreview ? "w-1/2 border-l" : "w-0"
           )}
         >
-          {activePreview && (
+          {activePreview && previewContentVisible && (
             <CodePreviewCanvas
               key={activePreview.id}
               preview={activePreview}
-              onClose={() => setActivePreview(null)}
+              onClose={dismissPreview}
             />
           )}
         </div>
