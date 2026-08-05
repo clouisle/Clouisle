@@ -146,12 +146,13 @@ async def _execute_asset_tool(
         if "parse" not in asset_service.capabilities(asset):
             return json.dumps({"error": t("unsupported_file_type")}, ensure_ascii=False)
         content = await asset_service.read(asset, storage=storage)
-        agent_max = getattr(agent, "max_file_size", None)
-        max_content = int(agent_max) if agent_max else 100000
+        parse_config = FileParseConfig.model_validate(
+            getattr(agent, "attachment_config", None) or {}
+        )
         parsed = await file_parser_service.parse_file(
             content,
             asset.original_filename,
-            FileParseConfig(max_content_length=max_content),
+            parse_config,
         )
         return json.dumps(
             {

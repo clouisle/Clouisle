@@ -240,6 +240,36 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("field", ["asset_id", "asset_ref"])
+async def test_chat_does_not_persist_message_for_invalid_attachment(monkeypatch, field):
+    state = await setup_chat(monkeypatch)
+    resolver = "get_authorized" if field == "asset_id" else "resolve_ref"
+    monkeypatch.setattr(
+        chat.asset_service,
+        resolver,
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="file_not_found",
+                status_code=404,
+            )
+        ),
+    )
+    attachment = ImageContent(
+        url="current.png", **{field: uuid4() if field == "asset_id" else "a1b2"}
+    )
+
+    with pytest.raises(BusinessError, match="file_not_found"):
+        await chat.chat(
+            state.agent.id,
+            ChatRequest(message="invalid attachment", images=[attachment]),
+            (state.user, None),
+        )
+
+    assert state.created == []
+
+
+@pytest.mark.anyio
 async def test_chat_executes_tool_round_and_aggregates_usage(monkeypatch):
     state = await setup_chat(monkeypatch)
     tool_call = ToolCall(

@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID
 
 from app.core.config import settings
+from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
@@ -104,9 +105,8 @@ class SandboxManager:
                 raise ValueError("Sandbox session not found or expired")
             if session_team_id is not None and session.team_id != session_team_id:
                 raise ValueError("Sandbox session not found or expired")
-            if any(input_file.asset_id is not None for input_file in job.input_files):
-                asset_team_id = UUID(session.team_id) if session.team_id else None
-                asset_user_id = UUID(session.user_id) if session.user_id else None
+            asset_team_id = UUID(session.team_id) if session.team_id else None
+            asset_user_id = UUID(session.user_id) if session.user_id else None
             workspace = self.workspace_manager.prepare_session(session_id)
             should_cleanup = False
         else:
@@ -244,6 +244,7 @@ class SandboxManager:
                     f"Sandbox input target already exists: {input_file.target_path}"
                 )
             if input_file.asset_id is not None:
+                from app.api.v1.endpoints.upload import UPLOAD_ROOT
                 from app.services.asset import asset_service
                 from app.services.upload_storage import get_upload_storage_backend
 
@@ -252,8 +253,7 @@ class SandboxManager:
                     team_id=team_id,
                     user_id=user_id,
                 )
-                upload_root = Path(__file__).resolve().parents[4] / "uploads"
-                storage = await get_upload_storage_backend(upload_root)
+                storage = await get_upload_storage_backend(UPLOAD_ROOT)
                 content = await asset_service.read(asset, storage=storage)
             else:
                 assert input_file.content_base64 is not None
@@ -263,13 +263,19 @@ class SandboxManager:
                 input_file.expected_size is not None
                 and len(content) != input_file.expected_size
             ):
-                raise ValueError("Sandbox input size does not match Asset metadata")
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR,
+                    msg_key="sandbox_input_size_mismatch",
+                )
             checksum = hashlib.sha256(content).hexdigest()
             if (
                 input_file.expected_checksum is not None
                 and checksum != input_file.expected_checksum
             ):
-                raise ValueError("Sandbox input checksum does not match Asset metadata")
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR,
+                    msg_key="sandbox_input_checksum_mismatch",
+                )
 
             target.parent.mkdir(parents=True, exist_ok=True)
             partial = target.with_name(f".{target.name}.partial")

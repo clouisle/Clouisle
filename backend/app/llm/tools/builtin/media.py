@@ -495,9 +495,9 @@ async def generate_image(
         max_images = int(config.get("max_images", 4))
         final_num_images = min(num_images, max_images)
 
-        if reference_image_refs and (images or reference_image_indexes):
-            raise BusinessError(msg_key="image_reference_images_conflict")
-        if reference_image_refs is not None:
+        if reference_image_refs:
+            if images or reference_image_indexes:
+                raise BusinessError(msg_key="image_reference_images_conflict")
             reference_images = await _resolve_generation_reference_refs(
                 refs=reference_image_refs,
                 conversation_id=conversation_id,

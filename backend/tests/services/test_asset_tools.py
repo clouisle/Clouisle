@@ -13,8 +13,10 @@ from app.api.v1.endpoints.chat_tools import _execute_asset_tool
 from app.schemas.response import BusinessError
 
 
-def _agent(team_id=None):
-    return SimpleNamespace(id=uuid4(), team_id=team_id, max_file_size=None)
+def _agent(team_id=None, attachment_config=None):
+    return SimpleNamespace(
+        id=uuid4(), team_id=team_id, attachment_config=attachment_config or {}
+    )
 
 
 def _user(uid=None):
@@ -43,7 +45,7 @@ def _make_service(asset, capabilities=None):
     return svc
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_inspect_asset_returns_no_uuid():
     asset = _asset()
     svc = _make_service(asset)
@@ -69,7 +71,7 @@ async def test_inspect_asset_returns_no_uuid():
     assert "capabilities" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_inspect_asset_missing_returns_not_found():
     svc = MagicMock()
     svc.resolve_ref = AsyncMock(
@@ -93,7 +95,7 @@ async def test_inspect_asset_missing_returns_not_found():
     assert "access_denied" not in data["error"]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_inspect_asset_forbidden_returns_access_denied():
     svc = MagicMock()
     svc.resolve_ref = AsyncMock(
@@ -117,7 +119,7 @@ async def test_inspect_asset_forbidden_returns_access_denied():
     assert data["error"] != ""
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_read_asset_returns_text():
     asset = _asset(ctype="text/plain", orig="readme.txt")
     svc = _make_service(asset, capabilities=["inspect", "read", "sandbox"])
@@ -144,7 +146,7 @@ async def test_read_asset_returns_text():
     assert data["ref"] == "abcd"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_read_asset_refuses_binary():
     asset = _asset(ctype="image/png", orig="photo.png")
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])
@@ -163,7 +165,7 @@ async def test_read_asset_refuses_binary():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parse_asset_returns_parsed_content():
     from app.services.file_parser import ParsedFile
 
@@ -179,21 +181,25 @@ async def test_parse_asset_returns_parsed_content():
         size=14,
     )
 
+    parse_file = AsyncMock(return_value=fake_parsed)
     with (
         patch("app.services.asset.asset_service", svc),
         patch(
             "app.services.upload_storage.get_upload_storage_backend",
             AsyncMock(return_value=object()),
         ),
-        patch(
-            "app.services.file_parser.file_parser_service.parse_file",
-            AsyncMock(return_value=fake_parsed),
-        ),
+        patch("app.services.file_parser.file_parser_service.parse_file", parse_file),
     ):
         result = await _execute_asset_tool(
             "parse_asset",
             {"ref": "abcd"},
-            agent=_agent(),
+            agent=_agent(
+                attachment_config={
+                    "max_file_size": 10 * 1024 * 1024,
+                    "max_content_length": 1234,
+                    "truncate_strategy": "middle",
+                }
+            ),
             user=_user(),
             conversation_id=convo_id,
         )
@@ -201,9 +207,12 @@ async def test_parse_asset_returns_parsed_content():
     data = json.loads(result)
     assert data["content"] == "parsed content"
     assert "truncated" in data
+    parse_config = parse_file.await_args.args[2]
+    assert parse_config.max_content_length == 1234
+    assert parse_config.truncate_strategy == "middle"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parse_asset_refuses_unsupported():
     asset = _asset(ctype="image/png", orig="photo.png")
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])
@@ -222,7 +231,7 @@ async def test_parse_asset_refuses_unsupported():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_asset_tool_missing_agent_or_user():
     convo_id = str(uuid4())
     result = await _execute_asset_tool(
@@ -236,7 +245,7 @@ async def test_asset_tool_missing_agent_or_user():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_asset_tool_invalid_conversation_id():
     result = await _execute_asset_tool(
         "inspect_asset",
@@ -249,7 +258,7 @@ async def test_asset_tool_invalid_conversation_id():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_asset_tool_no_conversation_id():
     result = await _execute_asset_tool(
         "inspect_asset",
@@ -262,7 +271,7 @@ async def test_asset_tool_no_conversation_id():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_materialize_asset_stages_file():
     asset = _asset(
         orig="report.xlsx",
@@ -300,7 +309,7 @@ async def test_materialize_asset_stages_file():
     assert mock_submit.call_args.kwargs["session_id"] == "session-1"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_materialize_asset_missing_session_returns_error():
     asset = _asset()
     svc = _make_service(asset)
@@ -320,7 +329,7 @@ async def test_materialize_asset_missing_session_returns_error():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_materialize_asset_missing_path_returns_error():
     asset = _asset()
     svc = _make_service(asset)
@@ -340,7 +349,7 @@ async def test_materialize_asset_missing_path_returns_error():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_materialize_asset_rejects_path_escape():
     asset = _asset()
     svc = _make_service(asset)
@@ -360,7 +369,7 @@ async def test_materialize_asset_rejects_path_escape():
     assert "error" in data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_materialize_asset_returns_error_on_sandbox_failure():
     asset = _asset(orig="report.xlsx")
     svc = _make_service(asset, capabilities=["inspect", "sandbox"])

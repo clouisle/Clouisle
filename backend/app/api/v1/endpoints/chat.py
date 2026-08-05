@@ -4,6 +4,8 @@ Provides streaming and non-streaming chat with AI agents.
 """
 
 from __future__ import annotations
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import ast
 import json
@@ -137,24 +139,25 @@ async def _append_asset_manifest(
     return f"{message}\n\n{manifest_text}" if message else manifest_text
 
 
-async def _attach_message_assets(
+async def _resolve_message_assets(
     *,
-    message_id: UUID,
     attachments: list[Any],
     agent: Agent,
     user: User,
     conversation_id: UUID | None = None,
-) -> None:
-    """Authorize and persist durable Asset links for a user message."""
+) -> list[tuple[Any, str, int]]:
+    """Authorize attachment references before creating their message."""
     from app.models.asset import AssetScopeType
 
+    team_id = UUID(str(agent.team_id)) if agent.team_id else None
+    resolved_assets: list[tuple[Any, str, int]] = []
     for position, attachment in enumerate(attachments):
         asset_id = getattr(attachment, "asset_id", None)
         asset_ref = getattr(attachment, "asset_ref", None)
         if asset_id is not None:
             asset = await asset_service.get_authorized(
                 asset_id,
-                team_id=UUID(str(agent.team_id)) if agent.team_id else None,
+                team_id=team_id,
                 user_id=user.id,
             )
         elif asset_ref and conversation_id is not None:
@@ -162,15 +165,40 @@ async def _attach_message_assets(
                 scope_type=AssetScopeType.CONVERSATION,
                 scope_id=conversation_id,
                 ref=asset_ref,
-                team_id=UUID(str(agent.team_id)) if agent.team_id else None,
+                team_id=team_id,
                 user_id=user.id,
             )
         else:
             continue
+        resolved_assets.append(
+            (asset, "selected_reference" if asset_ref else "attachment", position)
+        )
+    return resolved_assets
+
+
+@asynccontextmanager
+async def _message_asset_transaction(
+    has_assets: bool,
+) -> AsyncIterator[None]:
+    """Keep a persisted message and its Asset links atomic."""
+    if not has_assets or MessageAsset._meta.default_connection is None:
+        yield
+        return
+    async with in_transaction():
+        yield
+
+
+async def _attach_message_assets(
+    *,
+    message_id: UUID,
+    assets: list[tuple[Any, str, int]],
+) -> None:
+    """Persist already-authorized durable Asset links for a user message."""
+    for asset, role, position in assets:
         await asset_service.attach_to_message(
             asset=asset,
             message_id=message_id,
-            role="selected_reference" if asset_ref else "attachment",
+            role=role,
             position=position,
         )
 
@@ -1228,34 +1256,39 @@ async def chat(
         rag_contexts = aggregate_rag_contexts(rag_contexts)
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
-    round_id = uuid4()
-    next_round_index = 1
-    user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
-
-    # Save user message with images and file_urls
-    user_msg = await Message.create(
-        conversation=conversation,
-        role=MessageRole.USER,
-        content=chat_in.message,
-        images=[img.model_dump() for img in chat_in.images] if chat_in.images else None,
-        file_urls=[f.model_dump() for f in chat_in.file_urls]
-        if chat_in.file_urls
-        else None,
-        rag_context=rag_contexts if rag_contexts else None,
-        branch_parent_id=user_branch_parent_id,
-        round_id=round_id,
-        round_index=0,
-        round_role=MessageRoundRole.USER_INPUT,
-        is_round_canonical=True,
-    )
-
-    await _attach_message_assets(
-        message_id=user_msg.id,
+    message_assets = await _resolve_message_assets(
         attachments=[*chat_in.images, *chat_in.file_urls],
         agent=agent,
         user=current_user,
         conversation_id=conversation.id,
     )
+    round_id = uuid4()
+    next_round_index = 1
+    user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
+
+    # Save user message with images and file_urls.
+    async with _message_asset_transaction(bool(message_assets)):
+        user_msg = await Message.create(
+            conversation=conversation,
+            role=MessageRole.USER,
+            content=chat_in.message,
+            images=[img.model_dump() for img in chat_in.images]
+            if chat_in.images
+            else None,
+            file_urls=[f.model_dump() for f in chat_in.file_urls]
+            if chat_in.file_urls
+            else None,
+            rag_context=rag_contexts if rag_contexts else None,
+            branch_parent_id=user_branch_parent_id,
+            round_id=round_id,
+            round_index=0,
+            round_role=MessageRoundRole.USER_INPUT,
+            is_round_canonical=True,
+        )
+        await _attach_message_assets(
+            message_id=user_msg.id,
+            assets=message_assets,
+        )
     final_message = await _append_asset_manifest(
         final_message,
         conversation_id=conversation.id,
@@ -1819,38 +1852,41 @@ async def chat_stream(
                                 rag_contexts, chat_in.message
                             )
 
+                    message_assets = await _resolve_message_assets(
+                        attachments=[*chat_in.images, *chat_in.file_urls],
+                        agent=agent,
+                        user=current_user,
+                        conversation_id=conversation.id,
+                    )
                     round_id = uuid4()
                     next_round_index = 1
                     user_branch_parent_id = await get_next_user_branch_parent_id(
                         conversation
                     )
 
-                    # Save user message with images and file_urls
-                    user_msg = await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.USER,
-                        content=chat_in.message,
-                        images=[img.model_dump() for img in chat_in.images]
-                        if chat_in.images
-                        else None,
-                        file_urls=[f.model_dump() for f in chat_in.file_urls]
-                        if chat_in.file_urls
-                        else None,
-                        rag_context=rag_contexts if rag_contexts else None,
-                        branch_parent_id=user_branch_parent_id,
-                        round_id=round_id,
-                        round_index=0,
-                        round_role=MessageRoundRole.USER_INPUT,
-                        is_round_canonical=True,
-                    )
-
-                    await _attach_message_assets(
-                        message_id=user_msg.id,
-                        attachments=[*chat_in.images, *chat_in.file_urls],
-                        agent=agent,
-                        user=current_user,
-                        conversation_id=conversation.id,
-                    )
+                    # Save user message with images and file_urls.
+                    async with _message_asset_transaction(bool(message_assets)):
+                        user_msg = await Message.create(
+                            conversation=conversation,
+                            role=MessageRole.USER,
+                            content=chat_in.message,
+                            images=[img.model_dump() for img in chat_in.images]
+                            if chat_in.images
+                            else None,
+                            file_urls=[f.model_dump() for f in chat_in.file_urls]
+                            if chat_in.file_urls
+                            else None,
+                            rag_context=rag_contexts if rag_contexts else None,
+                            branch_parent_id=user_branch_parent_id,
+                            round_id=round_id,
+                            round_index=0,
+                            round_role=MessageRoundRole.USER_INPUT,
+                            is_round_canonical=True,
+                        )
+                        await _attach_message_assets(
+                            message_id=user_msg.id,
+                            assets=message_assets,
+                        )
                     final_message = await _append_asset_manifest(
                         final_message,
                         conversation_id=conversation.id,

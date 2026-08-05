@@ -2610,6 +2610,12 @@ msgstr "Sandbox job has no executable payload"
 msgid "sandbox_disk_limit_exceeded"
 msgstr "Sandbox disk limit exceeded during {stage}: {usage_bytes} > {limit_bytes}"
 
+msgid "sandbox_input_size_mismatch"
+msgstr "Sandbox input size does not match Asset metadata"
+
+msgid "sandbox_input_checksum_mismatch"
+msgstr "Sandbox input checksum does not match Asset metadata"
+
 msgid "verification_email_sent"
 msgstr "Verification email has been sent"
 

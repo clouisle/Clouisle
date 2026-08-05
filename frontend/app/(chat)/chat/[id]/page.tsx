@@ -319,6 +319,7 @@ export default function PublicChatPage({
 
       // Don't reload if already loaded
       if (conversationParam === conversationId) return
+      setSelectedImageRefs([])
       dismissPreview()
 
       try {
@@ -380,6 +381,7 @@ export default function PublicChatPage({
     resetChat()
     setInput('')
     setFiles([])
+    setSelectedImageRefs([])
     dismissPreview()
     setIsUploading(false)
     setLoadingConversation(false)
@@ -390,6 +392,7 @@ export default function PublicChatPage({
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
     if (conv.id === conversationId || loadingConversation) return
+    setSelectedImageRefs([])
     dismissPreview()
 
     try {
@@ -471,35 +474,42 @@ export default function PublicChatPage({
     const filesToProcess = submittedFiles || files
 
     // Process images and files
-    let images: ChatImageContent[] | undefined = selectedImageRefs.length > 0
+    let images: ChatImageContent[] | undefined = agent?.enable_attachments && selectedImageRefs.length > 0
       ? selectedImageRefs
       : undefined
     let fileUrls: ChatFileUrl[] | undefined
 
     if (agent && filesToProcess && filesToProcess.length > 0) {
-      const uploadFiles = async (items: ChatInputFile[], category: string) => Promise.all(
-        items.map(async (f) => {
-          const updateProgress = (progress: { percent: number }) => {
+      const uploadFiles = async (items: ChatInputFile[], category: string) => {
+        const results = await Promise.allSettled(
+          items.map(async (f) => {
+            const updateProgress = (progress: { percent: number }) => {
+              setFiles(prev => prev.map(file =>
+                file.id === f.id
+                  ? { ...file, isUploading: true, uploadProgress: progress.percent }
+                  : file
+              ))
+            }
             setFiles(prev => prev.map(file =>
               file.id === f.id
-                ? { ...file, isUploading: true, uploadProgress: progress.percent }
+                ? { ...file, isUploading: true, uploadProgress: 0 }
                 : file
             ))
-          }
-          setFiles(prev => prev.map(file =>
-            file.id === f.id
-              ? { ...file, isUploading: true, uploadProgress: 0 }
-              : file
-          ))
-          const result = await adapter.uploadFile(f.file, category, updateProgress)
-          setFiles(prev => prev.map(file =>
-            file.id === f.id
-              ? { ...file, isUploading: false, uploadProgress: 100 }
-              : file
-          ))
-          return { file: f, result }
-        })
-      )
+            const result = await adapter.uploadFile(f.file, category, updateProgress)
+            setFiles(prev => prev.map(file =>
+              file.id === f.id
+                ? { ...file, isUploading: false, uploadProgress: 100 }
+                : file
+            ))
+            return { file: f, result }
+          })
+        )
+        const failed = results.find((result) => result.status === 'rejected')
+        if (failed?.status === 'rejected') {
+          throw failed.reason
+        }
+        return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+      }
 
       try {
         setIsUploading(true)
@@ -537,6 +547,7 @@ export default function PublicChatPage({
           isUploading: false,
           uploadProgress: undefined
         })))
+        return
       } finally {
         setIsUploading(false)
       }
@@ -877,11 +888,11 @@ export default function PublicChatPage({
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
-              onSelectImageReference={({ asset_ref, url }) => {
+              onSelectImageReference={agent.enable_attachments ? ({ asset_ref, url }) => {
                 setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
                   ? current
                   : [...current, { asset_ref, type: 'image_url', url }])
-              }}
+              } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">

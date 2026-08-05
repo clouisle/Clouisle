@@ -2611,6 +2611,12 @@ msgstr "沙箱任务缺少可执行内容"
 msgid "sandbox_disk_limit_exceeded"
 msgstr "沙箱在 {stage} 阶段超出磁盘限制：{usage_bytes} > {limit_bytes}"
 
+msgid "sandbox_input_size_mismatch"
+msgstr "沙箱输入文件大小与资源元数据不匹配"
+
+msgid "sandbox_input_checksum_mismatch"
+msgstr "沙箱输入文件校验和与资源元数据不匹配"
+
 msgid "verification_email_sent"
 msgstr "验证邮件已发送"
 

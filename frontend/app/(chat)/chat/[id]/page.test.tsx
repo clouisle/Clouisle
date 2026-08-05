@@ -293,6 +293,57 @@ describe('PublicChatPage', () => {
     expect(disconnect).toHaveBeenCalled()
     renderer = undefined
   })
+  test('does not carry generated image references into another conversation', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    render()
+    await flush()
+
+    act(() => {
+      ;(chatContainerProps.onSelectImageReference as (image: { asset_ref: string; url: string }) => void)({
+        asset_ref: 'generated-image',
+        url: 'https://files.example.test/generated.png',
+      })
+    })
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
+    act(() => newChat.props.onClick())
+    await act(async () => (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('after switch', []))
+
+    expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined)
+  })
+
+  test('waits for every upload to settle before aborting submission', async () => {
+    const consoleError = console.error
+    console.error = mock()
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    let rejectFirst!: (reason?: unknown) => void
+    let resolveSecond!: (value: { asset_id: string; url: string }) => void
+    uploadFileWithProgress
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+    render()
+    await flush()
+    const first = { id: 'first', name: 'first.pdf', size: 5, type: 'application/pdf', file: new File(['first'], 'first.pdf'), isDocument: true }
+    const second = { id: 'second', name: 'second.pdf', size: 6, type: 'application/pdf', file: new File(['second'], 'second.pdf'), isDocument: true }
+
+    let settled = false
+    let submission!: Promise<void>
+    await act(async () => {
+      submission = (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('upload', [first, second])
+      submission.then(() => { settled = true }, () => { settled = true })
+      await Promise.resolve()
+    })
+    expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
+
+    rejectFirst(new Error('first upload failed'))
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    resolveSecond({ asset_id: 'second-asset', url: 'https://files.example.test/second.pdf' })
+    await act(async () => { await submission })
+    expect(settled).toBe(true)
+    expect(sendMessage).not.toHaveBeenCalled()
+    console.error = consoleError
+  })
 
   test('sends suggested and option messages while enforcing variable validation', async () => {
     getPublicAgent.mockResolvedValueOnce({
@@ -353,7 +404,7 @@ describe('PublicChatPage', () => {
     )
   })
 
-  test('reports allowed upload types without leaking upload failures', async () => {
+  test('reports allowed upload types and aborts submission without leaking upload failures', async () => {
     const consoleError = console.error
     console.error = mock()
     getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
@@ -364,7 +415,7 @@ describe('PublicChatPage', () => {
 
     await act(async () => (chatInputProps.onSubmit as (message: string, files: unknown[]) => Promise<void>)('upload', [documentFile]))
     expect(toastError).toHaveBeenCalledWith('invalidFileTypeWithAllowed:{"allowed":"pdf, txt"}')
-    expect(sendMessage).toHaveBeenCalledWith('upload', undefined, undefined)
+    expect(sendMessage).not.toHaveBeenCalled()
     expect(output()).not.toContain('private storage failure')
     console.error = consoleError
   })

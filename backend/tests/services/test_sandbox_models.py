@@ -70,6 +70,9 @@ def test_sandbox_job_rejects_multiple_input_sources():
 def test_sandbox_job_rejects_missing_input_source():
     with pytest.raises(ValueError, match="Exactly one Sandbox input source"):
         SandboxJob(input_files=[{"target_path": "/workspace/input.txt"}])
+
+
+def test_sandbox_execution_metadata_tracks_stage_durations():
     queued_at = datetime(2026, 1, 1, tzinfo=UTC)
     metadata = SandboxExecutionMetadata(queued_at=queued_at)
 

@@ -156,6 +156,33 @@ async def test_generate_image_resolves_asset_refs_before_legacy_indexes():
 
 
 @pytest.mark.anyio
+async def test_generate_image_uses_legacy_indexes_when_refs_are_empty():
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={"allow_reference_images": True},
+    )
+    response = ImageGenerationResponse(images=[], model="test-image")
+
+    with patch(
+        "app.llm.tools.builtin.media.model_manager.generate_image",
+        AsyncMock(return_value=response),
+    ) as mock_generate:
+        result = await generate_image(
+            prompt="Use the existing image",
+            reference_image_refs=[],
+            reference_image_indexes=[1],
+            current_images=[{"url": "data:image/png;base64,cmVm"}],
+            agent=agent,
+        )
+
+    assert result.display_result["success"] is True
+    reference = mock_generate.await_args.args[0].images
+    assert reference is not None
+    assert reference[0].base64 == "cmVm"
+    assert reference[0].format == "png"
+
+
+@pytest.mark.anyio
 async def test_generate_image_rejects_non_image_asset_ref():
     conversation_id = uuid4()
     user = SimpleNamespace(id=uuid4())

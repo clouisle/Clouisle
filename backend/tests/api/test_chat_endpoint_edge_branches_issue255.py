@@ -281,3 +281,38 @@ async def test_stream_initial_heartbeat_disconnect_persists_stopped_message(
         chat_env.created[1].round_status
         == chat_endpoint.MessageRoundStatus.MANUALLY_STOPPED
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("field", ["asset_id", "asset_ref"])
+async def test_stream_does_not_persist_message_for_invalid_attachment(
+    monkeypatch, chat_env, field
+):
+    chat_env.agent.enable_attachments = True
+    resolver = "get_authorized" if field == "asset_id" else "resolve_ref"
+    monkeypatch.setattr(
+        chat_endpoint.asset_service,
+        resolver,
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="file_not_found",
+                status_code=404,
+            )
+        ),
+    )
+    attachment = {
+        "url": "current.png",
+        field: str(uuid4()) if field == "asset_id" else "a1b2",
+    }
+
+    response = await chat_endpoint.chat_stream(
+        chat_env.agent_id,
+        ChatRequest(message="invalid attachment", images=[attachment]),
+        _Request(),
+        (chat_env.user, None),
+    )
+    body = "".join([chunk async for chunk in response.body_iterator])
+
+    assert "event: error" in body
+    assert chat_env.created == []

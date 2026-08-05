@@ -2011,6 +2011,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Sandbox disk limit exceeded during {stage}: {usage_bytes} > {limit_bytes}",
         "zh": "沙箱在 {stage} 阶段超出磁盘限制：{usage_bytes} > {limit_bytes}",
     },
+    "sandbox_input_checksum_mismatch": {
+        "en": "Sandbox input checksum does not match Asset metadata",
+        "zh": "沙箱输入文件校验和与资源元数据不匹配",
+    },
+    "sandbox_input_size_mismatch": {
+        "en": "Sandbox input size does not match Asset metadata",
+        "zh": "沙箱输入文件大小与资源元数据不匹配",
+    },
     "sandbox_missing_executable_payload": {
         "en": "Sandbox job has no executable payload",
         "zh": "沙箱任务缺少可执行内容",
