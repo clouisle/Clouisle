@@ -67,6 +67,7 @@ def message(**overrides):
         "conversation_id": uuid4(),
         "version_number": 1,
         "round_id": None,
+        "round_role": None,
         "is_round_canonical": True,
         "is_active": True,
         "created_at": datetime(2026, 1, 1),
@@ -204,7 +205,11 @@ async def test_descendant_branch_skips_hidden_and_stops_on_cycle(monkeypatch):
 async def test_activate_branch_includes_noncanonical_round_steps(monkeypatch):
     conversation_id = uuid4()
     round_id = uuid4()
-    canonical = message(conversation_id=conversation_id, round_id=round_id)
+    canonical = message(
+        conversation_id=conversation_id,
+        round_id=round_id,
+        round_role=branching.MessageRoundRole.ASSISTANT_FINAL,
+    )
     round_step = message(
         conversation_id=conversation_id,
         round_id=round_id,

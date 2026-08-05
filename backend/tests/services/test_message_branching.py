@@ -16,6 +16,7 @@ def message(**overrides):
         "branch_parent_id": None,
         "conversation_id": uuid4(),
         "round_id": None,
+        "round_role": None,
         "is_round_canonical": True,
         "is_active": True,
         "version_number": 1,
@@ -243,7 +244,11 @@ async def test_activate_branch_persists_canonical_round_steps_and_deactivates_ot
     conversation_id = uuid4()
     db = MagicMock()
     round_id = uuid4()
-    canonical = message(conversation_id=conversation_id, round_id=round_id)
+    canonical = message(
+        conversation_id=conversation_id,
+        round_id=round_id,
+        round_role=branching.MessageRoundRole.ASSISTANT_FINAL,
+    )
     plain = message(conversation_id=conversation_id)
     round_step = message(
         conversation_id=conversation_id,
@@ -345,3 +350,44 @@ async def test_stale_session_memory_transitions_only_outside_active_branch(is_ac
     else:
         assert snapshot.status == ConversationSessionMemoryStatus.STALE
         snapshot.save.assert_awaited_once_with(update_fields=["status", "updated_at"])
+
+
+@pytest.mark.anyio
+async def test_activate_branch_excludes_user_message_round_steps():
+    """Regenerate residue fix: the user message shares its round with the
+    deactivated old assistant reply. Activating the new path must NOT
+    re-activate the old round's tool steps - only the assistant-final
+    round's steps belong on the active branch."""
+    from app.models.agent import MessageRoundRole
+
+    conversation_id = uuid4()
+    user_round = uuid4()
+    new_round = uuid4()
+    user_msg = message(
+        conversation_id=conversation_id,
+        round_id=user_round,
+        round_role=MessageRoundRole.USER_INPUT,
+    )
+    new_assistant = message(
+        conversation_id=conversation_id,
+        round_id=new_round,
+        round_role=MessageRoundRole.ASSISTANT_FINAL,
+    )
+    steps_query = query(all=[])
+    deactivate_all = query(update=1)
+    activate_ids = query(update=1)
+
+    with patch.object(
+        branching.Message,
+        "filter",
+        side_effect=[steps_query, deactivate_all, activate_ids],
+    ) as message_filter:
+        await branching.activate_conversation_branch(
+            conversation_id, [user_msg, new_assistant]
+        )
+
+    # round_steps query must only include the assistant-final round,
+    # NOT the user message's round (which shares the old reply's tool steps)
+    round_steps_call = message_filter.call_args_list[0]
+    assert round_steps_call.kwargs["round_id__in"] == [new_round]
+    assert user_round not in round_steps_call.kwargs["round_id__in"]

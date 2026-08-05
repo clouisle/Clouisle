@@ -10,6 +10,7 @@ from app.models.agent import (
     ConversationSessionMemory,
     ConversationSessionMemoryStatus,
     Message,
+    MessageRoundRole,
 )
 
 
@@ -204,8 +205,15 @@ async def activate_conversation_branch(
     using_db: BaseDBAsyncClient | None = None,
 ) -> None:
     canonical_ids = [message.id for message in canonical_path]
+    # Only activate round steps that belong to an assistant-final message in the
+    # path. The user message shares its round with the (now-deactivated) old
+    # assistant reply; including that round would re-activate the previous
+    # version's tool calls/results as residue.
     round_ids = [
-        message.round_id for message in canonical_path if message.round_id is not None
+        message.round_id
+        for message in canonical_path
+        if message.round_id is not None
+        and message.round_role == MessageRoundRole.ASSISTANT_FINAL
     ]
 
     active_ids = set(canonical_ids)
