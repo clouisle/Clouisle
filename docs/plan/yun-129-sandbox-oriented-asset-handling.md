@@ -119,6 +119,19 @@ Uploaded image Assets can project to model vision or image-generation inputs. Th
   - Verify idempotent backfill and explicit unresolved reporting.
   - Verify old/new clients coexist, workflow Asset authorization and lineage, rollout metrics, and feature-flag rollback.
 
+### Stage 7: One-Time Agent Attachment Capability Cutover
+
+- **Files modified**: Agent model/schema/API/package adapters, startup migration, chat/preview/embed surfaces, orchestration UI, i18n resources, and focused tests.
+- **Specific logic**:
+  - Replace `enable_vision` and `enable_file_upload` with one `enable_attachments` field and replace `file_upload_config` with `attachment_config`.
+  - On startup, migrate persisted values with `enable_vision OR enable_file_upload`, strip obsolete parser settings, and drop legacy columns. The API accepts and emits only the new fields.
+  - Keep direct image projection conditional on the selected chat model's vision capability; the Agent attachment setting permits both images and files.
+  - Remove parser selection and automatic URL parsing; Assets remain raw until the Agent invokes an explicit Asset tool.
+- **Validation**:
+  - Verify startup migration is idempotent and preserves every old boolean combination.
+  - Verify a text-only model can use attachment Assets without receiving direct image bytes, while a vision-capable model receives them.
+  - Verify the orchestration UI exposes one attachment card and the chat, preview, and embed paths use the same switch.
+
 ## Testing Strategy
 
 ### Happy paths

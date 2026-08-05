@@ -111,7 +111,7 @@ Agent 是 Clouisle 的核心功能，代表一个可配置的 AI 助手。Agent 
     }
   ],
   "enable_vision": false,
-  "enable_file_upload": false
+  "enable_attachments": false
 }
 ```
 
