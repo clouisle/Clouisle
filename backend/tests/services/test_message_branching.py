@@ -183,6 +183,42 @@ async def test_prefix_path_follows_branch_parents_and_ignores_hidden_steps():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("history_is_active", [True, False])
+async def test_prefix_path_preserves_history_before_legacy_chain_gap(
+    history_is_active,
+):
+    conversation_id = uuid4()
+    first_user = message(
+        conversation_id=conversation_id,
+        is_active=history_is_active,
+    )
+    first_assistant = message(
+        conversation_id=conversation_id,
+        branch_parent_id=first_user.id,
+        is_active=history_is_active,
+        created_at=first_user.created_at + timedelta(seconds=1),
+    )
+    latest_user = message(
+        conversation_id=conversation_id,
+        branch_parent_id=None,
+        created_at=first_user.created_at + timedelta(seconds=2),
+    )
+    target_version = message(
+        conversation_id=conversation_id,
+        branch_parent_id=latest_user.id,
+        created_at=first_user.created_at + timedelta(seconds=3),
+    )
+    orm = query(all=[first_user, first_assistant, latest_user, target_version])
+
+    with patch.object(branching.Message, "filter", return_value=orm):
+        assert await branching.get_prefix_path_before(target_version) == [
+            first_user,
+            first_assistant,
+            latest_user,
+        ]
+
+
+@pytest.mark.anyio
 async def test_prefix_path_stops_at_cycle_and_falls_back_when_unresolved():
     conversation_id = uuid4()
     parent = message(conversation_id=conversation_id)
