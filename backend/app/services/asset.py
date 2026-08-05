@@ -307,9 +307,14 @@ class AssetService:
         return capabilities
 
     @staticmethod
-    def format_manifest(manifest: list[dict[str, Any]]) -> str | None:
+    def format_manifest(manifest: list[dict[str, Any]]) -> str:
         if not manifest:
-            return None
+            return (
+                "<available_assets>\n"
+                "No attachments are available in this conversation. "
+                "Do not call Asset tools or guess refs.\n"
+                "</available_assets>"
+            )
         lines = [
             "<available_assets>",
             (

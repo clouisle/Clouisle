@@ -134,6 +134,17 @@ async def test_resolve_ref_validates_format_and_scope(monkeypatch):
     assert error.value.status_code == 404
 
 
+def test_format_manifest_reports_no_available_attachments():
+    manifest = asset_module.AssetService.format_manifest([])
+
+    assert manifest == (
+        "<available_assets>\n"
+        "No attachments are available in this conversation. "
+        "Do not call Asset tools or guess refs.\n"
+        "</available_assets>"
+    )
+
+
 @pytest.mark.asyncio
 async def test_read_verifies_checksum_and_size():
     content = b"hello"
