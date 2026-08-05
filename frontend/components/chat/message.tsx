@@ -1699,6 +1699,7 @@ function TokenStatsContent({
   )
 }
 
+
 /**
  * Text content with lightweight inline citation markers.
  * Keep citation handling in string preprocessing so message rendering does not
@@ -1715,6 +1716,14 @@ function PreviewableMarkdownBlock({
   isStreaming: boolean
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
 }) {
+  const blockRef = React.useRef<HTMLDivElement>(null)
+
+  React.useLayoutEffect(() => {
+    if (!isStreaming || !props.isIncomplete) return
+
+    const body = blockRef.current?.querySelector<HTMLElement>('[data-streamdown="code-block-body"]')
+    if (body) body.scrollTop = body.scrollHeight
+  }, [content, isStreaming, props.isIncomplete])
   const parsedFence = !isStreaming && onOpenCodePreview ? parseCodeFence(content) : null
   const previewKind = parsedFence ? getPreviewKind(parsedFence.language, parsedFence.code) : null
 
@@ -1732,13 +1741,23 @@ function PreviewableMarkdownBlock({
     )
   }
 
-  return (
+  const block = (
     <Block
       content={content}
       index={index}
       shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
       {...props}
     />
+  )
+
+  if (!isStreaming || !props.isIncomplete) {
+    return block
+  }
+
+  return (
+    <div ref={blockRef} data-chat-code-autoscroll="true">
+      {block}
+    </div>
   )
 }
 
@@ -2210,6 +2229,14 @@ export const TextWithCitations = React.memo(function TextWithCitations({
     },
   }), [onOpenImage])
 
+  const renderMarkdownBlock = React.useCallback((props: React.ComponentProps<typeof Block>) => (
+    <PreviewableMarkdownBlock
+      {...props}
+      isStreaming={isStreaming}
+      onOpenCodePreview={onOpenCodePreview}
+    />
+  ), [isStreaming, onOpenCodePreview])
+
   React.useEffect(() => {
     if (!activeSpeechSentence) {
       clearSpeechHighlight()
@@ -2238,13 +2265,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
           onLinkCheck: (url) => isSameOriginChatLink(url),
           renderModal: (props) => <LinkSafetyModal {...props} />,
         }}
-        BlockComponent={(props) => (
-          <PreviewableMarkdownBlock
-            {...props}
-            isStreaming={isStreaming}
-            onOpenCodePreview={onOpenCodePreview}
-          />
-        )}
+        BlockComponent={renderMarkdownBlock}
       >
         {processedText}
       </Streamdown>
