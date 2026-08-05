@@ -1073,6 +1073,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // Get text parts to check if content has started
     const hasTextContent = textParts.some(t => t.text && t.text.length > 0)
 
+    // A finished assistant turn is actionable whenever it produced any visible
+    // content - text, reasoning, tool activity, or an error - so regenerate/copy
+    // stay available for reasoning-only messages even when the chain of thought
+    // is hidden. hideMessageActions still suppresses the bar entirely.
+    const hasMessageContent = hasTextContent
+      || reasoningParts.length > 0
+      || toolCallParts.length > 0
+      || isErroredMessage
+
     // Check if any step is still active (streaming)
     // Chain of thought is streaming until content starts appearing
     // Only consider tool calls if there's reasoning (otherwise they're in message content)
@@ -1519,7 +1528,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && (textContent || isErroredMessage) && !hideMessageActions && (
+            {isAssistant && !isStreaming && hasMessageContent && !hideMessageActions && (
            <MessageActions className={cn("transition-opacity", isSpeakingThisMessage ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (

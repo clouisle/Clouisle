@@ -236,6 +236,35 @@ describe('message rendering', () => {
     expect(html.match(/chat\.message\.iterationCapReached/g)?.length).toBe(1)
     expect(html).toContain('chat.message.manuallyStopped')
   })
+
+  test('shows assistant actions for reasoning-only messages and respects hide flags', () => {
+    const parts = [{ type: 'reasoning' as const, text: 'Only thinking', state: 'done' as const }]
+    const onRegenerate = mock(() => {})
+
+    const visible = renderToStaticMarkup(<Message
+      message={{ id: 'reasoning-only', role: 'assistant', parts }}
+      onRegenerate={onRegenerate}
+    />)
+    expect(visible).toContain('chat.message.regenerate')
+    expect(visible).toContain('chat.message.copy')
+
+    // hideReasoning hides the chain-of-thought panel, not the actions
+    const noChain = renderToStaticMarkup(<Message
+      message={{ id: 'reasoning-hidden', role: 'assistant', parts }}
+      hideReasoning
+      onRegenerate={onRegenerate}
+    />)
+    expect(noChain).toContain('chat.message.regenerate')
+
+    // hideMessageActions suppresses the bar entirely
+    const noActions = renderToStaticMarkup(<Message
+      message={{ id: 'actions-hidden', role: 'assistant', parts }}
+      hideMessageActions
+      onRegenerate={onRegenerate}
+    />)
+    expect(noActions).not.toContain('chat.message.regenerate')
+    expect(noActions).not.toContain('chat.message.copy')
+  })
 })
 
 describe('message behavior', () => {
