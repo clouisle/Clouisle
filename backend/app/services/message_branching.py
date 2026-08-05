@@ -199,6 +199,9 @@ async def get_prefix_path_before(
 
         if prefix:
             prefix.reverse()
+            if len(prefix) < limit:
+                full_prefix = await get_prefix_path_before(message)
+                return full_prefix[-limit:]
             return prefix
 
     return await get_visible_conversation_messages(
