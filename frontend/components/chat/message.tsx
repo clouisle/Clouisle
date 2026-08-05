@@ -1362,7 +1362,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               defaultOpen={false}
             >
               <ChainOfThoughtHeader title={tReasoning('thought')} />
-              <ChainOfThoughtContent containScroll className="max-h-80 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+              <ChainOfThoughtContent>
                 {buildChainOfThoughtSteps()}
               </ChainOfThoughtContent>
             </ChainOfThought>
