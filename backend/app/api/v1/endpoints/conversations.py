@@ -539,6 +539,7 @@ async def get_conversation_detail(
     if root_ids:
         child_counts = (
             await Message.filter(parent_id__in=list(root_ids))
+            .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
             .annotate(count=Count("id"))
             .group_by("parent_id")
             .values("parent_id", "count")

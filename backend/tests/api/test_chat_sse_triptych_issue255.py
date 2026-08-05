@@ -44,6 +44,9 @@ class Query:
         self.update = AsyncMock(return_value=1)
         self.delete = AsyncMock(return_value=1)
 
+    def filter(self, *_args, **_kwargs):
+        return self
+
     def prefetch_related(self, *_args):
         return self
 

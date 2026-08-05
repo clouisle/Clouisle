@@ -1093,9 +1093,10 @@ async def get_conversation(
     # Batch query version counts using GROUP BY
     version_counts: dict[str, int] = {}
     if root_ids:
-        # Count children for each parent_id
+        # Count children for each parent_id (canonical only - round steps are not versions)
         child_counts = (
             await Message.filter(parent_id__in=list(root_ids))
+            .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
             .annotate(count=Count("id"))
             .group_by("parent_id")
             .values("parent_id", "count")

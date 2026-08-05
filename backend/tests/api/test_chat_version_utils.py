@@ -49,7 +49,9 @@ async def test_get_message_versions_uses_root_and_sorts_versions():
     child = _message(parent_id=root.id, version_number=2, is_active=False)
     newest = _message(parent_id=root.id, version_number=3)
     root_query = SimpleNamespace(all=AsyncMock(return_value=[root]))
+    root_query.filter = lambda *a, **k: root_query
     children_query = SimpleNamespace(all=AsyncMock(return_value=[newest, child]))
+    children_query.filter = lambda *a, **k: children_query
 
     with patch(
         "app.api.v1.endpoints.chat_helpers.version_utils.Message.filter",
@@ -69,6 +71,7 @@ async def test_get_message_versions_uses_root_and_sorts_versions():
 async def test_get_version_count_includes_root_message():
     root = _message()
     query = SimpleNamespace(count=AsyncMock(return_value=2))
+    query.filter = lambda *a, **k: query
 
     with patch(
         "app.api.v1.endpoints.chat_helpers.version_utils.Message.filter",

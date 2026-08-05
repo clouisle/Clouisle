@@ -19,14 +19,24 @@ def get_version_root_id(message: Message) -> UUID:
 
 async def get_message_version_group(message: Message) -> list[Message]:
     root_id = get_version_root_id(message)
-    versions = await Message.filter(Q(id=root_id) | Q(parent_id=root_id)).all()
+    versions = await _version_group_query(root_id).all()
     versions.sort(key=lambda item: item.version_number)
     return versions
 
 
 async def get_version_count(message: Message) -> int:
     root_id = get_version_root_id(message)
-    return await Message.filter(Q(id=root_id) | Q(parent_id=root_id)).count()
+    return await _version_group_query(root_id).count()
+
+
+def _version_group_query(root_id: UUID):
+    """Messages that are real versions of a group: the root plus canonical
+    children. Excludes round steps (tool calls/results) that carry
+    parent_id=root, which would otherwise inflate version counts."""
+    return Message.filter(
+        Q(id=root_id) | Q(parent_id=root_id),
+        Q(round_id__isnull=True) | Q(is_round_canonical=True),
+    )
 
 
 def _is_canonical_visible(message: Message) -> bool:

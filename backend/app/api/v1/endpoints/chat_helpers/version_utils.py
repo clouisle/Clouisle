@@ -2,6 +2,8 @@
 Message version utilities for chat.
 """
 
+from tortoise.expressions import Q
+
 from app.models.agent import Message
 from app.schemas.agent import MessageVersion, MessageOut
 
@@ -14,8 +16,12 @@ async def get_message_versions(message: Message) -> list[MessageVersion]:
     # Get all messages in this version group
     versions = await Message.filter(id=root_id).all()
 
-    # Also get all child versions
-    child_versions = await Message.filter(parent_id=root_id).all()
+    # Also get all child versions (canonical only - round steps are not versions)
+    child_versions = (
+        await Message.filter(parent_id=root_id)
+        .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
+        .all()
+    )
 
     all_versions = versions + child_versions
     all_versions.sort(key=lambda m: m.version_number)
@@ -35,7 +41,11 @@ async def get_message_versions(message: Message) -> list[MessageVersion]:
 async def get_version_count(message: Message) -> int:
     """Get total version count for a message group."""
     root_id = message.parent_id or message.id
-    count = await Message.filter(parent_id=root_id).count()
+    count = (
+        await Message.filter(parent_id=root_id)
+        .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
+        .count()
+    )
     return count + 1  # +1 for the root message itself
 
 

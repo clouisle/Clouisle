@@ -2877,7 +2877,11 @@ async def get_message_versions(message: Message) -> list[MessageVersion]:
 async def get_version_count(message: Message) -> int:
     """Get total version count for a message group."""
     root_id = message.parent_id or message.id
-    count = await Message.filter(parent_id=root_id).count()
+    count = (
+        await Message.filter(parent_id=root_id)
+        .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
+        .count()
+    )
     return count + 1  # +1 for the root message itself
 
 
@@ -3218,6 +3222,9 @@ async def edit_user_message_stream(
                         )
                         current_version_count = await (
                             Message.filter(Q(id=root_id) | Q(parent_id=root_id))
+                            .filter(
+                                Q(round_id__isnull=True) | Q(is_round_canonical=True)
+                            )
                             .using_db(conn)
                             .count()
                         )
@@ -4688,8 +4695,6 @@ async def regenerate_message(
                                             "arguments": arguments,
                                         }
                                     ],
-                                    parent_id=new_message.parent_id or new_message.id,
-                                    version_number=new_version_number,
                                     branch_parent_id=new_message.id,
                                     round_id=round_id,
                                     round_index=assistant_step_index,
@@ -4705,8 +4710,6 @@ async def regenerate_message(
                                     content=display_result,
                                     tool_call_id=tc.id,
                                     tool_name=tool_name,
-                                    parent_id=new_message.parent_id or new_message.id,
-                                    version_number=new_version_number,
                                     branch_parent_id=new_message.id,
                                     round_id=round_id,
                                     round_index=tool_step_index,
