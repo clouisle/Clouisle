@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
@@ -670,175 +669,31 @@ async def build_file_content_for_context(
     tool_timeouts: dict[str, Any] | None,
     user: Any,
 ) -> tuple[str, list[dict[str, Any]] | None]:
-    """Build legacy file content while leaving Asset attachments raw."""
-    from app.core.i18n import t
-    from app.services.file_parser import (
-        file_parser_service,
-        ParsedFile,
-        FileParseConfig,
-    )
+    """Format only deprecated pre-parsed file payloads for the prompt."""
+    from app.services.file_parser import file_parser_service, ParsedFile
 
-    if not agent.enable_file_upload:
+    if not agent.enable_attachments:
         return "", None
 
     parsed_files: list[ParsedFile] = []
-    updated_file_urls: list[dict[str, Any]] | None = None
-    file_config = agent.file_upload_config or {}
-    parser_config = file_config.get("parser")
-    parse_config = FileParseConfig(
-        max_content_length=file_config.get("max_content_length", 100000),
-        truncate_strategy=file_config.get("truncate_strategy", "end"),
-    )
-
-    # Asset-aware attachments are raw by design. Explicit Asset tools perform parsing.
-    legacy_file_urls = [
-        item for item in (file_urls or []) if not _get_item_value(item, "asset_id")
-    ]
-    if legacy_file_urls and parser_config:
-        parser_type = parser_config.get("type", "builtin")
-        parser_name = parser_config.get("name", "markitdown")
-        parser_tool_id = parser_config.get("tool_id")
-
-        if parser_type == "builtin" and parser_name == "markitdown":
-            from app.api.v1.endpoints.upload import UPLOAD_ROOT, _resolve_upload_path
-            from app.services.file_parse_cache import (
-                build_parser_hash,
-                read_cached_file,
-                write_cached_file,
+    for file_item in legacy_files or []:
+        parsed_files.append(
+            ParsedFile(
+                filename=_get_item_value(file_item, "filename", ""),
+                content=_get_item_value(file_item, "content", ""),
+                mime_type=_get_item_value(file_item, "mime_type", "text/plain"),
+                size=_get_item_value(file_item, "size", 0),
+                truncated=bool(_get_item_value(file_item, "truncated", False)),
+                original_length=_get_item_value(file_item, "original_length"),
             )
-
-            parser_hash = build_parser_hash(parser_config, parse_config)
-            updated_file_urls = []
-            for f in file_urls or []:
-                if isinstance(f, dict):
-                    file_item = dict(f)
-                elif hasattr(f, "model_dump"):
-                    file_item = f.model_dump()
-                else:
-                    file_item = {
-                        "filename": _get_item_value(f, "filename", ""),
-                        "url": _get_item_value(f, "url", ""),
-                        "size": _get_item_value(f, "size", 0),
-                        "mime_type": _get_item_value(
-                            f, "mime_type", "application/octet-stream"
-                        ),
-                    }
-                if _get_item_value(file_item, "asset_id"):
-                    updated_file_urls.append(file_item)
-                    continue
-                filename = _get_item_value(file_item, "filename", "")
-                mime_type = _get_item_value(
-                    file_item, "mime_type", "application/octet-stream"
-                )
-                size = _get_item_value(file_item, "size", 0)
-                url = _get_item_value(file_item, "url", "")
-                if not url:
-                    updated_file_urls.append(file_item)
-                    continue
-                try:
-                    prefix = "/api/v1/upload/files/"
-                    if not url.startswith(prefix):
-                        raise ValueError("only_upload_file_urls_are_allowed")
-                    relative_parts = [
-                        unquote(part) for part in url[len(prefix) :].split("/")
-                    ]
-                    if len(relative_parts) != 4:
-                        raise ValueError("invalid_upload_file_url")
-                    file_path = _resolve_upload_path(*relative_parts)
-                    if not file_path.is_file():
-                        raise ValueError("upload_file_not_found")
-                    file_path.relative_to(UPLOAD_ROOT)
-                    parsed_file = await read_cached_file(
-                        file_item,
-                        file_path=file_path,
-                        url=url,
-                        parser_hash=parser_hash,
-                    )
-                    if parsed_file is None:
-                        parsed_file = await file_parser_service.parse_file(
-                            file_path.read_bytes(),
-                            filename,
-                            parse_config,
-                        )
-                        file_item = await write_cached_file(
-                            file_item,
-                            parsed_file,
-                            file_path=file_path,
-                            url=url,
-                            parser_hash=parser_hash,
-                        )
-                    parsed_files.append(parsed_file)
-                except Exception as e:
-                    logger.warning("Failed to parse file %s: %s", filename, e)
-                    parsed_files.append(
-                        ParsedFile(
-                            filename=filename,
-                            content=t("file_parse_failed_placeholder"),
-                            mime_type=mime_type,
-                            size=size,
-                        )
-                    )
-                updated_file_urls.append(file_item)
-        elif parser_type == "custom" and parser_tool_id:
-            from app.models.tool import Tool
-
-            custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
-            if custom_tool:
-                try:
-                    urls = [_get_item_value(f, "url", "") for f in legacy_file_urls]
-                    result = await execute_tool_call(
-                        f"custom_{custom_tool.name}",
-                        {"files_url": [url for url in urls if url]},
-                        agent=agent,
-                        tool_timeouts=tool_timeouts,
-                        user=user,
-                    )
-                    display_result = _get_tool_result_display(result)
-                    if display_result:
-                        parsed_files.append(
-                            ParsedFile(
-                                filename=t("custom_parser_filename"),
-                                content=display_result,
-                                mime_type="text/plain",
-                                size=len(display_result),
-                            )
-                        )
-                except Exception as e:
-                    logger.warning("Custom parser failed: %s", e)
-                    parsed_files.append(
-                        ParsedFile(
-                            filename=t("custom_parser_filename"),
-                            content=t("custom_parser_failed_placeholder"),
-                            mime_type="text/plain",
-                            size=0,
-                        )
-                    )
-
-    if not parsed_files and legacy_files:
-        for f in legacy_files:
-            filename = _get_item_value(f, "filename", "")
-            content = _get_item_value(f, "content", "")
-            mime_type = _get_item_value(f, "mime_type", "text/plain")
-            size = _get_item_value(f, "size", 0)
-            truncated = _get_item_value(f, "truncated", False)
-            original_length = _get_item_value(f, "original_length")
-            parsed_files.append(
-                ParsedFile(
-                    filename=filename,
-                    content=content,
-                    mime_type=mime_type,
-                    size=size,
-                    truncated=bool(truncated),
-                    original_length=original_length,
-                )
-            )
+        )
 
     if not parsed_files:
-        return "", updated_file_urls
+        return "", None
 
     return (
         file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale),
-        updated_file_urls,
+        None,
     )
 
 
@@ -847,12 +702,3 @@ def _get_item_value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
     return getattr(item, key, default)
-
-
-def _get_tool_result_display(result: Any) -> str | None:
-    """Extract display string from tool execution result."""
-    if isinstance(result, dict):
-        return json.dumps(result, ensure_ascii=False)
-    if isinstance(result, str):
-        return result
-    return str(result) if result is not None else None

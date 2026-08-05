@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
+        init_agent_attachment_fields,
         init_user_locale_field,
         fix_cascade_delete_policies,
         init_workflow_visibility_field,
@@ -114,6 +115,11 @@ async def lifespan(app: FastAPI):
         await init_user_locale_field()
     except Exception as e:
         logger.warning(f"User locale migration failed: {e}")
+
+    try:
+        await init_agent_attachment_fields()
+    except Exception as e:
+        logger.warning(f"Agent attachment migration failed: {e}")
 
     try:
         await init_agent_tools_credentials()

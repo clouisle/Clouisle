@@ -424,6 +424,96 @@ async def init_user_locale_field():
     logger.info("User locale migration complete")
 
 
+async def init_agent_attachment_fields() -> None:
+    """Replace legacy agent vision and file-upload fields with attachments."""
+    logger.info("Initializing agent attachment fields...")
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        logger.info("Agents table does not exist yet, skipping attachment migration")
+        return
+
+    _, rows = await conn.execute_query(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND table_schema = 'public'
+        """
+    )
+    columns = {row["column_name"] for row in rows}
+
+    if "enable_attachments" not in columns:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE agents
+            ADD COLUMN enable_attachments BOOLEAN NOT NULL DEFAULT FALSE
+            """,
+        )
+
+    if "attachment_config" not in columns:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE agents
+            ADD COLUMN attachment_config JSONB NOT NULL DEFAULT '{}'::jsonb
+            """,
+        )
+
+    if {"enable_vision", "enable_file_upload"} & columns:
+        vision = (
+            "COALESCE(enable_vision, FALSE)" if "enable_vision" in columns else "FALSE"
+        )
+        uploads = (
+            "COALESCE(enable_file_upload, FALSE)"
+            if "enable_file_upload" in columns
+            else "FALSE"
+        )
+        await execute_startup_migration_query(
+            conn,
+            f"""
+            UPDATE agents
+            SET enable_attachments = {vision} OR {uploads}
+            """,
+        )
+
+    if "file_upload_config" in columns:
+        await execute_startup_migration_query(
+            conn,
+            """
+            UPDATE agents
+            SET attachment_config = COALESCE(file_upload_config, '{}'::jsonb) - 'parser'
+            """,
+        )
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        UPDATE agents
+        SET attachment_config = attachment_config - 'parser'
+        WHERE attachment_config ? 'parser'
+        """,
+    )
+
+    legacy_columns = [
+        column
+        for column in ("enable_vision", "enable_file_upload", "file_upload_config")
+        if column in columns
+    ]
+    if legacy_columns:
+        await execute_startup_migration_query(
+            conn,
+            f"ALTER TABLE agents DROP COLUMN {', DROP COLUMN '.join(legacy_columns)}",
+        )
+
+    logger.info("Agent attachment fields migration complete")
+
+
 async def init_agent_tools_credentials():
     """
     Initialize tools_credentials field for existing agents.
@@ -2576,6 +2666,11 @@ async def init_db():
         await init_user_locale_field()
     except Exception as e:
         logger.warning(f"User locale migration failed (may be first run): {e}")
+
+    try:
+        await init_agent_attachment_fields()
+    except Exception as e:
+        logger.warning(f"Agent attachment migration failed (may be first run): {e}")
 
     try:
         await init_agent_tools_credentials()

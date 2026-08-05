@@ -576,6 +576,27 @@ msgstr "... [{count} lines omitted] ..."
 msgid "bash_output_repeated_lines"
 msgstr "[repeated {count} times]"
 
+msgid "asset_tool_inspect"
+msgstr "Inspect Attachment"
+
+msgid "asset_tool_inspect_description"
+msgstr "Inspect metadata and capabilities for an attachment in this conversation."
+
+msgid "asset_tool_parse"
+msgstr "Parse Attachment"
+
+msgid "asset_tool_parse_description"
+msgstr "Parse a supported attachment on demand while preserving its raw bytes."
+
+msgid "asset_tool_read"
+msgstr "Read Attachment"
+
+msgid "asset_tool_read_description"
+msgstr "Read bounded text from an attachment in this conversation."
+
+msgid "asset_tool_ref_description"
+msgstr "Exact reference from available attachments."
+
 msgid "builtin_tool_artifact"
 msgstr "Create Download Link"
 

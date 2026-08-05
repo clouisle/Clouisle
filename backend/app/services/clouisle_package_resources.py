@@ -533,9 +533,8 @@ class AgentPackageAdapter(ResourcePackageAdapter):
             "hide_message_actions": agent.hide_message_actions,
             "hide_reasoning": agent.hide_reasoning,
             "tools_config": _copy_json(agent.tools_config) or [],
-            "enable_vision": agent.enable_vision,
-            "enable_file_upload": agent.enable_file_upload,
-            "file_upload_config": _copy_json(agent.file_upload_config) or {},
+            "enable_attachments": agent.enable_attachments,
+            "attachment_config": _copy_json(agent.attachment_config) or {},
             "enable_user_input_request": agent.enable_user_input_request,
             "enable_memory": agent.enable_memory,
             "memory_config": _copy_json(agent.memory_config) or {},
@@ -991,9 +990,8 @@ def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str
         "hide_reasoning": bool(payload.get("hide_reasoning") or False),
         "tools_config": tools_config,
         "tools_credentials": {},
-        "enable_vision": bool(payload.get("enable_vision") or False),
-        "enable_file_upload": bool(payload.get("enable_file_upload") or False),
-        "file_upload_config": payload.get("file_upload_config") or {},
+        "enable_attachments": bool(payload.get("enable_attachments") or False),
+        "attachment_config": payload.get("attachment_config") or {},
         "enable_user_input_request": bool(
             payload.get("enable_user_input_request") or False
         ),

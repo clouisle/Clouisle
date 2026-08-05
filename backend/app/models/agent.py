@@ -103,17 +103,12 @@ class Agent(models.Model):
         default=dict, description="Tools credentials (API keys, tokens, etc.)"
     )  # type: ignore[assignment]
 
-    # Vision configuration
-    enable_vision = fields.BooleanField(
-        default=False, description="Enable vision/image understanding"
+    # Attachment configuration
+    enable_attachments = fields.BooleanField(
+        default=False, description="Enable file and image attachments"
     )
-
-    # File upload configuration
-    enable_file_upload = fields.BooleanField(
-        default=False, description="Enable file upload and parsing"
-    )
-    file_upload_config: dict = fields.JSONField(
-        default=dict, description="File upload configuration"
+    attachment_config: dict = fields.JSONField(
+        default=dict, description="Attachment limits and accepted file types"
     )  # type: ignore[assignment]
 
     # User input request configuration

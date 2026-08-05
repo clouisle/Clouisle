@@ -421,20 +421,14 @@ class AgentKnowledgeBaseConfig(BaseModel):
     search_mode: str = Field(default="hybrid", pattern="^(vector|fulltext|hybrid)$")
 
 
-class FileUploadConfig(BaseModel):
-    """File upload configuration for agent"""
+class AttachmentConfig(BaseModel):
+    """Attachment limits for an Agent."""
 
-    # Parser configuration - which tool to use for parsing files
-    # Format: {"type": "builtin", "name": "markitdown"} or {"type": "custom", "tool_id": "xxx"}
-    parser: dict | None = Field(
-        default=None,
-        description="File parser configuration. If None, file upload is disabled even if enable_file_upload is True.",
-    )
     max_file_size: int = Field(
-        default=10 * 1024 * 1024,  # 10MB
+        default=10 * 1024 * 1024,
         ge=1024,
-        le=50 * 1024 * 1024,  # 50MB max
-        description="Maximum file size in bytes",
+        le=50 * 1024 * 1024,
+        description="Maximum attachment size in bytes",
     )
     max_files: int = Field(
         default=5,
@@ -505,14 +499,11 @@ class AgentCreate(AgentBase):
     tools_credentials: dict[str, str] = Field(
         default_factory=dict, description="Tools credentials (API keys, tokens, etc.)"
     )
-    enable_vision: bool = Field(
-        default=False, description="Enable vision/image understanding"
+    enable_attachments: bool = Field(
+        default=False, description="Enable file and image attachments"
     )
-    enable_file_upload: bool = Field(
-        default=False, description="Enable file upload and parsing"
-    )
-    file_upload_config: FileUploadConfig | None = Field(
-        default=None, description="File upload configuration"
+    attachment_config: AttachmentConfig | None = Field(
+        default=None, description="Attachment configuration"
     )
     enable_user_input_request: bool = Field(
         default=False, description="Enable user input request with predefined options"
@@ -572,9 +563,8 @@ class AgentUpdate(BaseModel):
     hide_reasoning: bool | None = None
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None
-    enable_vision: bool | None = None
-    enable_file_upload: bool | None = None
-    file_upload_config: FileUploadConfig | None = None
+    enable_attachments: bool | None = None
+    attachment_config: AttachmentConfig | None = None
     enable_user_input_request: bool | None = None
     enable_memory: bool | None = None
     memory_config: MemoryConfig | None = None
@@ -619,9 +609,8 @@ class AgentOut(AgentBase):
     hide_reasoning: bool = False
     tools_config: list[ToolConfig] = []
     tools_credentials: dict[str, str] = {}
-    enable_vision: bool = False
-    enable_file_upload: bool = False
-    file_upload_config: FileUploadConfig | None = None
+    enable_attachments: bool = False
+    attachment_config: AttachmentConfig | None = None
     enable_user_input_request: bool = False
     enable_memory: bool = False
     memory_config: MemoryConfig | None = None
@@ -658,9 +647,8 @@ class AgentPublicOut(BaseModel):
     opening_message: str | None = None
     suggested_questions: list[str] = []
     variables: list[dict[str, Any]] = []
-    enable_vision: bool = False
-    enable_file_upload: bool = False
-    file_upload_config: dict[str, Any] | None = None
+    enable_attachments: bool = False
+    attachment_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
@@ -680,9 +668,8 @@ class EmbedAgentInfo(BaseModel):
     opening_message: str | None = None
     suggested_questions: list[str] = []
     variables: list[dict[str, Any]] = []
-    enable_vision: bool = False
-    enable_file_upload: bool = False
-    file_upload_config: dict[str, Any] | None = None
+    enable_attachments: bool = False
+    attachment_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False

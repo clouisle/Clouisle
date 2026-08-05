@@ -216,10 +216,9 @@ async def create_agent(
         hide_message_actions=agent_in.hide_message_actions,
         hide_reasoning=agent_in.hide_reasoning,
         tools_config=[tool.model_dump() for tool in agent_in.tools_config],
-        enable_vision=agent_in.enable_vision,
-        enable_file_upload=agent_in.enable_file_upload,
-        file_upload_config=agent_in.file_upload_config.model_dump()
-        if agent_in.file_upload_config
+        enable_attachments=agent_in.enable_attachments,
+        attachment_config=agent_in.attachment_config.model_dump()
+        if agent_in.attachment_config
         else {},
         enable_user_input_request=agent_in.enable_user_input_request,
         enable_memory=agent_in.enable_memory,
@@ -369,20 +368,17 @@ async def update_agent(
         agent.tools_config = tools_config
         updated_fields.append("tools_config")
 
-    if agent_in.enable_vision is not None:
-        agent.enable_vision = agent_in.enable_vision
-        updated_fields.append("enable_vision")
-    if agent_in.enable_file_upload is not None:
-        agent.enable_file_upload = agent_in.enable_file_upload
-        updated_fields.append("enable_file_upload")
-    if agent_in.file_upload_config is not None:
-        file_upload_config = (
-            agent_in.file_upload_config.model_dump()
-            if hasattr(agent_in.file_upload_config, "model_dump")
-            else agent_in.file_upload_config
+    if agent_in.enable_attachments is not None:
+        agent.enable_attachments = agent_in.enable_attachments
+        updated_fields.append("enable_attachments")
+    if agent_in.attachment_config is not None:
+        attachment_config = (
+            agent_in.attachment_config.model_dump()
+            if hasattr(agent_in.attachment_config, "model_dump")
+            else agent_in.attachment_config
         )
-        agent.file_upload_config = cast(dict[str, Any], file_upload_config)
-        updated_fields.append("file_upload_config")
+        agent.attachment_config = cast(dict[str, Any], attachment_config)
+        updated_fields.append("attachment_config")
     if agent_in.enable_user_input_request is not None:
         agent.enable_user_input_request = agent_in.enable_user_input_request
         updated_fields.append("enable_user_input_request")
@@ -558,9 +554,8 @@ async def duplicate_agent(
         hide_message_actions=agent.hide_message_actions,
         hide_reasoning=agent.hide_reasoning,
         tools_config=agent.tools_config,
-        enable_vision=agent.enable_vision,
-        enable_file_upload=agent.enable_file_upload,
-        file_upload_config=agent.file_upload_config,
+        enable_attachments=agent.enable_attachments,
+        attachment_config=agent.attachment_config,
         enable_user_input_request=agent.enable_user_input_request,
         enable_memory=agent.enable_memory,
         memory_config=agent.memory_config,

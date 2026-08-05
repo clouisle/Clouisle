@@ -788,20 +788,20 @@ Examples of when to search:
                 }
             )
 
-    if agent.enable_file_upload:
+    if getattr(agent, "enable_attachments", False):
         asset_tools = [
             {
                 "type": "function",
                 "function": {
                     "name": "inspect_asset",
-                    "description": "Inspect metadata and capabilities for an Asset in this conversation.",
+                    "description": t("asset_tool_inspect_description"),
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "ref": {
                                 "type": "string",
                                 "pattern": "^[0-9a-f]{4}$",
-                                "description": "Exact ref from available_assets.",
+                                "description": t("asset_tool_ref_description"),
                             }
                         },
                         "required": ["ref"],
@@ -812,11 +812,15 @@ Examples of when to search:
                 "type": "function",
                 "function": {
                     "name": "read_asset",
-                    "description": "Read bounded text from an Asset in this conversation.",
+                    "description": t("asset_tool_read_description"),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "ref": {"type": "string", "pattern": "^[0-9a-f]{4}$"},
+                            "ref": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{4}$",
+                                "description": t("asset_tool_ref_description"),
+                            },
                             "max_chars": {
                                 "type": "integer",
                                 "minimum": 1,
@@ -832,11 +836,15 @@ Examples of when to search:
                 "type": "function",
                 "function": {
                     "name": "parse_asset",
-                    "description": "Parse a supported Asset on demand while preserving its raw bytes.",
+                    "description": t("asset_tool_parse_description"),
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "ref": {"type": "string", "pattern": "^[0-9a-f]{4}$"}
+                            "ref": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{4}$",
+                                "description": t("asset_tool_ref_description"),
+                            }
                         },
                         "required": ["ref"],
                     },
@@ -985,6 +993,16 @@ async def get_tool_display_names(
     display_names: dict[str, str] = {}
     tools_config = list(agent.tools_config or [])
 
+    # Add attachment tool display names if attachments are enabled
+    if getattr(agent, "enable_attachments", False):
+        display_names.update(
+            {
+                "inspect_asset": t("asset_tool_inspect", lang=user_locale),
+                "read_asset": t("asset_tool_read", lang=user_locale),
+                "parse_asset": t("asset_tool_parse", lang=user_locale),
+            }
+        )
+
     # Add knowledge_search display name for agentic RAG mode
     if agent.rag_mode == RAGMode.AGENTIC:
         kb_associations = await AgentKnowledgeBase.filter(agent_id=agent.id).count()
@@ -1120,9 +1138,8 @@ async def get_public_agent_info(
             opening_message=agent.opening_message,
             suggested_questions=agent.suggested_questions or [],
             variables=agent.variables or [],
-            enable_vision=agent.enable_vision,
-            enable_file_upload=agent.enable_file_upload,
-            file_upload_config=agent.file_upload_config,
+            enable_attachments=agent.enable_attachments,
+            attachment_config=agent.attachment_config,
             hide_tool_calls=agent.hide_tool_calls,
             hide_message_actions=agent.hide_message_actions,
             hide_reasoning=agent.hide_reasoning,
@@ -1235,7 +1252,7 @@ async def chat(
     model_used = model_id
 
     model_supports_vision = bool(
-        chat_in.images and agent.enable_vision and chat_model.supports_vision
+        chat_in.images and agent.enable_attachments and chat_model.supports_vision
     )
 
     streaming_config = get_streaming_config(agent)
@@ -1860,7 +1877,7 @@ async def chat_stream(
                     model_used = model_id
                     model_supports_vision = bool(
                         chat_in.images
-                        and agent.enable_vision
+                        and agent.enable_attachments
                         and chat_model.supports_vision
                     )
                     working_history_override = (

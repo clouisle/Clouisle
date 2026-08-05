@@ -102,6 +102,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Archive task started successfully",
         "zh": "归档任务已启动",
     },
+    "asset_tool_inspect": {"en": "Inspect Attachment", "zh": "查看附件"},
+    "asset_tool_inspect_description": {
+        "en": "Inspect metadata and capabilities for an attachment in this conversation.",
+        "zh": "查看当前对话中附件的元数据和可用操作。",
+    },
+    "asset_tool_parse": {"en": "Parse Attachment", "zh": "解析附件"},
+    "asset_tool_parse_description": {
+        "en": "Parse a supported attachment on demand while preserving its raw bytes.",
+        "zh": "按需解析支持的附件，同时保留原始文件内容。",
+    },
+    "asset_tool_read": {"en": "Read Attachment", "zh": "读取附件"},
+    "asset_tool_read_description": {
+        "en": "Read bounded text from an attachment in this conversation.",
+        "zh": "读取当前对话中附件的有限文本内容。",
+    },
+    "asset_tool_ref_description": {
+        "en": "Exact reference from available attachments.",
+        "zh": "从可用附件列表中使用精确引用。",
+    },
     "audit_log_activate_user": {"en": "Activate user", "zh": "激活用户"},
     "audit_log_admin_disable_totp": {
         "en": "Admin disable user 2FA",
