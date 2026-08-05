@@ -107,6 +107,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Inspect metadata and capabilities for an attachment in this conversation.",
         "zh": "查看当前对话中附件的元数据和可用操作。",
     },
+    "asset_tool_materialize": {"en": "Materialize Attachment", "zh": "物化附件"},
+    "asset_tool_materialize_description": {
+        "en": "Write the raw bytes of a conversation attachment into the sandbox workspace so it can be read, edited, or collected as a download link. Only works when a sandbox session is available.",
+        "zh": "将当前对话中的附件原始字节写入沙箱工作区，以便后续读取、编辑或生成下载链接。仅在沙箱会话可用时生效。",
+    },
+    "asset_tool_materialize_path_description": {
+        "en": "Destination path inside the sandbox workspace, e.g. /workspace/report.xlsx.",
+        "zh": "沙箱工作区内的目标路径，例如 /workspace/report.xlsx。",
+    },
     "asset_tool_parse": {"en": "Parse Attachment", "zh": "解析附件"},
     "asset_tool_parse_description": {
         "en": "Parse a supported attachment on demand while preserving its raw bytes.",
@@ -2009,6 +2018,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "sandbox_process_exit_code": {
         "en": "Process exited with code {exit_code}",
         "zh": "进程退出码：{exit_code}",
+    },
+    "sandbox_session_required": {
+        "en": "Sandbox session is required",
+        "zh": "需要沙箱会话",
     },
     "search_completed": {"en": "Search completed", "zh": "搜索完成"},
     "session_expired_new_login": {

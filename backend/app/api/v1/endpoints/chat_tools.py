@@ -20,6 +20,7 @@ async def _execute_asset_tool(
     agent: "Agent | None",
     user: Any,
     conversation_id: Any,
+    session_id: str | None = None,
 ) -> str:
     from uuid import UUID
 
@@ -56,6 +57,63 @@ async def _execute_asset_tool(
             return json.dumps({"error": t("access_denied")}, ensure_ascii=False)
         return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
     try:
+        if tool_name == "materialize_asset":
+            path = arguments.get("path")
+            if not isinstance(path, str) or not path.strip():
+                return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+            if not session_id:
+                return json.dumps(
+                    {"error": t("sandbox_session_required")}, ensure_ascii=False
+                )
+            from app.llm.tools.sandbox_paths import normalize_workspace_path
+            from app.services.sandbox.gateway import sandbox_gateway
+            from app.services.sandbox.models import (
+                SandboxInputFileSpec,
+                SandboxJob,
+                SandboxJobSource,
+                SandboxLimits,
+            )
+
+            try:
+                safe_path = normalize_workspace_path(path)
+            except ValueError:
+                return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+            job = SandboxJob(
+                source=SandboxJobSource.TOOL,
+                language="python",
+                code="return {'materialized': True}",
+                cwd="/workspace",
+                limits=SandboxLimits(timeout_seconds=30, disk_mb=512),
+                input_files=[
+                    SandboxInputFileSpec(
+                        target_path=safe_path,
+                        asset_id=asset.id,
+                        expected_checksum=asset.checksum,
+                        expected_size=asset.size,
+                    )
+                ],
+            )
+            result = await sandbox_gateway.submit_and_wait(
+                job,
+                session_id=session_id,
+                agent_id=str(agent.id),
+                team_id=str(agent.team_id) if agent.team_id else None,
+                timeout_seconds=60,
+            )
+            if not result.success:
+                return json.dumps(
+                    {"error": result.error or t("tool_execution_failed")},
+                    ensure_ascii=False,
+                )
+            return json.dumps(
+                {
+                    "ref": ref,
+                    "path": safe_path,
+                    "filename": asset.display_filename,
+                    "size": asset.size,
+                },
+                ensure_ascii=False,
+            )
         if tool_name == "inspect_asset":
             return json.dumps(
                 {
@@ -128,13 +186,14 @@ async def execute_tool_call(
     from app.llm.tools import tool_registry
     from app.services.error_messages import exception_to_user_message
 
-    if tool_name in {"inspect_asset", "read_asset", "parse_asset"}:
+    if tool_name in {"inspect_asset", "read_asset", "parse_asset", "materialize_asset"}:
         return await _execute_asset_tool(
             tool_name,
             arguments,
             agent=agent,
             user=user,
             conversation_id=conversation_id,
+            session_id=session_id,
         )
 
     if tool_timeouts is None:

@@ -260,3 +260,128 @@ async def test_asset_tool_no_conversation_id():
     )
     data = json.loads(result)
     assert "error" in data
+
+
+@pytest.mark.anyio
+async def test_materialize_asset_stages_file():
+    asset = _asset(
+        orig="report.xlsx",
+        ctype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    svc = _make_service(asset, capabilities=["inspect", "sandbox"])
+    convo_id = str(uuid4())
+    fake_result = SimpleNamespace(success=True, error=None)
+
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch(
+            "app.services.sandbox.gateway.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_submit,
+    ):
+        result = await _execute_asset_tool(
+            "materialize_asset",
+            {"ref": "abcd", "path": "/workspace/report.xlsx"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+            session_id="session-1",
+        )
+
+    data = json.loads(result)
+    assert data["path"] == "/workspace/report.xlsx"
+    assert data["filename"] == "report.xlsx"
+    assert data["ref"] == "abcd"
+    mock_submit.assert_awaited_once()
+    job = mock_submit.call_args.args[0]
+    assert job.input_files[0].asset_id == asset.id
+    assert job.input_files[0].expected_checksum == asset.checksum
+    assert job.input_files[0].expected_size == asset.size
+    assert mock_submit.call_args.kwargs["session_id"] == "session-1"
+
+
+@pytest.mark.anyio
+async def test_materialize_asset_missing_session_returns_error():
+    asset = _asset()
+    svc = _make_service(asset)
+    convo_id = str(uuid4())
+
+    with patch("app.services.asset.asset_service", svc):
+        result = await _execute_asset_tool(
+            "materialize_asset",
+            {"ref": "abcd", "path": "/workspace/report.xlsx"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+            session_id=None,
+        )
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+@pytest.mark.anyio
+async def test_materialize_asset_missing_path_returns_error():
+    asset = _asset()
+    svc = _make_service(asset)
+    convo_id = str(uuid4())
+
+    with patch("app.services.asset.asset_service", svc):
+        result = await _execute_asset_tool(
+            "materialize_asset",
+            {"ref": "abcd"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+            session_id="session-1",
+        )
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+@pytest.mark.anyio
+async def test_materialize_asset_rejects_path_escape():
+    asset = _asset()
+    svc = _make_service(asset)
+    convo_id = str(uuid4())
+
+    with patch("app.services.asset.asset_service", svc):
+        result = await _execute_asset_tool(
+            "materialize_asset",
+            {"ref": "abcd", "path": "/etc/passwd"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+            session_id="session-1",
+        )
+
+    data = json.loads(result)
+    assert "error" in data
+
+
+@pytest.mark.anyio
+async def test_materialize_asset_returns_error_on_sandbox_failure():
+    asset = _asset(orig="report.xlsx")
+    svc = _make_service(asset, capabilities=["inspect", "sandbox"])
+    convo_id = str(uuid4())
+    fake_result = SimpleNamespace(success=False, error="target already exists")
+
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch(
+            "app.services.sandbox.gateway.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(return_value=fake_result),
+        ),
+    ):
+        result = await _execute_asset_tool(
+            "materialize_asset",
+            {"ref": "abcd", "path": "/workspace/report.xlsx"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+            session_id="session-1",
+        )
+
+    data = json.loads(result)
+    assert data["error"] == "target already exists"

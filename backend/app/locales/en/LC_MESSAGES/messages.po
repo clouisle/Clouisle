@@ -597,6 +597,18 @@ msgstr "Read bounded text from an attachment in this conversation."
 msgid "asset_tool_ref_description"
 msgstr "Exact reference from available attachments."
 
+msgid "asset_tool_materialize"
+msgstr "Materialize Attachment"
+
+msgid "asset_tool_materialize_description"
+msgstr "Write the raw bytes of a conversation attachment into the sandbox workspace so it can be read, edited, or collected as a download link. Only works when a sandbox session is available."
+
+msgid "asset_tool_materialize_path_description"
+msgstr "Destination path inside the sandbox workspace, e.g. /workspace/report.xlsx."
+
+msgid "sandbox_session_required"
+msgstr "Sandbox session is required"
+
 msgid "builtin_tool_artifact"
 msgstr "Create Download Link"
 

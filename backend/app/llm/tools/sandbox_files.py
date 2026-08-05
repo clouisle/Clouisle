@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePosixPath
+from .sandbox_paths import (
+    normalize_workspace_path as _normalize_workspace_path,
+    runtime_workspace_path as _runtime_workspace_path,
+)
 from typing import Any
 
 from app.core.config import settings
@@ -847,30 +850,6 @@ return {
 }
 """
 ).strip()
-
-
-def _normalize_workspace_path(path: str) -> str:
-    raw = str(path or "").strip()
-    if not raw:
-        raise ValueError("path is required")
-    posix_path = PurePosixPath(raw)
-    if posix_path.is_absolute() and not raw.startswith("/workspace"):
-        raise ValueError("path must stay inside /workspace")
-    relative = raw.removeprefix("/workspace/") if raw != "/workspace" else ""
-    relative_path = PurePosixPath(relative)
-    if ".." in relative_path.parts:
-        raise ValueError("path must stay inside /workspace")
-    if raw == "/workspace":
-        return "/workspace"
-    if raw.startswith("/workspace/"):
-        return PurePosixPath("/workspace", relative_path).as_posix()
-    return PurePosixPath("/workspace", posix_path).as_posix()
-
-
-def _runtime_workspace_path(path: str) -> str:
-    if path == "/workspace":
-        return "."
-    return path.removeprefix("/workspace/")
 
 
 class SandboxReadTool:

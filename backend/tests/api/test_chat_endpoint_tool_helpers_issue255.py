@@ -244,6 +244,7 @@ async def test_tool_display_names_localize_asset_tools_when_attachments_enabled(
     assert names["inspect_asset"] == "translated:asset_tool_inspect"
     assert names["read_asset"] == "translated:asset_tool_read"
     assert names["parse_asset"] == "translated:asset_tool_parse"
+    assert names["materialize_asset"] == "translated:asset_tool_materialize"
 
 
 @pytest.mark.anyio

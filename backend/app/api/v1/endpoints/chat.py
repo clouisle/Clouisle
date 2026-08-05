@@ -850,6 +850,30 @@ Examples of when to search:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "materialize_asset",
+                    "description": t("asset_tool_materialize_description"),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{4}$",
+                                "description": t("asset_tool_ref_description"),
+                            },
+                            "path": {
+                                "type": "string",
+                                "description": t(
+                                    "asset_tool_materialize_path_description"
+                                ),
+                            },
+                        },
+                        "required": ["ref", "path"],
+                    },
+                },
+            },
         ]
         for asset_tool in asset_tools:
             append_openai_tool(asset_tool)
@@ -1000,6 +1024,7 @@ async def get_tool_display_names(
                 "inspect_asset": t("asset_tool_inspect", lang=user_locale),
                 "read_asset": t("asset_tool_read", lang=user_locale),
                 "parse_asset": t("asset_tool_parse", lang=user_locale),
+                "materialize_asset": t("asset_tool_materialize", lang=user_locale),
             }
         )
 
@@ -3139,6 +3164,7 @@ async def edit_user_message_stream(
             sandbox_session_id = await sandbox_gateway.create_session(
                 agent_id=str(agent.id),
                 team_id=str(agent.team_id) if agent.team_id else None,
+                user_id=str(current_user.id),
                 conversation_id=str(conversation.id),
             )
 
@@ -4121,6 +4147,7 @@ async def regenerate_message(
             sandbox_session_id = await sandbox_gateway.create_session(
                 agent_id=str(agent.id),
                 team_id=str(agent.team_id) if agent.team_id else None,
+                user_id=str(current_user.id),
                 conversation_id=str(conversation.id),
             )
 
