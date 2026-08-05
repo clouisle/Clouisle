@@ -24,7 +24,8 @@ let result: HookResult
 let useChat: typeof import('./use-chat').useChat
 let renderScheduled = false
 type StreamEvent = { event: string; data: unknown }
-let streamEvents: Array<StreamEvent | Promise<StreamEvent>> = []
+type StreamEventSource = StreamEvent | Promise<StreamEvent> | (() => Promise<StreamEvent>)
+let streamEvents: StreamEventSource[] = []
 
 const chatStream = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
 const editMessageStream = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
@@ -44,7 +45,9 @@ const agentsApi = {
 mock.module('@/lib/api', () => ({
   agentsApi,
   async *parseSSEStream() {
-    for (const event of streamEvents) yield await event
+    for (const event of streamEvents) {
+      yield await (typeof event === 'function' ? event() : event)
+    }
   },
 }))
 
@@ -145,13 +148,7 @@ beforeEach(() => {
 })
 
 function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, resolve, reject }
+  return Promise.withResolvers<T>()
 }
 
 async function flush() {
@@ -554,6 +551,79 @@ describe('useChat', () => {
     await result.editMessage('temporary-id', 'ignored')
     await result.editMessage('assistant-2', 'ignored')
     expect(editMessageStream).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the complete assistant stream while an edited response is in progress', async () => {
+    const userId = '11111111-1111-1111-1111-111111111111'
+    const reload = deferred<{ messages: ChatMessage[] }>()
+    const messageEnd = deferred<StreamEvent>()
+    const messageEndRequested = deferred<void>()
+    const reloadStarted = deferred<void>()
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+      { id: 'assistant-old', role: 'assistant', parts: [{ type: 'text', text: 'stale' }] },
+    ] as ChatMessage[])
+    await flush()
+
+    streamEvents = [
+      { event: 'message_start', data: { message_id: 'assistant-edited', edited_message_id: userId } },
+      { event: 'rag_start', data: {} },
+      { event: 'reasoning_start', data: {} },
+      { event: 'reasoning_delta', data: { delta: 'reconsidering' } },
+      { event: 'reasoning_end', data: {} },
+      { event: 'rag_context', data: { contexts: [{ document_id: 'doc-1', document_name: 'Doc', content: 'chunk', kb_id: 'kb-1', kb_name: 'KB', score: 0.8 }] } },
+      { event: 'compression_start', data: {} },
+      { event: 'compression_end', data: { before_tokens: 20, after_tokens: 10 } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: { q: 'edited' } } },
+      { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', result: { ok: true }, is_error: false } },
+      { event: 'media_result', data: { kind: 'image', url: '/edited.png' } },
+      { event: 'content_delta', data: { delta: 'updated answer' } },
+      { event: 'output_truncated', data: {} },
+      { event: 'iteration_cap_reached', data: { content: 'Reached limit' } },
+      () => {
+        messageEndRequested.resolve()
+        return messageEnd.promise
+      },
+    ]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockImplementation(() => {
+      reloadStarted.resolve()
+      return reload.promise
+    })
+
+    const editing = result.editMessage(userId, 'edited')
+    await messageEndRequested.promise
+
+    let assistant = result.messages.find(message => message.id === 'assistant-edited')
+    expect(result.status).toBe('streaming')
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'reasoning', text: 'reconsidering', state: 'done' }))
+    expect(assistant?.parts).toContainEqual({ type: 'text', text: 'updated answer', state: 'streaming' })
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1', state: 'done' }))
+
+    messageEnd.resolve({ event: 'message_end', data: { usage: { total_tokens: 30 }, timing: { duration_ms: 50 } } })
+    await reloadStarted.promise
+    await flush()
+    assistant = result.messages.find(message => message.id === 'assistant-edited')
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'reasoning', text: 'reconsidering', state: 'done' }))
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc-1' }))
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'task', taskType: 'compression', state: 'completed' }))
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1', state: 'done' }))
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'tool-result', toolCallId: 'tool-1' }))
+    expect(assistant?.parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
+    expect(assistant?.parts).toContainEqual({ type: 'text', text: 'updated answer', state: 'done' })
+    expect(assistant?.parts).toContainEqual({ type: 'truncated' })
+    expect(assistant?.parts).toContainEqual({ type: 'iteration-cap-reached' })
+    expect(assistant?.metadata).toMatchObject({
+      isLoading: false,
+      usage: { total_tokens: 30 },
+      timing: { duration_ms: 50 },
+    })
+
+    reload.resolve({ messages: result.messages })
+    await editing
   })
 
   it('recovers authoritative messages after an edit stream error', async () => {
