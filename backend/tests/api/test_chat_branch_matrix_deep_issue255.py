@@ -74,7 +74,7 @@ async def setup_send_until_prepare(monkeypatch, prepare_error):
         team_id=team.id,
         team=team,
         rag_mode=RAGMode.OFF,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )

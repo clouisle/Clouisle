@@ -54,7 +54,7 @@ def test_context_and_style_helpers_cover_empty_and_populated_boundaries():
         agent_description="Find facts",
         rag_mode="hybrid",
         capabilities={
-            "enable_vision": True,
+            "enable_attachments": True,
             "enable_memory": True,
             "memory_config": {"window": 3},
         },
@@ -85,7 +85,7 @@ def test_context_and_style_helpers_cover_empty_and_populated_boundaries():
     rendered = prompt_generator.build_context_string(context, "en")
 
     assert "Agent Name: Researcher" in rendered
-    assert "Enabled Capabilities: Vision, Memory" in rendered
+    assert "Enabled Capabilities: Files and Images, Memory" in rendered
     assert 'Capability Configs: {"memory_config":{"window":3}}' in rendered
     assert 'Search(builtin): Search the web config={"safe":true}' in rendered
     assert "unknown(unknown)" in rendered

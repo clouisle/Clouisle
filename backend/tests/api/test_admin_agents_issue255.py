@@ -71,9 +71,8 @@ def agent(**overrides):
         "hide_message_actions": False,
         "hide_reasoning": False,
         "tools_config": [],
-        "enable_vision": False,
-        "enable_file_upload": False,
-        "file_upload_config": {},
+        "enable_attachments": False,
+        "attachment_config": {},
         "enable_user_input_request": False,
         "enable_memory": False,
         "memory_config": {},
@@ -271,9 +270,8 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         opening_message="Hello",
         suggested_questions=["Help?"],
         visibility="private",
-        enable_vision=True,
-        enable_file_upload=True,
-        file_upload_config={"max_file_size": 1024},
+        enable_attachments=True,
+        attachment_config={"max_file_size": 1024},
         enable_user_input_request=True,
         enable_memory=True,
         memory_config={"max_memories_per_retrieval": 4},
@@ -301,7 +299,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     item.save.assert_awaited_once()
     assert item.name == "Updated Agent"
     assert item.visibility is AgentVisibility.PRIVATE
-    assert item.file_upload_config["max_file_size"] == 1024
+    assert item.attachment_config["max_file_size"] == 1024
     assert item.memory_config["max_memories_per_retrieval"] == 4
     assert item.rag_mode.value == "auto"
     assert item.variables[0]["name"] == "topic"

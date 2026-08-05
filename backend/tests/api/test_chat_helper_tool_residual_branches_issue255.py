@@ -112,8 +112,8 @@ async def test_execute_code_tool_shapes_dict_stdout_residuals_issue255(stdout):
 @pytest.mark.anyio
 async def test_custom_file_parser_without_tool_id_skips_lookup_issue255():
     agent = SimpleNamespace(
-        enable_file_upload=True,
-        file_upload_config={"parser": {"type": "custom"}},
+        enable_attachments=True,
+        attachment_config={"parser": {"type": "custom"}},
     )
 
     result = await build_file_content_for_context(
@@ -129,19 +129,16 @@ async def test_custom_file_parser_without_tool_id_skips_lookup_issue255():
 
 
 @pytest.mark.anyio
-async def test_custom_file_parser_ignores_empty_tool_result_issue255():
+async def test_custom_file_parser_config_is_ignored_for_asset_files_issue255():
     agent = SimpleNamespace(
-        enable_file_upload=True,
-        file_upload_config={"parser": {"type": "custom", "tool_id": "parser-tool-id"}},
+        enable_attachments=True,
+        attachment_config={"parser": {"type": "custom", "tool_id": "parser-tool-id"}},
     )
-    query = MagicMock()
-    query.first = AsyncMock(return_value=SimpleNamespace(name="parser"))
 
     with (
-        patch("app.models.tool.Tool.filter", return_value=query),
         patch(
             "app.api.v1.endpoints.chat_tools.execute_tool_call",
-            new=AsyncMock(return_value=None),
+            new=AsyncMock(),
         ) as execute_parser,
     ):
         result = await build_file_content_for_context(
@@ -154,4 +151,4 @@ async def test_custom_file_parser_ignores_empty_tool_result_issue255():
         )
 
     assert result == ("", None)
-    execute_parser.assert_awaited_once()
+    execute_parser.assert_not_awaited()

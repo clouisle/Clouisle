@@ -17,8 +17,8 @@ from app.services.file_parser import FileParseConfig, FileParserService, ParsedF
 def _agent():
     return SimpleNamespace(
         id=uuid4(),
-        enable_file_upload=True,
-        file_upload_config={
+        enable_attachments=True,
+        attachment_config={
             "parser": {"type": "builtin", "name": "markitdown"},
             "max_content_length": 100000,
             "truncate_strategy": "end",
@@ -111,20 +111,7 @@ def test_file_parser_does_not_truncate_at_limit():
 
 
 @pytest.mark.anyio
-async def test_builtin_file_parser_writes_cache_metadata(tmp_path, monkeypatch):
-    upload_root = tmp_path / "uploads"
-    upload_root.mkdir()
-    file_path = upload_root / "documents" / "2026" / "05" / "report.txt"
-    file_path.parent.mkdir(parents=True)
-    file_path.write_text("report body", encoding="utf-8")
-
-    monkeypatch.setattr("app.api.v1.endpoints.upload.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr("app.services.file_parse_cache.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr(
-        "app.services.file_parse_cache.CACHE_DIR",
-        upload_root / ".cache" / "file-parses",
-    )
-
+async def test_asset_file_urls_are_not_automatically_parsed():
     content, updated_file_urls = await build_file_content_for_context(
         agent=_agent(),
         file_urls=[
@@ -141,113 +128,8 @@ async def test_builtin_file_parser_writes_cache_metadata(tmp_path, monkeypatch):
         user=None,
     )
 
-    assert "report body" in content
-    assert updated_file_urls is not None
-    assert updated_file_urls[0]["parse_cache"]["status"] == "success"
-    assert updated_file_urls[0]["parse_cache"]["key"]
-
-
-@pytest.mark.anyio
-async def test_builtin_file_parser_preserves_asset_entries_in_mixed_list(
-    tmp_path, monkeypatch
-):
-    upload_root = tmp_path / "uploads"
-    upload_root.mkdir()
-    file_path = upload_root / "documents" / "2026" / "05" / "legacy.txt"
-    file_path.parent.mkdir(parents=True)
-    file_path.write_text("legacy body", encoding="utf-8")
-    asset_id = uuid4()
-
-    monkeypatch.setattr("app.api.v1.endpoints.upload.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr("app.services.file_parse_cache.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr(
-        "app.services.file_parse_cache.CACHE_DIR",
-        upload_root / ".cache" / "file-parses",
-    )
-
-    content, updated_file_urls = await build_file_content_for_context(
-        agent=_agent(),
-        file_urls=[
-            {
-                "asset_id": asset_id,
-                "filename": "raw.pdf",
-                "url": "/api/v1/upload/files/documents/2026/05/raw.pdf",
-                "size": 123,
-                "mime_type": "application/pdf",
-            },
-            {
-                "filename": "legacy.txt",
-                "url": "/api/v1/upload/files/documents/2026/05/legacy.txt",
-                "size": 11,
-                "mime_type": "text/plain",
-            },
-        ],
-        legacy_files=None,
-        user_locale="en",
-        tool_timeouts=None,
-        user=None,
-    )
-
-    assert "legacy body" in content
-    assert "raw.pdf" not in content
-    assert updated_file_urls is not None
-    assert len(updated_file_urls) == 2
-    assert updated_file_urls[0]["asset_id"] == asset_id
-    assert "parse_cache" not in updated_file_urls[0]
-    assert updated_file_urls[1]["parse_cache"]["status"] == "success"
-
-
-@pytest.mark.anyio
-async def test_builtin_file_parser_reuses_cache_without_reparse(tmp_path, monkeypatch):
-    upload_root = tmp_path / "uploads"
-    upload_root.mkdir()
-    file_path = upload_root / "documents" / "2026" / "05" / "report.txt"
-    file_path.parent.mkdir(parents=True)
-    file_path.write_text("report body", encoding="utf-8")
-
-    monkeypatch.setattr("app.api.v1.endpoints.upload.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr("app.services.file_parse_cache.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr(
-        "app.services.file_parse_cache.CACHE_DIR",
-        upload_root / ".cache" / "file-parses",
-    )
-
-    file_urls = [
-        {
-            "filename": "report.txt",
-            "url": "/api/v1/upload/files/documents/2026/05/report.txt",
-            "size": 11,
-            "mime_type": "text/plain",
-        }
-    ]
-    _, updated_file_urls = await build_file_content_for_context(
-        agent=_agent(),
-        file_urls=file_urls,
-        legacy_files=None,
-        user_locale="en",
-        tool_timeouts=None,
-        user=None,
-    )
-
-    async def fail_parse_file(*args, **kwargs):
-        raise AssertionError("parser should not run when cache is valid")
-
-    monkeypatch.setattr(
-        "app.services.file_parser.file_parser_service.parse_file",
-        fail_parse_file,
-    )
-
-    content, second_updated_file_urls = await build_file_content_for_context(
-        agent=_agent(),
-        file_urls=updated_file_urls,
-        legacy_files=None,
-        user_locale="en",
-        tool_timeouts=None,
-        user=None,
-    )
-
-    assert "report body" in content
-    assert second_updated_file_urls == updated_file_urls
+    assert content == ""
+    assert updated_file_urls is None
 
 
 def _configure_cache(tmp_path, monkeypatch):

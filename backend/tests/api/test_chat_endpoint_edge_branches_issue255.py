@@ -79,7 +79,7 @@ def chat_env(monkeypatch):
         team_id=team_id,
         team=SimpleNamespace(id=team_id),
         rag_mode="manual",
-        enable_vision=False,
+        enable_attachments=False,
         max_iterations=1,
         enable_user_input_request=False,
     )

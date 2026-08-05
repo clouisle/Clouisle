@@ -296,7 +296,7 @@ async def test_nonstream_model_selection_reaches_sandbox_boundary(has_team_model
         id=uuid4(),
         team_id=uuid4(),
         rag_mode=RAGMode.OFF,
-        enable_vision=True,
+        enable_attachments=True,
     )
     conversation = SimpleNamespace(id=uuid4())
     user_message = SimpleNamespace(id=uuid4(), file_urls=None)

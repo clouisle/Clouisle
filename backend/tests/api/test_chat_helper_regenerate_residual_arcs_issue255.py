@@ -393,7 +393,7 @@ async def test_chat_stream_auto_rag_emits_context(monkeypatch):
         team_id=team.id,
         team=team,
         rag_mode=RAGMode.AUTO,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )

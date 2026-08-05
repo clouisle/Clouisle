@@ -64,7 +64,7 @@ def core_chat(monkeypatch):
         team_id=uuid4(),
         team=SimpleNamespace(id=uuid4()),
         rag_mode=RAGMode.AGENTIC,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
         max_iterations=1,
     )

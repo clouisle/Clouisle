@@ -73,7 +73,7 @@ async def setup_chat(monkeypatch, *, max_iterations=2, history_override=None):
         team_id=uuid4(),
         rag_mode=RAGMode.OFF,
         max_iterations=max_iterations,
-        enable_vision=False,
+        enable_attachments=False,
         enable_user_input_request=False,
     )
     conversation = SimpleNamespace(id=uuid4(), title="existing")

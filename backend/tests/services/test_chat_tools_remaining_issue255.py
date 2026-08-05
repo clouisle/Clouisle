@@ -1,12 +1,11 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.api.v1.endpoints.chat_tools import (
     _get_item_value,
-    _get_tool_result_display,
     build_file_content_for_context,
     build_file_content_for_prompt,
     execute_code_tool,
@@ -21,8 +20,8 @@ def _agent(**overrides):
     values = {
         "id": "agent-1",
         "team_id": "team-1",
-        "enable_file_upload": True,
-        "file_upload_config": {},
+        "enable_attachments": True,
+        "attachment_config": {},
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -34,7 +33,7 @@ def _query(result):
 
 @pytest.mark.anyio
 async def test_file_content_disabled_empty_legacy_and_prompt_wrapper():
-    disabled = _agent(enable_file_upload=False)
+    disabled = _agent(enable_attachments=False)
     assert await build_file_content_for_context(disabled, [], [], "en", None, None) == (
         "",
         None,
@@ -73,155 +72,11 @@ async def test_file_content_disabled_empty_legacy_and_prompt_wrapper():
     build.assert_awaited_once()
 
 
-@pytest.mark.anyio
-async def test_builtin_file_parser_handles_missing_and_invalid_urls(tmp_path):
-    agent = _agent(
-        file_upload_config={"parser": {"type": "builtin", "name": "markitdown"}}
-    )
-    existing = tmp_path / "documents" / "2026" / "05" / "report.txt"
-    existing.parent.mkdir(parents=True)
-    existing.write_text("body", encoding="utf-8")
-
-    def resolve(*parts):
-        if parts[-1] == "missing.txt":
-            return tmp_path / "missing.txt"
-        return existing
-
-    files = [
-        SimpleNamespace(filename="empty.txt", url="", size=0),
-        {"filename": "remote.txt", "url": "https://example.com/a", "size": 1},
-        {
-            "filename": "shape.txt",
-            "url": "/api/v1/upload/files/too/few/parts",
-            "size": 2,
-        },
-        {
-            "filename": "missing.txt",
-            "url": "/api/v1/upload/files/documents/2026/05/missing.txt",
-            "size": 3,
-        },
-    ]
-    with (
-        patch("app.api.v1.endpoints.upload.UPLOAD_ROOT", tmp_path),
-        patch("app.api.v1.endpoints.upload._resolve_upload_path", side_effect=resolve),
-        patch("app.services.file_parse_cache.build_parser_hash", return_value="hash"),
-    ):
-        content, updates = await build_file_content_for_context(
-            agent, files, None, "en", None, None
-        )
-
-    assert updates is not None and len(updates) == 4
-    assert updates[0]["url"] == ""
-    assert content.count(t("file_parse_failed_placeholder")) == 3
-
-
-@pytest.mark.anyio
-async def test_builtin_file_parser_uses_cached_result_and_parses_cache_miss(tmp_path):
-    from app.services.file_parser import ParsedFile
-
-    agent = _agent(
-        file_upload_config={"parser": {"type": "builtin", "name": "markitdown"}}
-    )
-    path = tmp_path / "report.txt"
-    path.write_text("raw", encoding="utf-8")
-    files = [
-        {
-            "filename": "cached.txt",
-            "url": "/api/v1/upload/files/documents/2026/05/cached.txt",
-        },
-        {
-            "filename": "fresh.txt",
-            "url": "/api/v1/upload/files/documents/2026/05/fresh.txt",
-        },
-    ]
-    cached = ParsedFile(
-        filename="cached.txt", content="cached body", mime_type="text/plain", size=11
-    )
-    fresh = ParsedFile(
-        filename="fresh.txt", content="fresh body", mime_type="text/plain", size=10
-    )
-    with (
-        patch("app.api.v1.endpoints.upload.UPLOAD_ROOT", tmp_path),
-        patch("app.api.v1.endpoints.upload._resolve_upload_path", return_value=path),
-        patch("app.services.file_parse_cache.build_parser_hash", return_value="hash"),
-        patch(
-            "app.services.file_parse_cache.read_cached_file",
-            new=AsyncMock(side_effect=[cached, None]),
-        ),
-        patch(
-            "app.services.file_parser.file_parser_service.parse_file",
-            new=AsyncMock(return_value=fresh),
-        ) as parse,
-        patch(
-            "app.services.file_parse_cache.write_cached_file",
-            new=AsyncMock(
-                side_effect=lambda item, *_args, **_kwargs: {**item, "cached": True}
-            ),
-        ) as write,
-    ):
-        content, updates = await build_file_content_for_context(
-            agent, files, None, "en", None, None
-        )
-
-    assert "cached body" in content and "fresh body" in content
-    assert updates is not None and updates[1]["cached"] is True
-    parse.assert_awaited_once_with(b"raw", "fresh.txt", ANY)
-    write.assert_awaited_once()
-
-
-@pytest.mark.anyio
-async def test_custom_file_parser_success_missing_tool_and_failure():
-    config = {"parser": {"type": "custom", "tool_id": "parser-1"}}
-    agent = _agent(file_upload_config=config)
-    files = [{"url": "https://storage/a"}, {"url": ""}]
-    tool = SimpleNamespace(name="parser")
-
-    with (
-        patch("app.models.tool.Tool.filter", return_value=_query(tool)),
-        patch(
-            "app.api.v1.endpoints.chat_tools.execute_tool_call",
-            new=AsyncMock(return_value={"text": "parsed"}),
-        ) as execute,
-    ):
-        content, _ = await build_file_content_for_context(
-            agent, files, None, "en", {"http": 4}, "user"
-        )
-    assert '"text": "parsed"' in content
-    execute.assert_awaited_once_with(
-        "custom_parser",
-        {"files_url": ["https://storage/a"]},
-        agent=agent,
-        tool_timeouts={"http": 4},
-        user="user",
-    )
-
-    with patch("app.models.tool.Tool.filter", return_value=_query(None)):
-        assert await build_file_content_for_context(
-            agent, files, None, "en", None, None
-        ) == ("", None)
-
-    with (
-        patch("app.models.tool.Tool.filter", return_value=_query(tool)),
-        patch(
-            "app.api.v1.endpoints.chat_tools.execute_tool_call",
-            new=AsyncMock(side_effect=RuntimeError("parser down")),
-        ),
-    ):
-        content, _ = await build_file_content_for_context(
-            agent, files, None, "en", None, None
-        )
-    assert t("custom_parser_failed_placeholder") in content
-
-
 def test_file_and_tool_display_helpers():
     obj = SimpleNamespace(value=3)
     assert _get_item_value({"value": 2}, "value") == 2
     assert _get_item_value(obj, "value") == 3
     assert _get_item_value(obj, "missing", 4) == 4
-    assert _get_tool_result_display({"ok": True}) == '{"ok": true}'
-    assert _get_tool_result_display("text") == "text"
-    assert _get_tool_result_display(7) == "7"
-    assert _get_tool_result_display(None) is None
 
 
 @pytest.mark.anyio

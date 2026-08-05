@@ -76,9 +76,8 @@ def _agent(**overrides):
         "hide_message_actions": False,
         "hide_reasoning": False,
         "tools_config": [],
-        "enable_vision": False,
-        "enable_file_upload": False,
-        "file_upload_config": {},
+        "enable_attachments": False,
+        "attachment_config": {},
         "enable_user_input_request": False,
         "enable_memory": False,
         "memory_config": {},
@@ -232,9 +231,8 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
         visibility="private",
         model_id=model_id,
         tools_config=[SimpleNamespace(model_dump=lambda: {"type": "builtin"})],
-        enable_vision=True,
-        enable_file_upload=True,
-        file_upload_config={"parser": None},
+        enable_attachments=True,
+        attachment_config={"parser": None},
         enable_user_input_request=True,
         enable_memory=True,
         memory_config=SimpleNamespace(model_dump=lambda: {"auto_extract": True}),
@@ -283,13 +281,13 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
         )
 
     assert response["data"] == {"id": item.id}
-    assert item.file_upload_config == {"parser": None}
+    assert item.attachment_config == {"parser": None}
     assert item.rag_mode == RAGMode.OFF
     assert item.variables == [{"name": "topic"}]
     assert item.embed_config == {"theme": "dark"}
     item.save.assert_awaited_once()
     create_kb.assert_awaited_once()
-    assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 29
+    assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 28
 
 
 @pytest.mark.anyio

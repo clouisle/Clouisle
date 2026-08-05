@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 from uuid import uuid4
 
 import pytest
@@ -109,7 +109,14 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
     query = SimpleNamespace(all=AsyncMock(return_value=[db_tool]))
     filter_mock = Mock(return_value=query)
     skill = SimpleNamespace(display_name="Skill Display")
-    translate = Mock(return_value="Translated Builtin")
+    translate = Mock(
+        side_effect=lambda key, **_kwargs: {
+            "asset_tool_inspect": "Inspect Attachment",
+            "asset_tool_read": "Read Attachment",
+            "asset_tool_parse": "Parse Attachment",
+            "tools.translated": "Translated Builtin",
+        }[key]
+    )
     monkeypatch.setattr(tool_utils.Tool, "filter", filter_mock)
     monkeypatch.setattr(
         tool_utils.SkillService,
@@ -131,6 +138,7 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
         {"display_name": "Fallback Builtin"},
     )
     agent = SimpleNamespace(
+        enable_attachments=True,
         tools_config=[
             {"type": "builtin", "name": "translated"},
             {"type": "builtin", "name": "fallback"},
@@ -138,17 +146,20 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
             {"type": "builtin"},
             {"type": "custom", "tool_id": str(tool_id)},
             {"type": "custom", "tool_id": str(uuid4())},
-        ]
+        ],
     )
 
     assert await tool_utils.get_tool_display_names(agent, "zh-CN") == {
+        "inspect_asset": "Inspect Attachment",
+        "read_asset": "Read Attachment",
+        "parse_asset": "Parse Attachment",
         "translated": "Translated Builtin",
         "fallback": "Fallback Builtin",
         "unknown": "unknown",
         "custom": "Custom Display",
         "skill_demo": "Skill Display",
     }
-    translate.assert_called_once_with("tools.translated", lang="zh-CN")
+    assert translate.call_args_list[-1] == call("tools.translated", lang="zh-CN")
 
 
 @pytest.mark.anyio

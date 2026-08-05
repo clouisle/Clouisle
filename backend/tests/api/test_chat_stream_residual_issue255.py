@@ -67,7 +67,7 @@ def patched_chat_stream(monkeypatch):
         team_id=uuid4(),
         team=SimpleNamespace(id=uuid4()),
         rag_mode="off",
-        enable_vision=False,
+        enable_attachments=False,
         max_iterations=2,
         context_compression_config=None,
     )

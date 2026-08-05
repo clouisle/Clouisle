@@ -105,7 +105,7 @@ def chat_harness(monkeypatch):
         team_id=uuid4(),
         team=SimpleNamespace(id=uuid4()),
         rag_mode=RAGMode.AGENTIC,
-        enable_vision=True,
+        enable_attachments=True,
         enable_user_input_request=False,
         max_iterations=2,
         context_compression_config={},
