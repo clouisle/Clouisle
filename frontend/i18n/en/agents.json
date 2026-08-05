@@ -289,29 +289,14 @@
           }
         }
       },
-      "vision": {
-        "title": "Vision",
-        "tooltip": "Enable vision capabilities to understand and analyze images",
-        "description": "When enabled, the agent can receive and understand image inputs. Requires a vision-capable model (e.g., GPT-4V, Claude 3)."
-      },
-      "fileUpload": {
-        "title": "File Upload",
-        "tooltip": "Enable users to upload documents for the agent to analyze",
-        "description": "When enabled, users can upload documents (PDF, Word, Excel, PPT, etc.). The content will be parsed and attached to the conversation context.",
-        "parser": "File Parser",
-        "selectParser": "Select file parser",
-        "parserHint": "Select a tool to parse uploaded files. You can also create custom file parsing tools.",
-        "customParser": "(Custom)",
+      "attachments": {
+        "title": "Files and Images",
+        "tooltip": "Allow users to attach files and images to the conversation",
+        "description": "Attachments are stored as Assets and the agent can inspect or parse them on demand. Images are sent directly to the model only when the selected chat model supports vision.",
         "maxContentLength": "Max Content Length",
-        "maxContentLengthHint": "Maximum characters per parsed file (1,000-500,000)",
+        "maxContentLengthHint": "Maximum characters returned when the agent explicitly parses a file (1,000-500,000)",
         "characters": "chars",
-        "truncateStrategy": "Truncation Strategy",
-        "selectStrategy": "Select truncation strategy",
-        "truncateEnd": "Keep start (truncate end)",
-        "truncateStart": "Keep end (truncate start)",
-        "truncateMiddle": "Keep both ends (truncate middle)",
-        "contextHint": "Uploaded files are automatically passed to the model as conversation context. No prompt variable is required.",
-        "supportedFormats": "Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html)"
+        "contextHint": "Attachments remain available as Assets. They are not automatically parsed into the conversation context."
       },
       "userInputRequest": {
         "title": "User Input Request",

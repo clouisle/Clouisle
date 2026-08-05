@@ -103,15 +103,7 @@ export interface AgentKnowledgeBaseConfig {
   search_mode: 'vector' | 'fulltext' | 'hybrid'
 }
 
-/** File parser configuration - which tool to use for parsing files */
-export interface FileParserConfig {
-  type: 'builtin' | 'custom'
-  name?: string       // for builtin, e.g., 'markitdown'
-  tool_id?: string    // for custom tools
-}
-
-export interface FileUploadConfig {
-  parser?: FileParserConfig | null  // null means no parser selected
+export interface AttachmentConfig {
   max_file_size: number  // bytes
   max_files: number
   max_content_length: number  // characters
@@ -212,9 +204,8 @@ export interface Agent {
   opening_message?: string | null
   suggested_questions: string[]
   knowledge_bases: AgentKnowledgeBaseOut[]
-  enable_vision: boolean
-  enable_file_upload: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments: boolean
+  attachment_config?: AttachmentConfig | null
   enable_user_input_request: boolean
   enable_memory: boolean
   memory_config?: MemoryConfig | null
@@ -268,9 +259,8 @@ export interface AgentCreateInput {
   variables?: VariableDefinition[]
   opening_message?: string | null
   suggested_questions?: string[]
-  enable_vision?: boolean
-  enable_file_upload?: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments?: boolean
+  attachment_config?: AttachmentConfig | null
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
@@ -299,9 +289,8 @@ export interface AgentUpdateInput {
   variables?: VariableDefinition[]
   opening_message?: string | null
   suggested_questions?: string[]
-  enable_vision?: boolean
-  enable_file_upload?: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments?: boolean
+  attachment_config?: AttachmentConfig | null
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
@@ -1246,9 +1235,8 @@ export interface PublicAgent {
   opening_message?: string | null
   suggested_questions: string[]
   variables: VariableDefinition[]
-  enable_vision: boolean
-  enable_file_upload: boolean
-  file_upload_config?: FileUploadConfig | null
+  enable_attachments: boolean
+  attachment_config?: AttachmentConfig | null
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean

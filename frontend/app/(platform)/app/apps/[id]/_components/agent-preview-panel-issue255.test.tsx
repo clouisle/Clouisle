@@ -63,7 +63,7 @@ mock.module('@/hooks/use-chat', () => ({
 const { AgentPreviewPanel } = await import('./agent-preview-panel')
 const baseAgent = {
   id: 'agent-1', variables: [], suggested_questions: ['First?', 'Second?', 'Third?', 'Ignored?'],
-  enable_vision: false, enable_file_upload: false, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+ enable_attachments: false, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
 } as never
 
 function descendants(value: unknown): Node[] {
@@ -138,7 +138,7 @@ describe('AgentPreviewPanel', () => {
   test('converts images and uploads documents with progress before sending', async () => {
     const image = { id: 'image', name: 'photo.png', size: 5, type: 'image/png', file: new File(['img'], 'photo.png') }
     const document = { id: 'doc', name: 'notes.txt', size: 9, type: 'text/plain', file: new File(['notes'], 'notes.txt'), isDocument: true }
-    const agent = { ...baseAgent, enable_vision: true, enable_file_upload: true } as never
+    const agent = { ...baseAgent, enable_attachments: true } as never
     let tree = render(agent)
     ;(find(tree, ChatInput)[0].props.onFilesChange as (files: unknown[]) => void)([image, document])
     tree = render(agent)
@@ -159,7 +159,7 @@ describe('AgentPreviewPanel', () => {
   test('reports upload validation failures and still submits text', async () => {
     const document = { id: 'doc', name: 'bad.exe', size: 2, type: 'application/x-msdownload', file: new File(['x'], 'bad.exe'), isDocument: true }
     uploadFile.mockRejectedValue(new ApiError(1001, 'invalid', { allowed: ['pdf', 'txt'] }))
-    const tree = render({ ...baseAgent, enable_file_upload: true } as never)
+    const tree = render({ ...baseAgent, enable_attachments: true } as never)
     const originalError = console.error
     console.error = mock(() => undefined)
     try {

@@ -80,7 +80,7 @@ export {
   type AgentVisibility,
   type AgentKnowledgeBaseConfig,
   type AgentKnowledgeBaseOut,
-  type FileUploadConfig,
+  type AttachmentConfig,
   type MemoryConfig,
   type ContextCompressionConfig,
   type ImageGenerationConfig,

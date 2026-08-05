@@ -487,7 +487,7 @@ export default function PublicChatPage({
 
       try {
         setIsUploading(true)
-        if (agent.enable_vision) {
+        if (agent.enable_attachments) {
           const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
           if (imageFiles.length > 0) {
             const uploaded = await uploadFiles(imageFiles, 'images')
@@ -500,9 +500,7 @@ export default function PublicChatPage({
               })),
             ]
           }
-        }
 
-        if (agent.enable_file_upload) {
           const documentFiles = filesToProcess.filter(f => f.isDocument)
           if (documentFiles.length > 0) {
             const uploaded = await uploadFiles(documentFiles, 'documents')
@@ -994,9 +992,9 @@ export default function PublicChatPage({
               disabled={chatLoading && !isStreaming}
               isLoading={chatLoading}
               isStreaming={isStreaming}
-              allowAttachments={agent.enable_vision}
-              enableFileUpload={agent.enable_file_upload}
-              fileUploadConfig={agent.file_upload_config}
+              allowAttachments={agent.enable_attachments}
+              enableFileUpload={agent.enable_attachments}
+              fileUploadConfig={agent.attachment_config}
               files={files}
               onFilesChange={setFiles}
               isUploading={isUploading}

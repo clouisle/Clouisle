@@ -64,8 +64,8 @@ const agent = {
   opening_message: '',
   suggested_questions: [],
   knowledge_bases: [],
-  enable_vision: false,
-  enable_file_upload: false,
+
+  enable_attachments: false,
   enable_user_input_request: false,
   enable_memory: false,
   enable_image_generation: false,
@@ -143,7 +143,7 @@ describe('AgentEditor', () => {
     expect(updateAgent).toHaveBeenCalledWith('agent-1', expect.objectContaining({
       name: '',
       memory_config: null,
-      file_upload_config: null,
+      attachment_config: null,
       image_generation_config: null,
       video_generation_config: null,
     }))
@@ -166,8 +166,8 @@ describe('AgentEditor', () => {
       variables: [{ name: 'topic' }],
       knowledge_base_configs: [{ knowledge_base_id: 'kb-1' }],
       rag_mode: 'auto',
-      enable_vision: true,
-      enable_file_upload: true,
+
+      enable_attachments: true,
       enable_user_input_request: true,
       enable_memory: true,
       memory_config: { max_memories_per_retrieval: 3 },
@@ -175,7 +175,7 @@ describe('AgentEditor', () => {
       image_generation_config: { size: '1024x1024' },
       enable_video_generation: true,
       video_generation_config: { duration: 5 },
-      file_upload_config: { max_file_size: 1024 },
+      attachment_config: { max_file_size: 1024 },
     })
 
     expect(setState).toHaveBeenCalledTimes(16)

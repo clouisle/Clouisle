@@ -29,9 +29,8 @@ export interface EmbedAgentInfo {
   opening_message: string | null
   suggested_questions: string[]
   variables: Array<Record<string, unknown>>
-  enable_vision: boolean
-  enable_file_upload: boolean
-  file_upload_config: Record<string, unknown> | null
+  enable_attachments: boolean
+  attachment_config: Record<string, unknown> | null
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean

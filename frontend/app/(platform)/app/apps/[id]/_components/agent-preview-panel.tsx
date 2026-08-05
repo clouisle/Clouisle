@@ -105,8 +105,8 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     let fileUrls: ChatFileUrl[] | undefined
     
     if (filesToProcess && filesToProcess.length > 0) {
-      // Process image files for vision
-      if (agent.enable_vision) {
+      // Process both images and documents when attachments are enabled
+      if (agent.enable_attachments) {
         const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
         if (imageFiles.length > 0) {
           images = await Promise.all(
@@ -116,46 +116,43 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
             }))
           )
         }
-      }
-      
-      // Process document files for file upload - upload to get URLs with progress
-      if (agent.enable_file_upload) {
+
         const documentFiles = filesToProcess.filter(f => f.isDocument)
         if (documentFiles.length > 0) {
           try {
             setIsUploading(true)
-            
+
             // Upload documents with progress tracking
             const uploadPromises = documentFiles.map(async (f) => {
               // Update file progress
               const updateProgress = (progress: { percent: number }) => {
-                setFiles(prev => prev.map(file => 
-                  file.id === f.id 
+                setFiles(prev => prev.map(file =>
+                  file.id === f.id
                     ? { ...file, isUploading: true, uploadProgress: progress.percent }
                     : file
                 ))
               }
-              
+
               // Mark as uploading
-              setFiles(prev => prev.map(file => 
-                file.id === f.id 
+              setFiles(prev => prev.map(file =>
+                file.id === f.id
                   ? { ...file, isUploading: true, uploadProgress: 0 }
                   : file
               ))
-              
+
               const result = await uploadApi.uploadFileWithProgress(
-                f.file, 
+                f.file,
                 'documents',
                 updateProgress
               )
-              
+
               // Mark as complete
-              setFiles(prev => prev.map(file => 
-                file.id === f.id 
+              setFiles(prev => prev.map(file =>
+                file.id === f.id
                   ? { ...file, isUploading: false, uploadProgress: 100 }
                   : file
               ))
-              
+
               return {
                 filename: f.name,
                 url: result.url,
@@ -340,9 +337,9 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           disabled={isLoading && !isStreaming}
           isLoading={isLoading}
           isStreaming={isStreaming}
-          allowAttachments={agent.enable_vision}
-          enableFileUpload={agent.enable_file_upload}
-          fileUploadConfig={agent.file_upload_config}
+          allowAttachments={agent.enable_attachments}
+          enableFileUpload={agent.enable_attachments}
+          fileUploadConfig={agent.attachment_config}
           files={files}
           onFilesChange={setFiles}
           isUploading={isUploading}

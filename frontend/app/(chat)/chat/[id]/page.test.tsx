@@ -133,7 +133,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
-  enable_vision: false, enable_file_upload: false, file_upload_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+ enable_attachments: false, attachment_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
   created_by: { username: 'owner' },
 }
 const conversations = [
@@ -307,7 +307,7 @@ describe('PublicChatPage', () => {
   })
 
   test('converts image attachments and uploads documents with progress', async () => {
-    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_vision: true, enable_file_upload: true })
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     class MockFileReader {
       result: string | ArrayBuffer | null = null
       onload: (() => void) | null = null
@@ -323,27 +323,32 @@ describe('PublicChatPage', () => {
 
     const image = { id: 'image', name: 'safe.png', size: 4, type: 'image/png', file: new File(['safe'], 'safe.png', { type: 'image/png' }), isDocument: false }
     const documentFile = { id: 'doc', name: 'safe.pdf', size: 4, type: 'application/pdf', file: new File(['safe'], 'safe.pdf', { type: 'application/pdf' }), isDocument: true }
-    uploadFileWithProgress.mockImplementationOnce(async (_file, _category, onProgress) => {
+    uploadFileWithProgress.mockImplementation(async (file, category, onProgress) => {
       onProgress({ percent: 50 })
-      return { url: 'https://files.example.test/safe.pdf' }
+      return {
+        asset_id: category === 'images' ? 'image-asset' : 'document-asset',
+        url: `https://files.example.test/${file.name}`,
+      }
     })
     act(() => (chatInputProps.onFilesChange as (files: unknown[]) => void)([image, documentFile]))
     await act(async () => (chatInputProps.onSubmit as (message: string) => Promise<void>)('with files'))
 
-    expect(uploadFileWithProgress).toHaveBeenCalledTimes(1)
-    expect(uploadFileWithProgress.mock.calls[0][0]).toBe(documentFile.file)
-    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('documents')
+    expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
+    expect(uploadFileWithProgress.mock.calls[0][0]).toBe(image.file)
+    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('images')
+    expect(uploadFileWithProgress.mock.calls[1][0]).toBe(documentFile.file)
+    expect(uploadFileWithProgress.mock.calls[1][1]).toBe('documents')
     expect(sendMessage).toHaveBeenCalledWith(
       'with files',
-      [{ type: 'image_url', url: 'data:image/png;base64,c2FmZQ==' }],
-      [{ filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
+      [{ asset_id: 'image-asset', type: 'image_url', url: 'https://files.example.test/safe.png' }],
+      [{ asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
     )
   })
 
   test('reports allowed upload types without leaking upload failures', async () => {
     const consoleError = console.error
     console.error = mock()
-    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_file_upload: true })
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     uploadFileWithProgress.mockRejectedValueOnce(new ApiError(1001, 'private storage failure', { allowed: ['pdf', 'txt'] }))
     render()
     await flush()
@@ -412,7 +417,7 @@ describe('PublicChatPage', () => {
   test('cleans delete selection when the dialog closes and ignores invalid upload types without allowed values', async () => {
     const consoleError = console.error
     console.error = mock()
-    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_file_upload: true })
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     uploadFileWithProgress.mockRejectedValueOnce(new ApiError(1001))
     render()
     await flush()

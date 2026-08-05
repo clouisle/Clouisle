@@ -5,7 +5,7 @@ mock.module('@/lib/api/embed', () => ({
   embedApi: {
     getAgentInfo: mock(async () => ({
       id: 'agent-1', name: 'Embed Agent', description: '', icon: null, variables: [],
-      enable_vision: false, enable_file_upload: false, file_upload_config: null,
+ enable_attachments: false, attachment_config: null,
     })),
     uploadFile: mock(async () => ({ url: '/file.png' })),
     chatStream: mock(() => () => {}),
@@ -92,7 +92,7 @@ describe('createEmbedChatAdapter', () => {
           variables: [
             { name: 'query', label: 'Query', type: 'string', required: true, default_value: 'hello', description: 'Prompt', hidden: false },
           ],
-          enable_vision: false, enable_file_upload: false, file_upload_config: null,
+ enable_attachments: false, attachment_config: null,
         })),
         uploadFile: mock(async () => ({ url: '/file.png' })),
         chatStream: mock(() => () => {}),
