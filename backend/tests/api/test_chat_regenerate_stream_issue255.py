@@ -236,6 +236,7 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
             call.kwargs["history_before_message_created_at"]
             == state.user_message.created_at
         )
+        assert call.kwargs["include_current_user_message"] is False
     state.agent_stats.update.assert_awaited_once()
     state.team_stats.update.assert_awaited_once()
 
