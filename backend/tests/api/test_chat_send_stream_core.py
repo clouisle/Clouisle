@@ -266,6 +266,7 @@ async def test_chat_stream_generator_persists_completed_assistant(
 
     user_message, assistant_message = core_chat.created
     assert "event: message_start" in events
+    assert f'"user_message_id": "{user_message.id}"' in events
     assert 'data: {"delta": "think"}' in events
     assert 'data: {"delta": "answer"}' in events
     assert "event: message_end" in events

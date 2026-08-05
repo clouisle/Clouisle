@@ -1872,7 +1872,7 @@ async def chat_stream(
                     message_id = str(assistant_msg.id)
 
                     # Send message_start event
-                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id})}\n\n"
+                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id, 'user_message_id': str(user_msg.id)})}\n\n"
                     last_event_time = time.time()
 
                     (

@@ -411,6 +411,17 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 setConversationId(data.conversation_id)
                 onConversationChange?.(data.conversation_id)
               }
+              const persistedUserMessageId = data.user_message_id
+              if (persistedUserMessageId) {
+                const optimisticUserMessageId = userMessage.id
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === optimisticUserMessageId
+                      ? { ...msg, id: persistedUserMessageId }
+                      : msg
+                  )
+                )
+              }
               // Update assistant message ID to the real database ID
               if (data.message_id) {
                 const oldId = assistantMessageId

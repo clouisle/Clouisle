@@ -520,6 +520,7 @@ export type SSEEventType =
 export interface SSEMessageStart {
   conversation_id: string
   message_id: string
+  user_message_id?: string
 }
 
 export interface SSEContentDelta {

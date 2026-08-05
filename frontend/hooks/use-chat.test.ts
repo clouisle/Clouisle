@@ -182,7 +182,7 @@ describe('useChat', () => {
     expect(result.messages[0].parts[0]).toMatchObject({ type: 'text', text: 'Hello' })
 
     streamEvents = [
-      { event: 'message_start', data: { conversation_id: 'conversation-1', message_id: 'message-1' } },
+      { event: 'message_start', data: { conversation_id: 'conversation-1', message_id: 'message-1', user_message_id: 'user-message-1' } },
       { event: 'content_delta', data: { delta: 'Hi there' } },
       releaseStream.promise,
       { event: 'message_end', data: { version_number: 2, version_count: 3 } },
@@ -201,6 +201,7 @@ describe('useChat', () => {
     expect(result.conversationId).toBe('conversation-1')
     expect(onConversationChange).toHaveBeenCalledWith('conversation-1')
     expect(onStreamEnd).toHaveBeenCalledTimes(1)
+    expect(result.messages[0].id).toBe('user-message-1')
     expect(result.messages[1]).toMatchObject({
       id: 'message-1',
       versionNumber: 2,
