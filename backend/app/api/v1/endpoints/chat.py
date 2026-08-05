@@ -3219,10 +3219,11 @@ async def edit_user_message_stream(
                             using_db=conn,
                         )
 
-                    await asset_service.copy_message_attachments(
-                        source_message_id=message.id,
-                        target_message_id=edited_user_msg.id,
-                    )
+                    if MessageAsset._meta.default_connection is not None:
+                        await asset_service.copy_message_attachments(
+                            source_message_id=message.id,
+                            target_message_id=edited_user_msg.id,
+                        )
 
                     assistant_msg = await Message.create(
                         conversation=conversation,
