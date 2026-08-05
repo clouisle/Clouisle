@@ -996,6 +996,73 @@ async def init_conversation_context_checkpoint_table():
     logger.info("Conversation context checkpoint table initialization complete")
 
 
+async def init_assets_tables() -> None:
+    """Create durable Asset metadata and scoped reference tables."""
+    logger.info("Initializing Asset tables...")
+    conn = Tortoise.get_connection("default")
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS assets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            parent_id UUID REFERENCES assets(id) ON DELETE SET NULL,
+            storage_key VARCHAR(1000) NOT NULL UNIQUE,
+            original_filename VARCHAR(500) NOT NULL,
+            display_filename VARCHAR(500) NOT NULL,
+            content_type VARCHAR(255) NOT NULL,
+            size BIGINT NOT NULL CHECK (size >= 0),
+            checksum VARCHAR(64) NOT NULL,
+            source VARCHAR(32) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'available',
+            provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
+            expires_at TIMESTAMPTZ,
+            deleted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_assets_team_status_created
+        ON assets(team_id, status, created_at)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_assets_checksum ON assets(checksum)
+    """)
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS message_assets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            role VARCHAR(30) NOT NULL DEFAULT 'attachment',
+            position INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(message_id, asset_id, role)
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_message_assets_message_position
+        ON message_assets(message_id, position, created_at)
+    """)
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS asset_scope_refs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            scope_type VARCHAR(20) NOT NULL,
+            scope_id UUID NOT NULL,
+            asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            ref VARCHAR(4) NOT NULL CHECK (ref ~ '^[0-9a-f]{4}$'),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(scope_type, scope_id, asset_id),
+            UNIQUE(scope_type, scope_id, ref)
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_asset_scope_refs_scope
+        ON asset_scope_refs(scope_type, scope_id)
+    """)
+    logger.info("Asset table initialization complete")
+
+
 async def init_permission_is_system_field():
     """
     Add is_system field to permissions table if it doesn't exist.

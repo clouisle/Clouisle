@@ -135,6 +135,7 @@ export default function PublicChatPage({
 
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
+  const [selectedImageRefs, setSelectedImageRefs] = React.useState<ChatImageContent[]>([])
   const [isUploading, setIsUploading] = React.useState(false)
 
   // Variable form state
@@ -443,16 +444,6 @@ export default function PublicChatPage({
     }
   }
 
-  // Helper function to convert File to base64 data URL
-  const fileToDataUrl = async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim() || chatLoading) return
 
@@ -464,87 +455,82 @@ export default function PublicChatPage({
     const filesToProcess = submittedFiles || files
 
     // Process images and files
-    let images: ChatImageContent[] | undefined
+    let images: ChatImageContent[] | undefined = selectedImageRefs.length > 0
+      ? selectedImageRefs
+      : undefined
     let fileUrls: ChatFileUrl[] | undefined
 
     if (agent && filesToProcess && filesToProcess.length > 0) {
-      // Process image files for vision
-      if (agent.enable_vision) {
-        const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
-        if (imageFiles.length > 0) {
-          images = await Promise.all(
-            imageFiles.map(async (f) => ({
-              type: 'image_url' as const,
-              url: await fileToDataUrl(f.file),
-            }))
-          )
-        }
-      }
+      const uploadFiles = async (items: ChatInputFile[], category: string) => Promise.all(
+        items.map(async (f) => {
+          const updateProgress = (progress: { percent: number }) => {
+            setFiles(prev => prev.map(file =>
+              file.id === f.id
+                ? { ...file, isUploading: true, uploadProgress: progress.percent }
+                : file
+            ))
+          }
+          setFiles(prev => prev.map(file =>
+            file.id === f.id
+              ? { ...file, isUploading: true, uploadProgress: 0 }
+              : file
+          ))
+          const result = await adapter.uploadFile(f.file, category, updateProgress)
+          setFiles(prev => prev.map(file =>
+            file.id === f.id
+              ? { ...file, isUploading: false, uploadProgress: 100 }
+              : file
+          ))
+          return { file: f, result }
+        })
+      )
 
-      // Process document files for file upload - upload to get URLs with progress
-      if (agent.enable_file_upload) {
-        const documentFiles = filesToProcess.filter(f => f.isDocument)
-        if (documentFiles.length > 0) {
-          try {
-            setIsUploading(true)
-
-            // Upload documents with progress tracking
-            const uploadPromises = documentFiles.map(async (f) => {
-              // Update file progress
-              const updateProgress = (progress: { percent: number }) => {
-                setFiles(prev => prev.map(file =>
-                  file.id === f.id
-                    ? { ...file, isUploading: true, uploadProgress: progress.percent }
-                    : file
-                ))
-              }
-
-              // Mark as uploading
-              setFiles(prev => prev.map(file =>
-                file.id === f.id
-                  ? { ...file, isUploading: true, uploadProgress: 0 }
-                  : file
-              ))
-
-              const result = await adapter.uploadFile(
-                f.file,
-                'documents',
-                updateProgress
-              )
-
-              // Mark as complete
-              setFiles(prev => prev.map(file =>
-                file.id === f.id
-                  ? { ...file, isUploading: false, uploadProgress: 100 }
-                  : file
-              ))
-
-              return {
-                filename: f.name,
+      try {
+        setIsUploading(true)
+        if (agent.enable_vision) {
+          const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
+          if (imageFiles.length > 0) {
+            const uploaded = await uploadFiles(imageFiles, 'images')
+            images = [
+              ...(images || []),
+              ...uploaded.map(({ result }) => ({
+                asset_id: result.asset_id,
+                type: 'image_url' as const,
                 url: result.url,
-                size: f.size,
-                mime_type: f.type,
-              }
-            })
-            fileUrls = await Promise.all(uploadPromises)
-          } catch (err) {
-            console.error('Failed to upload files:', err)
-            showUploadValidationError(err, tCommon)
-            // Reset upload state on error
-            setFiles(prev => prev.map(file => ({
-              ...file,
-              isUploading: false,
-              uploadProgress: undefined
-            })))
-          } finally {
-            setIsUploading(false)
+              })),
+            ]
           }
         }
+
+        if (agent.enable_file_upload) {
+          const documentFiles = filesToProcess.filter(f => f.isDocument)
+          if (documentFiles.length > 0) {
+            const uploaded = await uploadFiles(documentFiles, 'documents')
+            fileUrls = uploaded.map(({ file, result }) => ({
+              asset_id: result.asset_id,
+              filename: file.name,
+              url: result.url,
+              size: file.size,
+              mime_type: file.type,
+            }))
+          }
+        }
+      } catch (err) {
+        console.error('Failed to upload files:', err)
+        showUploadValidationError(err, tCommon)
+        setFiles(prev => prev.map(file => ({
+          ...file,
+          isUploading: false,
+          uploadProgress: undefined
+        })))
+      } finally {
+        setIsUploading(false)
       }
     }
 
     setInput('')
     setFiles([])
+    setSelectedImageRefs([])
     await sendMessage(message, images, fileUrls)
   }
 
@@ -876,6 +862,11 @@ export default function PublicChatPage({
               onSwitchVersion={embedMode ? undefined : switchVersion}
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
+              }}
+              onSelectImageReference={({ asset_ref, url }) => {
+                setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
+                  ? current
+                  : [...current, { asset_ref, type: 'image_url', url }])
               }}
               onOpenCodePreview={setActivePreview}
               emptyState={

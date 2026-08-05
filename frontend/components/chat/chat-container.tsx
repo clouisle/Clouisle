@@ -24,6 +24,8 @@ interface ChatContainerProps {
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void;
+  /** Callback when a generated image is selected as a later reference */
+  onSelectImageReference?: (image: { asset_ref: string; url: string }) => void;
   /** Show scroll to bottom button when not at bottom */
   showScrollToBottom?: boolean;
   /** Callback when a previewable code block is opened */
@@ -74,6 +76,7 @@ interface ChatMessageRowProps {
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
   onSelectOption?: (option: string) => void;
+  onSelectImageReference?: (image: { asset_ref: string; url: string }) => void;
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   hideToolCalls: boolean;
   hideMessageActions: boolean;
@@ -93,6 +96,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   onEditMessage,
   onSwitchVersion,
   onSelectOption,
+  onSelectImageReference,
   onOpenCodePreview,
   hideToolCalls,
   hideMessageActions,
@@ -139,6 +143,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
         chainOfThoughtOpen={chainOfThoughtOpen}
         onChainOfThoughtOpenChange={handleChainOfThoughtOpenChange}
         onSelectOption={onSelectOption}
+        onSelectImageReference={onSelectImageReference}
         onOpenCodePreview={onOpenCodePreview}
         hideToolCalls={hideToolCalls}
         hideMessageActions={hideMessageActions}
@@ -156,6 +161,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.onEditMessage === next.onEditMessage
   && prev.onSwitchVersion === next.onSwitchVersion
   && prev.onSelectOption === next.onSelectOption
+  && prev.onSelectImageReference === next.onSelectImageReference
   && prev.onOpenCodePreview === next.onOpenCodePreview
   && prev.hideToolCalls === next.hideToolCalls
   && prev.hideMessageActions === next.hideMessageActions
@@ -179,6 +185,7 @@ export function ChatContainer({
   onEditMessage,
   onSwitchVersion,
   onSelectOption,
+  onSelectImageReference,
   showScrollToBottom = true,
   onOpenCodePreview,
   hideToolCalls = false,
@@ -389,6 +396,7 @@ export function ChatContainer({
                 onEditMessage={onEditMessage}
                 onSwitchVersion={onSwitchVersion}
                 onSelectOption={onSelectOption}
+                onSelectImageReference={onSelectImageReference}
                 onOpenCodePreview={onOpenCodePreview}
                 hideToolCalls={hideToolCalls}
                 hideMessageActions={hideMessageActions}

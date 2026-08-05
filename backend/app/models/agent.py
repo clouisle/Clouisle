@@ -12,6 +12,7 @@ from uuid import UUID
 from tortoise import fields, models
 
 if TYPE_CHECKING:
+    from app.models.asset import MessageAsset
     from app.models.user import Team, User
     from app.models.model import TeamModel
     from app.models.knowledge_base import KnowledgeBase
@@ -417,6 +418,7 @@ class Message(models.Model):
     file_urls: list | None = fields.JSONField(
         null=True, description="File URLs for uploaded files"
     )  # type: ignore[assignment]
+    asset_links: fields.ReverseRelation["MessageAsset"]
 
     # Tool call related (for assistant tool calls and tool responses)
     tool_calls: list | None = fields.JSONField(

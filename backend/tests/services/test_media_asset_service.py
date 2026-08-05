@@ -2,6 +2,7 @@ import base64
 import importlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -123,3 +124,43 @@ async def test_normalize_remote_media_mirrors_http_only_and_maps_download_error(
         await service.normalize_image(
             ImageContent(url="https://cdn.example.test/image.png")
         )
+
+
+@pytest.mark.asyncio
+async def test_normalize_image_registers_generated_asset_and_scoped_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conversation_id = uuid4()
+    team_id = uuid4()
+    user_id = uuid4()
+    save_upload = AsyncMock(
+        return_value={
+            "url": "/api/v1/upload/files/generated-images/2026/08/image.png",
+            "storage_key": "generated-images/2026/08/image.png",
+            "filename": "image.png",
+        }
+    )
+    asset = SimpleNamespace(id=uuid4())
+    binding = SimpleNamespace(ref="a1b2")
+    asset_service = SimpleNamespace(
+        register_bytes=AsyncMock(return_value=asset),
+        get_or_create_ref=AsyncMock(return_value=binding),
+    )
+    monkeypatch.setattr(media_module, "save_generated_upload", save_upload)
+    monkeypatch.setattr("app.services.asset.asset_service", asset_service)
+
+    normalized = await MediaAssetService().normalize_image(
+        ImageContent(base64=base64.b64encode(b"image").decode()),
+        team_id=team_id,
+        created_by_id=user_id,
+        conversation_id=conversation_id,
+    )
+
+    assert normalized is not None
+    assert normalized.asset_ref == "a1b2"
+    asset_service.register_bytes.assert_awaited_once()
+    register_kwargs = asset_service.register_bytes.await_args.kwargs
+    assert register_kwargs["content"] == b"image"
+    assert register_kwargs["team_id"] == team_id
+    assert register_kwargs["created_by_id"] == user_id
+    asset_service.get_or_create_ref.assert_awaited_once()

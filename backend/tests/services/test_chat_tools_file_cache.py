@@ -148,6 +148,56 @@ async def test_builtin_file_parser_writes_cache_metadata(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_builtin_file_parser_preserves_asset_entries_in_mixed_list(
+    tmp_path, monkeypatch
+):
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    file_path = upload_root / "documents" / "2026" / "05" / "legacy.txt"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("legacy body", encoding="utf-8")
+    asset_id = uuid4()
+
+    monkeypatch.setattr("app.api.v1.endpoints.upload.UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr("app.services.file_parse_cache.UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(
+        "app.services.file_parse_cache.CACHE_DIR",
+        upload_root / ".cache" / "file-parses",
+    )
+
+    content, updated_file_urls = await build_file_content_for_context(
+        agent=_agent(),
+        file_urls=[
+            {
+                "asset_id": asset_id,
+                "filename": "raw.pdf",
+                "url": "/api/v1/upload/files/documents/2026/05/raw.pdf",
+                "size": 123,
+                "mime_type": "application/pdf",
+            },
+            {
+                "filename": "legacy.txt",
+                "url": "/api/v1/upload/files/documents/2026/05/legacy.txt",
+                "size": 11,
+                "mime_type": "text/plain",
+            },
+        ],
+        legacy_files=None,
+        user_locale="en",
+        tool_timeouts=None,
+        user=None,
+    )
+
+    assert "legacy body" in content
+    assert "raw.pdf" not in content
+    assert updated_file_urls is not None
+    assert len(updated_file_urls) == 2
+    assert updated_file_urls[0]["asset_id"] == asset_id
+    assert "parse_cache" not in updated_file_urls[0]
+    assert updated_file_urls[1]["parse_cache"]["status"] == "success"
+
+
+@pytest.mark.anyio
 async def test_builtin_file_parser_reuses_cache_without_reparse(tmp_path, monkeypatch):
     upload_root = tmp_path / "uploads"
     upload_root.mkdir()

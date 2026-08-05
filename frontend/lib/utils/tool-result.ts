@@ -2,6 +2,7 @@ export interface MediaAsset {
   url?: string | null
   base64?: string | null
   file_path?: string | null
+  asset_ref?: string | null
   width?: number | null
   height?: number | null
   duration?: number | null

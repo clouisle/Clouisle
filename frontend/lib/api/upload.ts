@@ -1,6 +1,7 @@
 import { api, axiosInstance } from './client'
 
 export interface UploadResult {
+  asset_id?: string
   url: string
   filename: string
   original_name: string

@@ -398,8 +398,8 @@ export interface Message {
   role: MessageRole
   content: string
   // Attachments (for user messages)
-  images?: Array<{ type: string; url: string }> | null
-  file_urls?: Array<{ filename: string; url: string; size: number; mime_type: string }> | null
+  images?: Array<{ asset_id?: string; asset_ref?: string; type: string; url: string }> | null
+  file_urls?: Array<{ asset_id?: string; filename: string; url: string; size: number; mime_type: string }> | null
   // Tool calls
   tool_calls?: Record<string, unknown>[] | null
   tool_call_id?: string | null
@@ -444,6 +444,8 @@ export interface ConversationWithMessages extends Conversation {
 // ============ Chat Types ============
 
 export interface ChatImageContent {
+  asset_id?: string
+  asset_ref?: string
   type: 'image_url'
   url: string
 }
@@ -459,6 +461,7 @@ export interface ChatFileContent {
 
 /** File URL for backend file parsing and injection into {{fileContent}} */
 export interface ChatFileUrl {
+  asset_id?: string
   filename: string
   url: string
   size: number

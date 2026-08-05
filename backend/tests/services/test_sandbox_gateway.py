@@ -189,6 +189,7 @@ class InMemorySessionStore:
         conversation_id=None,
         agent_id=None,
         team_id=None,
+        user_id=None,
         ttl_hours=None,
     ):
         del ttl_hours
@@ -199,6 +200,7 @@ class InMemorySessionStore:
             conversation_id=conversation_id,
             agent_id=agent_id,
             team_id=team_id,
+            user_id=user_id,
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=24),
             last_accessed_at=datetime.now(UTC),

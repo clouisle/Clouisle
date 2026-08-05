@@ -1,4 +1,4 @@
-// GENERATED — 2026-07-29T06:20:44.146Z
+// GENERATED — 2026-08-04T22:40:00.251Z
 // Source: i18n/en/settings.json
 export type SettingsMessages = {
   settings: {

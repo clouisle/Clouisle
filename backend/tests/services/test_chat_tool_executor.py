@@ -255,6 +255,7 @@ class TestChatToolExecutor:
             user=None,
             session_id=None,
             current_images=[{"url": "data:image/png;base64,cmVm"}],
+            conversation_id=None,
         )
 
     @pytest.mark.anyio

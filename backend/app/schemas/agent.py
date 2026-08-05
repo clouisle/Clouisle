@@ -881,6 +881,10 @@ class ConversationWithMessages(ConversationOut):
 class ImageContent(BaseModel):
     """Image content for vision"""
 
+    asset_id: UUID | None = Field(default=None, description="Durable Asset ID")
+    asset_ref: str | None = Field(
+        default=None, description="Conversation-scoped Asset reference"
+    )
     type: str = Field(default="image_url", description="Content type")
     url: str = Field(..., description="Image URL (data:image/... or https://...)")
 
@@ -899,10 +903,11 @@ class FileContent(BaseModel):
 
 
 class FileUrl(BaseModel):
-    """File URL for tool-based file processing"""
+    """Raw uploaded file with a durable Asset identity."""
 
+    asset_id: UUID | None = Field(default=None, description="Durable Asset ID")
     filename: str = Field(..., description="Original filename")
-    url: str = Field(..., description="File URL for the markitdown tool to process")
+    url: str = Field(..., description="Legacy download URL")
     size: int = Field(..., ge=0, description="File size in bytes")
     mime_type: str = Field(..., description="MIME type of the file")
 
@@ -980,7 +985,7 @@ class ChatRequest(BaseModel):
     )
     file_urls: list[FileUrl] = Field(
         default_factory=list,
-        description="File URLs for backend to download, parse and inject into {{fileContent}} variable.",
+        description="Raw uploaded Asset metadata; legacy URL-only entries remain supported.",
     )
     conversation_id: UUID | None = Field(
         None, description="Continue existing conversation"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -67,10 +67,23 @@ class SandboxArtifactLimits(BaseModel):
 
 class SandboxInputFileSpec(BaseModel):
     target_path: str = Field(..., description="Destination path inside workspace")
-    content_base64: str = Field(..., description="Base64-encoded file content")
+    content_base64: str | None = Field(
+        default=None, description="Base64-encoded file content (legacy)"
+    )
+    asset_id: UUID | None = Field(
+        default=None, description="Durable Asset ID resolved server-side"
+    )
+    expected_checksum: str | None = Field(default=None, min_length=64, max_length=64)
+    expected_size: int | None = Field(default=None, ge=0)
     mode: int | None = Field(
         default=None, ge=0, le=0o777, description="Optional file mode"
     )
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "SandboxInputFileSpec":
+        if (self.content_base64 is None) == (self.asset_id is None):
+            raise ValueError("Exactly one Sandbox input source is required")
+        return self
 
 
 class SandboxArtifact(BaseModel):
@@ -88,6 +101,7 @@ class SandboxArtifact(BaseModel):
     storage_path: str = Field(..., description="Persisted storage path")
     url: str = Field(..., description="Backend file URL")
     filename: str = Field(..., description="Persisted filename")
+    asset_id: UUID | None = Field(default=None, description="Durable Asset ID")
 
 
 class SandboxLimits(BaseModel):
@@ -340,6 +354,7 @@ class SandboxSession(BaseModel):
     conversation_id: str | None = None
     agent_id: str | None = None
     team_id: str | None = None
+    user_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     expires_at: datetime
     disk_usage_bytes: int = 0

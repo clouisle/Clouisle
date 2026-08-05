@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+from uuid import uuid4
+
 import pytest
 
 from app.services.sandbox.models import (
@@ -36,7 +38,38 @@ def test_sandbox_job_preserves_explicit_input_file_content_base64():
     assert job.input_files[0].content_base64 == "ZXhwbGljaXQ="
 
 
-def test_execution_metadata_tracks_sandbox_lifecycle_durations():
+def test_sandbox_job_accepts_asset_input_reference():
+    asset_id = uuid4()
+    job = SandboxJob(
+        input_files=[
+            {
+                "target_path": "/workspace/input/report.pdf",
+                "asset_id": asset_id,
+                "expected_size": 12,
+            }
+        ]
+    )
+
+    assert job.input_files[0].asset_id == asset_id
+    assert job.input_files[0].expected_size == 12
+
+
+def test_sandbox_job_rejects_multiple_input_sources():
+    with pytest.raises(ValueError, match="Exactly one Sandbox input source"):
+        SandboxJob(
+            input_files=[
+                {
+                    "target_path": "/workspace/input.txt",
+                    "asset_id": uuid4(),
+                    "content_base64": "bGVnYWN5",
+                }
+            ]
+        )
+
+
+def test_sandbox_job_rejects_missing_input_source():
+    with pytest.raises(ValueError, match="Exactly one Sandbox input source"):
+        SandboxJob(input_files=[{"target_path": "/workspace/input.txt"}])
     queued_at = datetime(2026, 1, 1, tzinfo=UTC)
     metadata = SandboxExecutionMetadata(queued_at=queued_at)
 

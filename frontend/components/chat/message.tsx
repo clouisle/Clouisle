@@ -434,6 +434,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onSwitchVersion?: (versionIndex: number) => void
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void
+  /** Callback when a generated image is selected as a later reference */
+  onSelectImageReference?: (image: { asset_ref: string; url: string }) => void
   /** Callback when a previewable code block is opened */
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   /** Hide tool call cards and tool execution details */
@@ -465,6 +467,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onFeedback,
       onSwitchVersion,
       onSelectOption,
+      onSelectImageReference,
       onOpenCodePreview,
       hideToolCalls = false,
       hideMessageActions = false,
@@ -761,22 +764,40 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   const imageUrl = getImageAssetUrl(item.image)
                   if (!imageUrl) return null
                   return (
-                    <button
+                    <div
                       key={`${imageIndex}-${imageUrl}`}
-                      type="button"
-                      className="relative overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
-                      aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
-                      onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
+                      className="relative overflow-hidden rounded-lg border bg-background"
                     >
-                      <img
-                        src={imageUrl}
-                        alt={parsedOutput.prompt || t('generatedImageAlt')}
-                        className="h-auto w-full object-cover"
-                      />
-                      <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
-                        <Eye className="h-4 w-4" />
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        className="block w-full text-left transition-opacity hover:opacity-90"
+                        aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
+                        onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
+                      >
+                        <img
+                          src={imageUrl}
+                          alt={parsedOutput.prompt || t('generatedImageAlt')}
+                          className="h-auto w-full object-cover"
+                        />
+                        <span aria-hidden="true" className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm">
+                          <Eye className="h-4 w-4" />
+                        </span>
+                      </button>
+                      {item.image.asset_ref && onSelectImageReference && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="absolute bottom-2 left-2"
+                          onClick={() => onSelectImageReference({
+                            asset_ref: item.image.asset_ref as string,
+                            url: imageUrl,
+                          })}
+                        >
+                          {t('useAsReference')}
+                        </Button>
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -849,7 +870,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
-    }, [handleArtifactPreview, onOpenCodePreview, openLightbox, t])
+    }, [handleArtifactPreview, onOpenCodePreview, onSelectImageReference, openLightbox, t])
 
     // Render a single part
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
@@ -1604,6 +1625,7 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onFeedback === next.onFeedback
     && prev.onSwitchVersion === next.onSwitchVersion
     && prev.onSelectOption === next.onSelectOption
+    && prev.onSelectImageReference === next.onSelectImageReference
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls
     && prev.hideMessageActions === next.hideMessageActions

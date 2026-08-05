@@ -39,12 +39,17 @@ class SandboxGateway:
         self,
         agent_id: str | None = None,
         team_id: str | None = None,
+        user_id: str | None = None,
         ttl_hours: int = 24,
         conversation_id: str | None = None,
     ) -> str:
         if conversation_id:
             existing = await sandbox_session_store.get_by_conversation(conversation_id)
-            if existing is not None:
+            if existing is not None and (
+                existing.agent_id == agent_id
+                and existing.team_id == team_id
+                and existing.user_id == user_id
+            ):
                 workspace = self._get_workspace_manager().prepare_session(
                     existing.session_id
                 )
@@ -64,6 +69,7 @@ class SandboxGateway:
             conversation_id=conversation_id,
             agent_id=agent_id,
             team_id=team_id,
+            user_id=user_id,
             ttl_hours=ttl_hours,
         )
         return session_id
@@ -74,6 +80,7 @@ class SandboxGateway:
         *,
         agent_id: str | None = None,
         team_id: str | None = None,
+        user_id: str | None = None,
     ) -> "SandboxWorkspace | None":
         session = await sandbox_session_store.get(session_id)
         if session is None:
@@ -81,6 +88,8 @@ class SandboxGateway:
         if agent_id is not None and session.agent_id != agent_id:
             return None
         if team_id is not None and session.team_id != team_id:
+            return None
+        if user_id is not None and session.user_id != user_id:
             return None
         workspace_manager = self._get_workspace_manager()
         session_root = workspace_manager.get_session_root(session_id)

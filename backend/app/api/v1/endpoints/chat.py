@@ -22,6 +22,7 @@ from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.core.i18n import t
+from app.models.asset import MessageAsset
 from app.models.user import User, Team
 from app.models.model import TeamModel
 from app.models.user import TeamMember
@@ -74,6 +75,7 @@ from app.services.message_branching import (
     get_version_root_id,
     stale_session_memory_if_source_outside_active_branch,
 )
+from app.services.asset import asset_service
 from app.services.audit_log import AuditLogService
 
 # Import helper functions from modules
@@ -113,6 +115,64 @@ logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_KEY = "unknown_error"
 AUTO_RAG_HISTORY_LIMIT = 6
 AUDIT_MESSAGE_CONTENT_PREVIEW_LENGTH = 500
+
+
+async def _append_asset_manifest(
+    message: str,
+    *,
+    conversation_id: UUID,
+    agent: Agent,
+    user: User,
+) -> str:
+    if MessageAsset._meta.default_connection is None:
+        return message
+    manifest = await asset_service.build_conversation_manifest(
+        conversation_id=conversation_id,
+        team_id=UUID(str(agent.team_id)) if agent.team_id else None,
+        user_id=user.id,
+    )
+    manifest_text = asset_service.format_manifest(manifest)
+    if not manifest_text:
+        return message
+    return f"{message}\n\n{manifest_text}" if message else manifest_text
+
+
+async def _attach_message_assets(
+    *,
+    message_id: UUID,
+    attachments: list[Any],
+    agent: Agent,
+    user: User,
+    conversation_id: UUID | None = None,
+) -> None:
+    """Authorize and persist durable Asset links for a user message."""
+    from app.models.asset import AssetScopeType
+
+    for position, attachment in enumerate(attachments):
+        asset_id = getattr(attachment, "asset_id", None)
+        asset_ref = getattr(attachment, "asset_ref", None)
+        if asset_id is not None:
+            asset = await asset_service.get_authorized(
+                asset_id,
+                team_id=UUID(str(agent.team_id)) if agent.team_id else None,
+                user_id=user.id,
+            )
+        elif asset_ref and conversation_id is not None:
+            asset = await asset_service.resolve_ref(
+                scope_type=AssetScopeType.CONVERSATION,
+                scope_id=conversation_id,
+                ref=asset_ref,
+                team_id=UUID(str(agent.team_id)) if agent.team_id else None,
+                user_id=user.id,
+            )
+        else:
+            continue
+        await asset_service.attach_to_message(
+            asset=asset,
+            message_id=message_id,
+            role="selected_reference" if asset_ref else "attachment",
+            position=position,
+        )
 
 
 def _message_content_audit_preview(content: str) -> dict[str, Any]:
@@ -728,6 +788,64 @@ Examples of when to search:
                 }
             )
 
+    if agent.enable_file_upload:
+        asset_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "inspect_asset",
+                    "description": "Inspect metadata and capabilities for an Asset in this conversation.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{4}$",
+                                "description": "Exact ref from available_assets.",
+                            }
+                        },
+                        "required": ["ref"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_asset",
+                    "description": "Read bounded text from an Asset in this conversation.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {"type": "string", "pattern": "^[0-9a-f]{4}$"},
+                            "max_chars": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 50000,
+                                "default": 12000,
+                            },
+                        },
+                        "required": ["ref"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "parse_asset",
+                    "description": "Parse a supported Asset on demand while preserving its raw bytes.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {"type": "string", "pattern": "^[0-9a-f]{4}$"}
+                        },
+                        "required": ["ref"],
+                    },
+                },
+            },
+        ]
+        for asset_tool in asset_tools:
+            append_openai_tool(asset_tool)
+
     if agent.enable_image_generation:
         for builtin_tool in tool_registry.to_openai_tools(["generate_image"]):
             append_openai_tool(builtin_tool)
@@ -1089,6 +1207,20 @@ async def chat(
         is_round_canonical=True,
     )
 
+    await _attach_message_assets(
+        message_id=user_msg.id,
+        attachments=[*chat_in.images, *chat_in.file_urls],
+        agent=agent,
+        user=current_user,
+        conversation_id=conversation.id,
+    )
+    final_message = await _append_asset_manifest(
+        final_message,
+        conversation_id=conversation.id,
+        agent=agent,
+        user=current_user,
+    )
+
     # Update message stats (user message, no tokens)
     await update_message_stats(agent, token_usage=None)
 
@@ -1113,6 +1245,8 @@ async def chat(
     sandbox_session_id = await sandbox_gateway.create_session(
         agent_id=str(agent.id),
         team_id=str(agent.team_id) if agent.team_id else None,
+        user_id=str(current_user.id),
+        conversation_id=str(conversation.id),
     )
     file_content_str, updated_file_urls = await build_file_content_for_context(
         agent=agent,
@@ -1329,6 +1463,7 @@ async def chat(
                         user=current_user,
                         session_id=sandbox_session_id,
                         current_images=image_pool,
+                        conversation_id=conversation.id,
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
                     append_generated_images(image_pool, image_inventory, display_result)
@@ -1598,6 +1733,7 @@ async def chat_stream(
             sandbox_session_id = await sandbox_gateway.create_session(
                 agent_id=str(agent.id),
                 team_id=str(agent.team_id) if agent.team_id else None,
+                user_id=str(current_user.id),
                 ttl_hours=24,
                 conversation_id=str(conversation.id),
             )
@@ -1664,6 +1800,20 @@ async def chat_stream(
                         round_index=0,
                         round_role=MessageRoundRole.USER_INPUT,
                         is_round_canonical=True,
+                    )
+
+                    await _attach_message_assets(
+                        message_id=user_msg.id,
+                        attachments=[*chat_in.images, *chat_in.file_urls],
+                        agent=agent,
+                        user=current_user,
+                        conversation_id=conversation.id,
+                    )
+                    final_message = await _append_asset_manifest(
+                        final_message,
+                        conversation_id=conversation.id,
+                        agent=agent,
+                        user=current_user,
                     )
 
                     # Create placeholder for assistant message
@@ -2203,6 +2353,7 @@ async def chat_stream(
                                     user=current_user,
                                     session_id=sandbox_session_id,
                                     current_images=image_pool,
+                                    conversation_id=conversation.id,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -3006,6 +3157,13 @@ async def edit_user_message_stream(
                                 rag_contexts, edited_content
                             )
 
+                    final_message = await _append_asset_manifest(
+                        final_message,
+                        conversation_id=conversation.id,
+                        agent=agent,
+                        user=current_user,
+                    )
+
                     round_id = uuid4()
                     async with in_transaction() as conn:
                         await _lock_conversation(conn)
@@ -3043,6 +3201,11 @@ async def edit_user_message_stream(
                             [*original_prefix, edited_user_msg],
                             using_db=conn,
                         )
+
+                    await asset_service.copy_message_attachments(
+                        source_message_id=message.id,
+                        target_message_id=edited_user_msg.id,
+                    )
 
                     assistant_msg = await Message.create(
                         conversation=conversation,
@@ -3429,6 +3592,7 @@ async def edit_user_message_stream(
                                     user=current_user,
                                     session_id=sandbox_session_id,
                                     current_images=image_pool,
+                                    conversation_id=conversation.id,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -4014,6 +4178,13 @@ async def regenerate_message(
                                 rag_contexts, user_message.content
                             )
 
+                    final_message = await _append_asset_manifest(
+                        final_message,
+                        conversation_id=conversation.id,
+                        agent=agent,
+                        user=current_user,
+                    )
+
                     image_pool, image_inventory = collect_conversation_images(
                         prefix_for_message,
                     )
@@ -4399,6 +4570,7 @@ async def regenerate_message(
                                     user=current_user,
                                     session_id=sandbox_session_id,
                                     current_images=image_pool,
+                                    conversation_id=conversation.id,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)

@@ -6,6 +6,7 @@ import {
   type PublicAgent,
   type ConversationListItem,
   type ChatRequest,
+  type UploadResult,
 } from '@/lib/api'
 import type { ChatMessage } from '@/components/chat'
 import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
@@ -23,7 +24,7 @@ export interface ChatPageAdapter extends ChatStreamApi {
   getConversations(agentId: string, params: { page: number; pageSize: number }): Promise<{ items: ConversationListItem[]; total: number }>
   deleteConversation(id: string): Promise<void>
   updateConversation(id: string, data: { title: string }): Promise<void>
-  uploadFile(file: File, category: string, onProgress: (p: { percent: number }) => void): Promise<{ url: string }>
+  uploadFile(file: File, category: string, onProgress: (p: { percent: number }) => void): Promise<UploadResult>
   /** Persist the current conversation before starting a new one (embed/localStorage only). */
   saveConversation?(messages: ChatMessage[], conversationId: string | null): void
 }

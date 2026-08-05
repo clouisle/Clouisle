@@ -110,6 +110,7 @@
       "conversationId": "对话 ID",
       "error": "发生错误",
       "generatedImageAlt": "生成的图片",
+      "useAsReference": "用作参考图",
       "toolExecutionFailed": "工具执行失败",
       "videoPreviewUnavailable": "视频已生成，但暂时无法提供预览地址。",
       "videoProcessing": "视频仍在生成中。",

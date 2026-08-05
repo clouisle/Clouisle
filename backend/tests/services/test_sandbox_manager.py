@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -645,7 +646,8 @@ class TestSandboxManager:
         assert timed_out.success is False
         assert timed_out.error
 
-    def test_stage_input_files_rejects_existing_target(self, tmp_path: Path):
+    @pytest.mark.anyio
+    async def test_stage_input_files_rejects_existing_target(self, tmp_path: Path):
         workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
         workspace = workspace_manager.prepare("job-1")
         target = workspace.root / "input.txt"
@@ -666,7 +668,67 @@ class TestSandboxManager:
         )
 
         with pytest.raises(FileExistsError, match="already exists"):
-            manager._stage_input_files(job, workspace)
+            await manager._stage_input_files(job, workspace)
+
+    @pytest.mark.anyio
+    async def test_stage_asset_input_verifies_content_and_cleans_partial(
+        self, tmp_path: Path, monkeypatch
+    ):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        content = b"asset content"
+        asset_id = "c3f74d2b-255d-49bc-8895-89a7f088ea86"
+        asset = SimpleNamespace(storage_key="files/input.bin")
+        authorize = AsyncMock(return_value=asset)
+        read = AsyncMock(return_value=content)
+        storage = object()
+        monkeypatch.setattr(
+            "app.services.asset.asset_service.get_authorized", authorize
+        )
+        monkeypatch.setattr("app.services.asset.asset_service.read", read)
+        monkeypatch.setattr(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=storage),
+        )
+        job = SandboxJob(
+            command=["python3"],
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/data.bin",
+                    asset_id=asset_id,
+                    expected_size=len(content),
+                    expected_checksum=hashlib.sha256(content).hexdigest(),
+                )
+            ],
+        )
+
+        await manager._stage_input_files(job, workspace)
+
+        assert (workspace.root / "input/data.bin").read_bytes() == content
+        assert not (workspace.root / "input/.data.bin.partial").exists()
+        authorize.assert_awaited_once_with(
+            job.input_files[0].asset_id,
+            team_id=None,
+            user_id=None,
+        )
+        read.assert_awaited_once_with(asset, storage=storage)
+
+        mismatch = job.model_copy(
+            update={
+                "input_files": [
+                    job.input_files[0].model_copy(update={"expected_size": 1})
+                ]
+            }
+        )
+        (workspace.root / "input/data.bin").unlink()
+        with pytest.raises(ValueError, match="size"):
+            await manager._stage_input_files(mismatch, workspace)
+        assert not (workspace.root / "input/.data.bin.partial").exists()
 
     def test_parse_snippet_result_handles_timeout_and_plain_output(
         self, tmp_path: Path

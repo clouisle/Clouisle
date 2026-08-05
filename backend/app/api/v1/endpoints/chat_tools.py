@@ -14,6 +14,105 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def _execute_asset_tool(
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    agent: "Agent | None",
+    user: Any,
+    conversation_id: Any,
+) -> str:
+    from uuid import UUID
+
+    from app.models.asset import AssetScopeType
+    from app.schemas.response import BusinessError
+    from app.services.asset import asset_service
+    from app.services.file_parser import FileParseConfig, file_parser_service
+    from app.services.upload_storage import get_upload_storage_backend
+    from app.api.v1.endpoints.upload import UPLOAD_ROOT
+
+    from app.core.i18n import t
+
+    if not agent or not user:
+        return json.dumps({"error": t("agent_context_required")}, ensure_ascii=False)
+    ref = arguments.get("ref")
+    if not isinstance(ref, str):
+        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+    if not conversation_id:
+        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+    try:
+        scope_id = UUID(str(conversation_id))
+    except (ValueError, AttributeError):
+        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+    try:
+        asset = await asset_service.resolve_ref(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=scope_id,
+            ref=ref,
+            team_id=getattr(agent, "team_id", None),
+            user_id=user.id,
+        )
+    except BusinessError as exc:
+        if exc.status_code == 403:
+            return json.dumps({"error": t("access_denied")}, ensure_ascii=False)
+        return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
+    try:
+        if tool_name == "inspect_asset":
+            return json.dumps(
+                {
+                    "ref": ref,
+                    "filename": asset.display_filename,
+                    "content_type": asset.content_type,
+                    "size": asset.size,
+                    "source": asset.source.value,
+                    "capabilities": asset_service.capabilities(asset),
+                },
+                ensure_ascii=False,
+            )
+        storage = await get_upload_storage_backend(UPLOAD_ROOT)
+        if tool_name == "read_asset":
+            if "read" not in asset_service.capabilities(asset):
+                return json.dumps(
+                    {"error": t("unsupported_file_type")}, ensure_ascii=False
+                )
+            content = await asset_service.read(asset, storage=storage)
+            max_chars = min(max(int(arguments.get("max_chars", 12000)), 1), 50000)
+            text = content.decode("utf-8", errors="replace")[:max_chars]
+            return json.dumps(
+                {
+                    "ref": ref,
+                    "filename": asset.display_filename,
+                    "content": text,
+                },
+                ensure_ascii=False,
+            )
+        if "parse" not in asset_service.capabilities(asset):
+            return json.dumps({"error": t("unsupported_file_type")}, ensure_ascii=False)
+        content = await asset_service.read(asset, storage=storage)
+        agent_max = getattr(agent, "max_file_size", None)
+        max_content = int(agent_max) if agent_max else 100000
+        parsed = await file_parser_service.parse_file(
+            content,
+            asset.original_filename,
+            FileParseConfig(max_content_length=max_content),
+        )
+        return json.dumps(
+            {
+                "ref": ref,
+                "filename": parsed.filename,
+                "content": parsed.content,
+                "truncated": parsed.truncated,
+            },
+            ensure_ascii=False,
+        )
+    except RuntimeError as exc:
+        logger.warning("Asset tool storage error: %s", exc)
+        return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
+    except Exception as exc:
+        logger.exception("Asset tool failed: %s", exc)
+        return json.dumps({"error": t("tool_execution_failed")}, ensure_ascii=False)
+
+
 async def execute_tool_call(
     tool_name: str,
     arguments: dict,
@@ -22,6 +121,7 @@ async def execute_tool_call(
     user: Any = None,
     session_id: str | None = None,
     current_images: list[Any] | None = None,
+    conversation_id: Any = None,
 ) -> Any:
     """Execute a tool and return the result payload."""
     from app.core.i18n import t
@@ -29,7 +129,15 @@ async def execute_tool_call(
     from app.llm.tools import tool_registry
     from app.services.error_messages import exception_to_user_message
 
-    # Initialize default timeouts if not provided
+    if tool_name in {"inspect_asset", "read_asset", "parse_asset"}:
+        return await _execute_asset_tool(
+            tool_name,
+            arguments,
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+        )
+
     if tool_timeouts is None:
         tool_timeouts = {
             "http": 30,
@@ -331,6 +439,7 @@ async def execute_tool_call(
                 agent=agent,
                 user=user,
                 current_images=current_images,
+                conversation_id=conversation_id,
             )
         except Exception as e:
             logger.exception("Builtin tool execution failed: %s", e)
@@ -561,7 +670,7 @@ async def build_file_content_for_context(
     tool_timeouts: dict[str, Any] | None,
     user: Any,
 ) -> tuple[str, list[dict[str, Any]] | None]:
-    """Build uploaded file content and return cache metadata updates."""
+    """Build legacy file content while leaving Asset attachments raw."""
     from app.core.i18n import t
     from app.services.file_parser import (
         file_parser_service,
@@ -581,7 +690,11 @@ async def build_file_content_for_context(
         truncate_strategy=file_config.get("truncate_strategy", "end"),
     )
 
-    if file_urls and parser_config:
+    # Asset-aware attachments are raw by design. Explicit Asset tools perform parsing.
+    legacy_file_urls = [
+        item for item in (file_urls or []) if not _get_item_value(item, "asset_id")
+    ]
+    if legacy_file_urls and parser_config:
         parser_type = parser_config.get("type", "builtin")
         parser_name = parser_config.get("name", "markitdown")
         parser_tool_id = parser_config.get("tool_id")
@@ -596,11 +709,13 @@ async def build_file_content_for_context(
 
             parser_hash = build_parser_hash(parser_config, parse_config)
             updated_file_urls = []
-            for f in file_urls:
-                file_item = (
-                    dict(f)
-                    if isinstance(f, dict)
-                    else {
+            for f in file_urls or []:
+                if isinstance(f, dict):
+                    file_item = dict(f)
+                elif hasattr(f, "model_dump"):
+                    file_item = f.model_dump()
+                else:
+                    file_item = {
                         "filename": _get_item_value(f, "filename", ""),
                         "url": _get_item_value(f, "url", ""),
                         "size": _get_item_value(f, "size", 0),
@@ -608,7 +723,9 @@ async def build_file_content_for_context(
                             f, "mime_type", "application/octet-stream"
                         ),
                     }
-                )
+                if _get_item_value(file_item, "asset_id"):
+                    updated_file_urls.append(file_item)
+                    continue
                 filename = _get_item_value(file_item, "filename", "")
                 mime_type = _get_item_value(
                     file_item, "mime_type", "application/octet-stream"
@@ -668,7 +785,7 @@ async def build_file_content_for_context(
             custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
             if custom_tool:
                 try:
-                    urls = [_get_item_value(f, "url", "") for f in file_urls]
+                    urls = [_get_item_value(f, "url", "") for f in legacy_file_urls]
                     result = await execute_tool_call(
                         f"custom_{custom_tool.name}",
                         {"files_url": [url for url in urls if url]},

@@ -1,5 +1,7 @@
+import base64
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 from app.core.i18n import t
 from app.models.model import ModelType
@@ -81,6 +83,108 @@ async def test_generate_image_uses_agent_defaults():
         == "/api/v1/upload/files/generated-images/2026/03/cat.png"
     )
     assert result.llm_result.startswith("Image generation succeeded")
+
+
+@pytest.mark.anyio
+async def test_generate_image_resolves_asset_refs_before_legacy_indexes():
+    conversation_id = uuid4()
+    team_id = uuid4()
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(
+        team_id=team_id,
+        enable_image_generation=True,
+        image_generation_config={"allow_reference_images": True},
+    )
+    asset = SimpleNamespace(
+        content_type="image/png",
+        storage_key="uploads/reference.png",
+        size=9,
+        checksum="a" * 64,
+    )
+    asset_service = MagicMock()
+    asset_service.resolve_ref = AsyncMock(return_value=asset)
+    asset_service.read = AsyncMock(return_value=b"reference")
+    response = ImageGenerationResponse(images=[], model="test-image")
+
+    with (
+        patch("app.services.asset.asset_service", asset_service),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+    ):
+        result = await generate_image(
+            prompt="Edit the reference",
+            reference_image_refs=["a1b2", "a1b2"],
+            reference_image_indexes=[99],
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+        )
+
+    assert result.display_result["success"] is False
+    assert mock_generate.await_count == 0
+
+    with (
+        patch("app.services.asset.asset_service", asset_service),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+    ):
+        result = await generate_image(
+            prompt="Edit the reference",
+            reference_image_refs=["a1b2", "a1b2"],
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+        )
+
+    assert result.display_result["success"] is True
+    request = mock_generate.await_args.args[0]
+    assert len(request.images or []) == 1
+    assert request.images[0].base64 == base64.b64encode(b"reference").decode()
+    asset_service.resolve_ref.assert_awaited()
+
+
+@pytest.mark.anyio
+async def test_generate_image_rejects_non_image_asset_ref():
+    conversation_id = uuid4()
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(
+        team_id=uuid4(),
+        enable_image_generation=True,
+        image_generation_config={"allow_reference_images": True},
+    )
+    asset_service = MagicMock()
+    asset_service.resolve_ref = AsyncMock(
+        return_value=SimpleNamespace(content_type="application/pdf")
+    )
+
+    with (
+        patch("app.services.asset.asset_service", asset_service),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+    ):
+        result = await generate_image(
+            prompt="Use this file",
+            reference_image_refs=["c3d4"],
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+        )
+
+    assert result.display_result["success"] is False
 
 
 @pytest.mark.anyio

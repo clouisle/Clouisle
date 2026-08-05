@@ -66,7 +66,10 @@ async def test_run_job_covers_timeout_failure_and_missing_payload(tmp_path: Path
     assert missing.success is False and missing.error
 
 
-def test_stage_input_files_rejects_existing_target_and_applies_mode(tmp_path: Path):
+@pytest.mark.anyio
+async def test_stage_input_files_rejects_existing_target_and_applies_mode(
+    tmp_path: Path,
+):
     service = manager(tmp_path)
     workspace = service.workspace_manager.prepare("files")
     encoded = base64.b64encode(b"content").decode()
@@ -80,10 +83,10 @@ def test_stage_input_files_rejects_existing_target_and_applies_mode(tmp_path: Pa
         ]
     )
 
-    service._stage_input_files(first, workspace)
+    await service._stage_input_files(first, workspace)
     assert (workspace.root / "input.txt").stat().st_mode & 0o777 == 0o600
     with pytest.raises(FileExistsError):
-        service._stage_input_files(first, workspace)
+        await service._stage_input_files(first, workspace)
 
 
 def test_snippet_commands_and_node_module_link_edges(tmp_path: Path):

@@ -22,6 +22,7 @@ async def execute_tool_call(
     user: Any = None,
     session_id: str | None = None,
     current_images: list[Any] | None = None,
+    conversation_id: Any = None,
 ) -> Any:
     """Execute a tool call and return the result."""
     tool_timeouts = tool_timeouts or {}
@@ -47,6 +48,7 @@ async def execute_tool_call(
         user=user,
         session_id=session_id,
         current_images=current_images,
+        conversation_id=conversation_id,
     )
 
 

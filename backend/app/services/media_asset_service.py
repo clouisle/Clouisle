@@ -4,6 +4,7 @@ import base64
 import mimetypes
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import UUID
 
 import aiofiles
 import httpx
@@ -21,7 +22,12 @@ class MediaAssetService:
     REMOTE_TIMEOUT = 60.0
 
     async def normalize_image(
-        self, content: ImageContent | None
+        self,
+        content: ImageContent | None,
+        *,
+        team_id: UUID | None = None,
+        created_by_id: UUID | None = None,
+        conversation_id: UUID | None = None,
     ) -> ImageContent | None:
         if content is None:
             return None
@@ -29,6 +35,9 @@ class MediaAssetService:
             content,
             category=self.IMAGE_CATEGORY,
             default_mime_type=self._get_image_mime_type(content),
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
         )
         return ImageContent(**normalized.model_dump(mode="json"))
 
@@ -50,12 +59,18 @@ class MediaAssetService:
         *,
         category: str,
         default_mime_type: str,
+        team_id: UUID | None = None,
+        created_by_id: UUID | None = None,
+        conversation_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         if content.base64:
             return await self._save_inline_media(
                 content,
                 category=category,
                 default_mime_type=default_mime_type,
+                team_id=team_id,
+                created_by_id=created_by_id,
+                conversation_id=conversation_id,
             )
 
         if content.file_path:
@@ -63,6 +78,9 @@ class MediaAssetService:
                 content,
                 category=category,
                 default_mime_type=default_mime_type,
+                team_id=team_id,
+                created_by_id=created_by_id,
+                conversation_id=conversation_id,
             )
 
         if content.url and self._should_mirror_remote_url(content.url):
@@ -70,6 +88,9 @@ class MediaAssetService:
                 content,
                 category=category,
                 default_mime_type=default_mime_type,
+                team_id=team_id,
+                created_by_id=created_by_id,
+                conversation_id=conversation_id,
             )
 
         return self._strip_non_url_fields(content)
@@ -80,6 +101,9 @@ class MediaAssetService:
         *,
         category: str,
         default_mime_type: str,
+        team_id: UUID | None = None,
+        created_by_id: UUID | None = None,
+        conversation_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         payload = content.base64 or ""
         detected_content_type, encoded = self._split_data_url(payload)
@@ -98,7 +122,15 @@ class MediaAssetService:
             content_type=content_type,
             extension=infer_extension(content_type=content_type),
         )
-        return self._build_url_only_content(content, upload_info["url"])
+        return await self._build_persisted_content(
+            content,
+            upload_info,
+            raw_bytes=raw_bytes,
+            content_type=content_type,
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
+        )
 
     async def _save_local_media(
         self,
@@ -106,6 +138,9 @@ class MediaAssetService:
         *,
         category: str,
         default_mime_type: str,
+        team_id: UUID | None = None,
+        created_by_id: UUID | None = None,
+        conversation_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         file_path = Path(content.file_path or "")
         if not file_path.exists() or not file_path.is_file():
@@ -123,7 +158,15 @@ class MediaAssetService:
             content_type=content_type,
             filename=file_path.name,
         )
-        return self._build_url_only_content(content, upload_info["url"])
+        return await self._build_persisted_content(
+            content,
+            upload_info,
+            raw_bytes=raw_bytes,
+            content_type=content_type,
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
+        )
 
     async def _save_remote_media(
         self,
@@ -131,6 +174,9 @@ class MediaAssetService:
         *,
         category: str,
         default_mime_type: str,
+        team_id: UUID | None = None,
+        created_by_id: UUID | None = None,
+        conversation_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         url = content.url or ""
         timeout = httpx.Timeout(self.REMOTE_TIMEOUT)
@@ -155,7 +201,59 @@ class MediaAssetService:
             content_type=content_type,
             filename=remote_name,
         )
-        return self._build_url_only_content(content, upload_info["url"])
+        return await self._build_persisted_content(
+            content,
+            upload_info,
+            raw_bytes=response.content,
+            content_type=content_type,
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
+        )
+
+    async def _build_persisted_content(
+        self,
+        content: ImageContent | VideoContent,
+        upload_info: dict,
+        *,
+        raw_bytes: bytes,
+        content_type: str,
+        team_id: UUID | None,
+        created_by_id: UUID | None,
+        conversation_id: UUID | None,
+    ) -> ImageContent | VideoContent:
+        normalized = self._build_url_only_content(content, upload_info["url"])
+        if not isinstance(content, ImageContent) or (
+            team_id is None and created_by_id is None
+        ):
+            return normalized
+
+        from app.models.asset import AssetScopeType, AssetSource
+        from app.services.asset import asset_service
+
+        asset = await asset_service.register_bytes(
+            storage_key=upload_info["storage_key"],
+            original_filename=upload_info["filename"],
+            content_type=content_type,
+            content=raw_bytes,
+            source=AssetSource.GENERATED_MEDIA,
+            team_id=team_id,
+            created_by_id=created_by_id,
+            provenance={"conversation_id": str(conversation_id)}
+            if conversation_id
+            else None,
+        )
+        if conversation_id is None:
+            return normalized
+
+        binding = await asset_service.get_or_create_ref(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            asset=asset,
+        )
+        payload = normalized.model_dump(mode="json")
+        payload["asset_ref"] = binding.ref
+        return normalized.__class__(**payload)
 
     def _build_url_only_content(
         self,
