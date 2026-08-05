@@ -152,7 +152,10 @@ async def test_read_asset_refuses_binary():
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])
     convo_id = str(uuid4())
 
-    with patch("app.services.asset.asset_service", svc):
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch("app.services.upload_storage.get_upload_storage_backend", AsyncMock()),
+    ):
         result = await _execute_asset_tool(
             "read_asset",
             {"ref": "abcd"},
@@ -218,7 +221,10 @@ async def test_parse_asset_refuses_unsupported():
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])
     convo_id = str(uuid4())
 
-    with patch("app.services.asset.asset_service", svc):
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch("app.services.upload_storage.get_upload_storage_backend", AsyncMock()),
+    ):
         result = await _execute_asset_tool(
             "parse_asset",
             {"ref": "abcd"},
@@ -229,6 +235,20 @@ async def test_parse_asset_refuses_unsupported():
 
     data = json.loads(result)
     assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_asset_tool_rejects_non_string_ref():
+    result = await _execute_asset_tool(
+        "inspect_asset",
+        {"ref": 123},
+        agent=_agent(),
+        user=_user(),
+        conversation_id=str(uuid4()),
+    )
+
+    data = json.loads(result)
+    assert data["error"] != ""
 
 
 @pytest.mark.asyncio

@@ -326,6 +326,66 @@ async def test_generate_image_uses_legacy_size_default_when_width_height_missing
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("size", "default_width", "default_height", "expected_width", "expected_height"),
+    [
+        ("1024", None, None, 1024, 1024),
+        ("1024x768", 999, None, 999, 768),
+        ("1024x768", None, 999, 1024, 999),
+    ],
+)
+async def test_generate_image_legacy_size_variants(
+    size, default_width, default_height, expected_width, expected_height
+):
+    config = {
+        "default_model_ref": "openai/gpt-image-1",
+        "size": size,
+        "max_images": 4,
+        "allow_reference_images": True,
+    }
+    if default_width is not None:
+        config["default_width"] = default_width
+    if default_height is not None:
+        config["default_height"] = default_height
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config=config,
+    )
+    response = ImageGenerationResponse(
+        images=[
+            GeneratedImage(
+                image=ImageContent(url="https://example.com/cat.png", format="png"),
+            )
+        ],
+        model="gpt-image-1",
+    )
+
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.media_asset_service.normalize_image",
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/2026/03/cat.png",
+                    format="png",
+                )
+            ),
+        ),
+    ):
+        await generate_image(
+            prompt="A cat portrait",
+            agent=agent,
+        )
+
+    request = mock_generate.await_args.args[0]
+    assert request.width == expected_width
+    assert request.height == expected_height
+
+
+@pytest.mark.anyio
 async def test_generate_image_clamps_num_images_to_agent_limit():
     agent = SimpleNamespace(
         enable_image_generation=True,

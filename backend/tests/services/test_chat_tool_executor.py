@@ -54,6 +54,35 @@ class TestChatToolExecutor:
         mock_submit.assert_awaited_once()
 
     @pytest.mark.anyio
+    async def test_execute_asset_tool_dispatches_to_asset_handler(self):
+        from types import SimpleNamespace
+        from uuid import uuid4
+
+        asset = SimpleNamespace(
+            id=uuid4(),
+            display_filename="file.txt",
+            content_type="text/plain",
+            size=4,
+            source=SimpleNamespace(value="upload"),
+        )
+        svc = MagicMock()
+        svc.resolve_ref = AsyncMock(return_value=asset)
+        svc.capabilities = MagicMock(return_value=["inspect", "read", "sandbox"])
+        agent = SimpleNamespace(id=uuid4(), team_id=None, attachment_config={})
+        user = SimpleNamespace(id=uuid4())
+
+        with patch("app.services.asset.asset_service", svc):
+            result = await execute_tool_call(
+                "inspect_asset",
+                {"ref": "abcd"},
+                agent=agent,
+                user=user,
+                conversation_id=str(uuid4()),
+            )
+
+        assert json.loads(result)["ref"] == "abcd"
+
+    @pytest.mark.anyio
     async def test_execute_skill_tool_uses_normal_tool_contract(self):
         async def handler(**kwargs):
             return ToolExecutionResult(

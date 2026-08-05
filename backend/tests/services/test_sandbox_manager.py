@@ -862,3 +862,108 @@ class TestSandboxManager:
         assert metadata.started_at is None
         store.update_status.assert_awaited_once()
         assert await manager.run_once() is None
+
+    async def test_stage_input_file_applies_mode(self, tmp_path: Path):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        job = SandboxJob(
+            command=["python3"],
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/data.bin",
+                    content_base64=base64.b64encode(b"asset content").decode(),
+                    mode=0o755,
+                )
+            ],
+        )
+
+        await manager._stage_input_files(job, workspace)
+
+        assert (workspace.root / "input/data.bin").stat().st_mode & 0o777 == 0o755
+
+    async def test_stage_input_file_rejects_checksum_mismatch(self, tmp_path: Path):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        content = b"asset content"
+        job = SandboxJob(
+            command=["python3"],
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/data.bin",
+                    content_base64=base64.b64encode(content).decode(),
+                    expected_checksum="0" * 64,
+                )
+            ],
+        )
+
+        with pytest.raises(BusinessError) as exc_info:
+            await manager._stage_input_files(job, workspace)
+
+        assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+        assert exc_info.value.msg_key == "sandbox_input_checksum_mismatch"
+
+    def test_python_executable_resolves_plain_which(self, tmp_path: Path, monkeypatch):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        monkeypatch.setattr(
+            "app.services.sandbox.manager.shutil.which",
+            lambda *a, **k: "/usr/bin/python3",
+        )
+        monkeypatch.setattr(
+            "app.services.sandbox.manager.Path.exists", lambda self: False
+        )
+
+        assert manager._python_executable({"PATH": "/usr/bin"}) == "/usr/bin/python3"
+
+    def test_inject_default_node_runtime_prepends_path(self, tmp_path: Path):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+            node_env_manager=SimpleNamespace(node_binary=lambda: "/usr/bin/node"),
+        )
+        env = {"PATH": "/usr/local/bin"}
+
+        manager._inject_default_node_runtime(env)
+        manager._inject_default_node_runtime(empty_env := {})
+
+        assert env["PATH"] == "/usr/bin:/usr/local/bin"
+        assert empty_env["PATH"] == "/usr/bin"
+        assert env["SANDBOX_NODE_BINARY"] == "/usr/bin/node"
+
+    def test_artifact_storage_key_requires_marker(self):
+        manager = SandboxManager(
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+
+        assert manager._artifact_storage_key("https://example.com/files/x.png") is None
+        assert (
+            manager._artifact_storage_key("/api/v1/upload/files/images/2026/05/out.png")
+            == "images/2026/05/out.png"
+        )
+
+    async def test_save_result_snapshot_uses_save_result(self, tmp_path: Path):
+        save_result = AsyncMock()
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=SimpleNamespace(save_result=save_result),
+        )
+
+        await manager._save_result_snapshot(SandboxResult(job_id="job-1"))
+
+        save_result.assert_awaited_once()

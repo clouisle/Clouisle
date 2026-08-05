@@ -402,3 +402,71 @@ async def test_chat_maps_provider_failure_without_final_persistence(monkeypatch)
     assert error.value.status_code == 500
     assert len(state.created) == 1
     chat.activate_conversation_branch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_append_asset_manifest_formats_when_connection_available(monkeypatch):
+    from app.models.asset import MessageAsset
+
+    monkeypatch.setattr(MessageAsset._meta, "default_connection", object())
+    build_manifest = AsyncMock(return_value=[])
+    format_manifest = Mock(return_value="")
+    monkeypatch.setattr(
+        chat.asset_service, "build_conversation_manifest", build_manifest
+    )
+    monkeypatch.setattr(chat.asset_service, "format_manifest", format_manifest)
+    agent = SimpleNamespace(id=uuid4(), team_id=None)
+    user = SimpleNamespace(id=uuid4())
+
+    result = await chat._append_asset_manifest(
+        "original message",
+        conversation_id=uuid4(),
+        agent=agent,
+        user=user,
+    )
+
+    assert result == "original message"
+    build_manifest.assert_awaited_once()
+
+    format_manifest.return_value = "<available_assets>...</available_assets>"
+    result = await chat._append_asset_manifest(
+        "original message",
+        conversation_id=uuid4(),
+        agent=agent,
+        user=user,
+    )
+
+    assert result == "original message\n\n<available_assets>...</available_assets>"
+
+
+@pytest.mark.asyncio
+async def test_message_asset_transaction_uses_db_transaction(monkeypatch):
+    from app.models.asset import MessageAsset
+
+    monkeypatch.setattr(MessageAsset._meta, "default_connection", object())
+    transaction_cm = AsyncMock()
+    in_transaction = Mock(return_value=transaction_cm)
+    monkeypatch.setattr("app.api.v1.endpoints.chat.in_transaction", in_transaction)
+
+    async with chat._message_asset_transaction(True):
+        pass
+
+    in_transaction.assert_called_once_with()
+    transaction_cm.__aenter__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_attach_message_assets_persists_links(monkeypatch):
+    attach = AsyncMock()
+    monkeypatch.setattr(chat.asset_service, "attach_to_message", attach)
+    asset = SimpleNamespace(id=uuid4())
+
+    await chat._attach_message_assets(
+        message_id=uuid4(),
+        assets=[(asset, "attachment", 0)],
+    )
+
+    attach.assert_awaited_once()
+    assert attach.await_args.kwargs["asset"] is asset
+    assert attach.await_args.kwargs["role"] == "attachment"
+    assert attach.await_args.kwargs["position"] == 0
