@@ -236,6 +236,7 @@ async def test_send_retries_context_and_caps_tool_iterations(monkeypatch):
         user=user,
         session_id="session",
         current_images=[],
+        conversation_id=conversation.id,
     )
 
 

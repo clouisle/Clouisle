@@ -178,7 +178,7 @@ describe('AgentEditor', () => {
       attachment_config: { max_file_size: 1024 },
     })
 
-    expect(setState).toHaveBeenCalledTimes(16)
+    expect(setState).toHaveBeenCalledTimes(15)
   })
 
   it('exposes publish by permission and opens editor actions', () => {

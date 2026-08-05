@@ -208,7 +208,14 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
     user_message, assistant = state.created
     assert user_message.content == "explain the notes"
     assert user_message.rag_context == rag
-    assert user_message.images == [{"type": "image_url", "url": "current.png"}]
+    assert user_message.images == [
+        {
+            "asset_id": None,
+            "asset_ref": None,
+            "type": "image_url",
+            "url": "current.png",
+        }
+    ]
     assert user_message.file_urls == [{"filename": "notes.txt"}]
     user_message.save.assert_awaited_once_with(update_fields=["file_urls"])
     assert assistant.content == "answer"
@@ -298,6 +305,7 @@ async def test_chat_executes_tool_round_and_aggregates_usage(monkeypatch):
         user=state.user,
         session_id="sandbox-session",
         current_images=[{"url": "old.png"}],
+        conversation_id=state.conversation.id,
     )
     second_context = chat.prepare_model_context.await_args_list[1].kwargs
     assert [entry["role"] for entry in second_context["history_override"]] == [

@@ -274,6 +274,7 @@ async def test_edit_stream_reactive_retry_executes_tool_and_caps_iteration(monke
         user=user,
         session_id="sandbox-session",
         current_images=[],
+        conversation_id=conversation.id,
     )
     assert [item.role for item in created_steps] == [
         MessageRole.ASSISTANT,

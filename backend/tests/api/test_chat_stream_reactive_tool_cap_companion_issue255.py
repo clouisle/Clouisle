@@ -275,6 +275,7 @@ async def test_stream_retries_context_then_persists_tool_cap(monkeypatch):
         user=user,
         session_id="session",
         current_images=[],
+        conversation_id=conversation.id,
     )
     assert [message.role for message in created] == [
         MessageRole.USER,

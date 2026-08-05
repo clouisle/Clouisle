@@ -277,11 +277,15 @@ async def test_nonstream_builds_user_message_variants(
 
     kwargs = created.await_args.kwargs
     assert kwargs["content"] == "hello"
-    expected_images = [{"type": "image_url", **image} for image in images]
+    expected_images = [
+        {"type": "image_url", "asset_id": None, "asset_ref": None, **image}
+        for image in images
+    ]
     assert kwargs["images"] == expected_images or (
         not images and kwargs["images"] is None
     )
-    assert kwargs["file_urls"] == file_urls or (
+    expected_file_urls = [{"asset_id": None, **item} for item in file_urls]
+    assert kwargs["file_urls"] == expected_file_urls or (
         not file_urls and kwargs["file_urls"] is None
     )
     assert (kwargs["rag_context"] or []) == rag_result
