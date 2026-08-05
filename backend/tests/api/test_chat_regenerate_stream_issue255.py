@@ -39,7 +39,10 @@ async def setup_regeneration(monkeypatch):
     )
     conversation = SimpleNamespace(id=uuid4(), agent_id=agent.id)
     user_message = SimpleNamespace(
-        id=uuid4(), role=MessageRole.USER, content="original question"
+        id=uuid4(),
+        role=MessageRole.USER,
+        content="original question",
+        created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
     )
     original = SimpleNamespace(
         id=uuid4(),
@@ -226,6 +229,13 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
         "total_tokens": 5,
     }
     assert prepare.await_count == 2
+    for call in prepare.call_args_list:
+        # Regenerate must not leak the old round's tool-call chain into history:
+        # the cutoff is the triggering user message, not the old assistant reply.
+        assert (
+            call.kwargs["history_before_message_created_at"]
+            == state.user_message.created_at
+        )
     state.agent_stats.update.assert_awaited_once()
     state.team_stats.update.assert_awaited_once()
 
