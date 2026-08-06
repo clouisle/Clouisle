@@ -224,7 +224,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
     },
     {
       title: t('helpCenter'),
-      url: '/help',
+      url: 'https://clouisle.asia',
       icon: HelpCircle,
       permission: null, // No permission required
     },
