@@ -193,6 +193,12 @@ export function AuditLogsTable() {
         return t.has(key) ? t(key) : option.fallback_label;
     };
 
+    const getResourceTypeLabel = (resourceType: string) => {
+        if (!resourceType) return "-";
+        const key = `resourceType${resourceType.charAt(0).toUpperCase()}${resourceType.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`;
+        return t.has(key) ? t(key) : resourceType;
+    };
+
     const actionOptions = useMemo(
         () => actionOptionsMeta.map((item) => {
             const key = getTranslationKey(item.translation_key);
@@ -327,7 +333,7 @@ export function AuditLogsTable() {
                                             </TableCell>
                                             <TableCell>{log.username || t("system")}</TableCell>
                                             <TableCell>{getActionLabel(log.action)}</TableCell>
-                                            <TableCell>{log.resource_type}</TableCell>
+                                            <TableCell>{getResourceTypeLabel(log.resource_type)}</TableCell>
                                             <TableCell>{log.resource_name || "-"}</TableCell>
                                             <TableCell>
                                                 {log.resource_type === "workflow_run" && log.resource_id ? (

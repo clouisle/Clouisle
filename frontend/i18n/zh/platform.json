@@ -29,6 +29,7 @@
     "aboutCheckingVersion": "正在检查更新...",
     "aboutNewVersion": "发现新版本 {version}",
     "aboutChangelog": "更新日志",
+    "aboutGitHub": "GitHub 仓库",
     "teams": "团队",
     "manageTeams": "管理团队",
     "noTeams": "暂无团队",

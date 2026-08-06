@@ -537,7 +537,7 @@ export function PlatformHeader() {
             </h2>
 
             <p className="text-sm text-muted-foreground mb-4">
-              Version {APP_VERSION}
+              {t('aboutVersion')} {APP_VERSION}
             </p>
 
             {/* 版权和链接 */}
@@ -556,7 +556,7 @@ export function PlatformHeader() {
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                GitHub
+                {t('aboutGitHub')}
               </a>
               <span className="text-muted-foreground">,</span>
               <a
