@@ -39,6 +39,19 @@ class FakeAsyncOpenAI:
         self.close = AsyncMock()
 
 
+def test_base_url_normalizes_ollama_v1_endpoint():
+    assert (
+        OllamaAdapter(build_model(base_url="http://10.144.144.2:11434"))._get_base_url()
+        == "http://10.144.144.2:11434/v1"
+    )
+    assert (
+        OllamaAdapter(
+            build_model(base_url="http://localhost:11434/v1/")
+        )._get_base_url()
+        == "http://localhost:11434/v1"
+    )
+
+
 @pytest.mark.anyio
 async def test_chat_builds_request_and_normalizes_tool_response():
     response = SimpleNamespace(
@@ -107,14 +120,45 @@ async def test_chat_builds_request_and_normalizes_tool_response():
                 },
             }
         ],
-        "think": True,
-        "extra_body": {"keep_alive": "5m"},
+        "extra_body": {"keep_alive": "5m", "think": True},
     }
     assert result.id == "resp-1"
     assert result.reasoning_content == "I should check the weather."
     assert result.finish_reason == "tool_calls"
     assert result.tool_calls[0].function.arguments == '{"city":"Paris"}'
     assert result.usage.total_tokens == 8
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_passes_disabled_thinking_through_extra_body():
+    response = SimpleNamespace(
+        id="resp-disabled",
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(
+                    content="ok",
+                    thinking=None,
+                    model_extra=None,
+                    tool_calls=None,
+                ),
+            )
+        ],
+        usage=None,
+    )
+    client = FakeAsyncOpenAI(response)
+    adapter = OllamaAdapter(
+        build_model(default_params={"thinking": {"enabled": False}})
+    )
+
+    with patch("openai.AsyncOpenAI", return_value=client):
+        result = await adapter.chat([Message(role=MessageRole.USER, content="Hi")])
+
+    request = client.chat.completions.create.await_args.kwargs
+    assert result.content == "ok"
+    assert "think" not in request
+    assert request["extra_body"] == {"think": False}
     client.close.assert_awaited_once()
 
 
@@ -216,7 +260,7 @@ async def test_chat_stream_normalizes_activity_reasoning_and_stop():
 
     request = client.chat.completions.create.await_args.kwargs
     assert request["stream"] is True
-    assert request["think"] is False
+    assert request["extra_body"] == {"think": False}
     assert [chunk.delta.stream_activity for chunk in chunks] == [True, False, False]
     assert chunks[1].delta.reasoning_content == "Thinking"
     assert chunks[2].delta.content == "Answer"
