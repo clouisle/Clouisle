@@ -118,7 +118,8 @@ function parseDate(value: string | number | Date | null | undefined): Date | nul
       const day = parseInt(bareDateMatch[3], 10)
       // Reject overflow dates (e.g. 2026-02-30)
       if (month < 1 || month > 12 || day < 1) return null
-      const d = new Date(year, month - 1, day)
+      const d = new Date(0)
+      d.setFullYear(year, month - 1, day)
       if (d.getMonth() !== month - 1 || d.getDate() !== day) return null
       return d
     }
