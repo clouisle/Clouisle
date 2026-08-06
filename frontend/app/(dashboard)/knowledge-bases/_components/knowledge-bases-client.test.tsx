@@ -12,7 +12,7 @@ const toastSuccess = mock(() => {})
 const push = mock(() => {})
 let permissions = new Set<string>()
 
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api', () => ({

@@ -8,6 +8,7 @@ const toastSuccess = mock(() => {})
 let searchState = ''
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => {
     const t = (key: string, values?: Record<string, unknown>) => values?.count === undefined ? key : `${key}:${values.count}`
     t.has = (key: string) => !key.endsWith('.webhook') && !key.endsWith('.unknown')

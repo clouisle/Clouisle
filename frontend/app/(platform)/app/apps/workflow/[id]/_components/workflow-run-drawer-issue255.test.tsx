@@ -74,10 +74,10 @@ const toast = { success: mock(() => {}), error: mock(() => {}), info: mock(() =>
 mock.module('react', () => ({ default: hooks, ...hooks }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('sonner', () => ({ toast }))
 mock.module('lucide-react', () => icons)
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/lib/utils', () => ({ formatDateTime: (value: unknown) => String(value), formatTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/api/client', () => ({
   ApiError: class ApiError extends Error {},
   getErrorMessage: () => 'request failed',

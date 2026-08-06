@@ -36,6 +36,7 @@ function text(value: unknown): string {
 
 const translations = new Map<string, (key: string, values?: Record<string, unknown>) => string>()
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => {
     if (!translations.has(namespace)) {
       translations.set(namespace, (key: string, values?: Record<string, unknown>) =>

@@ -25,7 +25,7 @@ mock.module('react', () => ({
   useEffect: () => {},
   useMemo: <T,>(factory: () => T) => factory(),
 }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}) }) }))
 mock.module('sonner', () => ({ toast: { success, info: mock(() => {}), warning: mock(() => {}) } }))
 mock.module('lucide-react', () => ({

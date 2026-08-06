@@ -55,17 +55,25 @@ test("builds request examples for workflow variable types", () => {
 });
 
 test("expands examples and copies their generated code", async () => {
-  act(() => {
-    renderer = create(<CodeExamples webhookUrl="https://example.test/run" variables={[]} />);
-  });
-  const headers = renderer!.root.findAllByType("header");
+  const originalSetTimeout = globalThis.setTimeout
+  let timeoutCallback: (() => void) | undefined
+  globalThis.setTimeout = ((callback: () => void) => { timeoutCallback = callback; return 1 }) as unknown as typeof globalThis.setTimeout
+  try {
+    act(() => {
+      renderer = create(<CodeExamples webhookUrl="https://example.test/run" variables={[]} />);
+    })
+    const headers = renderer!.root.findAllByType("header")
 
-  act(() => headers[1].props.onClick());
-  expect(renderedText(renderer!)).toContain("import requests");
+    act(() => headers[1].props.onClick())
+    expect(renderedText(renderer!)).toContain("import requests")
 
-  const copyButton = headers[1].findByType("button");
-  await act(async () => copyButton.props.onClick({ stopPropagation: mock(() => {}) }));
+    const copyButton = headers[1].findByType("button")
+    await act(async () => copyButton.props.onClick({ stopPropagation: mock(() => {}) }))
 
-  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("import requests"));
-  expect(renderedText(renderer!)).toContain("copied");
-});
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("import requests"))
+    expect(renderedText(renderer!)).toContain("copied")
+    act(() => timeoutCallback!())
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+  }
+})

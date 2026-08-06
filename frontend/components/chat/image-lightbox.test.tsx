@@ -129,6 +129,9 @@ describe('ImageLightbox', () => {
     globalThis.fetch = fetchImage as typeof fetch
     window.URL.createObjectURL = createObjectUrl
     window.URL.revokeObjectURL = revokeObjectUrl
+    const consoleError = mock(() => {})
+    const originalConsoleError = console.error
+    console.error = consoleError
 
     try {
       renderImage({
@@ -184,10 +187,15 @@ describe('ImageLightbox', () => {
       expect(fetchImage).toHaveBeenCalledWith('/image.png')
       expect(createObjectUrl).toHaveBeenCalled()
       expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image')
+
+      fetchImage.mockRejectedValueOnce(new Error('download failed'))
+      await act(async () => document.body.querySelector('button[aria-label="download"]')!.click())
+      expect(consoleError).toHaveBeenCalledWith('Failed to download image:', expect.any(Error))
     } finally {
       globalThis.fetch = originalFetch
       window.URL.createObjectURL = originalCreateObjectUrl
       window.URL.revokeObjectURL = originalRevokeObjectUrl
+      console.error = originalConsoleError
     }
   })
 

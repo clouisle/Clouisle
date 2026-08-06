@@ -8,7 +8,7 @@ mock.module('react', () => ({ useState: (initial: unknown) => [states[stateIndex
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 const translate = Object.assign((key: string) => `memories.${key}`, { has: (key: string) => key.endsWith('.person') || key.endsWith('.knows') })
-mock.module('next-intl', () => ({ useTranslations: () => translate }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => translate }))
 mock.module('lucide-react', () => ({ Trash2: component, X: component }))
 mock.module('sonner', () => ({ toast: { success: mock(() => {}) } }))
 for (const [path, names] of [

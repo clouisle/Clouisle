@@ -54,6 +54,7 @@ let user = {
 }
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))

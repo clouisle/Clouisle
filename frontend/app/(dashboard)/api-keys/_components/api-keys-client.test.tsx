@@ -50,6 +50,7 @@ mock.module('react', () => ({
   },
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => (key: string, values?: Record<string, unknown>) => (
     values?.count === undefined ? `${namespace}.${key}` : `${namespace}.${key}.${values.count}`
   ),

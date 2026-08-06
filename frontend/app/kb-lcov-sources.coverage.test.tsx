@@ -3,6 +3,7 @@ import * as React from 'react'
 import { renderToStaticMarkup, renderToString } from 'react-dom/server'
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${JSON.stringify(values)}` : key,
 }))
 

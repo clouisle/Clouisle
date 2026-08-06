@@ -74,17 +74,26 @@ const render = (apiKey: string | null) => {
 };
 
 test("copies a newly generated API key to the clipboard", async () => {
-  const renderer = render("test-api-key");
+  const originalSetTimeout = globalThis.setTimeout
+  let timeoutCallback: (() => void) | undefined
+  let renderer!: ReactTestRenderer
+  globalThis.setTimeout = ((callback: () => void) => { timeoutCallback = callback; return 1 }) as unknown as typeof globalThis.setTimeout
+  try {
+    renderer = render("test-api-key")
 
-  await act(async () =>
-    renderer.root.findAllByType("button")[0].props.onClick(),
-  );
+    await act(async () =>
+      renderer.root.findAllByType("button")[0].props.onClick(),
+    )
 
-  expect(writeText).toHaveBeenCalledWith("test-api-key");
-  expect(success).toHaveBeenCalledWith("copied");
-  expect(renderer.root.findByType("input").props.value).toBe("test-api-key");
-  act(() => renderer.unmount());
-});
+    expect(writeText).toHaveBeenCalledWith("test-api-key")
+    expect(success).toHaveBeenCalledWith("copied")
+    expect(renderer.root.findByType("input").props.value).toBe("test-api-key")
+    act(() => timeoutCallback!())
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+  }
+  act(() => renderer.unmount())
+})
 
 test("does not copy when the dialog has no generated key", async () => {
   const renderer = render(null);

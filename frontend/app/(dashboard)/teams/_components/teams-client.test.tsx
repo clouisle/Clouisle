@@ -35,6 +35,7 @@ mock.module('react', () => ({
   useMemo: <T,>(factory: () => T) => factory(),
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${JSON.stringify(values)}` : key,
 }))

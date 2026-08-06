@@ -185,14 +185,22 @@ describe('ApiAccessContent', () => {
   })
 
   test('copies the nearest code block content', async () => {
-    const { document, writeText } = await renderApiContent()
-    const copyButton = document.querySelector('button') as HTMLButtonElement
+    const originalSetTimeout = globalThis.setTimeout
+    let timeoutCallback: (() => void) | undefined
+    globalThis.setTimeout = ((callback: () => void) => { timeoutCallback = callback; return 1 }) as unknown as typeof globalThis.setTimeout
+    try {
+      const { document, writeText } = await renderApiContent()
+      const copyButton = document.querySelector('button') as HTMLButtonElement
 
-    await act(async () => {
-      copyButton.click()
-    })
+      await act(async () => {
+        copyButton.click()
+      })
+      await act(async () => timeoutCallback!())
 
-    expect(writeText).toHaveBeenCalledWith('Authorization: Bearer YOUR_API_KEY')
-    expect(toastSuccess).toHaveBeenCalledWith('Copied')
+      expect(writeText).toHaveBeenCalledWith('Authorization: Bearer YOUR_API_KEY')
+      expect(toastSuccess).toHaveBeenCalledWith('Copied')
+    } finally {
+      globalThis.setTimeout = originalSetTimeout
+    }
   })
 })

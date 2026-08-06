@@ -414,6 +414,12 @@ describe('ai elements', () => {
       Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} })
       await act(async () => { await renderer!.root.findByType('button').props.onClick() })
       expect(onError.mock.calls.at(-1)?.[0].message).toBe('Clipboard API not available')
+
+      const clipboardError = new Error('clipboard denied')
+      writeText.mockRejectedValueOnce(clipboardError)
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText } } })
+      await act(async () => { await renderer!.root.findByType('button').props.onClick() })
+      expect(onError.mock.calls.at(-1)?.[0]).toBe(clipboardError)
     } finally {
       if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
       else delete (globalThis as typeof globalThis & { window?: unknown }).window

@@ -101,6 +101,20 @@ describe('ProminentNotificationDialog', () => {
     expect(renderer.toJSON()).toBeNull()
   })
 
+  test('keeps a notification visible when marking it read fails', async () => {
+    spyOn(notificationsApi, 'list').mockResolvedValue({
+      items: [notification('one', 'First')], total: 1, page: 1, page_size: 50,
+    })
+    spyOn(notificationsApi, 'markRead').mockRejectedValue(new Error('unavailable'))
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const renderer = await render()
+
+    await act(async () => renderer.root.findAllByType('button')[0].props.onClick())
+
+    expect(consoleError).toHaveBeenCalledWith('Failed to mark notification read:', expect.any(Error))
+    expect(JSON.stringify(renderer.toJSON())).toContain('First content')
+  })
+
   test('renders nothing when no prominent notification is available or loading fails', async () => {
     const list = spyOn(notificationsApi, 'list')
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 50 })

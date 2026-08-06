@@ -102,7 +102,7 @@ mock.module('react', () => ({
     }] as const
   },
 }))
-mock.module('next-intl', () => ({ useTranslations: translator }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: translator }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('next/image', () => ({ default: ({ children, ...props }: Record<string, unknown>) => ({ type: 'img', props: { ...props, children } }) }))
 mock.module('next/link', () => ({ default: ({ children, ...props }: Record<string, unknown>) => ({ type: 'a', props: { ...props, children } }) }))

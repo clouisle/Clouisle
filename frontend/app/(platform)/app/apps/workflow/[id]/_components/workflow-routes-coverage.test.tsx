@@ -182,7 +182,7 @@ mock.module('lucide-react', () => ({
   ZoomIn: createIcon('ZoomIn'),
   ZoomOut: createIcon('ZoomOut'),
 }))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/lib/utils', () => ({ formatTime: (value: unknown) => String(value), formatDateTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/api/client', () => ({
   api: { get: async () => ({}), post: async () => ({}), put: async () => ({}), delete: async () => ({}) },
   axiosInstance: { get: async () => ({}), post: async () => ({}), put: async () => ({}), delete: async () => ({}) },

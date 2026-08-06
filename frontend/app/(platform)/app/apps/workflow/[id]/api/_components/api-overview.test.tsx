@@ -53,15 +53,23 @@ test("shows the unconfigured state without a webhook token", () => {
 });
 
 test("renders webhook documentation and copies the URL", async () => {
-  act(() => { renderer = create(<ApiOverview workflow={workflow as never} webhookUrl="https://example.test/hook" />); });
-  const output = text(renderer!);
+  const originalSetTimeout = globalThis.setTimeout
+  let timeoutCallback: (() => void) | undefined
+  globalThis.setTimeout = ((callback: () => void) => { timeoutCallback = callback; return 1 }) as unknown as typeof globalThis.setTimeout
+  try {
+    act(() => { renderer = create(<ApiOverview workflow={workflow as never} webhookUrl="https://example.test/hook" />); })
+    const output = text(renderer!)
 
-  expect(output).toContain("https://example.test/hook");
-  expect(output).toContain("query");
-  expect(output).toContain("required");
-  expect(output).toContain("optional");
-  expect(output).toContain("workflow_error");
+    expect(output).toContain("https://example.test/hook")
+    expect(output).toContain("query")
+    expect(output).toContain("required")
+    expect(output).toContain("optional")
+    expect(output).toContain("workflow_error")
 
-  await act(async () => renderer!.root.findAllByType("button")[0].props.onClick());
-  expect(writeText).toHaveBeenCalledWith("https://example.test/hook");
-});
+    await act(async () => renderer!.root.findAllByType("button")[0].props.onClick())
+    expect(writeText).toHaveBeenCalledWith("https://example.test/hook")
+    act(() => timeoutCallback!())
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+  }
+})

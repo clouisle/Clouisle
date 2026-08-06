@@ -64,7 +64,7 @@ const React = {
 mock.module('react', () => React)
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
 mock.module('sonner', () => ({ toast }))
 mock.module('lucide-react', () => ({
   Play: element, Bug: element, X: element, Loader2: element, CheckCircle2: element, XCircle: element,
@@ -73,7 +73,7 @@ mock.module('lucide-react', () => ({
   FileText: element, MessageSquareText: element, RefreshCw: element, Infinity: element, Tags: element,
   Variable: element, Combine: element, Braces: element, Link: element, Workflow: element, Sparkles: element,
 }))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/lib/utils', () => ({ formatDateTime: (value: unknown) => String(value), formatTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/api/client', () => ({
   ApiError: class ApiError extends Error {},
   getErrorMessage: (key: string) => key,
