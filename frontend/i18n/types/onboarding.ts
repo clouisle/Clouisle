@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-06T08:44:33.216Z
+// GENERATED — 2026-08-06T09:27:15.452Z
 // Source: i18n/en/onboarding.json
 export type OnboardingMessages = {
   onboarding: {
