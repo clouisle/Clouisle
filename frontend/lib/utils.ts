@@ -106,7 +106,24 @@ const TIME: Intl.DateTimeFormatOptions = {
 
 function parseDate(value: string | number | Date | null | undefined): Date | null {
   if (value == null || value === '') return null
-  const d = value instanceof Date ? value : new Date(value)
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+  if (typeof value === 'string') {
+    // Bare YYYY-MM-DD: parse as local date components to avoid UTC shift
+    const bareDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+    if (bareDateMatch) {
+      const year = parseInt(bareDateMatch[1], 10)
+      const month = parseInt(bareDateMatch[2], 10)
+      const day = parseInt(bareDateMatch[3], 10)
+      // Reject overflow dates (e.g. 2026-02-30)
+      if (month < 1 || month > 12 || day < 1) return null
+      const d = new Date(year, month - 1, day)
+      if (d.getMonth() !== month - 1 || d.getDate() !== day) return null
+      return d
+    }
+  }
+  const d = new Date(value)
   return Number.isNaN(d.getTime()) ? null : d
 }
 

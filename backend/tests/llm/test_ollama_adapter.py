@@ -260,6 +260,7 @@ async def test_chat_stream_normalizes_activity_reasoning_and_stop():
 
     request = client.chat.completions.create.await_args.kwargs
     assert request["stream"] is True
+    assert "think" not in request
     assert request["extra_body"] == {"think": False}
     assert [chunk.delta.stream_activity for chunk in chunks] == [True, False, False]
     assert chunks[1].delta.reasoning_content == "Thinking"

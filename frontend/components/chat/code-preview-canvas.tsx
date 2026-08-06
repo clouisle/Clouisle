@@ -27,7 +27,7 @@ const SOURCE_SEGMENT_BATCH_SIZE = 5
 // credentialless moves the iframe into its own renderer process, so heavy user
 // HTML scripts running in `sandbox="allow-scripts"` cannot stall the parent
 // page's main thread. Spread to bypass strict prop typing for this attribute.
-const IFRAME_PROCESS_ISOLATION = { credentialless: true } as unknown as React.IframeHTMLAttributes<HTMLIFrameElement>
+const IFRAME_PROCESS_ISOLATION = { credentialless: "" } as unknown as React.IframeHTMLAttributes<HTMLIFrameElement>
 
 // Lightweight placeholder shown while the preview panel is being dragged:
 // keeps the heavy iframe from re-laying-out on every resize frame.

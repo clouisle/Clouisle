@@ -26,6 +26,14 @@ describe('utility helpers', () => {
     expect(formatDateTime('2026-11-13T16:05:00', 'en')).toBe('Nov 13, 2026 at 4:05 PM')
   })
 
+  test('parses bare YYYY-MM-DD as local date and rejects overflow', () => {
+    // Bare date should be treated as local, not UTC
+    expect(formatDate('2026-11-13', 'zh')).toBe('2026/11/13')
+    expect(formatDate('2026-11-13', 'en')).toBe('Nov 13, 2026')
+    // Overflow date (Feb 30 does not exist) should be rejected
+    expect(formatDate('2026-02-30', 'en')).toBe('-')
+  })
+
   test('formats dates with locale-specific month names', () => {
     const date = new Date(2026, 1, 3, 6, 7)
 

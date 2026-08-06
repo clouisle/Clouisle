@@ -218,6 +218,7 @@ async def test_chat_builds_request_and_maps_response(
     assert request["top_p"] == 0.8
     assert request["max_tokens"] == 100
     assert request["tools"][0]["function"]["name"] == "lookup"
+    assert "think" not in request
     assert request["extra_body"] == {"keep_alive": "5m", "think": True}
     assert result.finish_reason == expected
     assert result.reasoning_content == "thought"
@@ -322,6 +323,7 @@ async def test_stream_emits_activity_content_reasoning_tools_and_finish_reasons(
     assert request["top_p"] == 0.9
     assert request["max_tokens"] == 50
     assert request["tools"][0]["function"]["name"] == "lookup"
+    assert "think" not in request
     assert request["extra_body"] == {"think": True}
     assert result[0].delta.stream_activity is True
     assert result[1].delta.content == "answer"
