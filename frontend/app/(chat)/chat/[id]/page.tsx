@@ -133,6 +133,9 @@ export default function PublicChatPage({
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
   const [activePreview, setActivePreview] = React.useState<ChatPreviewPayload | null>(null)
+  // Pauses heavy preview rendering (HTML iframes) while the user drags the
+  // resize handle, so continuous relayouts can't stall the page.
+  const [isPreviewResizing, setIsPreviewResizing] = React.useState(false)
 
   const dismissPreview = React.useCallback(() => {
     setActivePreview(null)
@@ -1030,12 +1033,18 @@ export default function PublicChatPage({
         </ResizablePanel>
         {activePreview && (
           <>
-            <ResizableHandle withHandle />
+            <ResizableHandle
+              withHandle
+              onPointerDown={() => setIsPreviewResizing(true)}
+              onPointerUp={() => setIsPreviewResizing(false)}
+              onPointerCancel={() => setIsPreviewResizing(false)}
+            />
             <ResizablePanel data-chat-preview-panel defaultSize="38%" minSize={400}>
               <CodePreviewCanvas
                 key={activePreview.id}
                 preview={activePreview}
                 onClose={dismissPreview}
+                isResizing={isPreviewResizing}
               />
             </ResizablePanel>
           </>

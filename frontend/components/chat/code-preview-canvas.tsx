@@ -23,6 +23,17 @@ const MERMAID_MIN_ZOOM = 0.05
 const MERMAID_MAX_ZOOM = 15
 const MERMAID_ZOOM_STEP = 0.1
 const SOURCE_SEGMENT_BATCH_SIZE = 5
+// React 19.2 types predate the `credentialless` iframe attribute (Chromium 110+).
+// credentialless moves the iframe into its own renderer process, so heavy user
+// HTML scripts running in `sandbox="allow-scripts"` cannot stall the parent
+// page's main thread. Spread to bypass strict prop typing for this attribute.
+const IFRAME_PROCESS_ISOLATION = { credentialless: true } as unknown as React.IframeHTMLAttributes<HTMLIFrameElement>
+
+// Lightweight placeholder shown while the preview panel is being dragged:
+// keeps the heavy iframe from re-laying-out on every resize frame.
+function PreviewResizePlaceholder() {
+  return <div data-preview-resize-placeholder className="h-full w-full bg-muted/30" aria-hidden="true" />
+}
 
 function escapeClosingScriptTag(code: string) {
   return code.replace(/<\/script/gi, '<\\/script')
@@ -545,9 +556,11 @@ function getArtifactPreviewMode(file: ArtifactPreviewPayload['file']): ArtifactP
 function ArtifactPreviewCanvas({
   preview,
   onClose,
+  isResizing,
 }: {
   preview: ArtifactPreviewPayload
   onClose: () => void
+  isResizing?: boolean
 }) {
   const t = useTranslations('chat.message')
   const file = preview.file
@@ -650,7 +663,7 @@ function ArtifactPreviewCanvas({
   } else if (mode === 'pdf' && previewUrl) {
     body = <iframe title={file.filename} src={previewUrl} className="h-full w-full border-0 bg-white" />
   } else if (mode === 'html' && previewUrl) {
-    body = <iframe title={file.filename} src={previewUrl} sandbox="allow-scripts" className="h-full w-full border-0 bg-white" />
+    body = isResizing ? <PreviewResizePlaceholder /> : <iframe title={file.filename} src={previewUrl} sandbox="allow-scripts" {...IFRAME_PROCESS_ISOLATION} className="h-full w-full border-0 bg-white" />
   } else if (mode === 'markdown') {
     body = <div className="h-full overflow-auto p-6"><Streamdown>{textContent}</Streamdown></div>
   } else if (mode === 'mermaid') {
@@ -700,9 +713,11 @@ function ArtifactPreviewCanvas({
 function CodeContentPreviewCanvas({
   preview,
   onClose,
+  isResizing,
 }: {
   preview: CodePreviewPayload
   onClose: () => void
+  isResizing?: boolean
 }) {
   const t = useTranslations('chat.message')
   const sourceLanguage = getSourceLanguage(preview)
@@ -796,10 +811,13 @@ function CodeContentPreviewCanvas({
               </div>
             ) : preview.kind === 'mermaid' ? (
               <MermaidPreview code={preview.code} />
+            ) : isResizing ? (
+              <PreviewResizePlaceholder />
             ) : (
               <iframe
                 title={t('codePreview')}
                 sandbox="allow-scripts"
+                {...IFRAME_PROCESS_ISOLATION}
                 srcDoc={srcDoc}
                 className="h-full w-full border-0 bg-white"
               />
@@ -882,15 +900,17 @@ function SourceDocumentPreviewCanvas({
 export function CodePreviewCanvas({
   preview,
   onClose,
+  isResizing,
 }: {
   preview: ChatPreviewPayload
   onClose: () => void
+  isResizing?: boolean
 }) {
   if (preview.kind === 'artifact') {
-    return <ArtifactPreviewCanvas preview={preview} onClose={onClose} />
+    return <ArtifactPreviewCanvas preview={preview} onClose={onClose} isResizing={isResizing} />
   }
   if (preview.kind === 'source-document') {
     return <SourceDocumentPreviewCanvas preview={preview} onClose={onClose} />
   }
-  return <CodeContentPreviewCanvas preview={preview} onClose={onClose} />
+  return <CodeContentPreviewCanvas preview={preview} onClose={onClose} isResizing={isResizing} />
 }
