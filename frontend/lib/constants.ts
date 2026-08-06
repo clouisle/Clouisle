@@ -44,7 +44,7 @@ export const SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES = SKILL_ZIP_MAX_UPLOAD_SIZE_MB * BY
 export const GITHUB_URL = 'https://github.com/yunhai-dev/Clouisle'
 
 // 文档地址
-export const DOCS_URL = 'https://github.com/yunhai-dev/Clouisle/blob/main/README.md'
+export const DOCS_URL = 'https://clouisle.asia'
 
 // 更新日志地址
 export const CHANGELOG_URL = 'https://github.com/yunhai-dev/Clouisle/blob/main/CHANGELOG.md'
