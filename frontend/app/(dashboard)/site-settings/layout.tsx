@@ -69,9 +69,7 @@ export default function SiteSettingsLayout({
 
             {/* Settings Content */}
             <div className="flex-1 min-h-0 overflow-auto p-1">
-              <div className="max-w-2xl">
-                {children}
-              </div>
+              {children}
             </div>
           </div>
         </div>
