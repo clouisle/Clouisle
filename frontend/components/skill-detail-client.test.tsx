@@ -43,7 +43,7 @@ mock.module('react', () => ({
   useMemo: (factory: () => unknown) => factory(),
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('streamdown', () => ({ Streamdown }))
 mock.module('lucide-react', () => ({ ArrowLeft, Loader2, PackageOpen }))
 mock.module('@/components/ui/badge', () => ({ Badge }))

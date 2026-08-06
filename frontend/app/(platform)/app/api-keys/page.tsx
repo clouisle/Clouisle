@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import {
   Plus,
   Search,
@@ -34,6 +34,7 @@ import { ShowKeyDialog } from './_components/show-key-dialog'
 export default function APIKeysPage() {
   const t = useTranslations('apiKeys')
   const commonT = useTranslations('common')
+  const locale = useLocale()
 
   // 数据状态
   const [apiKeys, setApiKeys] = React.useState<APIKey[]>([])
@@ -241,19 +242,19 @@ export default function APIKeysPage() {
                   <div className="flex flex-col items-end">
                     <span className="text-xs">{t('expiresAt')}</span>
                     <span className="font-medium text-foreground">
-                      {apiKey.expires_at ? formatDateTime(apiKey.expires_at) : t('never')}
+                      {apiKey.expires_at ? formatDateTime(apiKey.expires_at, locale) : t('never')}
                     </span>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-xs">{t('lastUsed')}</span>
                     <span className="font-medium text-foreground">
-                      {apiKey.last_used_at ? formatDateTime(apiKey.last_used_at) : t('neverUsed')}
+                      {apiKey.last_used_at ? formatDateTime(apiKey.last_used_at, locale) : t('neverUsed')}
                     </span>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-xs">{t('createdAt')}</span>
                     <span className="font-medium text-foreground">
-                      {formatDateTime(apiKey.created_at)}
+                      {formatDateTime(apiKey.created_at, locale)}
                     </span>
                   </div>
                 </div>

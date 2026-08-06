@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, X, Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock, Eye, MoreHorizontal } from 'lucide-react'
 import { notificationsApi, type NotificationItem } from '@/lib/api/admin/notifications'
 import type { NotificationLevel, NotificationScope, NotificationDelivery } from '@/lib/api/notifications'
@@ -81,6 +81,7 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
 export function NotificationsAdminClient() {
   const t = useTranslations('notifications')
   const tCommon = useTranslations('common')
+  const locale = useLocale()
 
   const getScopeLabel = (scope: string) => {
     const key = `scopeOptions.${scope}`
@@ -374,7 +375,7 @@ export function NotificationsAdminClient() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDateTime(item.created_at)}
+                    {formatDateTime(item.created_at, locale)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>

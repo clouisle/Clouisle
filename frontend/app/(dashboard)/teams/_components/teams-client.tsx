@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import {
   Plus,
   Search,
@@ -62,6 +62,7 @@ import { useUrlSearchState } from '@/hooks/use-url-search-state'
 import { useDebounce } from '@/hooks/use-debounce'
 
 export function TeamsClient() {
+  const locale = useLocale()
   const t = useTranslations('teams')
   const commonT = useTranslations('common')
   const { canPerform } = useCanPerform()
@@ -385,7 +386,7 @@ export function TeamsClient() {
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Calendar className="h-4 w-4 shrink-0" />
-                  <span className="whitespace-nowrap">{formatDateTime(team.created_at)}</span>
+                  <span className="whitespace-nowrap">{formatDateTime(team.created_at, locale)}</span>
                 </div>
               </div>
             </div>

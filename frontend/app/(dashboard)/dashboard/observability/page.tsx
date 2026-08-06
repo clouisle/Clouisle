@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 
@@ -24,6 +24,7 @@ import {
   type WorkflowPerformanceRow,
   type WorkerResponse,
 } from '@/lib/api/admin/observability'
+import { formatTime } from '@/lib/utils'
 import {
   AgentsPanel,
   ErrorState,
@@ -45,6 +46,7 @@ const TAB_VALUES: ObservabilityTab[] = ['overview', 'health', 'agents', 'workflo
 
 export default function ObservabilityPage() {
   const t = useTranslations('dashboard.observability')
+  const locale = useLocale()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = React.useState<ObservabilityTab>('overview')
@@ -158,7 +160,7 @@ export default function ObservabilityPage() {
                 <p className="text-muted-foreground mt-1">{t('description')}</p>
                 {lastUpdatedAt && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {t('states.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString() })}
+                    {t('states.lastUpdated', { time: formatTime(lastUpdatedAt, locale) })}
                   </p>
                 )}
               </div>

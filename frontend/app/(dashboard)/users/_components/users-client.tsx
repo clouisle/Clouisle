@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   Plus,
   Search,
@@ -91,6 +91,7 @@ type Role = {
 export function UsersClient() {
   const t = useTranslations('users')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const { canPerform } = useCanPerform()
 
   // 系统设置
@@ -721,7 +722,7 @@ export function UsersClient() {
                   </TableCell>
                   <TableCell>{getPasswordExpirationBadge(user)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDateTime(user.created_at)}
+                    {formatDateTime(user.created_at, locale)}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>

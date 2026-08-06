@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Send, Loader2, AlertCircle, CheckCircle, XCircle, Clock, ExternalLink, ArrowRight, SkipForward } from 'lucide-react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,6 +22,7 @@ import {
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { type VariableDefinition } from '@/lib/api/workflows'
+import { formatTime } from '@/lib/utils'
 
 interface ApiPlaygroundProps {
   webhookUrl: string
@@ -75,6 +76,7 @@ function resolveWorkflowUiError(message: unknown, fallback: string): string {
 
 export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
   const t = useTranslations('workflow')
+  const locale = useLocale()
   const [apiKey, setApiKey] = React.useState('')
   const [input, setInput] = React.useState('')
   const [loading, setLoading] = React.useState(false)
@@ -344,7 +346,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
 
   const renderEvent = (event: WorkflowEvent, index: number) => {
     const { type, data, timestamp } = event
-    const time = new Date(timestamp).toLocaleTimeString()
+    const time = formatTime(timestamp, locale)
 
     switch (type) {
       case 'workflow_start':

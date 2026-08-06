@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Streamdown } from 'streamdown'
 import { ArrowLeft, Loader2, PackageOpen } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApiError, skillsApi, type SkillDetail } from '@/lib/api'
 import { adminSkillsApi } from '@/lib/api/admin'
+import { formatDateTime } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface SkillDetailClientProps {
@@ -32,6 +33,7 @@ function getInputParameterNames(skill: SkillDetail) {
 
 export function SkillDetailClient({ skillId, mode, backHref, teamId }: SkillDetailClientProps) {
   const t = useTranslations('platform.skills')
+  const locale = useLocale()
   const router = useRouter()
   const [skill, setSkill] = useState<SkillDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -118,7 +120,7 @@ export function SkillDetailClient({ skillId, mode, backHref, teamId }: SkillDeta
             </div>
             <div>
               <div className="text-xs font-medium text-muted-foreground">{t('updatedAt')}</div>
-              <div className="mt-1 text-sm">{new Date(skill.updated_at).toLocaleString()}</div>
+              <div className="mt-1 text-sm">{formatDateTime(skill.updated_at, locale)}</div>
             </div>
           </CardContent>
         </Card>

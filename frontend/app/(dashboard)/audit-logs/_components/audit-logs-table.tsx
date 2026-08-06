@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
-import { format } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
 import {
     Table,
     TableBody,
@@ -29,6 +28,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDateTime } from "@/lib/utils";
 import {
     Download,
     Eye,
@@ -52,6 +52,7 @@ import { useUrlSearchState } from "@/hooks/use-url-search-state";
 export function AuditLogsTable() {
     const t = useTranslations("auditLogs");
     const commonT = useTranslations("common");
+    const locale = useLocale();
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -322,7 +323,7 @@ export function AuditLogsTable() {
                                             }}
                                         >
                                             <TableCell className="whitespace-nowrap">
-                                                {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
+                                                {formatDateTime(log.created_at, locale, "-", { withSeconds: true })}
                                             </TableCell>
                                             <TableCell>{log.username || t("system")}</TableCell>
                                             <TableCell>{getActionLabel(log.action)}</TableCell>

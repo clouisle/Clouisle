@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import {
   Play,
@@ -41,7 +41,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { FieldError } from '@/components/ui/field'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime, formatTime } from '@/lib/utils'
 import { ApiError, getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
 import {
   clearValidationError,
@@ -251,6 +251,7 @@ export function WorkflowRunDrawer({
 }: WorkflowRunDrawerProps) {
   const t = useTranslations('workflow')
   const commonT = useTranslations('common')
+  const locale = useLocale()
 
   // 从工作流节点中提取输入变量，优先级：节点 parameters > prop variables
   const variables = React.useMemo(() => {
@@ -714,7 +715,7 @@ export function WorkflowRunDrawer({
           <span className="font-medium text-sm">
             {t('runDrawer.testRun')} {runStartTimeRef.current && (
               <span className="text-muted-foreground text-xs ml-1">
-                ({new Date(runStartTimeRef.current).toLocaleTimeString()})
+                ({formatTime(runStartTimeRef.current, locale)})
               </span>
             )}
           </span>
@@ -1050,7 +1051,7 @@ export function WorkflowRunDrawer({
                     {runStartTimeRef.current && (
                       <>
                         <div className="text-muted-foreground">{t('runDrawer.startTime')}</div>
-                        <div>{new Date(runStartTimeRef.current).toLocaleString()}</div>
+                        <div>{formatDateTime(runStartTimeRef.current, locale)}</div>
                       </>
                     )}
                   </div>

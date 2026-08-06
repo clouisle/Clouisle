@@ -27,7 +27,7 @@ mock.module('react/jsx-runtime', () => ({
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}) }) }))
 mock.module('next/image', () => ({ default: () => null }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('lucide-react', () => ({
   AlertCircle: () => null, GitBranch: () => null, Loader2: () => null, PanelLeft: () => null,
   PanelLeftClose: () => null, Play: () => null, RotateCcw: () => null, Square: () => null, SquarePlay: () => null,

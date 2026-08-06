@@ -1,13 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Check, ChevronLeft, ChevronRight, Megaphone, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { notificationsApi, type NotificationItem, type NotificationLevel, type NotificationScope } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
@@ -92,6 +92,7 @@ interface NotificationsClientProps {
 
 export function NotificationsClient({ onReadUpdated }: NotificationsClientProps) {
   const t = useTranslations('notifications')
+  const locale = useLocale()
   const { resolvedTheme } = useTheme()
 
   const [items, setItems] = React.useState<NotificationItem[]>([])
@@ -317,7 +318,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                     <TableCell>
                       <Badge variant={meta.priorityScore >= 5 ? 'default' : 'outline'}>{t(`levelOptions.${item.level}`)}</Badge>
                     </TableCell>
-                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell>{formatDateTime(item.created_at, locale)}</TableCell>
                     <TableCell className="text-right">
                       {!item.is_read ? (
                         <Button
@@ -380,7 +381,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                   <Badge variant="secondary">{t(`scopeOptions.${selectedItem.scope}`)}</Badge>
                   <Badge variant={meta.priorityScore >= 5 ? 'default' : 'outline'}>{t(`levelOptions.${selectedItem.level}`)}</Badge>
                   <span className="mx-1 h-3 w-px bg-border/70" />
-                  <span>{t('createdAt')}: {new Date(selectedItem.created_at).toLocaleString()}</span>
+                  <span>{t('createdAt')}: {formatDateTime(selectedItem.created_at, locale)}</span>
                 </div>
                 <div className={cn(
                   'min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-6 text-sm text-foreground',

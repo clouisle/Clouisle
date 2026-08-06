@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   Search,
   MessageSquare,
@@ -24,6 +24,7 @@ import type { Team } from '@/lib/api/teams'
 import { conversationsApi, type AdminConversationListItem, type AdminConversationWithMessages } from '@/lib/api/admin/conversations'
 import { usersApi } from '@/lib/api/admin/users'
 import type { User } from '@/lib/api/auth'
+import { formatDateTime } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -66,20 +67,10 @@ import { useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 import { useDebounce } from '@/hooks/use-debounce'
 
-// Helper to format datetime
-function formatDateTime(dateString: string): string {
-  const d = new Date(dateString)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hour = String(d.getHours()).padStart(2, '0')
-  const minute = String(d.getMinutes()).padStart(2, '0')
-  return `${year}/${month}/${day} ${hour}:${minute}`
-}
-
 export function ConversationsTable() {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const { canPerform } = useCanPerform()
 
   // State
@@ -391,7 +382,7 @@ export function ConversationsTable() {
                     <TableCell>{conversation.user_name}</TableCell>
                     <TableCell>{conversation.message_count}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(conversation.updated_at)}
+                      {formatDateTime(conversation.updated_at, locale)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>

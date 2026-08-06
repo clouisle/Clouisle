@@ -49,7 +49,7 @@ import {
   Cell,
 } from 'recharts'
 import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_SURFACE_COLORS } from '@/lib/chart-theme'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 
 interface MonitorPageProps {
   params: Promise<{ id: string }>
@@ -230,25 +230,6 @@ export default function MonitorPage({ params }: MonitorPageProps) {
       fetchStats()
     }
   }, [agent, fetchStats])
-
-  // Format datetime
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString)
-    if (locale === 'zh') {
-      return date.toLocaleString('zh-CN', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    }
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 
   if (isLoading || !agent) {
     return (
@@ -517,7 +498,7 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                             </p>
                           </div>
                           <div className="text-xs text-muted-foreground shrink-0 ml-4">
-                            {formatDateTime(conv.updated_at)}
+                            {formatDateTime(conv.updated_at, locale)}
                           </div>
                         </div>
                       ))}

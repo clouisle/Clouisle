@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Image from 'next/image'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { X, Copy, Check, RefreshCw, Loader2, ChevronDown, History, RotateCcw, GitBranch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ImageUpload } from '@/components/ui/image-upload'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { toast } from 'sonner'
 import { workflowsApi, type Workflow, type TriggerType, type WorkflowUpdateInput, type WorkflowVersionListItem, type WorkflowVisibility } from '@/lib/api/workflows'
 
@@ -36,6 +36,7 @@ export function WorkflowSettingsDrawer({
   updateWorkflow = workflowsApi.updateWorkflow,
 }: WorkflowSettingsDrawerProps) {
   const t = useTranslations('workflow')
+  const locale = useLocale()
   // 基本信息
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -252,10 +253,7 @@ export function WorkflowSettingsDrawer({
       return t('settings.daysAgo', { n: days })
     }
     // 更久
-    return date.toLocaleDateString('en', {
-      month: 'short',
-      day: 'numeric',
-    })
+    return formatDate(date, locale, '-', { withYear: false })
   }
 
   // 保存设置
@@ -804,7 +802,7 @@ export function WorkflowSettingsDrawer({
                 {selectedVersion.description || t('noDescription')}
               </p>
               <p className="text-xs text-muted-foreground">
-                {t('settings.createdAtLabel')} {new Date(selectedVersion.created_at).toLocaleString()}
+                {t('settings.createdAtLabel')} {formatDateTime(selectedVersion.created_at, locale)}
               </p>
             </div>
           )}

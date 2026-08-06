@@ -1,7 +1,6 @@
 "use client";
 
-import { useTranslations } from "next-intl";
-import { format } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Sheet,
   SheetContent,
@@ -12,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AuditLog } from "@/lib/api/admin/audit-logs";
+import { formatDateTime } from "@/lib/utils";
 
 interface AuditLogDrawerProps {
   log: AuditLog | null;
@@ -21,6 +21,7 @@ interface AuditLogDrawerProps {
 
 export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps) {
   const t = useTranslations("auditLogs");
+  const locale = useLocale();
 
   if (!log) return null;
 
@@ -43,7 +44,7 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
         <SheetHeader className="px-6">
           <SheetTitle>{t("logDetails")}</SheetTitle>
           <SheetDescription>
-            {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
+            {formatDateTime(log.created_at, locale, "-", { withSeconds: true })}
           </SheetDescription>
         </SheetHeader>
 

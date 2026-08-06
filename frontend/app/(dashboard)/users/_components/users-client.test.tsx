@@ -19,6 +19,7 @@ const canPerform = mock(() => true)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, string | number>) =>
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))

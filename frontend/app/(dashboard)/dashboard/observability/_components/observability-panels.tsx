@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   AlertTriangle,
   ChevronRight,
@@ -85,8 +85,8 @@ const CHART_AXIS_PROPS = {
   tickLine: false,
 }
 const CHART_MARGIN = { top: 12, right: 12, left: 0, bottom: 0 }
-const formatTooltipBucket = (label: React.ReactNode) =>
-  formatBucket(label == null ? undefined : String(label))
+const formatTooltipBucket = (label: React.ReactNode, locale: string) =>
+  formatBucket(label == null ? undefined : String(label), locale)
 
 interface OverviewPanelProps {
   overview: ObservabilityOverview | null
@@ -137,6 +137,9 @@ export function ErrorState({ onRetry }: { onRetry: () => void }) {
 
 export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
   const t = useTranslations('dashboard.observability')
+  const locale = useLocale()
+  const formatTick = (v: string) => formatBucket(v, locale)
+  const formatTooltip = (label: React.ReactNode) => formatTooltipBucket(label, locale)
   if (!overview) return <ObservabilityEmpty />
 
   const risk = getRiskLevel(
@@ -195,9 +198,9 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
-              <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+              <XAxis dataKey="bucket" tickFormatter={formatTick} minTickGap={24} {...CHART_AXIS_PROPS} />
               <YAxis hide />
-              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltip} />
               <Legend />
               <Area name={t('overview.agentRequests')} type="monotone" dataKey="agent_requests" stackId="requests" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} fill="url(#observabilityAgentRequests)" fillOpacity={1} />
               <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} fill="url(#observabilityWorkflowRuns)" fillOpacity={1} />
@@ -236,6 +239,9 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
 
 export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanelProps) {
   const t = useTranslations('dashboard.observability')
+  const locale = useLocale()
+  const formatTick = (v: string) => formatBucket(v, locale)
+  const formatTooltip = (label: React.ReactNode) => formatTooltipBucket(label, locale)
   if (!health) return <ObservabilityEmpty />
 
   const worker = workers ?? health.workers
@@ -256,9 +262,9 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
             <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trend?.items ?? []} margin={CHART_MARGIN}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
-              <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+              <XAxis dataKey="generated_at" tickFormatter={formatTick} minTickGap={24} {...CHART_AXIS_PROPS} />
               <YAxis hide />
-              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
+              <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltip} />
               <Legend />
               <Line name="CPU" type="monotone" dataKey="cpu_percent" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
               <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
@@ -460,6 +466,9 @@ export function TimeoutsPanel({ data }: { data: TimeoutResponse | null }) {
 
 export function ThroughputPanel({ throughput }: { throughput: ThroughputResponse | null }) {
   const t = useTranslations('dashboard.observability')
+  const locale = useLocale()
+  const formatTick = (v: string) => formatBucket(v, locale)
+  const formatTooltip = (label: React.ReactNode) => formatTooltipBucket(label, locale)
   if (!throughput) return <ObservabilityEmpty />
 
   return (
@@ -474,9 +483,9 @@ export function ThroughputPanel({ throughput }: { throughput: ThroughputResponse
           <ResponsiveContainer width="100%" height="100%">
           <BarChart data={throughput.buckets} margin={CHART_MARGIN} barCategoryGap="28%">
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
-            <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+            <XAxis dataKey="bucket" tickFormatter={formatTick} minTickGap={24} {...CHART_AXIS_PROPS} />
             <YAxis hide />
-            <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
+            <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltip} />
             <Legend />
             <Bar name={t('overview.agentRequests')} dataKey="agent_requests" stackId="requests" fill={CHART_COLOR_ORDER[0]} radius={[6, 6, 0, 0]} />
             <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[6, 6, 0, 0]} />
@@ -647,15 +656,18 @@ function WorkflowDetailSheet({ open, onOpenChange, detail, isLoading }: { open: 
 
 function DetailTrendChart({ data, countKey }: { data: ObservabilityTrendPoint[]; countKey: 'request_count' | 'run_count' }) {
   const t = useTranslations('dashboard.observability')
+  const locale = useLocale()
+  const formatTick = (v: string) => formatBucket(v, locale)
+  const formatTooltip = (label: React.ReactNode) => formatTooltipBucket(label, locale)
   return (
     <ObservabilityChartCard title={t('details.performanceTrend')} description={t('details.percentiles')} empty={!data.length}>
       <div className="min-h-[260px] flex-1">
         <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} vertical={false} />
-          <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} {...CHART_AXIS_PROPS} />
+          <XAxis dataKey="bucket" tickFormatter={formatTick} minTickGap={24} {...CHART_AXIS_PROPS} />
           <YAxis hide />
-          <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltipBucket} />
+          <Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={formatTooltip} />
           <Legend />
           <Line name="P95" type="monotone" dataKey="p95_ms" stroke={CHART_COLOR_ORDER[0]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
           <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
@@ -742,6 +754,7 @@ function SlowQueriesContent({ slowQueries }: { slowQueries: SlowQueriesResponse 
 
 function TimeoutEventsTable({ rows }: { rows: TimeoutEvent[] }) {
   const t = useTranslations('dashboard.observability')
+  const locale = useLocale()
   if (!rows.length) return <ObservabilityEmpty />
   return (
     <Table>
@@ -765,7 +778,7 @@ function TimeoutEventsTable({ rows }: { rows: TimeoutEvent[] }) {
             <TableCell><StatusPill tone={row.status === 'timeout' || row.status === 'error' ? 'warning' : 'neutral'} label={statusLabel(row.status, t)} /></TableCell>
             <TableCell>{row.model || '-'}</TableCell>
             <TableCell className="text-right">{formatDuration(row.duration_ms)}</TableCell>
-            <TableCell className="text-right">{formatBucket(row.created_at)}</TableCell>
+            <TableCell className="text-right">{formatBucket(row.created_at, locale)}</TableCell>
           </TableRow>
         ))}
       </TableBody>

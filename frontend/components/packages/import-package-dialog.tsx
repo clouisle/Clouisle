@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -13,6 +13,7 @@ import {
   type ClouisleResourceType,
 } from '@/lib/api/packages'
 import type { Team } from '@/lib/api/teams'
+import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -109,6 +110,7 @@ export function ImportPackageDialog({
 }: ImportPackageDialogProps) {
   const t = useTranslations('packages')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [preview, setPreview] = React.useState<ClouisleImportPreview | null>(null)
   const [action, setAction] = React.useState<ClouisleConflictAction>('install')
@@ -289,7 +291,7 @@ export function ImportPackageDialog({
                 </div>
                 <div>
                   <span className="text-muted-foreground">{t('exported')}</span>
-                  <div>{new Date(preview.exported_at).toLocaleString()}</div>
+                  <div>{formatDateTime(preview.exported_at, locale)}</div>
                 </div>
               </div>
 

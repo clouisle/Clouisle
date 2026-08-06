@@ -4,6 +4,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { Clock, User, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { formatDateTime } from '@/lib/utils'
 
 interface ConversationDrawerHeaderProps {
   title?: string | null
@@ -15,26 +16,6 @@ interface ConversationDrawerHeaderProps {
   userName?: string | null
   conversationId?: string | null
   action?: React.ReactNode
-}
-
-function formatDateTime(dateString: string, locale: string): string {
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 export function ConversationDrawerHeader({

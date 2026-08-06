@@ -5,6 +5,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 const toast = { error: mock(() => undefined), success: mock(() => undefined) }
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => Object.assign((key: string) => key, { has: () => false }),
 }))
 mock.module('sonner', () => ({ toast }))

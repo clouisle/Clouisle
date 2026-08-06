@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   Activity,
   TrendingUp,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { workflowsApi, type Workflow, type WorkflowRunListItem } from '@/lib/api/workflows'
+import { formatDateTime } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -174,6 +175,7 @@ function StatCard({
 export default function WorkflowMonitorPage() {
   const params = useParams()
   const router = useRouter()
+  const locale = useLocale()
   const t = useTranslations('workflow')
   const tMonitor = useTranslations('workflow.monitor_page')
   const workflowId = params.id as string
@@ -572,7 +574,7 @@ export default function WorkflowMonitorPage() {
                               {statusLabel}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(run.created_at).toLocaleString()}
+                              {formatDateTime(run.created_at, locale)}
                             </p>
                           </div>
                         </div>

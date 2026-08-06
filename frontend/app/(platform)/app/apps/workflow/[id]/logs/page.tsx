@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { workflowsApi, type Workflow, type WorkflowRunListItem } from '@/lib/api/workflows'
+import { formatDateTime } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,30 +73,6 @@ function getCreatedAfter(dateFilter: string): string | undefined {
       return undefined
   }
   return cutoff.toISOString()
-}
-
-// Helper to format datetime
-function formatDateTime(dateString: string, locale: string): string {
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  } else {
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  }
 }
 
 // Status badge component
@@ -411,7 +388,7 @@ export default function WorkflowLogsPage() {
                         : '-'}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(run.created_at, locale)}
+                      {formatDateTime(run.created_at, locale, '-', { withSeconds: true })}
                     </TableCell>
                   </TableRow>
                 ))}

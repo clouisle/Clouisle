@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { MoreHorizontal, Pencil, Trash2, UserCheck, UserX, Link as LinkIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { usersApi, type User } from '@/lib/api/admin/users'
+import { formatDateTime } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
@@ -76,6 +77,7 @@ interface UserTableRowProps {
 function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowProps) {
   const t = useTranslations('users')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const [isChangingStatus, setIsChangingStatus] = React.useState(false)
 
   const handleToggleStatus = async () => {
@@ -94,16 +96,6 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
     } finally {
       setIsChangingStatus(false)
     }
-  }
-
-  const formatDate = (dateString: string) => {
-    const d = new Date(dateString)
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const hour = String(d.getHours()).padStart(2, '0')
-    const minute = String(d.getMinutes()).padStart(2, '0')
-    return `${year}/${month}/${day} ${hour}:${minute}`
   }
 
   // 获取用户名首字母
@@ -188,7 +180,7 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
           )}
         </div>
       </td>
-      <td className="p-4 text-muted-foreground">{formatDate(user.created_at)}</td>
+      <td className="p-4 text-muted-foreground">{formatDateTime(user.created_at, locale)}</td>
       <td className="p-4 text-right">
         <DropdownMenu>
           <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50">
