@@ -36,7 +36,8 @@ def test_build_system_prompt_injects_sandbox_guidance_for_builtin_sandbox_tools(
     assert "Python AST nodes, Markdown sections, brace blocks" in prompt
     assert "`/workspace` is the sandbox filesystem root" in prompt
     assert "visible to sandbox tools, generated Python and Node scripts" in prompt
-    assert "paths outside it are not part of the job filesystem" in prompt
+    assert "When filesystem isolation is enabled" in prompt
+    assert "otherwise keep all work under `/workspace` regardless" in prompt
     assert "Path behavior must be observed, not assumed" in prompt
     assert "Do not rely on ad-hoc `PYTHONPATH` or `sys.path` hacks" in prompt
     assert "Install output can be misleading if filtered" in prompt

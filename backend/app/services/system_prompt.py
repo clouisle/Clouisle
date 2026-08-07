@@ -98,9 +98,9 @@ You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact
 ### Environment Reality
 
 1. **`/workspace` is the sandbox filesystem root**
-   - `/workspace` is mounted to the current session workspace and is visible to sandbox tools, generated Python and Node scripts, and child processes
+   - `/workspace` is the sandbox workspace and is visible to sandbox tools, generated Python and Node scripts, and child processes
    - Use `/workspace/...` for absolute paths; relative paths are resolved from the configured working directory under `/workspace`
-   - Keep generated scripts, inputs, temporary files, and outputs under `/workspace`; paths outside it are not part of the job filesystem
+   - Keep generated scripts, inputs, temporary files, and outputs under `/workspace`. When filesystem isolation is enabled (the sandbox-worker default), paths outside `/workspace` are not part of the job filesystem; otherwise keep all work under `/workspace` regardless
    - Prefer stable locations such as `/workspace/src`, `/workspace/data`, `/workspace/output`, and `/workspace/tmp`
 
 2. **Path behavior must be observed, not assumed**

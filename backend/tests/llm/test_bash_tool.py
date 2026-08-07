@@ -98,6 +98,64 @@ async def test_bash_tool_confines_find_root_scan_to_workspace(
     assert job.command == ["bash", "-c", expected]
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find /tmp / -name '*.py'",
+        "find -- / -name '*.py'",
+        "find // -name '*.py'",
+        "find '/tmp' / -maxdepth 2",
+    ],
+)
+@pytest.mark.anyio
+async def test_bash_tool_rejects_find_root_scan_variants(command: str):
+    tool = BashSandboxTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+
+    with patch("app.llm.tools.bash.sandbox_gateway.submit_and_wait") as mock_submit:
+        result = await tool.execute(command)
+
+    assert result["success"] is False
+    assert "Root-level find scans are not allowed" in result["error"]
+    mock_submit.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("find /workspace -name '*.py'", "find . -name '*.py'"),
+        ("find /workspace/output -name '*.py'", "find ./output -name '*.py'"),
+        ("find . -name '*.py'", "find . -name '*.py'"),
+        ("find '/workspace'", "find '.'"),
+        ("ls /", "ls /"),
+        ("echo '/'", "echo '/'"),
+    ],
+)
+@pytest.mark.anyio
+async def test_bash_tool_does_not_rewrite_non_root_find_paths(
+    command: str,
+    expected: str,
+):
+    tool = BashSandboxTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+
+    with patch(
+        "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
+        new=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                stdout="ok\n",
+                stderr="",
+                metadata=SimpleNamespace(exit_code=0),
+                status=SimpleNamespace(value="completed"),
+                error=None,
+            )
+        ),
+    ) as mock_submit:
+        await tool.execute(command)
+
+    job = mock_submit.await_args.args[0]
+    assert job.command == ["bash", "-c", expected]
+
+
 @pytest.mark.anyio
 async def test_bash_tool_maps_workspace_paths_from_nested_cwd():
     tool = BashSandboxTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
