@@ -818,6 +818,29 @@ ENABLE_2FA=true
 ENABLE_AUDIT_LOG=true
 ```
 
+## Sandbox Runtime
+
+| Variable | Generic Default | Deployment Default | Description |
+|---|---|---|---|
+| `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | Route code, Bash, skill, and workflow execution through the sandbox runtime |
+| `SANDBOX_LEGACY_FALLBACK_ENABLED` | `true` | `true` | Allow supported code paths to fall back to the legacy runner when the runtime is unavailable |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` for sandbox-worker | Launch executable payloads in a Bubblewrap mount namespace |
+| `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
+| `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Celery worker concurrency |
+| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Root directory for job and session workspaces |
+| `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum workspace disk limit accepted by policy |
+| `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
+| `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Redis result retention period |
+
+The generic application default leaves filesystem isolation disabled so unsupported host development environments can still start. The supplied sandbox-worker Docker image, Docker Compose service, and Helm deployment enable it explicitly:
+
+```bash
+SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
+SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
+```
+
+When enabled, Bubblewrap must be installed and usable. The supplied worker remains non-root, disables privilege escalation, and drops all capabilities. Rootless Bubblewrap needs namespace and mount syscalls, so the supplied Docker Compose and Helm configurations use an unconfined seccomp profile for this worker only. A cluster that prohibits `Unconfined` must provide an equivalent Localhost seccomp profile.
+
 ## Celery Configuration
 
 ### CELERY_BROKER_URL

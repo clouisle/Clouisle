@@ -187,6 +187,19 @@ The following should be changed for production domains:
 
 > **Note**: `POSTGRES_SERVER`, `REDIS_HOST`, `QDRANT_URL` are overridden in `docker-compose.yml` via the `environment` section (set to Docker service names `db`, `redis`, `qdrant`). You do not need to change them in `.env`.
 
+### Sandbox Filesystem Isolation
+
+The sandbox-worker image installs Bubblewrap and enables per-task filesystem isolation by default:
+
+```bash
+SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
+SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
+```
+
+Keep these values enabled for production. Each task receives its current job/session directory at `/workspace`; sibling workspaces and `/app/uploads` are not mounted into the task namespace.
+
+Rootless Bubblewrap needs namespace and mount syscalls. The supplied Compose service uses `no-new-privileges`, drops all capabilities, and sets `seccomp=unconfined` for sandbox-worker only. Do not remove that seccomp setting unless you replace it with a Localhost profile that permits the required syscalls.
+
 ### Volume Mounts
 
 Docker Compose uses named volumes for data persistence:
@@ -611,6 +624,11 @@ kubectl -n clouisle top pods
 | `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection name prefix |
 | `QDRANT_DISTANCE` | `Cosine` | Vector distance metric |
 | `TAVILY_API_KEY` | *(empty)* | Tavily web search API key (for agent web search capability) |
+| `SANDBOX_RUNTIME_ENABLED` | `true` | Route executable tasks through the sandbox runtime. |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` in sandbox-worker deployments | Enable the Bubblewrap mount namespace. Generic application default is `false`. |
+| `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `/usr/bin/bwrap` in sandbox-worker deployments | Bubblewrap executable path. Generic application default is `bwrap`. |
+| `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery worker concurrency. |
+| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Host-side root for sandbox job and session directories. |
 
 ---
 
@@ -801,6 +819,7 @@ kubectl -n clouisle rollout status deployment frontend
 - [ ] **Network isolation** — In Docker Compose, infrastructure services (db, redis, qdrant) should not be accessible from outside. In K8s, they use ClusterIP services (no external access by default).
 - [ ] **Regular backups** — Set up automated PostgreSQL and Qdrant backups
 - [ ] **Resource limits** — Review and adjust CPU/memory limits in K8s manifests based on actual usage
+- [ ] **Verify sandbox isolation** — Keep `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`, ensure `/usr/bin/bwrap` exists in the sandbox-worker image, and retain the worker-specific seccomp configuration
 - [ ] **Image scanning** — Scan Docker images for vulnerabilities before deploying
 
 ---
