@@ -15,7 +15,7 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates curl git gnupg locales \
+    bash bubblewrap ca-certificates curl git gnupg locales \
     coreutils findutils file zip unzip \
     libpq5 libxml2 libxmlsec1 libxmlsec1-openssl \
     && mkdir -p /etc/apt/keyrings \
@@ -48,6 +48,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
+    SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true \
+    SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap \
     PATH="/app/backend/.venv/bin:$PATH"
 
 USER clouisle

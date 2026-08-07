@@ -39,6 +39,28 @@ def test_read_tool_localizes_range_and_search_parameters():
     )
 
 
+def test_edit_tool_localizes_tag_parameter():
+    register_all_builtin_tools()
+
+    zh_parameters = {
+        parameter.name: parameter
+        for parameter in _get_tool(get_builtin_tools("zh"), "edit").parameters
+    }
+    en_parameters = {
+        parameter.name: parameter
+        for parameter in _get_tool(get_builtin_tools("en"), "edit").parameters
+    }
+
+    assert zh_parameters["tag"].description == (
+        "从 read 获取的四位十六进制快照 ID。使用整数行号或仅 head/tail "
+        "操作时必填；当所有锚点为 LINE#ID 时可省略。"
+    )
+    assert en_parameters["tag"].description == (
+        "Four-hex snapshot ID from read. Required for integer lines and "
+        "head/tail-only operations; omit when every anchor is LINE#ID."
+    )
+
+
 def test_get_builtin_tools_uses_backend_translations_for_non_sandbox_descriptions():
     register_all_builtin_tools()
 

@@ -187,6 +187,19 @@ docker compose ps
 
 > **说明**：`POSTGRES_SERVER`、`REDIS_HOST`、`QDRANT_URL` 会在 `docker-compose.yml` 的 `environment` 中被覆盖为 Docker 服务名（`db`、`redis`、`qdrant`）。无需在 `.env` 里修改它们。
 
+### 沙箱文件系统隔离
+
+Sandbox Worker 镜像已安装 Bubblewrap，并默认启用任务级文件系统隔离：
+
+```bash
+SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
+SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
+```
+
+生产环境应保持这两个配置。每个任务只会将当前任务/会话目录挂载到 `/workspace`，不会向任务命名空间挂载其他会话或 `/app/uploads`。
+
+Rootless Bubblewrap 需要 namespace/mount 系统调用。项目提供的 Compose 服务使用 `no-new-privileges`、丢弃全部 capabilities，并仅对 sandbox-worker 设置 `seccomp=unconfined`。除非替换为允许必要系统调用的 Localhost seccomp profile，否则不要删除该 seccomp 配置。
+
 ### 卷挂载
 
 Docker Compose 使用命名卷持久化数据：
@@ -611,6 +624,11 @@ kubectl -n clouisle top pods
 | `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection 前缀 |
 | `QDRANT_DISTANCE` | `Cosine` | 向量距离度量 |
 | `TAVILY_API_KEY` | *(empty)* | Tavily 网页搜索 API Key（用于 Agent 网页搜索能力） |
+| `SANDBOX_RUNTIME_ENABLED` | `true` | 将可执行任务路由到沙箱运行时。 |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | Sandbox Worker 部署中为 `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `false`。 |
+| `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | Sandbox Worker 部署中为 `/usr/bin/bwrap` | Bubblewrap 可执行文件路径；通用应用默认值为 `bwrap`。 |
+| `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery Worker 并发数。 |
+| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | 沙箱任务和会话目录在 Worker 上的根路径。 |
 
 ---
 
@@ -801,6 +819,7 @@ kubectl -n clouisle rollout status deployment frontend
 - [ ] **网络隔离**：Compose 下基础设施服务（db、redis、qdrant）不应对外访问；K8s 下默认使用 ClusterIP（不对外）
 - [ ] **定期备份**：配置 PostgreSQL 与 Qdrant 自动备份
 - [ ] **资源限制**：按实际负载调整 K8s 清单中的 CPU/内存 limits
+- [ ] **验证沙箱隔离**：保持 `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`，确认 Sandbox Worker 镜像存在 `/usr/bin/bwrap`，并保留 Worker 专用 seccomp 配置
 - [ ] **镜像扫描**：部署前对 Docker 镜像进行漏洞扫描
 
 ---

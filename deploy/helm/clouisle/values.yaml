@@ -42,6 +42,8 @@ config:
   SANDBOX_LEGACY_FALLBACK_ENABLED: "true"
   SANDBOX_WORKER_CONCURRENCY: "1"
   SANDBOX_WORKSPACE_ROOT: /tmp/clouisle-sandbox/jobs
+  SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
+  SANDBOX_FILESYSTEM_ISOLATION_BINARY: /usr/bin/bwrap
   SANDBOX_MAX_DISK_MB: "8192"
   SANDBOX_SESSION_TTL_HOURS: "24"
   SANDBOX_RESULT_TTL_SECONDS: "86400"
@@ -117,6 +119,14 @@ sandboxWorker:
   enabled: true
   replicas: 1
   command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    runAsNonRoot: true
+    seccompProfile:
+      type: Unconfined
   resources:
     requests:
       cpu: 250m

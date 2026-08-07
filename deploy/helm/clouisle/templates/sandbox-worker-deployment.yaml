@@ -20,6 +20,7 @@ spec:
       {{- end }}
     spec:
       {{- include "clouisle.podCommon" . | nindent 6 }}
+      {{- $sandboxSecurityContext := mergeOverwrite (deepCopy (default (dict) .Values.global.securityContext)) (default (dict) .Values.sandboxWorker.securityContext) }}
       containers:
         - name: sandbox-worker
           image: {{ include "clouisle.sandboxWorkerImage" . | quote }}
@@ -27,7 +28,7 @@ spec:
           command:
             {{- toYaml .Values.sandboxWorker.command | nindent 12 }}
           {{- include "clouisle.envFrom" . | nindent 10 }}
-          {{- with .Values.global.securityContext }}
+          {{- with $sandboxSecurityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}

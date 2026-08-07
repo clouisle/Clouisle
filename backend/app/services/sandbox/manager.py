@@ -188,6 +188,8 @@ class SandboxManager:
                 timeout_seconds=job.limits.timeout_seconds,
                 max_stdout_kb=job.limits.max_stdout_kb,
                 max_stderr_kb=job.limits.max_stderr_kb,
+                workspace_root=str(workspace.root),
+                cache_root=str(self.workspace_manager.cache_root),
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             return self._parse_snippet_result(process_result, script_path)
@@ -201,6 +203,8 @@ class SandboxManager:
                 timeout_seconds=job.limits.timeout_seconds,
                 max_stdout_kb=job.limits.max_stdout_kb,
                 max_stderr_kb=job.limits.max_stderr_kb,
+                workspace_root=str(workspace.root),
+                cache_root=str(self.workspace_manager.cache_root),
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             success = process_result.exit_code == 0 and not process_result.timed_out

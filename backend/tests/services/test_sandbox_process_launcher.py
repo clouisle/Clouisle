@@ -1,9 +1,13 @@
 import asyncio
 from unittest.mock import AsyncMock, Mock
+from pathlib import Path
 
 import pytest
 
-from app.services.sandbox.process_launcher import SandboxProcessLauncher
+from app.services.sandbox.process_launcher import (
+    SandboxIsolationError,
+    SandboxProcessLauncher,
+)
 
 
 @pytest.mark.asyncio
@@ -36,6 +40,72 @@ async def test_launch_collects_output_and_truncates_it(
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_launch_mounts_workspace_at_logical_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "jobs" / "job-1"
+    (workspace / "tmp").mkdir(parents=True)
+    (workspace / "output").mkdir()
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    process = Mock(returncode=0)
+    process.communicate = AsyncMock(return_value=(b"ok", b""))
+    create_process = AsyncMock(return_value=process)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    monkeypatch.setattr(
+        "app.services.sandbox.process_launcher.shutil.which",
+        lambda _: "/usr/bin/bwrap",
+    )
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+
+    result = await launcher.launch(
+        [str(workspace / ".venv/bin/python"), str(workspace / "script.py")],
+        cwd=str(workspace / "output"),
+        env={
+            "HOME": str(workspace),
+            "PATH": f"{workspace}/.venv/bin:/usr/bin",
+        },
+        workspace_root=str(workspace),
+        cache_root=str(cache),
+    )
+
+    assert result.stdout == "ok"
+    args = list(create_process.await_args.args)
+    assert args[0] == "/usr/bin/bwrap"
+    assert ["--bind", str(workspace.resolve()), "/workspace"] == args[
+        args.index("--bind") : args.index("--bind") + 3
+    ]
+    assert args[-3:] == [
+        "--",
+        "/workspace/.venv/bin/python",
+        "/workspace/script.py",
+    ]
+    assert create_process.await_args.kwargs["cwd"] is None
+    assert create_process.await_args.kwargs["env"] == {
+        "HOME": "/workspace",
+        "PATH": "/workspace/.venv/bin:/usr/bin",
+    }
+
+
+@pytest.mark.asyncio
+async def test_isolated_launch_requires_workspace_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.sandbox.process_launcher.shutil.which",
+        lambda _: "/usr/bin/bwrap",
+    )
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+
+    with pytest.raises(
+        SandboxIsolationError,
+        match="require a workspace root",
+    ):
+        await launcher.launch(["python3"])
 
 
 @pytest.mark.asyncio

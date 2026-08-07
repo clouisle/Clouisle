@@ -19,6 +19,145 @@ from .registry import ToolInfo, ToolParameter, tool_registry
 from .bash_output import denoise_output
 
 logger = logging.getLogger(__name__)
+_FIND_ROOT_SCAN_PATHS = frozenset({"/", "//"})
+_FIND_OPTION_ARGS_CONSUMING_VALUE = frozenset(
+    {
+        "-f",
+        "-fprintf",
+        "-newer",
+        "-newermt",
+        "-newerct",
+        "-anewer",
+        "-cnewer",
+        "-path",
+        "-ipath",
+        "-name",
+        "-iname",
+        "-lname",
+        "-ilname",
+        "-regex",
+        "-iregex",
+        "-context",
+        "-xtype",
+        "-type",
+        "-user",
+        "-uid",
+        "-group",
+        "-gid",
+        "-perm",
+        "-links",
+        "-inum",
+        "-size",
+        "-exec",
+        "-execdir",
+        "-ok",
+        "-okdir",
+    }
+)
+_FIND_ROOT_SCAN_PATTERN = re.compile(
+    r"(?P<head>(?:^|(?:&&|\|\||;|\|)\s*)(?:command\s+)?(?:/usr/bin/)?find\s+)"
+    r"(?P<quote>['\"]?)/(?P=quote)(?=\s|$)"
+)
+_SHELL_TOKEN_RE = re.compile(
+    r"""
+    (?P<op>\|\||&&|;|\||<|>|\(|\))   # shell operators
+  | (?P<dq>"(?:\\.|[^"\\])*")        # double-quoted string
+  | (?P<sq>'(?:[^'])*')              # single-quoted string
+  | (?P<word>[^\s'"|<>()&;]+)        # bare word
+    """,
+    re.VERBOSE,
+)
+
+
+class BashRootScanError(ValueError):
+    """Raised when a bash command launches a root-level find scan."""
+
+
+def _strip_quotes(token: str) -> str:
+    if len(token) >= 2 and token[0] in "'\"" and token[-1] == token[0]:
+        return token[1:-1]
+    return token
+
+
+def _find_root_scan_tokens(command: str) -> list[str]:
+    """Return raw tokens that pass root paths (``/`` or ``//``) to any ``find`` call.
+
+    The scan walks shell-like tokens so it catches multi-path ``find`` forms,
+    ``find -- /``, and root scans nested in compound commands. It intentionally
+    does not recurse into quoted script bodies such as ``python -c 'find /'``;
+    the sandbox filesystem namespace still confines code-launched scans when
+    isolation is enabled.
+    """
+    tokens = list(_SHELL_TOKEN_RE.finditer(command))
+    roots: list[str] = []
+    index = 0
+    while index < len(tokens):
+        kind, value = tokens[index].lastgroup, tokens[index].group()
+        if kind != "word":
+            index += 1
+            continue
+        if value.rsplit("/", 1)[-1] != "find":
+            index += 1
+            continue
+        position = index + 1
+        skip_next_value = False
+        while position < len(tokens):
+            token_kind, token_value = (
+                tokens[position].lastgroup,
+                tokens[position].group(),
+            )
+            if token_kind == "op":
+                break
+            if skip_next_value:
+                skip_next_value = False
+                position += 1
+                continue
+            unquoted = _strip_quotes(token_value)
+            if unquoted in {"--", "("}:
+                position += 1
+                continue
+            if unquoted.startswith("-") and unquoted != "-":
+                if unquoted in _FIND_OPTION_ARGS_CONSUMING_VALUE:
+                    skip_next_value = True
+                position += 1
+                continue
+            if unquoted in _FIND_ROOT_SCAN_PATHS:
+                roots.append(token_value)
+            position += 1
+        index = position if position > index else index + 1
+    return roots
+
+
+def _rewrite_direct_find_root_scans(command: str) -> str:
+    """Rewrite direct ``find /`` forms to ``find /workspace``.
+
+    Kept for the common single-root case so agent ``find /`` calls remain a
+    no-op scan of the workspace rather than an error. Shell-aware rejection in
+    :func:`_reject_find_root_scans` handles forms the regex cannot reach.
+    """
+    return _FIND_ROOT_SCAN_PATTERN.sub(
+        lambda match: (
+            f"{match.group('head')}{match.group('quote')}"
+            f"/workspace{match.group('quote')}"
+        ),
+        command,
+    )
+
+
+def _reject_find_root_scans(command: str) -> None:
+    """Reject root-level ``find`` scans that survive the direct rewrite.
+
+    Multi-path scans (``find /tmp /``), option-prefixed scans (``find -- /``),
+    double-slash forms (``find //``), and root scans nested in compound commands
+    are rejected instead of silently rewritten, because a partial rewrite could
+    still leave a root path in place.
+    """
+    root_tokens = _find_root_scan_tokens(command)
+    if root_tokens:
+        raise BashRootScanError(
+            "Root-level find scans are not allowed; scan /workspace instead. "
+            f"Rejected root paths: {', '.join(root_tokens)}"
+        )
 
 
 class BashSandboxTool:
@@ -46,7 +185,12 @@ class BashSandboxTool:
     ) -> dict[str, Any]:
         runtime_workspace_root = await self._runtime_workspace_root()
         logical_cwd = self._normalize_logical_cwd(cwd, runtime_workspace_root)
-        runtime_command = self._normalize_install_commands(command)
+        try:
+            runtime_command = self._confine_find_root_scans(
+                self._normalize_install_commands(command)
+            )
+        except BashRootScanError as exc:
+            return {"success": False, "error": str(exc)}
         runtime_command = self._map_workspace_paths(
             runtime_command, runtime_workspace_root
         )
@@ -110,6 +254,11 @@ class BashSandboxTool:
             command,
         )
 
+    def _confine_find_root_scans(self, command: str) -> str:
+        rewritten = _rewrite_direct_find_root_scans(command)
+        _reject_find_root_scans(rewritten)
+        return rewritten
+
     async def _runtime_workspace_root(self) -> Path:
         if not self.session_id:
             return Path(self.workspace_root)
@@ -154,11 +303,10 @@ def register_bash_tool() -> None:
         description=(
             "Execute a Bash command in the sandbox workspace. Use this for running scripts, "
             "installing packages, inspecting files, and invoking CLI tools. The sandbox workspace "
-            "is exposed to you as /workspace; prefer paths under /workspace when calling this tool "
-            "and set cwd to /workspace or a subdirectory. The cwd value is mapped to the current "
-            "sandbox session directory on disk. When you write Python or Node scripts with the write "
-            "tool, those scripts should use relative paths (e.g., 'output/report.docx') or derive "
-            "paths from their working directory, not hardcode /workspace/... inside the script code. "
+            "is exposed as a real /workspace filesystem path; use paths under /workspace and "
+            "set cwd to /workspace or a subdirectory. Python and Node scripts may use absolute "
+            "/workspace paths or paths relative to their working directory. Root-level find scans "
+            "are confined to /workspace. "
             "To install Python packages, run `python3 -m pip install <package>` or `pip install "
             "<package>`; pip commands are normalized to python3 -m pip. To run Python code, prefer "
             "writing a script with the write tool, then run `python3 /workspace/script.py`. Inline "

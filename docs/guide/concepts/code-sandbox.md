@@ -4,25 +4,31 @@ Clouisle provides a secure, isolated code execution environment — the **Sandbo
 
 ## Architecture
 
-The sandbox uses a dedicated Celery worker that processes code execution tasks in isolation:
+Sandbox tasks are submitted to a dedicated Celery worker. The worker launches each executable payload inside a rootless Bubblewrap mount namespace:
 
-```
+```text
 Agent/Workflow → API → Celery Queue (sandbox) → Sandbox Worker
                                                       ↓
-                                              Isolated Process
-                                              (resource limits)
+                                             Bubblewrap process
+                                                      ↓
+                                  /workspace → current job/session directory
+```
+
 Key properties:
-- **Process isolation**: each execution runs in a separate subprocess with CPU, memory, and disk quotas
-- **Local filesystem**: each job/session gets an isolated workspace directory under `/tmp/clouisle-sandbox/jobs/` with `input/`, `output/`, `tmp/`, and `logs/` subdirectories
-- **Symlink protection**: path traversal attacks are blocked by symlink detection on all workspace paths
-- **No network access**: sandboxed code cannot reach external networks
-- **Input staging**: files are base64-decoded and written into the workspace before execution
-- **Automatic cleanup**: one-off jobs cleaned immediately after execution; sessions cleaned on TTL expiry
+
+- **Real `/workspace` path**: the current job or session directory is bind-mounted read-write at `/workspace`, so Python, Node.js, native libraries, and child processes use the same path.
+- **Filesystem isolation**: sibling workspaces, `/app`, and `/app/uploads` are not mounted into the task namespace. Required system runtime directories and the dependency cache are mounted read-only.
+- **Process lifecycle isolation**: each execution uses a new process group; timeout handling terminates the whole group.
+- **Path protection**: input staging, file tools, and artifact collection reject workspace escapes and symlink traversal.
+- **Root-scan confinement**: direct Agent commands such as `find /` are normalized to `find /workspace`; commands launched from code still see only the minimal Bubblewrap filesystem.
+- **Bounded execution**: task timeout, output limits, workspace disk checks, and worker container resource limits constrain runaway jobs.
+- **Network policy is separate**: Bubblewrap does not unshare the network namespace. Restrict outbound access with Docker or Kubernetes network policy when required.
+- **Automatic cleanup**: one-off jobs are cleaned immediately after execution; sessions are cleaned on TTL expiry.
 
 | Runtime | Base Environment |
 |---|---|
-| Python | Python 3.13 with standard library and common packages |
-| JavaScript | Node.js 22 with core modules |
+| Python | Python 3.13 with standard library and configured packages |
+| JavaScript | Node.js 22 with core modules and configured packages |
 
 ## Usage in the Platform
 
@@ -40,34 +46,49 @@ Agents can invoke code tools via function calling. The LLM decides when to run c
 
 ## Configuration
 
-| Variable | Description |
-|---|---|
-| `SANDBOX_RUNTIME_ENABLED` | Enable the sandbox runtime (default: `true`) |
-| `SANDBOX_WORKER_CONCURRENCY` | Number of parallel sandbox workers |
-| `SANDBOX_WORKSPACE_ROOT` | Temp directory for job workspaces |
-| `SANDBOX_MAX_DISK_MB` | Per-job disk quota |
-| `SANDBOX_SESSION_TTL_HOURS` | Session lifetime before cleanup |
-| `SANDBOX_RESULT_TTL_SECONDS` | Result retention period |
+| Variable | Generic Default | Sandbox Worker Deployment | Description |
+|---|---|---|---|
+| `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | Enable the sandbox runtime |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` | Launch executable payloads inside the Bubblewrap filesystem namespace |
+| `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
+| `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Number of concurrent sandbox worker slots |
+| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Host-side root for job and session directories |
+| `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum requested workspace disk limit |
+| `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
+| `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Result retention period |
+
+The sandbox-worker image installs Bubblewrap and enables isolation. When isolation is enabled, a missing binary or missing workspace root fails the task instead of falling back to direct execution.
 
 ## Security Model
 
-- Code runs under a **non-root user** inside the sandbox worker container
-- `shell=false` — no shell command execution; only declarative script invocation
-- **No credentials or secrets** are exposed to sandboxed code
-- Workspace directories are **cleaned up** after session expiry
-- Resource limits prevent runaway code from affecting other services
+- The sandbox worker and Bubblewrap processes run as a **non-root user**.
+- Docker Compose and Helm disable privilege escalation and drop all Linux capabilities.
+- Rootless Bubblewrap needs namespace and mount syscalls. The supplied deployment uses `seccomp=unconfined` for the sandbox worker; clusters that prohibit this setting must provide a Localhost seccomp profile allowing the required syscalls.
+- Only the current workspace and its temporary directory are writable inside the task namespace.
+- The dependency cache and required runtime directories are read-only.
+- The child receives a filtered environment rather than the worker's full process environment.
+- Session workspaces are cleaned after TTL expiry.
 
 ## Development
 
 For local development, start the sandbox worker alongside the main worker:
 
 ```bash
-# Host process (direct)
+# Host process: filesystem isolation remains disabled unless explicitly enabled
 uv run --project backend main.py sandbox-worker -c 1
 
-# Container isolation (recommended)
+# Container mode: builds the sandbox-worker image with Bubblewrap enabled
 uv run --project backend main.py sandbox-worker --local-dev -c 1
 ```
+
+To enable the same isolation on a supported Linux host, install Bubblewrap and set:
+
+```bash
+SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
+SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
+```
+
+Docker Compose and Helm enable these settings by default. Their sandbox-worker security configuration is required because standard container seccomp profiles normally block the namespace and mount syscalls used by rootless Bubblewrap.
 
 For Docker-based deployment, a separate `sandbox-worker` service is included in the Docker Compose and Kubernetes configurations.
 

@@ -27,19 +27,17 @@ def test_build_system_prompt_injects_sandbox_guidance_for_builtin_sandbox_tools(
 
     assert "## Sandbox Environment Guidance" in prompt
     assert "## Sandbox Environment Guidance" in prompt
-    assert "`/workspace` is the intended working area" in prompt
+    assert "`/workspace` is the sandbox filesystem root" in prompt
     assert "every returned line has a `LINE#ID` anchor" in prompt
     assert "`start_line` and `end_line` for an inclusive range" in prompt
     assert "`search` for case-sensitive literal text" in prompt
     assert "Use one `edit` call for related changes" in prompt
     assert "persistent named register" in prompt
     assert "Python AST nodes, Markdown sections, brace blocks" in prompt
-    assert "logical alias used by the sandbox tools" in prompt
-    assert (
-        "Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...`"
-        in prompt
-    )
-    assert "prefer paths relative to the script's working directory" in prompt
+    assert "`/workspace` is the sandbox filesystem root" in prompt
+    assert "visible to sandbox tools, generated Python and Node scripts" in prompt
+    assert "When filesystem isolation is enabled" in prompt
+    assert "otherwise keep all work under `/workspace` regardless" in prompt
     assert "Path behavior must be observed, not assumed" in prompt
     assert "Do not rely on ad-hoc `PYTHONPATH` or `sys.path` hacks" in prompt
     assert "Install output can be misleading if filtered" in prompt

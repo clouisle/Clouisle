@@ -33,6 +33,8 @@ data:
   API_BASE_URL: "http://api:8000"
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
   SANDBOX_WORKER_CONCURRENCY: "1"
+  SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
+  SANDBOX_FILESYSTEM_ISOLATION_BINARY: "/usr/bin/bwrap"
   FRONTEND_URL: "http://frontend:3000"
   POSTGRES_SERVER: "postgres"
   POSTGRES_PORT: "5432"
@@ -479,6 +481,14 @@ spec:
                 name: clouisle-config
             - secretRef:
                 name: clouisle-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: Unconfined
           volumeMounts:
             - name: uploads
               mountPath: /app/uploads
