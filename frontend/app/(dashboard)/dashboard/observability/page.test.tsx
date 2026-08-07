@@ -18,7 +18,7 @@ Object.assign(globalThis, {
   },
 })
 
-mock.module('next-intl', () => ({ useTranslations: () => translate }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => translate }))
 mock.module('next/navigation', () => ({
   useRouter: () => ({ push: mock(() => {}) }),
   useSearchParams: () => ({ get: () => tab }),

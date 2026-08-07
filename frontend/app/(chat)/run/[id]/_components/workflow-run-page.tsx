@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { AlertCircle, GitBranch, Loader2, PanelLeft, PanelLeftClose, Play, RotateCcw, Square, SquarePlay } from 'lucide-react'
 import { ApiError, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
 import { ExecutionTimeline, VariableForm, useVariableForm } from '@/components/chat'
@@ -14,7 +14,7 @@ import { extractVariables } from '@/lib/utils/extract-variables'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { WorkflowResultRenderer, type WorkflowResultNode } from './workflow-result-renderer'
 
 type WorkflowWorkspaceView = 'form' | 'live' | 'history'
@@ -27,6 +27,7 @@ interface WorkflowRunPageProps {
 
 export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode }: WorkflowRunPageProps) {
   const router = useRouter()
+  const locale = useLocale()
   const t = useTranslations('run')
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -248,7 +249,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-medium">{t(`status.${item.status}`)}</span>
                     <time className="shrink-0 text-xs text-muted-foreground">
-                      {new Date(item.created_at).toLocaleString()}
+                      {formatDateTime(item.created_at, locale)}
                     </time>
                   </div>
                   <Tooltip>
@@ -503,7 +504,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                           {t(`status.${selectedRun.status}`)}
                         </h2>
                         <time className="mt-2 block text-xs text-muted-foreground">
-                          {t('time')}{new Date(selectedRun.created_at).toLocaleString()}
+                          {t('time')}{formatDateTime(selectedRun.created_at, locale)}
                         </time>
                         <Tooltip>
                           <TooltipTrigger render={<code />} className="mt-1 block max-w-full truncate text-xs text-muted-foreground cursor-default">

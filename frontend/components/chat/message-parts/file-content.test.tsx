@@ -195,6 +195,7 @@ describe("file message parts", () => {
     ["audio/mpeg", "sound.mp3"],
     ["application/javascript", "script.js"],
     ["application/gzip", "archive.gz"],
+    ["application/octet-stream", "binary.bin"],
     [undefined, "unknown.bin"],
   ])(
     "renders %s file metadata without a download URL",

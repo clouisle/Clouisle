@@ -19,7 +19,7 @@ const list = mock(async () => ({ items: [item], total: 41, page: 1, page_size: 2
 const markRead = mock(async () => ({ updated: 1 }))
 const toastSuccess = mock(() => undefined)
 
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
 mock.module('next/dynamic', () => ({ default: () => ({ source }: { source: string }) => <article>{source}</article> }))
 mock.module('lucide-react', () => ({
@@ -37,7 +37,7 @@ mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => val
 mock.module('@/lib/notifications/display', () => ({
   getNotificationDisplayMeta: () => ({ kind: 'delivery', isAnnouncement: false, priorityScore: 5 }),
 }))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/lib/utils', () => ({ formatDateTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 
 const element = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>

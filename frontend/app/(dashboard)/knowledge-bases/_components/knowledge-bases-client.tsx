@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
   Plus,
@@ -77,6 +77,7 @@ export function KnowledgeBasesClient() {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const packagesT = useTranslations('packages')
+  const locale = useLocale()
   const router = useRouter()
   const { canPerform } = useCanPerform()
   
@@ -406,7 +407,7 @@ export function KnowledgeBasesClient() {
                   </TableCell>
                   <TableCell>{getStatusBadge(kb)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDateTime(kb.created_at)}
+                    {formatDateTime(kb.created_at, locale)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     {(canPerform('admin:knowledge-base:read') || canPerform('admin:knowledge-base:update') || canPerform('admin:knowledge-base:delete')) && (

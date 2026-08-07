@@ -23,6 +23,7 @@ mock.module('next/navigation', () => ({
   useRouter: () => ({ push }),
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => (key: string) => `${namespace}.${key}`,
 }))
 mock.module('next/image', () => ({ default: (props: ComponentProps<'img'>) => <span {...props} /> }))

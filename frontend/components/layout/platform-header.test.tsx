@@ -20,6 +20,7 @@ let currentTeam: { id: string } | null = { id: 'team-1' }
 let headerVariant: 'default' | 'centered' | 'minimal' = 'centered'
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string) => key,
 }))
 

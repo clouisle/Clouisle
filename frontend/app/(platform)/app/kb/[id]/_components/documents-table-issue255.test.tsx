@@ -93,6 +93,7 @@ mock.module('react', () => ({
   },
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))

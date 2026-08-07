@@ -48,9 +48,9 @@ mock.module('react', () => React)
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('next/image', () => ({ default: element }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
 mock.module('lucide-react', () => ({ X: element, Copy: element, Check: element, RefreshCw: element, Loader2: element, ChevronDown: element, History: element, RotateCcw: element, GitBranch: element }))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/lib/utils', () => ({ formatDate: (value: unknown) => String(value), formatDateTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api/workflows', () => ({ workflowsApi: {
   updateWorkflow: mock(() => {}),
@@ -198,6 +198,21 @@ test('parses interval, daily, monthly, and custom schedules into save payloads',
     await (control(tree, (node) => text(node.props.children) === 'settings.save').props.onClick as () => Promise<void>)()
     expect(updateWorkflow.mock.calls[0][1]).toMatchObject({ trigger_config: { cron_expression: expected } })
   }
+})
+
+test('preserves edits to a custom cron expression', async () => {
+  const configured = { ...workflow, trigger_config: { cron_expression: '1/2 3 * * *' } }
+  const updateWorkflow = mock(async (_id: string, data: unknown) => ({ ...configured, ...(data as object) }))
+  let tree = settle({ workflow: configured, updateWorkflow })
+
+  const cron = control(tree, (node) => node.props.placeholder === '0 0 * * *')
+  ;(cron.props.onChange as (event: unknown) => void)({ target: { value: '2/3 4 * * *' } })
+  tree = settle({ workflow: configured, updateWorkflow })
+  await (control(tree, (node) => text(node.props.children) === 'settings.save').props.onClick as () => Promise<void>)()
+
+  expect(updateWorkflow).toHaveBeenCalledWith('workflow-1', expect.objectContaining({
+    trigger_config: { cron_expression: '2/3 4 * * *' },
+  }))
 })
 
 test('loads version history and restores a selected non-current version', async () => {

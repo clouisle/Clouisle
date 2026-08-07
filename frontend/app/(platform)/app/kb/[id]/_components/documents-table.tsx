@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
   MoreHorizontal,
@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
+import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -105,6 +106,7 @@ async function runBulkActions<T>(items: T[], action: (item: T) => Promise<unknow
 export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: DocumentsTableProps) {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const router = useRouter()
   const { canPerform } = useCanPerform()
   const canUpdateKb = canPerform('kb:update')
@@ -535,7 +537,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                   </TableCell>
                   <TableCell>{getStatusBadge(doc.status, doc)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(doc.created_at).toLocaleDateString()}
+                    {formatDate(doc.created_at, locale)}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>

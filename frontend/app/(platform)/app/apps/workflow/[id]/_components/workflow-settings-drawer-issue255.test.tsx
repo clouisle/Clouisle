@@ -48,9 +48,9 @@ mock.module('react', () => React)
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('next/image', () => ({ default: element }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${Object.values(values).join(',')}` : key }))
 mock.module('lucide-react', () => ({ X: element, Copy: element, Check: element, RefreshCw: element, Loader2: element, ChevronDown: element, History: element, RotateCcw: element, GitBranch: element }))
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/lib/utils', () => ({ formatDate: (value: unknown) => String(value), formatDateTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api/workflows', () => ({ workflowsApi: {
   updateWorkflow: mock(() => {}),
@@ -144,15 +144,23 @@ test('covers remaining editable controls and guarded selections', () => {
 })
 
 test('copies a configured webhook URL', () => {
-  const writeText = navigator.clipboard.writeText as ReturnType<typeof mock>
-  const webhook = { ...workflow, trigger_type: 'webhook', webhook_token: 'secret' }
-  const tree = settle({ workflow: webhook })
-  const copy = control(tree, (node) => node.props.className === 'h-8 w-8 shrink-0')
+  const originalSetTimeout = globalThis.setTimeout
+  let timeoutCallback: (() => void) | undefined
+  globalThis.setTimeout = ((callback: () => void) => { timeoutCallback = callback; return 1 }) as unknown as typeof globalThis.setTimeout
+  try {
+    const writeText = navigator.clipboard.writeText as ReturnType<typeof mock>
+    const webhook = { ...workflow, trigger_type: 'webhook', webhook_token: 'secret' }
+    const tree = settle({ workflow: webhook })
+    const copy = control(tree, (node) => node.props.className === 'h-8 w-8 shrink-0')
 
-  ;(copy.props.onClick as () => void)()
+    ;(copy.props.onClick as () => void)()
 
-  expect(writeText).toHaveBeenCalledWith('https://app.test/api/v1/workflows/webhook/secret')
-  expect(toastSuccess).toHaveBeenCalledWith('editor.copiedToClipboard')
+    expect(writeText).toHaveBeenCalledWith('https://app.test/api/v1/workflows/webhook/secret')
+    expect(toastSuccess).toHaveBeenCalledWith('editor.copiedToClipboard')
+    timeoutCallback!()
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+  }
 })
 
 test('covers schedule controls and collapsible callbacks', () => {

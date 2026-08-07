@@ -13,6 +13,7 @@ const open = mock()
 let permissions = new Set<string>()
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))

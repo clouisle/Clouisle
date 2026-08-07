@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import {
     Search,
     MoreHorizontal,
@@ -68,6 +68,7 @@ import { useUrlSearchState } from '@/hooks/use-url-search-state'
 export function MemoriesClient() {
     const t = useTranslations('memories')
     const commonT = useTranslations('common')
+    const locale = useLocale()
     const { canPerform } = useCanPerform()
 
     const getEntityTypeLabel = (entityType: string) => {
@@ -365,10 +366,10 @@ export function MemoriesClient() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-sm text-muted-foreground">
-                                            {entity.last_accessed_at ? formatDateTime(entity.last_accessed_at) : t('neverAccessed')}
+                                            {entity.last_accessed_at ? formatDateTime(entity.last_accessed_at, locale) : t('neverAccessed')}
                                         </TableCell>
                                         <TableCell className="text-sm text-muted-foreground">
-                                            {formatDateTime(entity.created_at)}
+                                            {formatDateTime(entity.created_at, locale)}
                                         </TableCell>
                                         <TableCell>
                                             <DropdownMenu>

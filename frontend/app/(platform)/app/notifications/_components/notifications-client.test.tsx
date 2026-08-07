@@ -27,7 +27,7 @@ const list = mock(() =>
 const markRead = mock(() => Promise.resolve({ updated: 1 }));
 const onReadUpdated = mock();
 
-mock.module("next-intl", () => ({ useTranslations: () => (key: string) => key }));
+mock.module("next-intl", () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }));
 mock.module("next-themes", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 mock.module("next/dynamic", () => ({ default: () => () => <div /> }));
 mock.module("lucide-react", () => ({
@@ -49,7 +49,7 @@ mock.module("@/lib/notifications/display", () => ({
     priorityScore: 5,
   }),
 }));
-mock.module("@/lib/utils", () => ({ cn: (...values: string[]) => values.filter(Boolean).join(" ") }));
+mock.module("@/lib/utils", () => ({ formatDateTime: (value: unknown) => String(value), cn: (...values: string[]) => values.filter(Boolean).join(" ") }));
 mock.module("sonner", () => ({ toast: { success: mock() } }));
 
 const element = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Trash2, X } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 
 import {
@@ -48,6 +48,7 @@ export function EntityDetailSheet({
   onDeleteRelation,
 }: EntityDetailSheetProps) {
   const t = useTranslations('memories')
+  const locale = useLocale()
   const [deleteEntityOpen, setDeleteEntityOpen] = useState(false)
   const [deleteRelationId, setDeleteRelationId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -218,12 +219,12 @@ export function EntityDetailSheet({
               {entity.last_accessed_at && (
                 <div className="flex justify-between">
                   <span>{t('lastAccessed')}:</span>
-                  <span className="font-medium">{formatDateTime(entity.last_accessed_at)}</span>
+                  <span className="font-medium">{formatDateTime(entity.last_accessed_at, locale)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>{t('createdAt')}:</span>
-                <span className="font-medium">{formatDateTime(entity.created_at)}</span>
+                <span className="font-medium">{formatDateTime(entity.created_at, locale)}</span>
               </div>
             </div>
             <Button

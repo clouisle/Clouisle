@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
-import { format } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
 import {
     Table,
     TableBody,
@@ -29,6 +28,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDateTime } from "@/lib/utils";
 import {
     Download,
     Eye,
@@ -52,6 +52,7 @@ import { useUrlSearchState } from "@/hooks/use-url-search-state";
 export function AuditLogsTable() {
     const t = useTranslations("auditLogs");
     const commonT = useTranslations("common");
+    const locale = useLocale();
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -192,6 +193,12 @@ export function AuditLogsTable() {
         return t.has(key) ? t(key) : option.fallback_label;
     };
 
+    const getResourceTypeLabel = (resourceType: string) => {
+        if (!resourceType) return "-";
+        const key = `resourceType${resourceType.charAt(0).toUpperCase()}${resourceType.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`;
+        return t.has(key) ? t(key) : resourceType;
+    };
+
     const actionOptions = useMemo(
         () => actionOptionsMeta.map((item) => {
             const key = getTranslationKey(item.translation_key);
@@ -322,11 +329,11 @@ export function AuditLogsTable() {
                                             }}
                                         >
                                             <TableCell className="whitespace-nowrap">
-                                                {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
+                                                {formatDateTime(log.created_at, locale, "-", { withSeconds: true })}
                                             </TableCell>
                                             <TableCell>{log.username || t("system")}</TableCell>
                                             <TableCell>{getActionLabel(log.action)}</TableCell>
-                                            <TableCell>{log.resource_type}</TableCell>
+                                            <TableCell>{getResourceTypeLabel(log.resource_type)}</TableCell>
                                             <TableCell>{log.resource_name || "-"}</TableCell>
                                             <TableCell>
                                                 {log.resource_type === "workflow_run" && log.resource_id ? (

@@ -60,3 +60,18 @@ test('uses default branches and configuration prompt when no branches are config
   expect(findAll(tree, (node) => node.props.children === 'nodesCondition.clickToConfigure')).toHaveLength(1)
   expect(findAll(tree, (node) => node.props.type === 'source').map((node) => node.props.id)).toEqual(['if', 'else'])
 })
+
+test('positions a branch that follows an else branch', () => {
+  const tree = ConditionNode({
+    id: 'condition',
+    data: {
+      type: 'condition', label: 'Router', config: {},
+      branches: [
+        { id: 'else', type: 'else', name: 'ELSE', logicOperator: 'and', conditions: [] },
+        { id: 'if', type: 'if', name: 'IF', logicOperator: 'and', conditions: [] },
+      ],
+    },
+  }) as TreeNode
+
+  expect(findAll(tree, (node) => node.props.type === 'source').map((node) => node.props.id)).toEqual(['else', 'if'])
+})

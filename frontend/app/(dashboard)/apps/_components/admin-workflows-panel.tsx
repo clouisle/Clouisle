@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Copy, Download, FileEdit, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -40,15 +40,12 @@ import { adminPackagesApi, downloadBlob } from '@/lib/api/packages'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { AppCreateDialog } from '@/app/(platform)/app/apps/_components/app-create-dialog'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { formatDateTime } from '@/lib/utils'
 
 function getErrorMessage(error: unknown) {
   if (error instanceof ApiError) return error.message
   if (error instanceof Error) return error.message
   return 'Unknown error'
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString()
 }
 
 function AppIcon({ icon, name }: { icon?: string | null; name: string }) {
@@ -67,6 +64,7 @@ export function AdminWorkflowsPanel() {
   const t = useTranslations('apps.admin')
   const packageT = useTranslations('packages')
   const tCommon = useTranslations('common')
+  const locale = useLocale()
   const [workflows, setWorkflows] = useState<AdminWorkflow[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [statusOptions, setStatusOptions] = useState<Array<{ value: string; label: string }>>([])
@@ -310,7 +308,7 @@ export function AdminWorkflowsPanel() {
                 <TableCell>{workflow.team_name || '-'}</TableCell>
                 <TableCell>{workflow.created_by_name || '-'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{t('workflows.stats', { runs: workflow.run_count, success: workflow.success_count, failed: workflow.fail_count })}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{formatDate(workflow.updated_at)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDateTime(workflow.updated_at, locale)}</TableCell>
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger render={

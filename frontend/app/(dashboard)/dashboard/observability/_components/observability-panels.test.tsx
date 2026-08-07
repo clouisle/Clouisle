@@ -20,7 +20,7 @@ const component = (tag: string) => {
 }
 const icon = () => null
 
-mock.module('next-intl', () => ({ useTranslations: () => translate }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => translate }))
 mock.module('lucide-react', () => ({ AlertTriangle: icon, ChevronRight: icon, Cpu: icon, Database: icon, HardDrive: icon, Info: icon, Server: icon, Workflow: icon }))
 mock.module('recharts', () => ({
   Area: component('area'), AreaChart: component('area-chart'), Bar: component('bar'), BarChart: component('bar-chart'),

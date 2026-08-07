@@ -120,41 +120,6 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         fallback_label="Bulk Force Password Change",
     ),
     AuditLogActionOption(
-        value="create_role",
-        translation_key="auditLogs.actioncreate_role",
-        fallback_label="Create Role",
-    ),
-    AuditLogActionOption(
-        value="update_role",
-        translation_key="auditLogs.actionupdate_role",
-        fallback_label="Update Role",
-    ),
-    AuditLogActionOption(
-        value="delete_role",
-        translation_key="auditLogs.actiondelete_role",
-        fallback_label="Delete Role",
-    ),
-    AuditLogActionOption(
-        value="create_permission",
-        translation_key="auditLogs.actioncreate_permission",
-        fallback_label="Create Permission",
-    ),
-    AuditLogActionOption(
-        value="update_permission",
-        translation_key="auditLogs.actionupdate_permission",
-        fallback_label="Update Permission",
-    ),
-    AuditLogActionOption(
-        value="delete_permission",
-        translation_key="auditLogs.actiondelete_permission",
-        fallback_label="Delete Permission",
-    ),
-    AuditLogActionOption(
-        value="update_settings",
-        translation_key="auditLogs.actionupdate_settings",
-        fallback_label="Update Settings",
-    ),
-    AuditLogActionOption(
         value="create_api_key",
         translation_key="auditLogs.actioncreate_api_key",
         fallback_label="Create API Key",
@@ -178,21 +143,6 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         value="delete_api_key",
         translation_key="auditLogs.actiondelete_api_key",
         fallback_label="Delete API Key",
-    ),
-    AuditLogActionOption(
-        value="create_model",
-        translation_key="auditLogs.actioncreate_model",
-        fallback_label="Create Model",
-    ),
-    AuditLogActionOption(
-        value="update_model",
-        translation_key="auditLogs.actionupdate_model",
-        fallback_label="Update Model",
-    ),
-    AuditLogActionOption(
-        value="delete_model",
-        translation_key="auditLogs.actiondelete_model",
-        fallback_label="Delete Model",
     ),
     AuditLogActionOption(
         value="create_team",
@@ -243,21 +193,6 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         value="unpublish_agent",
         translation_key="auditLogs.actionunpublish_agent",
         fallback_label="Unpublish Agent",
-    ),
-    AuditLogActionOption(
-        value="create_kb",
-        translation_key="auditLogs.actioncreate_kb",
-        fallback_label="Create Knowledge Base",
-    ),
-    AuditLogActionOption(
-        value="update_kb",
-        translation_key="auditLogs.actionupdate_kb",
-        fallback_label="Update Knowledge Base",
-    ),
-    AuditLogActionOption(
-        value="delete_kb",
-        translation_key="auditLogs.actiondelete_kb",
-        fallback_label="Delete Knowledge Base",
     ),
     AuditLogActionOption(
         value="create_tool",
@@ -458,6 +393,341 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         value="admin_test_skill",
         translation_key="auditLogs.actionadmin_test_skill",
         fallback_label="Admin Test Skill",
+    ),
+    AuditLogActionOption(
+        value="admin_create_agent",
+        translation_key="auditLogs.actionadmin_create_agent",
+        fallback_label="Admin Create Agent",
+    ),
+    AuditLogActionOption(
+        value="admin_update_agent",
+        translation_key="auditLogs.actionadmin_update_agent",
+        fallback_label="Admin Update Agent",
+    ),
+    AuditLogActionOption(
+        value="admin_publish_agent",
+        translation_key="auditLogs.actionadmin_publish_agent",
+        fallback_label="Admin Publish Agent",
+    ),
+    AuditLogActionOption(
+        value="admin_unpublish_agent",
+        translation_key="auditLogs.actionadmin_unpublish_agent",
+        fallback_label="Admin Unpublish Agent",
+    ),
+    AuditLogActionOption(
+        value="admin_duplicate_agent",
+        translation_key="auditLogs.actionadmin_duplicate_agent",
+        fallback_label="Admin Duplicate Agent",
+    ),
+    AuditLogActionOption(
+        value="admin_delete_agent",
+        translation_key="auditLogs.actionadmin_delete_agent",
+        fallback_label="Admin Delete Agent",
+    ),
+    AuditLogActionOption(
+        value="admin_create_workflow",
+        translation_key="auditLogs.actionadmin_create_workflow",
+        fallback_label="Admin Create Workflow",
+    ),
+    AuditLogActionOption(
+        value="admin_update_workflow",
+        translation_key="auditLogs.actionadmin_update_workflow",
+        fallback_label="Admin Update Workflow",
+    ),
+    AuditLogActionOption(
+        value="admin_publish_workflow",
+        translation_key="auditLogs.actionadmin_publish_workflow",
+        fallback_label="Admin Publish Workflow",
+    ),
+    AuditLogActionOption(
+        value="admin_unpublish_workflow",
+        translation_key="auditLogs.actionadmin_unpublish_workflow",
+        fallback_label="Admin Unpublish Workflow",
+    ),
+    AuditLogActionOption(
+        value="admin_duplicate_workflow",
+        translation_key="auditLogs.actionadmin_duplicate_workflow",
+        fallback_label="Admin Duplicate Workflow",
+    ),
+    AuditLogActionOption(
+        value="admin_delete_workflow",
+        translation_key="auditLogs.actionadmin_delete_workflow",
+        fallback_label="Admin Delete Workflow",
+    ),
+    AuditLogActionOption(
+        value="duplicate_agent",
+        translation_key="auditLogs.actionduplicate_agent",
+        fallback_label="Duplicate Agent",
+    ),
+    AuditLogActionOption(
+        value="edit_message",
+        translation_key="auditLogs.actionedit_message",
+        fallback_label="Edit Message",
+    ),
+    AuditLogActionOption(
+        value="delete_conversation",
+        translation_key="auditLogs.actiondelete_conversation",
+        fallback_label="Delete Conversation",
+    ),
+    AuditLogActionOption(
+        value="batch_delete_conversations",
+        translation_key="auditLogs.actionbatch_delete_conversations",
+        fallback_label="Batch Delete Conversations",
+    ),
+    AuditLogActionOption(
+        value="run_workflow_embed",
+        translation_key="auditLogs.actionrun_workflow_embed",
+        fallback_label="Run Workflow (Embed)",
+    ),
+    AuditLogActionOption(
+        value="upload_document",
+        translation_key="auditLogs.actionupload_document",
+        fallback_label="Upload Document",
+    ),
+    AuditLogActionOption(
+        value="add_url_document",
+        translation_key="auditLogs.actionadd_url_document",
+        fallback_label="Add URL Document",
+    ),
+    AuditLogActionOption(
+        value="update_document",
+        translation_key="auditLogs.actionupdate_document",
+        fallback_label="Update Document",
+    ),
+    AuditLogActionOption(
+        value="delete_document",
+        translation_key="auditLogs.actiondelete_document",
+        fallback_label="Delete Document",
+    ),
+    AuditLogActionOption(
+        value="process_document",
+        translation_key="auditLogs.actionprocess_document",
+        fallback_label="Process Document",
+    ),
+    AuditLogActionOption(
+        value="process_document_with_chunks",
+        translation_key="auditLogs.actionprocess_document_with_chunks",
+        fallback_label="Process Document with Chunks",
+    ),
+    AuditLogActionOption(
+        value="reprocess_document",
+        translation_key="auditLogs.actionreprocess_document",
+        fallback_label="Reprocess Document",
+    ),
+    AuditLogActionOption(
+        value="retry_failed_chunks",
+        translation_key="auditLogs.actionretry_failed_chunks",
+        fallback_label="Retry Failed Chunks",
+    ),
+    AuditLogActionOption(
+        value="retry_failed_chunk",
+        translation_key="auditLogs.actionretry_failed_chunk",
+        fallback_label="Retry Failed Chunk",
+    ),
+    AuditLogActionOption(
+        value="update_document_chunk",
+        translation_key="auditLogs.actionupdate_document_chunk",
+        fallback_label="Update Document Chunk",
+    ),
+    AuditLogActionOption(
+        value="delete_document_chunk",
+        translation_key="auditLogs.actiondelete_document_chunk",
+        fallback_label="Delete Document Chunk",
+    ),
+    AuditLogActionOption(
+        value="create_document_chunk",
+        translation_key="auditLogs.actioncreate_document_chunk",
+        fallback_label="Create Document Chunk",
+    ),
+    AuditLogActionOption(
+        value="rechunk_document",
+        translation_key="auditLogs.actionrechunk_document",
+        fallback_label="Rechunk Document",
+    ),
+    AuditLogActionOption(
+        value="export_clouisle_package",
+        translation_key="auditLogs.actionexport_clouisle_package",
+        fallback_label="Export Clouisle Package",
+    ),
+    AuditLogActionOption(
+        value="preview_clouisle_import",
+        translation_key="auditLogs.actionpreview_clouisle_import",
+        fallback_label="Preview Clouisle Import",
+    ),
+    AuditLogActionOption(
+        value="install_clouisle_package",
+        translation_key="auditLogs.actioninstall_clouisle_package",
+        fallback_label="Install Clouisle Package",
+    ),
+    AuditLogActionOption(
+        value="test_sso_provider_failed",
+        translation_key="auditLogs.actiontest_sso_provider_failed",
+        fallback_label="Test SSO Provider Failed",
+    ),
+    AuditLogActionOption(
+        value="create_memory_entity",
+        translation_key="auditLogs.actioncreate_memory_entity",
+        fallback_label="Create Memory Entity",
+    ),
+    AuditLogActionOption(
+        value="create_memory_relation",
+        translation_key="auditLogs.actioncreate_memory_relation",
+        fallback_label="Create Memory Relation",
+    ),
+    AuditLogActionOption(
+        value="update_tool_config",
+        translation_key="auditLogs.actionupdate_tool_config",
+        fallback_label="Update Tool Config",
+    ),
+    AuditLogActionOption(
+        value="delete_tool_config",
+        translation_key="auditLogs.actiondelete_tool_config",
+        fallback_label="Delete Tool Config",
+    ),
+    AuditLogActionOption(
+        value="generate_prompt",
+        translation_key="auditLogs.actiongenerate_prompt",
+        fallback_label="Generate Prompt",
+    ),
+    AuditLogActionOption(
+        value="optimize_prompt",
+        translation_key="auditLogs.actionoptimize_prompt",
+        fallback_label="Optimize Prompt",
+    ),
+    AuditLogActionOption(
+        value="debug_workflow",
+        translation_key="auditLogs.actiondebug_workflow",
+        fallback_label="Debug Workflow",
+    ),
+    AuditLogActionOption(
+        value="add_team_model",
+        translation_key="auditLogs.actionadd_team_model",
+        fallback_label="Add Team Model",
+    ),
+    AuditLogActionOption(
+        value="batch_add_team_models",
+        translation_key="auditLogs.actionbatch_add_team_models",
+        fallback_label="Batch Add Team Models",
+    ),
+    AuditLogActionOption(
+        value="batch_remove_team_models",
+        translation_key="auditLogs.actionbatch_remove_team_models",
+        fallback_label="Batch Remove Team Models",
+    ),
+    AuditLogActionOption(
+        value="cancel_workflow_run",
+        translation_key="auditLogs.actioncancel_workflow_run",
+        fallback_label="Cancel Workflow Run",
+    ),
+    AuditLogActionOption(
+        value="create_tool_config",
+        translation_key="auditLogs.actioncreate_tool_config",
+        fallback_label="Create Tool Config",
+    ),
+    AuditLogActionOption(
+        value="create_workflow_version",
+        translation_key="auditLogs.actioncreate_workflow_version",
+        fallback_label="Create Workflow Version",
+    ),
+    AuditLogActionOption(
+        value="delete_file",
+        translation_key="auditLogs.actiondelete_file",
+        fallback_label="Delete File",
+    ),
+    AuditLogActionOption(
+        value="delete_workflow_run",
+        translation_key="auditLogs.actiondelete_workflow_run",
+        fallback_label="Delete Workflow Run",
+    ),
+    AuditLogActionOption(
+        value="duplicate_tool",
+        translation_key="auditLogs.actionduplicate_tool",
+        fallback_label="Duplicate Tool",
+    ),
+    AuditLogActionOption(
+        value="duplicate_workflow",
+        translation_key="auditLogs.actionduplicate_workflow",
+        fallback_label="Duplicate Workflow",
+    ),
+    AuditLogActionOption(
+        value="publish_workflow",
+        translation_key="auditLogs.actionpublish_workflow",
+        fallback_label="Publish Workflow",
+    ),
+    AuditLogActionOption(
+        value="regenerate_webhook_token",
+        translation_key="auditLogs.actionregenerate_webhook_token",
+        fallback_label="Regenerate Webhook Token",
+    ),
+    AuditLogActionOption(
+        value="remove_team_model",
+        translation_key="auditLogs.actionremove_team_model",
+        fallback_label="Remove Team Model",
+    ),
+    AuditLogActionOption(
+        value="restore_workflow_version",
+        translation_key="auditLogs.actionrestore_workflow_version",
+        fallback_label="Restore Workflow Version",
+    ),
+    AuditLogActionOption(
+        value="run_workflow",
+        translation_key="auditLogs.actionrun_workflow",
+        fallback_label="Run Workflow",
+    ),
+    AuditLogActionOption(
+        value="share_tool",
+        translation_key="auditLogs.actionshare_tool",
+        fallback_label="Share Tool",
+    ),
+    AuditLogActionOption(
+        value="toggle_tool",
+        translation_key="auditLogs.actiontoggle_tool",
+        fallback_label="Toggle Tool",
+    ),
+    AuditLogActionOption(
+        value="unpublish_workflow",
+        translation_key="auditLogs.actionunpublish_workflow",
+        fallback_label="Unpublish Workflow",
+    ),
+    AuditLogActionOption(
+        value="unshare_tool",
+        translation_key="auditLogs.actionunshare_tool",
+        fallback_label="Unshare Tool",
+    ),
+    AuditLogActionOption(
+        value="update_team_model",
+        translation_key="auditLogs.actionupdate_team_model",
+        fallback_label="Update Team Model",
+    ),
+    AuditLogActionOption(
+        value="upload_file",
+        translation_key="auditLogs.actionupload_file",
+        fallback_label="Upload File",
+    ),
+    AuditLogActionOption(
+        value="upload_image",
+        translation_key="auditLogs.actionupload_image",
+        fallback_label="Upload Image",
+    ),
+    AuditLogActionOption(
+        value="upload_sandbox_artifact",
+        translation_key="auditLogs.actionupload_sandbox_artifact",
+        fallback_label="Upload Sandbox Artifact",
+    ),
+    AuditLogActionOption(
+        value="create_knowledge_base",
+        translation_key="auditLogs.actioncreate_knowledge_base",
+        fallback_label="Create Knowledge Base",
+    ),
+    AuditLogActionOption(
+        value="update_knowledge_base",
+        translation_key="auditLogs.actionupdate_knowledge_base",
+        fallback_label="Update Knowledge Base",
+    ),
+    AuditLogActionOption(
+        value="delete_knowledge_base",
+        translation_key="auditLogs.actiondelete_knowledge_base",
+        fallback_label="Delete Knowledge Base",
     ),
 ]
 

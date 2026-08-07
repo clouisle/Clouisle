@@ -24,6 +24,7 @@ function text(value: React.ReactNode): string {
 }
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => (key: string, values?: Record<string, unknown>) =>
     values ? `${namespace}.${key}:${JSON.stringify(values)}` : `${namespace}.${key}`,
 }))

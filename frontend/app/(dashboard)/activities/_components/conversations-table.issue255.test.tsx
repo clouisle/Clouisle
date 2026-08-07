@@ -17,7 +17,7 @@ const element = (tag: string) => {
   return Component
 }
 
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('sonner', () => ({ toast: { success: mock() } }))
 mock.module('@/lib/api', () => ({ agentsApi: { getAgents } }))
 mock.module('@/lib/api/admin/teams', () => ({ teamsApi: { getTeams } }))

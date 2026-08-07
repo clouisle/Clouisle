@@ -30,7 +30,7 @@ class FakeEventSource {
 
 Object.assign(globalThis, { fetch: fetchMock, EventSource: FakeEventSource })
 
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next/link', () => ({
   default: ({ children, ...props }: React.ComponentProps<'a'>) => <a {...props}>{children}</a>,
 }))

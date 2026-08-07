@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import type { NotificationItem } from '@/lib/api/admin/notifications'
@@ -76,6 +76,7 @@ export function NotificationDetailDialog({
   onOpenChange,
 }: NotificationDetailDialogProps) {
   const t = useTranslations('notifications')
+  const locale = useLocale()
 
   const getChannelLabel = (channel: string) => {
     const key = `channel.${channel}`
@@ -161,7 +162,7 @@ export function NotificationDetailDialog({
               <div className="text-sm font-medium text-muted-foreground mb-1">
                 {t('createdAt')}
               </div>
-              <div className="text-sm">{formatDateTime(notification.created_at)}</div>
+              <div className="text-sm">{formatDateTime(notification.created_at, locale)}</div>
             </div>
           </div>
 
@@ -188,7 +189,7 @@ export function NotificationDetailDialog({
               <div className="text-sm font-medium text-muted-foreground mb-1">
                 {t('admin.createExpiresAt')}
               </div>
-              <div className="text-sm">{formatDateTime(notification.expires_at)}</div>
+              <div className="text-sm">{formatDateTime(notification.expires_at, locale)}</div>
             </div>
           )}
 
@@ -210,7 +211,7 @@ export function NotificationDetailDialog({
                     </div>
                     <div className="text-sm text-muted-foreground">
                       {getDeliveryStatusLabel(delivery.status)}
-                      {delivery.sent_at && ` • ${formatDateTime(delivery.sent_at)}`}
+                      {delivery.sent_at && ` • ${formatDateTime(delivery.sent_at, locale)}`}
                     </div>
                   </div>
                 ))}

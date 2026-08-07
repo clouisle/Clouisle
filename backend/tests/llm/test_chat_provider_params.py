@@ -254,5 +254,6 @@ async def test_ollama_adapter_passes_think_and_uses_dummy_api_key():
 
     kwargs = fake_client.chat.completions.create.await_args.kwargs
     assert captured_init["api_key"] == "ollama"
-    assert kwargs["think"] is True
+    assert "think" not in kwargs
+    assert kwargs["extra_body"] == {"think": True}
     assert kwargs["messages"][1]["thinking"] == "chain of thought"

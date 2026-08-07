@@ -210,6 +210,18 @@ test('renders iframe previews and escapes javascript closing script tags', () =>
   expect(text(tree)).toContain('javascript')
 })
 
+test('shows resize placeholder instead of the iframe while the panel is being dragged', () => {
+  const tree = CodePreviewCanvas({
+    preview: { id: 'html', language: 'html', kind: 'html', code: '<h1>Hi</h1>' },
+    onClose: close,
+    isResizing: true,
+  })
+  const nodes = walk(tree)
+
+  expect(nodes.some((node) => node.type === 'iframe')).toBe(false)
+  expect(nodes.some((node) => node.props['data-preview-resize-placeholder'] === true)).toBe(true)
+})
+
 test('shows markdown preview without iframe script notice', () => {
   const tree = render({ id: 'md', language: 'markdown', kind: 'markdown', code: '# Hello' })
 

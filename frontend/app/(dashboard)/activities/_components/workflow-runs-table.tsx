@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   Search,
   Workflow,
@@ -31,6 +31,7 @@ import { teamsApi } from '@/lib/api/admin/teams'
 import { usersApi } from '@/lib/api/admin/users'
 import type { Team } from '@/lib/api/teams'
 import type { User } from '@/lib/api/auth'
+import { formatDateTime } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -72,17 +73,6 @@ import { WorkflowRunDrawer } from './workflow-run-drawer'
 import { useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 import { useDebounce } from '@/hooks/use-debounce'
-
-// Helper to format datetime
-function formatDateTime(dateString: string): string {
-  const d = new Date(dateString)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hour = String(d.getHours()).padStart(2, '0')
-  const minute = String(d.getMinutes()).padStart(2, '0')
-  return `${year}/${month}/${day} ${hour}:${minute}`
-}
 
 // Helper to format duration
 function formatDuration(ms: number | null | undefined): string {
@@ -146,6 +136,7 @@ function StatusBadge({ status }: { status: RunStatus }) {
 export function WorkflowRunsTable() {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const { canPerform } = useCanPerform()
   const canDeleteWorkflowRun = canPerform('workflow:delete')
 
@@ -499,7 +490,7 @@ export function WorkflowRunsTable() {
                     <TableCell>{run.triggered_by_name || '-'}</TableCell>
                     <TableCell>{formatDuration(run.total_duration_ms)}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(run.created_at)}
+                      {formatDateTime(run.created_at, locale)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>

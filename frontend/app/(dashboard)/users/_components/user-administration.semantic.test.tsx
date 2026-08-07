@@ -11,6 +11,7 @@ const usersApi = {
 }
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, string | number>) =>
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
 import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
 import { agentsApi, type Agent, type ConversationListItem, type ConversationWithMessages } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -58,28 +59,6 @@ function getCreatedAfter(dateFilter: string): string | undefined {
       return undefined
   }
   return cutoff.toISOString()
-}
-
-// Helper to format datetime
-function formatDateTime(dateString: string, locale: string): string {
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } else {
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 }
 
 export default function LogsPage() {

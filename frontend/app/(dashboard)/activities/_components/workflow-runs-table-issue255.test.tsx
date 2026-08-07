@@ -23,7 +23,7 @@ let allowed = true
 mock.module('react', () => ({ default: hooks, ...hooks }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: component('Fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: component('Fragment') }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Props) => values ? `${key}:${Object.values(values).join('/')}` : key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string, values?: Props) => values ? `${key}:${Object.values(values).join('/')}` : key }))
 mock.module('sonner', () => ({ toast }))
 mock.module('lucide-react', () => Object.fromEntries(['Search', 'Workflow', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'X', 'Trash2', 'MoreHorizontal', 'CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle', 'Copy'].map((name) => [name, component(name)])))
 mock.module('@/lib/api', () => ({ workflowsApi: { getAllWorkflowRuns, getWorkflows, deleteWorkflowRun } }))

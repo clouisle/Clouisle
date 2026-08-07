@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   CheckCircle,
   XCircle,
@@ -35,6 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { formatDateTime } from '@/lib/utils'
 import { useCanPerform } from '@/components/permission-guard'
 
 interface WorkflowRunDrawerProps {
@@ -42,18 +43,6 @@ interface WorkflowRunDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onDelete?: () => void
-}
-
-// Helper to format datetime
-function formatDateTime(dateString: string | null | undefined): string {
-  if (!dateString) return '-'
-  const d = new Date(dateString)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hour = String(d.getHours()).padStart(2, '0')
-  const minute = String(d.getMinutes()).padStart(2, '0')
-  return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
 // Helper to format duration
@@ -116,6 +105,7 @@ function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: ReturnT
 export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: WorkflowRunDrawerProps) {
   const t = useTranslations('activities')
   const tWorkflow = useTranslations('workflow')
+  const locale = useLocale()
   const commonT = useTranslations('common')
   const { canPerform } = useCanPerform()
   const canDeleteWorkflowRun = canPerform('workflow:delete')
@@ -205,18 +195,18 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t('table.createdAt')}</span>
-                  <span>{formatDateTime(run.created_at)}</span>
+                  <span>{formatDateTime(run.created_at, locale)}</span>
                 </div>
                 {run.started_at && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">{t('runDetail.startedAt')}</span>
-                    <span>{formatDateTime(run.started_at)}</span>
+                    <span>{formatDateTime(run.started_at, locale)}</span>
                   </div>
                 )}
                 {run.finished_at && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">{t('runDetail.finishedAt')}</span>
-                    <span>{formatDateTime(run.finished_at)}</span>
+                    <span>{formatDateTime(run.finished_at, locale)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">

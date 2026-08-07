@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   Bot,
   Wrench,
@@ -23,6 +23,7 @@ import { useTeam } from '@/contexts/team-context'
 import { usePermissions } from '@/hooks/use-permissions'
 import { knowledgeBasesApi, teamModelsApi, agentsApi, workflowsApi, type TeamModel } from '@/lib/api'
 import { conversationsApi } from '@/lib/api/agents'
+import { formatDate } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -215,6 +216,7 @@ function StatCard({
 
 function RecentItemCard({ item }: { item: RecentItem }) {
   const t = useTranslations('platform.home')
+  const locale = useLocale()
   const href = item.type === 'agent' ? `/app/apps/${item.id}` : `/app/apps/workflow/${item.id}`
   const Icon = item.type === 'agent' ? Bot : Workflow
 
@@ -242,7 +244,7 @@ function RecentItemCard({ item }: { item: RecentItem }) {
             </Badge>
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {new Date(item.updatedAt).toLocaleDateString()}
+              {formatDate(item.updatedAt, locale)}
             </span>
           </div>
         </div>

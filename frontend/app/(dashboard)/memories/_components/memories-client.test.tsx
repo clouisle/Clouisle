@@ -39,6 +39,7 @@ mock.module('react', () => ({
   },
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => Object.assign(
     (key: string, values?: Record<string, unknown>) => values?.count === undefined ? `${namespace}.${key}` : `${namespace}.${key}.${values.count}`,
     { has: (key: string) => key !== 'types.customType' }

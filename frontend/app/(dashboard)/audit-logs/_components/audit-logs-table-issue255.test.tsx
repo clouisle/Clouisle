@@ -25,7 +25,7 @@ const translate = Object.assign(
   { has: (key: string) => key !== 'operationUnknown' },
 )
 
-mock.module('next-intl', () => ({ useTranslations: () => translate }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => translate }))
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => [search, setSearch],
 }))

@@ -3,6 +3,7 @@ import React from "react";
 import { act, create } from "react-test-renderer";
 
 mock.module("next-intl", () => ({
+  useLocale: () => 'en',
   useTranslations: () => {
     const translate = (key: string, options?: { defaultValue?: string }) =>
       key.startsWith("admin.typeOptions.") ? options?.defaultValue || "" : key;

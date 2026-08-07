@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-05T06:10:25.294Z
+// GENERATED — 2026-08-06T10:15:38.095Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -31,6 +31,7 @@ export type PlatformMessages = {
     aboutCheckingVersion: string
     aboutNewVersion: string
     aboutChangelog: string
+    aboutGitHub: string
     teams: string
     manageTeams: string
     noTeams: string

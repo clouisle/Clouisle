@@ -8,6 +8,7 @@ const activateAPIKey = mock(() => Promise.resolve({}));
 const success = mock();
 
 mock.module("next-intl", () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string) => key,
 }));
 mock.module("lucide-react", () => ({

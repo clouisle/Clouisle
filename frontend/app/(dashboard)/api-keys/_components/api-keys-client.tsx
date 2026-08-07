@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
     Plus,
     Search,
@@ -75,6 +75,7 @@ import { useDebounce } from '@/hooks/use-debounce'
 export function APIKeysClient() {
     const t = useTranslations('apiKeys')
     const commonT = useTranslations('common')
+    const locale = useLocale()
     const { canPerform } = useCanPerform()
 
     // 数据状态
@@ -464,16 +465,16 @@ export function APIKeysClient() {
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
                                         {apiKey.expires_at
-                                            ? formatDateTime(apiKey.expires_at)
+                                            ? formatDateTime(apiKey.expires_at, locale)
                                             : t('never')}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
                                         {apiKey.last_used_at
-                                            ? formatDateTime(apiKey.last_used_at)
+                                            ? formatDateTime(apiKey.last_used_at, locale)
                                             : t('neverUsed')}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
-                                        {formatDateTime(apiKey.created_at)}
+                                        {formatDateTime(apiKey.created_at, locale)}
                                     </TableCell>
                                     <TableCell>
                                         {(canPerform('apikey:update') || canPerform('apikey:delete')) && (

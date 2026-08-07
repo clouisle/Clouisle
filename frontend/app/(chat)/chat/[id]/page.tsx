@@ -57,6 +57,7 @@ import {
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { CodePreviewCanvas } from '@/components/chat/code-preview-canvas'
 import {
   Collapsible,
@@ -132,22 +133,13 @@ export default function PublicChatPage({
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
   const [activePreview, setActivePreview] = React.useState<ChatPreviewPayload | null>(null)
-  const [previewContentVisible, setPreviewContentVisible] = React.useState(false)
+  // Pauses heavy preview rendering (HTML iframes) while the user drags the
+  // resize handle, so continuous relayouts can't stall the page.
+  const [isPreviewResizing, setIsPreviewResizing] = React.useState(false)
 
   const dismissPreview = React.useCallback(() => {
-    setPreviewContentVisible(false)
     setActivePreview(null)
   }, [])
-
-  const handlePreviewTransitionEnd = React.useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
-    if (
-      event.target !== event.currentTarget
-      || event.propertyName !== 'width'
-      || !activePreview
-    ) return
-
-    setPreviewContentVisible(true)
-  }, [activePreview])
 
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
@@ -748,7 +740,9 @@ export default function PublicChatPage({
       )}
 
       {/* Main Content */}
-      <div className="flex-1 min-w-0 min-h-0 flex">
+      <div className="flex-1 min-w-0 min-h-0">
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
+        <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize={400}>
         <div className="flex h-full min-w-0 flex-1 flex-col">
         {/* Header */}
         {showHeader && (
@@ -1036,24 +1030,26 @@ export default function PublicChatPage({
           </div>
         </div>
         </div>
-        {/* Preview Panel */}
-        <div
-          data-chat-preview-panel
-          aria-hidden={!previewContentVisible}
-          onTransitionEnd={handlePreviewTransitionEnd}
-          className={cn(
-            "h-full shrink-0 overflow-hidden bg-background transition-all duration-300 ease-in-out",
-            activePreview ? "w-1/2 border-l" : "w-0"
-          )}
-        >
-          {activePreview && previewContentVisible && (
-            <CodePreviewCanvas
-              key={activePreview.id}
-              preview={activePreview}
-              onClose={dismissPreview}
+        </ResizablePanel>
+        {activePreview && (
+          <>
+            <ResizableHandle
+              withHandle
+              onPointerDown={() => setIsPreviewResizing(true)}
+              onPointerUp={() => setIsPreviewResizing(false)}
+              onPointerCancel={() => setIsPreviewResizing(false)}
             />
-          )}
-        </div>
+            <ResizablePanel data-chat-preview-panel defaultSize="38%" minSize={400}>
+              <CodePreviewCanvas
+                key={activePreview.id}
+                preview={activePreview}
+                onClose={dismissPreview}
+                isResizing={isPreviewResizing}
+              />
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
       </div>
 
       {/* Delete Dialog */}

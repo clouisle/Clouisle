@@ -58,6 +58,7 @@ const text = (namespace: string, key: string, values?: Record<string, unknown>) 
 }
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => Object.assign(
     (key: string, values?: Record<string, unknown>) => text(namespace, key, values),
     { has: () => true },

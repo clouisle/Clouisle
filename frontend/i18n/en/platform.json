@@ -29,6 +29,7 @@
     "aboutCheckingVersion": "Checking for updates...",
     "aboutNewVersion": "New version {version} available",
     "aboutChangelog": "Changelog",
+    "aboutGitHub": "GitHub",
     "teams": "Teams",
     "manageTeams": "Manage Teams",
     "noTeams": "No teams",

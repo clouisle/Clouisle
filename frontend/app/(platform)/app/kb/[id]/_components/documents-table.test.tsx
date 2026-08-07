@@ -2,7 +2,6 @@ import { Window } from 'happy-dom'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DocumentsTable } from './documents-table'
 
 const window = new Window()
 const documentNode = window.document
@@ -11,9 +10,14 @@ globalThis.document = documentNode as unknown as Document
 globalThis.HTMLElement = window.HTMLElement as unknown as typeof HTMLElement
 globalThis.Element = window.Element as unknown as typeof Element
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+const originalSetInterval = globalThis.setInterval
+const originalClearInterval = globalThis.clearInterval
+let intervalCallback: (() => void) | undefined
+const clearIntervalMock = mock(() => {})
 
 const push = mock(() => {})
 const toastSuccess = mock(() => {})
+const toastError = mock(() => {})
 const onRefresh = mock(() => {})
 const getDocuments = mock(async () => ({
   items: [
@@ -26,9 +30,11 @@ const getDocuments = mock(async () => ({
 const processDocument = mock(async () => undefined)
 const retryFailedChunks = mock(async () => undefined)
 const deleteDocument = mock(async () => undefined)
+const downloadDocument = mock(async () => undefined)
 
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => (key: string, values?: Record<string, unknown>) => {
     if (key === 'documentsSelected') return 'documents selected'
     if (key === 'confirmBulkDocumentsDelete') return `Delete ${values?.count} documents?`
@@ -36,16 +42,18 @@ mock.module('next-intl', () => ({
     return `${namespace}.${key}`
   },
 }))
-mock.module('sonner', () => ({ toast: { success: toastSuccess, error: mock(() => {}) } }))
+mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => true }) }))
 mock.module('@/lib/api', () => ({
-  knowledgeBasesApi: { getDocuments, processDocument, retryFailedChunks, deleteDocument },
+  knowledgeBasesApi: { getDocuments, processDocument, retryFailedChunks, deleteDocument, downloadDocument },
 }))
 mock.module('@/components/ui/checkbox', () => ({
   Checkbox: ({ checked, onCheckedChange }: { checked?: boolean; onCheckedChange?: () => void }) => <button role="checkbox" aria-checked={checked} onClick={onCheckedChange} />,
 }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({
-  DataTableFacetedFilter: ({ title }: { title: string }) => <button>{title}</button>,
+  DataTableFacetedFilter: ({ title, onSelectionChange }: { title: string; onSelectionChange: (values: Set<string>) => void }) => (
+    <button onClick={() => onSelectionChange(new Set(['pending']))}>{title}</button>
+  ),
 }))
 mock.module('@/components/ui/select', () => ({
   Select: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -76,6 +84,7 @@ mock.module('@/components/ui/tooltip', () => ({
   TooltipTrigger: ({ children, render, onClick }: { children?: React.ReactNode; render?: React.ReactNode; onClick?: () => void }) => render ? React.cloneElement(render as React.ReactElement<{ onClick?: () => void }>, { onClick }) : <button onClick={onClick}>{children}</button>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }))
+import { DocumentsTable } from './documents-table'
 
 function makeDocument(id: string, name: string, status: string) {
   return {
@@ -119,15 +128,28 @@ function previousButtonForText(container: HTMLElement, text: string) {
   return nodes.slice(0, index).reverse().find(node => node.tagName === 'BUTTON') as HTMLButtonElement
 }
 
+function buttonForText(container: HTMLElement, text: string, index = 0) {
+  return Array.from(container.querySelectorAll('button')).filter(button => button.textContent === text)[index]!
+}
+
 let mounted: Root[] = []
 
 beforeEach(() => {
+  intervalCallback = undefined
+  clearIntervalMock.mockClear()
+  globalThis.setInterval = ((callback: () => void) => {
+    intervalCallback = callback
+    return 1
+  }) as unknown as typeof globalThis.setInterval
+  globalThis.clearInterval = clearIntervalMock as unknown as typeof globalThis.clearInterval
   push.mockClear()
   toastSuccess.mockClear()
+  toastError.mockClear()
   getDocuments.mockClear()
   processDocument.mockClear()
   retryFailedChunks.mockClear()
   deleteDocument.mockClear()
+  downloadDocument.mockClear()
   onRefresh.mockClear()
 })
 
@@ -135,6 +157,8 @@ afterEach(() => {
   for (const root of mounted) act(() => root.unmount())
   mounted = []
   documentNode.body.replaceChildren()
+  globalThis.setInterval = originalSetInterval
+  globalThis.clearInterval = originalClearInterval
 })
 
 describe('platform DocumentsTable', () => {
@@ -172,5 +196,79 @@ describe('platform DocumentsTable', () => {
     await act(async () => Array.from(view.container.querySelectorAll('button')).filter(button => button.textContent === 'common.delete').at(-1)!.click())
     expect(deleteDocument).toHaveBeenCalledWith('kb-1', 'done-doc')
     expect(onRefresh).toHaveBeenCalled()
+  })
+
+  test('runs row actions and toggles all documents', async () => {
+    const view = await renderTable()
+    mounted.push(view.root)
+
+    await act(async () => checkbox(view.container, 0).click())
+    expect(Array.from(view.container.querySelectorAll('button[role="checkbox"]')).every(button => button.getAttribute('aria-checked') === 'true')).toBe(true)
+    await act(async () => checkbox(view.container, 0).click())
+    await act(async () => checkbox(view.container, 1).click())
+    await act(async () => checkbox(view.container, 1).click())
+
+    await act(async () => buttonForText(view.container, 'knowledgeBases.configure').click())
+    await act(async () => buttonForText(view.container, 'knowledgeBases.quickProcess').click())
+    await act(async () => buttonForText(view.container, 'knowledgeBases.viewChunks').click())
+    await act(async () => buttonForText(view.container, 'knowledgeBases.reprocess').click())
+    await act(async () => buttonForText(view.container, 'knowledgeBases.retryFailedChunks').click())
+    await act(async () => buttonForText(view.container, 'knowledgeBases.downloadOriginal').click())
+    await act(async () => buttonForText(view.container, 'common.delete').click())
+    await act(async () => Array.from(view.container.querySelectorAll('button')).filter(button => button.textContent === 'common.delete').at(-1)!.click())
+
+    expect(push.mock.calls.map(call => call[0])).toEqual([
+      '/app/kb/kb-1/documents/pending-doc',
+      '/app/kb/kb-1/documents/error-doc',
+      '/app/kb/kb-1/documents/preview?docs=error-doc',
+    ])
+    expect(processDocument).toHaveBeenCalledWith('kb-1', 'pending-doc')
+    expect(retryFailedChunks).toHaveBeenCalledWith('kb-1', 'error-doc')
+    expect(downloadDocument).toHaveBeenCalledWith('kb-1', 'pending-doc', 'Pending Guide')
+  })
+
+  test('auto-refreshes processing documents and shows embedding progress', async () => {
+    getDocuments.mockResolvedValueOnce({
+      items: [{
+        ...makeDocument('processing-doc', 'Processing Guide', 'processing'),
+        metadata: { embed_progress: { embedded: 2, failed: 1, total: 4 } },
+      }],
+      total: 1,
+    })
+    const view = await renderTable()
+    mounted.push(view.root)
+
+    expect(view.container.textContent).toContain('knowledgeBases.embeddingProgress')
+    expect(view.container.textContent).toContain('knowledgeBases.failedCount')
+    expect(intervalCallback).toBeDefined()
+    await act(async () => intervalCallback!())
+    expect(getDocuments).toHaveBeenCalledTimes(2)
+  })
+
+  test('resets search filters and handles empty results', async () => {
+    const view = await renderTable()
+    mounted.push(view.root)
+    await act(async () => buttonForText(view.container, 'knowledgeBases.status').click())
+    expect(buttonForText(view.container, 'common.reset')).toBeDefined()
+    await act(async () => buttonForText(view.container, 'common.reset').click())
+    expect(buttonForText(view.container, 'common.reset')).toBeUndefined()
+
+    getDocuments.mockResolvedValueOnce({ items: [], total: 0 })
+    await act(async () => intervalCallback!())
+    expect(view.container.textContent).toContain('knowledgeBases.noDocuments')
+  })
+
+  test('renders processing without progress and reports failed downloads', async () => {
+    getDocuments.mockResolvedValueOnce({
+      items: [makeDocument('processing-doc', 'Processing Guide', 'processing')],
+      total: 1,
+    })
+    downloadDocument.mockRejectedValueOnce(new Error('download failed'))
+    const view = await renderTable()
+    mounted.push(view.root)
+
+    expect(view.container.textContent).toContain('knowledgeBases.statusProcessing')
+    await act(async () => buttonForText(view.container, 'knowledgeBases.downloadOriginal').click())
+    expect(toastError).toHaveBeenCalledWith('knowledgeBases.downloadFailed')
   })
 })

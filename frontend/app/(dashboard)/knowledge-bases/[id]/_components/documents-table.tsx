@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
   MoreHorizontal,
@@ -106,6 +106,7 @@ async function runBulkActions<T>(items: T[], action: (item: T) => Promise<unknow
 export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: DocumentsTableProps) {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
+  const locale = useLocale()
   const router = useRouter()
   const { canPerform } = useCanPerform()
   const canUpdateKb = canPerform('kb:update')
@@ -536,7 +537,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                   </TableCell>
                   <TableCell>{getStatusBadge(doc.status, doc)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatDateTime(doc.created_at)}
+                    {formatDateTime(doc.created_at, locale)}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>

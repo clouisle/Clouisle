@@ -39,6 +39,19 @@ class OllamaAdapter(BaseChatAdapter):
 
     DEFAULT_BASE_URL = "http://localhost:11434/v1"
 
+    def get_passthrough_body(self) -> dict[str, Any]:
+        """Return Ollama-specific options through the OpenAI SDK escape hatch."""
+        body = super().get_passthrough_body()
+        body["think"] = self.thinking_enabled
+        return body
+
+    def _get_base_url(self) -> str:
+        """Return an Ollama OpenAI-compatible endpoint ending in ``/v1``."""
+        base_url = (self.base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url = f"{base_url}/v1"
+        return base_url
+
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """转换消息格式为 Ollama 格式"""
         ollama_messages: list[dict[str, Any]] = []
@@ -129,7 +142,7 @@ class OllamaAdapter(BaseChatAdapter):
 
         client = AsyncOpenAI(
             api_key=self.api_key or "ollama",
-            base_url=self.base_url or self.DEFAULT_BASE_URL,
+            base_url=self._get_base_url(),
             timeout=self.http_timeout,
         )
 
@@ -150,10 +163,6 @@ class OllamaAdapter(BaseChatAdapter):
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
-
-            # Ollama 使用 think 参数（Boolean），明确传递开关状态
-            request_params["think"] = self.thinking_enabled
-
             response = await client.chat.completions.create(
                 **request_params,
                 extra_body=self.get_passthrough_body() or None,
@@ -223,7 +232,7 @@ class OllamaAdapter(BaseChatAdapter):
 
         client = AsyncOpenAI(
             api_key=self.api_key or "ollama",
-            base_url=self.base_url or self.DEFAULT_BASE_URL,
+            base_url=self._get_base_url(),
             timeout=self.http_timeout,
         )
 
@@ -245,10 +254,6 @@ class OllamaAdapter(BaseChatAdapter):
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
-
-            # Ollama 使用 think 参数（Boolean），明确传递开关状态
-            request_params["think"] = self.thinking_enabled
-
             stream = await client.chat.completions.create(
                 **request_params,
                 extra_body=self.get_passthrough_body() or None,

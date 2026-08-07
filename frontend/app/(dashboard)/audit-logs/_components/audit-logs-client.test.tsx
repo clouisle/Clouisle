@@ -32,6 +32,7 @@ mock.module('react', () => ({
   },
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => Object.assign((key: string) => `${namespace}.${key}`, { has: () => false }),
 }))
 mock.module('@/lib/api/admin/audit-logs', () => ({ auditLogsApi: api }))
@@ -132,7 +133,13 @@ describe('audit-log dashboard behavior', () => {
     expect(text(tree)).toContain('denied')
     expect(text(tree)).toContain('"role": "admin"')
     expect(text(tree)).toContain('"source": "sso"')
+    const successTree = render(() => <AuditLogDrawer open onOpenChange={() => {}} log={{
+      id: 'log-2', created_at: '2026-01-02T03:04:05Z', status: 'success', action: 'login', operation: '',
+      username: 'ada', resource_type: '', changes: null, metadata: null,
+    }} />)
+    expect(text(successTree)).toContain('auditLogs.statusSuccess')
   })
+
 
   test('hides export controls without audit export permission', async () => {
     canExport = false

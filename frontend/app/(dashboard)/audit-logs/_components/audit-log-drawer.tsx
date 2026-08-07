@@ -1,7 +1,6 @@
 "use client";
 
-import { useTranslations } from "next-intl";
-import { format } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Sheet,
   SheetContent,
@@ -12,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AuditLog } from "@/lib/api/admin/audit-logs";
+import { formatDateTime } from "@/lib/utils";
 
 interface AuditLogDrawerProps {
   log: AuditLog | null;
@@ -21,6 +21,7 @@ interface AuditLogDrawerProps {
 
 export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps) {
   const t = useTranslations("auditLogs");
+  const locale = useLocale();
 
   if (!log) return null;
 
@@ -37,13 +38,19 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
     return t.has(key) ? t(key) : operation;
   };
 
+  const getResourceTypeLabel = (resourceType: string) => {
+    if (!resourceType) return "-";
+    const key = `resourceType${resourceType.charAt(0).toUpperCase()}${resourceType.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`;
+    return t.has(key) ? t(key) : resourceType;
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
         <SheetHeader className="px-6">
           <SheetTitle>{t("logDetails")}</SheetTitle>
           <SheetDescription>
-            {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
+            {formatDateTime(log.created_at, locale, "-", { withSeconds: true })}
           </SheetDescription>
         </SheetHeader>
 
@@ -98,7 +105,7 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">{t("resourceType")}</span>
-                <span className="text-sm font-medium">{log.resource_type}</span>
+                <span className="text-sm font-medium">{getResourceTypeLabel(log.resource_type)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">{t("resourceName")}</span>

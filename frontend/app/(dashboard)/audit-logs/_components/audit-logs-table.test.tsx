@@ -15,6 +15,7 @@ const element = (tag: string) => {
 }
 
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => Object.assign((key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${JSON.stringify(values)}` : key, { has: (key: string) => key === 'operationCreate' || key === 'actionLogin' }),
 }))

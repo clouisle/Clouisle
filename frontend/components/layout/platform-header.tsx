@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import {
   Bot,
@@ -104,6 +104,7 @@ export function PlatformHeader() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
   const tOnboarding = useTranslations('onboarding')
+  const locale = useLocale()
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = React.useState<UserType | null>(null)
@@ -536,7 +537,7 @@ export function PlatformHeader() {
             </h2>
 
             <p className="text-sm text-muted-foreground mb-4">
-              Version {APP_VERSION}
+              {t('aboutVersion')} {APP_VERSION}
             </p>
 
             {/* 版权和链接 */}
@@ -545,7 +546,7 @@ export function PlatformHeader() {
             </p>
 
             <p className="text-sm text-muted-foreground mb-4">
-              {t('aboutBuildDate')}: {BUILD_DATE !== 'dev' ? formatDateTime(BUILD_DATE) : BUILD_DATE}
+              {t('aboutBuildDate')}: {BUILD_DATE !== 'dev' ? formatDateTime(BUILD_DATE, locale) : BUILD_DATE}
             </p>
 
             <div className="flex items-center gap-1 text-sm">
@@ -555,7 +556,7 @@ export function PlatformHeader() {
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                GitHub
+                {t('aboutGitHub')}
               </a>
               <span className="text-muted-foreground">,</span>
               <a

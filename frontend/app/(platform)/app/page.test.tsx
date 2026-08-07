@@ -52,7 +52,7 @@ const getTrends = mock(() => Promise.resolve({
   ],
 }))
 
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next/link', () => ({
   default: ({ href, children }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a>,
 }))

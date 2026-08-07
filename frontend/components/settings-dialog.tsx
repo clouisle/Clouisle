@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy, Mail } from 'lucide-react'
@@ -53,6 +53,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+  const locale = useLocale()
   const t = useTranslations('settings')
   const tCommon = useTranslations('common')
   const tSSO = useTranslations('sso')
@@ -645,7 +646,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               <LinkIcon className="h-3 w-3 text-muted-foreground" />
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {tSSO('lastLogin')}: {formatDateTime(connection.last_login)}
+                              {tSSO('lastLogin')}: {formatDateTime(connection.last_login, locale)}
                             </p>
                           </div>
                         </div>
@@ -707,7 +708,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             <p className="text-sm font-medium">{t('twoFactorEnabled')}</p>
                             {totpStatus.enabled_at && (
                               <p className="text-xs text-muted-foreground">
-                                {t('twoFactorEnabledAt')}: {formatDateTime(totpStatus.enabled_at)}
+                                {t('twoFactorEnabledAt')}: {formatDateTime(totpStatus.enabled_at, locale)}
                               </p>
                             )}
                           </div>
@@ -820,7 +821,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             <span className="text-muted-foreground">
                               {tAuth('passwordExpiresAt')}:{' '}
                               <span className="font-medium text-foreground">
-                                {formatDate(passwordStatus.password_expires_at)}
+                                {formatDate(passwordStatus.password_expires_at, locale)}
                               </span>
                             </span>
                           </div>

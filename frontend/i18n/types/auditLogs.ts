@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-05T06:10:25.287Z
+// GENERATED — 2026-08-06T10:15:38.097Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {
@@ -73,6 +73,30 @@ export type AuditLogsMessages = {
     actionResetPassword: string
     action: string
     actions: string
+    resourceTypeUser: string
+    resourceTypeAgent: string
+    resourceTypeWorkflow: string
+    resourceTypeTeam: string
+    resourceTypeRole: string
+    resourceTypePermission: string
+    resourceTypeApiKey: string
+    resourceTypeModel: string
+    resourceTypeKnowledgeBase: string
+    resourceTypeDocument: string
+    resourceTypeDocumentChunk: string
+    resourceTypeMemoryEntity: string
+    resourceTypeMemoryRelation: string
+    resourceTypeSession: string
+    resourceTypeMessage: string
+    resourceTypeConversation: string
+    resourceTypeSkill: string
+    resourceTypeTool: string
+    resourceTypeSsoConnection: string
+    resourceTypeSsoProvider: string
+    resourceTypeSiteSetting: string
+    resourceTypeSystem: string
+    resourceTypePackage: string
+    resourceTypeNotification: string
     actionlogin_success: string
     actionlogin_failed: string
     actionlogout: string
@@ -88,21 +112,11 @@ export type AuditLogsMessages = {
     actionreset_password_expiration: string
     actionexempt_password_expiration: string
     actionbulk_force_password_change: string
-    actioncreate_role: string
-    actionupdate_role: string
-    actiondelete_role: string
-    actioncreate_permission: string
-    actionupdate_permission: string
-    actiondelete_permission: string
-    actionupdate_settings: string
     actioncreate_api_key: string
     actionupdate_api_key: string
     actionactivate_api_key: string
     actiondeactivate_api_key: string
     actiondelete_api_key: string
-    actioncreate_model: string
-    actionupdate_model: string
-    actiondelete_model: string
     actioncreate_team: string
     actionupdate_team: string
     actiondelete_team: string
@@ -113,9 +127,6 @@ export type AuditLogsMessages = {
     actiondelete_agent: string
     actionpublish_agent: string
     actionunpublish_agent: string
-    actioncreate_kb: string
-    actionupdate_kb: string
-    actiondelete_kb: string
     actioncreate_tool: string
     actionupdate_tool: string
     actiondelete_tool: string
@@ -156,6 +167,79 @@ export type AuditLogsMessages = {
     actionadmin_update_skill: string
     actionadmin_delete_skill: string
     actionadmin_test_skill: string
+    actionadmin_create_agent: string
+    actionadmin_update_agent: string
+    actionadmin_publish_agent: string
+    actionadmin_unpublish_agent: string
+    actionadmin_duplicate_agent: string
+    actionadmin_delete_agent: string
+    actionadmin_create_workflow: string
+    actionadmin_update_workflow: string
+    actionadmin_publish_workflow: string
+    actionadmin_unpublish_workflow: string
+    actionadmin_duplicate_workflow: string
+    actionadmin_delete_workflow: string
+    actionduplicate_agent: string
+    actionedit_message: string
+    actiondelete_conversation: string
+    actionbatch_delete_conversations: string
+    actionrun_workflow_embed: string
+    actionupload_document: string
+    actionadd_url_document: string
+    actionupdate_document: string
+    actiondelete_document: string
+    actionprocess_document: string
+    actionprocess_document_with_chunks: string
+    actionreprocess_document: string
+    actionretry_failed_chunks: string
+    actionretry_failed_chunk: string
+    actionupdate_document_chunk: string
+    actiondelete_document_chunk: string
+    actioncreate_document_chunk: string
+    actionrechunk_document: string
+    actionexport_clouisle_package: string
+    actionpreview_clouisle_import: string
+    actioninstall_clouisle_package: string
+    actiontest_sso_provider_failed: string
+    actioncreate_memory_entity: string
+    actioncreate_memory_relation: string
+    actionupdate_tool_config: string
+    actiondelete_tool_config: string
+    actiongenerate_prompt: string
+    actionoptimize_prompt: string
+    actiondebug_workflow: string
+    actionadd_team_model: string
+    actionbatch_add_team_models: string
+    actionbatch_remove_team_models: string
+    actioncancel_workflow_run: string
+    actioncreate_tool_config: string
+    actioncreate_workflow_version: string
+    actiondelete_file: string
+    actiondelete_workflow_run: string
+    actionduplicate_tool: string
+    actionduplicate_workflow: string
+    actionpublish_workflow: string
+    actionregenerate_webhook_token: string
+    actionremove_team_model: string
+    actionrestore_workflow_version: string
+    actionrun_workflow: string
+    actionshare_tool: string
+    actiontoggle_tool: string
+    actionunpublish_workflow: string
+    actionunshare_tool: string
+    actionupdate_team_model: string
+    actionupload_file: string
+    actionupload_image: string
+    actionupload_sandbox_artifact: string
+    actioncreate_knowledge_base: string
+    actionupdate_knowledge_base: string
+    actiondelete_knowledge_base: string
+    resourceTypeToolConfig: string
+    resourceTypePrompt: string
+    resourceTypeWorkflowRun: string
+    resourceTypeWorkflowVersion: string
+    resourceTypeFile: string
+    resourceTypeTeamModel: string
     rowsPerPage: string
     pageInfo: string
   }

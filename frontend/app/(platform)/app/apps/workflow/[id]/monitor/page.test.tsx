@@ -25,6 +25,7 @@ mock.module("next/navigation", () => ({
   useRouter: () => router,
 }));
 mock.module("next-intl", () => ({
+  useLocale: () => 'en',
   useTranslations: (namespace: string) => (key: string) => `${namespace}:${key}`,
 }));
 mock.module("next/image", () => ({

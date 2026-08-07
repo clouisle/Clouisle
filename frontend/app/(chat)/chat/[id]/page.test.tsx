@@ -159,14 +159,6 @@ function buttons(text: string) {
 async function click(text: string, index = 0) {
   await act(async () => { await buttons(text)[index].props.onClick({ stopPropagation: mock() }) })
 }
-function previewPanel() {
-  return renderer!.root.findByProps({ 'data-chat-preview-panel': true })
-}
-function endPreviewWidthTransition() {
-  const panel = previewPanel()
-  const target = {}
-  act(() => panel.props.onTransitionEnd({ target, currentTarget: target, propertyName: 'width' }))
-}
 
 beforeEach(() => {
   token = 'token'
@@ -491,27 +483,14 @@ describe('PublicChatPage', () => {
     expect(toastError).toHaveBeenCalledWith('invalidFileType')
     console.error = consoleError
   })
-  test('shows preview content only after opening and hides it before closing', async () => {
+  test('shows preview content when opened and hides it when closed', async () => {
     render()
     await flush()
 
     act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'source' }))
-    expect(previewPanel().props['aria-hidden']).toBe(true)
-    expect(output()).not.toContain('data-preview')
-
-    const panel = previewPanel()
-    const target = {}
-    act(() => panel.props.onTransitionEnd({ target, currentTarget: target, propertyName: 'border-left-width' }))
-    expect(output()).not.toContain('data-preview')
-    act(() => panel.props.onTransitionEnd({ target: {}, currentTarget: target, propertyName: 'width' }))
-    expect(output()).not.toContain('data-preview')
-
-    endPreviewWidthTransition()
-    expect(previewPanel().props['aria-hidden']).toBe(false)
     expect(output()).toContain('data-preview')
 
     await click('preview')
-    expect(previewPanel().props['aria-hidden']).toBe(true)
     expect(output()).not.toContain('data-preview')
   })
 
@@ -523,7 +502,6 @@ describe('PublicChatPage', () => {
 
     // A code preview is open for the current conversation
     act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'code' }))
-    endPreviewWidthTransition()
     expect(output()).toContain('data-preview')
 
     // Simulate browser back/forward: conv-1 is now the active conversation and the
