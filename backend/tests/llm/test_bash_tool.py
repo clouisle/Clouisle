@@ -64,6 +64,40 @@ async def test_bash_tool_maps_workspace_paths_to_relative_paths():
     assert job.command == ["bash", "-c", "ls ./output"]
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("find / -name '*.py'", "find . -name '*.py'"),
+        ("/usr/bin/find '/' -name '*.py'", "/usr/bin/find '.' -name '*.py'"),
+        ("pwd && find / -maxdepth 2", "pwd && find . -maxdepth 2"),
+    ],
+)
+@pytest.mark.anyio
+async def test_bash_tool_confines_find_root_scan_to_workspace(
+    command: str,
+    expected: str,
+):
+    tool = BashSandboxTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+
+    with patch(
+        "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
+        new=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                stdout="ok\n",
+                stderr="",
+                metadata=SimpleNamespace(exit_code=0),
+                status=SimpleNamespace(value="completed"),
+                error=None,
+            )
+        ),
+    ) as mock_submit:
+        await tool.execute(command)
+
+    job = mock_submit.await_args.args[0]
+    assert job.command == ["bash", "-c", expected]
+
+
 @pytest.mark.anyio
 async def test_bash_tool_maps_workspace_paths_from_nested_cwd():
     tool = BashSandboxTool(session_id="session-1", agent_id="agent-1", team_id="team-1")

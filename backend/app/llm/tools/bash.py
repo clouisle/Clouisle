@@ -20,6 +20,11 @@ from .bash_output import denoise_output
 
 logger = logging.getLogger(__name__)
 
+_FIND_ROOT_SCAN_PATTERN = re.compile(
+    r"(?P<head>(?:^|(?:&&|\|\||;|\|)\s*)(?:command\s+)?(?:/usr/bin/)?find\s+)"
+    r"(?P<quote>['\"]?)/(?P=quote)(?=\s|$)"
+)
+
 
 class BashSandboxTool:
     """Bash 沙箱工具封装，支持 shell=True 模式"""
@@ -46,7 +51,9 @@ class BashSandboxTool:
     ) -> dict[str, Any]:
         runtime_workspace_root = await self._runtime_workspace_root()
         logical_cwd = self._normalize_logical_cwd(cwd, runtime_workspace_root)
-        runtime_command = self._normalize_install_commands(command)
+        runtime_command = self._confine_find_root_scans(
+            self._normalize_install_commands(command)
+        )
         runtime_command = self._map_workspace_paths(
             runtime_command, runtime_workspace_root
         )
@@ -110,6 +117,15 @@ class BashSandboxTool:
             command,
         )
 
+    def _confine_find_root_scans(self, command: str) -> str:
+        return _FIND_ROOT_SCAN_PATTERN.sub(
+            lambda match: (
+                f"{match.group('head')}{match.group('quote')}"
+                f"/workspace{match.group('quote')}"
+            ),
+            command,
+        )
+
     async def _runtime_workspace_root(self) -> Path:
         if not self.session_id:
             return Path(self.workspace_root)
@@ -154,11 +170,10 @@ def register_bash_tool() -> None:
         description=(
             "Execute a Bash command in the sandbox workspace. Use this for running scripts, "
             "installing packages, inspecting files, and invoking CLI tools. The sandbox workspace "
-            "is exposed to you as /workspace; prefer paths under /workspace when calling this tool "
-            "and set cwd to /workspace or a subdirectory. The cwd value is mapped to the current "
-            "sandbox session directory on disk. When you write Python or Node scripts with the write "
-            "tool, those scripts should use relative paths (e.g., 'output/report.docx') or derive "
-            "paths from their working directory, not hardcode /workspace/... inside the script code. "
+            "is exposed as a real /workspace filesystem path; use paths under /workspace and "
+            "set cwd to /workspace or a subdirectory. Python and Node scripts may use absolute "
+            "/workspace paths or paths relative to their working directory. Root-level find scans "
+            "are confined to /workspace. "
             "To install Python packages, run `python3 -m pip install <package>` or `pip install "
             "<package>`; pip commands are normalized to python3 -m pip. To run Python code, prefer "
             "writing a script with the write tool, then run `python3 /workspace/script.py`. Inline "

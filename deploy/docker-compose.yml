@@ -121,6 +121,11 @@ services:
     restart: unless-stopped
     command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=unconfined
+    cap_drop:
+      - ALL
     environment:
       API_BASE_URL: http://api:8000
       SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
