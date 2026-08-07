@@ -619,7 +619,7 @@ msgid "builtin_tool_bash"
 msgstr "执行命令"
 
 msgid "builtin_tool_bash_description"
-msgstr "让助手在隔离的沙盒环境中运行命令，用于处理文件、运行脚本或生成内容。"
+msgstr "在沙箱工作区中执行 Bash 命令，用于运行脚本、安装包、检查文件和调用 CLI 工具。沙箱工作区以真实的 /workspace 文件系统路径暴露；使用 /workspace 下的路径并将 cwd 设为 /workspace 或其子目录。Python 和 Node 脚本可使用绝对 /workspace 路径或相对于工作目录的路径。根目录 find 扫描被限制在 /workspace 范围内。安装 Python 包请运行 `python3 -m pip install <包名>` 或 `pip install <包名>`；pip 命令会自动归一化为 python3 -m pip。运行 Python 代码时，建议先用 write 工具编写脚本，再运行 `python3 /workspace/script.py`。也允许 `python3 -c \"print('ok')\"` 等内联检查。安装 Node 包请在工作区使用 `npm install <包名>`，然后用 `node /workspace/script.js` 或 `npm run <脚本>` 运行。如果缺少模块，请先安装而不是反复重试同一命令。"
 
 msgid "builtin_tool_edit"
 msgstr "编辑文件"
@@ -632,6 +632,9 @@ msgstr "有序紧凑操作列表，支持范围、近似语法块、持久剪切
 
 msgid "builtin_tool_edit_param_path_description"
 msgstr "要编辑的现有文本文件。使用 /workspace 路径或相对路径；/workspace 外的路径会被拒绝。"
+
+msgid "builtin_tool_edit_param_tag_description"
+msgstr "从 read 获取的四位十六进制快照 ID。使用整数行号或仅 head/tail 操作时必填；当所有锚点为 LINE#ID 时可省略。"
 
 msgid "builtin_tool_calculate"
 msgstr "数学计算"

@@ -299,8 +299,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "builtin_tool_bash": {"en": "Run Command", "zh": "执行命令"},
     "builtin_tool_bash_description": {
-        "en": "Execute a Bash command in the sandbox workspace. Use this for running scripts, installing packages, inspecting files, and invoking CLI tools. The sandbox workspace is exposed to you as /workspace; prefer paths under /workspace when calling this tool and set cwd to /workspace or a subdirectory. The cwd value is mapped to the current sandbox session directory on disk. When you write Python or Node scripts with the write tool, those scripts should use relative paths (e.g., 'output/report.docx') or derive paths from their working directory, not hardcode /workspace/... inside the script code. To install Python packages, run `python3 -m pip install <package>` or `pip install <package>`; pip commands are normalized to python3 -m pip. To run Python code, prefer writing a script with the write tool, then run `python3 /workspace/script.py`. Inline checks like `python3 -c \"print('ok')\"` are also allowed. For Node packages, use `npm install <package>` in the workspace, then run scripts with `node /workspace/script.js` or `npm run <script>`. If a module is missing, install it first instead of repeatedly retrying the same command.",
-        "zh": "让助手在隔离的沙盒环境中运行命令，用于处理文件、运行脚本或生成内容。",
+        "en": "Execute a Bash command in the sandbox workspace. Use this for running scripts, installing packages, inspecting files, and invoking CLI tools. The sandbox workspace is exposed as a real /workspace filesystem path; use paths under /workspace and set cwd to /workspace or a subdirectory. Python and Node scripts may use absolute /workspace paths or paths relative to their working directory. Root-level find scans are confined to /workspace. To install Python packages, run `python3 -m pip install <package>` or `pip install <package>`; pip commands are normalized to python3 -m pip. To run Python code, prefer writing a script with the write tool, then run `python3 /workspace/script.py`. Inline checks like `python3 -c \"print('ok')\"` are also allowed. For Node packages, use `npm install <package>` in the workspace, then run scripts with `node /workspace/script.js` or `npm run <script>`. If a module is missing, install it first instead of repeatedly retrying the same command.",
+        "zh": "在沙箱工作区中执行 Bash 命令，用于运行脚本、安装包、检查文件和调用 CLI 工具。沙箱工作区以真实的 /workspace 文件系统路径暴露；使用 /workspace 下的路径并将 cwd 设为 /workspace 或其子目录。Python 和 Node 脚本可使用绝对 /workspace 路径或相对于工作目录的路径。根目录 find 扫描被限制在 /workspace 范围内。安装 Python 包请运行 `python3 -m pip install <包名>` 或 `pip install <包名>`；pip 命令会自动归一化为 python3 -m pip。运行 Python 代码时，建议先用 write 工具编写脚本，再运行 `python3 /workspace/script.py`。也允许 `python3 -c \"print('ok')\"` 等内联检查。安装 Node 包请在工作区使用 `npm install <包名>`，然后用 `node /workspace/script.js` 或 `npm run <脚本>` 运行。如果缺少模块，请先安装而不是反复重试同一命令。",
     },
     "builtin_tool_bash_param_command_description": {
         "en": "Shell command to execute. Examples: `ls -la /workspace`, `python3 -m pip install python-docx`, `python3 /workspace/create_docx.py`, `npm install mammoth`, `node /workspace/convert.js`. Use /workspace paths when referencing files created by the read/write tools.",
@@ -335,6 +335,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "builtin_tool_edit_param_path_description": {
         "en": "Existing text file to edit. Use a /workspace path or a relative path; paths outside /workspace are rejected.",
         "zh": "要编辑的现有文本文件。使用 /workspace 路径或相对路径；/workspace 外的路径会被拒绝。",
+    },
+    "builtin_tool_edit_param_tag_description": {
+        "en": "Four-hex snapshot ID from read. Required for integer lines and head/tail-only operations; omit when every anchor is LINE#ID.",
+        "zh": "从 read 获取的四位十六进制快照 ID。使用整数行号或仅 head/tail 操作时必填；当所有锚点为 LINE#ID 时可省略。",
     },
     "builtin_tool_fetch_webpage": {"en": "Fetch Webpage", "zh": "获取网页内容"},
     "builtin_tool_fetch_webpage_description": {
