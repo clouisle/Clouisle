@@ -132,7 +132,26 @@ jobs:
       - build-frontend
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Find previous stable tag
+        id: previous-tag
+        shell: bash
+        run: |
+          previous_tag=""
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$tag" != "$GITHUB_REF_NAME" ]]; then
+              previous_tag="$tag"
+              break
+            fi
+          done < <(git tag --merged "$GITHUB_SHA" --sort=-version:refname)
+          echo "tag=$previous_tag" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          previous_tag: ${{ steps.previous-tag.outputs.tag }}
