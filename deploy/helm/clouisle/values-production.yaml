@@ -1,13 +1,13 @@
 images:
   backend:
-    repository: registry.example.com/clouisle/clouisle-backend
-    tag: 0.1.0
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend
+    tag: latest
   sandboxWorker:
-    repository: registry.example.com/clouisle/clouisle-sandbox-worker
-    tag: 0.1.0
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker
+    tag: latest
   frontend:
-    repository: registry.example.com/clouisle/clouisle-frontend
-    tag: 0.1.0
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend
+    tag: latest
 
 config:
   API_BASE_URL: http://api:8000

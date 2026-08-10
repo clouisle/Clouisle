@@ -71,9 +71,9 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `images.backend.repository` | `clouisle-backend` | API, worker, and beat image |
-| `images.sandboxWorker.repository` | `clouisle-sandbox-worker` | Sandbox worker image |
-| `images.frontend.repository` | `clouisle-frontend` | Frontend image |
+| `images.backend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend` | API, worker, and beat image |
+| `images.sandboxWorker.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker` | Sandbox worker image |
+| `images.frontend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend` | Frontend image |
 | `config.API_BASE_URL` | `http://api:8000` | Internal API URL |
 | `config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | `http://api:8000` | Internal artifact upload API URL |
 | `secrets.create` | `true` | Create a Secret from values |

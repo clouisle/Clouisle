@@ -6,8 +6,7 @@
 # IMPORTANT: Before applying, replace base64 placeholder values in the Secret.
 #   echo -n 'your-value' | base64
 #
-# Replace image references with your registry, e.g.:
-#   registry.cn-hangzhou.aliyuncs.com/clouisle/clouisle-backend:0.1.0
+# Application images use the published Clouisle ACR repositories below.
 
 # ===========================================================================
 # 1. Namespace
@@ -368,7 +367,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: clouisle-backend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
           ports:
@@ -426,7 +425,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: clouisle-backend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
           envFrom:
@@ -470,7 +469,7 @@ spec:
     spec:
       containers:
         - name: sandbox-worker
-          image: clouisle-sandbox-worker:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
           imagePullPolicy: IfNotPresent
           command:
             - sh
@@ -527,7 +526,7 @@ spec:
     spec:
       containers:
         - name: beat
-          image: clouisle-backend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "beat"]
           envFrom:
@@ -576,7 +575,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: clouisle-frontend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

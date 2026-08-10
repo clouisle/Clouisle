@@ -10,15 +10,15 @@ global:
 
 images:
   backend:
-    repository: clouisle-backend
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend
     tag: latest
     pullPolicy: IfNotPresent
   sandboxWorker:
-    repository: clouisle-sandbox-worker
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker
     tag: latest
     pullPolicy: IfNotPresent
   frontend:
-    repository: clouisle-frontend
+    repository: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend
     tag: latest
     pullPolicy: IfNotPresent
 

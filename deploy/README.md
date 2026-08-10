@@ -39,9 +39,9 @@ git push origin v0.1.0
 Images are pushed to:
 
 ```text
-<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-backend:<version>
-<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-sandbox-worker:<version>
-<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-frontend:<version>
+registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
+registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
 ```
 
 Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
@@ -69,15 +69,11 @@ cp .env.example .env
 # Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD,
 # and QDRANT_API_KEY.
 
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Compose reads `deploy/.env`. The default image prefix is `clouisle`; set these when using registry images:
-
-```env
-IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/your-namespace/clouisle
-IMAGE_TAG=0.1.0
-```
+Compose pulls the published `latest` images listed above by default. Use `docker compose up -d --build` only when intentionally rebuilding them from local source.
 
 ### Services
 
