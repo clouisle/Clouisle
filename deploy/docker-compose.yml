@@ -63,9 +63,6 @@ services:
   # ---------------------------------------------------------------------------
   api:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
     command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
     env_file: .env
@@ -89,9 +86,6 @@ services:
 
   worker:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
     command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
     env_file: .env
@@ -115,9 +109,6 @@ services:
 
   sandbox-worker:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/sandbox-worker.Dockerfile
     restart: unless-stopped
     command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
     env_file: .env
@@ -146,9 +137,6 @@ services:
 
   beat:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
     command: ["python", "main.py", "beat"]
     env_file: .env
@@ -168,13 +156,6 @@ services:
 
   frontend:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/frontend.Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
-        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.0.0-dev}
-        NEXT_PUBLIC_BUILD_DATE: ${NEXT_PUBLIC_BUILD_DATE:-unknown}
     restart: unless-stopped
     environment:
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000}

@@ -147,28 +147,24 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 ### 快速开始
 
+在任意目录运行交互式安装脚本：
+
 ```bash
-cd deploy
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
 
-# 1. Create and edit environment file
-cp .env.example .env
+根据提示选择单机 Docker Compose 或 Kubernetes Helm。Docker 模式会交互式询问安装目录，默认为 `/opt/clouisle`，随后自动生成强随机密钥、下载当前 Compose 文件、拉取镜像并启动服务。Helm 模式会引导配置命名空间、Ingress、共享存储和可选的镜像拉取 Secret。
 
-# 2. Generate secure passwords (run each command, paste results into .env)
-openssl rand -base64 32    # → SECRET_KEY
-openssl rand -base64 16    # → POSTGRES_PASSWORD
-openssl rand -base64 16    # → REDIS_PASSWORD
-openssl rand -base64 16    # → QDRANT_API_KEY
+如需非交互式安装 Docker Compose：
 
-# 3. Build images and start all services
-docker compose up -d --build
-
-# 4. Verify all services are healthy
-docker compose ps
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
 ```
 
 ### 配置说明
 
-启动前请编辑 `deploy/.env`。以下变量**必须**修改：
+Docker 安装会把生成的配置保存在 `<安装目录>/.env`（默认为 `/opt/clouisle/.env`）。对外开放前请检查该文件。以下变量为空时会自动生成：
 
 | 变量 | 原因 | 示例 |
 |------|------|------|
@@ -365,7 +361,7 @@ docker compose down -v
 
 # Update images and restart
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 ```
 
 ---

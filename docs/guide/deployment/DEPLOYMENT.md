@@ -147,28 +147,24 @@ The plain manifest remains available at `deploy/k8s/clouisle.yaml` for fallback 
 
 ### Quick Start
 
+Run the interactive installer from any directory:
+
 ```bash
-cd deploy
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
 
-# 1. Create and edit environment file
-cp .env.example .env
+Choose Docker Compose for a single server or Kubernetes with Helm. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings.
 
-# 2. Generate secure passwords (run each command, paste results into .env)
-openssl rand -base64 32    # → SECRET_KEY
-openssl rand -base64 16    # → POSTGRES_PASSWORD
-openssl rand -base64 16    # → REDIS_PASSWORD
-openssl rand -base64 16    # → QDRANT_API_KEY
+For non-interactive Docker installation:
 
-# 3. Build images and start all services
-docker compose up -d --build
-
-# 4. Verify all services are healthy
-docker compose ps
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
 ```
 
 ### Configuration
 
-Edit `deploy/.env` before starting. The following variables **must** be changed:
+Docker installations keep their generated configuration in `<installation-directory>/.env` (`/opt/clouisle/.env` by default). Review it before exposing the deployment publicly. The following variables are generated automatically when empty:
 
 | Variable | Why | Example |
 |----------|-----|---------|
@@ -365,7 +361,7 @@ docker compose down -v
 
 # Update images and restart
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 ```
 
 ---

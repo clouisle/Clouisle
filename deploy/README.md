@@ -61,19 +61,25 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 
 ## Docker Compose Deployment
 
-### Quick Start
+### Guided One-Command Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
+
+The installer asks whether to deploy with Docker Compose or Kubernetes with Helm. Docker mode prompts for an installation directory (`/opt/clouisle` by default), downloads the deployment files, generates strong secrets, validates the Compose configuration, pulls the published images, and starts the services. Existing `.env` files are preserved during upgrades.
+
+### Manual Docker Compose Install
 
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD,
-# and QDRANT_API_KEY.
-
+# Edit .env when custom domains or external API keys are required.
 docker compose pull
 docker compose up -d
 ```
 
-Compose pulls the published `latest` images listed above by default. Use `docker compose up -d --build` only when intentionally rebuilding them from local source.
+Compose pulls the published `latest` images listed above by default.
 
 ### Services
 

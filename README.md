@@ -178,28 +178,20 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 ## Quick Start
 ### Prerequisites
 
-- Docker & Docker Compose
+- Docker and Docker Compose v2 for single-server deployment
+- `kubectl` and Helm 3 for Kubernetes deployment
 
 > For development from source, see the [Development Guide](docs/guide/getting-started/development.md).
 
-### 1. Configure Environment
+### 1. Run the Guided Installer
 
 ```bash
-# Copy the Docker deployment environment file
-cp deploy/.env.example deploy/.env
-
-# Edit deploy/.env with secure random values for:
-#   SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, QDRANT_API_KEY
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-### 2. Start Clouisle
+Choose Docker Compose for a single server or Helm for Kubernetes. Docker mode interactively selects an installation directory, defaulting to `/opt/clouisle`. The installer generates required secrets and validates the selected deployment before starting it.
 
-```bash
-cd deploy
-docker compose --env-file .env up -d
-```
-
-### 3. Access the Application
+### 2. Access the Application
 
 - **Frontend**: http://localhost:3000
 - **API Documentation**: http://localhost:8000/docs

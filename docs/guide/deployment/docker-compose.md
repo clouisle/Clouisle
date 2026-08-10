@@ -54,11 +54,19 @@ docker compose version
 
 ## Quick Start
 
-### Clone Repository
+### Guided Installation
 
 ```bash
-git clone https://github.com/your-org/clouisle.git
-cd clouisle
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
+
+Choose Docker Compose when prompted. The installer downloads the current deployment files, generates required secrets, validates the configuration, pulls images, and starts the services.
+
+### Manual Installation from Source
+
+```bash
+git clone https://github.com/clouisle/Clouisle.git
+cd Clouisle
 ```
 
 ### Configure Environment
