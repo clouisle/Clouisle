@@ -7,6 +7,7 @@ type Model = {
   id: string
   name: string
   provider: string
+  provider_display_name?: string | null
   model_id: string
   model_type: string
   is_enabled: boolean
@@ -134,7 +135,7 @@ mock.module('@/components/ui/table', () => ({
 const { TeamModelsTab } = await import('./team-models-tab')
 
 const model = (id: string, name = id, is_enabled = true): Model => ({
-  id, name, provider: 'openai', model_id: `${id}-api`, model_type: 'chat', is_enabled,
+  id, name, provider: 'openai', provider_display_name: 'Acme Gateway', model_id: `${id}-api`, model_type: 'chat', is_enabled,
 })
 const teamModel = (overrides: Partial<TeamModel> = {}): TeamModel => ({
   id: 'team-model-1', team_id: 'team-1', model_id: 'model-1', model: model('model-1', 'GPT Team'),
@@ -210,6 +211,7 @@ describe('TeamModelsTab', () => {
     expect(getModels).toHaveBeenCalledWith({ pageSize: 100 })
     expect(textContent(loaded)).toContain('authorizedModels')
     expect(textContent(loaded)).toContain('GPT Team')
+    expect(textContent(loaded)).toContain('Acme Gateway')
     expect(textContent(loaded)).toContain('1.5K')
     expect(textContent(loaded)).toContain('2.0K')
     expect(textContent(loaded)).toContain('2.5M')

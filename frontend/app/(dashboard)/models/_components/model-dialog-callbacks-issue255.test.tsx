@@ -18,6 +18,7 @@ const effects: Array<() => void> = []
 const createModel = mock(() => Promise.resolve({}))
 const updateModel = mock(() => Promise.resolve({}))
 const testModelConfig = mock(() => Promise.resolve({ success: true, message: ' connected ', latency_ms: 12 }))
+const discoverModels = mock(() => Promise.resolve({ success: true, message: 'models found', models: [] }))
 const toastSuccess = mock(() => undefined)
 const toastError = mock(() => undefined)
 
@@ -48,7 +49,7 @@ mock.module('lucide-react', () => ({
   Eye: element('eye'), EyeOff: element('eye-off'), Loader2: element('loader'),
   CheckCircle2: element('check-circle'), XCircle: element('x-circle'), Zap: element('zap'), Check: element('check'),
 }))
-mock.module('@/lib/api/admin/models', () => ({ modelsApi: { createModel, updateModel, testModelConfig } }))
+mock.module('@/lib/api/admin/models', () => ({ modelsApi: { createModel, updateModel, testModelConfig, discoverModels } }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => Object.fromEntries(Object.entries(errors).filter(([key]) => key !== field)),
   getValidationSummaryEntries: (errors: Record<string, string>) => Object.entries(errors),
@@ -58,11 +59,12 @@ mock.module('@/lib/validation', () => ({
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 
-for (const path of ['button', 'dialog', 'input', 'label', 'select', 'switch', 'textarea', 'tabs', 'popover', 'tooltip', 'field']) {
+for (const path of ['button', 'dialog', 'input', 'label', 'select', 'combobox', 'switch', 'textarea', 'tabs', 'popover', 'tooltip', 'field']) {
   const exports: Record<string, unknown> = {}
   const names: Record<string, string[]> = {
     button: ['Button'], dialog: ['Dialog', 'DialogContent', 'DialogDescription', 'DialogFooter', 'DialogHeader', 'DialogTitle'],
     input: ['Input'], label: ['Label'], select: ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'],
+    combobox: ['Combobox', 'ComboboxContent', 'ComboboxEmpty', 'ComboboxInput', 'ComboboxItem', 'ComboboxList'],
     switch: ['Switch'], textarea: ['Textarea'], tabs: ['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'],
     popover: ['Popover', 'PopoverContent', 'PopoverTrigger'], tooltip: ['Tooltip', 'TooltipContent', 'TooltipTrigger'], field: ['FieldError'],
   }
@@ -128,6 +130,8 @@ beforeEach(() => {
   updateModel.mockResolvedValue({})
   testModelConfig.mockReset()
   testModelConfig.mockResolvedValue({ success: true, message: ' connected ', latency_ms: 12 })
+  discoverModels.mockReset()
+  discoverModels.mockResolvedValue({ success: true, message: 'models found', models: [] })
   toastSuccess.mockClear()
   toastError.mockClear()
   baseProps.onOpenChange.mockClear()

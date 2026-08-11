@@ -79,6 +79,7 @@ export function MediaGenerationNodeConfig({
     return teamModels.filter(m =>
       m.model.name.toLowerCase().includes(query) ||
       m.model.provider.toLowerCase().includes(query) ||
+      (m.model.provider_display_name?.toLowerCase().includes(query) ?? false) ||
       m.model.model_id.toLowerCase().includes(query)
     )
   }, [teamModels, modelSearch])
@@ -86,7 +87,7 @@ export function MediaGenerationNodeConfig({
   const groupedModels = React.useMemo(() => {
     const groups: Record<string, TeamModel[]> = {}
     filteredModels.forEach(m => {
-      const provider = m.model.provider
+      const provider = m.model.provider_display_name || m.model.provider
       if (!groups[provider]) groups[provider] = []
       groups[provider].push(m)
     })

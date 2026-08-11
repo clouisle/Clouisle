@@ -108,7 +108,12 @@ async def test_agent_lookup_and_model_map_boundaries(monkeypatch):
     model_id = uuid4()
     team_model = SimpleNamespace(
         id=model_id,
-        model=SimpleNamespace(name="Model", provider="openai", model_id="gpt-test"),
+        model=SimpleNamespace(
+            name="Model",
+            provider="openai",
+            provider_display_name="Acme Gateway",
+            model_id="gpt-test",
+        ),
     )
     monkeypatch.setattr(
         agents.TeamModel,
@@ -117,6 +122,7 @@ async def test_agent_lookup_and_model_map_boundaries(monkeypatch):
     )
     info = await agents._get_model_info_map([agent(model_id=model_id)])
     assert info[str(model_id)].name == "Model"
+    assert info[str(model_id)].provider_display_name == "Acme Gateway"
 
 
 @pytest.mark.anyio

@@ -1369,6 +1369,21 @@ msgstr "测试连接需要 API Key"
 msgid "model_created"
 msgstr "模型创建成功"
 
+msgid "model_discovery_api_key_required"
+msgstr "获取模型列表需要 API Key"
+
+msgid "model_discovery_base_url_invalid"
+msgstr "请输入有效的 HTTP 或 HTTPS API 地址"
+
+msgid "model_discovery_failed"
+msgstr "无法获取模型列表。请检查 API 地址、API Key 和供应商兼容性。"
+
+msgid "model_discovery_not_supported"
+msgstr "该供应商不支持在线获取模型列表"
+
+msgid "model_discovery_success"
+msgstr "已获取 {count} 个模型"
+
 msgid "model_deleted"
 msgstr "模型删除成功"
 

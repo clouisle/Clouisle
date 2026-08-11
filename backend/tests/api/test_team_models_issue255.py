@@ -55,6 +55,7 @@ def model(**overrides):
         "id": uuid4(),
         "name": "GPT",
         "provider": "openai",
+        "provider_display_name": None,
         "model_id": "gpt-4o",
         "model_type": "chat",
         "is_enabled": True,
@@ -209,7 +210,11 @@ async def test_add_team_model_returns_provider_data_and_records_side_effects(
     monkeypatch,
 ):
     team = SimpleNamespace(id=uuid4(), name="Platform")
-    item = model(provider="anthropic", model_id="claude-sonnet-4-5")
+    item = model(
+        provider="anthropic",
+        provider_display_name="Acme Anthropic Gateway",
+        model_id="claude-sonnet-4-5",
+    )
     created = authorization(item, team_id=team.id)
     reloaded = authorization(item, id=created.id, team_id=team.id)
     notify = AsyncMock()
@@ -239,6 +244,9 @@ async def test_add_team_model_returns_provider_data_and_records_side_effects(
     )
 
     assert response["data"]["model"]["provider"] == "anthropic"
+    assert (
+        response["data"]["model"]["provider_display_name"] == "Acme Anthropic Gateway"
+    )
     assert response["data"]["model"]["model_id"] == "claude-sonnet-4-5"
     notify.assert_awaited_once()
     audit.assert_awaited_once()
@@ -469,6 +477,7 @@ async def test_available_models_filters_type_and_preserves_provider(monkeypatch)
             "id": item.id,
             "name": "GPT",
             "provider": "anthropic",
+            "provider_display_name": None,
             "model_id": "claude-sonnet-4-5",
             "model_type": "chat",
         }

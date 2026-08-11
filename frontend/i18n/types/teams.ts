@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-06T10:15:38.094Z
+// GENERATED — 2026-08-11T08:41:00.429Z
 // Source: i18n/en/teams.json
 export type TeamsMessages = {
   teams: {

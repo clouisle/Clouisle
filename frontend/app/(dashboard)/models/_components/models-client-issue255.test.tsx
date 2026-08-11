@@ -64,7 +64,7 @@ const model = {
   output_price: null, default_params: null, capabilities: null, config: null, is_enabled: true,
   is_default: false, sort_order: 0, created_at: '', updated_at: '',
 }
-const second = { ...model, id: 'model-2', name: 'Custom', provider: 'custom', model_type: 'custom_type', has_api_key: false, is_enabled: false, is_default: true }
+const second = { ...model, id: 'model-2', name: 'Custom', provider: 'custom', provider_display_name: 'Acme Gateway', model_type: 'custom_type', has_api_key: false, is_enabled: false, is_default: true }
 const page = (items = [model, second], total = items.length) => ({ items, total, page: 1, page_size: 10 })
 const renderers: ReactTestRenderer[] = []
 
@@ -108,6 +108,7 @@ describe('models client issue 255 coverage', () => {
     expect(JSON.stringify(renderer.toJSON())).toContain('configured')
     expect(JSON.stringify(renderer.toJSON())).toContain('notConfigured')
     expect(JSON.stringify(renderer.toJSON())).toContain('default')
+    expect(JSON.stringify(renderer.toJSON())).toContain('Acme Gateway')
   })
 
   test('swallows metadata and list failures and reaches the empty state', async () => {

@@ -9,6 +9,14 @@ import type { PageData } from '../users'
 
 export type { Model, ModelCreateInput, ModelUpdateInput, ModelQueryParams }
 
+export type ModelDiscoveryItem = {
+  id: string
+  name: string
+  context_length?: number | null
+  max_output_tokens?: number | null
+  capabilities?: Record<string, boolean> | null
+}
+
 export const modelsApi = {
   getModels: async (params: ModelQueryParams = {}): Promise<PageData<Model>> => {
     const { page = 1, pageSize = 20, provider, model_type, is_enabled, search } = params
@@ -47,6 +55,13 @@ export const modelsApi = {
     config?: Record<string, unknown> | null
   }): Promise<{ success: boolean; message: string; latency_ms?: number }> =>
     api.post('/admin/models/test', data, { timeout: 300000 }),
+
+  discoverModels: async (data: {
+    provider: string
+    base_url: string
+    api_key?: string | null
+  }): Promise<{ success: boolean; message: string; models: ModelDiscoveryItem[] }> =>
+    api.post('/admin/models/discover', data, { timeout: 20000, silent: true }),
 
   setDefault: async (modelId: string): Promise<Model> =>
     api.post<Model>(`/admin/models/${modelId}/set-default`),

@@ -62,6 +62,7 @@ const teamModel = {
     name: "Assistant",
     model_id: "assistant-1",
     provider: "unknown-provider",
+    provider_display_name: "Acme Gateway",
     model_type: "unknown-type",
   },
 } as never;
@@ -78,6 +79,7 @@ test("renders disabled model quota state and opens its details", () => {
     .map((node) => node.children.join(""))
     .join(" ");
   expect(text).toContain("Assistant");
+  expect(renderer!.root.findAllByType("div").some((node) => node.children.includes("Acme Gateway"))).toBe(true);
   expect(
     renderer!.root.findAllByType("div").map((node) => node.children.join("")),
   ).toContain("disabled");

@@ -170,7 +170,7 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
         "icon": "midjourney",
     },
     ModelProvider.CUSTOM: {
-        "name": "Custom",
+        "name": "OpenAI Compatible",
         "base_url": None,
         "icon": "custom",
     },
@@ -191,6 +191,11 @@ class Model(models.Model):
     name = fields.CharField(max_length=100, description="Display name")
     provider = fields.CharField(
         max_length=30, description="Provider identifier (openai, anthropic, etc.)"
+    )
+    provider_display_name = fields.CharField(
+        max_length=100,
+        null=True,
+        description="Optional user-facing provider or gateway name",
     )
     model_id = fields.CharField(
         max_length=100, description="Model identifier (gpt-4o, claude-3-5-sonnet, etc.)"

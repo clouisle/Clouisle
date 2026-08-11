@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **model-provider-display-and-discovery-metadata** — Complete. Preserved the controlled model adapter identifier while adding a user-facing provider/gateway name, and carried safe remote model metadata through discovery into model configuration. See `docs/plan/model-provider-display-and-discovery-metadata.md`
+  - [x] 1. Persist display-only provider identity
+  - [x] 2. Normalize remote model metadata
+  - [x] 3. Surface metadata in Model Management
+  - [x] 4. Propagate and validate additive response metadata
+
 
 - **kubernetes-manifest-installer-readiness** — Complete. Add a secure single-file Kubernetes manifest generation route to the guided installer and prevent raw-manifest backend workloads from starting before PostgreSQL accepts connections. See `docs/plan/kubernetes-manifest-installer-readiness.md`
   - [x] 1. Generate an isolated secret-filled Kubernetes manifest

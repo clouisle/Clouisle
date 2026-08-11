@@ -60,16 +60,22 @@ describe('modelsApi', () => {
     expect(remove).toHaveBeenCalledWith('/admin/models/model-1')
   })
 
-  test('constructs connection, config, and default requests', async () => {
+  test('constructs connection, config, discovery, and default requests', async () => {
     const config = {
       provider: 'anthropic',
       model_id: 'claude-sonnet',
       model_type: 'llm',
       api_key: 'secret',
     }
+    const discovery = {
+      provider: 'openai',
+      base_url: 'https://api.openai.test/v1',
+      api_key: 'secret',
+    }
 
     await modelsApi.testConnection('model-1')
     await modelsApi.testModelConfig(config)
+    await modelsApi.discoverModels(discovery)
     await modelsApi.setDefault('model-1')
 
     expect(post).toHaveBeenNthCalledWith(
@@ -84,7 +90,13 @@ describe('modelsApi', () => {
       config,
       { timeout: 300000 }
     )
-    expect(post).toHaveBeenNthCalledWith(3, '/admin/models/model-1/set-default')
+    expect(post).toHaveBeenNthCalledWith(
+      3,
+      '/admin/models/discover',
+      discovery,
+      { timeout: 20000, silent: true }
+    )
+    expect(post).toHaveBeenNthCalledWith(4, '/admin/models/model-1/set-default')
   })
 
   test('propagates request errors', async () => {

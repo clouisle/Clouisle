@@ -1368,6 +1368,21 @@ msgstr "API key is required to test connection"
 msgid "model_created"
 msgstr "Model created successfully"
 
+msgid "model_discovery_api_key_required"
+msgstr "API key is required to fetch the model list"
+
+msgid "model_discovery_base_url_invalid"
+msgstr "Enter an absolute HTTP or HTTPS API base URL"
+
+msgid "model_discovery_failed"
+msgstr "Could not fetch the model list. Check the API URL, API key, and provider compatibility."
+
+msgid "model_discovery_not_supported"
+msgstr "This provider does not support remote model discovery"
+
+msgid "model_discovery_success"
+msgstr "Discovered {count} models"
+
 msgid "model_deleted"
 msgstr "Model deleted successfully"
 

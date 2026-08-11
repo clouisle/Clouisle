@@ -44,7 +44,14 @@
     "testSuccess": "连接测试成功",
     "testFailed": "连接测试失败",
     "fillRequiredFieldsFirst": "请先填写必填字段",
+    "providerDisplayName": "供应商 / 网关名称",
+    "providerDisplayNamePlaceholder": "例如：Acme AI 网关",
+    "providerDisplayNameHint": "将在模型列表中替代 OpenAI 兼容接口标签显示。",
     "testing": "测试中...",
+    "modelDiscoveryHint": "填写 API 地址和 API Key 后，系统会自动加载可用模型。",
+    "modelDiscoveryLoading": "正在加载可用模型...",
+    "selectDiscoveredModel": "选择可用模型",
+    "modelDiscoveryFailed": "无法获取模型列表",
     "videoTestCostWarning": "此测试将实际生成视频，可能产生供应商费用，并可能需要等待数分钟。是否继续？",
     "latency": "延迟",
     "basicInfo": "基本信息",
@@ -213,7 +220,7 @@
       "midjourney": "Midjourney",
       "siliconflow": "SiliconFlow",
       "volcengine": "火山方舟",
-      "custom": "自定义"
+      "custom": "OpenAI 兼容接口"
     },
     "providerGroups": {
       "international": "国际",

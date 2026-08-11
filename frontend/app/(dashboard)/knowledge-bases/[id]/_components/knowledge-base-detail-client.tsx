@@ -221,7 +221,7 @@ export function KnowledgeBaseDetailClient({ knowledgeBaseId }: KnowledgeBaseDeta
                     {knowledgeBase.embedding_model.name}
                   </span>
                   <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                    {knowledgeBase.embedding_model.provider}
+                    {knowledgeBase.embedding_model.provider_display_name || knowledgeBase.embedding_model.provider}
                   </span>
                 </div>
               )}
@@ -233,7 +233,7 @@ export function KnowledgeBaseDetailClient({ knowledgeBaseId }: KnowledgeBaseDeta
                     {knowledgeBase.rerank_model.name}
                   </span>
                   <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                    {knowledgeBase.rerank_model.provider}
+                    {knowledgeBase.rerank_model.provider_display_name || knowledgeBase.rerank_model.provider}
                   </span>
                 </div>
               )}

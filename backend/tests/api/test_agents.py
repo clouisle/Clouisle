@@ -648,10 +648,17 @@ async def test_model_helpers_and_shared_agent_write_access(monkeypatch):
     monkeypatch.setattr(agents.Model, "filter", lambda **_kwargs: Query(None))
     assert await agents.get_model_info(SimpleNamespace(model_id=uuid4())) is None
 
-    model = SimpleNamespace(name="Model", provider="dummy", model_id="model")
+    model = SimpleNamespace(
+        name="Model",
+        provider="dummy",
+        provider_display_name="Acme Gateway",
+        model_id="model",
+    )
     monkeypatch.setattr(agents.Model, "filter", lambda **_kwargs: Query(model))
     team_model = SimpleNamespace(id=uuid4(), model_id=uuid4())
-    assert (await agents.get_model_info(team_model)).name == "Model"
+    model_info = await agents.get_model_info(team_model)
+    assert model_info.name == "Model"
+    assert model_info.provider_display_name == "Acme Gateway"
 
     current_user = user()
     item = agent(created_by=user(), visibility=AgentVisibility.TEAM)

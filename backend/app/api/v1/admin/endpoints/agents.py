@@ -78,6 +78,9 @@ async def _get_model_info_map(agents: list[Agent]) -> dict[str, ModelInfo]:
             id=team_model.id,
             name=team_model.model.name,
             provider=team_model.model.provider,
+            provider_display_name=getattr(
+                team_model.model, "provider_display_name", None
+            ),
             model_id=team_model.model.model_id,
         )
     return model_info_map

@@ -459,7 +459,7 @@ export function ModelsClient() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{getProviderName(model.provider)}</TableCell>
+                  <TableCell>{model.provider_display_name || getProviderName(model.provider)}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{getTypeName(model.model_type)}</Badge>
                   </TableCell>

@@ -2506,6 +2506,26 @@ async def drop_model_provider_uniqueness():
     logger.info("Model provider uniqueness constraints dropped")
 
 
+async def init_model_provider_display_name() -> None:
+    """Add the optional display-only provider name to existing model tables."""
+    logger.info("Adding provider display name field to models table...")
+
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'models' AND table_schema = 'public'
+    """)
+    if not tables:
+        logger.info("models table does not exist yet, skipping provider display name")
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE models
+        ADD COLUMN IF NOT EXISTS provider_display_name VARCHAR(100)
+    """)
+    logger.info("Provider display name field is ready")
+
+
 async def revert_channel_id_to_model_id():
     """Rename models.channel_id back to models.model_id if needed.
 
@@ -2689,6 +2709,13 @@ async def init_db():
     except Exception as e:
         logger.warning(
             f"Model provider uniqueness migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_model_provider_display_name()
+    except Exception as e:
+        logger.warning(
+            f"Model provider display name migration failed (may be first run): {e}"
         )
 
     try:

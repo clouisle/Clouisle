@@ -67,7 +67,11 @@ async def test_access_helpers_cover_missing_and_privileged_paths(monkeypatch):
 async def test_model_info_helpers_cover_empty_missing_and_present(monkeypatch):
     model_id = uuid4()
     model = SimpleNamespace(
-        id=model_id, name="Model", provider="local", model_id="model-v1"
+        id=model_id,
+        name="Model",
+        provider="local",
+        provider_display_name="Acme Embeddings",
+        model_id="model-v1",
     )
     monkeypatch.setattr(knowledge_bases.Model, "filter", lambda **_kwargs: Query())
 
@@ -81,11 +85,13 @@ async def test_model_info_helpers_cover_empty_missing_and_present(monkeypatch):
     embedding = await knowledge_bases.get_embedding_model_info(model_id)
     rerank = await knowledge_bases.get_rerank_model_info(model_id)
     assert embedding and embedding.name == "Model"
+    assert embedding.provider_display_name == "Acme Embeddings"
     assert rerank and rerank.provider == "local"
     assert knowledge_bases._build_model_info(model) == {
         "id": model_id,
         "name": "Model",
         "provider": "local",
+        "provider_display_name": "Acme Embeddings",
         "model_id": "model-v1",
     }
 

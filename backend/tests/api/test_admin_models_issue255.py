@@ -67,6 +67,7 @@ def model(**overrides):
         "id": uuid4(),
         "name": "GPT",
         "provider": "openai",
+        "provider_display_name": None,
         "model_id": "gpt-4o",
         "model_type": "chat",
         "base_url": None,
@@ -113,6 +114,7 @@ def test_routes_require_model_specific_permissions():
         ("POST", "/{model_id}/test"): "admin:model:update",
         ("POST", "/{model_id}/set-default"): "admin:model:update",
         ("POST", "/test"): "admin:model:create",
+        ("POST", "/discover"): "admin:model:create",
     }
 
     actual = {}
@@ -169,6 +171,7 @@ async def test_create_model_allows_duplicate_provider_model_id(monkeypatch):
         model_in=ModelCreate(
             name="GPT",
             provider=ModelProvider.OPENAI,
+            provider_display_name="  Company Gateway  ",
             model_id="gpt-4o",
             model_type=ModelType.CHAT,
         ),
@@ -176,6 +179,7 @@ async def test_create_model_allows_duplicate_provider_model_id(monkeypatch):
     )
 
     assert response["data"].id == created.id
+    assert create.await_args.kwargs["provider_display_name"] == "Company Gateway"
 
 
 @pytest.mark.anyio
@@ -200,6 +204,7 @@ async def test_create_default_model_clears_old_default_and_persists(monkeypatch)
 
     assert response["data"].id == created.id
     assert default_query.calls == [("update", (), {"is_default": False})]
+    assert create.await_args.kwargs["provider_display_name"] is None
     assert create.await_args.kwargs["provider"] == "openai"
     assert create.await_args.kwargs["model_type"] == "chat"
 
@@ -235,12 +240,22 @@ async def test_update_model_clears_key_sets_default_and_saves(monkeypatch):
 
     response = await models.update_model(
         item.id,
-        ModelUpdate(name="Updated", api_key="", is_default=True),
+        ModelUpdate(
+            name="Updated",
+            api_key="",
+            provider_display_name="   ",
+            is_default=True,
+        ),
         current_user=SimpleNamespace(),
     )
 
     item.update_from_dict.assert_awaited_once_with(
-        {"name": "Updated", "api_key": None, "is_default": True}
+        {
+            "name": "Updated",
+            "api_key": None,
+            "provider_display_name": None,
+            "is_default": True,
+        }
     )
     item.save.assert_awaited_once()
     assert default_query.calls == [

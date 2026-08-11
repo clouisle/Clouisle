@@ -108,7 +108,8 @@ export default function ModelsPage() {
         if (
           !tm.model.name.toLowerCase().includes(query) &&
           !tm.model.model_id.toLowerCase().includes(query) &&
-          !tm.model.provider.toLowerCase().includes(query)
+          !tm.model.provider.toLowerCase().includes(query) &&
+          !(tm.model.provider_display_name?.toLowerCase().includes(query) ?? false)
         ) {
           return false
         }

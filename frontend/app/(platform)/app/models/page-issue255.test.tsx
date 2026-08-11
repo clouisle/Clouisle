@@ -146,17 +146,22 @@ describe('ModelsPage', () => {
     expect(states.slice(2, 6)).toEqual(['', new Set(), new Set(), new Set()])
   })
 
-  test('matches searches by model name and provider', async () => {
+  test('matches searches by model name, provider, and provider display name', async () => {
     const teamModel = {
       id: 'team-model', priority: 1, is_enabled: true,
-      model: { name: 'GPT Test', model_id: 'gpt-test', provider: 'openai', model_type: 'chat' },
+      model: {
+        name: 'GPT Test', model_id: 'gpt-test', provider: 'custom',
+        provider_display_name: 'Acme Gateway', model_type: 'chat',
+      },
     }
     getTeamModels.mockResolvedValue([teamModel])
     await load()
 
     states[2] = 'gpt test'
     expect(findAll(render(), components.ModelCard)).toHaveLength(1)
-    states[2] = 'openai'
+    states[2] = 'custom'
+    expect(findAll(render(), components.ModelCard)).toHaveLength(1)
+    states[2] = 'acme gateway'
     expect(findAll(render(), components.ModelCard)).toHaveLength(1)
   })
 

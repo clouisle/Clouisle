@@ -363,6 +363,7 @@ class ModelInfo(BaseModel):
     id: UUID
     name: str
     provider: str
+    provider_display_name: str | None = None
     model_id: str
 
     model_config = ConfigDict(from_attributes=True)

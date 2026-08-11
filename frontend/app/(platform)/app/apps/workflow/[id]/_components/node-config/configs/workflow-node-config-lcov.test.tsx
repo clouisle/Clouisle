@@ -121,7 +121,13 @@ test('keeps node config defaults usable', () => {
 const model = (id: string, provider: string, vision = false, enabled = true) => ({
   id,
   is_enabled: enabled,
-  model: { name: `${provider} ${id}`, provider, model_id: `${provider}/${id}`, capabilities: { vision } },
+  model: {
+    name: `${provider} ${id}`,
+    provider,
+    provider_display_name: provider === 'open' ? 'Acme Gateway' : null,
+    model_id: `${provider}/${id}`,
+    capabilities: { vision },
+  },
 })
 const one = (tree: TreeNode, predicate: (node: TreeNode) => boolean) => {
   const found = findAll(tree, predicate)[0]
@@ -155,7 +161,7 @@ test('LLMNodeConfig filters grouped models and selects a matching vision model',
   resetState()
   const onChange = mock(() => {})
   stateValues.push(
-    [model('text', 'anthropic'), model('vision', 'open', true)], false, 'VISION', true,
+    [model('text', 'anthropic'), model('vision', 'open', true)], false, 'ACME GATEWAY', true,
     false, false, false, false,
   )
   const tree = LLMNodeConfig({ config: defaultLLMNodeConfig, onChange }) as TreeNode

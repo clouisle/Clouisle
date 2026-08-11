@@ -139,7 +139,7 @@ export function ModelDetailDialog({
           {/* 基本信息 */}
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">
-              {getProviderName(model.provider)}
+              {model.provider_display_name || getProviderName(model.provider)}
             </Badge>
             <Badge variant="outline">
               {getTypeName(model.model_type)}

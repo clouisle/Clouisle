@@ -1,15 +1,17 @@
 """
-Admin-only model management endpoints (CRUD, test, set-default).
+Admin-only model management endpoints (CRUD, discovery, test, set-default).
 Public endpoints (providers, types, available, default) remain in the platform router.
 """
 
 import asyncio
-import time
 import logging
 import re
+import time
 from typing import Any, Optional, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Query
 from tortoise.expressions import Q
 
@@ -21,6 +23,9 @@ from app.schemas.model import (
     ModelCreate,
     ModelUpdate,
     ModelResponse,
+    ModelDiscoveryItem,
+    ModelDiscoveryRequest,
+    ModelDiscoveryResponse,
     ModelTestRequest,
     ModelTestResponse,
     ModelProvider,
@@ -90,6 +95,11 @@ async def create_model(
     model_data = model_in.model_dump()
     model_data["provider"] = model_in.provider.value
     model_data["model_type"] = model_in.model_type.value
+    model_data["provider_display_name"] = (
+        model_in.provider_display_name.strip()
+        if model_in.provider_display_name and model_in.provider_display_name.strip()
+        else None
+    )
 
     model = await Model.create(**model_data)
     return success(data=ModelResponse.model_validate(model), msg_key="model_created")
@@ -129,6 +139,11 @@ async def update_model(
     if "api_key" in update_data:
         if update_data["api_key"] == "":
             update_data["api_key"] = None
+    if "provider_display_name" in update_data:
+        display_name = update_data["provider_display_name"]
+        update_data["provider_display_name"] = (
+            display_name.strip() if display_name and display_name.strip() else None
+        )
 
     if update_data.get("is_default"):
         await (
@@ -431,6 +446,312 @@ async def test_model_config(
             model_id=model_id,
             model_type=model_type,
         )
+
+
+_MODEL_DISCOVERY_TIMEOUT_SECONDS = 15.0
+_MODEL_DISCOVERY_MAX_TOKEN_LIMIT = 2_147_483_647
+_MODEL_DISCOVERY_CONTEXT_LENGTH_KEYS = (
+    "context_length",
+    "contextLength",
+    "context_window",
+    "contextWindow",
+    "max_context_length",
+    "maxContextLength",
+    "input_token_limit",
+    "inputTokenLimit",
+)
+_MODEL_DISCOVERY_MAX_OUTPUT_TOKENS_KEYS = (
+    "max_output_tokens",
+    "maxOutputTokens",
+    "max_completion_tokens",
+    "maxCompletionTokens",
+    "max_tokens",
+    "maxTokens",
+    "output_token_limit",
+    "outputTokenLimit",
+)
+_MODEL_DISCOVERY_CAPABILITY_KEYS = {
+    "vision": ("vision", "supports_vision", "supportsVision"),
+    "function_call": (
+        "function_call",
+        "functionCall",
+        "tools",
+        "function_calling",
+        "functionCalling",
+        "supports_function_call",
+        "supportsFunctionCall",
+        "tool_calling",
+        "toolCalling",
+    ),
+    "streaming": ("streaming", "supports_streaming", "supportsStreaming"),
+    "json_mode": (
+        "json_mode",
+        "structured_output",
+        "structuredOutput",
+        "jsonMode",
+        "supports_json_mode",
+        "supportsJsonMode",
+    ),
+}
+_MODEL_DISCOVERY_MAX_MODELS = 200
+_MODEL_DISCOVERY_SUPPORTED_PROVIDERS = frozenset(
+    {
+        ModelProvider.OPENAI,
+        ModelProvider.OPENAI_RESPONSES,
+        ModelProvider.ANTHROPIC,
+        ModelProvider.GOOGLE,
+        ModelProvider.DEEPSEEK,
+        ModelProvider.MOONSHOT,
+        ModelProvider.ZHIPU,
+        ModelProvider.QWEN,
+        ModelProvider.BAICHUAN,
+        ModelProvider.MINIMAX,
+        ModelProvider.VOLCENGINE,
+        ModelProvider.SILICONFLOW,
+        ModelProvider.XAI,
+        ModelProvider.OLLAMA,
+        ModelProvider.CUSTOM,
+    }
+)
+
+
+@router.post("/discover", response_model=Response[ModelDiscoveryResponse])
+async def discover_models(
+    discovery_request: ModelDiscoveryRequest,
+    current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
+) -> Any:
+    """List models exposed by a provider without persisting the supplied key."""
+    provider = discovery_request.provider
+    if provider not in _MODEL_DISCOVERY_SUPPORTED_PROVIDERS:
+        return _model_discovery_failure("model_discovery_not_supported")
+
+    base_url = _normalize_model_discovery_base_url(discovery_request.base_url)
+    if not base_url:
+        return _model_discovery_failure("model_discovery_base_url_invalid")
+
+    api_key = (discovery_request.api_key or "").strip()
+    if _requires_api_key(provider) and not api_key:
+        return _model_discovery_failure("model_discovery_api_key_required")
+
+    endpoint, headers, params = _build_model_discovery_request(
+        provider, base_url, api_key
+    )
+    try:
+        async with httpx.AsyncClient(
+            timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS,
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+            response.raise_for_status()
+            discovered_models = _parse_discovered_models(provider, response.json())
+    except (httpx.HTTPError, ValueError):
+        return _model_discovery_failure("model_discovery_failed")
+
+    message = t("model_discovery_success", count=len(discovered_models))
+    return success(
+        data=ModelDiscoveryResponse(
+            success=True,
+            message=message,
+            models=discovered_models,
+        ),
+        msg=message,
+    )
+
+
+def _model_discovery_failure(msg_key: str) -> dict:
+    message = t(msg_key)
+    return success(
+        data=ModelDiscoveryResponse(success=False, message=message, models=[]),
+        msg=message,
+    )
+
+
+def _normalize_model_discovery_base_url(value: str) -> str | None:
+    base_url = value.strip().rstrip("/")
+    parsed = urlsplit(base_url)
+    if (
+        not base_url
+        or parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        return None
+    return base_url
+
+
+def _append_model_discovery_path(base_url: str, path: str) -> str:
+    normalized_path = path.strip("/")
+    if base_url.endswith(f"/{normalized_path}"):
+        return base_url
+    return f"{base_url}/{normalized_path}"
+
+
+def _build_model_discovery_request(
+    provider: ModelProvider,
+    base_url: str,
+    api_key: str,
+) -> tuple[str, dict[str, str], dict[str, str] | None]:
+    if provider == ModelProvider.OLLAMA:
+        return _append_model_discovery_path(base_url, "api/tags"), {}, None
+    if provider == ModelProvider.ANTHROPIC:
+        if base_url.endswith("/v1/models"):
+            endpoint = base_url
+        elif base_url.endswith("/v1"):
+            endpoint = _append_model_discovery_path(base_url, "models")
+        else:
+            endpoint = _append_model_discovery_path(base_url, "v1/models")
+        return (
+            endpoint,
+            {
+                "anthropic-version": "2023-06-01",
+                "x-api-key": api_key,
+            },
+            None,
+        )
+    if provider == ModelProvider.GOOGLE:
+        return _append_model_discovery_path(base_url, "models"), {}, {"key": api_key}
+    return (
+        _append_model_discovery_path(base_url, "models"),
+        {"Authorization": f"Bearer {api_key}"},
+        None,
+    )
+
+
+def _parse_discovered_models(
+    provider: ModelProvider,
+    payload: Any,
+) -> list[ModelDiscoveryItem]:
+    if not isinstance(payload, dict):
+        raise ValueError("Model list response is not an object")
+
+    native_models_key = provider in {ModelProvider.GOOGLE, ModelProvider.OLLAMA}
+    raw_models = payload.get("models") if native_models_key else payload.get("data")
+    if raw_models is None:
+        raw_models = payload.get("models")
+    if not isinstance(raw_models, list):
+        raise ValueError("Model list response does not contain models")
+
+    discovered_models: list[ModelDiscoveryItem] = []
+    seen_model_ids: set[str] = set()
+    for item in raw_models:
+        if not isinstance(item, dict):
+            continue
+
+        raw_model_id = item.get("name") if native_models_key else item.get("id")
+        if not isinstance(raw_model_id, str):
+            raw_model_id = item.get("id") or item.get("name")
+        if not isinstance(raw_model_id, str):
+            continue
+
+        model_id = raw_model_id.strip()
+        if provider == ModelProvider.GOOGLE:
+            model_id = model_id.removeprefix("models/")
+        if not model_id or len(model_id) > 100 or model_id in seen_model_ids:
+            continue
+
+        raw_name = (
+            item.get("display_name") or item.get("displayName") or item.get("name")
+        )
+        name = raw_name.strip() if isinstance(raw_name, str) else model_id
+        if not name or len(name) > 100:
+            name = model_id
+
+        top_provider = item.get("top_provider")
+        discovered_models.append(
+            ModelDiscoveryItem(
+                id=model_id,
+                name=name,
+                context_length=_extract_discovery_token_limit(
+                    (item,), _MODEL_DISCOVERY_CONTEXT_LENGTH_KEYS
+                ),
+                max_output_tokens=_extract_discovery_token_limit(
+                    (item, top_provider), _MODEL_DISCOVERY_MAX_OUTPUT_TOKENS_KEYS
+                ),
+                capabilities=_extract_discovery_capabilities(item),
+            )
+        )
+        seen_model_ids.add(model_id)
+        if len(discovered_models) == _MODEL_DISCOVERY_MAX_MODELS:
+            break
+
+    return discovered_models
+
+
+def _extract_discovery_token_limit(
+    sources: tuple[Any, ...], keys: tuple[str, ...]
+) -> int | None:
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in keys:
+            value = source.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                parsed_value = value
+            elif isinstance(value, str) and value.strip().isdecimal():
+                parsed_value = int(value.strip())
+            else:
+                continue
+            if 0 < parsed_value <= _MODEL_DISCOVERY_MAX_TOKEN_LIMIT:
+                return parsed_value
+    return None
+
+
+def _extract_discovery_capabilities(item: dict[str, Any]) -> dict[str, bool] | None:
+    capabilities: dict[str, bool] = {}
+    declared_capabilities = item.get("capabilities")
+    sources = (item, declared_capabilities)
+    for capability, keys in _MODEL_DISCOVERY_CAPABILITY_KEYS.items():
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key in keys:
+                value = source.get(key)
+                if isinstance(value, bool):
+                    capabilities[capability] = value
+                    break
+            if capability in capabilities:
+                break
+
+    features: set[str] = set()
+    for source in (
+        declared_capabilities,
+        item.get("supported_parameters"),
+        item.get("supportedParameters"),
+    ):
+        if isinstance(source, list):
+            features.update(
+                value.strip().lower().replace("-", "_").replace(" ", "_")
+                for value in source
+                if isinstance(value, str)
+            )
+    if features & {"vision", "image_input", "multimodal", "image_to_text"}:
+        capabilities.setdefault("vision", True)
+    if features & {
+        "function_call",
+        "function_calling",
+        "functions",
+        "tools",
+        "tool_calling",
+    }:
+        capabilities.setdefault("function_call", True)
+    if features & {"json_mode", "response_format", "structured_outputs"}:
+        capabilities.setdefault("json_mode", True)
+
+    architecture = item.get("architecture")
+    if isinstance(architecture, dict):
+        input_modalities = architecture.get("input_modalities")
+        if isinstance(input_modalities, list) and any(
+            isinstance(value, str) and value.lower() == "image"
+            for value in input_modalities
+        ):
+            capabilities.setdefault("vision", True)
+
+    return capabilities or None
 
 
 _MODEL_TEST_MAX_ERROR_DETAIL_LENGTH = 400

@@ -40,6 +40,7 @@ export interface EmbeddingModelInfo {
   id: string
   name: string
   provider: string
+  provider_display_name?: string | null
   model_id: string
 }
 
@@ -47,6 +48,7 @@ export interface RerankModelInfo {
   id: string
   name: string
   provider: string
+  provider_display_name?: string | null
   model_id: string
 }
 

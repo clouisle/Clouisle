@@ -1498,6 +1498,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "model_call_failed": {"en": "Model call failed", "zh": "模型调用失败"},
     "model_created": {"en": "Model created successfully", "zh": "模型创建成功"},
     "model_deleted": {"en": "Model deleted successfully", "zh": "模型删除成功"},
+    "model_discovery_api_key_required": {
+        "en": "API key is required to fetch the model list",
+        "zh": "获取模型列表需要 API Key",
+    },
+    "model_discovery_base_url_invalid": {
+        "en": "Enter an absolute HTTP or HTTPS API base URL",
+        "zh": "请输入有效的 HTTP 或 HTTPS API 地址",
+    },
+    "model_discovery_failed": {
+        "en": "Could not fetch the model list. Check the API URL, API key, and provider compatibility.",
+        "zh": "无法获取模型列表。请检查 API 地址、API Key 和供应商兼容性。",
+    },
+    "model_discovery_not_supported": {
+        "en": "This provider does not support remote model discovery",
+        "zh": "该供应商不支持在线获取模型列表",
+    },
+    "model_discovery_success": {
+        "en": "Discovered {count} models",
+        "zh": "已获取 {count} 个模型",
+    },
     "model_not_authorized": {
         "en": "Model is not authorized for this team",
         "zh": "该模型未被授权给此团队",
