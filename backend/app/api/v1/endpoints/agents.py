@@ -521,6 +521,7 @@ async def create_agent(
             "visibility": agent_in.visibility,
             "kb_count": len(agent_in.knowledge_base_configs),
         },
+        changes={"after": AuditLogService.snapshot(agent, "agent")},
     )
 
     agent_data = await build_agent_out(agent)
@@ -548,6 +549,7 @@ async def update_agent(
 ) -> Any:
     """Update an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+    audit_before = AuditLogService.snapshot(agent, "agent")
     await deps.check_scoped_permission(
         current_user, "agent:update", "team", agent.team.id
     )
@@ -739,6 +741,9 @@ async def update_agent(
         status="success",
         request=request,
         metadata={"fields_updated": updated_fields},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(agent, "agent")
+        ),
     )
 
     agent_data = await build_agent_out(agent)
@@ -753,6 +758,7 @@ async def delete_agent(
 ) -> Any:
     """Delete an agent and all its conversations."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+    audit_before = AuditLogService.snapshot(agent, "agent")
 
     # 记录审计日志（在删除前）
     await AuditLogService.log(
@@ -764,6 +770,7 @@ async def delete_agent(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={
             "team_id": str(agent.team_id),
             "visibility": agent.visibility,
@@ -784,6 +791,7 @@ async def publish_agent(
 ) -> Any:
     """Publish an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+    audit_before = AuditLogService.snapshot(agent, "agent")
 
     agent.status = AgentStatus.PUBLISHED
     await agent.save()
@@ -798,6 +806,9 @@ async def publish_agent(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(agent, "agent")
+        ),
     )
 
     # 发送团队通知
@@ -821,6 +832,7 @@ async def unpublish_agent(
 ) -> Any:
     """Unpublish an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+    audit_before = AuditLogService.snapshot(agent, "agent")
 
     agent.status = AgentStatus.DRAFT
     await agent.save()
@@ -835,6 +847,9 @@ async def unpublish_agent(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(agent, "agent")
+        ),
     )
 
     # 发送团队通知
@@ -929,6 +944,7 @@ async def duplicate_agent(
         status="success",
         request=request,
         metadata={"source_agent_id": str(agent.id), "source_agent_name": agent.name},
+        changes={"after": AuditLogService.snapshot(new_agent, "agent")},
     )
 
     agent_data = await build_agent_out(new_agent)

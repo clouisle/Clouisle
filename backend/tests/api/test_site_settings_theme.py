@@ -456,6 +456,15 @@ async def test_auto_notification_update_validates_before_persistence(monkeypatch
 async def test_reset_category_and_audit(monkeypatch):
     set_value = AsyncMock()
     monkeypatch.setattr(site_settings.SiteSetting, "set_value", set_value)
+
+    class _NoRow:
+        def filter(self, *, key=None):
+            return self
+
+        async def first(self):
+            return None
+
+    monkeypatch.setattr(site_settings.SiteSetting, "filter", _NoRow().filter)
     monkeypatch.setattr(
         site_settings.SiteSetting,
         "get_all_by_category",
@@ -476,6 +485,12 @@ async def test_reset_category_and_audit(monkeypatch):
         call.kwargs["category"] == "security" for call in set_value.await_args_list
     )
     assert audit.await_args.kwargs["metadata"]["count"] == set_value.await_count
+    changes = audit.await_args.kwargs["changes"]
+    assert changes is not None
+    assert set(changes["before"]["values"]) == set(
+        audit.await_args.kwargs["metadata"]["reset_keys"]
+    )
+    assert set(changes["before"]["values"]) == set(changes["after"]["values"])
 
 
 @pytest.mark.asyncio

@@ -191,6 +191,7 @@ async def add_team_model(
             "model_id": str(auth_in.model_id),
             "model_name": model.name,
         },
+        changes={"after": AuditLogService.snapshot(team_model, "team_model")},
     )
 
     return success(
@@ -247,6 +248,8 @@ async def update_team_model(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(team_model, "team_model")
+
     # 更新字段
     update_data = auth_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -268,6 +271,9 @@ async def update_team_model(
             "model_id": str(model_id),
             "updated_fields": list(update_data.keys()),
         },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(team_model, "team_model")
+        ),
     )
 
     return success(
@@ -327,6 +333,7 @@ async def remove_team_model(
     model_name = team_model.model.name
     team_name = team_model.team.name
     team_id_for_notify = team_model.team.id
+    audit_before = AuditLogService.snapshot(team_model, "team_model")
 
     await team_model.delete()
 
@@ -362,6 +369,7 @@ async def remove_team_model(
             "model_id": str(model_id),
             "model_name": model_name,
         },
+        changes={"before": audit_before},
     )
 
     return success(

@@ -272,6 +272,7 @@ async def create_agent(
             "visibility": normalize_agent_visibility(agent_in.visibility),
             "kb_count": len(agent_in.knowledge_base_configs),
         },
+        changes={"after": AuditLogService.snapshot(agent, "agent")},
     )
     return success(data=await build_agent_out(agent), msg_key="agent_created")
 
@@ -293,6 +294,7 @@ async def update_agent(
     current_user: User = Depends(deps.PermissionChecker("admin:app:update")),
 ) -> Any:
     agent = await _get_agent(agent_id, detail=True)
+    audit_before = AuditLogService.snapshot(agent, "agent")
 
     if agent_in.name is not None and agent_in.name != agent.name:
         existing = (
@@ -459,6 +461,9 @@ async def update_agent(
             "team_id": str(agent.team_id),
             "visibility": agent.visibility.value,
         },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(agent, "agent")
+        ),
     )
     return success(data=await build_agent_out(agent), msg_key="agent_updated")
 
@@ -470,7 +475,7 @@ async def publish_agent(
     current_user: User = Depends(deps.PermissionChecker("admin:app:publish")),
 ) -> Any:
     agent = await _get_agent(agent_id, detail=True)
-    old_status = agent.status
+    audit_before = AuditLogService.snapshot(agent, "agent")
     agent.status = AgentStatus.PUBLISHED
     await agent.save()
 
@@ -483,10 +488,9 @@ async def publish_agent(
         operation="update",
         status="success",
         request=request,
-        changes={
-            "before": {"status": old_status.value},
-            "after": {"status": agent.status.value},
-        },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(agent, "agent")
+        ),
         metadata={"team_id": str(agent.team_id), "visibility": agent.visibility.value},
     )
     if agent.team_id:
@@ -507,7 +511,7 @@ async def unpublish_agent(
     current_user: User = Depends(deps.PermissionChecker("admin:app:publish")),
 ) -> Any:
     agent = await _get_agent(agent_id, detail=True)
-    old_status = agent.status
+    audit_before = AuditLogService.snapshot(agent, "agent")
     agent.status = AgentStatus.DRAFT
     await agent.save()
 
@@ -520,10 +524,9 @@ async def unpublish_agent(
         operation="update",
         status="success",
         request=request,
-        changes={
-            "before": {"status": old_status.value},
-            "after": {"status": agent.status.value},
-        },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(agent, "agent")
+        ),
         metadata={"team_id": str(agent.team_id), "visibility": agent.visibility.value},
     )
     if agent.team_id:
@@ -610,6 +613,7 @@ async def duplicate_agent(
             "source_visibility": agent.visibility.value,
             "new_agent_id": str(new_agent.id),
         },
+        changes={"after": AuditLogService.snapshot(new_agent, "agent")},
     )
     return success(data=await build_agent_out(new_agent), msg_key="agent_duplicated")
 
@@ -621,6 +625,7 @@ async def delete_agent(
     current_user: User = Depends(deps.PermissionChecker("admin:app:delete")),
 ) -> Any:
     agent = await _get_agent(agent_id)
+    audit_before = AuditLogService.snapshot(agent, "agent")
     await AuditLogService.log(
         user=current_user,
         action="admin_delete_agent",
@@ -630,6 +635,7 @@ async def delete_agent(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"team_id": str(agent.team_id), "visibility": agent.visibility},
     )
     await agent.delete()

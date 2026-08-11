@@ -284,6 +284,7 @@ async def create_api_key(
             "agent_count": len(agents),
             "workflow_count": len(workflows),
         },
+        changes={"after": AuditLogService.snapshot(api_key, "api_key")},
     )
 
     # 重新查询以获取关联数据
@@ -334,6 +335,7 @@ async def update_api_key(
     """
     api_key = await get_api_key_or_404(api_key_id)
     await ensure_api_key_owner(api_key, current_user)
+    audit_before = AuditLogService.snapshot(api_key, "api_key")
 
     new_agents = (
         await collect_allowed_agents(data.agent_ids, current_user)
@@ -392,6 +394,9 @@ async def update_api_key(
         status="success",
         request=request,
         metadata={"fields_updated": list(data.model_dump(exclude_unset=True).keys())},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(reloaded_api_key, "api_key")
+        ),
     )
 
     response_data = await build_api_key_response(reloaded_api_key)
@@ -412,6 +417,7 @@ async def delete_api_key(
 
     # Store for response
     response_data = await build_api_key_response(api_key)
+    audit_before = AuditLogService.snapshot(api_key, "api_key")
 
     # 记录审计日志（在删除前）
     await AuditLogService.log(
@@ -423,6 +429,7 @@ async def delete_api_key(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"key_prefix": api_key.key_prefix},
     )
 
@@ -443,6 +450,7 @@ async def activate_api_key(
     """
     api_key = await get_api_key_or_404(api_key_id)
     await ensure_api_key_owner(api_key, current_user)
+    audit_before = AuditLogService.snapshot(api_key, "api_key")
 
     if api_key.is_active:
         raise BusinessError(
@@ -463,6 +471,9 @@ async def activate_api_key(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(api_key, "api_key")
+        ),
     )
 
     response_data = await build_api_key_response(api_key)
@@ -480,6 +491,7 @@ async def deactivate_api_key(
     """
     api_key = await get_api_key_or_404(api_key_id)
     await ensure_api_key_owner(api_key, current_user)
+    audit_before = AuditLogService.snapshot(api_key, "api_key")
 
     if not api_key.is_active:
         raise BusinessError(
@@ -500,6 +512,9 @@ async def deactivate_api_key(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(api_key, "api_key")
+        ),
     )
 
     response_data = await build_api_key_response(api_key)

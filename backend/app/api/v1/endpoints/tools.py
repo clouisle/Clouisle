@@ -677,6 +677,7 @@ async def create_tool(
         status="success",
         request=request,
         metadata={"team_id": str(team_id), "tool_type": tool_in.type.value},
+        changes={"after": AuditLogService.snapshot(tool, "tool")},
     )
 
     return success(
@@ -759,6 +760,8 @@ async def update_tool(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(tool, "tool")
+
     await check_tool_write_access(tool, current_user)
     await deps.check_scoped_permission(
         current_user, "tool:update", "team", tool.team_id
@@ -811,6 +814,9 @@ async def update_tool(
         status="success",
         request=request,
         metadata={"team_id": str(tool.team_id)},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(tool, "tool")
+        ),
     )
 
     creator_name = tool.created_by.username if tool.created_by else None
@@ -839,6 +845,7 @@ async def delete_tool(
 
     tool_name = tool.name
     tool_team_id = tool.team_id
+    audit_before = AuditLogService.snapshot(tool, "tool")
     await tool.delete()
 
     await AuditLogService.log(
@@ -850,6 +857,7 @@ async def delete_tool(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"team_id": str(tool_team_id)},
     )
 
@@ -1161,6 +1169,7 @@ async def toggle_tool(
     await deps.check_scoped_permission(
         current_user, "tool:update", "team", tool.team_id
     )
+    audit_before = AuditLogService.snapshot(tool, "tool")
 
     tool.is_enabled = not tool.is_enabled
     await tool.save()
@@ -1174,6 +1183,9 @@ async def toggle_tool(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(tool, "tool")
+        ),
         metadata={"team_id": str(tool.team_id), "is_enabled": tool.is_enabled},
     )
 
@@ -1238,6 +1250,7 @@ async def duplicate_tool(
         status="success",
         request=request,
         metadata={"team_id": str(tool.team_id), "source_tool_id": str(tool_id)},
+        changes={"after": AuditLogService.snapshot(new_tool, "tool")},
     )
 
     return success(

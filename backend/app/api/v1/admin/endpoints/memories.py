@@ -250,10 +250,7 @@ async def update_entity(
         )
 
     # Store old values for audit
-    old_values = {
-        "description": entity.description,
-        "properties": entity.properties,
-    }
+    audit_before = AuditLogService.snapshot(entity, "memory_entity")
 
     # Update fields
     if data.description is not None:
@@ -273,13 +270,9 @@ async def update_entity(
         operation="update",
         status="success",
         request=request,
-        changes={
-            "before": old_values,
-            "after": {
-                "description": entity.description,
-                "properties": entity.properties,
-            },
-        },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(entity, "memory_entity")
+        ),
         metadata={
             "entity_type": entity.entity_type,
             "owner_user_id": str(entity.user_id),
@@ -312,6 +305,7 @@ async def delete_entity(
     entity_name = entity.name
     entity_type = entity.entity_type
     owner_user_id = str(entity.user_id)
+    audit_before = AuditLogService.snapshot(entity, "memory_entity")
 
     # Delete entity (cascades to relations)
     await entity.delete()
@@ -326,6 +320,7 @@ async def delete_entity(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={
             "entity_type": entity_type,
             "owner_user_id": owner_user_id,
@@ -406,6 +401,7 @@ async def delete_relation(
     target_name = relation.target_entity.name
     relation_type = relation.relation_type
     owner_user_id = str(relation.user_id)
+    audit_before = AuditLogService.snapshot(relation, "memory_relation")
 
     # Delete relation
     await relation.delete()
@@ -420,6 +416,7 @@ async def delete_relation(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={
             "relation_type": relation_type,
             "source_entity": source_name,

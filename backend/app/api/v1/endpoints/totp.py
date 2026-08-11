@@ -97,6 +97,7 @@ async def enable_totp(
     """
     Enable TOTP 2FA by verifying the code
     """
+    audit_before = AuditLogService.snapshot(current_user, "user")
     if current_user.totp_enabled:
         raise BusinessError(
             code=ResponseCode.TOTP_ALREADY_ENABLED,
@@ -134,6 +135,9 @@ async def enable_totp(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(current_user, "user")
+        ),
     )
 
     return success(msg_key="totp_enabled")
@@ -148,6 +152,7 @@ async def disable_totp(
     """
     Disable TOTP 2FA (requires password + current TOTP code)
     """
+    audit_before = AuditLogService.snapshot(current_user, "user")
     if not current_user.totp_enabled:
         raise BusinessError(
             code=ResponseCode.TOTP_NOT_ENABLED,
@@ -206,6 +211,9 @@ async def disable_totp(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(current_user, "user")
+        ),
     )
 
     return success(msg_key="totp_disabled")
@@ -220,6 +228,7 @@ async def regenerate_backup_codes(
     """
     Regenerate backup codes (requires TOTP code verification)
     """
+    audit_before = AuditLogService.snapshot(current_user, "user")
     if not current_user.totp_enabled:
         raise BusinessError(
             code=ResponseCode.TOTP_NOT_ENABLED,
@@ -259,6 +268,9 @@ async def regenerate_backup_codes(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(current_user, "user")
+        ),
     )
 
     return success(

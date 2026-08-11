@@ -1,3 +1,4 @@
+import json
 from typing import Any, NoReturn, Optional, cast
 from urllib.parse import urlparse
 from uuid import UUID
@@ -493,9 +494,27 @@ async def reset_settings(
     current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     reset_keys = []
+    before_values: dict[str, object] = {}
+    after_values: dict[str, object] = {}
     for key, config in DEFAULT_SETTINGS.items():
         if category and config["category"] != category:
             continue
+        old_setting = await SiteSetting.filter(key=key).first()
+        old_value = (
+            SiteSetting._convert_value(old_setting.value, old_setting.value_type)
+            if old_setting
+            else None
+        )
+        # 与 set_value 的存储规则一致：先转成存储字符串，再转回规范值比较
+        if config["type"] == "bool":
+            stored_str = "true" if config["value"] else "false"
+        elif config["type"] == "json":
+            stored_str = (
+                json.dumps(config["value"]) if config["value"] is not None else None
+            )
+        else:
+            stored_str = str(config["value"]) if config["value"] is not None else None
+        new_value = SiteSetting._convert_value(stored_str, config["type"])
         await SiteSetting.set_value(
             key=key,
             value=config["value"],
@@ -505,6 +524,16 @@ async def reset_settings(
             is_public=config["public"],
         )
         reset_keys.append(key)
+        if old_value != new_value:
+            before_values[key] = "***" if key in SENSITIVE_SETTING_KEYS else old_value
+            after_values[key] = "***" if key in SENSITIVE_SETTING_KEYS else new_value
+
+    changes = None
+    if before_values or after_values:
+        changes = {
+            "before": {"values": before_values},
+            "after": {"values": after_values},
+        }
 
     await AuditLogService.log(
         user=current_user,
@@ -515,6 +544,7 @@ async def reset_settings(
         operation="update",
         status="success",
         request=request,
+        changes=changes,
         metadata={
             "category": category,
             "reset_keys": reset_keys,

@@ -579,6 +579,7 @@ async def create_knowledge_base(
         operation="create",
         status="success",
         request=request,
+        changes={"after": AuditLogService.snapshot(kb, "knowledge_base")},
     )
 
     kb_data = await kb_with_model_info(kb)
@@ -611,6 +612,7 @@ async def update_knowledge_base(
     Requires admin permission in the team.
     """
     kb = await check_kb_access(kb_id, current_user, require_write=True)
+    audit_before = AuditLogService.snapshot(kb, "knowledge_base")
 
     # Update fields
     if kb_in.name is not None:
@@ -671,6 +673,9 @@ async def update_knowledge_base(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(kb, "knowledge_base")
+        ),
     )
 
     kb_data = await kb_with_model_info(kb)
@@ -691,6 +696,7 @@ async def delete_knowledge_base(
         kb_id, current_user, require_write=True, allow_owner_write=False
     )
     kb_name = kb.name
+    audit_before = AuditLogService.snapshot(kb, "knowledge_base")
 
     # Delete all documents and chunks (cascades)
     await kb.delete()
@@ -705,6 +711,7 @@ async def delete_knowledge_base(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     return success(data={"id": str(kb_id)}, msg_key="kb_deleted")
@@ -882,6 +889,7 @@ async def upload_document(
         status="success",
         request=request,
         metadata={"kb_id": str(kb_id), "kb_name": kb.name, "doc_type": doc_type},
+        changes={"after": AuditLogService.snapshot(doc, "document")},
     )
 
     return success(data=await serialize_document(doc), msg_key="document_uploaded")
@@ -942,6 +950,7 @@ async def add_url_document(
             "kb_name": kb.name,
             "source_url": doc_in.source_url,
         },
+        changes={"after": AuditLogService.snapshot(doc, "document")},
     )
 
     return success(data=await serialize_document(doc), msg_key="document_created")
@@ -995,6 +1004,8 @@ async def update_document(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(doc, "document")
+
     if doc_in.name is not None:
         doc.name = doc_in.name
         await doc.save()
@@ -1008,6 +1019,9 @@ async def update_document(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(doc, "document")
+        ),
         metadata={"knowledge_base_id": str(kb_id)},
     )
 
@@ -1037,6 +1051,7 @@ async def delete_document(
         )
 
     doc_name = doc.name
+    audit_before = AuditLogService.snapshot(doc, "document")
 
     # Cancel Celery task if document is pending or processing
     if doc.status in [DocumentStatus.PENDING.value, DocumentStatus.PROCESSING.value]:
@@ -1080,6 +1095,7 @@ async def delete_document(
         status="success",
         request=request,
         metadata={"knowledge_base_id": str(kb_id)},
+        changes={"before": audit_before},
     )
 
     return success(data={"id": str(doc_id)}, msg_key="document_deleted")
@@ -1874,6 +1890,7 @@ async def update_document_chunk(
                 .get()
             )
             old_content = locked_chunk.content
+            audit_before = AuditLogService.snapshot(locked_chunk, "document_chunk")
             token_diff = new_token_count - locked_chunk.token_count
             locked_chunk.content = chunk_in.content
             locked_chunk.token_count = new_token_count
@@ -1940,6 +1957,9 @@ async def update_document_chunk(
         status="success",
         request=request,
         metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(chunk, "document_chunk")
+        ),
     )
 
     return success(data=await serialize_chunk(chunk), msg_key="chunk_updated")
@@ -1998,6 +2018,7 @@ async def delete_document_chunk(
             )
         chunk_index = locked_chunk.chunk_index
         chunk_token_count = locked_chunk.token_count
+        audit_before = AuditLogService.snapshot(locked_chunk, "document_chunk")
         await locked_chunk.delete(using_db=connection)
         await (
             DocumentChunk.filter(document_id=doc_id, chunk_index__gt=chunk_index)
@@ -2043,6 +2064,7 @@ async def delete_document_chunk(
         status="success",
         request=request,
         metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+        changes={"before": audit_before},
     )
 
     return success(data={"id": str(chunk_id)}, msg_key="chunk_deleted")
@@ -2167,6 +2189,7 @@ async def create_document_chunk(
         status="success",
         request=request,
         metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+        changes={"after": AuditLogService.snapshot(chunk, "document_chunk")},
     )
 
     return success(data=await serialize_chunk(chunk), msg_key="chunk_created")

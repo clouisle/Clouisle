@@ -333,6 +333,7 @@ async def delete_skill(
     skill_name = skill.name
     team_id = str(skill.team_id) if skill.team_id else None
     package_storage_path = skill.package_storage_path
+    audit_before = AuditLogService.snapshot(skill, "skill")
     await skill.delete()
     await SkillImportService.delete_private_storage(package_storage_path)
     await AuditLogService.log(
@@ -344,6 +345,7 @@ async def delete_skill(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"team_id": team_id},
     )
     return success(data=None, msg_key="skill_deleted")

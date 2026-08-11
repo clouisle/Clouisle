@@ -630,6 +630,7 @@ async def delete_conversation_admin(
     )
 
     conv_title = conversation.title or str(conversation_id)
+    audit_before = AuditLogService.snapshot(conversation, "conversation")
     # Delete conversation (cascades to messages)
     await conversation.delete()
 
@@ -642,6 +643,7 @@ async def delete_conversation_admin(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")

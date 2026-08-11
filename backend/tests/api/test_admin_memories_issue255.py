@@ -180,15 +180,13 @@ async def test_update_entity_changes_only_supplied_field_and_audits(admin):
     entity.save.assert_awaited_once()
     assert response["data"]["description"] == "Revised"
     assert audit.await_args.kwargs["changes"] == {
-        "before": {
-            "description": "Original",
-            "properties": {"status": "active"},
-        },
-        "after": {
-            "description": "Revised",
-            "properties": {"status": "active"},
-        },
+        "before": {"description": "Original"},
+        "after": {"description": "Revised"},
     }
+    assert (
+        audit.await_args.kwargs["changes"]["before"]["description"]
+        != audit.await_args.kwargs["changes"]["after"]["description"]
+    )
 
 
 @pytest.mark.anyio

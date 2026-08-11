@@ -238,6 +238,7 @@ async def create_user(
         operation="create",
         status="success",
         request=request,
+        changes={"after": AuditLogService.snapshot(user, "user")},
     )
 
     return success(data=await serialize_user_with_sso(user), msg_key="user_created")
@@ -363,6 +364,7 @@ async def activate_user(
             msg_key="user_already_active",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     user.is_active = True
     user.approval_status = "approved"
     await user.save(update_fields=["is_active", "approval_status"])
@@ -378,6 +380,9 @@ async def activate_user(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(updated_user, "user")
+        ),
     )
 
     await AutoNotificationService.send_to_user(
@@ -418,6 +423,7 @@ async def deactivate_user(
             msg_key="user_already_inactive",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     user.is_active = False
     user.approval_status = "approved"
     await user.save(update_fields=["is_active", "approval_status"])
@@ -433,6 +439,9 @@ async def deactivate_user(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(updated_user, "user")
+        ),
     )
 
     await AutoNotificationService.send_to_user(
@@ -463,6 +472,7 @@ async def update_user(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     user_data = user_in.model_dump(exclude_unset=True)
 
     password_changed = False
@@ -508,6 +518,9 @@ async def update_user(
         metadata={
             "fields_updated": list(user_in.model_dump(exclude_unset=True).keys())
         },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(updated_user, "user")
+        ),
     )
 
     if password_changed:
@@ -543,6 +556,7 @@ async def delete_user(
             msg_key="cannot_delete_superuser",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     await AuditLogService.log(
         user=current_user,
         action="delete_user",
@@ -552,6 +566,7 @@ async def delete_user(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     await user.delete()

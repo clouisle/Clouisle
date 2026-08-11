@@ -17,6 +17,7 @@ Clouisle is a monorepo application with:
 - Put detailed engineering rules and subsystem notes in `docs/dev/`.
 - Keep user-facing and operator-facing content in `docs/guide/`.
 - Preserve the separation between dashboard/admin and platform/user code paths.
+- Record field-level before/after diffs in audit logs via `AuditLogService.snapshot`/`build_changes` (see `docs/dev/backend/audit-logging.md`).
 - Update the relevant docs when implementation rules change.
 
 ## Start here

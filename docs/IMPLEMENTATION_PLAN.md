@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **audit-log-detail** — Complete. Audit logs now record field-level before/after diffs for every direct CRUD mutation of snapshot-capable resources, via `AuditLogService.snapshot`/`build_changes` + a `SNAPSHOT_FIELDS` registry (zero extra queries, bounded 500-char values). See `docs/plan/audit-log-detail.md`
+  - [x] 1. Service helpers and SNAPSHOT_FIELDS registry
+  - [x] 2. Admin endpoint wiring
+  - [x] 3. User-facing endpoint wiring
+  - [x] 4. Helper tests and updated API assertions
+  - [x] 5. Docs and conventions
 - **model-provider-display-and-discovery-metadata** — Complete. Preserved the controlled model adapter identifier while adding a user-facing provider/gateway name, and carried safe remote model metadata through discovery into model configuration. See `docs/plan/model-provider-display-and-discovery-metadata.md`
   - [x] 1. Persist display-only provider identity
   - [x] 2. Normalize remote model metadata

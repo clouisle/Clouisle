@@ -124,6 +124,7 @@ async def update_user_me(
     """
     Update current user profile.
     """
+    audit_before = AuditLogService.snapshot(current_user, "user")
     update_data = data.model_dump(exclude_unset=True)
     email_verification_code = update_data.pop("email_verification_code", None)
 
@@ -171,6 +172,9 @@ async def update_user_me(
         status="success",
         request=request,
         metadata={"fields_updated": list(update_data.keys())},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(updated_user, "user")
+        ),
     )
 
     return success(

@@ -70,6 +70,8 @@ async def admin_disable_user_totp(
             msg_key="totp_not_enabled",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
+
     # Disable TOTP
     user.totp_enabled = False  # type: ignore[assignment]
     user.totp_secret = None  # type: ignore[assignment]
@@ -88,6 +90,9 @@ async def admin_disable_user_totp(
         status="success",
         request=request,
         metadata={"target_user_id": str(user.id), "target_username": user.username},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        ),
     )
 
     return success(msg_key="totp_disabled")
