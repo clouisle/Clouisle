@@ -551,6 +551,23 @@ _MODEL_DISCOVERY_SUPPORTED_PROVIDERS = frozenset(
         ModelProvider.CUSTOM,
     }
 )
+_MODEL_DISCOVERY_PROVIDER_PATHS = {
+    ModelProvider.OPENAI: "/v1/models",
+    ModelProvider.OPENAI_RESPONSES: "/v1/models",
+    ModelProvider.ANTHROPIC: "/v1/models",
+    ModelProvider.GOOGLE: "/v1beta/models",
+    ModelProvider.DEEPSEEK: "/models",
+    ModelProvider.MOONSHOT: "/v1/models",
+    ModelProvider.ZHIPU: "/api/paas/v4/models",
+    ModelProvider.QWEN: "/compatible-mode/v1/models",
+    ModelProvider.BAICHUAN: "/v1/models",
+    ModelProvider.MINIMAX: "/v1/models",
+    ModelProvider.VOLCENGINE: "/api/v3/models",
+    ModelProvider.SILICONFLOW: "/v1/models",
+    ModelProvider.XAI: "/v1/models",
+    ModelProvider.OLLAMA: "/api/tags",
+    ModelProvider.CUSTOM: "/v1/models",
+}
 
 
 @router.post("/discover", response_model=Response[ModelDiscoveryResponse])
@@ -577,9 +594,7 @@ async def discover_models(
     if _requires_api_key(provider) and not api_key:
         return _model_discovery_failure("model_discovery_api_key_required")
 
-    request_path, headers, params = _build_model_discovery_request(
-        provider, base_url, api_key
-    )
+    request_path, headers, params = _build_model_discovery_request(provider, api_key)
     try:
         async with httpx.AsyncClient(
             base_url=allowed_origin,
@@ -629,31 +644,16 @@ def _normalize_model_discovery_base_url(value: str) -> str | None:
     return base_url
 
 
-def _append_model_discovery_path(base_path: str, path: str) -> str:
-    normalized_path = path.strip("/")
-    base_path = base_path.rstrip("/")
-    if base_path.endswith(f"/{normalized_path}"):
-        return base_path
-    return f"{base_path}/{normalized_path}" if base_path else f"/{normalized_path}"
-
-
 def _build_model_discovery_request(
     provider: ModelProvider,
-    base_url: str,
     api_key: str,
 ) -> tuple[str, dict[str, str], dict[str, str] | None]:
-    base_path = urlsplit(base_url).path.rstrip("/")
+    request_path = _MODEL_DISCOVERY_PROVIDER_PATHS[provider]
     if provider == ModelProvider.OLLAMA:
-        return _append_model_discovery_path(base_path, "api/tags"), {}, None
+        return request_path, {}, None
     if provider == ModelProvider.ANTHROPIC:
-        if base_path.endswith("/v1/models"):
-            endpoint = base_path
-        elif base_path.endswith("/v1"):
-            endpoint = _append_model_discovery_path(base_path, "models")
-        else:
-            endpoint = _append_model_discovery_path(base_path, "v1/models")
         return (
-            endpoint,
+            request_path,
             {
                 "anthropic-version": "2023-06-01",
                 "x-api-key": api_key,
@@ -661,12 +661,8 @@ def _build_model_discovery_request(
             None,
         )
     if provider == ModelProvider.GOOGLE:
-        return _append_model_discovery_path(base_path, "models"), {}, {"key": api_key}
-    return (
-        _append_model_discovery_path(base_path, "models"),
-        {"Authorization": f"Bearer {api_key}"},
-        None,
-    )
+        return request_path, {}, {"key": api_key}
+    return request_path, {"Authorization": f"Bearer {api_key}"}, None
 
 
 def _parse_discovered_models(

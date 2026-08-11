@@ -69,7 +69,7 @@ async def test_discover_models_requests_openai_compatible_api(monkeypatch):
     result = await models.discover_models(
         ModelDiscoveryRequest(
             provider=ModelProvider.CUSTOM,
-            base_url="https://api.example.test/v1/",
+            base_url="https://api.example.test/https://evil.example.test",
             api_key="secret",
         ),
         current_user=SimpleNamespace(),
@@ -353,11 +353,10 @@ async def test_discover_models_returns_safe_failure_for_remote_errors(
 
 
 @pytest.mark.parametrize(
-    ("provider", "base_url", "api_key", "endpoint", "headers", "params"),
+    ("provider", "api_key", "endpoint", "headers", "params"),
     [
         (
             ModelProvider.CUSTOM,
-            "https://api.example.test/v1/models",
             "key",
             "/v1/models",
             {"Authorization": "Bearer key"},
@@ -365,31 +364,28 @@ async def test_discover_models_returns_safe_failure_for_remote_errors(
         ),
         (
             ModelProvider.ANTHROPIC,
-            "https://api.anthropic.test/v1/models",
             "key",
             "/v1/models",
             {"anthropic-version": "2023-06-01", "x-api-key": "key"},
             None,
         ),
         (
-            ModelProvider.ANTHROPIC,
-            "https://api.anthropic.test/v1",
+            ModelProvider.GOOGLE,
             "key",
-            "/v1/models",
-            {"anthropic-version": "2023-06-01", "x-api-key": "key"},
-            None,
+            "/v1beta/models",
+            {},
+            {"key": "key"},
         ),
     ],
 )
-def test_model_discovery_reuses_existing_model_paths(
+def test_model_discovery_uses_fixed_provider_paths(
     provider,
-    base_url,
     api_key,
     endpoint,
     headers,
     params,
 ):
-    assert models._build_model_discovery_request(provider, base_url, api_key) == (
+    assert models._build_model_discovery_request(provider, api_key) == (
         endpoint,
         headers,
         params,
