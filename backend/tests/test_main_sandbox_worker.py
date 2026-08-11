@@ -93,6 +93,7 @@ def test_start_sandbox_worker_container_runs_without_bind_mounts(
     mock_build.assert_called_once_with(no_cache=False, image_tag="sandbox:test")
     cmd = mock_run.call_args.args[0]
     assert cmd[:3] == ["docker", "run", "--rm"]
+    assert ["--add-host", "host.docker.internal:host-gateway"] == cmd[3:5]
     assert "-v" not in cmd
     assert "--volume" not in cmd
     assert "--mount" not in cmd

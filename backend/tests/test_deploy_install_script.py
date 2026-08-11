@@ -72,6 +72,8 @@ def test_k8s_installer_generates_a_secret_manifest_and_preserves_output(tmp_path
         template_secret["data"]["SECRET_KEY"]
         == "Y2hhbmdldGhpcy10by1hLXNlY3VyZS1yYW5kb20tc2VjcmV0LWtleQ=="
     )
+    assert template_secret["data"]["INTERNAL_API_TOKEN"] == ""
+    assert template_secret["data"]["SANDBOX_ARTIFACT_UPLOAD_API_KEY"] == ""
 
     deployments = {
         document["metadata"]["name"]: document

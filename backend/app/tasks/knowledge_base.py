@@ -19,7 +19,8 @@ from app.models.knowledge_base import (
 )
 from app.models.notification import AutoNotificationType
 from app.services.auto_notification import AutoNotificationService
-from app.services.document_processor import UploadGatewayError, document_processor
+from app.services.document_processor import document_processor
+from app.services.upload_gateway import UploadGatewayError
 from app.services.lexical_store import LexicalStore, chunk_document, index_document
 from app.services.vector_store import (
     VectorStore,
@@ -211,6 +212,68 @@ async def _finish_already_finished_task(
         "document_id": str(document.id),
         "document_status": document.status,
     }
+
+
+async def _finish_upload_gateway_retry_exhaustion(
+    document_id: str,
+    task_id: str | None,
+    error: UploadGatewayError,
+) -> dict[str, Any]:
+    """Mark a document terminally failed after gateway retries are exhausted."""
+    document = (
+        await Document.filter(id=UUID(document_id))
+        .prefetch_related("knowledge_base", "uploaded_by")
+        .first()
+    )
+    if not document:
+        logger.error("Document %s not found after upload gateway retries", document_id)
+        default_lang = await get_default_language()
+        return {
+            "status": "error",
+            "message": t("document_not_found", lang=default_lang),
+        }
+    if _is_stale_task(document, task_id):
+        return await _finish_stale_task(document, task_id)
+    if _is_finished_task(document, task_id):
+        return await _finish_already_finished_task(document, task_id)
+
+    kb = document.knowledge_base
+    user_locale = (
+        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    )
+    logger.error(
+        "Upload gateway retries exhausted for document %s: %s", document_id, error
+    )
+    document.status = DocumentStatus.ERROR.value
+    _clear_task_metadata(document)
+    document.error_message = _get_generic_processing_error(document, user_locale)[:500]
+    await document.save()
+    await _send_doc_failed_notification(
+        document=document,
+        kb_name=kb.name,
+        team_id=kb.team_id,
+        error=document.error_message,
+        user_locale=user_locale,
+    )
+    return {
+        "status": "error",
+        "document_id": document_id,
+        "message": document.error_message,
+    }
+
+
+def _retry_upload_gateway_or_mark_document_failed(
+    task: Any,
+    document_id: str,
+    task_id: str | None,
+    error: UploadGatewayError,
+) -> dict[str, Any]:
+    # Celery re-raises the supplied error at the retry limit, so check first.
+    if getattr(task.request, "retries", 0) >= task.max_retries:
+        return _run_async(
+            _finish_upload_gateway_retry_exhaustion(document_id, task_id, error)
+        )
+    raise task.retry(exc=error) from error
 
 
 async def _send_doc_indexed_notification(
@@ -616,7 +679,12 @@ def process_document_task(self, document_id: str) -> dict:
     try:
         return _run_async(_process_document(document_id, task_id))
     except UploadGatewayError as exc:
-        raise self.retry(exc=exc) from exc
+        return _retry_upload_gateway_or_mark_document_failed(
+            self,
+            document_id,
+            task_id,
+            exc,
+        )
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -686,7 +754,12 @@ def reprocess_document_task(self, document_id: str) -> dict:
 
         return result
     except UploadGatewayError as exc:
-        raise self.retry(exc=exc) from exc
+        return _retry_upload_gateway_or_mark_document_failed(
+            self,
+            document_id,
+            getattr(self.request, "id", None),
+            exc,
+        )
 
 
 @shared_task
@@ -957,7 +1030,12 @@ def rechunk_document_task(self, document_id: str) -> dict:
     try:
         return _run_async(_rechunk())
     except UploadGatewayError as exc:
-        raise self.retry(exc=exc) from exc
+        return _retry_upload_gateway_or_mark_document_failed(
+            self,
+            document_id,
+            getattr(self.request, "id", None),
+            exc,
+        )
 
 
 async def _embed_existing_document_chunks(

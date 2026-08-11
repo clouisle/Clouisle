@@ -20,16 +20,13 @@ from uuid import UUID
 from app.models.knowledge_base import (
     DocumentType,
 )
+from app.services import upload_gateway
 from app.services.upload_storage import LocalUploadStorage, get_upload_storage_backend
 from app.services.skill_package import resolve_child_path
 import bleach
 import httpx
 
 logger = logging.getLogger(__name__)
-
-
-class UploadGatewayError(RuntimeError):
-    """A transient failure while the worker is calling the api gateway."""
 
 
 MIME_TYPE_MAP: dict[str, str] = {
@@ -121,15 +118,6 @@ class DocumentProcessor:
         from app.core.config import settings
 
         return settings.UPLOAD_STORAGE_MODE == "remote"
-
-    def _internal_client(self) -> httpx.AsyncClient:
-        from app.core.config import settings
-
-        return httpx.AsyncClient(
-            base_url=settings.API_INTERNAL_BASE_URL.rstrip("/"),
-            headers={"Authorization": f"Bearer {settings.get_internal_api_token()}"},
-            timeout=60.0,
-        )
 
     def _media_storage_key(self, kb_id: UUID, document_id: UUID, filename: str) -> str:
         return (
@@ -242,24 +230,7 @@ class DocumentProcessor:
         """Read file content, streaming api gateway responses in remote mode."""
         storage_key = self._storage_key(path)
         if self._remote_mode():
-            try:
-                async with self._internal_client() as client:
-                    async with client.stream(
-                        "GET", "/internal/uploads/read", params={"key": storage_key}
-                    ) as resp:
-                        if resp.status_code == 404:
-                            raise FileNotFoundError(storage_key)
-                        resp.raise_for_status()
-                        content = bytearray()
-                        async for chunk in resp.aiter_bytes():
-                            content.extend(chunk)
-                        return bytes(content)
-            except FileNotFoundError:
-                raise
-            except httpx.HTTPError as exc:
-                raise UploadGatewayError(
-                    "Unable to read upload through api gateway"
-                ) from exc
+            return await upload_gateway.read(storage_key)
         storage = await get_upload_storage_backend(self._storage_root())
         return await storage.read(storage_key)
 
@@ -268,16 +239,18 @@ class DocumentProcessor:
         storage_key = self._storage_key(path)
         if self._remote_mode():
             try:
-                async with self._internal_client() as client:
+                async with upload_gateway.client() as client:
                     resp = await client.request(
                         "DELETE",
                         "/internal/uploads/delete",
                         params={"key": storage_key},
                     )
+                    if resp.status_code == 404:
+                        return False
                     resp.raise_for_status()
                     return True
             except httpx.HTTPError as exc:
-                raise UploadGatewayError(
+                raise upload_gateway.UploadGatewayError(
                     "Unable to delete upload through api gateway"
                 ) from exc
         storage = await get_upload_storage_backend(self._storage_root())
@@ -289,13 +262,13 @@ class DocumentProcessor:
     async def delete_media_assets(self, kb_id: UUID, document_id: UUID) -> None:
         if self._remote_mode():
             try:
-                async with self._internal_client() as client:
+                async with upload_gateway.client() as client:
                     resp = await client.delete(
                         f"/internal/uploads/media/{kb_id}/{document_id}"
                     )
                     resp.raise_for_status()
             except httpx.HTTPError as exc:
-                raise UploadGatewayError(
+                raise upload_gateway.UploadGatewayError(
                     "Unable to delete media through api gateway"
                 ) from exc
             return
@@ -338,7 +311,7 @@ class DocumentProcessor:
         storage_key = self._media_storage_key(kb_id, document_id, filename)
         if self._remote_mode():
             try:
-                async with self._internal_client() as client:
+                async with upload_gateway.client() as client:
                     resp = await client.put(
                         f"/internal/uploads/media/{kb_id}/{document_id}",
                         params={"filename": filename},
@@ -347,7 +320,7 @@ class DocumentProcessor:
                     )
                     resp.raise_for_status()
             except httpx.HTTPError as exc:
-                raise UploadGatewayError(
+                raise upload_gateway.UploadGatewayError(
                     "Unable to save media through api gateway"
                 ) from exc
         else:

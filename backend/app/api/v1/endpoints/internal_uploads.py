@@ -92,6 +92,8 @@ async def delete_upload(
     _: None = Depends(require_internal_token),
 ) -> Response:
     storage = await get_upload_storage_backend(UPLOAD_ROOT)
+    if not await storage.exists(key):
+        raise HTTPException(status_code=404, detail="Not Found")
     await storage.delete(key)
     return Response(status_code=204)
 

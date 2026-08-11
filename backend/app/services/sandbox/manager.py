@@ -8,7 +8,6 @@ import json
 import os
 import shutil
 import time
-import httpx
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +18,7 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
+from app.services import upload_gateway
 
 from .artifacts import SandboxArtifactStore
 from .models import (
@@ -257,13 +257,14 @@ class SandboxManager:
                     user_id=user_id,
                 )
                 if settings.UPLOAD_STORAGE_MODE == "remote":
-                    content = await self._read_asset_from_gateway(asset.storage_key)
+                    content = await upload_gateway.read(asset.storage_key)
                     if (
                         len(content) != asset.size
                         or hashlib.sha256(content).hexdigest() != asset.checksum
                     ):
-                        raise RuntimeError(
-                            "Stored Asset content does not match its metadata"
+                        raise BusinessError(
+                            code=ResponseCode.VALIDATION_ERROR,
+                            msg_key="sandbox_input_checksum_mismatch",
                         )
                 else:
                     from app.api.v1.endpoints.upload import UPLOAD_ROOT
@@ -302,35 +303,6 @@ class SandboxManager:
                 partial.unlink(missing_ok=True)
             if input_file.mode is not None:
                 target.chmod(input_file.mode)
-
-    async def _read_asset_from_gateway(self, storage_key: str) -> bytes:
-        """Read an authorized attachment without relying on a local uploads mount."""
-        from app.services.document_processor import UploadGatewayError
-
-        try:
-            async with httpx.AsyncClient(
-                base_url=settings.API_INTERNAL_BASE_URL.rstrip("/"),
-                headers={
-                    "Authorization": f"Bearer {settings.get_internal_api_token()}"
-                },
-                timeout=60.0,
-            ) as client:
-                async with client.stream(
-                    "GET", "/internal/uploads/read", params={"key": storage_key}
-                ) as response:
-                    if response.status_code == 404:
-                        raise FileNotFoundError(storage_key)
-                    response.raise_for_status()
-                    content = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        content.extend(chunk)
-                    return bytes(content)
-        except FileNotFoundError:
-            raise
-        except httpx.HTTPError as exc:
-            raise UploadGatewayError(
-                "Unable to read sandbox attachment through api gateway"
-            ) from exc
 
     def _prepare_snippet_execution(
         self,

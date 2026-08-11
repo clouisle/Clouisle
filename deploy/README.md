@@ -74,6 +74,11 @@ The installer offers Docker Compose, Kubernetes with Helm, or secure single-file
 ```bash
 cd deploy
 cp .env.example .env
+# Generate the shared API-to-worker gateway token before starting Compose.
+internal_api_token="$(openssl rand -hex 32)"
+sed -i.bak "s/^INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=${internal_api_token}/" .env
+rm .env.bak
+unset internal_api_token
 # Edit .env when custom domains or external API keys are required.
 docker compose pull
 docker compose up -d
@@ -157,10 +162,13 @@ docker compose down -v
 ### Option A: Helm Chart (recommended)
 
 ```bash
-helm lint deploy/helm/clouisle
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
+
 ```
 
 For production, create a Secret and use `values-production.yaml`:

@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from app.core.config import settings
 from app.schemas.response import BusinessError, ResponseCode
-from app.services.document_processor import UploadGatewayError
+from app.services.upload_gateway import UploadGatewayError, read as read_upload
 
 from app.services.sandbox.manager import SandboxManager
 from app.services.sandbox.models import (
@@ -843,7 +843,7 @@ class TestSandboxManager:
         client = Client()
         async_client = Mock(return_value=client)
         monkeypatch.setattr(
-            "app.services.sandbox.manager.httpx.AsyncClient", async_client
+            "app.services.upload_gateway.httpx.AsyncClient", async_client
         )
         job = SandboxJob(
             command=["python3"],
@@ -875,15 +875,52 @@ class TestSandboxManager:
         )
 
     @pytest.mark.anyio
-    async def test_read_asset_gateway_preserves_missing_and_wraps_network_error(
+    async def test_stage_asset_input_maps_remote_asset_integrity_failure(
         self, tmp_path: Path, monkeypatch
+    ):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        content = b"remote asset content"
+        asset = SimpleNamespace(
+            storage_key="files/input.bin",
+            size=len(content),
+            checksum="invalid-checksum",
+        )
+        authorize = AsyncMock(return_value=asset)
+        read = AsyncMock(return_value=content)
+        monkeypatch.setattr(
+            "app.services.asset.asset_service.get_authorized", authorize
+        )
+        monkeypatch.setattr("app.services.sandbox.manager.upload_gateway.read", read)
+        monkeypatch.setattr(settings, "UPLOAD_STORAGE_MODE", "remote")
+        job = SandboxJob(
+            command=["python3"],
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/data.bin",
+                    asset_id="c3f74d2b-255d-49bc-8895-89a7f088ea86",
+                )
+            ],
+        )
+
+        with pytest.raises(BusinessError) as exc_info:
+            await manager._stage_input_files(job, workspace)
+
+        assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+        assert exc_info.value.msg_key == "sandbox_input_checksum_mismatch"
+        read.assert_awaited_once_with(asset.storage_key)
+
+    @pytest.mark.anyio
+    async def test_upload_gateway_preserves_missing_and_wraps_network_error(
+        self, monkeypatch
     ):
         import httpx
 
-        manager = SandboxManager(
-            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
-            result_store=InMemoryResultStore(),
-        )
         monkeypatch.setattr(settings, "API_INTERNAL_BASE_URL", "http://api:8000")
         monkeypatch.setattr(settings, "INTERNAL_API_TOKEN", "gateway-token")
         monkeypatch.setattr(settings, "INTERNAL_API_TOKEN_FILE", "")
@@ -910,18 +947,18 @@ class TestSandboxManager:
                 return None
 
         monkeypatch.setattr(
-            "app.services.sandbox.manager.httpx.AsyncClient",
+            "app.services.upload_gateway.httpx.AsyncClient",
             Mock(return_value=Client()),
         )
         with pytest.raises(FileNotFoundError, match="files/missing.bin"):
-            await manager._read_asset_from_gateway("files/missing.bin")
+            await read_upload("files/missing.bin")
 
         monkeypatch.setattr(
-            "app.services.sandbox.manager.httpx.AsyncClient",
+            "app.services.upload_gateway.httpx.AsyncClient",
             Mock(side_effect=httpx.ConnectError("connection reset")),
         )
         with pytest.raises(UploadGatewayError, match="api gateway"):
-            await manager._read_asset_from_gateway("files/missing.bin")
+            await read_upload("files/missing.bin")
 
     def test_parse_snippet_result_handles_timeout_and_plain_output(
         self, tmp_path: Path

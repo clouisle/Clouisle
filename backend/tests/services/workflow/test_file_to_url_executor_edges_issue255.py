@@ -92,7 +92,11 @@ def test_remaining_output_metadata_modes():
     ] == ["content", "filename", "mimeType", "size"]
     assert [item.name for item in executor.get_output_specs({})] == [
         "url",
+        "urls",
         "filename",
         "mimeType",
         "size",
     ]
+    urls_spec = executor.get_output_specs({})[1].type
+    assert urls_spec.kind == "array"
+    assert urls_spec.item is not None and urls_spec.item.kind == "string"

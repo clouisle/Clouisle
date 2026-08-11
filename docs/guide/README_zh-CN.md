@@ -183,7 +183,7 @@
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-根据提示选择单机 Docker Compose 或 Kubernetes Helm。Docker 模式会交互式选择安装目录，默认为 `/opt/clouisle`。脚本会生成必要的随机密钥，并在启动前验证部署配置。
+根据提示选择单机 Docker Compose、Kubernetes Helm，或 Kubernetes 单文件 manifest（仅生成）。Docker 模式会交互式选择安装目录，默认为 `/opt/clouisle`；脚本会生成必要的随机密钥，并在启动前验证部署配置。选择单文件 manifest 时，脚本默认在当前目录生成权限为 `0600` 的 `./clouisle-k8s.yaml`（可通过 `CLOUISLE_K8S_MANIFEST` 指定路径），不会自动执行 `kubectl apply`；请先审阅生成文件，再运行 `kubectl apply -f ./clouisle-k8s.yaml`。
 
 ### 2. 访问应用
 

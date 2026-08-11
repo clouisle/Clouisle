@@ -126,10 +126,12 @@ docker push registry.example.com/clouisle/clouisle-frontend:latest
 Helm is the recommended Kubernetes deployment method:
 
 ```bash
-helm lint deploy/helm/clouisle
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
 For production, create `clouisle-secret` and use production values:
@@ -153,7 +155,7 @@ Run the interactive installer from any directory:
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-Choose Docker Compose for a single server or Kubernetes with Helm. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings.
+Choose Docker Compose for a single server, Kubernetes with Helm, or Kubernetes single-file manifest generation. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings. The manifest mode writes a `0600` file at `./clouisle-k8s.yaml` by default (override with `CLOUISLE_K8S_MANIFEST`), does not apply it automatically, and prints the explicit `kubectl apply -f ./clouisle-k8s.yaml` command after generation; review the file before applying it.
 
 For non-interactive Docker installation:
 
@@ -172,6 +174,8 @@ Docker installations keep their generated configuration in `<installation-direct
 | `POSTGRES_PASSWORD` | Database access | `openssl rand -base64 16` |
 | `REDIS_PASSWORD` | Cache/queue access | `openssl rand -base64 16` |
 | `QDRANT_API_KEY` | Vector DB access | `openssl rand -base64 16` |
+| `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | Optional API-key authentication for sandbox artifact uploads | `openssl rand -base64 32` |
+| `INTERNAL_API_TOKEN` | Authenticated worker-to-API upload gateway | `openssl rand -base64 32` |
 
 The following should be changed for production domains:
 

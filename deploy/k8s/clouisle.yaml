@@ -65,8 +65,8 @@ data:
   POSTGRES_PASSWORD: Y2hhbmdlbWU=   # changeme
   REDIS_PASSWORD: Y2hhbmdlbWU=      # changeme
   QDRANT_API_KEY: Y2hhbmdlbWU=      # changeme
-  INTERNAL_API_TOKEN: Y2hhbmdlbWU=  # changeme — worker -> api internal file gateway
-  SANDBOX_ARTIFACT_UPLOAD_API_KEY: Y2hhbmdlbWU=  # changeme
+  INTERNAL_API_TOKEN: ""  # required; install.sh generates it in output copies
+  SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""  # required; install.sh generates it in output copies
 
 # ===========================================================================
 # 4. PostgreSQL — StatefulSet + Headless Service + PVC

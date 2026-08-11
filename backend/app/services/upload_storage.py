@@ -267,10 +267,11 @@ class ObjectUploadStorage(UploadStorageBackend):
 
     async def list(self, prefix: str) -> list[str]:
         keys: list[str] = []
+        normalized_prefix = f"{prefix.rstrip('/')}/" if prefix else ""
         async with self._client() as client:
             paginator = client.get_paginator("list_objects_v2")
             async for page in paginator.paginate(
-                Bucket=self.config.bucket, Prefix=prefix
+                Bucket=self.config.bucket, Prefix=normalized_prefix
             ):
                 for obj in page.get("Contents", []):
                     keys.append(str(obj["Key"]))

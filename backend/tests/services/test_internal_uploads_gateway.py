@@ -17,7 +17,8 @@ import app.services  # noqa: F401  # Initialize service exports before the endpo
 from app.api.v1.endpoints.internal_uploads import router as internal_router
 from app.core.config import settings
 from app.services import upload_storage
-from app.services.document_processor import DocumentProcessor, UploadGatewayError
+from app.services.document_processor import DocumentProcessor
+from app.services.upload_gateway import UploadGatewayError
 
 
 @pytest.fixture
@@ -173,6 +174,7 @@ def test_save_and_delete_and_exists(gateway_client, monkeypatch):
     )
     assert missing.status_code == 404
 
+    storage.exists.return_value = True
     delete = gateway_client.delete(
         "/internal/uploads/delete",
         params={"key": "documents/kb/doc.pdf"},
@@ -180,6 +182,16 @@ def test_save_and_delete_and_exists(gateway_client, monkeypatch):
     )
     assert delete.status_code == 204
     storage.delete.assert_awaited_once_with("documents/kb/doc.pdf")
+
+    storage.delete.reset_mock()
+    storage.exists.return_value = False
+    missing_delete = gateway_client.delete(
+        "/internal/uploads/delete",
+        params={"key": "documents/missing.pdf"},
+        headers=headers,
+    )
+    assert missing_delete.status_code == 404
+    storage.delete.assert_not_awaited()
 
 
 def test_media_save_and_delete_delegate_to_document_processor(
@@ -230,10 +242,13 @@ def remote_processor(tmp_path, monkeypatch):
     return DocumentProcessor(upload_dir=str(tmp_path / "uploads" / "documents"))
 
 
-def _patch_http_client(monkeypatch, *, status_code=200, stream_error=None):
+def _patch_http_client(
+    monkeypatch, *, status_code=200, request_status_code=200, stream_error=None
+):
     import importlib
 
     module = importlib.import_module("app.services.document_processor")
+    gateway_module = importlib.import_module("app.services.upload_gateway")
 
     async def aiter_bytes():
         if stream_error is not None:
@@ -254,7 +269,10 @@ def _patch_http_client(monkeypatch, *, status_code=200, stream_error=None):
         async def __aexit__(self, *_args):
             return None
 
-    fake_resp = SimpleNamespace(status_code=200, raise_for_status=Mock())
+    fake_resp = SimpleNamespace(
+        status_code=request_status_code,
+        raise_for_status=Mock(),
+    )
     fake_client = AsyncMock()
     fake_client.put = AsyncMock(return_value=fake_resp)
     fake_client.delete = AsyncMock(return_value=fake_resp)
@@ -267,6 +285,7 @@ def _patch_http_client(monkeypatch, *, status_code=200, stream_error=None):
         AsyncClient=Mock(return_value=fake_client), HTTPError=httpx.HTTPError
     )
     monkeypatch.setattr(module, "httpx", fake_httpx)
+    monkeypatch.setattr(gateway_module, "httpx", fake_httpx)
     return fake_client
 
 
@@ -315,8 +334,7 @@ async def test_remote_processor_reads_through_internal_gateway_app(
     processor = DocumentProcessor(upload_dir=str(tmp_path / "uploads" / "documents"))
     transport = httpx.ASGITransport(app=gateway_app)
     monkeypatch.setattr(
-        processor,
-        "_internal_client",
+        "app.services.upload_gateway.client",
         lambda: httpx.AsyncClient(
             transport=transport,
             base_url="http://gateway",
@@ -339,6 +357,20 @@ async def test_remote_delete_file_calls_internal_endpoint(
         "DELETE",
         "/internal/uploads/delete",
         params={"key": "documents/kb/doc.pdf"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_remote_delete_file_returns_false_for_missing(
+    remote_processor, monkeypatch
+):
+    fake_client = _patch_http_client(monkeypatch, request_status_code=404)
+
+    assert await remote_processor.delete_file("documents/kb/missing.pdf") is False
+    fake_client.request.assert_awaited_once_with(
+        "DELETE",
+        "/internal/uploads/delete",
+        params={"key": "documents/kb/missing.pdf"},
     )
 
 
@@ -399,8 +431,16 @@ async def test_local_storage_list_empty_prefix_lists_all(tmp_path):
     assert await storage.list("") == ["a.txt", "sub/b.txt"]
 
 
+@pytest.mark.parametrize(
+    ("prefix", "expected_prefix"),
+    [
+        ("", ""),
+        ("documents/kb", "documents/kb/"),
+        ("documents/kb/", "documents/kb/"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_object_storage_list_paginates(monkeypatch):
+async def test_object_storage_list_paginates(monkeypatch, prefix, expected_prefix):
     first_page = {
         "Contents": [{"Key": "documents/kb/a.png"}, {"Key": "documents/kb/b.png"}]
     }
@@ -433,7 +473,8 @@ async def test_object_storage_list_paginates(monkeypatch):
         )
     )
 
-    keys = await storage.list("documents/kb/")
+    keys = await storage.list(prefix)
 
     assert keys == ["documents/kb/a.png", "documents/kb/b.png", "documents/kb/c.png"]
     client.get_paginator.assert_called_once_with("list_objects_v2")
+    paginator.paginate.assert_called_once_with(Bucket="uploads", Prefix=expected_prefix)

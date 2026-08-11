@@ -65,7 +65,7 @@ secrets:
     QDRANT_API_KEY: changeme
     TAVILY_API_KEY: ""
     SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""
-    INTERNAL_API_TOKEN: changeme
+    INTERNAL_API_TOKEN: ""
 
 serviceAccount:
   create: true

@@ -2,6 +2,7 @@ import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from uuid import uuid4
 import pytest
 
 from app.services.workflow.executors.subworkflow import FileToURLNodeExecutor
@@ -118,7 +119,11 @@ async def test_legacy_path_to_base64_streams_internal_upload(monkeypatch):
         yield b"hel"
         yield b"lo"
 
-    stream_response = SimpleNamespace(raise_for_status=Mock(), aiter_bytes=aiter_bytes)
+    stream_response = SimpleNamespace(
+        status_code=200,
+        raise_for_status=Mock(),
+        aiter_bytes=aiter_bytes,
+    )
 
     class StreamContext:
         async def __aenter__(self):
@@ -161,6 +166,105 @@ async def test_legacy_path_to_base64_streams_internal_upload(monkeypatch):
         "/internal/uploads/read",
         params={"key": "documents/2026/08/report.txt"},
     )
+
+
+@pytest.mark.asyncio
+async def test_legacy_document_path_requires_workflow_team_access(monkeypatch):
+    from app.models.knowledge_base import KnowledgeBase
+    from app.models.workflow import Workflow
+    from app.services import upload_gateway
+
+    kb_id, workflow_id, team_id = uuid4(), uuid4(), uuid4()
+    workflow_filter = Mock()
+    workflow_filter.return_value.only.return_value.first = AsyncMock(
+        return_value=SimpleNamespace(team_id=team_id)
+    )
+    kb_filter = Mock()
+    kb_filter.return_value.first = AsyncMock(return_value=SimpleNamespace(id=kb_id))
+    read = AsyncMock(return_value=b"hello")
+    monkeypatch.setattr(Workflow, "filter", workflow_filter)
+    monkeypatch.setattr(KnowledgeBase, "filter", kb_filter)
+    monkeypatch.setattr(upload_gateway, "read", read)
+
+    context = SimpleNamespace(
+        resolve_variable_ref=AsyncMock(
+            return_value=f"/api/v1/upload/files/documents/{kb_id}/2026/08/report.txt"
+        )
+    )
+    result = await FileToURLNodeExecutor().execute(
+        node(inputVariable="file", inputType="path", outputType="base64"),
+        context,
+        SimpleNamespace(workflow_id=workflow_id),
+    )
+
+    assert result.outputs["content"] == base64.b64encode(b"hello").decode()
+    workflow_filter.assert_called_once_with(id=workflow_id)
+    kb_filter.assert_called_once_with(id=kb_id, team_id=team_id)
+    read.assert_awaited_once_with(f"documents/{kb_id}/2026/08/report.txt")
+
+
+@pytest.mark.asyncio
+async def test_legacy_document_path_rejects_missing_workflow(monkeypatch):
+    from app.models.knowledge_base import KnowledgeBase
+    from app.models.workflow import Workflow
+    from app.services import upload_gateway
+
+    workflow_filter = Mock()
+    workflow_filter.return_value.only.return_value.first = AsyncMock(return_value=None)
+    kb_filter = Mock()
+    read = AsyncMock(return_value=b"should not be read")
+    monkeypatch.setattr(Workflow, "filter", workflow_filter)
+    monkeypatch.setattr(KnowledgeBase, "filter", kb_filter)
+    monkeypatch.setattr(upload_gateway, "read", read)
+
+    context = SimpleNamespace(
+        resolve_variable_ref=AsyncMock(
+            return_value=f"documents/{uuid4()}/2026/08/report.txt"
+        )
+    )
+    result = await FileToURLNodeExecutor().execute(
+        node(inputVariable="file", inputType="path", outputType="base64"),
+        context,
+        SimpleNamespace(),
+    )
+
+    assert result.error == "not_found"
+    kb_filter.assert_not_called()
+    read.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_legacy_document_path_rejects_knowledge_base_from_other_team(monkeypatch):
+    from app.models.knowledge_base import KnowledgeBase
+    from app.models.workflow import Workflow
+    from app.services import upload_gateway
+
+    kb_id, workflow_id, team_id = uuid4(), uuid4(), uuid4()
+    workflow_filter = Mock()
+    workflow_filter.return_value.only.return_value.first = AsyncMock(
+        return_value=SimpleNamespace(team_id=team_id)
+    )
+    kb_filter = Mock()
+    kb_filter.return_value.first = AsyncMock(return_value=None)
+    read = AsyncMock(return_value=b"should not be read")
+    monkeypatch.setattr(Workflow, "filter", workflow_filter)
+    monkeypatch.setattr(KnowledgeBase, "filter", kb_filter)
+    monkeypatch.setattr(upload_gateway, "read", read)
+
+    context = SimpleNamespace(
+        resolve_variable_ref=AsyncMock(
+            return_value=f"documents/{kb_id}/2026/08/report.txt"
+        )
+    )
+    result = await FileToURLNodeExecutor().execute(
+        node(inputVariable="file", inputType="path", outputType="base64"),
+        context,
+        SimpleNamespace(workflow_id=workflow_id),
+    )
+
+    assert result.error == "not_found"
+    kb_filter.assert_called_once_with(id=kb_id, team_id=team_id)
+    read.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -280,6 +384,7 @@ def test_output_metadata_matches_requested_mode():
 
     assert [item["name"] for item in executor.get_output_variables({})] == [
         "url",
+        "urls",
         "filename",
         "mimeType",
         "size",
@@ -292,3 +397,21 @@ def test_output_metadata_matches_requested_mode():
         "mimeType",
         "size",
     ]
+
+
+def test_dynamic_input_output_metadata_uses_any_for_string_or_list_values():
+    executor = FileToURLNodeExecutor()
+    config = {
+        "inputs": [
+            {"name": "document_url", "sourceVariable": "{{start.document}}"},
+            {"name": "image_urls", "sourceVariable": "{{start.images}}"},
+        ]
+    }
+
+    assert executor.get_output_variables(config) == [
+        {"name": "document_url", "type": "any"},
+        {"name": "image_urls", "type": "any"},
+    ]
+    specs = executor.get_output_specs(config)
+    assert [spec.name for spec in specs] == ["document_url", "image_urls"]
+    assert [spec.type.kind for spec in specs] == ["any", "any"]

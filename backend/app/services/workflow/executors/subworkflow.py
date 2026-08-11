@@ -10,6 +10,7 @@ import logging
 import mimetypes
 import os
 
+from app.services import upload_gateway
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
 from ..errors import MaxDepthExceededError
@@ -332,7 +333,7 @@ class FileToURLNodeExecutor(NodeExecutor):
                 return ExecutionResult(error="validation_error")
 
             if input_type == "path" and output_type == "base64":
-                return await self._legacy_path_to_base64(value, settings)
+                return await self._legacy_path_to_base64(value, run)
 
             converted = self._normalize_urls(value, ensure_absolute, settings)
             if isinstance(converted, list):
@@ -370,11 +371,10 @@ class FileToURLNodeExecutor(NodeExecutor):
 
     @staticmethod
     async def _legacy_path_to_base64(
-        value: WorkflowValue, settings: Any
+        value: WorkflowValue, run: "WorkflowRun"
     ) -> ExecutionResult:
         """Read a legacy uploaded path through api, never from worker disk."""
         import base64
-        import httpx
         from pathlib import PurePosixPath
         from urllib.parse import unquote, urlsplit
 
@@ -394,18 +394,26 @@ class FileToURLNodeExecutor(NodeExecutor):
         if key_path.is_absolute() or not key_path.parts or ".." in key_path.parts:
             return ExecutionResult(error="validation_error")
 
-        async with httpx.AsyncClient(
-            base_url=settings.API_INTERNAL_BASE_URL.rstrip("/"),
-            headers={"Authorization": f"Bearer {settings.get_internal_api_token()}"},
-            timeout=60.0,
-        ) as client:
-            async with client.stream(
-                "GET", "/internal/uploads/read", params={"key": key_path.as_posix()}
-            ) as response:
-                response.raise_for_status()
-                content = bytearray()
-                async for chunk in response.aiter_bytes():
-                    content.extend(chunk)
+        if len(key_path.parts) > 1 and key_path.parts[0] == "documents":
+            try:
+                kb_id = UUID(key_path.parts[1])
+            except ValueError:
+                pass
+            else:
+                from app.models.knowledge_base import KnowledgeBase
+                from app.models.workflow import Workflow
+
+                workflow_id = getattr(run, "workflow_id", None)
+                workflow = await Workflow.filter(id=workflow_id).only("team_id").first()
+                if not workflow:
+                    return ExecutionResult(error="not_found")
+                kb = await KnowledgeBase.filter(
+                    id=kb_id, team_id=workflow.team_id
+                ).first()
+                if not kb:
+                    return ExecutionResult(error="not_found")
+
+        content = await upload_gateway.read(key_path.as_posix())
 
         filename = os.path.basename(raw_path) or "file"
         mime_type, _ = mimetypes.guess_type(filename)
@@ -439,26 +447,50 @@ class FileToURLNodeExecutor(NodeExecutor):
             return _absolutize(value)
         return _absolutize(str(value))
 
+    @staticmethod
+    def _configured_input_names(config: dict) -> list[str]:
+        inputs = config.get("inputs", [])
+        if not isinstance(inputs, list):
+            return []
+        return [
+            name
+            for item in inputs
+            if isinstance(item, dict)
+            and isinstance((name := item.get("name")), str)
+            and name
+        ]
+
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
+        input_names = self._configured_input_names(config)
+        if input_names:
+            return [{"name": name, "type": "any"} for name in input_names]
+
         output_type = config.get("outputType", "url")
         if output_type == "url":
             return [
                 {"name": "url", "type": "string"},
+                {"name": "urls", "type": "array"},
                 {"name": "filename", "type": "string"},
                 {"name": "mimeType", "type": "string"},
                 {"name": "size", "type": "number"},
             ]
-        else:
-            return [
-                {"name": "content", "type": "string"},
-                {"name": "filename", "type": "string"},
-                {"name": "mimeType", "type": "string"},
-                {"name": "size", "type": "number"},
-            ]
+        return [
+            {"name": "content", "type": "string"},
+            {"name": "filename", "type": "string"},
+            {"name": "mimeType", "type": "string"},
+            {"name": "size", "type": "number"},
+        ]
 
     def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
         """Get output specs with TypeSpec for type inference."""
+        input_names = self._configured_input_names(config)
+        if input_names:
+            return [
+                NodeOutputDecl(name=name, type=TypeSpec(kind="any"))
+                for name in input_names
+            ]
+
         output_type = config.get("outputType", "url")
         specs = [
             NodeOutputDecl(name="filename", type=TypeSpec(kind="string")),
@@ -467,6 +499,16 @@ class FileToURLNodeExecutor(NodeExecutor):
         ]
         if output_type == "url":
             specs.insert(0, NodeOutputDecl(name="url", type=TypeSpec(kind="string")))
+            specs.insert(
+                1,
+                NodeOutputDecl(
+                    name="urls",
+                    type=TypeSpec(
+                        kind="array",
+                        item=TypeSpec(kind="string"),
+                    ),
+                ),
+            )
         else:
             specs.insert(
                 0, NodeOutputDecl(name="content", type=TypeSpec(kind="string"))
