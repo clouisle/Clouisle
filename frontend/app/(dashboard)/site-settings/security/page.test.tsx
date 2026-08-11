@@ -42,6 +42,7 @@ const settings = {
   password_min_age_days: 0,
   force_password_change_first_login: false,
   require_totp: false,
+  model_endpoint_allowlist: ['https://api.openai.com'],
 }
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
@@ -86,6 +87,9 @@ mock.module('@/components/ui/select', () => ({
 mock.module('@/components/ui/field', () => ({
   FieldError: ({ children }: React.PropsWithChildren) =>
     children ? <p role="alert">{children}</p> : null,
+}))
+mock.module('@/components/ui/textarea', () => ({
+  Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
 }))
 mock.module('@/lib/api/admin/site-settings', () => ({
   siteSettingsApi: { getSecurity, updateSecurity },
@@ -183,6 +187,11 @@ describe('SiteSettingsSecurityPage', () => {
       act(() => renderer.root.findByProps({ id }).props.onChange(''))
       act(() => renderer.root.findByProps({ id }).props.onChange(value))
     }
+    act(() => renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.onChange({
+      target: {
+        value: 'https://api.example.com/v1\n\nhttp://ollama:11434',
+      },
+    }))
 
     await act(async () => saveButton(renderer).props.onClick())
 
@@ -196,6 +205,10 @@ describe('SiteSettingsSecurityPage', () => {
       password_expiration_days: 120,
       sso_enabled: true,
       require_totp: true,
+      model_endpoint_allowlist: [
+        'https://api.example.com/v1',
+        'http://ollama:11434',
+      ],
     }))
     expect(success).toHaveBeenCalledWith('saveSuccess')
   })

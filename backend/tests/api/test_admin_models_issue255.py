@@ -16,6 +16,15 @@ from app.schemas.model import (
 from app.schemas.response import BusinessError, ResponseCode
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        models,
+        "_ensure_model_endpoint_allowed",
+        AsyncMock(return_value="https://api.openai.com/v1"),
+    )
+
+
 class Query:
     def __init__(self, result=None, *, count=0):
         self.result = result
@@ -180,6 +189,70 @@ async def test_create_model_allows_duplicate_provider_model_id(monkeypatch):
 
     assert response["data"].id == created.id
     assert create.await_args.kwargs["provider_display_name"] == "Company Gateway"
+
+
+@pytest.mark.anyio
+async def test_create_model_rejects_unallowlisted_endpoint_before_persistence(
+    monkeypatch,
+):
+    error = BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key="model_endpoint_not_allowlisted",
+    )
+    guard = AsyncMock(side_effect=error)
+    create = AsyncMock()
+    monkeypatch.setattr(models, "_ensure_model_endpoint_allowed", guard)
+    monkeypatch.setattr(models.Model, "create", create)
+
+    with pytest.raises(BusinessError) as caught:
+        await models.create_model(
+            model_in=ModelCreate(
+                name="Blocked",
+                provider=ModelProvider.CUSTOM,
+                model_id="blocked",
+                model_type=ModelType.CHAT,
+                base_url="https://blocked.example.test/v1",
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    assert caught.value is error
+    guard.assert_awaited_once_with(
+        ModelProvider.CUSTOM,
+        "https://blocked.example.test/v1",
+        ModelType.CHAT,
+    )
+    create.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_update_model_revalidates_effective_endpoint_before_persistence(
+    monkeypatch,
+):
+    item = model(base_url="https://blocked.example.test/v1")
+    error = BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key="model_endpoint_not_allowlisted",
+    )
+    guard = AsyncMock(side_effect=error)
+    monkeypatch.setattr(models, "_ensure_model_endpoint_allowed", guard)
+    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+
+    with pytest.raises(BusinessError) as caught:
+        await models.update_model(
+            item.id,
+            ModelUpdate(name="Still blocked"),
+            current_user=SimpleNamespace(),
+        )
+
+    assert caught.value is error
+    guard.assert_awaited_once_with(
+        item.provider,
+        item.base_url,
+        item.model_type,
+    )
+    item.update_from_dict.assert_not_awaited()
+    item.save.assert_not_awaited()
 
 
 @pytest.mark.anyio

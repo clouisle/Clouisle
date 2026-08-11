@@ -23,6 +23,11 @@ from app.schemas.model import ModelProvider, ModelTestRequest, ModelType
 from app.schemas.response import BusinessError
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(models_endpoint, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 @pytest.mark.anyio
 async def test_model_config_forwards_default_params_to_chat_test():
     captured: dict[str, object] = {}

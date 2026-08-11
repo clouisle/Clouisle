@@ -1518,6 +1518,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Discovered {count} models",
         "zh": "已获取 {count} 个模型",
     },
+    "model_endpoint_allowlist_invalid": {
+        "en": "Enter a valid list of HTTP or HTTPS model endpoint Origins",
+        "zh": "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表",
+    },
+    "model_endpoint_base_url_invalid": {
+        "en": "Enter a valid HTTP or HTTPS model Base URL",
+        "zh": "请输入有效的 HTTP 或 HTTPS 模型 Base URL",
+    },
+    "model_endpoint_not_allowlisted": {
+        "en": "This model endpoint is not allowlisted. Add its Origin in Site Settings > Security.",
+        "zh": "该模型端点不在白名单中。请前往“站点设置 > 安全”添加对应 Origin。",
+    },
     "model_not_authorized": {
         "en": "Model is not authorized for this team",
         "zh": "该模型未被授权给此团队",

@@ -10,6 +10,15 @@ from app.schemas.model import ModelProvider, ModelType, ModelUpdate
 from app.schemas.response import BusinessError, ResponseCode
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        models,
+        "_ensure_model_endpoint_allowed",
+        AsyncMock(return_value="https://api.openai.com/v1"),
+    )
+
+
 class Query:
     def __init__(self, result=None, *, count=0):
         self.result = result

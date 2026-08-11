@@ -6,6 +6,11 @@
   - [x] 2. Normalize remote model metadata
   - [x] 3. Surface metadata in Model Management
   - [x] 4. Propagate and validate additive response metadata
+- **model-endpoint-allowlist** — Complete. Added a database-backed, dynamically configurable Origin allowlist for all model endpoints, including provider save-time validation and outbound request enforcement. See `docs/plan/model-endpoint-allowlist.md`
+  - [x] 1. SiteSetting and origin policy
+  - [x] 2. Model persistence and outbound enforcement
+  - [x] 3. Dynamic Security settings UI
+  - [x] 4. Compatibility and rollout evidence
 
 
 - **kubernetes-manifest-installer-readiness** — Complete. Add a secure single-file Kubernetes manifest generation route to the guided installer and prevent raw-manifest backend workloads from starting before PostgreSQL accepts connections. See `docs/plan/kubernetes-manifest-installer-readiness.md`

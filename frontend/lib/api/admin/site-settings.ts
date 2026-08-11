@@ -169,6 +169,9 @@ export const siteSettingsApi = {
       force_password_change_first_login: (settings.force_password_change_first_login as boolean) ?? false,
       // TOTP
       require_totp: (settings.require_totp as boolean) ?? false,
+      model_endpoint_allowlist: Array.isArray(settings.model_endpoint_allowlist)
+        ? settings.model_endpoint_allowlist.filter((entry): entry is string => typeof entry === 'string')
+        : [],
     }
   },
 

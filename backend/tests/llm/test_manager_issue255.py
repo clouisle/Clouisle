@@ -19,6 +19,11 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.models.model import ModelProvider, ModelType
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ModelManager, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [

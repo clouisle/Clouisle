@@ -24,6 +24,10 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from app.core.i18n import t
 from app.models.model import Model, ModelType, TeamModel, ModelProvider
 from app.schemas.response import BusinessError, ResponseCode
+from app.core.model_endpoint_policy import (
+    ModelEndpointPolicyError,
+    ensure_model_endpoint_allowed,
+)
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
 from .adapters import (
@@ -104,6 +108,15 @@ class ModelManager:
     """
 
     # ==================== 内部辅助方法 ====================
+    async def _ensure_model_endpoint_allowed(self, model_config: Model) -> None:
+        try:
+            await ensure_model_endpoint_allowed(model_config.get_effective_base_url())
+        except ModelEndpointPolicyError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key=exc.msg_key,
+                origin=exc.origin or "",
+            ) from exc
 
     def _parse_model_identifier(self, identifier: str) -> str | None:
         """Return a valid model configuration UUID, or ``None``."""
@@ -140,6 +153,7 @@ class ModelManager:
                 model=str(model.id),
             )
 
+        await self._ensure_model_endpoint_allowed(model)
         return model
 
     def _get_chat_adapter(self, model_config: Model) -> BaseChatAdapter:
@@ -653,6 +667,8 @@ class ModelManager:
 
         last_error: Exception | None = None
         for model_config in candidate_models:
+            if not model_id:
+                await self._ensure_model_endpoint_allowed(model_config)
             adapter = create_video_adapter(model_config)
             try:
                 return await adapter.get_status(task_id)

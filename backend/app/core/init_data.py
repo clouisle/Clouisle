@@ -16,6 +16,49 @@ STARTUP_MIGRATION_LOCK_TIMEOUT = "2s"
 STARTUP_MIGRATION_QUERY_TIMEOUT_SECONDS = 3
 
 
+async def init_model_endpoint_allowlist() -> None:
+    """Seed the endpoint allowlist once from defaults and existing models."""
+    from app.core.model_endpoint_policy import (
+        DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+        MODEL_ENDPOINT_ALLOWLIST_SETTING,
+        ModelEndpointPolicyError,
+        normalize_model_endpoint_origin,
+    )
+    from app.models.model import Model
+    from app.models.site_setting import SiteSetting
+
+    existing = await SiteSetting.filter(key=MODEL_ENDPOINT_ALLOWLIST_SETTING).first()
+    if existing:
+        return
+
+    allowlist = list(DEFAULT_MODEL_ENDPOINT_ALLOWLIST)
+    seen = set(allowlist)
+    for model in await Model.all():
+        base_url = model.get_effective_base_url()
+        if not base_url:
+            continue
+        try:
+            origin = normalize_model_endpoint_origin(base_url)
+        except ModelEndpointPolicyError:
+            logger.warning(
+                "Skipping invalid existing model Base URL while seeding allowlist: model=%s",
+                model.id,
+            )
+            continue
+        if origin not in seen:
+            seen.add(origin)
+            allowlist.append(origin)
+
+    await SiteSetting.set_value(
+        key=MODEL_ENDPOINT_ALLOWLIST_SETTING,
+        value=allowlist,
+        value_type="json",
+        category="security",
+        description="Allowed model endpoint origins",
+        is_public=False,
+    )
+
+
 async def execute_startup_migration_query(conn, query: str):
     await conn.execute_query(f"SET lock_timeout = '{STARTUP_MIGRATION_LOCK_TIMEOUT}'")
     try:
@@ -2945,6 +2988,7 @@ async def init_db():
 
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")
+    await init_model_endpoint_allowlist()
     await init_default_settings()
 
     # 3.0. Set default_role_id to Viewer if not yet configured

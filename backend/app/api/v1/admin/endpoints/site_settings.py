@@ -1,4 +1,4 @@
-from typing import Any, NoReturn, Optional
+from typing import Any, NoReturn, Optional, cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -27,6 +27,11 @@ from app.schemas.site_setting import (
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.core.email import send_email
 from app.core.i18n import t
+from app.core.model_endpoint_policy import (
+    MODEL_ENDPOINT_ALLOWLIST_SETTING,
+    ModelEndpointPolicyError,
+    normalize_model_endpoint_allowlist,
+)
 from app.services.audit_log import AuditLogService
 from app.tasks.audit_log import archive_old_audit_logs
 
@@ -114,6 +119,13 @@ async def _validate_setting_value(key: str, value: object) -> None:
             raise_validation_error()
         if not all(char in "0123456789abcdefABCDEF" for char in color[1:]):
             raise_validation_error()
+        return
+    if key == MODEL_ENDPOINT_ALLOWLIST_SETTING:
+        try:
+            normalized_allowlist = normalize_model_endpoint_allowlist(value)
+        except ModelEndpointPolicyError:
+            raise_validation_error()
+        cast(list, value)[:] = normalized_allowlist
         return
 
     if key == "default_team_role":

@@ -11,6 +11,11 @@ from app.schemas.model import ModelCreate, ModelProvider, ModelType, ModelUpdate
 from app.schemas.response import BusinessError, ResponseCode
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(models_endpoint, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 def translate_model_test_error(key, **kwargs):
     if key == "model_test_provider_error_details":
         return f"{key}:{kwargs['error']}"

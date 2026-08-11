@@ -253,6 +253,7 @@
 | `lockout_duration` | 锁定时长（分钟） | 30 |
 | `single_session_mode` | 单会话模式 | false |
 | `allow_account_deletion` | 允许账户删除 | true |
+| `model_endpoint_allowlist` | 模型 API Origin 白名单（每项精确匹配协议、主机和端口） | 内置供应商 Origin |
 
 ### 密码策略 (password)
 

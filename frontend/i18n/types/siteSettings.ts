@@ -411,6 +411,11 @@ export type SiteSettingsMessages = {
     minutes: string
     singleSession: string
     singleSessionDescription: string
+    modelEndpointAllowlist: string
+    modelEndpointAllowlistDescription: string
+    modelEndpointAllowlistOrigins: string
+    modelEndpointAllowlistPlaceholder: string
+    modelEndpointAllowlistHint: string
     loginSecurity: string
     loginSecurityDescription: string
     maxLoginAttempts: string

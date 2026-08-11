@@ -4,8 +4,19 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+from app.core.model_endpoint_policy import ModelEndpointPolicyError
+
 from app.api.v1.admin.endpoints import models
 from app.schemas.model import ModelDiscoveryRequest, ModelProvider
+
+
+@pytest.fixture(autouse=True)
+def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        models,
+        "ensure_model_endpoint_allowed",
+        AsyncMock(return_value="https://api.example.test"),
+    )
 
 
 class AsyncClient:
@@ -253,6 +264,36 @@ async def test_discover_models_rejects_unusable_configuration(
     assert result["data"].success is False
     assert result["data"].message == expected_key
     assert result["data"].models == []
+    factory.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_discover_models_rejects_endpoint_outside_allowlist(monkeypatch):
+    monkeypatch.setattr(models, "t", lambda key, **_kwargs: key)
+    monkeypatch.setattr(
+        models,
+        "ensure_model_endpoint_allowed",
+        AsyncMock(
+            side_effect=ModelEndpointPolicyError(
+                "model_endpoint_not_allowlisted",
+                origin="https://blocked.example.test",
+            )
+        ),
+    )
+    factory = MagicMock()
+    monkeypatch.setattr(models.httpx, "AsyncClient", factory)
+
+    result = await models.discover_models(
+        ModelDiscoveryRequest(
+            provider=ModelProvider.CUSTOM,
+            base_url="https://blocked.example.test/v1",
+            api_key="secret",
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    assert result["data"].success is False
+    assert result["data"].message == "model_endpoint_not_allowlisted"
     factory.assert_not_called()
 
 

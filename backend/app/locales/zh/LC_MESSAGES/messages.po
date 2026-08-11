@@ -1369,6 +1369,15 @@ msgstr "测试连接需要 API Key"
 msgid "model_created"
 msgstr "模型创建成功"
 
+msgid "model_endpoint_allowlist_invalid"
+msgstr "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表"
+
+msgid "model_endpoint_base_url_invalid"
+msgstr "请输入有效的 HTTP 或 HTTPS 模型 Base URL"
+
+msgid "model_endpoint_not_allowlisted"
+msgstr "该模型端点不在白名单中。请前往“站点设置 > 安全”添加对应 Origin。"
+
 msgid "model_discovery_api_key_required"
 msgstr "获取模型列表需要 API Key"
 

@@ -176,6 +176,47 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
     },
 }
 
+MODEL_TYPE_PROVIDER_DEFAULT_BASE_URLS: dict[tuple[ModelProvider, ModelType], str] = {
+    (
+        ModelProvider.VOLCENGINE,
+        ModelType.TTS,
+    ): "https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse",
+    (
+        ModelProvider.VOLCENGINE,
+        ModelType.AUDIO_GENERATION,
+    ): "https://openspeech.bytedance.com/api/v3/tts/create",
+}
+
+
+def get_effective_model_base_url(
+    provider: ModelProvider | str,
+    model_type: ModelType | str | None,
+    base_url: str | None,
+) -> str | None:
+    """Resolve the endpoint that the runtime adapter will actually use."""
+    if base_url and base_url.strip():
+        return base_url.strip()
+
+    try:
+        provider_enum = ModelProvider(provider)
+    except ValueError:
+        return None
+
+    if model_type is not None:
+        try:
+            model_type_enum = ModelType(model_type)
+        except ValueError:
+            model_type_enum = None
+        if model_type_enum is not None:
+            endpoint = MODEL_TYPE_PROVIDER_DEFAULT_BASE_URLS.get(
+                (provider_enum, model_type_enum)
+            )
+            if endpoint:
+                return endpoint
+
+    default_base_url = (PROVIDER_DEFAULTS.get(provider_enum) or {}).get("base_url")
+    return default_base_url if isinstance(default_base_url, str) else None
+
 
 class Model(models.Model):
     """
@@ -270,18 +311,12 @@ class Model(models.Model):
         return bool(self.api_key)
 
     def get_effective_base_url(self) -> str | None:
-        """Get the effective base URL (custom or provider default)"""
-        if self.base_url:
-            return self.base_url
-        try:
-            provider_enum = ModelProvider(self.provider)
-            defaults = PROVIDER_DEFAULTS.get(provider_enum)
-            if defaults:
-                base_url = defaults.get("base_url")
-                return base_url if isinstance(base_url, str) else None
-            return None
-        except ValueError:
-            return None
+        """Get the endpoint used by this provider and model type."""
+        return get_effective_model_base_url(
+            self.provider,
+            self.model_type,
+            self.base_url,
+        )
 
 
 class TeamModel(models.Model):

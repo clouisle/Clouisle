@@ -4,6 +4,60 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from app.core import init_data
+from app.models.model import Model
+from app.models.site_setting import SiteSetting
+
+
+@pytest.mark.asyncio
+async def test_model_endpoint_allowlist_seeds_existing_origins_once(
+    monkeypatch,
+) -> None:
+    first = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        SiteSetting,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(first=first),
+    )
+    set_value = AsyncMock()
+    monkeypatch.setattr(SiteSetting, "set_value", set_value)
+    monkeypatch.setattr(
+        Model,
+        "all",
+        AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    id="custom",
+                    get_effective_base_url=lambda: "https://gateway.example.test/v1",
+                ),
+                SimpleNamespace(
+                    id="invalid",
+                    get_effective_base_url=lambda: "not-a-url",
+                ),
+            ]
+        ),
+    )
+
+    await init_data.init_model_endpoint_allowlist()
+
+    allowlist = set_value.await_args.kwargs["value"]
+    assert "https://api.openai.com" in allowlist
+    assert "https://gateway.example.test" in allowlist
+    assert all("not-a-url" not in origin for origin in allowlist)
+
+
+@pytest.mark.asyncio
+async def test_model_endpoint_allowlist_preserves_existing_setting(monkeypatch) -> None:
+    monkeypatch.setattr(
+        SiteSetting,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(first=AsyncMock(return_value=object())),
+    )
+    model_all = AsyncMock()
+    monkeypatch.setattr(Model, "all", model_all)
+
+    await init_data.init_model_endpoint_allowlist()
+
+    model_all.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -259,6 +313,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
         "init_scoped_role_assignments_table",
+        "init_model_endpoint_allowlist",
         "init_default_settings",
         "migrate_registration_settings_category",
         "migrate_storage_settings_category",

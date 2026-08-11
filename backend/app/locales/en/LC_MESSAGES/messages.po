@@ -1368,6 +1368,15 @@ msgstr "API key is required to test connection"
 msgid "model_created"
 msgstr "Model created successfully"
 
+msgid "model_endpoint_allowlist_invalid"
+msgstr "Enter a valid list of HTTP or HTTPS model endpoint Origins"
+
+msgid "model_endpoint_base_url_invalid"
+msgstr "Enter a valid HTTP or HTTPS model Base URL"
+
+msgid "model_endpoint_not_allowlisted"
+msgstr "This model endpoint is not allowlisted. Add its Origin in Site Settings > Security."
+
 msgid "model_discovery_api_key_required"
 msgstr "API key is required to fetch the model list"
 

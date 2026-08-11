@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectEmpty, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
 import { siteSettingsApi, type SecuritySettings } from '@/lib/api/admin/site-settings'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
 import { teamsApi } from '@/lib/api/admin/teams'
@@ -67,6 +68,7 @@ export default function SiteSettingsSecurityPage() {
   password_min_age_days: 0,
     force_password_change_first_login: false,
     require_totp: false,
+    model_endpoint_allowlist: [],
   })
 
   const errorPathMap = React.useMemo(
@@ -92,6 +94,7 @@ export default function SiteSettingsSecurityPage() {
       'session_timeout_days',
       'max_login_attempts',
       'lockout_duration_minutes',
+      'model_endpoint_allowlist',
     ]),
     [fieldErrors]
   )
@@ -136,6 +139,7 @@ export default function SiteSettingsSecurityPage() {
         password_min_age_days: data.password_min_age_days ?? 0,
         force_password_change_first_login: data.force_password_change_first_login ?? false,
         require_totp: data.require_totp ?? false,
+        model_endpoint_allowlist: data.model_endpoint_allowlist ?? [],
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -186,7 +190,17 @@ export default function SiteSettingsSecurityPage() {
     setFieldErrors({})
     try {
       setSaving(true)
-      await siteSettingsApi.updateSecurity(settings)
+      const modelEndpointAllowlist = Array.from(new Set(
+        settings.model_endpoint_allowlist.map((entry) => entry.trim()).filter(Boolean)
+      ))
+      await siteSettingsApi.updateSecurity({
+        ...settings,
+        model_endpoint_allowlist: modelEndpointAllowlist,
+      })
+      setSettings((current) => ({
+        ...current,
+        model_endpoint_allowlist: modelEndpointAllowlist,
+      }))
       toast.success(t('saveSuccess'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
@@ -562,6 +576,32 @@ export default function SiteSettingsSecurityPage() {
               disabled={!canUpdate}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('modelEndpointAllowlist')}</CardTitle>
+          <CardDescription>{t('modelEndpointAllowlistDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="modelEndpointAllowlist">{t('modelEndpointAllowlistOrigins')}</Label>
+          <Textarea
+            id="modelEndpointAllowlist"
+            value={settings.model_endpoint_allowlist.join('\n')}
+            onChange={(event) => updateSetting(
+              'model_endpoint_allowlist',
+              event.target.value.split('\n')
+            )}
+            placeholder={t('modelEndpointAllowlistPlaceholder')}
+            rows={8}
+            disabled={!canUpdate}
+            aria-invalid={!!fieldErrors.model_endpoint_allowlist}
+          />
+          <p className="text-sm text-muted-foreground">
+            {t('modelEndpointAllowlistHint')}
+          </p>
+          <FieldError>{fieldErrors.model_endpoint_allowlist}</FieldError>
         </CardContent>
       </Card>
 

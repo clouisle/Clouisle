@@ -17,7 +17,7 @@ from tortoise.expressions import Q
 
 from app.api import deps
 from app.core.i18n import t
-from app.models.model import Model
+from app.models.model import Model, get_effective_model_base_url
 from app.models.user import User
 from app.schemas.model import (
     ModelCreate,
@@ -38,9 +38,38 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.core.model_endpoint_policy import (
+    ModelEndpointPolicyError,
+    ensure_model_endpoint_allowed,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _effective_model_base_url(
+    provider: ModelProvider | str,
+    base_url: str | None,
+    model_type: ModelType | str | None = None,
+) -> str | None:
+    return get_effective_model_base_url(provider, model_type, base_url)
+
+
+async def _ensure_model_endpoint_allowed(
+    provider: ModelProvider | str,
+    base_url: str | None,
+    model_type: ModelType | str | None = None,
+) -> str | None:
+    effective_base_url = _effective_model_base_url(provider, base_url, model_type)
+    try:
+        await ensure_model_endpoint_allowed(effective_base_url)
+    except ModelEndpointPolicyError as exc:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key=exc.msg_key,
+            origin=exc.origin or "",
+        ) from exc
+    return effective_base_url
 
 
 @router.get("", response_model=Response[PageData[ModelResponse]])
@@ -86,6 +115,9 @@ async def create_model(
     model_in: ModelCreate,
     current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
+    await _ensure_model_endpoint_allowed(
+        model_in.provider, model_in.base_url, model_in.model_type
+    )
 
     if model_in.is_default:
         await Model.filter(
@@ -144,6 +176,10 @@ async def update_model(
         update_data["provider_display_name"] = (
             display_name.strip() if display_name and display_name.strip() else None
         )
+    candidate_base_url = update_data.get("base_url", model.base_url)
+    await _ensure_model_endpoint_allowed(
+        model.provider, candidate_base_url, model.model_type
+    )
 
     if update_data.get("is_default"):
         await (
@@ -207,6 +243,7 @@ async def test_model_connection(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_type_not_supported",
         ) from exc
+    await _ensure_model_endpoint_allowed(provider, model.base_url, model_type)
     default_params = model.default_params or {}
     config = model.config or {}
 
@@ -349,6 +386,7 @@ async def test_model_config(
     base_url = test_request.base_url
     default_params = test_request.default_params or {}
     config = test_request.config or {}
+    await _ensure_model_endpoint_allowed(provider, base_url, model_type)
 
     start_time = time.monotonic()
 
@@ -528,6 +566,10 @@ async def discover_models(
     base_url = _normalize_model_discovery_base_url(discovery_request.base_url)
     if not base_url:
         return _model_discovery_failure("model_discovery_base_url_invalid")
+    try:
+        await ensure_model_endpoint_allowed(base_url)
+    except ModelEndpointPolicyError:
+        return _model_discovery_failure("model_endpoint_not_allowlisted")
 
     api_key = (discovery_request.api_key or "").strip()
     if _requires_api_key(provider) and not api_key:
