@@ -288,6 +288,10 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
     item.save.assert_awaited_once()
     create_kb.assert_awaited_once()
     assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 28
+    assert audit.await_args.kwargs["changes"]["before"]["knowledge_base_ids"] == []
+    assert audit.await_args.kwargs["changes"]["after"]["knowledge_base_ids"] == [
+        str(kb_config.knowledge_base_id)
+    ]
 
 
 @pytest.mark.anyio

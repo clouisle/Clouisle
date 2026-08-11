@@ -41,6 +41,6 @@
 
 - `uv run pytest tests/services/test_audit_log_changes.py -q` — 辅助方法全分支。
 - `uv run pytest` + `uv run python scripts/check_coverage.py` — 95% 行+分支门槛。
-- `uv run ruff format`（pre-commit 强制）。
+- `uv run ruff format --check`（pre-commit 强制；非破坏性校验）。
 - 端到端：管理端 UI 修改 agent 名称 → 审计日志抽屉显示 `before: {"name": "old"}` / `after: {"name": "new"}`；无操作发布 → `changes` 为 `None`。
 - 大小护栏：`_json_safe` 处理 100 KB 嵌套字符串时序列化结果 < 2 KB。

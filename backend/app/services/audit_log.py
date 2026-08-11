@@ -336,9 +336,14 @@ class AuditLogService:
         """将值转换为 orjson 可序列化形式，并施加硬性大小上限。
 
         orjson（tortoise 的 JSONField 编码器）对原始 UUID 会抛错，且不能接受
-        Enum/Decimal/datetime。任何返回值最多约 AUDIT_MAX_FIELD_LENGTH 字符：
-        长字符串被截断；超过上限的 dict/list 被替换为前 500 字符的 JSON 预览字符串。
+        Enum/Decimal/datetime。长字符串被截断；整个结构超过上限时在最外层
+        替换为前 500 字符的 JSON 预览字符串。嵌套结构在转换过程中先按键名
+        脱敏（与 _sanitize_dict 同规则），敏感键不会绕过 sanitize_changes。
         """
+        return AuditLogService._json_safe_inner(value, bound=True)
+
+    @staticmethod
+    def _json_safe_inner(value: Any, bound: bool) -> Any:
         if isinstance(value, Enum):
             return value.value
         if isinstance(value, UUID):
@@ -351,15 +356,39 @@ class AuditLogService:
             if len(value) > AuditLogService.AUDIT_MAX_FIELD_LENGTH:
                 return value[: AuditLogService.AUDIT_MAX_FIELD_LENGTH] + "..."
             return value
-        if isinstance(value, (dict, list, tuple)):
-            compact = json.dumps(
-                value, default=str, ensure_ascii=False, separators=(",", ":")
-            )
-            if len(compact) > AuditLogService.AUDIT_MAX_FIELD_LENGTH:
-                return compact[: AuditLogService.AUDIT_MAX_FIELD_LENGTH] + "..."  # 预览
-            if isinstance(value, dict):
-                return {k: AuditLogService._json_safe(v) for k, v in value.items()}
-            return [AuditLogService._json_safe(v) for v in value]
+        if isinstance(value, dict):
+            sanitized: dict[str, Any] = {}
+            for key, item in value.items():
+                str_key = str(key)
+                # 先按键名脱敏（与 _sanitize_dict 同规则），再递归转换，
+                # 保证嵌套结构中的敏感键不会绕过 sanitize_changes。
+                if any(
+                    sensitive in str_key.lower()
+                    for sensitive in AuditLogService.SENSITIVE_FIELDS
+                ):
+                    if isinstance(item, str) and len(item) > 8:
+                        sanitized[str_key] = item[:8] + "***"
+                    else:
+                        sanitized[str_key] = "***"
+                elif str_key == "email" and isinstance(item, str):
+                    sanitized[str_key] = AuditLogService._mask_email(item)
+                else:
+                    sanitized[str_key] = AuditLogService._json_safe_inner(item, False)
+            result: Any = sanitized
+        elif isinstance(value, (list, tuple)):
+            result = [AuditLogService._json_safe_inner(item, False) for item in value]
+        else:
+            return value
+        if bound:
+            return AuditLogService._structured_or_preview(result)
+        return result
+
+    @staticmethod
+    def _structured_or_preview(value: Any) -> Any:
+        """结构在大小上限内原样返回，否则返回前 500 字符的 JSON 预览字符串。"""
+        compact = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        if len(compact) > AuditLogService.AUDIT_MAX_FIELD_LENGTH:
+            return compact[: AuditLogService.AUDIT_MAX_FIELD_LENGTH] + "..."  # 预览
         return value
 
     @staticmethod

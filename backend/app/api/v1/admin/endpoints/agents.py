@@ -422,6 +422,8 @@ async def update_agent(
 
     await agent.save()
 
+    kb_ids_before: list[str] | None = None
+    kb_ids_after: list[str] | None = None
     if agent_in.knowledge_base_configs is not None:
         for kb_config in agent_in.knowledge_base_configs:
             kb = await KnowledgeBase.filter(
@@ -435,6 +437,8 @@ async def update_agent(
                     status_code=404,
                 )
 
+        kb_rows = await AgentKnowledgeBase.filter(agent_id=agent.id)
+        kb_ids_before = sorted(str(row.knowledge_base_id) for row in kb_rows)
         await AgentKnowledgeBase.filter(agent_id=agent.id).delete()
         for kb_config in agent_in.knowledge_base_configs:
             await AgentKnowledgeBase.create(
@@ -444,9 +448,20 @@ async def update_agent(
                 score_threshold=kb_config.score_threshold,
                 search_mode=kb_config.search_mode,
             )
+        kb_ids_after = sorted(
+            {str(c.knowledge_base_id) for c in agent_in.knowledge_base_configs}
+        )
         updated_fields.append("knowledge_base_configs")
 
     agent = await Agent.get(id=agent_id).prefetch_related("team", "created_by")
+    changes = AuditLogService.build_changes(
+        audit_before, AuditLogService.snapshot(agent, "agent")
+    )
+    if kb_ids_before is not None and kb_ids_before != kb_ids_after:
+        # 仅关联集合变化的请求也要记录：合并知识库关联 ID 差异
+        changes = changes or {"before": {}, "after": {}}
+        changes["before"]["knowledge_base_ids"] = kb_ids_before
+        changes["after"]["knowledge_base_ids"] = kb_ids_after
     await AuditLogService.log(
         user=current_user,
         action="admin_update_agent",
@@ -456,14 +471,12 @@ async def update_agent(
         operation="update",
         status="success",
         request=request,
+        changes=changes,
         metadata={
             "fields_updated": updated_fields,
             "team_id": str(agent.team_id),
             "visibility": agent.visibility.value,
         },
-        changes=AuditLogService.build_changes(
-            audit_before, AuditLogService.snapshot(agent, "agent")
-        ),
     )
     return success(data=await build_agent_out(agent), msg_key="agent_updated")
 

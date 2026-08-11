@@ -491,8 +491,11 @@ async def update_user(
         user_data["hashed_password"] = security.get_password_hash(password)
         password_changed = True
 
+    roles_before: list[str] | None = None
+    roles_after: list[str] | None = None
     if "roles" in user_data:
         role_names = user_data.pop("roles")
+        roles_before = sorted(r.name for r in await user.roles.all())
         roles = []
         for role_name in role_names:
             role = await Role.filter(name=role_name).first()
@@ -500,11 +503,21 @@ async def update_user(
                 roles.append(role)
         await user.roles.clear()
         await user.roles.add(*roles)
+        roles_after = sorted({r.name for r in roles})
 
     await user.update_from_dict(user_data)
     await user.save()
 
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
+
+    changes = AuditLogService.build_changes(
+        audit_before, AuditLogService.snapshot(updated_user, "user")
+    )
+    if roles_before is not None and roles_before != roles_after:
+        # 仅角色集合变化的请求也要记录：合并角色差异
+        changes = changes or {"before": {}, "after": {}}
+        changes["before"]["roles"] = roles_before
+        changes["after"]["roles"] = roles_after
 
     await AuditLogService.log(
         user=current_user,
@@ -518,9 +531,7 @@ async def update_user(
         metadata={
             "fields_updated": list(user_in.model_dump(exclude_unset=True).keys())
         },
-        changes=AuditLogService.build_changes(
-            audit_before, AuditLogService.snapshot(updated_user, "user")
-        ),
+        changes=changes,
     )
 
     if password_changed:

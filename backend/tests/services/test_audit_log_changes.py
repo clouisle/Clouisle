@@ -123,6 +123,37 @@ def test_snapshot_converts_enum_and_uuid_columns() -> None:
     assert isinstance(snap["model_id"], str)
 
 
+def test_json_safe_masks_nested_sensitive_keys_in_small_values() -> None:
+    svc = audit_log.AuditLogService
+    result = svc._json_safe({"nodes": [{"token": "secret-value-123", "label": "ok"}]})
+    assert result == {"nodes": [{"token": "secret-v***", "label": "ok"}]}
+
+
+def test_json_safe_masks_sensitive_keys_inside_lists() -> None:
+    svc = audit_log.AuditLogService
+    result = svc._json_safe([{"api_key": "sk-very-long-value", "name": "x"}])
+    assert result == [{"api_key": "sk-very-***", "name": "x"}]
+
+
+def test_json_safe_masks_nested_email_in_small_values() -> None:
+    svc = audit_log.AuditLogService
+    result = svc._json_safe({"profile": {"email": "alice@example.com"}})
+    assert result == {"profile": {"email": "a***e@example.com"}}
+
+
+def test_json_safe_masks_nested_sensitive_keys_in_oversized_values() -> None:
+    svc = audit_log.AuditLogService
+    big = {
+        "nodes": [
+            {"token": "ultra-secret-value", "label": "y" * 600} for _ in range(80)
+        ]
+    }
+    result = svc._json_safe(big)
+    assert isinstance(result, str)
+    assert "ultra-secret" not in result
+    assert "***" in result
+
+
 def test_build_changes_only_contains_changed_keys() -> None:
     svc = audit_log.AuditLogService
     before = {"name": "old", "description": "same", "status": "draft"}
