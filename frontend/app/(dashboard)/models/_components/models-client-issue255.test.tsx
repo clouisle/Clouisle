@@ -199,7 +199,7 @@ describe('models client issue 255 coverage', () => {
     await click(renderer, 'setDefault'); await settle()
   })
 
-  test('covers connection success, fallback failures, video cancellation, and request errors', async () => {
+  test('covers connection success, generic fallback failures, blocked endpoints, video cancellation, and request errors', async () => {
     const renderer = render(); await settle()
     testConnection.mockResolvedValueOnce({ success: true })
     await click(renderer, 'testConnection', 0); await settle()
@@ -208,6 +208,12 @@ describe('models client issue 255 coverage', () => {
     testConnection.mockResolvedValueOnce({ success: false, message: '' })
     await click(renderer, 'testConnection', 0); await settle()
     expect(toastError).toHaveBeenCalledWith('testFailed', { id: 'toast-1' })
+
+    const blockedEndpointError = new Error('model_endpoint_not_allowlisted')
+    blockedEndpointError.name = 'ApiError'
+    testConnection.mockRejectedValueOnce(blockedEndpointError)
+    await click(renderer, 'testConnection', 0); await settle()
+    expect(toastError).toHaveBeenCalledWith('model_endpoint_not_allowlisted', { id: 'toast-1' })
 
     getModels.mockResolvedValue(page([{ ...model, model_type: 'text_to_video' }]))
     act(() => renderer.root.findByProps({ placeholder: 'filterModels' }).props.onChange({ target: { value: 'video' } }))

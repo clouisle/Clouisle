@@ -1413,41 +1413,46 @@ export function ModelDialog({
         
         {/* 测试连接按钮和结果 */}
         <div className="space-y-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleTestConnection}
-              disabled={
-                isTesting ||
-                !provider ||
-                !modelId.trim() ||
-                (!canTestWithStoredApiKey && !apiKey.trim())
-              }
-            >
-              {isTesting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Zap className="mr-2 h-4 w-4" />
-              )}
-              {t('testConnection')}
-            </Button>
-
-            {testResult && (
-              <div className={`flex items-start gap-2 text-sm ${testResult.success ? 'text-green-600' : 'text-destructive'}`}>
-                {testResult.success ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                ) : (
-                  <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                )}
-                <span className="break-words">{testResult.message}</span>
-                {testResult.latency_ms && (
-                  <span className="text-muted-foreground shrink-0">({testResult.latency_ms}ms)</span>
-                )}
-              </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleTestConnection}
+            disabled={
+              isTesting ||
+              !provider ||
+              !modelId ||
+              !modelType ||
+              (
+                requiresApiKey(provider)
+                && !apiKey.trim()
+                && !canTestWithStoredApiKey
+              )
+            }
+          >
+            {isTesting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="mr-2 h-4 w-4" />
             )}
-          </div>
-      </div>
+            {t('testConnection')}
+          </Button>
+
+          {testResult && (
+            <div className={`flex items-start gap-2 text-sm ${testResult.success ? 'text-green-600' : 'text-destructive'}`}>
+              {testResult.success ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <span className="break-words">{testResult.message}</span>
+              {testResult.latency_ms && (
+                <span className="text-muted-foreground shrink-0">({testResult.latency_ms}ms)</span>
+              )}
+            </div>
+          )}
+        </div>
+        </div>
       
       {/* 状态 */}
       <div className="space-y-4">

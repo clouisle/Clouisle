@@ -232,8 +232,8 @@ describe('ModelDialog', () => {
     expect(find(render(), (tree) => tree.props.children === 'apiKeyRequired')).toBeDefined()
   })
 
-  test('recovers from a connection failure without exposing the thrown secret', async () => {
-    testModelConfig.mockRejectedValue(new Error('sk-live-secret'))
+  test('recovers from generic failure, displays safe API errors, and succeeds on retry', async () => {
+    testModelConfig.mockRejectedValueOnce(new Error('sk-live-secret'))
     chooseModelType()
     chooseProvider('ollama')
     change('modelId', 'llama3.2')
@@ -243,10 +243,16 @@ describe('ModelDialog', () => {
     expect(find(render(), (tree) => tree.props.children === 'testFailed')).toBeDefined()
     expect(findAll(render(), (tree) => String(tree.props.children).includes('sk-live-secret'))).toHaveLength(0)
 
-    testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+    const blockedEndpointError = new Error('model_endpoint_not_allowlisted')
+    blockedEndpointError.name = 'ApiError'
+    testModelConfig.mockRejectedValueOnce(blockedEndpointError)
     await testConnection()
 
-    expect(testModelConfig).toHaveBeenCalledTimes(2)
+    expect(find(render(), (tree) => tree.props.children === 'model_endpoint_not_allowlisted')).toBeDefined()
+
+    await testConnection()
+
+    expect(testModelConfig).toHaveBeenCalledTimes(3)
     expect(find(render(), (tree) => tree.props.children === 'Connected')).toBeDefined()
   })
 })

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
+import { ApiError } from '@/lib/api/client'
+
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const createModel = mock(async () => ({}))
@@ -86,16 +88,19 @@ mock.module('@/components/ui/combobox', () => {
             {visibleItems.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         )}
+        {React.Children.toArray(children).filter(
+          (child) => React.isValidElement(child) && child.type !== ComboboxInput,
+        )}
       </>
     )
   }
   return {
     Combobox,
     ComboboxInput,
-    ComboboxContent: () => null,
+    ComboboxContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
     ComboboxEmpty: () => null,
     ComboboxItem: () => null,
-    ComboboxList: () => null,
+    ComboboxList: ({ children }: { children: (value: string) => React.ReactNode }) => <>{children('gpt-4o')}</>,
   }
 })
 mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
@@ -122,6 +127,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const providers = [
   { code: 'openai', base_url: 'https://api.openai.test' },
+  { code: 'xai', base_url: 'https://api.xai.test' },
   { code: 'anthropic', base_url: 'https://api.anthropic.test' },
   { code: 'google', base_url: 'https://api.google.test' },
   { code: 'azure_openai', base_url: 'https://azure.test' },
@@ -222,6 +228,30 @@ describe('model management dialog', () => {
 
     selectProvider(renderer, 'openai')
     expect(input(renderer, 'baseUrl').props.value).toBe('https://api.openai.test')
+  })
+
+  test('uses xAI-specific reasoning labels and hints', () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'xai')
+
+
+    const content = JSON.stringify(renderer.toJSON())
+    expect(content).toContain('xaiReasoningEffort')
+    expect(content).toContain('xaiReasoningEffortHint')
+  })
+  test('reveals and edits the Anthropic thinking budget control', () => {
+    const renderer = render({
+      model: {
+        id: 'model-1', name: 'Anthropic', provider: 'anthropic', model_id: 'claude', model_type: 'chat',
+        base_url: 'https://api.anthropic.test', is_enabled: true, is_default: false, has_api_key: true,
+        default_params: { thinking: { enabled: true, budget_tokens: 1024 } },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    expect(input(renderer, 'thinkingBudget').props.value).toBe('1024')
+    change(renderer, 'thinkingBudget', '2048')
+    expect(input(renderer, 'thinkingBudget').props.value).toBe('2048')
   })
 
   test('shows accessible validation errors without calling the create API', async () => {
@@ -374,6 +404,25 @@ describe('model management dialog', () => {
     expect(input(renderer, 'maxOutputTokens').props.value).toBe('8192')
   })
 
+  test('maps discovery validation failures into base URL errors', async () => {
+    const renderer = render()
+    discoverModels.mockRejectedValueOnce(new ApiError(1001, 'Invalid', {
+      errors: { base_url: ['Invalid URL'] },
+    }))
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'apiKey', 'secret')
+
+    await act(async () => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, 450)
+      await promise
+    })
+
+    expect(input(renderer, 'baseUrl').props['aria-invalid']).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).toContain('modelDiscoveryFailed')
+  })
+
   test('constructs a rich chat payload from parameters, capabilities, and extension JSON', async () => {
     const renderer = render()
     act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
@@ -437,6 +486,20 @@ describe('model management dialog', () => {
     expect(createModel).toHaveBeenCalledWith(expect.objectContaining({ default_params: { seed: 42 } }))
   })
 
+  test('blocks connection tests with invalid extension JSON', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'modelId', 'connection-json')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'extraBody', '{')
+
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+
+    expect(testModelConfig).not.toHaveBeenCalled()
+    expect(input(renderer, 'extraBody').props['aria-invalid']).toBe(true)
+  })
+
   test('recovers a failed connection test and reports the successful retry', async () => {
     const renderer = render()
     act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
@@ -486,6 +549,55 @@ describe('model management dialog', () => {
         aspect_ratio: '16:9', image_size: '2K', person_generation: 'ALLOW_ADULT',
         prominent_people: 'DONT_ALLOW', output_mime_type: 'image/jpeg', output_compression_quality: 88,
       },
+    }))
+  })
+
+  test('constructs OpenAI image output parameters', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'text_to_image' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', 'OpenAI image model')
+    change(renderer, 'modelId', 'gpt-image-1')
+    change(renderer, 'apiKey', 'secret')
+    selectValue(renderer, '1024x1024')
+    selectValue(renderer, 'vivid')
+    selectValue(renderer, 'high')
+    selectValue(renderer, 'transparent')
+    selectValue(renderer, 'png')
+    change(renderer, 'openaiImageOutputCompression', '80')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai',
+      model_type: 'text_to_image',
+      default_params: {
+        default_width: 1024,
+        default_height: 1024,
+        style: 'vivid',
+        quality: 'high',
+        background: 'transparent',
+        output_format: 'png',
+        output_compression: 80,
+      },
+    }))
+  })
+  test('builds Volcengine TTS speaker parameters from the audio form', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'tts' } }))
+    selectProvider(renderer, 'volcengine')
+    change(renderer, 'name', 'Speech model')
+    change(renderer, 'modelId', 'speech-resource')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'defaultVoice', 'speaker-123')
+    change(renderer, 'speed', '1.25')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'volcengine',
+      model_type: 'tts',
+      default_params: { speaker: 'speaker-123', speed: 1.25 },
     }))
   })
 })

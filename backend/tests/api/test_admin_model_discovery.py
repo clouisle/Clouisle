@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+from urllib.parse import urlsplit
+
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -73,9 +75,13 @@ async def test_discover_models_requests_openai_compatible_api(monkeypatch):
         current_user=SimpleNamespace(),
     )
 
-    factory.assert_called_once_with(timeout=15.0, follow_redirects=False)
+    factory.assert_called_once_with(
+        base_url="https://api.example.test",
+        timeout=15.0,
+        follow_redirects=False,
+    )
     client.get.assert_awaited_once_with(
-        "https://api.example.test/v1/models",
+        "/v1/models",
         headers={"Authorization": "Bearer secret"},
         params=None,
     )
@@ -214,7 +220,11 @@ async def test_discover_models_uses_provider_specific_protocol(
         current_user=SimpleNamespace(),
     )
 
-    client.get.assert_awaited_once_with(endpoint, headers=headers, params=params)
+    client.get.assert_awaited_once_with(
+        urlsplit(endpoint).path,
+        headers=headers,
+        params=params,
+    )
     assert result["data"].success is True
     assert [(item.id, item.name) for item in result["data"].models] == [expected]
 
@@ -242,6 +252,14 @@ async def test_discover_models_uses_provider_specific_protocol(
             ModelDiscoveryRequest(
                 provider=ModelProvider.OPENAI,
                 base_url="ftp://api.example.test/v1",
+                api_key="secret",
+            ),
+            "model_discovery_base_url_invalid",
+        ),
+        (
+            ModelDiscoveryRequest(
+                provider=ModelProvider.OPENAI,
+                base_url="https://api.example.test//unexpected-authority",
                 api_key="secret",
             ),
             "model_discovery_base_url_invalid",
@@ -341,7 +359,7 @@ async def test_discover_models_returns_safe_failure_for_remote_errors(
             ModelProvider.CUSTOM,
             "https://api.example.test/v1/models",
             "key",
-            "https://api.example.test/v1/models",
+            "/v1/models",
             {"Authorization": "Bearer key"},
             None,
         ),
@@ -349,7 +367,7 @@ async def test_discover_models_returns_safe_failure_for_remote_errors(
             ModelProvider.ANTHROPIC,
             "https://api.anthropic.test/v1/models",
             "key",
-            "https://api.anthropic.test/v1/models",
+            "/v1/models",
             {"anthropic-version": "2023-06-01", "x-api-key": "key"},
             None,
         ),
@@ -357,7 +375,7 @@ async def test_discover_models_returns_safe_failure_for_remote_errors(
             ModelProvider.ANTHROPIC,
             "https://api.anthropic.test/v1",
             "key",
-            "https://api.anthropic.test/v1/models",
+            "/v1/models",
             {"anthropic-version": "2023-06-01", "x-api-key": "key"},
             None,
         ),

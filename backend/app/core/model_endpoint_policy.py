@@ -107,13 +107,15 @@ def model_endpoint_origin_is_allowed(
     allowlist: Iterable[str],
 ) -> str:
     origin = normalize_model_endpoint_origin(base_url)
-    normalized_allowlist = set(normalize_model_endpoint_allowlist(list(allowlist)))
-    if origin not in normalized_allowlist:
-        raise ModelEndpointPolicyError(
-            "model_endpoint_not_allowlisted",
-            origin=origin,
-        )
-    return origin
+    normalized_allowlist = normalize_model_endpoint_allowlist(list(allowlist))
+    # Return the administrator-approved canonical value to outbound clients.
+    for allowed_origin in normalized_allowlist:
+        if origin == allowed_origin:
+            return allowed_origin
+    raise ModelEndpointPolicyError(
+        "model_endpoint_not_allowlisted",
+        origin=origin,
+    )
 
 
 async def get_model_endpoint_allowlist() -> list[str]:

@@ -39,10 +39,11 @@ async def test_model_endpoint_allowlist_seeds_existing_origins_once(
 
     await init_data.init_model_endpoint_allowlist()
 
-    allowlist = set(set_value.await_args.kwargs["value"])
-    assert "https://api.openai.com" in allowlist
-    assert "https://gateway.example.test" in allowlist
-    assert all("not-a-url" not in origin for origin in allowlist)
+    allowlist = set_value.await_args.kwargs["value"]
+    assert allowlist == [
+        *model_endpoint_policy.DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+        "https://gateway.example.test",
+    ]
     assert (
         set_value.await_args.kwargs["description"]
         == "model_endpoint_allowlist_description"

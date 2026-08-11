@@ -567,23 +567,26 @@ async def discover_models(
     if not base_url:
         return _model_discovery_failure("model_discovery_base_url_invalid")
     try:
-        await ensure_model_endpoint_allowed(base_url)
+        allowed_origin = await ensure_model_endpoint_allowed(base_url)
     except ModelEndpointPolicyError:
+        return _model_discovery_failure("model_endpoint_not_allowlisted")
+    if not allowed_origin:
         return _model_discovery_failure("model_endpoint_not_allowlisted")
 
     api_key = (discovery_request.api_key or "").strip()
     if _requires_api_key(provider) and not api_key:
         return _model_discovery_failure("model_discovery_api_key_required")
 
-    endpoint, headers, params = _build_model_discovery_request(
+    request_path, headers, params = _build_model_discovery_request(
         provider, base_url, api_key
     )
     try:
         async with httpx.AsyncClient(
+            base_url=allowed_origin,
             timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS,
             follow_redirects=False,
         ) as client:
-            response = await client.get(endpoint, headers=headers, params=params)
+            response = await client.get(request_path, headers=headers, params=params)
             response.raise_for_status()
             discovered_models = _parse_discovered_models(provider, response.json())
     except (httpx.HTTPError, ValueError):
@@ -619,16 +622,19 @@ def _normalize_model_discovery_base_url(value: str) -> str | None:
         or parsed.fragment
         or parsed.username
         or parsed.password
+        or parsed.path.startswith("//")
+        or "\\" in parsed.path
     ):
         return None
     return base_url
 
 
-def _append_model_discovery_path(base_url: str, path: str) -> str:
+def _append_model_discovery_path(base_path: str, path: str) -> str:
     normalized_path = path.strip("/")
-    if base_url.endswith(f"/{normalized_path}"):
-        return base_url
-    return f"{base_url}/{normalized_path}"
+    base_path = base_path.rstrip("/")
+    if base_path.endswith(f"/{normalized_path}"):
+        return base_path
+    return f"{base_path}/{normalized_path}" if base_path else f"/{normalized_path}"
 
 
 def _build_model_discovery_request(
@@ -636,15 +642,16 @@ def _build_model_discovery_request(
     base_url: str,
     api_key: str,
 ) -> tuple[str, dict[str, str], dict[str, str] | None]:
+    base_path = urlsplit(base_url).path.rstrip("/")
     if provider == ModelProvider.OLLAMA:
-        return _append_model_discovery_path(base_url, "api/tags"), {}, None
+        return _append_model_discovery_path(base_path, "api/tags"), {}, None
     if provider == ModelProvider.ANTHROPIC:
-        if base_url.endswith("/v1/models"):
-            endpoint = base_url
-        elif base_url.endswith("/v1"):
-            endpoint = _append_model_discovery_path(base_url, "models")
+        if base_path.endswith("/v1/models"):
+            endpoint = base_path
+        elif base_path.endswith("/v1"):
+            endpoint = _append_model_discovery_path(base_path, "models")
         else:
-            endpoint = _append_model_discovery_path(base_url, "v1/models")
+            endpoint = _append_model_discovery_path(base_path, "v1/models")
         return (
             endpoint,
             {
@@ -654,9 +661,9 @@ def _build_model_discovery_request(
             None,
         )
     if provider == ModelProvider.GOOGLE:
-        return _append_model_discovery_path(base_url, "models"), {}, {"key": api_key}
+        return _append_model_discovery_path(base_path, "models"), {}, {"key": api_key}
     return (
-        _append_model_discovery_path(base_url, "models"),
+        _append_model_discovery_path(base_path, "models"),
         {"Authorization": f"Bearer {api_key}"},
         None,
     )
