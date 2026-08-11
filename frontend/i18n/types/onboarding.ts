@@ -188,10 +188,6 @@ export type OnboardingMessages = {
       title: string
       description: string
     }
-    step7l: {
-      title: string
-      description: string
-    }
     step8: {
       title: string
       description: string
@@ -237,10 +233,6 @@ export type OnboardingMessages = {
       description: string
     }
     step14: {
-      title: string
-      description: string
-    }
-    step14a: {
       title: string
       description: string
     }

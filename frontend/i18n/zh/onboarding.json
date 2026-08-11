@@ -186,10 +186,6 @@
       "title": "重排参数",
       "description": "候选数（Candidate K）是传递给重排模型的 Top N 结果数量；分数阈值会过滤掉低于指定分数的结果。可根据业务需要调整。"
     },
-    "step7l": {
-      "title": "重排失败开放",
-      "description": "开启后，若重排模型调用失败，将返回原始检索结果而不会报错。建议在生产环境保持开启，以保证稳定性。"
-    },
     "step8": {
       "title": "应用模块",
       "description": "点击这里管理您的 Agent 和工作流。这是您构建 AI 应用的地方。"
@@ -238,13 +234,9 @@
       "title": "保存配置",
       "description": "点击这里保存您的 Agent 配置。修改后记得保存！"
     },
-    "step14a": {
-      "title": "图像理解",
-      "description": "开启后，Agent 可以理解和分析图片内容。适用于需要处理图像或从图片提取信息的场景。"
-    },
     "step14b": {
-      "title": "文件上传",
-      "description": "开启后，用户可以向 Agent 上传文件。支持 PDF、Word、Excel 等格式，Agent 可以读取文件内容来回答问题。"
+      "title": "附件",
+      "description": "当用户需要向 Agent 分享文件或图片时，请开启附件功能。随后可设置 Agent 接收的已提取内容上限。"
     },
     "step14c": {
       "title": "用户输入请求",

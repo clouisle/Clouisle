@@ -80,14 +80,7 @@ const appConfigSteps: OnboardingStep[] = [
   },
   // ========== Capabilities ==========
   {
-    target: '[data-testid="agent-vision-section"]',
-    content: 'onboarding.step14a.description',
-    title: 'onboarding.step14a.title',
-    placement: 'left',
-    overlayClickAction: false,
-  },
-  {
-    target: '[data-testid="agent-file-upload-section"]',
+    target: '[data-testid="agent-attachments-section"]',
     content: 'onboarding.step14b.description',
     title: 'onboarding.step14b.title',
     placement: 'left',

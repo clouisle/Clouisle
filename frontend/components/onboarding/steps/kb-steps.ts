@@ -91,13 +91,6 @@ const kbSteps: OnboardingStep[] = [
     overlayClickAction: false,
   },
   {
-    target: '[data-testid="kb-dialog-rerank-fail-open"]',
-    content: 'onboarding.step7l.description',
-    title: 'onboarding.step7l.title',
-    placement: 'top',
-    overlayClickAction: false,
-  },
-  {
     target: '[data-testid="kb-dialog-submit"]',
     content: 'onboarding.step7e.description',
     title: 'onboarding.step7e.title',
