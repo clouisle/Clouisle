@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/client'
 const createModel = mock(async () => ({}))
 const updateModel = mock(async () => ({}))
 const testModelConfig = mock(async () => ({ success: true, message: 'Connected', latency_ms: 12 }))
+const discoverModels = mock(async () => ({ success: true, message: 'Models found', models: [] }))
 const toastSuccess = mock(() => {})
 const toastError = mock(() => {})
 
@@ -19,7 +20,7 @@ mock.module('next-intl', () => ({
 
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api/admin/models', () => ({
-  modelsApi: { createModel, updateModel, testModelConfig },
+  modelsApi: { createModel, updateModel, testModelConfig, discoverModels },
 }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -43,6 +44,60 @@ mock.module('@/components/ui/select', () => ({
   SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }))
+mock.module('@/components/ui/combobox', () => {
+  const ComboboxInput = () => null
+  const Combobox = ({
+    children,
+    items = [],
+    value,
+    inputValue = '',
+    filter,
+    onInputValueChange,
+    onValueChange,
+  }: React.PropsWithChildren<{
+    items?: string[]
+    value?: string | null
+    inputValue?: string
+    filter?: (value: string, query: string) => boolean
+    onInputValueChange: (value: string, details: { reason: string }) => void
+    onValueChange: (value: string | null) => void
+  }>) => {
+    const inputElement = React.Children.toArray(children).find(
+      (child) => React.isValidElement(child) && child.type === ComboboxInput,
+    ) as React.ReactElement<Record<string, unknown>> | undefined
+    const visibleItems = items.filter((item) => !filter || filter(item, inputValue))
+    return (
+      <>
+        <input
+          {...inputElement?.props}
+          role="combobox"
+          aria-expanded={items.length > 0}
+          aria-controls="model-id-options"
+          value={inputValue}
+          onChange={(event) => onInputValueChange(event.target.value, { reason: 'input-change' })}
+        />
+        {items.length > 0 && (
+          <select
+            data-testid="model-id-options"
+            value={value || ''}
+            onChange={(event) => onValueChange(event.target.value || null)}
+          >
+            <option value="" />
+            {visibleItems.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        )}
+      </>
+    )
+  }
+  return {
+    Combobox,
+    ComboboxInput,
+    ComboboxContent: () => null,
+    ComboboxEmpty: () => null,
+    ComboboxItem: () => null,
+    ComboboxList: () => null,
+  }
+})
 mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
 mock.module('@/components/ui/tabs', () => ({
   Tabs: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -87,6 +142,8 @@ afterEach(() => {
   updateModel.mockClear()
   testModelConfig.mockReset()
   testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+  discoverModels.mockReset()
+  discoverModels.mockResolvedValue({ success: true, message: 'Models found', models: [] })
   toastSuccess.mockClear()
   toastError.mockClear()
   for (const renderer of renderers) act(() => renderer.unmount())
@@ -145,14 +202,20 @@ function selectProvider(renderer: ReactTestRenderer, code: string) {
 describe('model management dialog', () => {
   test('requires a model type before enabling provider selection, then applies the provider base URL', () => {
     const renderer = render()
-    const provider = renderer.root.findByProps({ role: 'combobox' })
+    const provider = renderer.root.findAllByProps({ role: 'combobox' }).find(
+      (candidate) => candidate.props.id !== 'modelId',
+    )!
 
     expect(provider.props.disabled).toBe(true)
     expect(input(renderer, 'name').props['aria-invalid']).toBe(false)
     expect(JSON.stringify(renderer.toJSON())).toContain('selectModelTypeFirst')
 
     act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
-    expect(renderer.root.findByProps({ role: 'combobox' }).props.disabled).toBe(false)
+    expect(
+      renderer.root.findAllByProps({ role: 'combobox' }).find(
+        (candidate) => candidate.props.id !== 'modelId',
+      )?.props.disabled,
+    ).toBe(false)
 
     selectProvider(renderer, 'openai')
     expect(input(renderer, 'baseUrl').props.value).toBe('https://api.openai.test')
@@ -245,7 +308,7 @@ describe('model management dialog', () => {
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
 
     expect(createModel).toHaveBeenCalledWith({
-      name: 'Reasoning model', provider: 'openai', model_id: 'reasoning-1', model_type: 'chat',
+      name: 'Reasoning model', provider: 'openai', provider_display_name: null, model_id: 'reasoning-1', model_type: 'chat',
       base_url: 'https://api.openai.test', api_key: 'secret', context_length: 128000,
       max_output_tokens: 8192, input_price: 1.25, output_price: 5.5,
       default_params: {

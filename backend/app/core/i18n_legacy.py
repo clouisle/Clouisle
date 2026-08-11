@@ -1498,6 +1498,42 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "model_call_failed": {"en": "Model call failed", "zh": "模型调用失败"},
     "model_created": {"en": "Model created successfully", "zh": "模型创建成功"},
     "model_deleted": {"en": "Model deleted successfully", "zh": "模型删除成功"},
+    "model_discovery_api_key_required": {
+        "en": "API key is required to fetch the model list",
+        "zh": "获取模型列表需要 API Key",
+    },
+    "model_discovery_base_url_invalid": {
+        "en": "Enter an absolute HTTP or HTTPS API base URL",
+        "zh": "请输入有效的 HTTP 或 HTTPS API 地址",
+    },
+    "model_discovery_failed": {
+        "en": "Could not fetch the model list. Check the API URL, API key, and provider compatibility.",
+        "zh": "无法获取模型列表。请检查 API 地址、API Key 和供应商兼容性。",
+    },
+    "model_discovery_not_supported": {
+        "en": "This provider does not support remote model discovery",
+        "zh": "该供应商不支持在线获取模型列表",
+    },
+    "model_discovery_success": {
+        "en": "Discovered {count} models",
+        "zh": "已获取 {count} 个模型",
+    },
+    "model_endpoint_allowlist_description": {
+        "en": "Allowed model endpoint Origins",
+        "zh": "允许使用的模型端点 Origin",
+    },
+    "model_endpoint_allowlist_invalid": {
+        "en": "Enter a valid list of HTTP or HTTPS model endpoint Origins",
+        "zh": "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表",
+    },
+    "model_endpoint_base_url_invalid": {
+        "en": "Enter a valid HTTP or HTTPS model Base URL",
+        "zh": "请输入有效的 HTTP 或 HTTPS 模型 Base URL",
+    },
+    "model_endpoint_not_allowlisted": {
+        "en": "This model endpoint is not allowlisted. Add its Origin in Site Settings > Security.",
+        "zh": "该模型端点不在白名单中。请前往“站点设置 > 安全”添加对应 Origin。",
+    },
     "model_not_authorized": {
         "en": "Model is not authorized for this team",
         "zh": "该模型未被授权给此团队",
@@ -1511,6 +1547,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "model_set_default": {
         "en": "Model set as default successfully",
         "zh": "已设为默认模型",
+    },
+    "model_test_chat_response_incompatible": {
+        "en": "The provider returned an incompatible chat response. Verify the selected provider and that the Base URL exposes a compatible chat-completions endpoint.",
+        "zh": "供应商返回的对话响应格式不兼容。请确认选择的供应商正确，并检查 Base URL 是否提供兼容的 chat-completions 接口。",
     },
     "model_test_connection_failed_check_base_url": {
         "en": "Connection failed, check base URL",
@@ -1538,8 +1578,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "模型返回了空响应",
     },
     "model_test_failed": {
-        "en": "Connection test failed: {error}",
-        "zh": "连接测试失败：{error}",
+        "en": "Connection test failed for {provider}/{model} ({model_type}): {error}",
+        "zh": "{provider}/{model}（{model_type}）连接测试失败：{error}",
     },
     "model_test_invalid_api_key": {"en": "Invalid API key", "zh": "API Key 无效"},
     "model_test_model_not_accessible": {
@@ -1550,14 +1590,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Connection test pending implementation",
         "zh": "连接测试功能待实现",
     },
+    "model_test_provider_error_details": {
+        "en": "Provider error: {error}. Check the provider configuration and request parameters.",
+        "zh": "供应商返回错误：{error}。请检查供应商配置和请求参数。",
+    },
     "model_test_rate_limit_but_valid": {
         "en": "Rate limit exceeded, but API key is valid",
         "zh": "触发了速率限制，但 API Key 有效",
     },
+    "model_test_rate_limited": {
+        "en": "The provider rate limit was exceeded. Retry later or increase the provider quota.",
+        "zh": "供应商触发了速率限制。请稍后重试或提升供应商配额。",
+    },
     "model_test_success": {"en": "Connection test successful", "zh": "连接测试成功"},
     "model_test_unexpected_error": {
-        "en": "Connection test failed unexpectedly",
-        "zh": "连接测试发生未知错误",
+        "en": "The provider returned an unexpected error. Check the provider configuration and server logs.",
+        "zh": "供应商返回了未知错误。请检查供应商配置和服务器日志。",
     },
     "model_type_mismatch": {
         "en": "Model {model_name} is not a {model_type} model",

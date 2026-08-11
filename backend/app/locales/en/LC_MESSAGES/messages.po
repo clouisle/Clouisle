@@ -1368,6 +1368,33 @@ msgstr "API key is required to test connection"
 msgid "model_created"
 msgstr "Model created successfully"
 
+msgid "model_endpoint_allowlist_description"
+msgstr "Allowed model endpoint Origins"
+
+msgid "model_endpoint_allowlist_invalid"
+msgstr "Enter a valid list of HTTP or HTTPS model endpoint Origins"
+
+msgid "model_endpoint_base_url_invalid"
+msgstr "Enter a valid HTTP or HTTPS model Base URL"
+
+msgid "model_endpoint_not_allowlisted"
+msgstr "This model endpoint is not allowlisted. Add its Origin in Site Settings > Security."
+
+msgid "model_discovery_api_key_required"
+msgstr "API key is required to fetch the model list"
+
+msgid "model_discovery_base_url_invalid"
+msgstr "Enter an absolute HTTP or HTTPS API base URL"
+
+msgid "model_discovery_failed"
+msgstr "Could not fetch the model list. Check the API URL, API key, and provider compatibility."
+
+msgid "model_discovery_not_supported"
+msgstr "This provider does not support remote model discovery"
+
+msgid "model_discovery_success"
+msgstr "Discovered {count} models"
+
 msgid "model_deleted"
 msgstr "Model deleted successfully"
 
@@ -1387,7 +1414,7 @@ msgid "model_set_default"
 msgstr "Model set as default successfully"
 
 msgid "model_test_failed"
-msgstr "Connection test failed: {error}"
+msgstr "Connection test failed for {provider}/{model} ({model_type}): {error}"
 
 msgid "model_test_pending"
 msgstr "Connection test pending implementation"
@@ -1400,6 +1427,15 @@ msgstr "Connection successful"
 
 msgid "model_test_rate_limit_but_valid"
 msgstr "Rate limit exceeded, but API key is valid"
+
+msgid "model_test_rate_limited"
+msgstr "The provider rate limit was exceeded. Retry later or increase the provider quota."
+
+msgid "model_test_chat_response_incompatible"
+msgstr "The provider returned an incompatible chat response. Verify the selected provider and that the Base URL exposes a compatible chat-completions endpoint."
+
+msgid "model_test_provider_error_details"
+msgstr "Provider error: {error}. Check the provider configuration and request parameters."
 
 msgid "model_test_invalid_api_key"
 msgstr "Invalid API key"
@@ -1420,7 +1456,7 @@ msgid "model_type_not_supported"
 msgstr "Model type is not supported"
 
 msgid "model_test_unexpected_error"
-msgstr "Connection test failed unexpectedly"
+msgstr "The provider returned an unexpected error. Check the provider configuration and server logs."
 
 msgid "model_test_empty_response"
 msgstr "The model returned an empty response"

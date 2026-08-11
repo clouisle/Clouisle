@@ -15,6 +15,11 @@ from app.llm.types import ChatResponse, FinishReason, Usage
 from app.models.model import ModelProvider, ModelType
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ModelManager, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 def build_adapter() -> LLMRerankAdapter:
     model_config = SimpleNamespace(
         provider="openai",

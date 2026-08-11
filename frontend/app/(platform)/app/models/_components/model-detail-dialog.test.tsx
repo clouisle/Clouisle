@@ -70,6 +70,7 @@ const teamModel = {
     name: "Assistant",
     model_id: "assistant-1",
     provider: "unknown-provider",
+    provider_display_name: "Acme Gateway",
     model_type: "unknown-type",
   },
 } as never;
@@ -87,6 +88,7 @@ test("shows model quotas with capped progress and unlimited fallback", () => {
     .map((node) => node.children.join(""))
     .join(" ");
   expect(text).toContain("Assistant");
+  expect(JSON.stringify(renderer!.toJSON())).toContain("Acme Gateway");
   expect(text).toContain("950 / 1.00K");
   expect(text).toContain("∞");
   expect(renderer!.root.findAllByProps({ "data-value": 95 })).toHaveLength(1);

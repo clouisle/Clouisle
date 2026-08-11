@@ -153,6 +153,7 @@ export interface SecuritySettings {
   force_password_change_first_login: boolean
   // TOTP
   require_totp: boolean
+  model_endpoint_allowlist: string[]
 }
 
 export interface EmailSettings {

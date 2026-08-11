@@ -121,6 +121,7 @@ async def get_model_info(team_model: TeamModel | None) -> ModelInfo | None:
         id=team_model.id,
         name=model.name,
         provider=model.provider,
+        provider_display_name=getattr(model, "provider_display_name", None),
         model_id=model.model_id,
     )
 
@@ -138,6 +139,9 @@ async def build_agent_out(agent: Agent) -> dict:
                 id=team_model.id,
                 name=team_model.model.name,
                 provider=team_model.model.provider,
+                provider_display_name=getattr(
+                    team_model.model, "provider_display_name", None
+                ),
                 model_id=team_model.model.model_id,
             )
 
@@ -259,6 +263,9 @@ async def build_agent_list_out(
                     id=team_model.id,
                     name=team_model.model.name,
                     provider=team_model.model.provider,
+                    provider_display_name=getattr(
+                        team_model.model, "provider_display_name", None
+                    ),
                     model_id=team_model.model.model_id,
                 )
 
@@ -364,6 +371,7 @@ async def list_agents(
                 id=tm.id,
                 name=tm.model.name,
                 provider=tm.model.provider,
+                provider_display_name=getattr(tm.model, "provider_display_name", None),
                 model_id=tm.model.model_id,
             )
 

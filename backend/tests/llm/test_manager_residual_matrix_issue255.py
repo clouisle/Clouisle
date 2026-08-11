@@ -22,6 +22,11 @@ from app.models.model import ModelProvider, ModelType
 from app.services.usage_tracker import QuotaExceededError
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ModelManager, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 class StringProvider(Enum):
     UNKNOWN = "unknown"
 

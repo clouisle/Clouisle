@@ -6,6 +6,7 @@ const createModel = mock(async () => ({}))
 const updateModel = mock(async () => ({}))
 const testModelConfig = mock(async () => ({ success: true, message: 'Connected', latency_ms: 12 }))
 const toastSuccess = mock(() => {})
+const discoverModels = mock(async () => ({ success: true, message: 'Models found', models: [] }))
 const toastError = mock(() => {})
 
 mock.module('next-intl', () => ({
@@ -18,7 +19,7 @@ mock.module('next-intl', () => ({
 
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api/admin/models', () => ({
-  modelsApi: { createModel, updateModel, testModelConfig },
+  modelsApi: { createModel, updateModel, testModelConfig, discoverModels },
 }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -42,6 +43,60 @@ mock.module('@/components/ui/select', () => ({
   SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }))
+mock.module('@/components/ui/combobox', () => {
+  const ComboboxInput = () => null
+  const Combobox = ({
+    children,
+    items = [],
+    value,
+    inputValue = '',
+    filter,
+    onInputValueChange,
+    onValueChange,
+  }: React.PropsWithChildren<{
+    items?: string[]
+    value?: string | null
+    inputValue?: string
+    filter?: (value: string, query: string) => boolean
+    onInputValueChange: (value: string, details: { reason: string }) => void
+    onValueChange: (value: string | null) => void
+  }>) => {
+    const inputElement = React.Children.toArray(children).find(
+      (child) => React.isValidElement(child) && child.type === ComboboxInput,
+    ) as React.ReactElement<Record<string, unknown>> | undefined
+    const visibleItems = items.filter((item) => !filter || filter(item, inputValue))
+    return (
+      <>
+        <input
+          {...inputElement?.props}
+          role="combobox"
+          aria-expanded={items.length > 0}
+          aria-controls="model-id-options"
+          value={inputValue}
+          onChange={(event) => onInputValueChange(event.target.value, { reason: 'input-change' })}
+        />
+        {items.length > 0 && (
+          <select
+            data-testid="model-id-options"
+            value={value || ''}
+            onChange={(event) => onValueChange(event.target.value || null)}
+          >
+            <option value="" />
+            {visibleItems.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        )}
+      </>
+    )
+  }
+  return {
+    Combobox,
+    ComboboxInput,
+    ComboboxContent: () => null,
+    ComboboxEmpty: () => null,
+    ComboboxItem: () => null,
+    ComboboxList: () => null,
+  }
+})
 mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
 mock.module('@/components/ui/tabs', () => ({
   Tabs: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -87,6 +142,8 @@ afterEach(() => {
   updateModel.mockClear()
   testModelConfig.mockReset()
   testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+  discoverModels.mockReset()
+  discoverModels.mockResolvedValue({ success: true, message: 'Models found', models: [] })
   toastSuccess.mockClear()
   toastError.mockClear()
   for (const renderer of renderers) act(() => renderer.unmount())
@@ -199,6 +256,10 @@ describe('model dialog remaining Issue #255 callbacks', () => {
     const domestic = render()
     act(() => modelTypeSelect(domestic).props.onChange({ target: { value: 'chat' } }))
     selectProvider(domestic, 'deepseek')
-    expect(domestic.root.findByProps({ role: 'combobox' }).findAll((node) => node.children.includes('providers.deepseek'))).not.toHaveLength(0)
+    expect(
+      domestic.root.findAllByProps({ role: 'combobox' }).find(
+        (candidate) => candidate.props.id !== 'modelId',
+      )?.findAll((node) => node.children.includes('providers.deepseek')),
+    ).not.toHaveLength(0)
   })
 })

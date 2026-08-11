@@ -564,6 +564,19 @@ Max Retries: 3
 4. Test connection
 5. Save changes
 
+### Approve Model API Origins
+
+Before saving or testing a model with a new API endpoint:
+
+1. Navigate to **Admin** → **Site Settings** → **Security**.
+2. Add the endpoint Origin to **Model Endpoint Allowlist**, one per line.
+3. Include only the scheme, hostname, and non-default port, for example `https://gateway.example.com` or `http://ollama.internal:11434`.
+4. Save the Security settings, then save or test the model again.
+
+> **Security:** Prefer HTTPS for remote endpoints. Use HTTP only for endpoints on a trusted private network because API keys and model traffic are otherwise sent without transport encryption.
+
+Matching is exact. URL paths are ignored, but the scheme, hostname, and port must all match. Removing an Origin blocks subsequent model discovery, connection tests, and runtime requests without restarting the service.
+
 ## Troubleshooting
 
 ### Model Connection Failed

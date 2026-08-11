@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 const createModel = mock(() => Promise.resolve({}))
 const updateModel = mock(() => Promise.resolve({}))
 const testModelConfig = mock(() => Promise.resolve({ success: true, message: 'Connected', latency_ms: 12 }))
+const discoverModels = mock(() => Promise.resolve({ success: true, message: 'Models found', models: [] }))
 const toastSuccess = mock()
 const toastError = mock()
 let state: unknown[] = []
@@ -34,7 +35,7 @@ const translation = (namespace: string) => Object.assign(
 mock.module('next-intl', () => ({ useTranslations: translation }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api/admin/models', () => ({
-  modelsApi: { createModel, updateModel, testModelConfig },
+  modelsApi: { createModel, updateModel, testModelConfig, discoverModels },
 }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => {
@@ -58,6 +59,7 @@ const modules: Record<string, string[]> = {
   '@/components/ui/input': ['Input'],
   '@/components/ui/label': ['Label'],
   '@/components/ui/select': ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'],
+  '@/components/ui/combobox': ['Combobox', 'ComboboxContent', 'ComboboxEmpty', 'ComboboxInput', 'ComboboxItem', 'ComboboxList'],
   '@/components/ui/switch': ['Switch'],
   '@/components/ui/textarea': ['Textarea'],
   '@/components/ui/tabs': ['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'],
@@ -126,15 +128,26 @@ function render(model?: Parameters<typeof ModelDialog>[0]['model']) {
 }
 
 function change(id: string, value: string) {
-  const input = find(render(), (tree) => tree.props.id === id)
-  ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
+  const tree = render()
+  const input = find(tree, (node) => node.props.id === id)
+  if (typeof input.props.onChange === 'function') {
+    ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
+    return
+  }
+  const picker = find(tree, (node) => node.type === 'combobox')
+  ;(picker.props.onInputValueChange as (
+    value: string,
+    details: { reason: string },
+  ) => void)(value, { reason: 'input-change' })
 }
 
 function chooseModelType(code = 'chat') {
+  render()
   state[3] = code
 }
 
 function chooseProvider(code: string) {
+  render()
   state[1] = code
   state[4] = providers.find((provider) => provider.code === code)?.base_url || ''
 }
@@ -219,8 +232,8 @@ describe('ModelDialog', () => {
     expect(find(render(), (tree) => tree.props.children === 'apiKeyRequired')).toBeDefined()
   })
 
-  test('recovers from a connection failure without exposing the thrown secret', async () => {
-    testModelConfig.mockRejectedValue(new Error('sk-live-secret'))
+  test('recovers from generic failure, displays safe API errors, and succeeds on retry', async () => {
+    testModelConfig.mockRejectedValueOnce(new Error('sk-live-secret'))
     chooseModelType()
     chooseProvider('ollama')
     change('modelId', 'llama3.2')
@@ -230,10 +243,16 @@ describe('ModelDialog', () => {
     expect(find(render(), (tree) => tree.props.children === 'testFailed')).toBeDefined()
     expect(findAll(render(), (tree) => String(tree.props.children).includes('sk-live-secret'))).toHaveLength(0)
 
-    testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+    const blockedEndpointError = new Error('model_endpoint_not_allowlisted')
+    blockedEndpointError.name = 'ApiError'
+    testModelConfig.mockRejectedValueOnce(blockedEndpointError)
     await testConnection()
 
-    expect(testModelConfig).toHaveBeenCalledTimes(2)
+    expect(find(render(), (tree) => tree.props.children === 'model_endpoint_not_allowlisted')).toBeDefined()
+
+    await testConnection()
+
+    expect(testModelConfig).toHaveBeenCalledTimes(3)
     expect(find(render(), (tree) => tree.props.children === 'Connected')).toBeDefined()
   })
 })

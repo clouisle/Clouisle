@@ -169,6 +169,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
       (m) =>
         m.name.toLowerCase().includes(query) ||
         m.provider.toLowerCase().includes(query) ||
+        (m.provider_display_name?.toLowerCase().includes(query) ?? false) ||
         m.model_id.toLowerCase().includes(query)
     )
   }, [availableModels, modelSearch])
@@ -344,7 +345,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium truncate">{model.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            {model.provider} / {model.model_id}
+                            {model.provider_display_name || model.provider} / {model.model_id}
                           </div>
                         </div>
                         <Badge variant="outline" className="text-xs shrink-0">
@@ -399,7 +400,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                     <div>
                       <div className="font-medium">{tm.model.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {tm.model.provider} / {tm.model.model_id}
+                        {tm.model.provider_display_name || tm.model.provider} / {tm.model.model_id}
                       </div>
                     </div>
                   </TableCell>

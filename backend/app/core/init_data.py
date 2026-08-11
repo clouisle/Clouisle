@@ -16,6 +16,53 @@ STARTUP_MIGRATION_LOCK_TIMEOUT = "2s"
 STARTUP_MIGRATION_QUERY_TIMEOUT_SECONDS = 3
 
 
+async def init_model_endpoint_allowlist() -> None:
+    """Seed the endpoint allowlist once from defaults and existing models."""
+    from app.core.model_endpoint_policy import (
+        DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+        MODEL_ENDPOINT_ALLOWLIST_MAX_ENTRIES,
+        MODEL_ENDPOINT_ALLOWLIST_SETTING,
+        ModelEndpointPolicyError,
+        normalize_model_endpoint_origin,
+    )
+    from app.models.model import Model
+    from app.models.site_setting import SiteSetting
+
+    existing = await SiteSetting.filter(key=MODEL_ENDPOINT_ALLOWLIST_SETTING).first()
+    if existing:
+        return
+
+    allowlist = list(DEFAULT_MODEL_ENDPOINT_ALLOWLIST)
+    seen = set(allowlist)
+    model_origins: set[str] = set()
+    for model in await Model.all():
+        base_url = model.get_effective_base_url()
+        if not base_url:
+            continue
+        try:
+            origin = normalize_model_endpoint_origin(base_url)
+        except ModelEndpointPolicyError:
+            logger.warning(
+                "Skipping invalid existing model Base URL while seeding allowlist: model=%s",
+                model.id,
+            )
+            continue
+        if origin not in seen:
+            model_origins.add(origin)
+
+    remaining_slots = max(MODEL_ENDPOINT_ALLOWLIST_MAX_ENTRIES - len(allowlist), 0)
+    allowlist.extend(sorted(model_origins)[:remaining_slots])
+
+    await SiteSetting.set_value(
+        key=MODEL_ENDPOINT_ALLOWLIST_SETTING,
+        value=allowlist,
+        value_type="json",
+        category="security",
+        description="model_endpoint_allowlist_description",
+        is_public=False,
+    )
+
+
 async def execute_startup_migration_query(conn, query: str):
     await conn.execute_query(f"SET lock_timeout = '{STARTUP_MIGRATION_LOCK_TIMEOUT}'")
     try:
@@ -2506,6 +2553,26 @@ async def drop_model_provider_uniqueness():
     logger.info("Model provider uniqueness constraints dropped")
 
 
+async def init_model_provider_display_name() -> None:
+    """Add the optional display-only provider name to existing model tables."""
+    logger.info("Adding provider display name field to models table...")
+
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'models' AND table_schema = 'public'
+    """)
+    if not tables:
+        logger.info("models table does not exist yet, skipping provider display name")
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE models
+        ADD COLUMN IF NOT EXISTS provider_display_name VARCHAR(100)
+    """)
+    logger.info("Provider display name field is ready")
+
+
 async def revert_channel_id_to_model_id():
     """Rename models.channel_id back to models.model_id if needed.
 
@@ -2690,6 +2757,8 @@ async def init_db():
         logger.warning(
             f"Model provider uniqueness migration failed (may be first run): {e}"
         )
+
+    await init_model_provider_display_name()
 
     try:
         await init_kb_rerank_fields()
@@ -2918,6 +2987,7 @@ async def init_db():
 
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")
+    await init_model_endpoint_allowlist()
     await init_default_settings()
 
     # 3.0. Set default_role_id to Viewer if not yet configured

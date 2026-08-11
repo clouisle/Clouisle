@@ -1,25 +1,32 @@
 """
-Admin-only model management endpoints (CRUD, test, set-default).
+Admin-only model management endpoints (CRUD, discovery, test, set-default).
 Public endpoints (providers, types, available, default) remain in the platform router.
 """
 
 import asyncio
-import time
+import json
 import logging
+import re
+import time
 from typing import Any, Optional, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Query
 from tortoise.expressions import Q
 
 from app.api import deps
 from app.core.i18n import t
-from app.models.model import Model
+from app.models.model import Model, get_effective_model_base_url
 from app.models.user import User
 from app.schemas.model import (
     ModelCreate,
     ModelUpdate,
     ModelResponse,
+    ModelDiscoveryItem,
+    ModelDiscoveryRequest,
+    ModelDiscoveryResponse,
     ModelTestRequest,
     ModelTestResponse,
     ModelProvider,
@@ -32,9 +39,38 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.core.model_endpoint_policy import (
+    ModelEndpointPolicyError,
+    ensure_model_endpoint_allowed,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _effective_model_base_url(
+    provider: ModelProvider | str,
+    base_url: str | None,
+    model_type: ModelType | str | None = None,
+) -> str | None:
+    return get_effective_model_base_url(provider, model_type, base_url)
+
+
+async def _ensure_model_endpoint_allowed(
+    provider: ModelProvider | str,
+    base_url: str | None,
+    model_type: ModelType | str | None = None,
+) -> str | None:
+    effective_base_url = _effective_model_base_url(provider, base_url, model_type)
+    try:
+        await ensure_model_endpoint_allowed(effective_base_url)
+    except ModelEndpointPolicyError as exc:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key=exc.msg_key,
+            origin=exc.origin or "",
+        ) from exc
+    return effective_base_url
 
 
 @router.get("", response_model=Response[PageData[ModelResponse]])
@@ -80,6 +116,9 @@ async def create_model(
     model_in: ModelCreate,
     current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
+    await _ensure_model_endpoint_allowed(
+        model_in.provider, model_in.base_url, model_in.model_type
+    )
 
     if model_in.is_default:
         await Model.filter(
@@ -89,6 +128,11 @@ async def create_model(
     model_data = model_in.model_dump()
     model_data["provider"] = model_in.provider.value
     model_data["model_type"] = model_in.model_type.value
+    model_data["provider_display_name"] = (
+        model_in.provider_display_name.strip()
+        if model_in.provider_display_name and model_in.provider_display_name.strip()
+        else None
+    )
 
     model = await Model.create(**model_data)
     return success(data=ModelResponse.model_validate(model), msg_key="model_created")
@@ -128,6 +172,15 @@ async def update_model(
     if "api_key" in update_data:
         if update_data["api_key"] == "":
             update_data["api_key"] = None
+    if "provider_display_name" in update_data:
+        display_name = update_data["provider_display_name"]
+        update_data["provider_display_name"] = (
+            display_name.strip() if display_name and display_name.strip() else None
+        )
+    candidate_base_url = update_data.get("base_url", model.base_url)
+    await _ensure_model_endpoint_allowed(
+        model.provider, candidate_base_url, model.model_type
+    )
 
     if update_data.get("is_default"):
         await (
@@ -191,6 +244,7 @@ async def test_model_connection(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_type_not_supported",
         ) from exc
+    await _ensure_model_endpoint_allowed(provider, model.base_url, model_type)
     default_params = model.default_params or {}
     config = model.config or {}
 
@@ -268,18 +322,15 @@ async def test_model_connection(
 
     except BusinessError:
         raise
-    except Exception as e:
-        logger.exception(f"Model test failed: {e}")
+    except Exception as exc:
+        logger.exception(
+            "Model test failed: provider=%s model=%s type=%s",
+            provider.value,
+            model.model_id,
+            model_type.value,
+        )
         latency_ms = int((time.monotonic() - start_time) * 1000)
-        raw_error_msg = str(e)
-        error_msg = raw_error_msg
-        if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
-            error_msg = t("model_test_invalid_api_key")
-        elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
-            error_msg = t("model_test_model_not_accessible")
-        elif (
-            "429" in raw_error_msg or "rate limit" in raw_error_msg.lower()
-        ) and model_type != ModelType.TEXT_TO_VIDEO:
+        if _is_model_test_rate_limited(exc) and model_type != ModelType.TEXT_TO_VIDEO:
             return success(
                 data=ModelTestResponse(
                     success=True,
@@ -288,20 +339,12 @@ async def test_model_connection(
                 ),
                 msg_key="model_test_success",
             )
-        elif "timeout" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_timeout")
-        elif "connection" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_failed_check_base_url")
-        else:
-            error_msg = t("model_test_unexpected_error")
-
-        return success(
-            data=ModelTestResponse(
-                success=False,
-                message=error_msg,
-                latency_ms=latency_ms,
-            ),
-            msg_key="model_test_failed",
+        return _model_test_failure_response(
+            error=exc,
+            latency_ms=latency_ms,
+            provider=provider,
+            model_id=model.model_id,
+            model_type=model_type,
         )
 
 
@@ -344,6 +387,7 @@ async def test_model_config(
     base_url = test_request.base_url
     default_params = test_request.default_params or {}
     config = test_request.config or {}
+    await _ensure_model_endpoint_allowed(provider, base_url, model_type)
 
     start_time = time.monotonic()
 
@@ -417,18 +461,15 @@ async def test_model_config(
 
     except BusinessError:
         raise
-    except Exception as e:
-        logger.exception(f"Model test failed: {e}")
+    except Exception as exc:
+        logger.exception(
+            "Model test failed: provider=%s model=%s type=%s",
+            provider.value,
+            model_id,
+            model_type.value,
+        )
         latency_ms = int((time.monotonic() - start_time) * 1000)
-        raw_error_msg = str(e)
-        error_msg = raw_error_msg
-        if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
-            error_msg = t("model_test_invalid_api_key")
-        elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
-            error_msg = t("model_test_model_not_accessible")
-        elif (
-            "429" in raw_error_msg or "rate limit" in raw_error_msg.lower()
-        ) and model_type != ModelType.TEXT_TO_VIDEO:
+        if _is_model_test_rate_limited(exc) and model_type != ModelType.TEXT_TO_VIDEO:
             return success(
                 data=ModelTestResponse(
                     success=True,
@@ -437,21 +478,461 @@ async def test_model_config(
                 ),
                 msg_key="model_test_success",
             )
-        elif "timeout" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_timeout")
-        elif "connection" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_failed_check_base_url")
-        else:
-            error_msg = t("model_test_unexpected_error")
-
-        return success(
-            data=ModelTestResponse(
-                success=False,
-                message=error_msg,
-                latency_ms=latency_ms,
-            ),
-            msg_key="model_test_failed",
+        return _model_test_failure_response(
+            error=exc,
+            latency_ms=latency_ms,
+            provider=provider,
+            model_id=model_id,
+            model_type=model_type,
         )
+
+
+_MODEL_DISCOVERY_TIMEOUT_SECONDS = 15.0
+_MODEL_DISCOVERY_MAX_TOKEN_LIMIT = 2_147_483_647
+_MODEL_DISCOVERY_CONTEXT_LENGTH_KEYS = (
+    "context_length",
+    "contextLength",
+    "context_window",
+    "contextWindow",
+    "max_context_length",
+    "maxContextLength",
+    "input_token_limit",
+    "inputTokenLimit",
+)
+_MODEL_DISCOVERY_MAX_OUTPUT_TOKENS_KEYS = (
+    "max_output_tokens",
+    "maxOutputTokens",
+    "max_completion_tokens",
+    "maxCompletionTokens",
+    "max_tokens",
+    "maxTokens",
+    "output_token_limit",
+    "outputTokenLimit",
+)
+_MODEL_DISCOVERY_CAPABILITY_KEYS = {
+    "vision": ("vision", "supports_vision", "supportsVision"),
+    "function_call": (
+        "function_call",
+        "functionCall",
+        "tools",
+        "function_calling",
+        "functionCalling",
+        "supports_function_call",
+        "supportsFunctionCall",
+        "tool_calling",
+        "toolCalling",
+    ),
+    "streaming": ("streaming", "supports_streaming", "supportsStreaming"),
+    "json_mode": (
+        "json_mode",
+        "structured_output",
+        "structuredOutput",
+        "jsonMode",
+        "supports_json_mode",
+        "supportsJsonMode",
+    ),
+}
+_MODEL_DISCOVERY_MAX_MODELS = 200
+_MODEL_DISCOVERY_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_MODEL_DISCOVERY_SUPPORTED_PROVIDERS = frozenset(
+    {
+        ModelProvider.OPENAI,
+        ModelProvider.OPENAI_RESPONSES,
+        ModelProvider.ANTHROPIC,
+        ModelProvider.GOOGLE,
+        ModelProvider.DEEPSEEK,
+        ModelProvider.MOONSHOT,
+        ModelProvider.ZHIPU,
+        ModelProvider.QWEN,
+        ModelProvider.BAICHUAN,
+        ModelProvider.MINIMAX,
+        ModelProvider.VOLCENGINE,
+        ModelProvider.SILICONFLOW,
+        ModelProvider.XAI,
+        ModelProvider.OLLAMA,
+        ModelProvider.CUSTOM,
+    }
+)
+_MODEL_DISCOVERY_PROVIDER_PATHS = {
+    ModelProvider.OPENAI: "/v1/models",
+    ModelProvider.OPENAI_RESPONSES: "/v1/models",
+    ModelProvider.ANTHROPIC: "/v1/models",
+    ModelProvider.GOOGLE: "/v1beta/models",
+    ModelProvider.DEEPSEEK: "/models",
+    ModelProvider.MOONSHOT: "/v1/models",
+    ModelProvider.ZHIPU: "/api/paas/v4/models",
+    ModelProvider.QWEN: "/compatible-mode/v1/models",
+    ModelProvider.BAICHUAN: "/v1/models",
+    ModelProvider.MINIMAX: "/v1/models",
+    ModelProvider.VOLCENGINE: "/api/v3/models",
+    ModelProvider.SILICONFLOW: "/v1/models",
+    ModelProvider.XAI: "/v1/models",
+    ModelProvider.OLLAMA: "/api/tags",
+    ModelProvider.CUSTOM: "/v1/models",
+}
+
+
+@router.post("/discover", response_model=Response[ModelDiscoveryResponse])
+async def discover_models(
+    discovery_request: ModelDiscoveryRequest,
+    current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
+) -> Any:
+    """List models exposed by a provider without persisting the supplied key."""
+    provider = discovery_request.provider
+    if provider not in _MODEL_DISCOVERY_SUPPORTED_PROVIDERS:
+        return _model_discovery_failure("model_discovery_not_supported")
+
+    base_url = _normalize_model_discovery_base_url(discovery_request.base_url)
+    if not base_url:
+        return _model_discovery_failure("model_discovery_base_url_invalid")
+    try:
+        allowed_origin = await ensure_model_endpoint_allowed(base_url)
+    except ModelEndpointPolicyError:
+        return _model_discovery_failure("model_endpoint_not_allowlisted")
+    if not allowed_origin:
+        return _model_discovery_failure("model_endpoint_not_allowlisted")
+
+    api_key = (discovery_request.api_key or "").strip()
+    if _requires_api_key(provider) and not api_key:
+        return _model_discovery_failure("model_discovery_api_key_required")
+
+    request_path, headers, params = _build_model_discovery_request(provider, api_key)
+    try:
+        async with httpx.AsyncClient(
+            base_url=allowed_origin,
+            timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS,
+            follow_redirects=False,
+        ) as client:
+            async with client.stream(
+                "GET", request_path, headers=headers, params=params
+            ) as response:
+                response.raise_for_status()
+                response_body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if (
+                        len(response_body) + len(chunk)
+                        > _MODEL_DISCOVERY_MAX_RESPONSE_BYTES
+                    ):
+                        raise ValueError("Model discovery response is too large")
+                    response_body.extend(chunk)
+                discovered_models = _parse_discovered_models(
+                    provider, json.loads(response_body)
+                )
+    except (httpx.HTTPError, ValueError):
+        return _model_discovery_failure("model_discovery_failed")
+
+    message = t("model_discovery_success", count=len(discovered_models))
+    return success(
+        data=ModelDiscoveryResponse(
+            success=True,
+            message=message,
+            models=discovered_models,
+        ),
+        msg=message,
+    )
+
+
+def _model_discovery_failure(msg_key: str) -> dict:
+    message = t(msg_key)
+    return success(
+        data=ModelDiscoveryResponse(success=False, message=message, models=[]),
+        msg=message,
+    )
+
+
+def _normalize_model_discovery_base_url(value: str) -> str | None:
+    base_url = value.strip().rstrip("/")
+    parsed = urlsplit(base_url)
+    if (
+        not base_url
+        or parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+        or parsed.path.startswith("//")
+        or "\\" in parsed.path
+    ):
+        return None
+    return base_url
+
+
+def _build_model_discovery_request(
+    provider: ModelProvider,
+    api_key: str,
+) -> tuple[str, dict[str, str], dict[str, str] | None]:
+    request_path = _MODEL_DISCOVERY_PROVIDER_PATHS[provider]
+    if provider == ModelProvider.OLLAMA:
+        return request_path, {}, None
+    if provider == ModelProvider.ANTHROPIC:
+        return (
+            request_path,
+            {
+                "anthropic-version": "2023-06-01",
+                "x-api-key": api_key,
+            },
+            None,
+        )
+    if provider == ModelProvider.GOOGLE:
+        return request_path, {}, {"key": api_key}
+    return request_path, {"Authorization": f"Bearer {api_key}"}, None
+
+
+def _parse_discovered_models(
+    provider: ModelProvider,
+    payload: Any,
+) -> list[ModelDiscoveryItem]:
+    if not isinstance(payload, dict):
+        raise ValueError("Model list response is not an object")
+
+    native_models_key = provider in {ModelProvider.GOOGLE, ModelProvider.OLLAMA}
+    raw_models = payload.get("models") if native_models_key else payload.get("data")
+    if raw_models is None:
+        raw_models = payload.get("models")
+    if not isinstance(raw_models, list):
+        raise ValueError("Model list response does not contain models")
+
+    discovered_models: list[ModelDiscoveryItem] = []
+    seen_model_ids: set[str] = set()
+    for item in raw_models:
+        if not isinstance(item, dict):
+            continue
+
+        raw_model_id = item.get("name") if native_models_key else item.get("id")
+        if not isinstance(raw_model_id, str):
+            raw_model_id = item.get("id") or item.get("name")
+        if not isinstance(raw_model_id, str):
+            continue
+
+        model_id = raw_model_id.strip()
+        if provider == ModelProvider.GOOGLE:
+            model_id = model_id.removeprefix("models/")
+        if not model_id or len(model_id) > 100 or model_id in seen_model_ids:
+            continue
+
+        raw_name = (
+            item.get("display_name") or item.get("displayName") or item.get("name")
+        )
+        name = raw_name.strip() if isinstance(raw_name, str) else model_id
+        if not name or len(name) > 100:
+            name = model_id
+
+        top_provider = item.get("top_provider")
+        discovered_models.append(
+            ModelDiscoveryItem(
+                id=model_id,
+                name=name,
+                context_length=_extract_discovery_token_limit(
+                    (item,), _MODEL_DISCOVERY_CONTEXT_LENGTH_KEYS
+                ),
+                max_output_tokens=_extract_discovery_token_limit(
+                    (item, top_provider), _MODEL_DISCOVERY_MAX_OUTPUT_TOKENS_KEYS
+                ),
+                capabilities=_extract_discovery_capabilities(item),
+            )
+        )
+        seen_model_ids.add(model_id)
+        if len(discovered_models) == _MODEL_DISCOVERY_MAX_MODELS:
+            break
+
+    return discovered_models
+
+
+def _extract_discovery_token_limit(
+    sources: tuple[Any, ...], keys: tuple[str, ...]
+) -> int | None:
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in keys:
+            value = source.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                parsed_value = value
+            elif isinstance(value, str) and value.strip().isdecimal():
+                parsed_value = int(value.strip())
+            else:
+                continue
+            if 0 < parsed_value <= _MODEL_DISCOVERY_MAX_TOKEN_LIMIT:
+                return parsed_value
+    return None
+
+
+def _extract_discovery_capabilities(item: dict[str, Any]) -> dict[str, bool] | None:
+    capabilities: dict[str, bool] = {}
+    declared_capabilities = item.get("capabilities")
+    sources = (item, declared_capabilities)
+    for capability, keys in _MODEL_DISCOVERY_CAPABILITY_KEYS.items():
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key in keys:
+                value = source.get(key)
+                if isinstance(value, bool):
+                    capabilities[capability] = value
+                    break
+            if capability in capabilities:
+                break
+
+    features: set[str] = set()
+    for source in (
+        declared_capabilities,
+        item.get("supported_parameters"),
+        item.get("supportedParameters"),
+    ):
+        if isinstance(source, list):
+            features.update(
+                value.strip().lower().replace("-", "_").replace(" ", "_")
+                for value in source
+                if isinstance(value, str)
+            )
+    if features & {"vision", "image_input", "multimodal", "image_to_text"}:
+        capabilities.setdefault("vision", True)
+    if features & {
+        "function_call",
+        "function_calling",
+        "functions",
+        "tools",
+        "tool_calling",
+    }:
+        capabilities.setdefault("function_call", True)
+    if features & {"json_mode", "response_format", "structured_outputs"}:
+        capabilities.setdefault("json_mode", True)
+
+    architecture = item.get("architecture")
+    if isinstance(architecture, dict):
+        input_modalities = architecture.get("input_modalities")
+        if isinstance(input_modalities, list) and any(
+            isinstance(value, str) and value.lower() == "image"
+            for value in input_modalities
+        ):
+            capabilities.setdefault("vision", True)
+
+    return capabilities or None
+
+
+_MODEL_TEST_MAX_ERROR_DETAIL_LENGTH = 400
+_MODEL_TEST_TRANSLATION_KEY_PATTERN = re.compile(
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", re.IGNORECASE
+)
+_MODEL_TEST_UNSAFE_DETAIL_PATTERNS = (
+    re.compile(r"\btraceback\b", re.IGNORECASE),
+    re.compile(r'\bfile\s+"[^"]+", line \d+', re.IGNORECASE),
+    re.compile(r"\bexception\b", re.IGNORECASE),
+    re.compile(r"(/private/|/tmp/|[A-Z]:\\)"),
+)
+_MODEL_TEST_CREDENTIAL_PATTERNS = (
+    (
+        re.compile(r"(?i)\bbearer\s+[^\s,;}\]]+"),
+        "Bearer ***",
+    ),
+    (
+        re.compile(
+            r"(?i)(\b(?:api[_-]?key|access[_-]?token|token|secret|password|authorization)"
+            r"\b\s*(?:[:=]\s*|['\"]\s*:\s*['\"]))[^,\s;}\]'\"]+"
+        ),
+        r"\1***",
+    ),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{4,}\b"), "sk-***"),
+    (
+        re.compile(r"(?i)([?&](?:api[_-]?key|access[_-]?token|token|key)=)[^&#\s]+"),
+        r"\1***",
+    ),
+    (re.compile(r"(https?://)[^/\s:@]+:[^@/\s]+@"), r"\1***:***@"),
+)
+
+
+def _model_test_error_text(error: Exception) -> str:
+    message = getattr(error, "message", None)
+    if isinstance(message, str) and message.strip():
+        return message
+    return str(error)
+
+
+def _sanitize_model_test_error(error_text: str) -> str | None:
+    if not error_text or "\n" in error_text:
+        return None
+
+    detail = error_text.strip()
+    if (
+        not detail
+        or len(detail) > _MODEL_TEST_MAX_ERROR_DETAIL_LENGTH
+        or _MODEL_TEST_TRANSLATION_KEY_PATTERN.fullmatch(detail)
+        or any(pattern.search(detail) for pattern in _MODEL_TEST_UNSAFE_DETAIL_PATTERNS)
+    ):
+        return None
+
+    for pattern, replacement in _MODEL_TEST_CREDENTIAL_PATTERNS:
+        detail = pattern.sub(replacement, detail)
+
+    return detail if len(detail) <= _MODEL_TEST_MAX_ERROR_DETAIL_LENGTH else None
+
+
+def _is_model_test_rate_limited(error: Exception) -> bool:
+    raw_error = _model_test_error_text(error)
+    return getattr(error, "status_code", None) == 429 or (
+        "429" in raw_error or "rate limit" in raw_error.lower()
+    )
+
+
+def _model_test_error_reason(error: Exception) -> str:
+    raw_error = _model_test_error_text(error)
+    normalized_error = raw_error.lower()
+    status_code = getattr(error, "status_code", None)
+
+    if (
+        status_code == 401
+        or "401" in raw_error
+        or "unauthorized" in normalized_error
+        or "authentication" in normalized_error
+    ):
+        return t("model_test_invalid_api_key")
+    if (
+        status_code in {403, 404}
+        or "404" in raw_error
+        or "not found" in normalized_error
+    ):
+        return t("model_test_model_not_accessible")
+    if _is_model_test_rate_limited(error):
+        return t("model_test_rate_limited")
+    if "timeout" in normalized_error or "timed out" in normalized_error:
+        return t("model_test_connection_timeout")
+    if "connection" in normalized_error or "connect" in normalized_error:
+        return t("model_test_connection_failed_check_base_url")
+    if "has no attribute 'choices'" in normalized_error:
+        return t("model_test_chat_response_incompatible")
+
+    detail = _sanitize_model_test_error(raw_error)
+    if detail:
+        return t("model_test_provider_error_details", error=detail)
+    return t("model_test_unexpected_error")
+
+
+def _model_test_failure_response(
+    *,
+    error: Exception,
+    latency_ms: int,
+    provider: ModelProvider,
+    model_id: str,
+    model_type: ModelType,
+) -> dict:
+    message = t(
+        "model_test_failed",
+        provider=provider.value,
+        model=model_id,
+        model_type=model_type.value,
+        error=_model_test_error_reason(error),
+    )
+    return success(
+        data=ModelTestResponse(
+            success=False,
+            message=message,
+            latency_ms=latency_ms,
+        ),
+        msg=message,
+    )
 
 
 def _validate_api_key(provider: ModelProvider, api_key: str | None) -> None:

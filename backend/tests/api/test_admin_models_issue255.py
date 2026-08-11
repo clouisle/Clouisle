@@ -16,6 +16,15 @@ from app.schemas.model import (
 from app.schemas.response import BusinessError, ResponseCode
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        models,
+        "_ensure_model_endpoint_allowed",
+        AsyncMock(return_value="https://api.openai.com/v1"),
+    )
+
+
 class Query:
     def __init__(self, result=None, *, count=0):
         self.result = result
@@ -67,6 +76,7 @@ def model(**overrides):
         "id": uuid4(),
         "name": "GPT",
         "provider": "openai",
+        "provider_display_name": None,
         "model_id": "gpt-4o",
         "model_type": "chat",
         "base_url": None,
@@ -92,6 +102,17 @@ def model(**overrides):
     return SimpleNamespace(**values)
 
 
+def translate_model_test_message(key, **kwargs):
+    if key == "model_test_failed":
+        return (
+            f"{key}:{kwargs['provider']}:{kwargs['model']}:"
+            f"{kwargs['model_type']}:{kwargs['error']}"
+        )
+    if key == "model_test_provider_error_details":
+        return f"{key}:{kwargs['error']}"
+    return key
+
+
 def test_routes_require_model_specific_permissions():
     expected = {
         ("GET", ""): "admin:model:read",
@@ -102,6 +123,7 @@ def test_routes_require_model_specific_permissions():
         ("POST", "/{model_id}/test"): "admin:model:update",
         ("POST", "/{model_id}/set-default"): "admin:model:update",
         ("POST", "/test"): "admin:model:create",
+        ("POST", "/discover"): "admin:model:create",
     }
 
     actual = {}
@@ -158,6 +180,7 @@ async def test_create_model_allows_duplicate_provider_model_id(monkeypatch):
         model_in=ModelCreate(
             name="GPT",
             provider=ModelProvider.OPENAI,
+            provider_display_name="  Company Gateway  ",
             model_id="gpt-4o",
             model_type=ModelType.CHAT,
         ),
@@ -165,6 +188,71 @@ async def test_create_model_allows_duplicate_provider_model_id(monkeypatch):
     )
 
     assert response["data"].id == created.id
+    assert create.await_args.kwargs["provider_display_name"] == "Company Gateway"
+
+
+@pytest.mark.anyio
+async def test_create_model_rejects_unallowlisted_endpoint_before_persistence(
+    monkeypatch,
+):
+    error = BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key="model_endpoint_not_allowlisted",
+    )
+    guard = AsyncMock(side_effect=error)
+    create = AsyncMock()
+    monkeypatch.setattr(models, "_ensure_model_endpoint_allowed", guard)
+    monkeypatch.setattr(models.Model, "create", create)
+
+    with pytest.raises(BusinessError) as caught:
+        await models.create_model(
+            model_in=ModelCreate(
+                name="Blocked",
+                provider=ModelProvider.CUSTOM,
+                model_id="blocked",
+                model_type=ModelType.CHAT,
+                base_url="https://blocked.example.test/v1",
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    assert caught.value is error
+    guard.assert_awaited_once_with(
+        ModelProvider.CUSTOM,
+        "https://blocked.example.test/v1",
+        ModelType.CHAT,
+    )
+    create.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_update_model_revalidates_effective_endpoint_before_persistence(
+    monkeypatch,
+):
+    item = model(base_url="https://blocked.example.test/v1")
+    error = BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key="model_endpoint_not_allowlisted",
+    )
+    guard = AsyncMock(side_effect=error)
+    monkeypatch.setattr(models, "_ensure_model_endpoint_allowed", guard)
+    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+
+    with pytest.raises(BusinessError) as caught:
+        await models.update_model(
+            item.id,
+            ModelUpdate(name="Still blocked"),
+            current_user=SimpleNamespace(),
+        )
+
+    assert caught.value is error
+    guard.assert_awaited_once_with(
+        item.provider,
+        item.base_url,
+        item.model_type,
+    )
+    item.update_from_dict.assert_not_awaited()
+    item.save.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -189,6 +277,7 @@ async def test_create_default_model_clears_old_default_and_persists(monkeypatch)
 
     assert response["data"].id == created.id
     assert default_query.calls == [("update", (), {"is_default": False})]
+    assert create.await_args.kwargs["provider_display_name"] is None
     assert create.await_args.kwargs["provider"] == "openai"
     assert create.await_args.kwargs["model_type"] == "chat"
 
@@ -224,12 +313,22 @@ async def test_update_model_clears_key_sets_default_and_saves(monkeypatch):
 
     response = await models.update_model(
         item.id,
-        ModelUpdate(name="Updated", api_key="", is_default=True),
+        ModelUpdate(
+            name="Updated",
+            api_key="",
+            provider_display_name="   ",
+            is_default=True,
+        ),
         current_user=SimpleNamespace(),
     )
 
     item.update_from_dict.assert_awaited_once_with(
-        {"name": "Updated", "api_key": None, "is_default": True}
+        {
+            "name": "Updated",
+            "api_key": None,
+            "provider_display_name": None,
+            "is_default": True,
+        }
     )
     item.save.assert_awaited_once()
     assert default_query.calls == [
@@ -354,7 +453,9 @@ async def test_stored_connection_uses_persisted_config_and_translates_failure(
     monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
     chat = AsyncMock()
     monkeypatch.setattr(models, "_test_chat_model", chat)
-    monkeypatch.setattr(models, "t", MagicMock(side_effect=lambda key, **_: key))
+    monkeypatch.setattr(
+        models, "t", MagicMock(side_effect=translate_model_test_message)
+    )
 
     response = await models.test_model_connection(
         item.id, current_user=SimpleNamespace()
@@ -375,7 +476,10 @@ async def test_stored_connection_uses_persisted_config_and_translates_failure(
         item.id, current_user=SimpleNamespace()
     )
     assert response["data"].success is False
-    assert response["data"].message == "model_test_invalid_api_key"
+    assert (
+        response["data"].message
+        == "model_test_failed:openai:gpt-4o:chat:model_test_invalid_api_key"
+    )
 
 
 @pytest.mark.anyio
@@ -391,14 +495,18 @@ async def test_stored_connection_uses_persisted_config_and_translates_failure(
             "model_test_connection_failed_check_base_url",
             False,
         ),
-        (RuntimeError("provider exploded"), "model_test_unexpected_error", False),
+        (
+            RuntimeError("provider exploded"),
+            "model_test_provider_error_details:provider exploded",
+            False,
+        ),
     ],
 )
 async def test_config_connection_translates_provider_errors(
     monkeypatch, error, expected_key, expected_success
 ):
     monkeypatch.setattr(models, "_test_chat_model", AsyncMock(side_effect=error))
-    translate = MagicMock(side_effect=lambda key, **_: key)
+    translate = MagicMock(side_effect=translate_model_test_message)
     monkeypatch.setattr(models, "t", translate)
 
     response = await models.test_model_config(
@@ -412,14 +520,53 @@ async def test_config_connection_translates_provider_errors(
     )
 
     assert response["data"].success is expected_success
-    assert response["data"].message == expected_key
+    if expected_success:
+        assert response["data"].message == expected_key
+    else:
+        assert response["data"].message == (
+            f"model_test_failed:openai:test-model:chat:{expected_key}"
+        )
+
+
+@pytest.mark.anyio
+async def test_config_connection_reports_incompatible_responses_without_credentials(
+    monkeypatch,
+):
+    request = ModelTestRequest(
+        provider=ModelProvider.DEEPSEEK,
+        model_id="deepseek-chat",
+        model_type=ModelType.CHAT,
+        api_key="sk-live-secret",
+    )
+    chat = AsyncMock(
+        side_effect=AttributeError("'str' object has no attribute 'choices'")
+    )
+    monkeypatch.setattr(models, "_test_chat_model", chat)
+    monkeypatch.setattr(models, "t", translate_model_test_message)
+
+    response = await models.test_model_config(request, current_user=SimpleNamespace())
+
+    expected = (
+        "model_test_failed:deepseek:deepseek-chat:chat:"
+        "model_test_chat_response_incompatible"
+    )
+    assert response["data"].message == expected
+    assert response["msg"] == expected
+
+    chat.side_effect = RuntimeError("Provider rejected api_key=sk-live-secret")
+    response = await models.test_model_config(request, current_user=SimpleNamespace())
+
+    assert "sk-live-secret" not in response["data"].message
+    assert "api_key=***" in response["data"].message
 
 
 @pytest.mark.anyio
 async def test_video_rate_limit_is_failure_and_business_error_propagates(monkeypatch):
     video = AsyncMock(side_effect=RuntimeError("429 rate limit"))
     monkeypatch.setattr(models, "_test_video_model", video)
-    monkeypatch.setattr(models, "t", MagicMock(side_effect=lambda key, **_: key))
+    monkeypatch.setattr(
+        models, "t", MagicMock(side_effect=translate_model_test_message)
+    )
     request = ModelTestRequest(
         provider=ModelProvider.OPENAI,
         model_id="video-test",
@@ -429,7 +576,9 @@ async def test_video_rate_limit_is_failure_and_business_error_propagates(monkeyp
 
     response = await models.test_model_config(request, current_user=SimpleNamespace())
     assert response["data"].success is False
-    assert response["data"].message == "model_test_unexpected_error"
+    assert response["data"].message == (
+        "model_test_failed:openai:video-test:text_to_video:model_test_rate_limited"
+    )
 
     error = BusinessError(
         code=ResponseCode.VALIDATION_ERROR, msg_key="model_test_empty_response"

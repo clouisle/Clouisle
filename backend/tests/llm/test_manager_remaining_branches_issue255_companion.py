@@ -16,6 +16,11 @@ from app.llm.types import (
 from app.models.model import ModelType
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ModelManager, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 class SplitlessIdentifier(str):
     def split(self, separator=None, maxsplit=-1):
         return [str(self)]

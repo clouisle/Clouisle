@@ -64,7 +64,7 @@ const model = {
   output_price: null, default_params: null, capabilities: null, config: null, is_enabled: true,
   is_default: false, sort_order: 0, created_at: '', updated_at: '',
 }
-const second = { ...model, id: 'model-2', name: 'Custom', provider: 'custom', model_type: 'custom_type', has_api_key: false, is_enabled: false, is_default: true }
+const second = { ...model, id: 'model-2', name: 'Custom', provider: 'custom', provider_display_name: 'Acme Gateway', model_type: 'custom_type', has_api_key: false, is_enabled: false, is_default: true }
 const page = (items = [model, second], total = items.length) => ({ items, total, page: 1, page_size: 10 })
 const renderers: ReactTestRenderer[] = []
 
@@ -108,6 +108,7 @@ describe('models client issue 255 coverage', () => {
     expect(JSON.stringify(renderer.toJSON())).toContain('configured')
     expect(JSON.stringify(renderer.toJSON())).toContain('notConfigured')
     expect(JSON.stringify(renderer.toJSON())).toContain('default')
+    expect(JSON.stringify(renderer.toJSON())).toContain('Acme Gateway')
   })
 
   test('swallows metadata and list failures and reaches the empty state', async () => {
@@ -198,7 +199,7 @@ describe('models client issue 255 coverage', () => {
     await click(renderer, 'setDefault'); await settle()
   })
 
-  test('covers connection success, fallback failures, video cancellation, and request errors', async () => {
+  test('covers connection success, generic fallback failures, blocked endpoints, video cancellation, and request errors', async () => {
     const renderer = render(); await settle()
     testConnection.mockResolvedValueOnce({ success: true })
     await click(renderer, 'testConnection', 0); await settle()
@@ -207,6 +208,12 @@ describe('models client issue 255 coverage', () => {
     testConnection.mockResolvedValueOnce({ success: false, message: '' })
     await click(renderer, 'testConnection', 0); await settle()
     expect(toastError).toHaveBeenCalledWith('testFailed', { id: 'toast-1' })
+
+    const blockedEndpointError = new Error('model_endpoint_not_allowlisted')
+    blockedEndpointError.name = 'ApiError'
+    testConnection.mockRejectedValueOnce(blockedEndpointError)
+    await click(renderer, 'testConnection', 0); await settle()
+    expect(toastError).toHaveBeenCalledWith('model_endpoint_not_allowlisted', { id: 'toast-1' })
 
     getModels.mockResolvedValue(page([{ ...model, model_type: 'text_to_video' }]))
     act(() => renderer.root.findByProps({ placeholder: 'filterModels' }).props.onChange({ target: { value: 'video' } }))
@@ -219,7 +226,7 @@ describe('models client issue 255 coverage', () => {
     confirm.mockReturnValue(true)
     testConnection.mockRejectedValueOnce(new Error('network'))
     await click(renderer, 'testConnection', 0); await settle()
-    expect(toastDismiss).toHaveBeenCalledWith('toast-1')
+    expect(toastError).toHaveBeenCalledWith('testFailed', { id: 'toast-1' })
   })
 
   test('bulk deletes, closes after failure, and clears selected rows after success', async () => {

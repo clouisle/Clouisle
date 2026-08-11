@@ -81,6 +81,11 @@ class ModelCreate(BaseModel):
         ..., min_length=1, max_length=100, description="Model identifier"
     )
     model_type: ModelType = Field(..., description="Model type")
+    provider_display_name: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Optional user-facing provider or gateway name",
+    )
     base_url: Optional[str] = Field(None, max_length=512, description="Custom API URL")
     api_key: Optional[str] = Field(
         None, max_length=1024, description="API key (optional for local providers)"
@@ -113,6 +118,7 @@ class ModelUpdate(BaseModel):
     """Schema for updating a model"""
 
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    provider_display_name: Optional[str] = Field(None, max_length=100)
     base_url: Optional[str] = Field(None, max_length=512)
     api_key: Optional[str] = Field(
         None, max_length=1024, description="Empty string to clear"
@@ -138,6 +144,7 @@ class ModelResponse(BaseModel):
     id: UUID
     name: str
     provider: str
+    provider_display_name: Optional[str] = None
     model_id: str
     model_type: str
     base_url: Optional[str] = None
@@ -164,6 +171,7 @@ class ModelBrief(BaseModel):
     id: UUID
     name: str
     provider: str
+    provider_display_name: Optional[str] = None
     model_id: str
     model_type: str
     capabilities: Optional[dict[str, Any]] = None
@@ -189,6 +197,34 @@ class ModelTestRequest(BaseModel):
     config: Optional[dict[str, Any]] = Field(
         None, description="Additional configuration"
     )
+
+
+class ModelDiscoveryRequest(BaseModel):
+    """Connection details used to list models without storing credentials."""
+
+    provider: ModelProvider = Field(..., description="Provider identifier")
+    base_url: str = Field(..., min_length=1, max_length=512, description="API base URL")
+    api_key: Optional[str] = Field(
+        None, max_length=1024, description="API key (optional for local providers)"
+    )
+
+
+class ModelDiscoveryItem(BaseModel):
+    """A remotely discoverable model that can be saved by this form."""
+
+    id: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=100)
+    context_length: Optional[int] = Field(None, ge=1)
+    max_output_tokens: Optional[int] = Field(None, ge=1)
+    capabilities: Optional[dict[str, bool]] = None
+
+
+class ModelDiscoveryResponse(BaseModel):
+    """Result of a remote model-list request."""
+
+    success: bool
+    message: str
+    models: list[ModelDiscoveryItem]
 
 
 class ModelTestResponse(BaseModel):

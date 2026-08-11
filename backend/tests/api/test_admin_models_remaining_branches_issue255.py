@@ -10,6 +10,15 @@ from app.schemas.model import ModelProvider, ModelType, ModelUpdate
 from app.schemas.response import BusinessError, ResponseCode
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        models,
+        "_ensure_model_endpoint_allowed",
+        AsyncMock(return_value="https://api.openai.com/v1"),
+    )
+
+
 class Query:
     def __init__(self, result=None, *, count=0):
         self.result = result
@@ -69,6 +78,17 @@ def make_model(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def translate_model_test_message(key, **kwargs):
+    if key == "model_test_failed":
+        return (
+            f"{key}:{kwargs['provider']}:{kwargs['model']}:"
+            f"{kwargs['model_type']}:{kwargs['error']}"
+        )
+    if key == "model_test_provider_error_details":
+        return f"{key}:{kwargs['error']}"
+    return key
 
 
 @pytest.mark.anyio
@@ -146,7 +166,16 @@ async def test_saved_connection_dispatches_remaining_types(model_type, helper_na
             "model_test_connection_failed_check_base_url",
             False,
         ),
-        ("provider exploded", "model_test_unexpected_error", False),
+        (
+            "provider exploded",
+            "model_test_provider_error_details:provider exploded",
+            False,
+        ),
+        (
+            "'str' object has no attribute 'choices'",
+            "model_test_chat_response_incompatible",
+            False,
+        ),
     ],
 )
 async def test_saved_connection_maps_remaining_provider_errors(
@@ -158,14 +187,19 @@ async def test_saved_connection_maps_remaining_provider_errors(
         patch.object(
             models, "_test_chat_model", AsyncMock(side_effect=RuntimeError(message))
         ),
-        patch.object(models, "t", side_effect=lambda key, **_: key),
+        patch.object(models, "t", side_effect=translate_model_test_message),
     ):
         response = await models.test_model_connection(
             item.id, current_user=SimpleNamespace()
         )
 
     assert response["data"].success is expected_success
-    assert response["data"].message == expected_key
+    if expected_success:
+        assert response["data"].message == expected_key
+    else:
+        assert response["data"].message == (
+            f"model_test_failed:openai:test-model:chat:{expected_key}"
+        )
 
 
 @pytest.mark.anyio

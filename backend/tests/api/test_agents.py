@@ -256,7 +256,12 @@ async def test_list_agents_applies_scope_filters_and_batches_models(monkeypatch)
     memberships = Query([item.team_id])
     team_model = SimpleNamespace(
         id=item.model_id,
-        model=SimpleNamespace(name="M", provider="dummy", model_id="m"),
+        model=SimpleNamespace(
+            name="M",
+            provider="dummy",
+            provider_display_name="Acme Gateway",
+            model_id="m",
+        ),
     )
     monkeypatch.setattr(agents.Agent, "all", lambda: query)
     monkeypatch.setattr(agents.TeamMember, "filter", lambda **_kwargs: memberships)
@@ -277,6 +282,9 @@ async def test_list_agents_applies_scope_filters_and_batches_models(monkeypatch)
 
     assert result["data"]["total"] == 1
     assert result["data"]["items"][0]["model"]["name"] == "M"
+    assert (
+        result["data"]["items"][0]["model"]["provider_display_name"] == "Acme Gateway"
+    )
     assert any(call[0] == "offset" and call[1] == (1,) for call in query.calls)
 
 
@@ -648,10 +656,17 @@ async def test_model_helpers_and_shared_agent_write_access(monkeypatch):
     monkeypatch.setattr(agents.Model, "filter", lambda **_kwargs: Query(None))
     assert await agents.get_model_info(SimpleNamespace(model_id=uuid4())) is None
 
-    model = SimpleNamespace(name="Model", provider="dummy", model_id="model")
+    model = SimpleNamespace(
+        name="Model",
+        provider="dummy",
+        provider_display_name="Acme Gateway",
+        model_id="model",
+    )
     monkeypatch.setattr(agents.Model, "filter", lambda **_kwargs: Query(model))
     team_model = SimpleNamespace(id=uuid4(), model_id=uuid4())
-    assert (await agents.get_model_info(team_model)).name == "Model"
+    model_info = await agents.get_model_info(team_model)
+    assert model_info.name == "Model"
+    assert model_info.provider_display_name == "Acme Gateway"
 
     current_user = user()
     item = agent(created_by=user(), visibility=AgentVisibility.TEAM)
@@ -671,7 +686,12 @@ async def test_agent_list_fallback_model_and_team_scopes(monkeypatch):
     query = Query([item], count=1)
     team_model = SimpleNamespace(
         id=item.model_id,
-        model=SimpleNamespace(name="Fallback", provider="dummy", model_id="fallback"),
+        model=SimpleNamespace(
+            name="Fallback",
+            provider="dummy",
+            provider_display_name="Acme Gateway",
+            model_id="fallback",
+        ),
     )
     monkeypatch.setattr(agents.Agent, "all", lambda: query)
     monkeypatch.setattr(
@@ -687,6 +707,7 @@ async def test_agent_list_fallback_model_and_team_scopes(monkeypatch):
     )
 
     assert listing["model"]["name"] == "Fallback"
+    assert listing["model"]["provider_display_name"] == "Acme Gateway"
     assert result["data"]["total"] == 1
     assert any(
         call[0] == "filter" and call[2] == {"team_id": team_id} for call in query.calls

@@ -1,6 +1,7 @@
 from typing import Any, Optional, TypedDict
 
 from tortoise import fields, models
+from app.core.model_endpoint_policy import DEFAULT_MODEL_ENDPOINT_ALLOWLIST
 
 
 class SiteSetting(models.Model):
@@ -516,6 +517,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "desc": "Default team role for new users",
     },
     # Security
+    "model_endpoint_allowlist": {
+        "value": DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+        "type": "json",
+        "category": "security",
+        "public": False,
+        "desc": "model_endpoint_allowlist_description",
+    },
     "min_password_length": {
         "value": 8,
         "type": "int",

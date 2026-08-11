@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
+import { ApiError } from '@/lib/api/client'
+
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 
 const createModel = mock(async () => ({}))
 const updateModel = mock(async () => ({}))
 const testModelConfig = mock(async () => ({ success: true, message: 'Connected', latency_ms: 12 }))
+const testConnection = mock(async () => ({ success: true, message: 'Connected', latency_ms: 12 }))
+const discoverModels = mock(async () => ({ success: true, message: '2 models found', models: [] }))
 const toastSuccess = mock(() => {})
 const toastError = mock(() => {})
 
@@ -18,7 +22,7 @@ mock.module('next-intl', () => ({
 
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api/admin/models', () => ({
-  modelsApi: { createModel, updateModel, testModelConfig },
+  modelsApi: { createModel, updateModel, testConnection, testModelConfig, discoverModels },
 }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -42,6 +46,63 @@ mock.module('@/components/ui/select', () => ({
   SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }))
+mock.module('@/components/ui/combobox', () => {
+  const ComboboxInput = () => null
+  const Combobox = ({
+    children,
+    items = [],
+    value,
+    inputValue = '',
+    filter,
+    onInputValueChange,
+    onValueChange,
+  }: React.PropsWithChildren<{
+    items?: string[]
+    value?: string | null
+    inputValue?: string
+    filter?: (value: string, query: string) => boolean
+    onInputValueChange: (value: string, details: { reason: string }) => void
+    onValueChange: (value: string | null) => void
+  }>) => {
+    const inputElement = React.Children.toArray(children).find(
+      (child) => React.isValidElement(child) && child.type === ComboboxInput,
+    ) as React.ReactElement<Record<string, unknown>> | undefined
+    const visibleItems = items.filter((item) => !filter || filter(item, inputValue))
+    return (
+      <>
+        <input
+          {...inputElement?.props}
+          role="combobox"
+          aria-expanded={items.length > 0}
+          aria-controls="model-id-options"
+          value={inputValue}
+          onChange={(event) => onInputValueChange(event.target.value, { reason: 'input-change' })}
+        />
+        {items.length > 0 && (
+          <select
+            data-testid="model-id-options"
+            value={value || ''}
+            onChange={(event) => onValueChange(event.target.value || null)}
+          >
+            <option value="" />
+            {visibleItems.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        )}
+        {React.Children.toArray(children).filter(
+          (child) => React.isValidElement(child) && child.type !== ComboboxInput,
+        )}
+      </>
+    )
+  }
+  return {
+    Combobox,
+    ComboboxInput,
+    ComboboxContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    ComboboxEmpty: () => null,
+    ComboboxItem: () => null,
+    ComboboxList: ({ children }: { children: (value: string) => React.ReactNode }) => <>{children('gpt-4o')}</>,
+  }
+})
 mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
 mock.module('@/components/ui/tabs', () => ({
   Tabs: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -66,12 +127,14 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const providers = [
   { code: 'openai', base_url: 'https://api.openai.test' },
+  { code: 'xai', base_url: 'https://api.xai.test' },
   { code: 'anthropic', base_url: 'https://api.anthropic.test' },
   { code: 'google', base_url: 'https://api.google.test' },
   { code: 'azure_openai', base_url: 'https://azure.test' },
   { code: 'volcengine', base_url: 'https://volcengine.test' },
   { code: 'stability', base_url: 'https://stability.test' },
   { code: 'ollama', base_url: 'http://ollama.test' },
+  { code: 'custom', base_url: null },
 ] as React.ComponentProps<typeof ModelDialog>['providers']
 const modelTypes = [
   { code: 'chat' },
@@ -85,7 +148,11 @@ afterEach(() => {
   createModel.mockClear()
   updateModel.mockClear()
   testModelConfig.mockReset()
+  testConnection.mockReset()
+  testConnection.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
   testModelConfig.mockResolvedValue({ success: true, message: 'Connected', latency_ms: 12 })
+  discoverModels.mockReset()
+  discoverModels.mockResolvedValue({ success: true, message: '2 models found', models: [] })
   toastSuccess.mockClear()
   toastError.mockClear()
   for (const renderer of renderers) act(() => renderer.unmount())
@@ -144,17 +211,47 @@ function selectProvider(renderer: ReactTestRenderer, code: string) {
 describe('model management dialog', () => {
   test('requires a model type before enabling provider selection, then applies the provider base URL', () => {
     const renderer = render()
-    const provider = renderer.root.findByProps({ role: 'combobox' })
+    const provider = renderer.root.findAllByProps({ role: 'combobox' }).find(
+      (candidate) => candidate.props.id !== 'modelId',
+    )!
 
     expect(provider.props.disabled).toBe(true)
     expect(input(renderer, 'name').props['aria-invalid']).toBe(false)
     expect(JSON.stringify(renderer.toJSON())).toContain('selectModelTypeFirst')
 
     act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
-    expect(renderer.root.findByProps({ role: 'combobox' }).props.disabled).toBe(false)
+    expect(
+      renderer.root.findAllByProps({ role: 'combobox' }).find(
+        (candidate) => candidate.props.id !== 'modelId',
+      )?.props.disabled,
+    ).toBe(false)
 
     selectProvider(renderer, 'openai')
     expect(input(renderer, 'baseUrl').props.value).toBe('https://api.openai.test')
+  })
+
+  test('uses xAI-specific reasoning labels and hints', () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'xai')
+
+
+    const content = JSON.stringify(renderer.toJSON())
+    expect(content).toContain('xaiReasoningEffort')
+    expect(content).toContain('xaiReasoningEffortHint')
+  })
+  test('reveals and edits the Anthropic thinking budget control', () => {
+    const renderer = render({
+      model: {
+        id: 'model-1', name: 'Anthropic', provider: 'anthropic', model_id: 'claude', model_type: 'chat',
+        base_url: 'https://api.anthropic.test', is_enabled: true, is_default: false, has_api_key: true,
+        default_params: { thinking: { enabled: true, budget_tokens: 1024 } },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    expect(input(renderer, 'thinkingBudget').props.value).toBe('1024')
+    change(renderer, 'thinkingBudget', '2048')
+    expect(input(renderer, 'thinkingBudget').props.value).toBe('2048')
   })
 
   test('shows accessible validation errors without calling the create API', async () => {
@@ -189,6 +286,23 @@ describe('model management dialog', () => {
     expect(onSuccess).toHaveBeenCalledTimes(1)
   })
 
+  test('persists a custom provider display name', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'custom')
+    change(renderer, 'name', 'Gateway model')
+    change(renderer, 'providerDisplayName', '  Acme Gateway  ')
+    change(renderer, 'modelId', 'gpt-gateway')
+    change(renderer, 'apiKey', 'secret')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'custom',
+      provider_display_name: 'Acme Gateway',
+    }))
+  })
+
   test('prefills edit fields, locks provider identity, and sends editable changes to update', async () => {
     const onSuccess = mock(() => {})
     const renderer = render({
@@ -212,6 +326,101 @@ describe('model management dialog', () => {
       name: 'Renamed', base_url: 'https://new.test', is_enabled: false, is_default: true,
     }))
     expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
+
+  test('tests an existing model with its stored API key when no replacement is entered', async () => {
+    const renderer = render({
+      model: {
+        id: 'model-1', name: 'Existing', provider: 'openai', model_id: 'gpt-existing', model_type: 'chat',
+        base_url: 'https://old.test', is_enabled: false, is_default: true, has_api_key: true,
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    const testButton = buttonWithText(renderer, 'testConnection')
+    expect(testButton.props.disabled).toBe(false)
+
+    await act(async () => testButton.props.onClick())
+
+    expect(testConnection).toHaveBeenCalledWith('model-1')
+    expect(testModelConfig).not.toHaveBeenCalled()
+    expect(toastSuccess).toHaveBeenCalledWith('testSuccess')
+  })
+
+  test('searches discovered models in the model ID input and fills the selected model', async () => {
+    const renderer = render()
+    discoverModels.mockResolvedValue({
+      success: true,
+      message: '2 models found',
+      models: [
+        {
+          id: 'gpt-4o',
+          name: 'GPT-4o',
+          context_length: 128000,
+          max_output_tokens: 8192,
+          capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
+        },
+        { id: 'gpt-4.1', name: 'GPT-4.1' },
+      ],
+    })
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'apiKey', 'secret')
+
+    await act(async () => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, 450)
+      await promise
+    })
+
+    expect(discoverModels).toHaveBeenCalledWith({
+      provider: 'openai',
+      base_url: 'https://api.openai.test',
+      api_key: 'secret',
+    })
+    expect(JSON.stringify(renderer.toJSON())).toContain('2 models found')
+
+    expect(input(renderer, 'modelId').props.role).toBe('combobox')
+    change(renderer, 'modelId', '4.1')
+    expect(input(renderer, 'modelId').props.value).toBe('4.1')
+    expect(
+      renderer.root.findByProps({ 'data-testid': 'model-id-options' })
+        .findAllByType('option')
+        .map((option) => option.props.value),
+    ).toEqual(['', 'gpt-4.1'])
+    change(renderer, 'modelId', '')
+
+    selectValue(renderer, 'gpt-4o')
+    expect(input(renderer, 'modelId').props.value).toBe('gpt-4o')
+    expect(input(renderer, 'name').props.value).toBe('GPT-4o')
+    expect(
+      renderer.root.findAllByProps({ type: 'checkbox' }).slice(2).map((item) => item.props.checked),
+    ).toEqual([true, true, false, true])
+
+    change(renderer, 'name', 'Custom label')
+    change(renderer, 'modelId', '')
+    selectValue(renderer, 'gpt-4.1')
+    expect(input(renderer, 'name').props.value).toBe('Custom label')
+    expect(input(renderer, 'contextLength').props.value).toBe('128000')
+    expect(input(renderer, 'maxOutputTokens').props.value).toBe('8192')
+  })
+
+  test('maps discovery validation failures into base URL errors', async () => {
+    const renderer = render()
+    discoverModels.mockRejectedValueOnce(new ApiError(1001, 'Invalid', {
+      errors: { base_url: ['Invalid URL'] },
+    }))
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'apiKey', 'secret')
+
+    await act(async () => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, 450)
+      await promise
+    })
+
+    expect(input(renderer, 'baseUrl').props['aria-invalid']).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).toContain('modelDiscoveryFailed')
   })
 
   test('constructs a rich chat payload from parameters, capabilities, and extension JSON', async () => {
@@ -244,7 +453,7 @@ describe('model management dialog', () => {
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
 
     expect(createModel).toHaveBeenCalledWith({
-      name: 'Reasoning model', provider: 'openai', model_id: 'reasoning-1', model_type: 'chat',
+      name: 'Reasoning model', provider: 'openai', provider_display_name: null, model_id: 'reasoning-1', model_type: 'chat',
       base_url: 'https://api.openai.test', api_key: 'secret', context_length: 128000,
       max_output_tokens: 8192, input_price: 1.25, output_price: 5.5,
       default_params: {
@@ -275,6 +484,20 @@ describe('model management dialog', () => {
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
 
     expect(createModel).toHaveBeenCalledWith(expect.objectContaining({ default_params: { seed: 42 } }))
+  })
+
+  test('blocks connection tests with invalid extension JSON', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'modelId', 'connection-json')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'extraBody', '{')
+
+    await act(async () => buttonWithText(renderer, 'testConnection').props.onClick())
+
+    expect(testModelConfig).not.toHaveBeenCalled()
+    expect(input(renderer, 'extraBody').props['aria-invalid']).toBe(true)
   })
 
   test('recovers a failed connection test and reports the successful retry', async () => {
@@ -326,6 +549,55 @@ describe('model management dialog', () => {
         aspect_ratio: '16:9', image_size: '2K', person_generation: 'ALLOW_ADULT',
         prominent_people: 'DONT_ALLOW', output_mime_type: 'image/jpeg', output_compression_quality: 88,
       },
+    }))
+  })
+
+  test('constructs OpenAI image output parameters', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'text_to_image' } }))
+    selectProvider(renderer, 'openai')
+    change(renderer, 'name', 'OpenAI image model')
+    change(renderer, 'modelId', 'gpt-image-1')
+    change(renderer, 'apiKey', 'secret')
+    selectValue(renderer, '1024x1024')
+    selectValue(renderer, 'vivid')
+    selectValue(renderer, 'high')
+    selectValue(renderer, 'transparent')
+    selectValue(renderer, 'png')
+    change(renderer, 'openaiImageOutputCompression', '80')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai',
+      model_type: 'text_to_image',
+      default_params: {
+        default_width: 1024,
+        default_height: 1024,
+        style: 'vivid',
+        quality: 'high',
+        background: 'transparent',
+        output_format: 'png',
+        output_compression: 80,
+      },
+    }))
+  })
+  test('builds Volcengine TTS speaker parameters from the audio form', async () => {
+    const renderer = render()
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'tts' } }))
+    selectProvider(renderer, 'volcengine')
+    change(renderer, 'name', 'Speech model')
+    change(renderer, 'modelId', 'speech-resource')
+    change(renderer, 'apiKey', 'secret')
+    change(renderer, 'defaultVoice', 'speaker-123')
+    change(renderer, 'speed', '1.25')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'volcengine',
+      model_type: 'tts',
+      default_params: { speaker: 'speaker-123', speed: 1.25 },
     }))
   })
 })

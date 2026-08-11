@@ -31,6 +31,11 @@ class Query:
         ("object_storage_endpoint", "https://s3.example.com", 123),
         ("object_storage_secure", True, "true"),
         ("kb_document_max_upload_size_mb", 50, True),
+        (
+            "model_endpoint_allowlist",
+            ["https://API.example.com/v1"],
+            ["ftp://api.example.com"],
+        ),
     ],
 )
 async def test_validate_setting_value_residual_admin_branches(
@@ -46,6 +51,25 @@ async def test_validate_setting_value_residual_admin_branches(
     with pytest.raises(BusinessError) as exc_info:
         await site_settings._validate_setting_value(key, invalid_value)
     assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+    expected_msg_key = (
+        "model_endpoint_allowlist_invalid"
+        if key == "model_endpoint_allowlist"
+        else "validation_error"
+    )
+    assert exc_info.value.msg_key == expected_msg_key
+
+
+@pytest.mark.asyncio
+async def test_endpoint_allowlist_validation_canonicalizes_in_place():
+    value = [
+        "https://API.example.com:443/v1",
+        "https://api.example.com/models",
+        "http://ollama:11434/api/tags",
+    ]
+
+    await site_settings._validate_setting_value("model_endpoint_allowlist", value)
+
+    assert value == ["https://api.example.com", "http://ollama:11434"]
 
 
 @pytest.mark.asyncio

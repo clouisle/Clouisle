@@ -24,6 +24,7 @@ export interface Model {
   id: string
   name: string
   provider: string
+  provider_display_name?: string | null
   model_id: string
   model_type: string
   base_url: string | null
@@ -46,6 +47,7 @@ export interface ModelBrief {
   id: string
   name: string
   provider: string
+  provider_display_name?: string | null
   model_id: string
   model_type: string
   capabilities?: Record<string, unknown> | null
@@ -55,6 +57,7 @@ export interface ModelCreateInput {
   name: string
   provider: string
   model_id: string
+  provider_display_name?: string | null
   model_type: string
   base_url?: string | null
   api_key?: string | null
@@ -73,6 +76,7 @@ export interface ModelCreateInput {
 export interface ModelUpdateInput {
   name?: string
   base_url?: string | null
+  provider_display_name?: string | null
   api_key?: string | null
   context_length?: number | null
   max_output_tokens?: number | null

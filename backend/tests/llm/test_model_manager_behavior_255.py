@@ -23,6 +23,11 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.services.usage_tracker import QuotaExceededError
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ModelManager, "_ensure_model_endpoint_allowed", AsyncMock())
+
+
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [

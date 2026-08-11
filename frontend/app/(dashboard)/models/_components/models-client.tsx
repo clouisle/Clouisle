@@ -301,9 +301,8 @@ export function ModelsClient() {
       } else {
         toast.error(result.message ? result.message.trim() : t('testFailed'), { id: toastId })
       }
-    } catch {
-      toast.dismiss(toastId)
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      toast.error(error instanceof Error && error.name === 'ApiError' && error.message ? error.message : t('testFailed'), { id: toastId })
     }
   }
   
@@ -459,7 +458,7 @@ export function ModelsClient() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{getProviderName(model.provider)}</TableCell>
+                  <TableCell>{model.provider_display_name || getProviderName(model.provider)}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{getTypeName(model.model_type)}</Badge>
                   </TableCell>

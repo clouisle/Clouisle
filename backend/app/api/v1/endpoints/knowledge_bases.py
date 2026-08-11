@@ -335,6 +335,7 @@ async def get_embedding_model_info(model_id: UUID | None) -> EmbeddingModelInfo 
         id=model.id,
         name=model.name,
         provider=model.provider,
+        provider_display_name=getattr(model, "provider_display_name", None),
         model_id=model.model_id,
     )
 
@@ -350,6 +351,7 @@ async def get_rerank_model_info(model_id: UUID | None) -> RerankModelInfo | None
         id=model.id,
         name=model.name,
         provider=model.provider,
+        provider_display_name=getattr(model, "provider_display_name", None),
         model_id=model.model_id,
     )
 
@@ -362,6 +364,7 @@ def _build_model_info(model: Model | None) -> dict | None:
         "id": model.id,
         "name": model.name,
         "provider": model.provider,
+        "provider_display_name": getattr(model, "provider_display_name", None),
         "model_id": model.model_id,
     }
 

@@ -1369,6 +1369,33 @@ msgstr "测试连接需要 API Key"
 msgid "model_created"
 msgstr "模型创建成功"
 
+msgid "model_endpoint_allowlist_description"
+msgstr "允许使用的模型端点 Origin"
+
+msgid "model_endpoint_allowlist_invalid"
+msgstr "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表"
+
+msgid "model_endpoint_base_url_invalid"
+msgstr "请输入有效的 HTTP 或 HTTPS 模型 Base URL"
+
+msgid "model_endpoint_not_allowlisted"
+msgstr "该模型端点不在白名单中。请前往“站点设置 > 安全”添加对应 Origin。"
+
+msgid "model_discovery_api_key_required"
+msgstr "获取模型列表需要 API Key"
+
+msgid "model_discovery_base_url_invalid"
+msgstr "请输入有效的 HTTP 或 HTTPS API 地址"
+
+msgid "model_discovery_failed"
+msgstr "无法获取模型列表。请检查 API 地址、API Key 和供应商兼容性。"
+
+msgid "model_discovery_not_supported"
+msgstr "该供应商不支持在线获取模型列表"
+
+msgid "model_discovery_success"
+msgstr "已获取 {count} 个模型"
+
 msgid "model_deleted"
 msgstr "模型删除成功"
 
@@ -1388,7 +1415,7 @@ msgid "model_set_default"
 msgstr "已设为默认模型"
 
 msgid "model_test_failed"
-msgstr "连接测试失败：{error}"
+msgstr "{provider}/{model}（{model_type}）连接测试失败：{error}"
 
 msgid "model_test_pending"
 msgstr "连接测试功能待实现"
@@ -1401,6 +1428,15 @@ msgstr "连接成功"
 
 msgid "model_test_rate_limit_but_valid"
 msgstr "触发了速率限制，但 API Key 有效"
+
+msgid "model_test_rate_limited"
+msgstr "供应商触发了速率限制。请稍后重试或提升供应商配额。"
+
+msgid "model_test_chat_response_incompatible"
+msgstr "供应商返回的对话响应格式不兼容。请确认选择的供应商正确，并检查 Base URL 是否提供兼容的 chat-completions 接口。"
+
+msgid "model_test_provider_error_details"
+msgstr "供应商返回错误：{error}。请检查供应商配置和请求参数。"
 
 msgid "model_test_invalid_api_key"
 msgstr "API Key 无效"
@@ -1421,7 +1457,7 @@ msgid "model_type_not_supported"
 msgstr "不支持的模型类型"
 
 msgid "model_test_unexpected_error"
-msgstr "连接测试发生未知错误"
+msgstr "供应商返回了未知错误。请检查供应商配置和服务器日志。"
 
 msgid "model_test_empty_response"
 msgstr "模型返回了空响应"

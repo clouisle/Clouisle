@@ -16,6 +16,15 @@ from app.schemas.model import (
 from app.schemas.response import BusinessError
 
 
+@pytest.fixture(autouse=True)
+def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        models,
+        "_ensure_model_endpoint_allowed",
+        AsyncMock(return_value="https://api.openai.com/v1"),
+    )
+
+
 class Query:
     def __init__(self, result=None, count=0):
         self.result = result
@@ -269,7 +278,7 @@ async def test_saved_connection_validation_dispatch_and_errors():
         ("429 rate limit", "rate", True),
         ("request timeout", "timeout", False),
         ("connection refused", "connection", False),
-        ("strange failure", "unexpected", False),
+        ("strange failure", "provider_error", False),
     ],
 )
 async def test_config_exception_mapping(message, expected, success_value):
@@ -283,7 +292,11 @@ async def test_config_exception_mapping(message, expected, success_value):
         patch.object(
             models, "_test_chat_model", AsyncMock(side_effect=RuntimeError(message))
         ),
-        patch.object(models, "t", side_effect=lambda key, **kwargs: key),
+        patch.object(
+            models,
+            "t",
+            side_effect=lambda key, **kwargs: f"{key}:{kwargs.get('error', '')}",
+        ),
     ):
         response = await models.test_model_config(
             request, current_user=SimpleNamespace()

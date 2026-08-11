@@ -23,6 +23,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -51,7 +59,7 @@ import {
 } from '@/lib/validation'
 import { cn } from '@/lib/utils'
 
-import { modelsApi, type Model, type ModelCreateInput } from '@/lib/api/admin/models'
+import { modelsApi, type Model, type ModelCreateInput, type ModelDiscoveryItem } from '@/lib/api/admin/models'
 import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
@@ -273,6 +281,12 @@ export function ModelDialog({
   const [baseUrl, setBaseUrl] = React.useState('')
   const [apiKey, setApiKey] = React.useState('')
   const [showApiKey, setShowApiKey] = React.useState(false)
+  const canTestWithStoredApiKey = Boolean(
+    isEditing
+    && model?.has_api_key
+    && requiresApiKey(provider)
+    && !apiKey.trim()
+  )
   const reasoningEffortOptions = React.useMemo(() => {
     if (provider === 'openai') {
       return ['minimal', 'low', 'medium', 'high'] as const
@@ -389,12 +403,29 @@ export function ModelDialog({
     message: string
     latency_ms?: number
   } | null>(null)
+  const [discoveredModels, setDiscoveredModels] = React.useState<ModelDiscoveryItem[]>([])
+  const [selectedDiscoveredModel, setSelectedDiscoveredModel] = React.useState('')
+  const [isDiscoveringModels, setIsDiscoveringModels] = React.useState(false)
+  const [modelDiscoveryResult, setModelDiscoveryResult] = React.useState<{
+    success: boolean
+    message: string
+  } | null>(null)
+  const [providerDisplayName, setProviderDisplayName] = React.useState('')
+  const discoveredModelIds = React.useMemo(
+    () => discoveredModels.map((item) => item.id),
+    [discoveredModels]
+  )
+  const discoveredModelsById = React.useMemo(
+    () => new Map(discoveredModels.map((item) => [item.id, item])),
+    [discoveredModels]
+  )
   
   // 重置表单
   const resetForm = React.useCallback(() => {
     if (model) {
       setName(model.name)
       setProvider(model.provider)
+      setProviderDisplayName(model.provider_display_name || '')
       setModelId(model.model_id)
       setModelType(model.model_type)
       setBaseUrl(model.base_url || '')
@@ -479,6 +510,7 @@ export function ModelDialog({
     } else {
       setName('')
       setProvider('')
+      setProviderDisplayName('')
       setModelId('')
       setModelType('')
       setBaseUrl('')
@@ -529,6 +561,10 @@ export function ModelDialog({
     setShowApiKey(false)
     setErrors({})
     setTestResult(null)
+    setDiscoveredModels([])
+    setSelectedDiscoveredModel('')
+    setIsDiscoveringModels(false)
+    setModelDiscoveryResult(null)
   }, [model])
   
   React.useEffect(() => {
@@ -541,7 +577,11 @@ export function ModelDialog({
     if (!provider) newErrors.provider = t('providerRequired')
     if (!modelId.trim()) newErrors.modelId = t('modelIdRequired')
     if (!modelType) newErrors.modelType = t('modelTypeRequired')
-    if (requiresApiKey(provider) && !apiKey.trim()) {
+    if (
+      requiresApiKey(provider)
+      && !apiKey.trim()
+      && !canTestWithStoredApiKey
+    ) {
       newErrors.apiKey = t('apiKeyRequired')
     }
 
@@ -634,15 +674,17 @@ export function ModelDialog({
         config.thinking = thinkingConfig
       }
 
-      const result = await modelsApi.testModelConfig({
-        provider,
-        model_id: modelId.trim(),
-        model_type: modelType,
-        base_url: baseUrl.trim() || null,
-        api_key: apiKey || null,
-        default_params: Object.keys(defaultParams).length > 0 ? defaultParams : null,
-        config: Object.keys(config).length > 0 ? config : null,
-      })
+      const result = canTestWithStoredApiKey && model
+        ? await modelsApi.testConnection(model.id)
+        : await modelsApi.testModelConfig({
+          provider,
+          model_id: modelId.trim(),
+          model_type: modelType,
+          base_url: baseUrl.trim() || null,
+          api_key: apiKey || null,
+          default_params: Object.keys(defaultParams).length > 0 ? defaultParams : null,
+          config: Object.keys(config).length > 0 ? config : null,
+        })
 
       setTestResult({
         ...result,
@@ -661,17 +703,120 @@ export function ModelDialog({
       }
       setTestResult({
         success: false,
-        message: t('testFailed'),
+        message: error instanceof Error && error.name === 'ApiError' && error.message ? error.message : t('testFailed'),
       })
     } finally {
       setIsTesting(false)
     }
   }
+
+  const canDiscoverModels = Boolean(
+    !isEditing
+    && provider
+    && baseUrl.trim()
+    && (!requiresApiKey(provider) || apiKey.trim())
+  )
+
+  const handleDiscoveredModelChange = (value: string | null) => {
+    if (!value) return
+    const discoveredModel = discoveredModelsById.get(value)
+    if (!discoveredModel) return
+
+    const previousModelId = modelId.trim()
+    setSelectedDiscoveredModel(value)
+    setModelId(discoveredModel.id)
+    setErrors((prev) => clearValidationError(prev, 'modelId'))
+    if (!name.trim() || name.trim() === previousModelId) {
+      setName(discoveredModel.name)
+      setErrors((prev) => clearValidationError(prev, 'name'))
+    }
+    if (discoveredModel.context_length !== null && discoveredModel.context_length !== undefined) {
+      setContextLength(String(discoveredModel.context_length))
+    }
+    if (discoveredModel.max_output_tokens !== null && discoveredModel.max_output_tokens !== undefined) {
+      setMaxOutputTokens(String(discoveredModel.max_output_tokens))
+    }
+    if (discoveredModel.capabilities) {
+      const capabilities = discoveredModel.capabilities
+      if ('vision' in capabilities) setSupportsVision(capabilities.vision)
+      if ('function_call' in capabilities) setSupportsFunctionCall(capabilities.function_call)
+      if ('streaming' in capabilities) setSupportsStreaming(capabilities.streaming)
+      if ('json_mode' in capabilities) setSupportsJsonMode(capabilities.json_mode)
+    }
+    setTestResult(null)
+  }
+
+  const handleModelIdInputChange = (value: string) => {
+    setModelId(value)
+    if (selectedDiscoveredModel !== value) setSelectedDiscoveredModel('')
+    setErrors((prev) => clearValidationError(prev, 'modelId'))
+  }
+
+  const filterDiscoveredModel = React.useCallback(
+    (value: string, query: string) => {
+      const normalizedQuery = query.trim().toLocaleLowerCase()
+      if (!normalizedQuery) return true
+      const discoveredModel = discoveredModelsById.get(value)
+      return value.toLocaleLowerCase().includes(normalizedQuery)
+        || discoveredModel?.name.toLocaleLowerCase().includes(normalizedQuery)
+        || false
+    },
+    [discoveredModelsById]
+  )
+
+  React.useEffect(() => {
+    if (!canDiscoverModels) return
+
+    let active = true
+    setIsDiscoveringModels(true)
+    setDiscoveredModels([])
+    setSelectedDiscoveredModel('')
+    setModelDiscoveryResult(null)
+    const timeout = setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await modelsApi.discoverModels({
+            provider,
+            base_url: baseUrl.trim(),
+            api_key: apiKey.trim() || null,
+          })
+          if (!active) return
+          setDiscoveredModels(result.success ? result.models : [])
+          setModelDiscoveryResult({
+            success: result.success,
+            message: result.message.trim(),
+          })
+        } catch (error) {
+          if (!active) return
+          const validationErrors = mapValidationErrors(
+            normalizeValidationErrors(error),
+            errorPathMap,
+          )
+          if (Object.keys(validationErrors).length > 0) {
+            setErrors((prev) => ({ ...prev, ...validationErrors }))
+          }
+          setModelDiscoveryResult({ success: false, message: '' })
+        } finally {
+          if (active) setIsDiscoveringModels(false)
+        }
+      })()
+    }, 400)
+
+    return () => {
+      active = false
+      clearTimeout(timeout)
+    }
+  }, [apiKey, baseUrl, canDiscoverModels, errorPathMap, provider])
   
   const handleProviderChange = (value: string) => {
     setProvider(value)
     setErrors((prev) => clearValidationError(prev, 'provider'))
     setTestResult(null)
+    setDiscoveredModels([])
+    setSelectedDiscoveredModel('')
+    setModelDiscoveryResult(null)
+    setIsDiscoveringModels(false)
+    if (value !== 'custom') setProviderDisplayName('')
     const isVolcengineOpenSpeech = value === 'volcengine'
       && ['tts', 'audio_generation'].includes(modelType)
     if (!baseUrl && !isVolcengineOpenSpeech) {
@@ -689,6 +834,10 @@ export function ModelDialog({
       if (newCategory !== currentCategory) {
         setProvider('')
         setBaseUrl('')
+        setDiscoveredModels([])
+        setSelectedDiscoveredModel('')
+        setModelDiscoveryResult(null)
+        setIsDiscoveringModels(false)
       }
     }
   }
@@ -835,6 +984,7 @@ export function ModelDialog({
       if (isEditing && model) {
         await modelsApi.updateModel(model.id, {
           name: name.trim(),
+          provider_display_name: providerDisplayName.trim() || null,
           base_url: baseUrl.trim() || null,
           api_key: apiKey || undefined,
           context_length: contextLength ? parseInt(contextLength) : null,
@@ -853,6 +1003,7 @@ export function ModelDialog({
           name: name.trim(),
           provider,
           model_id: modelId.trim(),
+          provider_display_name: providerDisplayName.trim() || null,
           model_type: modelType,
           base_url: baseUrl.trim() || null,
           api_key: apiKey || null,
@@ -1085,6 +1236,18 @@ export function ModelDialog({
             <FieldError>{errors.provider}</FieldError>
             {!modelType && <p className="text-xs text-muted-foreground">{t('selectModelTypeFirst')}</p>}
           </div>
+        {provider === 'custom' && (
+          <div className="space-y-2">
+            <Label htmlFor="providerDisplayName">{t('providerDisplayName')}</Label>
+            <Input
+              id="providerDisplayName"
+              value={providerDisplayName}
+              onChange={(e) => setProviderDisplayName(e.target.value)}
+              placeholder={t('providerDisplayNamePlaceholder')}
+            />
+            <p className="text-xs text-muted-foreground">{t('providerDisplayNameHint')}</p>
+          </div>
+        )}
         </div>
         
         <div className="space-y-2">
@@ -1093,18 +1256,91 @@ export function ModelDialog({
               ? t('volcengineResourceId')
               : t('modelId')} *
           </Label>
-          <Input
-            id="modelId"
-            value={modelId}
-            onChange={(e) => {
-              setModelId(e.target.value)
-              setErrors((prev) => clearValidationError(prev, 'modelId'))
-            }}
-            placeholder={t('modelIdPlaceholder')}
-            disabled={isEditing}
-            aria-invalid={!!errors.modelId}
-          />
+          {isEditing ? (
+            <Input
+              id="modelId"
+              value={modelId}
+              placeholder={t('modelIdPlaceholder')}
+              disabled
+              aria-invalid={!!errors.modelId}
+            />
+          ) : (
+            <Combobox
+              items={discoveredModelIds}
+              value={selectedDiscoveredModel || null}
+              inputValue={modelId}
+              itemToStringLabel={(value) => value}
+              filter={filterDiscoveredModel}
+              onInputValueChange={(value, eventDetails) => {
+                if (
+                  eventDetails.reason === 'input-change'
+                  || eventDetails.reason === 'input-clear'
+                ) {
+                  handleModelIdInputChange(value)
+                }
+              }}
+              onValueChange={handleDiscoveredModelChange}
+            >
+              <ComboboxInput
+                id="modelId"
+                placeholder={t('modelIdPlaceholder')}
+                className="w-full"
+                showTrigger={discoveredModels.length > 0}
+                autoComplete="off"
+                aria-invalid={!!errors.modelId}
+              />
+              {discoveredModels.length > 0 && (
+                <ComboboxContent>
+                  <ComboboxEmpty>{commonT('noResults')}</ComboboxEmpty>
+                  <ComboboxList>
+                    {(discoveredModelId) => {
+                      const discoveredModel = discoveredModelsById.get(discoveredModelId)
+                      return (
+                        <ComboboxItem key={discoveredModelId} value={discoveredModelId}>
+                          {discoveredModel?.name === discoveredModelId
+                            ? discoveredModelId
+                            : `${discoveredModel?.name} (${discoveredModelId})`}
+                        </ComboboxItem>
+                      )
+                    }}
+                  </ComboboxList>
+                </ComboboxContent>
+              )}
+            </Combobox>
+          )}
           <FieldError>{errors.modelId}</FieldError>
+          {!isEditing && (
+            <p
+              aria-live="polite"
+              role={modelDiscoveryResult && !modelDiscoveryResult.success ? 'alert' : undefined}
+              className={cn(
+                'flex items-center gap-2 text-xs',
+                isDiscoveringModels || !modelDiscoveryResult
+                  ? 'text-muted-foreground'
+                  : modelDiscoveryResult.success
+                    ? 'text-green-600'
+                    : 'text-destructive',
+              )}
+            >
+              {isDiscoveringModels ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('modelDiscoveryLoading')}
+                </>
+              ) : modelDiscoveryResult ? (
+                <>
+                  {modelDiscoveryResult.success ? (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <XCircle className="h-3.5 w-3.5" />
+                  )}
+                  {modelDiscoveryResult.message || t('modelDiscoveryFailed')}
+                </>
+              ) : (
+                t('modelDiscoveryHint')
+              )}
+            </p>
+          )}
         </div>
       </div>
       
@@ -1121,6 +1357,10 @@ export function ModelDialog({
               onChange={(e) => {
                 setBaseUrl(e.target.value)
                 setErrors((prev) => clearValidationError(prev, 'baseUrl'))
+                setDiscoveredModels([])
+                setSelectedDiscoveredModel('')
+                setModelDiscoveryResult(null)
+                setIsDiscoveringModels(false)
               }}
               placeholder={t('baseUrlPlaceholder')}
               aria-invalid={!!errors.baseUrl}
@@ -1144,6 +1384,10 @@ export function ModelDialog({
                   setApiKey(e.target.value)
                   setErrors((prev) => clearValidationError(prev, 'apiKey'))
                   setTestResult(null)
+                  setDiscoveredModels([])
+                  setSelectedDiscoveredModel('')
+                  setModelDiscoveryResult(null)
+                  setIsDiscoveringModels(false)
                 }}
                 placeholder={isEditing ? t('apiKeyPlaceholderEdit') : t('apiKeyPlaceholder')}
                 className="pr-10"
@@ -1165,22 +1409,27 @@ export function ModelDialog({
             )}
           </div>
         </div>
+
         
         {/* 测试连接按钮和结果 */}
-        <div className="flex items-center gap-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleTestConnection}
-              disabled={
-                isTesting ||
-                !provider ||
-                !modelId ||
-                !modelType ||
-                (requiresApiKey(provider) && !apiKey)
-              }
-            >
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleTestConnection}
+            disabled={
+              isTesting ||
+              !provider ||
+              !modelId ||
+              !modelType ||
+              (
+                requiresApiKey(provider)
+                && !apiKey.trim()
+                && !canTestWithStoredApiKey
+              )
+            }
+          >
             {isTesting ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -1188,22 +1437,22 @@ export function ModelDialog({
             )}
             {t('testConnection')}
           </Button>
-          
+
           {testResult && (
-            <div className={`flex items-center gap-2 text-sm ${testResult.success ? 'text-green-600' : 'text-destructive'}`}>
+            <div className={`flex items-start gap-2 text-sm ${testResult.success ? 'text-green-600' : 'text-destructive'}`}>
               {testResult.success ? (
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               ) : (
-                <XCircle className="h-4 w-4" />
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
               )}
-              <span>{testResult.message}</span>
+              <span className="break-words">{testResult.message}</span>
               {testResult.latency_ms && (
-                <span className="text-muted-foreground">({testResult.latency_ms}ms)</span>
+                <span className="text-muted-foreground shrink-0">({testResult.latency_ms}ms)</span>
               )}
             </div>
           )}
         </div>
-      </div>
+        </div>
       
       {/* 状态 */}
       <div className="space-y-4">

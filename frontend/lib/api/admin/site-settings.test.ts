@@ -89,7 +89,9 @@ describe('siteSettingsApi requests', () => {
   })
 
   it('loads security branches and category defaults from exact routes', async () => {
-    const get = spyOn(api, 'get').mockResolvedValue(response({}))
+    const get = spyOn(api, 'get').mockResolvedValue(response({
+      model_endpoint_allowlist: [],
+    }))
 
     try {
       const security = await siteSettingsApi.getSecurity()
@@ -121,6 +123,25 @@ describe('siteSettingsApi requests', () => {
       ])
     } finally {
       get.mockRestore()
+    }
+  })
+
+  it('rejects missing or malformed model endpoint allowlists', async () => {
+    for (const value of [undefined, 'invalid', ['https://api.example.com', 42]]) {
+      const securitySettings = value === undefined
+        ? {}
+        : { model_endpoint_allowlist: value }
+      const get = spyOn(api, 'get')
+        .mockResolvedValueOnce(response(securitySettings))
+        .mockResolvedValueOnce(response({}))
+
+      try {
+        await expect(siteSettingsApi.getSecurity()).rejects.toThrow(
+          'Invalid model endpoint allowlist response'
+        )
+      } finally {
+        get.mockRestore()
+      }
     }
   })
 

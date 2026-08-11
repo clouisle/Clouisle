@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-06T10:15:38.092Z
+// GENERATED — 2026-08-11T08:41:00.429Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -411,6 +411,11 @@ export type SiteSettingsMessages = {
     minutes: string
     singleSession: string
     singleSessionDescription: string
+    modelEndpointAllowlist: string
+    modelEndpointAllowlistDescription: string
+    modelEndpointAllowlistOrigins: string
+    modelEndpointAllowlistPlaceholder: string
+    modelEndpointAllowlistHint: string
     loginSecurity: string
     loginSecurityDescription: string
     maxLoginAttempts: string

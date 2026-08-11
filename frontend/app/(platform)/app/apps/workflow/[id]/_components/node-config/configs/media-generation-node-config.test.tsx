@@ -64,7 +64,7 @@ function render(config: Record<string, unknown> = {}, onChange?: ReturnType<type
 const change = (node: TreeNode, value: string) => (node.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 const models = [
-  { id: 'openai-image', is_enabled: true, model: { name: 'DALL-E', provider: 'OpenAI', model_id: 'dall-e-3' } },
+  { id: 'openai-image', is_enabled: true, model: { name: 'DALL-E', provider: 'OpenAI', provider_display_name: 'Acme Images', model_id: 'dall-e-3' } },
   { id: 'replicate-image', is_enabled: true, model: { name: 'Flux', provider: 'Replicate', model_id: 'flux-1' } },
   { id: 'disabled', is_enabled: false, model: { name: 'Hidden', provider: 'OpenAI', model_id: 'hidden' } },
 ]
@@ -85,7 +85,7 @@ test('loads enabled models by mode, groups, searches, and selects one', async ()
   expect(getTeamModels).toHaveBeenCalledWith('team-1', 'text_to_image')
   await settle()
   current = render({ mode: 'image', prompt: '', outputVariable: 'result' }, onChange)
-  expect(findAll(current.tree, (node) => node.props.children === 'OpenAI')).toHaveLength(1)
+  expect(findAll(current.tree, (node) => node.props.children === 'Acme Images')).toHaveLength(1)
   expect(findAll(current.tree, (node) => node.props.children === 'Replicate')).toHaveLength(1)
   expect(findAll(current.tree, (node) => node.props.children === 'Hidden')).toHaveLength(0)
 
@@ -94,12 +94,12 @@ test('loads enabled models by mode, groups, searches, and selects one', async ()
   expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'replicate-image', modelName: 'Flux' }))
 
   const search = findAll(current.tree, (node) => node.props.placeholder === 'configCommon.searchModel')[0]
-  change(search, 'FLUX-1')
-  states = [models, false, 'FLUX-1', false, false]
+  change(search, 'ACME IMAGES')
+  states = [models, false, 'ACME IMAGES', false, false]
   runEffect = false
   current = render({ mode: 'image', prompt: '', outputVariable: 'result' }, onChange)
-  expect(findAll(current.tree, (node) => node.props.children === 'DALL-E')).toHaveLength(0)
-  expect(findAll(current.tree, (node) => node.props.children === 'Flux')).toHaveLength(1)
+  expect(findAll(current.tree, (node) => node.props.children === 'DALL-E')).toHaveLength(1)
+  expect(findAll(current.tree, (node) => node.props.children === 'Flux')).toHaveLength(0)
 
   states = []
   runEffect = true

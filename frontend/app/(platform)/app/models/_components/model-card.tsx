@@ -122,7 +122,7 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
         {/* 中部：供应商和类型标签 */}
         <div className="flex items-center gap-1.5 mt-2">
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {getProviderName(model.provider)}
+            {model.provider_display_name || getProviderName(model.provider)}
           </Badge>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             {getTypeName(model.model_type)}

@@ -1,6 +1,17 @@
 # Implementation Plan
 
 ## Active
+- **model-provider-display-and-discovery-metadata** — Complete. Preserved the controlled model adapter identifier while adding a user-facing provider/gateway name, and carried safe remote model metadata through discovery into model configuration. See `docs/plan/model-provider-display-and-discovery-metadata.md`
+  - [x] 1. Persist display-only provider identity
+  - [x] 2. Normalize remote model metadata
+  - [x] 3. Surface metadata in Model Management
+  - [x] 4. Propagate and validate additive response metadata
+- **model-endpoint-allowlist** — Complete. Added a database-backed, dynamically configurable Origin allowlist for all model endpoints, including provider save-time validation and outbound request enforcement. See `docs/plan/model-endpoint-allowlist.md`
+  - [x] 1. SiteSetting and origin policy
+  - [x] 2. Model persistence and outbound enforcement
+  - [x] 3. Dynamic Security settings UI
+  - [x] 4. Compatibility and rollout evidence
+
 
 - **kubernetes-manifest-installer-readiness** — Complete. Add a secure single-file Kubernetes manifest generation route to the guided installer and prevent raw-manifest backend workloads from starting before PostgreSQL accepts connections. See `docs/plan/kubernetes-manifest-installer-readiness.md`
   - [x] 1. Generate an isolated secret-filled Kubernetes manifest

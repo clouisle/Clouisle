@@ -138,6 +138,13 @@ export const siteSettingsApi = {
   async getSecurity(): Promise<SecuritySettings> {
     const settings = await this.getAll('security')
     const ssoSettings = await this.getAll('sso')
+    const modelEndpointAllowlist = settings.model_endpoint_allowlist
+    if (
+      !Array.isArray(modelEndpointAllowlist)
+      || !modelEndpointAllowlist.every((entry) => typeof entry === 'string')
+    ) {
+      throw new Error('Invalid model endpoint allowlist response')
+    }
     return {
       allow_registration: (settings.allow_registration as boolean) ?? true,
       require_approval: (settings.require_approval as boolean) ?? false,
@@ -169,6 +176,7 @@ export const siteSettingsApi = {
       force_password_change_first_login: (settings.force_password_change_first_login as boolean) ?? false,
       // TOTP
       require_totp: (settings.require_totp as boolean) ?? false,
+      model_endpoint_allowlist: modelEndpointAllowlist,
     }
   },
 

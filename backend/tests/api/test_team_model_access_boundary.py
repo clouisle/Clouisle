@@ -49,6 +49,7 @@ async def test_available_models_returns_enabled_grants_to_member():
         id=uuid4(),
         name="Team model",
         provider="openai",
+        provider_display_name=None,
         model_id="gpt-4.1",
         model_type="llm",
     )
@@ -70,6 +71,7 @@ async def test_available_models_returns_enabled_grants_to_member():
             "id": model.id,
             "name": "Team model",
             "provider": "openai",
+            "provider_display_name": None,
             "model_id": "gpt-4.1",
             "model_type": "llm",
         }
