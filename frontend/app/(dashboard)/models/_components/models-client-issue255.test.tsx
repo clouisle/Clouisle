@@ -220,7 +220,7 @@ describe('models client issue 255 coverage', () => {
     confirm.mockReturnValue(true)
     testConnection.mockRejectedValueOnce(new Error('network'))
     await click(renderer, 'testConnection', 0); await settle()
-    expect(toastDismiss).toHaveBeenCalledWith('toast-1')
+    expect(toastError).toHaveBeenCalledWith('testFailed', { id: 'toast-1' })
   })
 
   test('bulk deletes, closes after failure, and clears selected rows after success', async () => {

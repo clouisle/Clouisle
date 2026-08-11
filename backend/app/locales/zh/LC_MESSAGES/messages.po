@@ -1369,6 +1369,9 @@ msgstr "测试连接需要 API Key"
 msgid "model_created"
 msgstr "模型创建成功"
 
+msgid "model_endpoint_allowlist_description"
+msgstr "允许使用的模型端点 Origin"
+
 msgid "model_endpoint_allowlist_invalid"
 msgstr "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表"
 

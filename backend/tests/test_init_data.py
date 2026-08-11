@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from app.core import init_data
+from app.core import init_data, model_endpoint_policy
 from app.models.model import Model
 from app.models.site_setting import SiteSetting
 
@@ -39,10 +39,52 @@ async def test_model_endpoint_allowlist_seeds_existing_origins_once(
 
     await init_data.init_model_endpoint_allowlist()
 
-    allowlist = set_value.await_args.kwargs["value"]
+    allowlist = set(set_value.await_args.kwargs["value"])
     assert "https://api.openai.com" in allowlist
     assert "https://gateway.example.test" in allowlist
     assert all("not-a-url" not in origin for origin in allowlist)
+    assert (
+        set_value.await_args.kwargs["description"]
+        == "model_endpoint_allowlist_description"
+    )
+
+
+@pytest.mark.asyncio
+async def test_model_endpoint_allowlist_caps_sorted_existing_origins(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        SiteSetting,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(first=AsyncMock(return_value=None)),
+    )
+    set_value = AsyncMock()
+    monkeypatch.setattr(SiteSetting, "set_value", set_value)
+
+    def model(index: int) -> SimpleNamespace:
+        origin = f"https://gateway-{index:03d}.example.test/v1"
+        return SimpleNamespace(
+            id=f"model-{index}",
+            get_effective_base_url=lambda: origin,
+        )
+
+    monkeypatch.setattr(
+        Model,
+        "all",
+        AsyncMock(return_value=[model(index) for index in reversed(range(250))]),
+    )
+
+    await init_data.init_model_endpoint_allowlist()
+
+    allowlist = set_value.await_args.kwargs["value"]
+    defaults = model_endpoint_policy.DEFAULT_MODEL_ENDPOINT_ALLOWLIST
+    limit = model_endpoint_policy.MODEL_ENDPOINT_ALLOWLIST_MAX_ENTRIES
+    expected_model_origins = sorted(
+        f"https://gateway-{index:03d}.example.test" for index in range(250)
+    )
+    assert len(allowlist) == limit
+    assert allowlist[: len(defaults)] == defaults
+    assert allowlist[len(defaults) :] == expected_model_origins[: limit - len(defaults)]
 
 
 @pytest.mark.asyncio
@@ -400,7 +442,6 @@ async def test_init_db_continues_after_optional_migration_failures(
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
-        "init_model_provider_display_name",
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
@@ -409,6 +450,7 @@ async def test_init_db_continues_after_optional_migration_failures(
         monkeypatch.setattr(
             init_data, name, AsyncMock(side_effect=RuntimeError(f"{name} failed"))
         )
+    monkeypatch.setattr(init_data, "init_model_provider_display_name", AsyncMock())
 
     monkeypatch.setattr(init_data.SystemPermissions, "get_all_definitions", lambda: [])
     monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
@@ -438,6 +480,34 @@ async def test_init_db_continues_after_optional_migration_failures(
         "Member",
         "Viewer",
     ]
+
+
+@pytest.mark.asyncio
+async def test_init_db_fails_when_provider_display_name_migration_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "init_user_locale_field",
+        "init_agent_attachment_fields",
+        "init_agent_tools_credentials",
+        "init_permission_is_system_field",
+        "drop_model_provider_uniqueness",
+    ):
+        monkeypatch.setattr(init_data, name, AsyncMock())
+
+    migration_error = RuntimeError("provider display migration failed")
+    monkeypatch.setattr(
+        init_data,
+        "init_model_provider_display_name",
+        AsyncMock(side_effect=migration_error),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="provider display migration failed"
+    ) as exc_info:
+        await init_data.init_db()
+
+    assert exc_info.value is migration_error
 
 
 @pytest.mark.asyncio

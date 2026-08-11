@@ -120,9 +120,14 @@ def close_coroutine(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_initializers", [False, True])
+@pytest.mark.parametrize(
+    ("fail_initializers", "fail_provider_display_name"),
+    [(False, False), (True, False), (False, True)],
+)
 async def test_lifespan_mocks_initializers_and_external_boundaries(
-    monkeypatch: pytest.MonkeyPatch, fail_initializers: bool
+    monkeypatch: pytest.MonkeyPatch,
+    fail_initializers: bool,
+    fail_provider_display_name: bool,
 ) -> None:
     import app.api.v1.endpoints.upload as upload_module
     import app.core.init_data as init_data_module
@@ -165,6 +170,11 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
     initializers = {
         name: AsyncMock(side_effect=side_effect) for name in initializer_names
     }
+    initializers["init_model_provider_display_name"].side_effect = (
+        RuntimeError("provider display migration failed")
+        if fail_provider_display_name
+        else None
+    )
     for name, initializer in initializers.items():
         monkeypatch.setattr(init_data_module, name, initializer)
 
@@ -199,6 +209,15 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "app.main.asyncio.create_task",
         lambda coroutine: close_coroutine(coroutine, task),
     )
+
+    if fail_provider_display_name:
+        with pytest.raises(RuntimeError, match="provider display migration failed"):
+            async with lifespan(SimpleNamespace()):
+                pass
+        initializers["init_model_provider_display_name"].assert_awaited_once()
+        generate_schemas.assert_not_awaited()
+        init_db.assert_not_awaited()
+        return
 
     async with lifespan(SimpleNamespace()):
         generate_schemas.assert_awaited_once()

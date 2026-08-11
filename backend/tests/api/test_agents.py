@@ -678,7 +678,12 @@ async def test_agent_list_fallback_model_and_team_scopes(monkeypatch):
     query = Query([item], count=1)
     team_model = SimpleNamespace(
         id=item.model_id,
-        model=SimpleNamespace(name="Fallback", provider="dummy", model_id="fallback"),
+        model=SimpleNamespace(
+            name="Fallback",
+            provider="dummy",
+            provider_display_name="Acme Gateway",
+            model_id="fallback",
+        ),
     )
     monkeypatch.setattr(agents.Agent, "all", lambda: query)
     monkeypatch.setattr(
@@ -694,6 +699,7 @@ async def test_agent_list_fallback_model_and_team_scopes(monkeypatch):
     )
 
     assert listing["model"]["name"] == "Fallback"
+    assert listing["model"]["provider_display_name"] == "Acme Gateway"
     assert result["data"]["total"] == 1
     assert any(
         call[0] == "filter" and call[2] == {"team_id": team_id} for call in query.calls

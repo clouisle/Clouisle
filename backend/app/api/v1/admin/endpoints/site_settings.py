@@ -123,8 +123,11 @@ async def _validate_setting_value(key: str, value: object) -> None:
     if key == MODEL_ENDPOINT_ALLOWLIST_SETTING:
         try:
             normalized_allowlist = normalize_model_endpoint_allowlist(value)
-        except ModelEndpointPolicyError:
-            raise_validation_error()
+        except ModelEndpointPolicyError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key=exc.msg_key,
+            ) from exc
         cast(list, value)[:] = normalized_allowlist
         return
 

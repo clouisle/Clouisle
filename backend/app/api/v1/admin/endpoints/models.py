@@ -804,7 +804,7 @@ _MODEL_TEST_UNSAFE_DETAIL_PATTERNS = (
     re.compile(r"\btraceback\b", re.IGNORECASE),
     re.compile(r'\bfile\s+"[^"]+", line \d+', re.IGNORECASE),
     re.compile(r"\bexception\b", re.IGNORECASE),
-    re.compile(r"(/private/|/tmp/|[A-Z]:\\\\)"),
+    re.compile(r"(/private/|/tmp/|[A-Z]:\\)"),
 )
 _MODEL_TEST_CREDENTIAL_PATTERNS = (
     (

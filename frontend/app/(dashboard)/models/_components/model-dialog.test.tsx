@@ -142,10 +142,12 @@ function change(id: string, value: string) {
 }
 
 function chooseModelType(code = 'chat') {
+  render()
   state[3] = code
 }
 
 function chooseProvider(code: string) {
+  render()
   state[1] = code
   state[4] = providers.find((provider) => provider.code === code)?.base_url || ''
 }

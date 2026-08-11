@@ -20,6 +20,7 @@ async def init_model_endpoint_allowlist() -> None:
     """Seed the endpoint allowlist once from defaults and existing models."""
     from app.core.model_endpoint_policy import (
         DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+        MODEL_ENDPOINT_ALLOWLIST_MAX_ENTRIES,
         MODEL_ENDPOINT_ALLOWLIST_SETTING,
         ModelEndpointPolicyError,
         normalize_model_endpoint_origin,
@@ -33,6 +34,7 @@ async def init_model_endpoint_allowlist() -> None:
 
     allowlist = list(DEFAULT_MODEL_ENDPOINT_ALLOWLIST)
     seen = set(allowlist)
+    model_origins: set[str] = set()
     for model in await Model.all():
         base_url = model.get_effective_base_url()
         if not base_url:
@@ -46,15 +48,17 @@ async def init_model_endpoint_allowlist() -> None:
             )
             continue
         if origin not in seen:
-            seen.add(origin)
-            allowlist.append(origin)
+            model_origins.add(origin)
+
+    remaining_slots = max(MODEL_ENDPOINT_ALLOWLIST_MAX_ENTRIES - len(allowlist), 0)
+    allowlist.extend(sorted(model_origins)[:remaining_slots])
 
     await SiteSetting.set_value(
         key=MODEL_ENDPOINT_ALLOWLIST_SETTING,
         value=allowlist,
         value_type="json",
         category="security",
-        description="Allowed model endpoint origins",
+        description="model_endpoint_allowlist_description",
         is_public=False,
     )
 
@@ -2754,12 +2758,7 @@ async def init_db():
             f"Model provider uniqueness migration failed (may be first run): {e}"
         )
 
-    try:
-        await init_model_provider_display_name()
-    except Exception as e:
-        logger.warning(
-            f"Model provider display name migration failed (may be first run): {e}"
-        )
+    await init_model_provider_display_name()
 
     try:
         await init_kb_rerank_fields()

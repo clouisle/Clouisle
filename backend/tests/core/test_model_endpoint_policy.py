@@ -180,8 +180,11 @@ async def test_ensure_model_endpoint_allowed_handles_missing_and_invalid_storage
     monkeypatch.setattr(SiteSetting, "get_value", get_value)
 
     assert await ensure_model_endpoint_allowed(None) is None
-    with pytest.raises(ModelEndpointPolicyError):
-        await ensure_model_endpoint_allowed("https://api.example.com")
+    for _stored_value in (None, "invalid"):
+        with pytest.raises(ModelEndpointPolicyError) as error:
+            await ensure_model_endpoint_allowed("https://api.example.com")
+        assert error.value.msg_key == "model_endpoint_not_allowlisted"
+    assert get_value.await_count == 2
 
 
 @pytest.mark.asyncio

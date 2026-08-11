@@ -1518,6 +1518,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Discovered {count} models",
         "zh": "已获取 {count} 个模型",
     },
+    "model_endpoint_allowlist_description": {
+        "en": "Allowed model endpoint Origins",
+        "zh": "允许使用的模型端点 Origin",
+    },
     "model_endpoint_allowlist_invalid": {
         "en": "Enter a valid list of HTTP or HTTPS model endpoint Origins",
         "zh": "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表",

@@ -522,7 +522,7 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "type": "json",
         "category": "security",
         "public": False,
-        "desc": "Allowed model endpoint origins",
+        "desc": "model_endpoint_allowlist_description",
     },
     "min_password_length": {
         "value": 8,

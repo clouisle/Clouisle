@@ -51,6 +51,12 @@ async def test_validate_setting_value_residual_admin_branches(
     with pytest.raises(BusinessError) as exc_info:
         await site_settings._validate_setting_value(key, invalid_value)
     assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+    expected_msg_key = (
+        "model_endpoint_allowlist_invalid"
+        if key == "model_endpoint_allowlist"
+        else "validation_error"
+    )
+    assert exc_info.value.msg_key == expected_msg_key
 
 
 @pytest.mark.asyncio

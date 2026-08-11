@@ -204,6 +204,13 @@ async def test_init_default_settings_creates_only_missing_settings(monkeypatch):
     )
 
 
+def test_model_endpoint_allowlist_default_uses_localized_description():
+    assert (
+        site_setting.DEFAULT_SETTINGS["model_endpoint_allowlist"]["desc"]
+        == "model_endpoint_allowlist_description"
+    )
+
+
 def test_string_representation():
     setting = SiteSetting(key="theme", value="dark")
     assert str(setting) == "theme=dark"

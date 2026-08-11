@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { ApiError } from '@/lib/api/client'
 
 const getSecurity = mock(() => Promise.resolve(settings))
-const updateSecurity = mock(() => Promise.resolve())
+const updateSecurity = mock(() => Promise.resolve({}))
 const getRoles = mock(() => Promise.resolve({ items: roles }))
 const getTeams = mock(() => Promise.resolve({ items: teams }))
 const success = mock(() => {})
@@ -122,7 +122,7 @@ const selects = (renderer: ReactTestRenderer) => renderer.root.findAllByProps({ 
 
 beforeEach(() => {
   getSecurity.mockImplementation(() => Promise.resolve(settings))
-  updateSecurity.mockImplementation(() => Promise.resolve())
+  updateSecurity.mockImplementation(() => Promise.resolve({}))
   getRoles.mockImplementation(() => Promise.resolve({ items: roles }))
   getTeams.mockImplementation(() => Promise.resolve({ items: teams }))
 })
@@ -138,7 +138,7 @@ afterEach(() => {
 const originalSettings = { ...settings }
 
 describe('SiteSettingsSecurityPage', () => {
-  test('shows loading placeholders and recovers to the default form after a load failure', async () => {
+  test('shows loading placeholders and keeps saving disabled after a load failure', async () => {
     let rejectLoad!: (error: Error) => void
     getSecurity.mockImplementationOnce(() => new Promise((_, reject) => { rejectLoad = reject }))
     const consoleError = mock(() => {})
@@ -153,10 +153,19 @@ describe('SiteSettingsSecurityPage', () => {
     await act(async () => rejectLoad(new Error('offline')))
     expect(consoleError).toHaveBeenCalledWith('Failed to load settings:', expect.any(Error))
     expect(renderer!.root.findByProps({ id: 'minLength' }).props.value).toBe(8)
+    expect(saveButton(renderer!).props.disabled).toBe(true)
+    await act(async () => saveButton(renderer!).props.onClick())
+    expect(updateSecurity).not.toHaveBeenCalled()
     console.error = originalConsoleError
   })
 
   test('loads options, drives every form callback, and saves the resulting payload', async () => {
+    updateSecurity.mockResolvedValueOnce({
+      model_endpoint_allowlist: [
+        'https://api.example.com',
+        'http://ollama:11434',
+      ],
+    })
     const renderer = await render()
 
     expect(getRoles).toHaveBeenCalledWith()
@@ -211,6 +220,9 @@ describe('SiteSettingsSecurityPage', () => {
       ],
     }))
     expect(success).toHaveBeenCalledWith('saveSuccess')
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.value).toBe(
+      'https://api.example.com\nhttp://ollama:11434'
+    )
   })
 
   test('blocks every invalid numeric boundary, clears errors on edits, and retries successfully', async () => {
@@ -259,7 +271,7 @@ describe('SiteSettingsSecurityPage', () => {
 
     act(() => selects(renderer)[1].props.onChange('team-1'))
     expect(renderer.root.findAllByProps({ role: 'alert' }).map((node) => node.children.join(' '))).toEqual(['Policy conflict'])
-    updateSecurity.mockResolvedValueOnce(undefined)
+    updateSecurity.mockResolvedValueOnce({})
     await act(async () => saveButton(renderer).props.onClick())
 
     expect(updateSecurity).toHaveBeenCalledTimes(2)

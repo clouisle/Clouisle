@@ -35,6 +35,7 @@ export default function SiteSettingsSecurityPage() {
   const canUpdate = canPerform('admin:settings:update')
   
   const [loading, setLoading] = React.useState(true)
+  const [settingsLoaded, setSettingsLoaded] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [roles, setRoles] = React.useState<Role[]>([])
   const [teams, setTeams] = React.useState<Team[]>([])
@@ -102,6 +103,7 @@ export default function SiteSettingsSecurityPage() {
   const loadSettings = React.useCallback(async () => {
     try {
       setLoading(true)
+      setSettingsLoaded(false)
       const [data, rolesData, teamsData] = await Promise.all([
         siteSettingsApi.getSecurity(),
         rolesApi.getRoles(),
@@ -139,9 +141,11 @@ export default function SiteSettingsSecurityPage() {
         password_min_age_days: data.password_min_age_days ?? 0,
         force_password_change_first_login: data.force_password_change_first_login ?? false,
         require_totp: data.require_totp ?? false,
-        model_endpoint_allowlist: data.model_endpoint_allowlist ?? [],
+        model_endpoint_allowlist: data.model_endpoint_allowlist,
       })
+      setSettingsLoaded(true)
     } catch (error) {
+      setSettingsLoaded(false)
       console.error('Failed to load settings:', error)
     } finally {
       setLoading(false)
@@ -153,6 +157,8 @@ export default function SiteSettingsSecurityPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
+    if (!settingsLoaded || saving) return
+
     const nextErrors: Record<string, string> = {}
 
     if (settings.min_password_length < 6 || settings.min_password_length > 32) {
@@ -193,13 +199,18 @@ export default function SiteSettingsSecurityPage() {
       const modelEndpointAllowlist = Array.from(new Set(
         settings.model_endpoint_allowlist.map((entry) => entry.trim()).filter(Boolean)
       ))
-      await siteSettingsApi.updateSecurity({
+      const updatedSettings = await siteSettingsApi.updateSecurity({
         ...settings,
         model_endpoint_allowlist: modelEndpointAllowlist,
       })
+      const persistedAllowlist = Array.isArray(updatedSettings.model_endpoint_allowlist)
+        ? updatedSettings.model_endpoint_allowlist.filter(
+            (entry): entry is string => typeof entry === 'string'
+          )
+        : modelEndpointAllowlist
       setSettings((current) => ({
         ...current,
-        model_endpoint_allowlist: modelEndpointAllowlist,
+        model_endpoint_allowlist: persistedAllowlist,
       }))
       toast.success(t('saveSuccess'))
     } catch (error) {
@@ -741,7 +752,7 @@ export default function SiteSettingsSecurityPage() {
 
       <PermissionGuard permission="admin:settings:update">
         <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || !settingsLoaded}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('saveChanges')}
           </Button>

@@ -265,10 +265,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Model provider uniqueness migration failed: {e}")
 
-    try:
-        await init_model_provider_display_name()
-    except Exception as e:
-        logger.warning(f"Model provider display name migration failed: {e}")
+    await init_model_provider_display_name()
 
     try:
         await init_kb_rerank_fields()

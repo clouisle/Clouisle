@@ -22,7 +22,7 @@ A shared backend policy normalizes an endpoint to its Origin and compares it aga
 
 ### Stage 1: SiteSetting and origin policy
 
-- **Files modified**: `backend/app/models/site_setting.py`, `backend/app/api/v1/admin/endpoints/site_settings.py`, `backend/app/services/` policy module, `backend/app/core/init_data.py`, schemas and locales.
+- **Files modified**: `backend/app/models/site_setting.py`, `backend/app/api/v1/admin/endpoints/site_settings.py`, `backend/app/core/model_endpoint_policy.py`, `backend/app/core/init_data.py`, schemas and locales.
 - **Specific logic**: Register one private JSON setting, validate entries, normalize Origins, and expose an async policy for effective Base URLs.
 - **Validation**: Reject malformed entries, normalize default ports and trailing paths, deduplicate values, and verify empty/non-empty allowlist behavior.
 
@@ -54,7 +54,7 @@ A shared backend policy normalizes an endpoint to its Origin and compares it aga
 ## Risks & Mitigation
 
 - **Existing model breakage**: Seed current provider defaults and persisted Origins before enforcing the policy.
-- **DNS changes**: Match the configured Origin at the URL policy boundary and retain destination checks before outbound requests; do not treat response validation as SSRF prevention.
+- **DNS changes**: Treat the administrator-controlled exact Origin as the destination trust boundary; this feature does not resolve or pin IP addresses, so explicitly approved private/internal endpoints remain supported. Prefer HTTPS for remote endpoints; DNS-rebinding hardening requires a shared transport design outside this plan.
 - **Credential leakage**: Keep API keys out of logs and user-facing upstream error text.
 - **Configuration mistakes**: Make empty-list behavior explicit in the UI and return an actionable localized error.
 

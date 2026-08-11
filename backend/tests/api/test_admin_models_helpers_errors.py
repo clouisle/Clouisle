@@ -183,6 +183,7 @@ def test_model_test_error_reason_is_specific_and_redacts_credentials(
         ("line one\nline two", None),
         ("model_test_failed", None),
         ("Traceback (most recent call last)", None),
+        (r"failed in C:\Users\svc\app.py", None),
         ("x" * 401, None),
         (
             "Provider rejected api_key=sk-live-secret",
