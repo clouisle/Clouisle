@@ -21,15 +21,34 @@ def allow_model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+class StreamContext:
+    def __init__(self, response: httpx.Response | None, error: Exception | None = None):
+        self.response = response
+        self.error = error
+
+    async def __aenter__(self):
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+class ChunkedStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
 class AsyncClient:
     def __init__(
         self, response: httpx.Response | None = None, error: Exception | None = None
     ):
-        self.get = AsyncMock()
-        if error is not None:
-            self.get.side_effect = error
-        else:
-            self.get.return_value = response
+        self.stream = MagicMock(return_value=StreamContext(response, error))
 
     async def __aenter__(self):
         return self
@@ -80,7 +99,8 @@ async def test_discover_models_requests_openai_compatible_api(monkeypatch):
         timeout=15.0,
         follow_redirects=False,
     )
-    client.get.assert_awaited_once_with(
+    client.stream.assert_called_once_with(
+        "GET",
         "/v1/models",
         headers={"Authorization": "Bearer secret"},
         params=None,
@@ -220,7 +240,8 @@ async def test_discover_models_uses_provider_specific_protocol(
         current_user=SimpleNamespace(),
     )
 
-    client.get.assert_awaited_once_with(
+    client.stream.assert_called_once_with(
+        "GET",
         urlsplit(endpoint).path,
         headers=headers,
         params=params,
@@ -350,6 +371,35 @@ async def test_discover_models_returns_safe_failure_for_remote_errors(
     assert result["data"].success is False
     assert result["data"].message == "model_discovery_failed"
     assert "sk-live-secret" not in result["data"].message
+
+
+@pytest.mark.anyio
+async def test_discover_models_rejects_oversized_chunked_response(monkeypatch):
+    prefix = b'{"data": []}'
+    response = httpx.Response(
+        200,
+        stream=ChunkedStream(
+            [
+                prefix,
+                b" " * (models._MODEL_DISCOVERY_MAX_RESPONSE_BYTES - len(prefix) + 1),
+            ]
+        ),
+        request=httpx.Request("GET", "https://api.example.test/v1/models"),
+    )
+    install_client(monkeypatch, response=response)
+    monkeypatch.setattr(models, "t", lambda key, **_kwargs: key)
+
+    result = await models.discover_models(
+        ModelDiscoveryRequest(
+            provider=ModelProvider.OPENAI,
+            base_url="https://api.example.test/v1",
+            api_key="secret",
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    assert result["data"].success is False
+    assert result["data"].message == "model_discovery_failed"
 
 
 @pytest.mark.parametrize(

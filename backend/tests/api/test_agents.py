@@ -256,7 +256,12 @@ async def test_list_agents_applies_scope_filters_and_batches_models(monkeypatch)
     memberships = Query([item.team_id])
     team_model = SimpleNamespace(
         id=item.model_id,
-        model=SimpleNamespace(name="M", provider="dummy", model_id="m"),
+        model=SimpleNamespace(
+            name="M",
+            provider="dummy",
+            provider_display_name="Acme Gateway",
+            model_id="m",
+        ),
     )
     monkeypatch.setattr(agents.Agent, "all", lambda: query)
     monkeypatch.setattr(agents.TeamMember, "filter", lambda **_kwargs: memberships)
@@ -277,6 +282,9 @@ async def test_list_agents_applies_scope_filters_and_batches_models(monkeypatch)
 
     assert result["data"]["total"] == 1
     assert result["data"]["items"][0]["model"]["name"] == "M"
+    assert (
+        result["data"]["items"][0]["model"]["provider_display_name"] == "Acme Gateway"
+    )
     assert any(call[0] == "offset" and call[1] == (1,) for call in query.calls)
 
 

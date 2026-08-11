@@ -4,6 +4,7 @@ Public endpoints (providers, types, available, default) remain in the platform r
 """
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -532,6 +533,7 @@ _MODEL_DISCOVERY_CAPABILITY_KEYS = {
     ),
 }
 _MODEL_DISCOVERY_MAX_MODELS = 200
+_MODEL_DISCOVERY_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _MODEL_DISCOVERY_SUPPORTED_PROVIDERS = frozenset(
     {
         ModelProvider.OPENAI,
@@ -601,9 +603,21 @@ async def discover_models(
             timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS,
             follow_redirects=False,
         ) as client:
-            response = await client.get(request_path, headers=headers, params=params)
-            response.raise_for_status()
-            discovered_models = _parse_discovered_models(provider, response.json())
+            async with client.stream(
+                "GET", request_path, headers=headers, params=params
+            ) as response:
+                response.raise_for_status()
+                response_body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if (
+                        len(response_body) + len(chunk)
+                        > _MODEL_DISCOVERY_MAX_RESPONSE_BYTES
+                    ):
+                        raise ValueError("Model discovery response is too large")
+                    response_body.extend(chunk)
+                discovered_models = _parse_discovered_models(
+                    provider, json.loads(response_body)
+                )
     except (httpx.HTTPError, ValueError):
         return _model_discovery_failure("model_discovery_failed")
 

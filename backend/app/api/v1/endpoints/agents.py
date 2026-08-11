@@ -371,6 +371,7 @@ async def list_agents(
                 id=tm.id,
                 name=tm.model.name,
                 provider=tm.model.provider,
+                provider_display_name=getattr(tm.model, "provider_display_name", None),
                 model_id=tm.model.model_id,
             )
 
