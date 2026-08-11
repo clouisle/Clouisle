@@ -1387,7 +1387,7 @@ msgid "model_set_default"
 msgstr "Model set as default successfully"
 
 msgid "model_test_failed"
-msgstr "Connection test failed: {error}"
+msgstr "Connection test failed for {provider}/{model} ({model_type}): {error}"
 
 msgid "model_test_pending"
 msgstr "Connection test pending implementation"
@@ -1400,6 +1400,15 @@ msgstr "Connection successful"
 
 msgid "model_test_rate_limit_but_valid"
 msgstr "Rate limit exceeded, but API key is valid"
+
+msgid "model_test_rate_limited"
+msgstr "The provider rate limit was exceeded. Retry later or increase the provider quota."
+
+msgid "model_test_chat_response_incompatible"
+msgstr "The provider returned an incompatible chat response. Verify the selected provider and that the Base URL exposes a compatible chat-completions endpoint."
+
+msgid "model_test_provider_error_details"
+msgstr "Provider error: {error}. Check the provider configuration and request parameters."
 
 msgid "model_test_invalid_api_key"
 msgstr "Invalid API key"
@@ -1420,7 +1429,7 @@ msgid "model_type_not_supported"
 msgstr "Model type is not supported"
 
 msgid "model_test_unexpected_error"
-msgstr "Connection test failed unexpectedly"
+msgstr "The provider returned an unexpected error. Check the provider configuration and server logs."
 
 msgid "model_test_empty_response"
 msgstr "The model returned an empty response"

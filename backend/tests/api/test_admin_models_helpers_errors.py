@@ -5,9 +5,16 @@ from uuid import uuid4
 
 import pytest
 
+from app.core import i18n
 from app.api.v1.admin.endpoints import models as models_endpoint
 from app.schemas.model import ModelCreate, ModelProvider, ModelType, ModelUpdate
 from app.schemas.response import BusinessError, ResponseCode
+
+
+def translate_model_test_error(key, **kwargs):
+    if key == "model_test_provider_error_details":
+        return f"{key}:{kwargs['error']}"
+    return key
 
 
 @pytest.mark.parametrize(
@@ -120,6 +127,112 @@ async def test_rerank_helper_forwards_config_and_rejects_empty_results():
     temp_model = create_adapter.call_args.args[0]
     assert temp_model.config == {"timeout": 9}
     assert exc_info.value.msg_key == "model_test_empty_rerank_result"
+
+
+@pytest.mark.parametrize(
+    ("message", "status_code", "expected"),
+    [
+        ("401 Unauthorized", None, "model_test_invalid_api_key"),
+        ("Forbidden", 403, "model_test_model_not_accessible"),
+        ("model not found", None, "model_test_model_not_accessible"),
+        ("service overloaded", 429, "model_test_rate_limited"),
+        ("request timed out", None, "model_test_connection_timeout"),
+        (
+            "failed to connect to provider",
+            None,
+            "model_test_connection_failed_check_base_url",
+        ),
+        (
+            "'str' object has no attribute 'choices'",
+            None,
+            "model_test_chat_response_incompatible",
+        ),
+        (
+            "Provider rejected api_key=sk-live-secret",
+            None,
+            "model_test_provider_error_details:Provider rejected api_key=***",
+        ),
+        (
+            "Traceback (most recent call last)",
+            None,
+            "model_test_unexpected_error",
+        ),
+    ],
+)
+def test_model_test_error_reason_is_specific_and_redacts_credentials(
+    monkeypatch, message, status_code, expected
+):
+    error = RuntimeError(message)
+    if status_code is not None:
+        error.status_code = status_code
+
+    monkeypatch.setattr(models_endpoint, "t", translate_model_test_error)
+
+    assert models_endpoint._model_test_error_reason(error) == expected
+
+
+@pytest.mark.parametrize(
+    ("error_text", "expected"),
+    [
+        ("", None),
+        ("line one\nline two", None),
+        ("model_test_failed", None),
+        ("Traceback (most recent call last)", None),
+        ("x" * 401, None),
+        (
+            "Provider rejected api_key=sk-live-secret",
+            "Provider rejected api_key=***",
+        ),
+        (
+            "https://user:password@example.test/v1 failed",
+            "https://***:***@example.test/v1 failed",
+        ),
+    ],
+)
+def test_model_test_error_sanitization_filters_unsafe_details(error_text, expected):
+    assert models_endpoint._sanitize_model_test_error(error_text) == expected
+
+
+def test_model_test_error_prefers_provider_message():
+    error = RuntimeError("fallback")
+    error.message = "provider detail"
+
+    assert models_endpoint._model_test_error_text(error) == "provider detail"
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        (
+            "en",
+            "Connection test failed for deepseek/deepseek-chat (chat): "
+            "The provider returned an incompatible chat response. Verify the "
+            "selected provider and that the Base URL exposes a compatible "
+            "chat-completions endpoint.",
+        ),
+        (
+            "zh",
+            "deepseek/deepseek-chat（chat）连接测试失败："
+            "供应商返回的对话响应格式不兼容。请确认选择的供应商正确，并检查 Base URL "
+            "是否提供兼容的 chat-completions 接口。",
+        ),
+    ],
+)
+def test_model_test_failure_response_is_localized_and_actionable(language, expected):
+    token = i18n.current_language.set(language)
+    try:
+        response = models_endpoint._model_test_failure_response(
+            error=AttributeError("'str' object has no attribute 'choices'"),
+            latency_ms=12,
+            provider=ModelProvider.DEEPSEEK,
+            model_id="deepseek-chat",
+            model_type=ModelType.CHAT,
+        )
+    finally:
+        i18n.current_language.reset(token)
+
+    assert response["data"].message == expected
+    assert response["msg"] == expected
 
 
 @pytest.mark.parametrize(

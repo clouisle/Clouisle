@@ -1512,6 +1512,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Model set as default successfully",
         "zh": "已设为默认模型",
     },
+    "model_test_chat_response_incompatible": {
+        "en": "The provider returned an incompatible chat response. Verify the selected provider and that the Base URL exposes a compatible chat-completions endpoint.",
+        "zh": "供应商返回的对话响应格式不兼容。请确认选择的供应商正确，并检查 Base URL 是否提供兼容的 chat-completions 接口。",
+    },
     "model_test_connection_failed_check_base_url": {
         "en": "Connection failed, check base URL",
         "zh": "连接失败，请检查 Base URL",
@@ -1538,8 +1542,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "模型返回了空响应",
     },
     "model_test_failed": {
-        "en": "Connection test failed: {error}",
-        "zh": "连接测试失败：{error}",
+        "en": "Connection test failed for {provider}/{model} ({model_type}): {error}",
+        "zh": "{provider}/{model}（{model_type}）连接测试失败：{error}",
     },
     "model_test_invalid_api_key": {"en": "Invalid API key", "zh": "API Key 无效"},
     "model_test_model_not_accessible": {
@@ -1550,14 +1554,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Connection test pending implementation",
         "zh": "连接测试功能待实现",
     },
+    "model_test_provider_error_details": {
+        "en": "Provider error: {error}. Check the provider configuration and request parameters.",
+        "zh": "供应商返回错误：{error}。请检查供应商配置和请求参数。",
+    },
     "model_test_rate_limit_but_valid": {
         "en": "Rate limit exceeded, but API key is valid",
         "zh": "触发了速率限制，但 API Key 有效",
     },
+    "model_test_rate_limited": {
+        "en": "The provider rate limit was exceeded. Retry later or increase the provider quota.",
+        "zh": "供应商触发了速率限制。请稍后重试或提升供应商配额。",
+    },
     "model_test_success": {"en": "Connection test successful", "zh": "连接测试成功"},
     "model_test_unexpected_error": {
-        "en": "Connection test failed unexpectedly",
-        "zh": "连接测试发生未知错误",
+        "en": "The provider returned an unexpected error. Check the provider configuration and server logs.",
+        "zh": "供应商返回了未知错误。请检查供应商配置和服务器日志。",
     },
     "model_type_mismatch": {
         "en": "Model {model_name} is not a {model_type} model",

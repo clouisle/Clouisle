@@ -6,6 +6,7 @@ Public endpoints (providers, types, available, default) remain in the platform r
 import asyncio
 import time
 import logging
+import re
 from typing import Any, Optional, cast
 from uuid import UUID
 
@@ -268,18 +269,15 @@ async def test_model_connection(
 
     except BusinessError:
         raise
-    except Exception as e:
-        logger.exception(f"Model test failed: {e}")
+    except Exception as exc:
+        logger.exception(
+            "Model test failed: provider=%s model=%s type=%s",
+            provider.value,
+            model.model_id,
+            model_type.value,
+        )
         latency_ms = int((time.monotonic() - start_time) * 1000)
-        raw_error_msg = str(e)
-        error_msg = raw_error_msg
-        if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
-            error_msg = t("model_test_invalid_api_key")
-        elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
-            error_msg = t("model_test_model_not_accessible")
-        elif (
-            "429" in raw_error_msg or "rate limit" in raw_error_msg.lower()
-        ) and model_type != ModelType.TEXT_TO_VIDEO:
+        if _is_model_test_rate_limited(exc) and model_type != ModelType.TEXT_TO_VIDEO:
             return success(
                 data=ModelTestResponse(
                     success=True,
@@ -288,20 +286,12 @@ async def test_model_connection(
                 ),
                 msg_key="model_test_success",
             )
-        elif "timeout" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_timeout")
-        elif "connection" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_failed_check_base_url")
-        else:
-            error_msg = t("model_test_unexpected_error")
-
-        return success(
-            data=ModelTestResponse(
-                success=False,
-                message=error_msg,
-                latency_ms=latency_ms,
-            ),
-            msg_key="model_test_failed",
+        return _model_test_failure_response(
+            error=exc,
+            latency_ms=latency_ms,
+            provider=provider,
+            model_id=model.model_id,
+            model_type=model_type,
         )
 
 
@@ -417,18 +407,15 @@ async def test_model_config(
 
     except BusinessError:
         raise
-    except Exception as e:
-        logger.exception(f"Model test failed: {e}")
+    except Exception as exc:
+        logger.exception(
+            "Model test failed: provider=%s model=%s type=%s",
+            provider.value,
+            model_id,
+            model_type.value,
+        )
         latency_ms = int((time.monotonic() - start_time) * 1000)
-        raw_error_msg = str(e)
-        error_msg = raw_error_msg
-        if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
-            error_msg = t("model_test_invalid_api_key")
-        elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
-            error_msg = t("model_test_model_not_accessible")
-        elif (
-            "429" in raw_error_msg or "rate limit" in raw_error_msg.lower()
-        ) and model_type != ModelType.TEXT_TO_VIDEO:
+        if _is_model_test_rate_limited(exc) and model_type != ModelType.TEXT_TO_VIDEO:
             return success(
                 data=ModelTestResponse(
                     success=True,
@@ -437,21 +424,135 @@ async def test_model_config(
                 ),
                 msg_key="model_test_success",
             )
-        elif "timeout" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_timeout")
-        elif "connection" in raw_error_msg.lower():
-            error_msg = t("model_test_connection_failed_check_base_url")
-        else:
-            error_msg = t("model_test_unexpected_error")
-
-        return success(
-            data=ModelTestResponse(
-                success=False,
-                message=error_msg,
-                latency_ms=latency_ms,
-            ),
-            msg_key="model_test_failed",
+        return _model_test_failure_response(
+            error=exc,
+            latency_ms=latency_ms,
+            provider=provider,
+            model_id=model_id,
+            model_type=model_type,
         )
+
+
+_MODEL_TEST_MAX_ERROR_DETAIL_LENGTH = 400
+_MODEL_TEST_TRANSLATION_KEY_PATTERN = re.compile(
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", re.IGNORECASE
+)
+_MODEL_TEST_UNSAFE_DETAIL_PATTERNS = (
+    re.compile(r"\btraceback\b", re.IGNORECASE),
+    re.compile(r'\bfile\s+"[^"]+", line \d+', re.IGNORECASE),
+    re.compile(r"\bexception\b", re.IGNORECASE),
+    re.compile(r"(/private/|/tmp/|[A-Z]:\\\\)"),
+)
+_MODEL_TEST_CREDENTIAL_PATTERNS = (
+    (
+        re.compile(r"(?i)\bbearer\s+[^\s,;}\]]+"),
+        "Bearer ***",
+    ),
+    (
+        re.compile(
+            r"(?i)(\b(?:api[_-]?key|access[_-]?token|token|secret|password|authorization)"
+            r"\b\s*(?:[:=]\s*|['\"]\s*:\s*['\"]))[^,\s;}\]'\"]+"
+        ),
+        r"\1***",
+    ),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{4,}\b"), "sk-***"),
+    (
+        re.compile(r"(?i)([?&](?:api[_-]?key|access[_-]?token|token|key)=)[^&#\s]+"),
+        r"\1***",
+    ),
+    (re.compile(r"(https?://)[^/\s:@]+:[^@/\s]+@"), r"\1***:***@"),
+)
+
+
+def _model_test_error_text(error: Exception) -> str:
+    message = getattr(error, "message", None)
+    if isinstance(message, str) and message.strip():
+        return message
+    return str(error)
+
+
+def _sanitize_model_test_error(error_text: str) -> str | None:
+    if not error_text or "\n" in error_text:
+        return None
+
+    detail = error_text.strip()
+    if (
+        not detail
+        or len(detail) > _MODEL_TEST_MAX_ERROR_DETAIL_LENGTH
+        or _MODEL_TEST_TRANSLATION_KEY_PATTERN.fullmatch(detail)
+        or any(pattern.search(detail) for pattern in _MODEL_TEST_UNSAFE_DETAIL_PATTERNS)
+    ):
+        return None
+
+    for pattern, replacement in _MODEL_TEST_CREDENTIAL_PATTERNS:
+        detail = pattern.sub(replacement, detail)
+
+    return detail if len(detail) <= _MODEL_TEST_MAX_ERROR_DETAIL_LENGTH else None
+
+
+def _is_model_test_rate_limited(error: Exception) -> bool:
+    raw_error = _model_test_error_text(error)
+    return getattr(error, "status_code", None) == 429 or (
+        "429" in raw_error or "rate limit" in raw_error.lower()
+    )
+
+
+def _model_test_error_reason(error: Exception) -> str:
+    raw_error = _model_test_error_text(error)
+    normalized_error = raw_error.lower()
+    status_code = getattr(error, "status_code", None)
+
+    if (
+        status_code == 401
+        or "401" in raw_error
+        or "unauthorized" in normalized_error
+        or "authentication" in normalized_error
+    ):
+        return t("model_test_invalid_api_key")
+    if (
+        status_code in {403, 404}
+        or "404" in raw_error
+        or "not found" in normalized_error
+    ):
+        return t("model_test_model_not_accessible")
+    if _is_model_test_rate_limited(error):
+        return t("model_test_rate_limited")
+    if "timeout" in normalized_error or "timed out" in normalized_error:
+        return t("model_test_connection_timeout")
+    if "connection" in normalized_error or "connect" in normalized_error:
+        return t("model_test_connection_failed_check_base_url")
+    if "has no attribute 'choices'" in normalized_error:
+        return t("model_test_chat_response_incompatible")
+
+    detail = _sanitize_model_test_error(raw_error)
+    if detail:
+        return t("model_test_provider_error_details", error=detail)
+    return t("model_test_unexpected_error")
+
+
+def _model_test_failure_response(
+    *,
+    error: Exception,
+    latency_ms: int,
+    provider: ModelProvider,
+    model_id: str,
+    model_type: ModelType,
+) -> dict:
+    message = t(
+        "model_test_failed",
+        provider=provider.value,
+        model=model_id,
+        model_type=model_type.value,
+        error=_model_test_error_reason(error),
+    )
+    return success(
+        data=ModelTestResponse(
+            success=False,
+            message=message,
+            latency_ms=latency_ms,
+        ),
+        msg=message,
+    )
 
 
 def _validate_api_key(provider: ModelProvider, api_key: str | None) -> None:
