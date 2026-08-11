@@ -398,7 +398,7 @@ class FileToURLNodeExecutor(NodeExecutor):
             try:
                 kb_id = UUID(key_path.parts[1])
             except ValueError:
-                pass
+                return ExecutionResult(error="not_found")
             else:
                 from app.models.knowledge_base import KnowledgeBase
                 from app.models.workflow import Workflow

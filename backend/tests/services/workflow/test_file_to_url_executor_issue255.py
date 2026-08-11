@@ -149,7 +149,7 @@ async def test_legacy_path_to_base64_streams_internal_upload(monkeypatch):
     monkeypatch.setattr(settings, "INTERNAL_API_TOKEN_FILE", "")
     context = SimpleNamespace(
         resolve_variable_ref=AsyncMock(
-            return_value="/api/v1/upload/files/documents/2026/08/report.txt"
+            return_value="/api/v1/upload/files/sandbox-artifacts/2026/08/report.txt"
         )
     )
 
@@ -164,8 +164,30 @@ async def test_legacy_path_to_base64_streams_internal_upload(monkeypatch):
     client.stream.assert_called_once_with(
         "GET",
         "/internal/uploads/read",
-        params={"key": "documents/2026/08/report.txt"},
+        params={"key": "sandbox-artifacts/2026/08/report.txt"},
     )
+
+
+@pytest.mark.asyncio
+async def test_legacy_document_path_rejects_non_uuid_knowledge_base(monkeypatch):
+    from app.services import upload_gateway
+
+    read = AsyncMock(return_value=b"should not be read")
+    monkeypatch.setattr(upload_gateway, "read", read)
+    context = SimpleNamespace(
+        resolve_variable_ref=AsyncMock(
+            return_value="documents/not-a-uuid/2026/08/report.txt"
+        )
+    )
+
+    result = await FileToURLNodeExecutor().execute(
+        node(inputVariable="file", inputType="path", outputType="base64"),
+        context,
+        SimpleNamespace(),
+    )
+
+    assert result.error == "not_found"
+    read.assert_not_awaited()
 
 
 @pytest.mark.asyncio

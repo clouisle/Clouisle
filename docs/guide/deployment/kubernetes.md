@@ -54,7 +54,7 @@ The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fall
 - Storage: 100GB+ persistent volumes
 
 **External Services:**
-- PostgreSQL 14+ (or use in-cluster)
+- PostgreSQL 17+ with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded (or use in-cluster)
 - Redis 6+ (or use in-cluster)
 - Qdrant 1.7+ (or use in-cluster)
 

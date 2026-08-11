@@ -155,7 +155,7 @@ Run the interactive installer from any directory:
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-Choose Docker Compose for a single server, Kubernetes with Helm, or Kubernetes single-file manifest generation. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings. The manifest mode writes a `0600` file at `./clouisle-k8s.yaml` by default (override with `CLOUISLE_K8S_MANIFEST`), does not apply it automatically, and prints the explicit `kubectl apply -f ./clouisle-k8s.yaml` command after generation; review the file before applying it.
+Choose Docker Compose for a single server, Kubernetes with Helm, or Kubernetes single-file manifest generation. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings. The manifest mode writes a `0600` file at `./clouisle-k8s.yaml` by default (override with `CLOUISLE_K8S_MANIFEST`), does not apply it automatically, and requires applying the generated file path after review; when `CLOUISLE_K8S_MANIFEST` is unset, use `kubectl apply -f ./clouisle-k8s.yaml`.
 
 For non-interactive Docker installation:
 
