@@ -39,9 +39,9 @@ git push origin v0.1.0
 Images are pushed to:
 
 ```text
-<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-backend:<version>
-<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-sandbox-worker:<version>
-<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-frontend:<version>
+registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
+registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
 ```
 
 Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
@@ -61,23 +61,30 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 
 ## Docker Compose Deployment
 
-### Quick Start
+### Guided One-Command Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
+
+The installer offers Docker Compose, Kubernetes with Helm, or secure single-file Kubernetes manifest generation. Docker mode prompts for an installation directory (`/opt/clouisle` by default), downloads deployment files, generates strong secrets, validates the Compose configuration, pulls published images, and starts services. Existing `.env` files are preserved during upgrades.
+
+### Manual Docker Compose Install
 
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD,
-# and QDRANT_API_KEY.
-
-docker compose up -d --build
+# Generate the shared API-to-worker gateway token before starting Compose.
+internal_api_token="$(openssl rand -hex 32)"
+sed -i.bak "s/^INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=${internal_api_token}/" .env
+rm .env.bak
+unset internal_api_token
+# Edit .env when custom domains or external API keys are required.
+docker compose pull
+docker compose up -d
 ```
 
-Compose reads `deploy/.env`. The default image prefix is `clouisle`; set these when using registry images:
-
-```env
-IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/your-namespace/clouisle
-IMAGE_TAG=0.1.0
-```
+Compose pulls the published `latest` images listed above by default.
 
 ### Services
 
@@ -146,19 +153,22 @@ docker compose down -v
 ### Prerequisites
 
 - Kubernetes cluster 1.25+
-- `kubectl` configured
-- Helm 3.x installed
+- `kubectl` configured to apply either Kubernetes option
+- Helm 3.x only for the Helm chart option
 - Ingress controller, such as ingress-nginx
 - Container images pushed to a registry accessible by the cluster
-- A `ReadWriteMany` capable StorageClass for multi-replica uploads, or single-replica application deployments
+- A `ReadWriteMany` capable StorageClass for multiple API replicas using local upload storage; otherwise use one API replica or object storage
 
 ### Option A: Helm Chart (recommended)
 
 ```bash
-helm lint deploy/helm/clouisle
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
+
 ```
 
 For production, create a Secret and use `values-production.yaml`:
@@ -169,7 +179,9 @@ kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
   --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
-  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
+  --from-literal=SANDBOX_ARTIFACT_UPLOAD_API_KEY='replace-with-sandbox-artifact-key' \
+  --from-literal=INTERNAL_API_TOKEN='replace-with-internal-upload-gateway-token'
 
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
@@ -179,18 +191,40 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 See `deploy/helm/clouisle/README.md` for external PostgreSQL, Redis, and Qdrant examples.
 
-### Option B: Single-file manifest
+### Option B: Generated single-file manifest
 
-The plain manifest is still available at `deploy/k8s/clouisle.yaml` for debugging or environments that do not use Helm.
+Generate a separate manifest with strong values for all required application secrets. The source
+template is not changed, the output is mode `0600`, and the installer does **not** apply it.
 
 ```bash
-# 1. Edit the manifest: replace base64 secret placeholders and set image/domain/storage values.
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
+  CLOUISLE_DEPLOYMENT=k8s \
+  CLOUISLE_K8S_MANIFEST="$PWD/clouisle-k8s.yaml" \
+  CLOUISLE_YES=1 bash
+
+# Review image, domain, and storage settings before applying.
+kubectl apply -f ./clouisle-k8s.yaml
+```
+
+The generated document contains base64-encoded secrets; store it securely and do not commit it.
+It contains `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `QDRANT_API_KEY`,
+`SANDBOX_ARTIFACT_UPLOAD_API_KEY`, and `INTERNAL_API_TOKEN`. The raw backend workloads wait in
+their `wait-for-postgres` init containers until PostgreSQL accepts connections, preventing a
+database startup race from turning into application restart loops.
+
+### Option C: Manual single-file template
+
+`deploy/k8s/clouisle.yaml` remains available for debugging or environments that need a manually
+edited template.
+
+```bash
+# 1. Replace base64 Secret placeholders and set image/domain/storage values.
 vi deploy/k8s/clouisle.yaml
 
-# 2. Apply everything
+# 2. Apply everything. Backend workloads wait for PostgreSQL automatically.
 kubectl apply -f deploy/k8s/clouisle.yaml
 
-# 3. Wait for infrastructure
+# 3. Observe infrastructure readiness when diagnosing a cluster deployment.
 kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
@@ -224,7 +258,7 @@ kubectl -n clouisle scale deployment api --replicas=3
 
 Keep `beat` at exactly one replica.
 
-If `uploads-data` uses `ReadWriteMany`, API/worker/sandbox-worker replicas can share uploaded files and sandbox artifacts. If your cluster does not support RWX storage, keep those deployments single-replica or move uploads/artifacts to object storage before scaling.
+`uploads-data` is mounted only by `api`; workers and sandbox-worker read authorized attachments/documents through the authenticated internal upload gateway, while sandbox artifacts are uploaded through the API. Local upload storage needs `ReadWriteMany` only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; worker and sandbox-worker replicas remain independently scalable.
 
 ### Logs
 
@@ -244,6 +278,7 @@ kubectl -n clouisle logs -f deployment/frontend
 |----------|----------|-----------------|-------------|
 | `SECRET_KEY` | Yes | placeholder | JWT signing key and default sandbox upload signing basis |
 | `API_BASE_URL` | Yes | `http://api:8000` | Internal API URL for containers |
+| `PUBLIC_API_URL` | No | empty | Public API origin used when workflow file URLs must be absolute |
 | `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | Yes for sandbox | `http://api:8000` | Internal API URL used by sandbox artifact upload |
 | `FRONTEND_URL` | Yes | `http://localhost:3000` | Public frontend URL |
 | `BACKEND_CORS_ORIGINS` | Yes | `["http://localhost:3000"]` | JSON array of allowed frontend origins |

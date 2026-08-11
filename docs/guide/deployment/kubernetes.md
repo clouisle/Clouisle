@@ -18,12 +18,16 @@ Kubernetes deployment provides:
 Helm is the recommended Kubernetes deployment method for Clouisle. It keeps the large manifest behind templates and lets each environment maintain a small values file.
 
 ```bash
-helm lint deploy/helm/clouisle
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
+
+The existing Secret must include a unique non-empty `INTERNAL_API_TOKEN` shared by the API, worker, and sandbox-worker.
 For production, create `clouisle-secret` and use `deploy/helm/clouisle/values-production.yaml`:
 
 ```bash
@@ -50,7 +54,7 @@ The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fall
 - Storage: 100GB+ persistent volumes
 
 **External Services:**
-- PostgreSQL 14+ (or use in-cluster)
+- PostgreSQL 17+ with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded (or use in-cluster)
 - Redis 6+ (or use in-cluster)
 - Qdrant 1.7+ (or use in-cluster)
 

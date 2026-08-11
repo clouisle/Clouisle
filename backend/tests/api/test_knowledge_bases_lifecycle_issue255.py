@@ -246,7 +246,9 @@ async def test_delete_document_cleans_storage_vectors_and_statistics(monkeypatch
     )
     store = SimpleNamespace(delete_document_vectors=AsyncMock())
     monkeypatch.setattr(knowledge_bases, "VectorStore", lambda: store)
-    monkeypatch.setattr(knowledge_bases.asyncio, "to_thread", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases.document_processor, "delete_media_assets", AsyncMock()
+    )
     monkeypatch.setattr(knowledge_bases.document_processor, "delete_file", AsyncMock())
     monkeypatch.setattr(knowledge_bases.AuditLogService, "log", AsyncMock())
     from app.core.celery import celery_app

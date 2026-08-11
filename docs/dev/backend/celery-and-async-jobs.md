@@ -113,6 +113,8 @@ python main.py sandbox-worker --local-dev -c 1
 
 The local dev mode uses `deploy/dockerfiles/sandbox-worker.Dockerfile` with the repository root Docker context, so `.dockerignore` excludes local `.venv`, `node_modules`, caches, `.env` files, and other local artifacts. It does not bind mount the project directory; code changes require rebuilding by rerunning the command. The `-c/--concurrency` value is passed through to the Celery worker inside the container.
 
+The container sets `UPLOAD_STORAGE_MODE=remote`: it reads authorized attachments through the API instead of mounting `uploads`. Set `INTERNAL_API_TOKEN` in the root `.env`; `API_INTERNAL_BASE_URL` defaults to the local API through `host.docker.internal` and localhost URLs are rewritten for the container.
+
 The container image installs Bubblewrap and enables `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true` with `SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap`. Each executable task receives its current workspace as a real `/workspace` bind mount. Direct host execution keeps isolation disabled unless both variables are set explicitly on a Linux host with working unprivileged user namespaces.
 
 Docker and Kubernetes must allow the namespace and mount syscalls used by rootless Bubblewrap. The supplied Compose and Helm configurations keep the worker non-root, disable privilege escalation, drop all capabilities, and use a worker-specific unconfined seccomp profile. Use an equivalent Localhost profile when cluster policy prohibits `Unconfined`.

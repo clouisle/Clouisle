@@ -12,10 +12,12 @@ This chart deploys Clouisle on Kubernetes with the current service model:
 ## Quick Start
 
 ```bash
-helm lint deploy/helm/clouisle
+INTERNAL_API_TOKEN="$(openssl rand -base64 32)"
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN"
+unset INTERNAL_API_TOKEN
 ```
 
 Check status:
@@ -37,7 +39,8 @@ kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
   --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
-  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
+  --from-literal=INTERNAL_API_TOKEN="$(openssl rand -base64 32)"
 ```
 
 Install with production values:
@@ -71,13 +74,15 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `images.backend.repository` | `clouisle-backend` | API, worker, and beat image |
-| `images.sandboxWorker.repository` | `clouisle-sandbox-worker` | Sandbox worker image |
-| `images.frontend.repository` | `clouisle-frontend` | Frontend image |
+| `images.backend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend` | API, worker, and beat image |
+| `images.sandboxWorker.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker` | Sandbox worker image |
+| `images.frontend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend` | Frontend image |
 | `config.API_BASE_URL` | `http://api:8000` | Internal API URL |
+| `config.API_INTERNAL_BASE_URL` | `http://api:8000` | Worker-to-API internal upload gateway URL |
 | `config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | `http://api:8000` | Internal artifact upload API URL |
 | `secrets.create` | `true` | Create a Secret from values |
 | `secrets.existingSecret` | empty | Existing Secret for production |
+| `secrets.values.INTERNAL_API_TOKEN` | required | Shared token for the internal upload gateway; set a unique value when chart-managed Secrets are enabled |
 | `uploads.accessModes` | `ReadWriteMany` | Shared uploads PVC mode |
 | `postgresql.enabled` | `true` | Deploy built-in ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
 | `postgresql.external.host` | empty | External PG17+ host with pg_search 0.24.3 preloaded when built-in mode is disabled |
@@ -92,9 +97,9 @@ Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migr
 
 ## Storage
 
-`api`, `worker`, and `sandbox-worker` share the `uploads` PVC at `/app/uploads`.
+`api` alone mounts the `uploads` PVC at `/app/uploads`. `worker` and `sandbox-worker` read authorized documents/attachments through the authenticated internal upload gateway, and `sandbox-worker` uploads artifacts through the API.
 
-Production multi-replica deployments require a `ReadWriteMany` capable StorageClass, such as NFS, EFS, or CephFS. If your cluster does not support RWX storage, keep `api`, `worker`, and `sandbox-worker` single-replica or move uploads/artifacts to object storage.
+Local upload storage needs a `ReadWriteMany` capable StorageClass, such as NFS, EFS, or CephFS, only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; workers remain independently scalable.
 
 ## Beat Replica Safety
 
@@ -103,11 +108,16 @@ Production multi-replica deployments require a `ReadWriteMany` capable StorageCl
 ## Validation
 
 ```bash
-helm lint deploy/helm/clouisle
-helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
+helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace \
   -f deploy/helm/clouisle/values-production.yaml
 helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace \
+  --set secrets.create=false --set secrets.existingSecret=clouisle-secret
+helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace \
+  --set secrets.create=false --set secrets.existingSecret=clouisle-secret \
   | kubectl apply --dry-run=client -f -
 ```
 

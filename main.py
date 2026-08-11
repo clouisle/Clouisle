@@ -11,6 +11,7 @@ Usage:
     python main.py beat      - Start the Celery beat scheduler
     python main.py flower    - Start the Flower monitoring (if installed)
 """
+
 import os
 import sys
 import argparse
@@ -24,6 +25,7 @@ BACKEND_DIR = os.path.join(PROJECT_ROOT, "backend")
 SANDBOX_WORKER_IMAGE_TAG = "clouisle-sandbox-worker:dev"
 SANDBOX_WORKER_ENV_KEYS = (
     "API_BASE_URL",
+    "API_INTERNAL_BASE_URL",
     "DATABASE_URL",
     "POSTGRES_SERVER",
     "POSTGRES_USER",
@@ -40,6 +42,7 @@ SANDBOX_WORKER_ENV_KEYS = (
     "QDRANT_DISTANCE",
     "SECRET_KEY",
     "SANDBOX_RUNTIME_ENABLED",
+    "INTERNAL_API_TOKEN",
     "SANDBOX_LEGACY_FALLBACK_ENABLED",
     "SANDBOX_WORKSPACE_ROOT",
     "SANDBOX_MAX_DISK_MB",
@@ -88,17 +91,28 @@ def start_server(
             f"with {workers} workers"
         )
         cmd = [
-            sys.executable, "-m", "gunicorn",
+            sys.executable,
+            "-m",
+            "gunicorn",
             "app.main:app",
-            "-k", "uvicorn.workers.UvicornWorker",
-            "--bind", f"{host}:{port}",
-            "--workers", str(workers),
-            "--graceful-timeout", "30",
-            "--timeout", "120",
-            "--keep-alive", "5",
-            "--access-logfile", "-",
-            "--error-logfile", "-",
-            "--forwarded-allow-ips", "*",
+            "-k",
+            "uvicorn.workers.UvicornWorker",
+            "--bind",
+            f"{host}:{port}",
+            "--workers",
+            str(workers),
+            "--graceful-timeout",
+            "30",
+            "--timeout",
+            "120",
+            "--keep-alive",
+            "5",
+            "--access-logfile",
+            "-",
+            "--error-logfile",
+            "-",
+            "--forwarded-allow-ips",
+            "*",
         ]
         subprocess.run(cmd)
 
@@ -116,8 +130,11 @@ def start_worker(
         f"🔧 Starting Celery worker (concurrency={concurrency}, queues={queues}, pool={pool or 'prefork'})"
     )
     cmd = [
-        sys.executable, "-m", "celery",
-        "-A", "app.core.celery:celery_app",
+        sys.executable,
+        "-m",
+        "celery",
+        "-A",
+        "app.core.celery:celery_app",
         "worker",
         "--loglevel=info",
         f"--concurrency={concurrency}",
@@ -137,8 +154,11 @@ def start_sandbox_worker(concurrency: int = 1):
         f"🔧 Starting Celery worker (concurrency={concurrency}, queues=sandbox, pool={pool or 'prefork'})"
     )
     cmd = [
-        os.path.join(BACKEND_DIR, ".venv", "bin", "python"), "-m", "celery",
-        "-A", "app.core.celery:celery_app",
+        os.path.join(BACKEND_DIR, ".venv", "bin", "python"),
+        "-m",
+        "celery",
+        "-A",
+        "app.core.celery:celery_app",
         "worker",
         "--loglevel=info",
         f"--concurrency={concurrency}",
@@ -156,9 +176,12 @@ def build_sandbox_worker_image(
 ):
     """Build the sandbox worker image from the repository root."""
     cmd = [
-        "docker", "build",
-        "-f", "deploy/dockerfiles/sandbox-worker.Dockerfile",
-        "-t", image_tag,
+        "docker",
+        "build",
+        "-f",
+        "deploy/dockerfiles/sandbox-worker.Dockerfile",
+        "-t",
+        image_tag,
     ]
     if no_cache:
         cmd.append("--no-cache")
@@ -198,8 +221,16 @@ def _map_local_url_to_host_gateway(url: str | None) -> str | None:
 
 def _sandbox_worker_container_env() -> dict[str, str]:
     root_env = _load_root_env_file()
-    env = {key: value for key in SANDBOX_WORKER_ENV_KEYS if (value := root_env.get(key))}
-    env.update({key: value for key in SANDBOX_WORKER_ENV_KEYS if (value := os.environ.get(key))})
+    env = {
+        key: value for key in SANDBOX_WORKER_ENV_KEYS if (value := root_env.get(key))
+    }
+    env.update(
+        {
+            key: value
+            for key in SANDBOX_WORKER_ENV_KEYS
+            if (value := os.environ.get(key))
+        }
+    )
     if env.get("REDIS_HOST") in {None, "localhost", "127.0.0.1"}:
         env["REDIS_HOST"] = "host.docker.internal"
     if env.get("POSTGRES_SERVER") in {None, "localhost", "127.0.0.1"}:
@@ -214,6 +245,13 @@ def _sandbox_worker_container_env() -> dict[str, str]:
     if api_base_url:
         env["API_BASE_URL"] = _map_local_url_to_host_gateway(api_base_url)
 
+    api_internal_base_url = (
+        env.get("API_INTERNAL_BASE_URL")
+        or api_base_url
+        or "http://host.docker.internal:8000"
+    )
+    env["API_INTERNAL_BASE_URL"] = _map_local_url_to_host_gateway(api_internal_base_url)
+
     artifact_upload_base_url = env.get("SANDBOX_ARTIFACT_UPLOAD_BASE_URL")
     if artifact_upload_base_url:
         env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = _map_local_url_to_host_gateway(
@@ -222,6 +260,7 @@ def _sandbox_worker_container_env() -> dict[str, str]:
     elif api_base_url:
         env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = env["API_BASE_URL"]
 
+    env["UPLOAD_STORAGE_MODE"] = "remote"
     return env
 
 
@@ -234,27 +273,40 @@ def start_sandbox_worker_container(
     """Build and run a temporary local-dev sandbox worker container."""
     build_sandbox_worker_image(no_cache=no_cache, image_tag=image_tag)
     cmd = [
-        "docker", "run", "--rm",
-        "--name", f"clouisle-sandbox-worker-dev-{os.getpid()}",
+        "docker",
+        "run",
+        "--rm",
+        "--add-host",
+        "host.docker.internal:host-gateway",
+        "--name",
+        f"clouisle-sandbox-worker-dev-{os.getpid()}",
     ]
     for key, value in _sandbox_worker_container_env().items():
         cmd.extend(["-e", f"{key}={value}"])
-    cmd.extend([
-        image_tag,
-        "python", "main.py", "sandbox-worker",
-        "-c", str(concurrency),
-    ])
+    cmd.extend(
+        [
+            image_tag,
+            "python",
+            "main.py",
+            "sandbox-worker",
+            "-c",
+            str(concurrency),
+        ]
+    )
     subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
 
 
 def start_beat():
     """Start the Celery beat scheduler."""
     os.chdir(BACKEND_DIR)
-    
+
     print("⏰ Starting Celery beat scheduler")
     cmd = [
-        sys.executable, "-m", "celery",
-        "-A", "app.core.celery:celery_app",
+        sys.executable,
+        "-m",
+        "celery",
+        "-A",
+        "app.core.celery:celery_app",
         "beat",
         "--loglevel=info",
     ]
@@ -264,11 +316,14 @@ def start_beat():
 def start_flower(port: int = 5555):
     """Start the Flower monitoring dashboard."""
     os.chdir(BACKEND_DIR)
-    
+
     print(f"🌸 Starting Flower at http://localhost:{port}")
     cmd = [
-        sys.executable, "-m", "celery",
-        "-A", "app.core.celery:celery_app",
+        sys.executable,
+        "-m",
+        "celery",
+        "-A",
+        "app.core.celery:celery_app",
         "flower",
         f"--port={port}",
     ]
@@ -293,45 +348,97 @@ Examples:
                                              Build and run sandbox worker dev container
   python main.py beat                      Start Celery beat scheduler
   python main.py flower                    Start Flower monitoring
-        """
+        """,
     )
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
+
     # Server command
     server_parser = subparsers.add_parser("server", help="Start the API server")
-    server_parser.add_argument("-H", "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
-    server_parser.add_argument("-p", "--port", type=int, default=8000, help="Port to bind (default: 8000)")
-    server_parser.add_argument("-w", "--workers", type=int, default=0, help="Number of Gunicorn workers (default: auto, production only)")
-    server_parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload (use Gunicorn for production)")
-    
+    server_parser.add_argument(
+        "-H", "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)"
+    )
+    server_parser.add_argument(
+        "-p", "--port", type=int, default=8000, help="Port to bind (default: 8000)"
+    )
+    server_parser.add_argument(
+        "-w",
+        "--workers",
+        type=int,
+        default=0,
+        help="Number of Gunicorn workers (default: auto, production only)",
+    )
+    server_parser.add_argument(
+        "--no-reload",
+        action="store_true",
+        help="Disable auto-reload (use Gunicorn for production)",
+    )
+
     # Worker command
     worker_parser = subparsers.add_parser("worker", help="Start the Celery worker")
-    worker_parser.add_argument("-c", "--concurrency", type=int, default=4, help="Number of worker processes (default: 4)")
-    worker_parser.add_argument("-Q", "--queues", default="default,workflow", help="Queues to consume (default: default,workflow)")
-    
+    worker_parser.add_argument(
+        "-c",
+        "--concurrency",
+        type=int,
+        default=4,
+        help="Number of worker processes (default: 4)",
+    )
+    worker_parser.add_argument(
+        "-Q",
+        "--queues",
+        default="default,workflow",
+        help="Queues to consume (default: default,workflow)",
+    )
+
     # Sandbox worker command
-    sandbox_worker_parser = subparsers.add_parser("sandbox-worker", help="Start the sandbox worker")
-    sandbox_worker_parser.add_argument("-c", "--concurrency", type=int, default=1, help="Number of sandbox worker processes (default: 1)")
-    sandbox_worker_parser.add_argument("--local-dev", action="store_true", help="Build and run the sandbox worker in a temporary local dev container")
-    sandbox_worker_parser.add_argument("--no-cache", action="store_true", help="Build the local dev sandbox image without Docker cache")
-    sandbox_worker_parser.add_argument("--image-tag", default=SANDBOX_WORKER_IMAGE_TAG, help=f"Local dev sandbox image tag (default: {SANDBOX_WORKER_IMAGE_TAG})")
+    sandbox_worker_parser = subparsers.add_parser(
+        "sandbox-worker", help="Start the sandbox worker"
+    )
+    sandbox_worker_parser.add_argument(
+        "-c",
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Number of sandbox worker processes (default: 1)",
+    )
+    sandbox_worker_parser.add_argument(
+        "--local-dev",
+        action="store_true",
+        help="Build and run the sandbox worker in a temporary local dev container",
+    )
+    sandbox_worker_parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Build the local dev sandbox image without Docker cache",
+    )
+    sandbox_worker_parser.add_argument(
+        "--image-tag",
+        default=SANDBOX_WORKER_IMAGE_TAG,
+        help=f"Local dev sandbox image tag (default: {SANDBOX_WORKER_IMAGE_TAG})",
+    )
 
     # Beat command
     subparsers.add_parser("beat", help="Start the Celery beat scheduler")
-    
+
     # Flower command
     flower_parser = subparsers.add_parser("flower", help="Start Flower monitoring")
-    flower_parser.add_argument("-p", "--port", type=int, default=5555, help="Flower port (default: 5555)")
-    
+    flower_parser.add_argument(
+        "-p", "--port", type=int, default=5555, help="Flower port (default: 5555)"
+    )
+
     args = parser.parse_args()
-    
+
     if args.command is None:
         parser.print_help()
         sys.exit(1)
-    
+
     if args.command == "server":
-        start_server(host=args.host, port=args.port, reload=not args.no_reload, workers=args.workers)
+        start_server(
+            host=args.host,
+            port=args.port,
+            reload=not args.no_reload,
+            workers=args.workers,
+        )
     elif args.command == "worker":
         start_worker(concurrency=args.concurrency, queues=args.queues)
     elif args.command == "sandbox-worker":

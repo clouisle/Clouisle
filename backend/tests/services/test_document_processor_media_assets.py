@@ -3,6 +3,8 @@ import importlib
 import io
 import zipfile
 from uuid import uuid4
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -14,7 +16,8 @@ from app.services.document_processor import DocumentProcessor
 document_processor_module = importlib.import_module("app.services.document_processor")
 
 
-def test_replace_embedded_media_data_uris_saves_assets(tmp_path):
+@pytest.mark.asyncio
+async def test_replace_embedded_media_data_uris_saves_assets(tmp_path):
     processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
     kb_id = uuid4()
     document_id = uuid4()
@@ -23,11 +26,20 @@ def test_replace_embedded_media_data_uris_saves_assets(tmp_path):
         "ascii"
     )
 
-    text, assets = processor.replace_embedded_media_data_uris(
-        f"before ![sample]({data_uri}) after",
-        kb_id=kb_id,
-        document_id=document_id,
-    )
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        text, assets = await processor.replace_embedded_media_data_uris(
+            f"before ![sample]({data_uri}) after",
+            kb_id=kb_id,
+            document_id=document_id,
+        )
 
     assert data_uri not in text
     assert f"/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/media/" in text
@@ -77,6 +89,65 @@ async def test_extract_text_resourceizes_markdown_data_uri_when_context_is_provi
     assert data_uri not in text
     assert metadata["media_assets"][0]["content_type"] == "image/png"
     assert metadata["media_assets"][0]["size"] == len(image_content)
+
+
+@pytest.mark.asyncio
+async def test_extract_text_without_data_uris_records_no_media_assets(tmp_path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id = uuid4()
+    document_id = uuid4()
+    markdown_path = processor.get_storage_path(kb_id, "plain.md")
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(b"# No images here", markdown_path)
+        text, metadata = await processor.extract_text(
+            markdown_path,
+            DocumentType.MD.value,
+            kb_id=kb_id,
+            document_id=document_id,
+        )
+
+    assert text == "# No images here"
+    assert "media_assets" not in metadata
+
+
+@pytest.mark.asyncio
+async def test_delete_media_assets_cleans_object_and_legacy_local_files(
+    tmp_path, monkeypatch
+):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id = uuid4()
+    document_id = uuid4()
+    key = f"documents/{kb_id}/media/{document_id}/legacy.png"
+    legacy_path = tmp_path / key
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_bytes(b"legacy")
+    object_storage = SimpleNamespace(
+        list=AsyncMock(return_value=[key]),
+        delete=AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        document_processor_module,
+        "get_upload_storage_backend",
+        AsyncMock(return_value=object_storage),
+    )
+
+    await processor.delete_media_assets(kb_id, document_id)
+
+    object_storage.list.assert_awaited_once_with(
+        f"documents/{kb_id}/media/{document_id}/"
+    )
+    object_storage.delete.assert_awaited_once_with(key)
+    assert not legacy_path.exists()
 
 
 @pytest.mark.asyncio

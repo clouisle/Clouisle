@@ -18,6 +18,7 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
+from app.services import upload_gateway
 
 from .artifacts import SandboxArtifactStore
 from .models import (
@@ -248,17 +249,29 @@ class SandboxManager:
                     f"Sandbox input target already exists: {input_file.target_path}"
                 )
             if input_file.asset_id is not None:
-                from app.api.v1.endpoints.upload import UPLOAD_ROOT
                 from app.services.asset import asset_service
-                from app.services.upload_storage import get_upload_storage_backend
 
                 asset = await asset_service.get_authorized(
                     input_file.asset_id,
                     team_id=team_id,
                     user_id=user_id,
                 )
-                storage = await get_upload_storage_backend(UPLOAD_ROOT)
-                content = await asset_service.read(asset, storage=storage)
+                if settings.UPLOAD_STORAGE_MODE == "remote":
+                    content = await upload_gateway.read(asset.storage_key)
+                    if (
+                        len(content) != asset.size
+                        or hashlib.sha256(content).hexdigest() != asset.checksum
+                    ):
+                        raise BusinessError(
+                            code=ResponseCode.VALIDATION_ERROR,
+                            msg_key="sandbox_input_checksum_mismatch",
+                        )
+                else:
+                    from app.api.v1.endpoints.upload import UPLOAD_ROOT
+                    from app.services.upload_storage import get_upload_storage_backend
+
+                    storage = await get_upload_storage_backend(UPLOAD_ROOT)
+                    content = await asset_service.read(asset, storage=storage)
             else:
                 assert input_file.content_base64 is not None
                 content = base64.b64decode(input_file.content_base64, validate=True)

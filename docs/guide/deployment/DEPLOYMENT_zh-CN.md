@@ -126,13 +126,26 @@ docker push registry.example.com/clouisle/clouisle-frontend:latest
 Kubernetes 推荐使用 Helm 部署：
 
 ```bash
-helm lint deploy/helm/clouisle
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
 生产环境建议先创建 `clouisle-secret`，再使用生产 values：
+```bash
+kubectl create namespace clouisle
+kubectl -n clouisle create secret generic clouisle-secret \
+  --from-literal=SECRET_KEY='replace-with-strong-random-key' \
+  --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
+  --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
+  --from-literal=SANDBOX_ARTIFACT_UPLOAD_API_KEY='replace-with-sandbox-artifact-key' \
+  --from-literal=INTERNAL_API_TOKEN="$(openssl rand -base64 32)"
+```
+
 
 ```bash
 helm upgrade --install clouisle deploy/helm/clouisle \
@@ -147,28 +160,24 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 ### 快速开始
 
+在任意目录运行交互式安装脚本：
+
 ```bash
-cd deploy
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
 
-# 1. Create and edit environment file
-cp .env.example .env
+根据提示选择单机 Docker Compose、Kubernetes Helm，或 Kubernetes 单文件 manifest（仅生成）。Docker 模式会交互式询问安装目录，默认为 `/opt/clouisle`，随后自动生成强随机密钥、下载当前 Compose 文件、拉取镜像并启动服务。Helm 模式会引导配置命名空间、Ingress、共享存储和可选的镜像拉取 Secret。单文件 manifest 模式默认在当前目录生成权限为 `0600` 的 `./clouisle-k8s.yaml`（可通过 `CLOUISLE_K8S_MANIFEST` 指定路径），不会自动应用；请先审阅文件，再运行 `kubectl apply -f ./clouisle-k8s.yaml`。
 
-# 2. Generate secure passwords (run each command, paste results into .env)
-openssl rand -base64 32    # → SECRET_KEY
-openssl rand -base64 16    # → POSTGRES_PASSWORD
-openssl rand -base64 16    # → REDIS_PASSWORD
-openssl rand -base64 16    # → QDRANT_API_KEY
+如需非交互式安装 Docker Compose：
 
-# 3. Build images and start all services
-docker compose up -d --build
-
-# 4. Verify all services are healthy
-docker compose ps
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
 ```
 
 ### 配置说明
 
-启动前请编辑 `deploy/.env`。以下变量**必须**修改：
+Docker 安装会把生成的配置保存在 `<安装目录>/.env`（默认为 `/opt/clouisle/.env`）。对外开放前请检查该文件。以下变量为空时会自动生成：
 
 | 变量 | 原因 | 示例 |
 |------|------|------|
@@ -176,6 +185,8 @@ docker compose ps
 | `POSTGRES_PASSWORD` | 数据库访问密码 | `openssl rand -base64 16` |
 | `REDIS_PASSWORD` | 缓存/队列访问密码 | `openssl rand -base64 16` |
 | `QDRANT_API_KEY` | 向量数据库访问密钥 | `openssl rand -base64 16` |
+| `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | 沙箱产物上传的可选 API Key 认证 | `openssl rand -base64 32` |
+| `INTERNAL_API_TOKEN` | worker 到 API 上传网关的认证令牌 | `openssl rand -base64 32` |
 
 以下变量在生产域名下建议修改：
 
@@ -365,7 +376,7 @@ docker compose down -v
 
 # Update images and restart
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 ```
 
 ---

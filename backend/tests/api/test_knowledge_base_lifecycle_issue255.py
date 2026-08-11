@@ -273,7 +273,11 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(
         patch.object(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb)),
         patch.object(knowledge_bases.Document, "filter", return_value=Query(first=doc)),
         patch.object(knowledge_bases, "VectorStore", return_value=vector_store),
-        patch.object(knowledge_bases.asyncio, "to_thread", AsyncMock()) as media_delete,
+        patch.object(
+            knowledge_bases.document_processor,
+            "delete_media_assets",
+            AsyncMock(),
+        ) as media_delete,
         patch.object(
             knowledge_bases.document_processor, "delete_file", AsyncMock()
         ) as file_delete,
@@ -288,7 +292,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(
     celery_app.control.revoke.assert_called_once_with("task-1", terminate=True)
     lexical_store_calls.document.assert_not_awaited()
     vector_store.delete_document_vectors.assert_awaited_once_with(doc_id)
-    media_delete.assert_awaited_once()
+    media_delete.assert_awaited_once_with(kb_id, doc_id)
     file_delete.assert_awaited_once_with("uploads/report.pdf")
     assert (kb.document_count, kb.total_chunks, kb.total_tokens) == (0, 0, 0)
     kb.save.assert_awaited_once()

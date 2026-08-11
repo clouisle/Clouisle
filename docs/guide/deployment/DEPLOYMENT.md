@@ -126,10 +126,12 @@ docker push registry.example.com/clouisle/clouisle-frontend:latest
 Helm is the recommended Kubernetes deployment method:
 
 ```bash
-helm lint deploy/helm/clouisle
+helm lint deploy/helm/clouisle \
+  --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
-  --create-namespace
+  --create-namespace \
+  --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
 For production, create `clouisle-secret` and use production values:
@@ -147,28 +149,24 @@ The plain manifest remains available at `deploy/k8s/clouisle.yaml` for fallback 
 
 ### Quick Start
 
+Run the interactive installer from any directory:
+
 ```bash
-cd deploy
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
+```
 
-# 1. Create and edit environment file
-cp .env.example .env
+Choose Docker Compose for a single server, Kubernetes with Helm, or Kubernetes single-file manifest generation. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings. The manifest mode writes a `0600` file at `./clouisle-k8s.yaml` by default (override with `CLOUISLE_K8S_MANIFEST`), does not apply it automatically, and requires applying the generated file path after review; when `CLOUISLE_K8S_MANIFEST` is unset, use `kubectl apply -f ./clouisle-k8s.yaml`.
 
-# 2. Generate secure passwords (run each command, paste results into .env)
-openssl rand -base64 32    # → SECRET_KEY
-openssl rand -base64 16    # → POSTGRES_PASSWORD
-openssl rand -base64 16    # → REDIS_PASSWORD
-openssl rand -base64 16    # → QDRANT_API_KEY
+For non-interactive Docker installation:
 
-# 3. Build images and start all services
-docker compose up -d --build
-
-# 4. Verify all services are healthy
-docker compose ps
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
 ```
 
 ### Configuration
 
-Edit `deploy/.env` before starting. The following variables **must** be changed:
+Docker installations keep their generated configuration in `<installation-directory>/.env` (`/opt/clouisle/.env` by default). Review it before exposing the deployment publicly. The following variables are generated automatically when empty:
 
 | Variable | Why | Example |
 |----------|-----|---------|
@@ -176,6 +174,8 @@ Edit `deploy/.env` before starting. The following variables **must** be changed:
 | `POSTGRES_PASSWORD` | Database access | `openssl rand -base64 16` |
 | `REDIS_PASSWORD` | Cache/queue access | `openssl rand -base64 16` |
 | `QDRANT_API_KEY` | Vector DB access | `openssl rand -base64 16` |
+| `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | Optional API-key authentication for sandbox artifact uploads | `openssl rand -base64 32` |
+| `INTERNAL_API_TOKEN` | Authenticated worker-to-API upload gateway | `openssl rand -base64 32` |
 
 The following should be changed for production domains:
 
@@ -365,7 +365,7 @@ docker compose down -v
 
 # Update images and restart
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 ```
 
 ---

@@ -487,10 +487,10 @@ async def test_delete_document_ignores_cleanup_failures_and_updates_counts(
 
     monkeypatch.setattr(kb_api, "VectorStore", lambda: VectorStore())
 
-    async def to_thread(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(kb_api.asyncio, "to_thread", to_thread)
+    delete_media_assets = AsyncMock()
+    monkeypatch.setattr(
+        kb_api.document_processor, "delete_media_assets", delete_media_assets
+    )
 
     async def delete_file(path):
         assert path == doc.file_path
@@ -500,6 +500,7 @@ async def test_delete_document_ignores_cleanup_failures_and_updates_counts(
     result = await kb_api.delete_document(kb.id, doc.id, fake_request, user)
 
     assert result["data"] == {"id": str(doc.id)}
+    delete_media_assets.assert_awaited_once_with(kb.id, doc.id)
     assert doc.deleted is True
     assert kb.document_count == 0
     assert kb.total_chunks == 0

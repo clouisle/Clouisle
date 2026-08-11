@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationInfo, field_validator
@@ -9,8 +10,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Clouisle"
     API_V1_STR: str = "/api/v1"
 
-    # Server URL (used for internal file access)
+    # Internal service URL; use PUBLIC_API_URL for browser-visible links.
     API_BASE_URL: str = "http://localhost:8000"
+    PUBLIC_API_URL: str | None = None
 
     # Frontend URL (used for SSO redirects)
     FRONTEND_URL: str = "http://localhost:3000"
@@ -117,6 +119,27 @@ class Settings(BaseSettings):
     SANDBOX_ARTIFACT_UPLOAD_API_KEY: str | None = None
     SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB: float = 10.0
     SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB: float = 10.0
+
+    # Internal upload gateway (worker -> api file access)
+    # UPLOAD_STORAGE_MODE: "local" (api process) | "remote" (worker process)
+    UPLOAD_STORAGE_MODE: str = "local"
+    API_INTERNAL_BASE_URL: str = ""
+    INTERNAL_API_TOKEN: str = ""
+    INTERNAL_API_TOKEN_FILE: str = ""
+
+    def get_internal_api_token(self) -> str:
+        if self.INTERNAL_API_TOKEN_FILE:
+            try:
+                token = (
+                    Path(self.INTERNAL_API_TOKEN_FILE)
+                    .read_text(encoding="utf-8")
+                    .strip()
+                )
+                if token:
+                    return token
+            except OSError:
+                pass
+        return self.INTERNAL_API_TOKEN
 
     model_config = SettingsConfigDict(
         case_sensitive=True,

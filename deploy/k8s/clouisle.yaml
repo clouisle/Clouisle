@@ -3,11 +3,10 @@
 # Apply:  kubectl apply -f deploy/k8s/clouisle.yaml
 # =============================================================================
 #
-# IMPORTANT: Before applying, replace base64 placeholder values in the Secret.
-#   echo -n 'your-value' | base64
+# IMPORTANT: Generate a separate secret-filled copy with `deploy/install.sh` (`CLOUISLE_DEPLOYMENT=k8s`),
+# or replace the base64 placeholder values below before applying this template manually.
 #
-# Replace image references with your registry, e.g.:
-#   registry.cn-hangzhou.aliyuncs.com/clouisle/clouisle-backend:0.1.0
+# Application images use the published Clouisle ACR repositories below.
 
 # ===========================================================================
 # 1. Namespace
@@ -31,6 +30,8 @@ data:
   PROJECT_NAME: "Clouisle"
   TIMEZONE: "Asia/Shanghai"
   API_BASE_URL: "http://api:8000"
+  PUBLIC_API_URL: ""
+  API_INTERNAL_BASE_URL: "http://api:8000"
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
   SANDBOX_WORKER_CONCURRENCY: "1"
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
@@ -50,8 +51,7 @@ data:
   RETRIEVAL_SHADOW_ENABLED: "false"
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
 
-# ===========================================================================
-# 3. Secret — sensitive values (replace base64 placeholders!)
+# 3. Secret — sensitive values (replace placeholders manually; the installer only changes generated copies)
 # ===========================================================================
 ---
 apiVersion: v1
@@ -65,6 +65,8 @@ data:
   POSTGRES_PASSWORD: Y2hhbmdlbWU=   # changeme
   REDIS_PASSWORD: Y2hhbmdlbWU=      # changeme
   QDRANT_API_KEY: Y2hhbmdlbWU=      # changeme
+  INTERNAL_API_TOKEN: ""  # required; install.sh generates it in output copies
+  SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""  # required; install.sh generates it in output copies
 
 # ===========================================================================
 # 4. PostgreSQL — StatefulSet + Headless Service + PVC
@@ -319,9 +321,9 @@ spec:
             claimName: qdrant-data
 
 # ===========================================================================
-# 7. Uploads — Shared PVC
-#    Production multi-replica deployments require a ReadWriteMany-capable
-#    StorageClass. Use single replicas or object storage if RWX is unavailable.
+# 7. Uploads — API PVC
+#    Multiple API replicas using local storage require ReadWriteMany. Workers
+#    access uploads through the authenticated API gateway and do not mount it.
 # ===========================================================================
 ---
 apiVersion: v1
@@ -358,6 +360,11 @@ metadata:
   namespace: clouisle
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: api
@@ -366,9 +373,42 @@ spec:
       labels:
         app: api
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - |
+              until pg_isready -h "$POSTGRES_SERVER" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "Waiting for PostgreSQL at ${POSTGRES_SERVER}:${POSTGRES_PORT}..."
+                sleep 2
+              done
+          env:
+            - name: POSTGRES_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_SERVER
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_DB
       containers:
         - name: api
-          image: clouisle-backend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
           ports:
@@ -378,9 +418,15 @@ spec:
                 name: clouisle-config
             - secretRef:
                 name: clouisle-secret
+          env:
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
           volumeMounts:
             - name: uploads
               mountPath: /app/uploads
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/v1/health
@@ -404,6 +450,12 @@ spec:
         - name: uploads
           persistentVolumeClaim:
             claimName: uploads-data
+        - name: internal-api-token
+          secret:
+            secretName: clouisle-secret
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 
 # ===========================================================================
 # 9. Worker — Deployment (no Service)
@@ -424,9 +476,42 @@ spec:
       labels:
         app: worker
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - |
+              until pg_isready -h "$POSTGRES_SERVER" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "Waiting for PostgreSQL at ${POSTGRES_SERVER}:${POSTGRES_PORT}..."
+                sleep 2
+              done
+          env:
+            - name: POSTGRES_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_SERVER
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_DB
       containers:
         - name: worker
-          image: clouisle-backend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
           envFrom:
@@ -434,9 +519,15 @@ spec:
                 name: clouisle-config
             - secretRef:
                 name: clouisle-secret
+          env:
+            - name: UPLOAD_STORAGE_MODE
+              value: "remote"
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
           volumeMounts:
-            - name: uploads
-              mountPath: /app/uploads
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
           resources:
             requests:
               cpu: 250m
@@ -445,9 +536,12 @@ spec:
               cpu: "2"
               memory: 2Gi
       volumes:
-        - name: uploads
-          persistentVolumeClaim:
-            claimName: uploads-data
+        - name: internal-api-token
+          secret:
+            secretName: clouisle-secret
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 
 # ===========================================================================
 # 10. Sandbox Worker — Deployment (no Service)
@@ -468,9 +562,42 @@ spec:
       labels:
         app: sandbox-worker
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - |
+              until pg_isready -h "$POSTGRES_SERVER" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "Waiting for PostgreSQL at ${POSTGRES_SERVER}:${POSTGRES_PORT}..."
+                sleep 2
+              done
+          env:
+            - name: POSTGRES_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_SERVER
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_DB
       containers:
         - name: sandbox-worker
-          image: clouisle-sandbox-worker:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
           imagePullPolicy: IfNotPresent
           command:
             - sh
@@ -481,6 +608,15 @@ spec:
                 name: clouisle-config
             - secretRef:
                 name: clouisle-secret
+          env:
+            - name: UPLOAD_STORAGE_MODE
+              value: "remote"
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
+          volumeMounts:
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -489,9 +625,6 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: Unconfined
-          volumeMounts:
-            - name: uploads
-              mountPath: /app/uploads
           resources:
             requests:
               cpu: 250m
@@ -500,9 +633,12 @@ spec:
               cpu: "2"
               memory: 2Gi
       volumes:
-        - name: uploads
-          persistentVolumeClaim:
-            claimName: uploads-data
+        - name: internal-api-token
+          secret:
+            secretName: clouisle-secret
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 
 # ===========================================================================
 # 11. Beat — Deployment (single replica, Recreate)
@@ -525,9 +661,42 @@ spec:
       labels:
         app: beat
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -ec
+            - |
+              until pg_isready -h "$POSTGRES_SERVER" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "Waiting for PostgreSQL at ${POSTGRES_SERVER}:${POSTGRES_PORT}..."
+                sleep 2
+              done
+          env:
+            - name: POSTGRES_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_SERVER
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_DB
       containers:
         - name: beat
-          image: clouisle-backend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "beat"]
           envFrom:
@@ -576,7 +745,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: clouisle-frontend:latest
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

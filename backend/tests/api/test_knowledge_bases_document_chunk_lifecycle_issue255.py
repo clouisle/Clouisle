@@ -121,7 +121,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(
     )
     monkeypatch.setattr(knowledge_bases, "VectorStore", lambda: vectors)
     monkeypatch.setattr(
-        knowledge_bases.document_processor, "delete_media_assets", Mock()
+        knowledge_bases.document_processor, "delete_media_assets", AsyncMock()
     )
     monkeypatch.setattr(knowledge_bases.document_processor, "delete_file", AsyncMock())
     monkeypatch.setattr(knowledge_bases.AuditLogService, "log", AsyncMock())
@@ -133,7 +133,7 @@ async def test_delete_document_cleans_task_vectors_media_file_and_stats(
     celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
     lexical_store_calls.document.assert_not_awaited()
     vectors.delete_document_vectors.assert_awaited_once_with(doc_id)
-    knowledge_bases.document_processor.delete_media_assets.assert_called_once_with(
+    knowledge_bases.document_processor.delete_media_assets.assert_awaited_once_with(
         kb_id, doc_id
     )
     knowledge_bases.document_processor.delete_file.assert_awaited_once_with(

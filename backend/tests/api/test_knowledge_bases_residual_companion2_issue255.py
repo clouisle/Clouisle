@@ -218,7 +218,7 @@ async def test_delete_document_cleans_processing_task_file_vectors_and_stats(
     monkeypatch.setattr(kb_endpoint, "VectorStore", lambda: vector_store)
     monkeypatch.setattr(kb_endpoint.document_processor, "delete_file", AsyncMock())
     monkeypatch.setattr(
-        kb_endpoint.document_processor, "delete_media_assets", lambda *_args: None
+        kb_endpoint.document_processor, "delete_media_assets", AsyncMock()
     )
     monkeypatch.setattr(kb_endpoint.AuditLogService, "log", AsyncMock())
 

@@ -13,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.api import api_router
 from app.core.config import settings
+from app.api.v1.endpoints.internal_uploads import router as internal_uploads_router
 from app.core.init_data import init_db
 from app.core.i18n import (
     set_language,
@@ -602,6 +603,10 @@ app.add_middleware(LoggingMiddleware)
 app.add_middleware(EmbedHeadersMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+# Internal upload gateway for worker -> api file access. Mounted outside
+# /api so the Ingress does not expose it publicly; authentication is
+# enforced by the dependency on every request.
+app.include_router(internal_uploads_router, prefix="/internal")
 
 
 @app.get("/")

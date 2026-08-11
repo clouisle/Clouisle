@@ -29,7 +29,7 @@ Success criteria:
 ### Stage 2: Chart scaffold and values schema
 - **Files modified**: `deploy/helm/clouisle/Chart.yaml`, `deploy/helm/clouisle/values.yaml`, `deploy/helm/clouisle/values-production.yaml`, `deploy/helm/clouisle/templates/_helpers.tpl`, `deploy/helm/clouisle/templates/NOTES.txt`
 - **Specific logic**: Define chart metadata, images, config, secrets, service settings, persistence, ingress, and infrastructure toggles.
-- **Validation**: `helm lint deploy/helm/clouisle` after templates are added.
+- **Validation**: `helm lint deploy/helm/clouisle --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token` after templates are added.
 
 ### Stage 3: Application service templates
 - **Files modified**: `deploy/helm/clouisle/templates/configmap.yaml`, `secret.yaml`, `serviceaccount.yaml`, `uploads-pvc.yaml`, `api-*`, `worker-deployment.yaml`, `sandbox-worker-deployment.yaml`, `beat-deployment.yaml`, `frontend-*`, `ingress.yaml`
@@ -48,12 +48,12 @@ Success criteria:
 
 ## Testing Strategy
 
-- `helm lint deploy/helm/clouisle`
-- `helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace`
+- `helm lint deploy/helm/clouisle --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token`
+- `helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token`
 - `helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace -f deploy/helm/clouisle/values-production.yaml`
 - `helm template clouisle deploy/helm/clouisle --namespace clouisle --set secrets.create=false --set secrets.existingSecret=clouisle-secret`
-- `helm template clouisle deploy/helm/clouisle --namespace clouisle --set postgresql.enabled=false --set postgresql.external.host=postgres.example.internal --set redis.enabled=false --set redis.external.host=redis.example.internal --set qdrant.enabled=false --set qdrant.external.url=https://qdrant.example.internal`
-- `helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace | kubectl apply --dry-run=client -f -`
+- `helm template clouisle deploy/helm/clouisle --namespace clouisle --set secrets.create=false --set secrets.existingSecret=clouisle-secret --set postgresql.enabled=false --set postgresql.external.host=postgres.example.internal --set redis.enabled=false --set redis.external.host=redis.example.internal --set qdrant.enabled=false --set qdrant.external.url=https://qdrant.example.internal`
+- `helm template clouisle deploy/helm/clouisle --namespace clouisle --create-namespace --set secrets.create=false --set secrets.existingSecret=clouisle-secret | kubectl apply --dry-run=client -f -`
 
 ## Current Validation Status
 

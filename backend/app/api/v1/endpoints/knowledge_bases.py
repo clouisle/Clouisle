@@ -3,7 +3,6 @@ Knowledge Base API endpoints.
 Provides CRUD operations for knowledge bases and documents.
 """
 
-import asyncio
 import logging
 import mimetypes
 from contextvars import ContextVar
@@ -11,7 +10,6 @@ from typing import Any, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
-from fastapi.responses import FileResponse
 from starlette.responses import Response as StarletteResponse
 from tortoise.expressions import F
 from tortoise.transactions import in_transaction
@@ -71,7 +69,7 @@ from app.services.lexical_store import (
     delete_document as delete_lexical_document,
     index_chunk as index_lexical_chunk,
 )
-from app.services.upload_storage import get_upload_storage_backend
+from app.services.upload_storage import LocalUploadStorage, get_upload_storage_backend
 from app.services.error_messages import is_safe_user_visible_error
 from app.services.audit_log import AuditLogService
 from app.services.vector_store import VectorStore, DimensionMismatchError
@@ -1054,7 +1052,7 @@ async def delete_document(
     await vector_store.delete_document_vectors(doc_id)
 
     # Delete extracted media assets if exists
-    await asyncio.to_thread(document_processor.delete_media_assets, kb.id, doc.id)
+    await document_processor.delete_media_assets(kb.id, doc.id)
 
     # Delete file if exists
     if doc.file_path:
@@ -1154,7 +1152,7 @@ async def get_document_media(
     doc_id: UUID,
     filename: str,
     current_user: User = Depends(require_kb_read),
-) -> FileResponse:
+) -> StarletteResponse:
     """
     Get extracted media from a processed document.
     """
@@ -1169,22 +1167,33 @@ async def get_document_media(
         )
 
     try:
-        file_path = document_processor.get_media_asset_path(kb_id, doc_id, filename)
+        safe_filename = document_processor._sanitize_filename(filename)
     except ValueError:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="file_not_found",
             status_code=404,
         ) from None
-    if not file_path.exists():
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="file_not_found",
-            status_code=404,
-        )
 
+    storage_key = f"documents/{kb_id}/media/{doc_id}/{safe_filename}"
+    root = document_processor._storage_root()
+    storage = await get_upload_storage_backend(root)
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return FileResponse(path=file_path, media_type=media_type)
+    if await storage.exists(storage_key):
+        return await storage.response(storage_key, content_type=media_type)
+
+    # Media assets created before this cutover were always local, including
+    # object-storage deployments. Keep them readable until migration/cleanup.
+    if not isinstance(storage, LocalUploadStorage):
+        legacy_storage = LocalUploadStorage(root)
+        if await legacy_storage.exists(storage_key):
+            return await legacy_storage.response(storage_key, content_type=media_type)
+
+    raise BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key="file_not_found",
+        status_code=404,
+    )
 
 
 @router.post(

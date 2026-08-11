@@ -93,12 +93,14 @@ def test_start_sandbox_worker_container_runs_without_bind_mounts(
     mock_build.assert_called_once_with(no_cache=False, image_tag="sandbox:test")
     cmd = mock_run.call_args.args[0]
     assert cmd[:3] == ["docker", "run", "--rm"]
+    assert ["--add-host", "host.docker.internal:host-gateway"] == cmd[3:5]
     assert "-v" not in cmd
     assert "--volume" not in cmd
     assert "--mount" not in cmd
     assert ["python", "main.py", "sandbox-worker", "-c", "3"] == cmd[-5:]
     assert "-e" in cmd
     assert "REDIS_HOST=redis.local" in cmd
+    assert "UPLOAD_STORAGE_MODE=remote" in cmd
     mock_run.assert_called_once_with(cmd, cwd=PROJECT_ROOT, check=True)
 
 
@@ -108,6 +110,7 @@ def test_start_sandbox_worker_container_reads_root_env(
     env_file = tmp_path / ".env"
     env_file.write_text(
         "REDIS_PASSWORD=secret\nPOSTGRES_USER=postgres\nREDIS_HOST=redis.local\n"
+        "API_INTERNAL_BASE_URL=http://localhost:8000\nINTERNAL_API_TOKEN=token\n"
     )
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
@@ -124,6 +127,8 @@ def test_start_sandbox_worker_container_reads_root_env(
     assert "REDIS_PASSWORD=secret" in cmd
     assert "POSTGRES_USER=postgres" in cmd
     assert "REDIS_HOST=redis.local" in cmd
+    assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
+    assert "INTERNAL_API_TOKEN=token" in cmd
 
 
 def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
@@ -135,6 +140,7 @@ def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
         "POSTGRES_SERVER=127.0.0.1\n"
         "QDRANT_URL=http://localhost:6333\n"
         "API_BASE_URL=http://localhost:8000\n"
+        "API_INTERNAL_BASE_URL=http://localhost:8000\n"
         "SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://127.0.0.1:9000\n"
     )
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
@@ -143,6 +149,7 @@ def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
     monkeypatch.delenv("QDRANT_URL", raising=False)
     monkeypatch.delenv("API_BASE_URL", raising=False)
     monkeypatch.delenv("SANDBOX_ARTIFACT_UPLOAD_BASE_URL", raising=False)
+    monkeypatch.delenv("API_INTERNAL_BASE_URL", raising=False)
 
     with (
         patch("main.build_sandbox_worker_image"),
@@ -156,6 +163,7 @@ def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
     assert "API_BASE_URL=http://host.docker.internal:8000" in cmd
     assert "SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://host.docker.internal:9000" in cmd
+    assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
 
 
 def test_start_sandbox_worker_container_defaults_host_service_env(
@@ -177,6 +185,7 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     assert "REDIS_HOST=host.docker.internal" in cmd
     assert "POSTGRES_SERVER=host.docker.internal" in cmd
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
+    assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
 
 
 def test_sandbox_worker_local_dev_cli_dispatches_container_mode(

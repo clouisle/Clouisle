@@ -11,16 +11,14 @@ def node(**config):
 
 
 @pytest.mark.asyncio
-async def test_path_reports_missing_file(tmp_path):
-    context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value=str(tmp_path / "missing.txt"))
-    )
+async def test_empty_input_value_is_rejected():
+    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=""))
 
     result = await FileToURLNodeExecutor().execute(
-        node(inputType="path"), context, SimpleNamespace()
+        node(inputVariable="file"), context, SimpleNamespace()
     )
 
-    assert result.error == "file_not_found"
+    assert result.error == "validation_error"
 
 
 @pytest.mark.asyncio
@@ -35,26 +33,55 @@ async def test_invalid_base64_uses_encoded_length():
 
 
 @pytest.mark.asyncio
-async def test_file_read_error_is_translated(tmp_path):
-    file_path = tmp_path / "file.txt"
-    file_path.write_text("content")
+async def test_resolve_error_is_translated():
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value=str(file_path))
+        resolve_variable_ref=AsyncMock(side_effect=OSError("private detail"))
     )
 
     with (
-        patch("os.path.getsize", side_effect=OSError("private detail")),
         patch(
             "app.services.workflow.executors.subworkflow.translate_public_workflow_error",
             return_value="public_error",
         ) as translate,
     ):
         result = await FileToURLNodeExecutor().execute(
-            node(inputType="path"), context, SimpleNamespace()
+            node(inputVariable="file"), context, SimpleNamespace()
         )
 
     assert result.error == "public_error"
     translate.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_absolute_urls_are_passed_through_unchanged():
+    context = SimpleNamespace(
+        resolve_variable_ref=AsyncMock(
+            return_value="https://cdn.example.com/files/a.pdf"
+        )
+    )
+
+    result = await FileToURLNodeExecutor().execute(
+        node(inputVariable="file", ensureAbsolute=True),
+        context,
+        SimpleNamespace(),
+    )
+
+    assert result.outputs["url"] == "https://cdn.example.com/files/a.pdf"
+
+
+@pytest.mark.asyncio
+async def test_http_absolute_url_is_not_rebaselined():
+    context = SimpleNamespace(
+        resolve_variable_ref=AsyncMock(return_value="http://cdn.example.com/a.pdf")
+    )
+
+    result = await FileToURLNodeExecutor().execute(
+        node(inputVariable="file", ensureAbsolute=True),
+        context,
+        SimpleNamespace(),
+    )
+
+    assert result.outputs["url"] == "http://cdn.example.com/a.pdf"
 
 
 def test_remaining_output_metadata_modes():
@@ -65,7 +92,11 @@ def test_remaining_output_metadata_modes():
     ] == ["content", "filename", "mimeType", "size"]
     assert [item.name for item in executor.get_output_specs({})] == [
         "url",
+        "urls",
         "filename",
         "mimeType",
         "size",
     ]
+    urls_spec = executor.get_output_specs({})[1].type
+    assert urls_spec.kind == "array"
+    assert urls_spec.item is not None and urls_spec.item.kind == "string"

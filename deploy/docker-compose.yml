@@ -62,10 +62,7 @@ services:
   # Application
   # ---------------------------------------------------------------------------
   api:
-    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
     restart: unless-stopped
     command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
     env_file: .env
@@ -75,6 +72,12 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     ports:
       - "8000:8000"
     volumes:
@@ -88,10 +91,7 @@ services:
         condition: service_healthy
 
   worker:
-    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
     restart: unless-stopped
     command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
     env_file: .env
@@ -101,8 +101,9 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
-    volumes:
-      - uploads_data:/app/uploads
+      UPLOAD_STORAGE_MODE: remote
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     depends_on:
       db:
         condition: service_healthy
@@ -111,13 +112,10 @@ services:
       qdrant:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
 
   sandbox-worker:
-    image: ${IMAGE_REGISTRY:-clouisle}-sandbox-worker:${IMAGE_TAG:-latest}
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/sandbox-worker.Dockerfile
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
     restart: unless-stopped
     command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
     env_file: .env
@@ -132,8 +130,9 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
-    volumes:
-      - uploads_data:/app/uploads
+      UPLOAD_STORAGE_MODE: remote
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     depends_on:
       db:
         condition: service_healthy
@@ -142,13 +141,10 @@ services:
       qdrant:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
 
   beat:
-    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
     restart: unless-stopped
     command: ["python", "main.py", "beat"]
     env_file: .env
@@ -167,14 +163,7 @@ services:
         condition: service_started
 
   frontend:
-    image: ${IMAGE_REGISTRY:-clouisle}-frontend:${IMAGE_TAG:-latest}
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/frontend.Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
-        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.0.0-dev}
-        NEXT_PUBLIC_BUILD_DATE: ${NEXT_PUBLIC_BUILD_DATE:-unknown}
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
     restart: unless-stopped
     environment:
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000}

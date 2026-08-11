@@ -174,26 +174,18 @@
 
 ### 前置条件
 
-- Docker 和 Docker Compose
+- 单机部署需要 Docker 和 Docker Compose v2
+- Kubernetes 部署需要 `kubectl` 和 Helm 3
 
-### 1. 配置环境变量
-
-```bash
-# 复制 Docker 部署环境变量文件
-cp deploy/.env.example deploy/.env
-
-# 编辑 deploy/.env，为以下字段设置强随机值：
-#   SECRET_KEY、POSTGRES_PASSWORD、REDIS_PASSWORD、QDRANT_API_KEY
-```
-
-### 2. 启动 Clouisle
+### 1. 运行引导式安装脚本
 
 ```bash
-cd deploy
-docker compose --env-file .env up -d
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-### 3. 访问应用
+根据提示选择单机 Docker Compose、Kubernetes Helm，或 Kubernetes 单文件 manifest（仅生成）。Docker 模式会交互式选择安装目录，默认为 `/opt/clouisle`；脚本会生成必要的随机密钥，并在启动前验证部署配置。选择单文件 manifest 时，脚本默认在当前目录生成权限为 `0600` 的 `./clouisle-k8s.yaml`（可通过 `CLOUISLE_K8S_MANIFEST` 指定路径），不会自动执行 `kubectl apply`；请先审阅生成文件，再使用实际生成路径运行 `kubectl apply -f <manifest-path>`；未设置 `CLOUISLE_K8S_MANIFEST` 时使用 `./clouisle-k8s.yaml`。
+
+### 2. 访问应用
 
 - **前端**：http://localhost:3000
 - **API 文档**：http://localhost:8000/docs
