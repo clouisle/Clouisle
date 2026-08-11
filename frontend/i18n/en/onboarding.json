@@ -186,10 +186,6 @@
       "title": "Rerank Parameters",
       "description": "Candidate K is the number of top results passed to the rerank model. Score threshold filters out results below a certain score. Adjust both based on your needs."
     },
-    "step7l": {
-      "title": "Rerank Fail Open",
-      "description": "When enabled, if the rerank model fails, the original retrieval results are returned instead of raising an error. Recommended to keep enabled for production stability."
-    },
     "step8": {
       "title": "Apps Section",
       "description": "Click here to manage your Agents and Workflows. This is where you build AI applications."
@@ -238,13 +234,9 @@
       "title": "Save Configuration",
       "description": "Click here to save your Agent configuration. Remember to save after making changes!"
     },
-    "step14a": {
-      "title": "Image Understanding",
-      "description": "When enabled, your Agent can understand and analyze image content. Useful for scenarios that require processing images or extracting information from pictures."
-    },
     "step14b": {
-      "title": "File Upload",
-      "description": "When enabled, users can upload files to your Agent. Supports PDF, Word, Excel, and other formats. The Agent can read file content to answer questions."
+      "title": "Attachments",
+      "description": "Enable attachments when users need to share files or images with your Agent. You can then set the maximum amount of extracted content the Agent receives."
     },
     "step14c": {
       "title": "User Input Request",
