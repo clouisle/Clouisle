@@ -34,6 +34,36 @@ async def test_local_upload_storage_save_read_delete(tmp_path: Path):
 
 
 @pytest.mark.anyio
+async def test_local_upload_storage_save_keeps_existing_file_on_write_failure(
+    monkeypatch, tmp_path: Path
+):
+    storage = LocalUploadStorage(tmp_path)
+    target = tmp_path / "documents" / "file.txt"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"complete-old-content")
+
+    class FailingWriter:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def write(self, _content):
+            raise OSError("disk full")
+
+    monkeypatch.setattr(
+        upload_storage.aiofiles, "open", lambda *_args, **_kwargs: FailingWriter()
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        await storage.save("documents/file.txt", b"partial")
+
+    assert target.read_bytes() == b"complete-old-content"
+    assert not list(target.parent.glob(".file.txt.*"))
+
+
+@pytest.mark.anyio
 async def test_local_upload_storage_read_response_and_traversal(tmp_path: Path):
     storage = LocalUploadStorage(tmp_path)
     await storage.save("file.txt", b"contents")

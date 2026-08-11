@@ -4,10 +4,11 @@ Sub-workflow node executor.
 Handles nested workflow execution with depth tracking.
 """
 
-from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 import logging
+import mimetypes
+import os
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
@@ -255,97 +256,188 @@ class FileToURLNodeExecutor(NodeExecutor):
         context: "ExecutionContext",
         run: "WorkflowRun",
     ) -> ExecutionResult:
-        """Execute file to URL conversion."""
-        import os
+        """Execute file to URL conversion.
+
+        Workflow file parameters are uploaded when the run starts; the
+        variable value is already the upload URL (frontend stores
+        ``result.url``, a list of URLs for multi-file parameters). This node
+        therefore never reads file bytes — it resolves the file variable(s)
+        and returns their URL(s), optionally absolutized. No local filesystem
+        access, so it runs on any worker without the uploads volume.
+        """
         import base64
         import mimetypes
+        from urllib.parse import urlparse
+
         from app.core.config import settings
 
         node_data = node.get("data", {})
-        config = node_data.get("config", {})
+        legacy_config = node_data.get("config", {})
+        config = node_data.get("fileToUrlConfig", legacy_config)
 
-        input_var = config.get("inputVariable", "")
-        input_type = config.get("inputType", "path")
-        output_type = config.get("outputType", "url")
-        config.get("expiresIn", 3600)
-
-        # Get input value
-        input_value = await context.resolve_variable_ref(input_var)
-        if not input_value:
-            return ExecutionResult(error="validation_error")
+        inputs = config.get("inputs", [])
+        ensure_absolute = bool(config.get("ensureAbsolute", True))
+        input_var = config.get("inputVariable", "") or legacy_config.get(
+            "inputVariable", ""
+        )
+        input_type = config.get("inputType", "path") or legacy_config.get(
+            "inputType", "path"
+        )
+        output_type = config.get("outputType", "url") or legacy_config.get(
+            "outputType", "url"
+        )
 
         try:
-            if input_type == "path":
-                # Input is a file path
-                file_path = str(input_value)
-
-                if not os.path.exists(file_path):
-                    return ExecutionResult(error="file_not_found")
-
-                filename = os.path.basename(file_path)
-                mime_type, _ = mimetypes.guess_type(file_path)
-                file_size = os.path.getsize(file_path)
-
-                if output_type == "base64":
-                    with open(file_path, "rb") as f:
-                        content = base64.b64encode(f.read()).decode()
-                    return ExecutionResult(
-                        outputs={
-                            "content": content,
-                            "filename": filename,
-                            "mimeType": mime_type or "application/octet-stream",
-                            "size": file_size,
-                        }
+            if inputs:
+                outputs: dict[str, WorkflowValue] = {}
+                for item in inputs:
+                    name = item.get("name", "")
+                    ref = item.get("sourceVariable", "")
+                    if not name or not ref:
+                        continue
+                    value = await context.resolve_variable_ref(ref)
+                    if not self._has_file_value(value):
+                        return ExecutionResult(error="validation_error")
+                    outputs[name] = self._normalize_urls(
+                        value, ensure_absolute, settings
                     )
-                else:
-                    # Generate URL (simplified - in production use signed URLs)
-                    uploads_root = Path(
-                        "/Users/yunhai/Documents/CodeData/Project/Clouisle/uploads"
-                    )
-                    relative_path = Path(file_path).resolve().relative_to(uploads_root)
-                    url = (
-                        f"{str(settings.API_BASE_URL).rstrip('/')}/uploads/"
-                        f"{relative_path.as_posix()}"
-                    )
+                if not outputs:
+                    return ExecutionResult(error="validation_error")
+                return ExecutionResult(outputs=outputs)
 
-                    return ExecutionResult(
-                        outputs={
-                            "url": url,
-                            "filename": filename,
-                            "mimeType": mime_type or "application/octet-stream",
-                            "size": file_size,
-                        }
-                    )
-
-            elif input_type == "base64":
-                # Input is base64 content
-                content = str(input_value)
-
-                # Decode to get size
+            # Legacy base64/content modes — pure string handling, no filesystem.
+            if input_type == "content":
+                return ExecutionResult(error="validation_error")
+            if input_type == "base64":
+                value = await context.resolve_variable_ref(input_var or "")
+                if value is None:
+                    return ExecutionResult(error="validation_error")
+                content = str(value)
                 try:
                     decoded = base64.b64decode(content)
                     file_size = len(decoded)
                 except Exception:
                     file_size = len(content)
-
                 if output_type == "base64":
                     return ExecutionResult(
-                        outputs={
-                            "content": content,
-                            "size": file_size,
-                        }
+                        outputs={"content": content, "size": file_size}
                     )
-                else:
-                    # Would need to save to storage and generate URL
-                    # This is a simplified implementation
-                    return ExecutionResult(error="workflow_execution_error")
+                return ExecutionResult(error="workflow_execution_error")
 
-            else:
+            if not input_var:
                 return ExecutionResult(error="validation_error")
 
+            value = await context.resolve_variable_ref(input_var)
+            if not self._has_file_value(value):
+                return ExecutionResult(error="validation_error")
+
+            if input_type == "path" and output_type == "base64":
+                return await self._legacy_path_to_base64(value, settings)
+
+            converted = self._normalize_urls(value, ensure_absolute, settings)
+            if isinstance(converted, list):
+                first = converted[0] if converted else ""
+                filename = os.path.basename(urlparse(first).path) or "file"
+                mime_type, _ = mimetypes.guess_type(filename)
+                return ExecutionResult(
+                    outputs={
+                        "urls": converted,
+                        "filename": filename,
+                        "mimeType": mime_type or "application/octet-stream",
+                    }
+                )
+            filename = os.path.basename(urlparse(converted).path) or "file"
+            mime_type, _ = mimetypes.guess_type(filename)
+            return ExecutionResult(
+                outputs={
+                    "url": converted,
+                    "filename": filename,
+                    "mimeType": mime_type or "application/octet-stream",
+                    "size": 0,
+                }
+            )
         except Exception as e:
             logger.exception(f"File conversion error: {e}")
             return ExecutionResult(error=translate_public_workflow_error(e))
+
+    @staticmethod
+    def _has_file_value(value: WorkflowValue) -> bool:
+        if isinstance(value, list):
+            return bool(value) and all(
+                isinstance(item, str) and item.strip() for item in value
+            )
+        return isinstance(value, str) and bool(value.strip())
+
+    @staticmethod
+    async def _legacy_path_to_base64(
+        value: WorkflowValue, settings: Any
+    ) -> ExecutionResult:
+        """Read a legacy uploaded path through api, never from worker disk."""
+        import base64
+        import httpx
+        from pathlib import PurePosixPath
+        from urllib.parse import unquote, urlsplit
+
+        if not isinstance(value, str):
+            return ExecutionResult(error="validation_error")
+        raw_path = unquote(urlsplit(value).path or value)
+        marker = "/api/v1/upload/files/"
+        if marker in raw_path:
+            storage_key = raw_path.split(marker, 1)[1]
+        elif "/uploads/" in raw_path:
+            storage_key = raw_path.split("/uploads/", 1)[1]
+        elif raw_path.startswith("documents/"):
+            storage_key = raw_path
+        else:
+            return ExecutionResult(error="workflow_execution_error")
+        key_path = PurePosixPath(storage_key)
+        if key_path.is_absolute() or not key_path.parts or ".." in key_path.parts:
+            return ExecutionResult(error="validation_error")
+
+        async with httpx.AsyncClient(
+            base_url=settings.API_INTERNAL_BASE_URL.rstrip("/"),
+            headers={"Authorization": f"Bearer {settings.get_internal_api_token()}"},
+            timeout=60.0,
+        ) as client:
+            async with client.stream(
+                "GET", "/internal/uploads/read", params={"key": key_path.as_posix()}
+            ) as response:
+                response.raise_for_status()
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    content.extend(chunk)
+
+        filename = os.path.basename(raw_path) or "file"
+        mime_type, _ = mimetypes.guess_type(filename)
+        return ExecutionResult(
+            outputs={
+                "content": base64.b64encode(content).decode("ascii"),
+                "filename": filename,
+                "mimeType": mime_type or "application/octet-stream",
+                "size": len(content),
+            }
+        )
+
+    @staticmethod
+    def _normalize_urls(
+        value: WorkflowValue, ensure_absolute: bool, settings: Any
+    ) -> str | list[str]:
+        """Normalize a file variable value (URL or URL list) without reading files."""
+
+        def _absolutize(url: str) -> str:
+            url = url.strip()
+            if not ensure_absolute or url.startswith(("http://", "https://")):
+                return url
+            base = str(getattr(settings, "PUBLIC_API_URL", "") or "").rstrip("/")
+            if not base:
+                return url
+            return f"{base}{url if url.startswith('/') else '/' + url}"
+
+        if isinstance(value, list):
+            return [_absolutize(v) for v in value if isinstance(v, str) and v.strip()]
+        if isinstance(value, str) and value.strip():
+            return _absolutize(value)
+        return _absolutize(str(value))
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""

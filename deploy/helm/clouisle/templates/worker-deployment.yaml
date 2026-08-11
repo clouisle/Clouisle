@@ -27,17 +27,26 @@ spec:
           command:
             {{- toYaml .Values.worker.command | nindent 12 }}
           {{- include "clouisle.envFrom" . | nindent 10 }}
+          env:
+            - name: UPLOAD_STORAGE_MODE
+              value: "remote"
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
+          volumeMounts:
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
           {{- with .Values.global.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          volumeMounts:
-            - name: uploads
-              mountPath: {{ .Values.uploads.mountPath }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
       volumes:
-        - name: uploads
-          persistentVolumeClaim:
-            claimName: {{ include "clouisle.uploadsClaimName" . }}
+        - name: internal-api-token
+          secret:
+            secretName: {{ include "clouisle.secretName" . }}
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 {{- end }}

@@ -1,5 +1,4 @@
 import importlib
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -250,10 +249,11 @@ async def test_download_and_media_reject_invalid_storage_paths(monkeypatch):
         await knowledge_bases.download_document(kb_id, doc_id, SimpleNamespace())
     assert caught.value.msg_key == "file_not_found"
 
+    storage = SimpleNamespace(exists=AsyncMock(return_value=False))
     monkeypatch.setattr(
-        knowledge_bases.document_processor,
-        "get_media_asset_path",
-        lambda *_args: Path("/definitely/missing/image.png"),
+        knowledge_bases,
+        "get_upload_storage_backend",
+        AsyncMock(return_value=storage),
     )
     with pytest.raises(BusinessError) as caught:
         await knowledge_bases.get_document_media(

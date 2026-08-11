@@ -75,9 +75,11 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 | `images.sandboxWorker.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker` | Sandbox worker image |
 | `images.frontend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend` | Frontend image |
 | `config.API_BASE_URL` | `http://api:8000` | Internal API URL |
+| `config.API_INTERNAL_BASE_URL` | `http://api:8000` | Worker-to-API internal upload gateway URL |
 | `config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | `http://api:8000` | Internal artifact upload API URL |
 | `secrets.create` | `true` | Create a Secret from values |
 | `secrets.existingSecret` | empty | Existing Secret for production |
+| `secrets.values.INTERNAL_API_TOKEN` | `changeme` | Shared token for the internal upload gateway |
 | `uploads.accessModes` | `ReadWriteMany` | Shared uploads PVC mode |
 | `postgresql.enabled` | `true` | Deploy built-in ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
 | `postgresql.external.host` | empty | External PG17+ host with pg_search 0.24.3 preloaded when built-in mode is disabled |
@@ -92,9 +94,9 @@ Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migr
 
 ## Storage
 
-`api`, `worker`, and `sandbox-worker` share the `uploads` PVC at `/app/uploads`.
+`api` alone mounts the `uploads` PVC at `/app/uploads`. `worker` and `sandbox-worker` read authorized documents/attachments through the authenticated internal upload gateway, and `sandbox-worker` uploads artifacts through the API.
 
-Production multi-replica deployments require a `ReadWriteMany` capable StorageClass, such as NFS, EFS, or CephFS. If your cluster does not support RWX storage, keep `api`, `worker`, and `sandbox-worker` single-replica or move uploads/artifacts to object storage.
+Local upload storage needs a `ReadWriteMany` capable StorageClass, such as NFS, EFS, or CephFS, only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; workers remain independently scalable.
 
 ## Beat Replica Safety
 

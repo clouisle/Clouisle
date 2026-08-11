@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -61,6 +62,10 @@ class UploadStorageBackend(ABC):
     async def delete(self, key: str) -> None:
         """Delete key if it exists."""
 
+    @abstractmethod
+    async def list(self, prefix: str) -> list[str]:
+        """List storage keys under a prefix (empty prefix lists everything)."""
+
     async def validate(self) -> None:
         return None
 
@@ -84,8 +89,16 @@ class LocalUploadStorage(UploadStorageBackend):
     ) -> str:
         path = self._path(key)
         os.makedirs(path.parent, exist_ok=True)
-        async with aiofiles.open(path, "wb") as f:
-            await f.write(content)
+        fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        os.close(fd)
+        temporary_path = Path(temporary_name)
+        try:
+            async with aiofiles.open(temporary_path, "wb") as f:
+                await f.write(content)
+            os.replace(temporary_path, path)
+        except Exception:
+            temporary_path.unlink(missing_ok=True)
+            raise
         return str(path)
 
     async def exists(self, key: str) -> bool:
@@ -108,6 +121,19 @@ class LocalUploadStorage(UploadStorageBackend):
             self._path(key).unlink()
         except FileNotFoundError:
             return
+
+    async def list(self, prefix: str) -> list[str]:
+        base = self.root.joinpath(*prefix.split("/")).resolve()
+        if base != self.root and self.root not in base.parents:
+            return []
+        if not base.is_dir():
+            return []
+        keys = [
+            path.relative_to(self.root).as_posix()
+            for path in sorted(base.rglob("*"))
+            if path.is_file()
+        ]
+        return keys
 
 
 class ObjectUploadStorage(UploadStorageBackend):
@@ -238,6 +264,17 @@ class ObjectUploadStorage(UploadStorageBackend):
     async def delete(self, key: str) -> None:
         async with self._client() as client:
             await client.delete_object(Bucket=self.config.bucket, Key=key)
+
+    async def list(self, prefix: str) -> list[str]:
+        keys: list[str] = []
+        async with self._client() as client:
+            paginator = client.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(
+                Bucket=self.config.bucket, Prefix=prefix
+            ):
+                for obj in page.get("Contents", []):
+                    keys.append(str(obj["Key"]))
+        return keys
 
 
 def _storage_defaults() -> dict[str, Any]:

@@ -19,7 +19,7 @@ from app.models.knowledge_base import (
 )
 from app.models.notification import AutoNotificationType
 from app.services.auto_notification import AutoNotificationService
-from app.services.document_processor import document_processor
+from app.services.document_processor import UploadGatewayError, document_processor
 from app.services.lexical_store import LexicalStore, chunk_document, index_document
 from app.services.vector_store import (
     VectorStore,
@@ -372,7 +372,7 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         clean_text_setting = doc_meta.get("clean_text", True)
 
         if document.file_path:
-            document_processor.delete_media_assets(kb.id, document.id)
+            await document_processor.delete_media_assets(kb.id, document.id)
             text, metadata = await document_processor.extract_text(
                 document.file_path,
                 document.doc_type,
@@ -562,6 +562,10 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
             "error_type": "dimension_mismatch",
         }
 
+    except UploadGatewayError:
+        # The api gateway can be briefly unavailable during startup or rollout.
+        # Let the bound Celery task retry instead of terminally failing the document.
+        raise
     except Exception as e:
         logger.exception(f"Error processing document {document_id}: {e}")
 
@@ -609,7 +613,10 @@ def process_document_task(self, document_id: str) -> dict:
     """
 
     task_id = getattr(self.request, "id", None)
-    return _run_async(_process_document(document_id, task_id))
+    try:
+        return _run_async(_process_document(document_id, task_id))
+    except UploadGatewayError as exc:
+        raise self.retry(exc=exc) from exc
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -670,13 +677,16 @@ def reprocess_document_task(self, document_id: str) -> dict:
 
         return {"status": "pending", "deleted_chunks": deleted_count}
 
-    result = _run_async(_reprocess())
+    try:
+        result = _run_async(_reprocess())
 
-    if result.get("status") == "pending":
-        task_id = getattr(self.request, "id", None)
-        return _run_async(_process_document(document_id, task_id))
+        if result.get("status") == "pending":
+            task_id = getattr(self.request, "id", None)
+            return _run_async(_process_document(document_id, task_id))
 
-    return result
+        return result
+    except UploadGatewayError as exc:
+        raise self.retry(exc=exc) from exc
 
 
 @shared_task
@@ -778,7 +788,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
             # Extract text
             if document.file_path:
-                document_processor.delete_media_assets(kb.id, document.id)
+                await document_processor.delete_media_assets(kb.id, document.id)
                 text, _ = await document_processor.extract_text(
                     document.file_path,
                     document.doc_type,
@@ -916,6 +926,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 "error_type": "dimension_mismatch",
             }
 
+        except UploadGatewayError:
+            raise
         except Exception as e:
             logger.exception(f"Error rechunking document {document_id}: {e}")
 
@@ -942,7 +954,10 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 "message": document.error_message,
             }
 
-    return _run_async(_rechunk())
+    try:
+        return _run_async(_rechunk())
+    except UploadGatewayError as exc:
+        raise self.retry(exc=exc) from exc
 
 
 async def _embed_existing_document_chunks(

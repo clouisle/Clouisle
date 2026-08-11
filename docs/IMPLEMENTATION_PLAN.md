@@ -2,6 +2,17 @@
 
 ## Active
 
+- **kubernetes-manifest-installer-readiness** — Complete. Add a secure single-file Kubernetes manifest generation route to the guided installer and prevent raw-manifest backend workloads from starting before PostgreSQL accepts connections. See `docs/plan/kubernetes-manifest-installer-readiness.md`
+  - [x] 1. Generate an isolated secret-filled Kubernetes manifest
+  - [x] 2. Gate raw backend workloads on PostgreSQL readiness
+  - [x] 3. Document and validate the installer and manifest
+
+- **remove-worker-uploads-mount** — In progress. Removed the shared uploads volume mount from the Celery worker (and sandbox-worker) so distributed deployments without distributed storage work: media assets moved onto UploadStorageBackend, worker file access goes through explicit internal `/internal/uploads/*` endpoints on api (`INTERNAL_API_TOKEN` auth), and the workflow `file_to_url` node became a pure URL passthrough. See `docs/plan/remove-worker-uploads-mount.md`
+  - [x] 1. Media assets on UploadStorageBackend (list/save/delete/serve)
+  - [x] 2. Internal file endpoints + token auth + worker remote-mode branches
+  - [x] 3. Deployment manifests, env/secret, and docs
+  - [ ] 4. End-to-end verification in a real cluster (local + object modes)
+
 - **yun-129-sandbox-oriented-asset-handling** — Complete. Replace parser- and URL-centric chat attachments with durable Assets that support on-demand parsing, stable conversation refs, Sandbox materialization, reusable media, and one Agent-level attachment capability. See `docs/plan/yun-129-sandbox-oriented-asset-handling.md`
   - [x] 1. Design and implementation index
   - [x] 2. Durable Asset domain and scoped references

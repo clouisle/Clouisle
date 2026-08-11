@@ -7,6 +7,8 @@ metadata:
     {{- include "clouisle.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
 spec:
   replicas: {{ .Values.api.replicas }}
+  strategy:
+    {{- toYaml .Values.api.strategy | nindent 4 }}
   selector:
     matchLabels:
       {{- include "clouisle.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
@@ -30,6 +32,9 @@ spec:
             - name: http
               containerPort: 8000
           {{- include "clouisle.envFrom" . | nindent 10 }}
+          env:
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
           {{- with .Values.global.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -37,6 +42,9 @@ spec:
           volumeMounts:
             - name: uploads
               mountPath: {{ .Values.uploads.mountPath }}
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
           readinessProbe:
             httpGet:
               path: {{ .Values.api.probes.readiness.path }}
@@ -55,4 +63,10 @@ spec:
         - name: uploads
           persistentVolumeClaim:
             claimName: {{ include "clouisle.uploadsClaimName" . }}
+        - name: internal-api-token
+          secret:
+            secretName: {{ include "clouisle.secretName" . }}
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 {{- end }}

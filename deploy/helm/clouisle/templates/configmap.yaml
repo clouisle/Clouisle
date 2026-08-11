@@ -20,6 +20,8 @@ data:
   PROJECT_NAME: {{ .Values.config.PROJECT_NAME | quote }}
   TIMEZONE: {{ .Values.config.TIMEZONE | quote }}
   API_BASE_URL: {{ .Values.config.API_BASE_URL | quote }}
+  PUBLIC_API_URL: {{ .Values.config.PUBLIC_API_URL | quote }}
+  API_INTERNAL_BASE_URL: {{ .Values.config.API_INTERNAL_BASE_URL | quote }}
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: {{ .Values.config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL | quote }}
   FRONTEND_URL: {{ .Values.config.FRONTEND_URL | quote }}
   BACKEND_CORS_ORIGINS: {{ .Values.config.BACKEND_CORS_ORIGINS | quote }}

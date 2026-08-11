@@ -245,7 +245,7 @@ async def test_delete_document_without_task_or_file(monkeypatch, status):
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock(return_value=kb))
     monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(first=doc))
     monkeypatch.setattr(endpoint, "VectorStore", lambda: vector_store)
-    monkeypatch.setattr(endpoint.asyncio, "to_thread", AsyncMock())
+    monkeypatch.setattr(endpoint.document_processor, "delete_media_assets", AsyncMock())
     monkeypatch.setattr(endpoint.AuditLogService, "log", AsyncMock())
 
     await endpoint.delete_document(
@@ -256,26 +256,71 @@ async def test_delete_document_without_task_or_file(monkeypatch, status):
     )
 
     vector_store.delete_document_vectors.assert_awaited_once_with(doc.id)
+    endpoint.document_processor.delete_media_assets.assert_awaited_once_with(
+        kb.id, doc.id
+    )
     doc.delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_document_media_returns_existing_asset(monkeypatch, tmp_path):
     doc = document()
-    asset = tmp_path / "image.png"
-    asset.write_bytes(b"png")
+    kb_id = uuid4()
+    storage = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        response=AsyncMock(
+            return_value=SimpleNamespace(path="asset", media_type="image/png")
+        ),
+    )
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock())
     monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(first=doc))
     monkeypatch.setattr(
-        endpoint.document_processor,
-        "get_media_asset_path",
-        lambda *_args: asset,
+        endpoint, "get_upload_storage_backend", AsyncMock(return_value=storage)
     )
 
-    response = await endpoint.get_document_media(uuid4(), doc.id, "image.png", user())
+    response = await endpoint.get_document_media(kb_id, doc.id, "image.png", user())
 
-    assert response.path == asset
-    assert response.media_type == "image/png"
+    assert response.path == "asset"
+    storage.exists.assert_awaited_once_with(
+        f"documents/{kb_id}/media/{doc.id}/image.png"
+    )
+    storage.response.assert_awaited_once_with(
+        f"documents/{kb_id}/media/{doc.id}/image.png", content_type="image/png"
+    )
+
+
+@pytest.mark.asyncio
+async def test_document_media_falls_back_to_legacy_local_asset(monkeypatch):
+    doc = document()
+    kb_id = uuid4()
+    key = f"documents/{kb_id}/media/{doc.id}/image.png"
+    object_storage = SimpleNamespace(
+        exists=AsyncMock(return_value=False), response=AsyncMock()
+    )
+
+    class LegacyStorage:
+        instances = []
+
+        def __init__(self, _root):
+            self.exists = AsyncMock(return_value=True)
+            self.response = AsyncMock(
+                return_value=SimpleNamespace(path="legacy", media_type="image/png")
+            )
+            self.instances.append(self)
+
+    monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(first=doc))
+    monkeypatch.setattr(
+        endpoint, "get_upload_storage_backend", AsyncMock(return_value=object_storage)
+    )
+    monkeypatch.setattr(endpoint, "LocalUploadStorage", LegacyStorage)
+    response = await endpoint.get_document_media(kb_id, doc.id, "image.png", user())
+
+    assert response.path == "legacy"
+    legacy_storage = LegacyStorage.instances[-1]
+    object_storage.exists.assert_awaited_once_with(key)
+    legacy_storage.exists.assert_awaited_once_with(key)
+    legacy_storage.response.assert_awaited_once_with(key, content_type="image/png")
 
 
 @pytest.mark.asyncio

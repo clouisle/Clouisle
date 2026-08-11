@@ -26,6 +26,8 @@ config:
   PROJECT_NAME: Clouisle
   TIMEZONE: Asia/Shanghai
   API_BASE_URL: http://api:8000
+  PUBLIC_API_URL: ""
+  API_INTERNAL_BASE_URL: http://api:8000
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
   FRONTEND_URL: http://frontend:3000
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
@@ -63,6 +65,7 @@ secrets:
     QDRANT_API_KEY: changeme
     TAVILY_API_KEY: ""
     SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""
+    INTERNAL_API_TOKEN: changeme
 
 serviceAccount:
   create: true
@@ -83,6 +86,11 @@ api:
   enabled: true
   replicas: 2
   command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   service:
     type: ClusterIP
     port: 8000

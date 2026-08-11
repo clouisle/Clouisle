@@ -69,19 +69,50 @@ choose_deployment() {
     return
   fi
 
-  [[ "$TTY_AVAILABLE" == "1" ]] || die "Set CLOUISLE_DEPLOYMENT=docker or CLOUISLE_DEPLOYMENT=helm."
+  [[ "$TTY_AVAILABLE" == "1" ]] || die "Set CLOUISLE_DEPLOYMENT=docker, helm, or k8s."
   printf '\nChoose a deployment target:\n' >&3
   printf '  1) Docker Compose (single server)\n' >&3
   printf '  2) Kubernetes with Helm\n' >&3
+  printf '  3) Kubernetes single-file manifest (generate only)\n' >&3
   printf 'Selection [1]: ' >&3
   local selection=""
   IFS= read -r selection <&3 || true
   case "${selection:-1}" in
     1) printf 'docker' ;;
     2) printf 'helm' ;;
+    3) printf 'k8s' ;;
     *) die "Invalid deployment selection: $selection" ;;
   esac
 }
+
+base64_secret() {
+  printf '%s' "$1" | base64 | tr -d '\n'
+}
+
+set_manifest_secret() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local encoded=""
+  local temporary="${file}.tmp.$$"
+
+  encoded="$(base64_secret "$value")"
+  if ! awk -v key="$key" -v encoded="$encoded" '
+    BEGIN { found = 0 }
+    $0 ~ "^[[:space:]]*" key ":[[:space:]]*" {
+      print "  " key ": " encoded
+      found = 1
+      next
+    }
+    { print }
+    END { if (!found) exit 1 }
+  ' "$file" > "$temporary"; then
+    rm -f "$temporary"
+    die "Kubernetes Secret key not found in manifest: $key"
+  fi
+  mv "$temporary" "$file"
+}
+
 
 download() {
   local url="$1"
@@ -121,6 +152,19 @@ ensure_secret() {
   current="$(awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$file")"
   if [[ -z "$current" || ( -n "$insecure_value" && "$current" == "$insecure_value" ) ]]; then
     set_env_value "$file" "$key" "$(random_secret)"
+  fi
+}
+
+ensure_kubernetes_internal_token() {
+  local namespace="$1"
+  local secret_name="$2"
+  local encoded=""
+
+  encoded="$(kubectl -n "$namespace" get secret "$secret_name" -o jsonpath='{.data.INTERNAL_API_TOKEN}' 2>/dev/null || true)"
+  if [[ -z "$encoded" ]]; then
+    kubectl -n "$namespace" patch secret "$secret_name" \
+      --type merge \
+      -p "{\"stringData\":{\"INTERNAL_API_TOKEN\":\"$(random_secret)\"}}" >/dev/null
   fi
 }
 
@@ -178,6 +222,7 @@ install_docker() {
   ensure_secret "$env_file" REDIS_PASSWORD
   ensure_secret "$env_file" QDRANT_API_KEY
   ensure_secret "$env_file" SANDBOX_ARTIFACT_UPLOAD_API_KEY
+  ensure_secret "$env_file" INTERNAL_API_TOKEN
   chmod 600 "$env_file"
 
   local compose=(docker compose --project-directory "$install_dir" --env-file "$env_file" -f "$compose_file")
@@ -220,7 +265,6 @@ write_helm_values() {
     fi
     if [[ "$access_mode" == "ReadWriteOnce" ]]; then
       printf 'api:\n  replicas: 1\n'
-      printf 'worker:\n  replicas: 1\n'
     fi
     if [[ -n "$image_pull_secret" ]]; then
       printf 'global:\n'
@@ -330,17 +374,17 @@ install_helm() {
       --from-literal=POSTGRES_PASSWORD="$(random_secret)" \
       --from-literal=REDIS_PASSWORD="$(random_secret)" \
       --from-literal=QDRANT_API_KEY="$(random_secret)" \
-      --from-literal=SANDBOX_ARTIFACT_UPLOAD_API_KEY="$(random_secret)" >/dev/null
+      --from-literal=SANDBOX_ARTIFACT_UPLOAD_API_KEY="$(random_secret)" \
+      --from-literal=INTERNAL_API_TOKEN="$(random_secret)" >/dev/null
   fi
 
+  ensure_kubernetes_internal_token "$namespace" "$secret_name"
   helm upgrade --install "$release_name" "$chart" \
     --namespace "$namespace" \
     --create-namespace \
     -f "$values_file" \
     --wait \
     --timeout 15m
-
-  kubectl -n "$namespace" get pods
   log ""
   if [[ -n "$ingress_host" ]]; then
     log "Clouisle URL: https://$ingress_host"
@@ -350,13 +394,65 @@ install_helm() {
   fi
 }
 
+install_k8s_manifest() {
+  require_command base64
+
+  local output_path="${CLOUISLE_K8S_MANIFEST:-./clouisle-k8s.yaml}"
+  output_path="${output_path/#\~/$HOME}"
+  if [[ -e "$output_path" || -L "$output_path" ]]; then
+    die "Refusing to overwrite existing Kubernetes manifest: $output_path"
+  fi
+
+  local output_dir
+  output_dir="$(dirname "$output_path")"
+
+  log ""
+  log "Deployment target: Kubernetes single-file manifest"
+  log "Generated manifest: $output_path"
+  log "The generated file contains secrets and will not be applied automatically."
+  confirm
+  mkdir -p "$output_dir"
+  [[ -w "$output_dir" ]] || die "Kubernetes manifest directory is not writable: $output_dir"
+
+  if [[ -z "$TEMP_DIR" ]]; then
+    TEMP_DIR="$(mktemp -d)"
+  fi
+  local temporary="$TEMP_DIR/clouisle-k8s.yaml"
+
+  if [[ -n "$SOURCE_DIR" ]]; then
+    local source_manifest="$SOURCE_DIR/deploy/k8s/clouisle.yaml"
+    [[ -f "$source_manifest" ]] || die "Kubernetes manifest not found: $source_manifest"
+    cp "$source_manifest" "$temporary"
+  else
+    download "$RAW_BASE_URL/k8s/clouisle.yaml" "$temporary"
+  fi
+
+  local key
+  for key in \
+    SECRET_KEY \
+    POSTGRES_PASSWORD \
+    REDIS_PASSWORD \
+    QDRANT_API_KEY \
+    SANDBOX_ARTIFACT_UPLOAD_API_KEY \
+    INTERNAL_API_TOKEN; do
+    set_manifest_secret "$temporary" "$key" "$(random_secret)"
+  done
+
+  chmod 600 "$temporary"
+  mv "$temporary" "$output_path"
+  log "Generated secure Kubernetes manifest: $output_path"
+  log "Review cluster-specific image, storage, and Ingress settings, then apply with:"
+  log "kubectl apply -f $output_path"
+}
+
 main() {
   require_command curl
 
   case "$(choose_deployment)" in
     docker) install_docker ;;
     helm) install_helm ;;
-    *) die "CLOUISLE_DEPLOYMENT must be docker or helm" ;;
+    k8s) install_k8s_manifest ;;
+    *) die "CLOUISLE_DEPLOYMENT must be docker, helm, or k8s" ;;
   esac
 }
 

@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.knowledge_base import DocumentStatus
+from app.services.document_processor import UploadGatewayError
 from app.services.vector_store import DimensionMismatchError
 from app.tasks import knowledge_base as kb_tasks
 
@@ -155,6 +156,46 @@ def test_process_document_returns_localized_not_found_error():
     assert result == {"status": "error", "message": "document_not_found:zh"}
 
 
+def test_process_document_retries_transient_upload_gateway_failure():
+    gateway_error = UploadGatewayError("api unavailable")
+    retry_signal = RuntimeError("retry queued")
+
+    def raise_gateway(coroutine):
+        coroutine.close()
+        raise gateway_error
+
+    with (
+        patch.object(kb_tasks, "_run_async", side_effect=raise_gateway),
+        patch.object(
+            kb_tasks.process_document_task, "retry", side_effect=retry_signal
+        ) as retry,
+        pytest.raises(RuntimeError, match="retry queued"),
+    ):
+        kb_tasks.process_document_task.run(str(uuid4()))
+
+    retry.assert_called_once_with(exc=gateway_error)
+
+
+def test_rechunk_document_retries_transient_upload_gateway_failure():
+    gateway_error = UploadGatewayError("api unavailable")
+    retry_signal = RuntimeError("retry queued")
+
+    def raise_gateway(coroutine):
+        coroutine.close()
+        raise gateway_error
+
+    with (
+        patch.object(kb_tasks, "_run_async", side_effect=raise_gateway),
+        patch.object(
+            kb_tasks.rechunk_document_task, "retry", side_effect=retry_signal
+        ) as retry,
+        pytest.raises(RuntimeError, match="retry queued"),
+    ):
+        kb_tasks.rechunk_document_task.run(str(uuid4()))
+
+    retry.assert_called_once_with(exc=gateway_error)
+
+
 def test_process_document_success_updates_document_and_kb():
     document = make_document(metadata={"clean_text": False, "task_name": "queued"})
     chunks = [make_chunk(tokens=3), make_chunk(tokens=5)]
@@ -166,6 +207,11 @@ def test_process_document_success_updates_document_and_kb():
     with (
         patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
         patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks.document_processor,
+            "delete_media_assets",
+            new=AsyncMock(),
+        ),
         patch.object(
             kb_tasks.document_processor,
             "extract_text",
@@ -265,6 +311,11 @@ def test_process_document_dimension_mismatch_is_specific_and_cleans_metadata():
     with (
         patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
         patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks.document_processor,
+            "delete_media_assets",
+            new=AsyncMock(),
+        ),
         patch.object(
             kb_tasks.document_processor,
             "extract_text",

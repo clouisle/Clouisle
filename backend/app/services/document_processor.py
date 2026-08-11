@@ -3,7 +3,6 @@ Document processing service for knowledge base.
 Handles document parsing, text extraction, and chunking.
 """
 
-import asyncio
 import base64
 import binascii
 import hashlib
@@ -11,7 +10,6 @@ import logging
 import mimetypes
 import os
 import re
-import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -22,11 +20,16 @@ from uuid import UUID
 from app.models.knowledge_base import (
     DocumentType,
 )
-from app.services.upload_storage import get_upload_storage_backend
+from app.services.upload_storage import LocalUploadStorage, get_upload_storage_backend
 from app.services.skill_package import resolve_child_path
 import bleach
+import httpx
 
 logger = logging.getLogger(__name__)
+
+
+class UploadGatewayError(RuntimeError):
+    """A transient failure while the worker is calling the api gateway."""
 
 
 MIME_TYPE_MAP: dict[str, str] = {
@@ -110,6 +113,28 @@ class DocumentProcessor:
 
     def _storage_root(self) -> Path:
         return Path(self.upload_dir).resolve().parent
+
+    # ---- Internal upload gateway (worker remote mode) ----
+    # In "remote" mode the worker process has no local uploads volume; every
+    # file operation is an explicit HTTP call to the api's /internal/uploads/*.
+    def _remote_mode(self) -> bool:
+        from app.core.config import settings
+
+        return settings.UPLOAD_STORAGE_MODE == "remote"
+
+    def _internal_client(self) -> httpx.AsyncClient:
+        from app.core.config import settings
+
+        return httpx.AsyncClient(
+            base_url=settings.API_INTERNAL_BASE_URL.rstrip("/"),
+            headers={"Authorization": f"Bearer {settings.get_internal_api_token()}"},
+            timeout=60.0,
+        )
+
+    def _media_storage_key(self, kb_id: UUID, document_id: UUID, filename: str) -> str:
+        return (
+            f"documents/{kb_id}/media/{document_id}/{self._sanitize_filename(filename)}"
+        )
 
     def _storage_key(self, path: str) -> str:
         if path.startswith("s3://"):
@@ -214,39 +239,77 @@ class DocumentProcessor:
         return len(content)
 
     async def read_file(self, path: str) -> bytes:
-        """
-        Read file content from disk.
-
-        Args:
-            path: File path
-
-        Returns:
-            File content bytes
-        """
+        """Read file content, streaming api gateway responses in remote mode."""
+        storage_key = self._storage_key(path)
+        if self._remote_mode():
+            try:
+                async with self._internal_client() as client:
+                    async with client.stream(
+                        "GET", "/internal/uploads/read", params={"key": storage_key}
+                    ) as resp:
+                        if resp.status_code == 404:
+                            raise FileNotFoundError(storage_key)
+                        resp.raise_for_status()
+                        content = bytearray()
+                        async for chunk in resp.aiter_bytes():
+                            content.extend(chunk)
+                        return bytes(content)
+            except FileNotFoundError:
+                raise
+            except httpx.HTTPError as exc:
+                raise UploadGatewayError(
+                    "Unable to read upload through api gateway"
+                ) from exc
         storage = await get_upload_storage_backend(self._storage_root())
-        return await storage.read(self._storage_key(path))
+        return await storage.read(storage_key)
 
     async def delete_file(self, path: str) -> bool:
-        """
-        Delete a file from upload storage.
-
-        Args:
-            path: File path or storage key
-
-        Returns:
-            True if deleted, False if not found
-        """
-        storage = await get_upload_storage_backend(self._storage_root())
+        """Delete a file from upload storage."""
         storage_key = self._storage_key(path)
+        if self._remote_mode():
+            try:
+                async with self._internal_client() as client:
+                    resp = await client.request(
+                        "DELETE",
+                        "/internal/uploads/delete",
+                        params={"key": storage_key},
+                    )
+                    resp.raise_for_status()
+                    return True
+            except httpx.HTTPError as exc:
+                raise UploadGatewayError(
+                    "Unable to delete upload through api gateway"
+                ) from exc
+        storage = await get_upload_storage_backend(self._storage_root())
         if not await storage.exists(storage_key):
             return False
         await storage.delete(storage_key)
         return True
 
-    def delete_media_assets(self, kb_id: UUID, document_id: UUID) -> None:
-        asset_dir = self._resolve_storage_path(str(kb_id), "media", str(document_id))
-        if asset_dir.exists():
-            shutil.rmtree(asset_dir, ignore_errors=True)
+    async def delete_media_assets(self, kb_id: UUID, document_id: UUID) -> None:
+        if self._remote_mode():
+            try:
+                async with self._internal_client() as client:
+                    resp = await client.delete(
+                        f"/internal/uploads/media/{kb_id}/{document_id}"
+                    )
+                    resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise UploadGatewayError(
+                    "Unable to delete media through api gateway"
+                ) from exc
+            return
+
+        prefix = f"documents/{kb_id}/media/{document_id}/"
+        storage = await get_upload_storage_backend(self._storage_root())
+        for key in await storage.list(prefix):
+            await storage.delete(key)
+        # Before this cutover media was always local, even when documents used
+        # object storage. Clean that legacy location during the transition.
+        if not isinstance(storage, LocalUploadStorage):
+            legacy_storage = LocalUploadStorage(self._storage_root())
+            for key in await legacy_storage.list(prefix):
+                await legacy_storage.delete(key)
 
     def _get_media_asset_extension(self, content_type: str) -> str:
         return MEDIA_MIME_EXTENSIONS.get(
@@ -261,7 +324,7 @@ class DocumentProcessor:
             str(kb_id), "media", str(document_id), self._sanitize_filename(filename)
         )
 
-    def _save_media_asset(
+    async def _save_media_asset(
         self,
         *,
         kb_id: UUID,
@@ -272,28 +335,37 @@ class DocumentProcessor:
         digest = hashlib.sha256(content).hexdigest()[:16]
         extension = self._get_media_asset_extension(content_type)
         filename = self._sanitize_filename(f"{digest}{extension}")
-        file_path = self.get_media_asset_path(kb_id, document_id, filename)
-        os.makedirs(file_path.parent, exist_ok=True)
-        if not file_path.exists():
-            temp_file_path = file_path.with_name(f".tmp_{file_path.name}")
+        storage_key = self._media_storage_key(kb_id, document_id, filename)
+        if self._remote_mode():
             try:
-                temp_file_path.write_bytes(content)
-                temp_file_path.replace(file_path)
-            except Exception:
-                temp_file_path.unlink(missing_ok=True)
-                raise
+                async with self._internal_client() as client:
+                    resp = await client.put(
+                        f"/internal/uploads/media/{kb_id}/{document_id}",
+                        params={"filename": filename},
+                        content=content,
+                        headers={"Content-Type": content_type},
+                    )
+                    resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise UploadGatewayError(
+                    "Unable to save media through api gateway"
+                ) from exc
+        else:
+            storage = await get_upload_storage_backend(self._storage_root())
+            if not await storage.exists(storage_key):
+                await storage.save(storage_key, content, content_type=content_type)
         url = (
             f"/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/media/{filename}"
         )
         return {
-            "path": str(file_path),
+            "path": storage_key,
             "url": url,
             "filename": filename,
             "content_type": content_type,
             "size": len(content),
         }
 
-    def replace_embedded_media_data_uris(
+    async def replace_embedded_media_data_uris(
         self,
         text: str,
         *,
@@ -301,23 +373,27 @@ class DocumentProcessor:
         document_id: UUID,
     ) -> tuple[str, list[dict[str, Any]]]:
         assets: list[dict[str, Any]] = []
+        replacements: dict[str, str] = {}
 
-        def replace(match: re.Match[str]) -> str:
+        for match in DATA_URI_IMAGE_RE.finditer(text):
             content_type = match.group(1).lower()
             if content_type not in ALLOWED_MEDIA_MIME_TYPES:
-                return match.group(0)
+                continue
             try:
                 content = base64.b64decode(match.group(2), validate=True)
             except binascii.Error:
-                return match.group(0)
-            asset = self._save_media_asset(
+                continue
+            asset = await self._save_media_asset(
                 kb_id=kb_id,
                 document_id=document_id,
                 content_type=content_type,
                 content=content,
             )
             assets.append(asset)
-            return asset["url"]
+            replacements[match.group(0)] = asset["url"]
+
+        def replace(match: re.Match[str]) -> str:
+            return replacements.get(match.group(0), match.group(0))
 
         return DATA_URI_IMAGE_RE.sub(replace, text), assets
 
@@ -387,8 +463,7 @@ class DocumentProcessor:
 
         # Clean up text
         if kb_id is not None and document_id is not None:
-            text, media_assets = await asyncio.to_thread(
-                self.replace_embedded_media_data_uris,
+            text, media_assets = await self.replace_embedded_media_data_uris(
                 text,
                 kb_id=kb_id,
                 document_id=document_id,

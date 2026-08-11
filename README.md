@@ -179,7 +179,7 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 ### Prerequisites
 
 - Docker and Docker Compose v2 for single-server deployment
-- `kubectl` and Helm 3 for Kubernetes deployment
+- `kubectl` for Kubernetes deployment; Helm 3 only when using the Helm chart
 
 > For development from source, see the [Development Guide](docs/guide/getting-started/development.md).
 
@@ -189,7 +189,7 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-Choose Docker Compose for a single server or Helm for Kubernetes. Docker mode interactively selects an installation directory, defaulting to `/opt/clouisle`. The installer generates required secrets and validates the selected deployment before starting it.
+Choose Docker Compose for a single server, Helm for Kubernetes, or a generated single-file Kubernetes manifest. Docker mode interactively selects an installation directory, defaulting to `/opt/clouisle`. The manifest generator writes a separate secret-filled file for review and explicit `kubectl apply`; it does not modify the template or apply to a cluster.
 
 ### 2. Access the Application
 

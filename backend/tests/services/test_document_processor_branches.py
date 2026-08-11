@@ -32,9 +32,21 @@ def test_document_type_detection(processor, filename, content_type, expected):
     assert processor.get_document_type(filename, content_type) == expected
 
 
-def test_paths_and_media_resource_cleanup(processor):
+@pytest.mark.asyncio
+async def test_paths_and_media_resource_cleanup(processor, monkeypatch):
     kb_id = uuid4()
     document_id = uuid4()
+
+    async def local_storage(root):
+        from app.services import upload_storage
+
+        return upload_storage.LocalUploadStorage(root)
+
+    monkeypatch.setattr(
+        document_processor_module,
+        "get_upload_storage_backend",
+        local_storage,
+    )
 
     short_path = processor.get_storage_path(kb_id, "../report.txt")
     long_path = processor.get_storage_path(kb_id, f"{'x' * 60}.pdf")
@@ -60,29 +72,32 @@ def test_paths_and_media_resource_cleanup(processor):
         with pytest.raises(ValueError, match="validation_error"):
             processor._sanitize_filename(invalid)
 
-    asset = processor._save_media_asset(
+    asset = await processor._save_media_asset(
         kb_id=kb_id,
         document_id=document_id,
         content_type="image/x-custom",
         content=b"asset",
     )
     assert asset["filename"].endswith(".bin")
-    processor._save_media_asset(
+    await processor._save_media_asset(
         kb_id=kb_id,
         document_id=document_id,
         content_type="image/x-custom",
         content=b"asset",
     )
-    processor.delete_media_assets(kb_id, document_id)
-    assert not Path(asset["path"]).exists()
+    media_path = processor.get_media_asset_path(kb_id, document_id, asset["filename"])
+    assert media_path.exists()
+    await processor.delete_media_assets(kb_id, document_id)
+    assert not media_path.exists()
 
 
-def test_media_replacement_ignores_unsupported_and_invalid_data(processor):
+@pytest.mark.asyncio
+async def test_media_replacement_ignores_unsupported_and_invalid_data(processor):
     invalid = "data:image/png;base64,not-valid=="
     unsupported = "data:image/bmp;base64," + base64.b64encode(b"bmp").decode()
     text = f"{invalid} {unsupported}"
 
-    assert processor.replace_embedded_media_data_uris(
+    assert await processor.replace_embedded_media_data_uris(
         text, kb_id=uuid4(), document_id=uuid4()
     ) == (text, [])
 
@@ -212,6 +227,26 @@ async def test_fetch_url_content_with_markitdown(processor, monkeypatch):
         "format": "markdown",
         "title": "Page",
         "char_count": 7,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_content_markitdown_without_title(processor, monkeypatch):
+    class FakeMarkItDown:
+        def convert(self, url):
+            return SimpleNamespace(text_content="body", title=None)
+
+    monkeypatch.setitem(
+        sys.modules, "markitdown", SimpleNamespace(MarkItDown=FakeMarkItDown)
+    )
+
+    text, metadata = await processor.fetch_url_content("https://example.test")
+
+    assert text == "body"
+    assert metadata == {
+        "source_url": "https://example.test",
+        "format": "markdown",
+        "char_count": 4,
     }
 
 

@@ -72,6 +72,12 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     ports:
       - "8000:8000"
     volumes:
@@ -95,8 +101,9 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
-    volumes:
-      - uploads_data:/app/uploads
+      UPLOAD_STORAGE_MODE: remote
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     depends_on:
       db:
         condition: service_healthy
@@ -105,7 +112,7 @@ services:
       qdrant:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
 
   sandbox-worker:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
@@ -123,8 +130,9 @@ services:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
-    volumes:
-      - uploads_data:/app/uploads
+      UPLOAD_STORAGE_MODE: remote
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     depends_on:
       db:
         condition: service_healthy
@@ -133,7 +141,7 @@ services:
       qdrant:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
 
   beat:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest

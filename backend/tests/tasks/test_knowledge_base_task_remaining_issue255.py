@@ -79,6 +79,11 @@ def test_process_document_all_failed_records_progress_and_error(monkeypatch, doc
     )
     monkeypatch.setattr(
         knowledge_base.document_processor,
+        "delete_media_assets",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        knowledge_base.document_processor,
         "extract_text",
         AsyncMock(return_value=("text", {})),
     )

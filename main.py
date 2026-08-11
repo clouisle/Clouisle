@@ -24,6 +24,7 @@ BACKEND_DIR = os.path.join(PROJECT_ROOT, "backend")
 SANDBOX_WORKER_IMAGE_TAG = "clouisle-sandbox-worker:dev"
 SANDBOX_WORKER_ENV_KEYS = (
     "API_BASE_URL",
+    "API_INTERNAL_BASE_URL",
     "DATABASE_URL",
     "POSTGRES_SERVER",
     "POSTGRES_USER",
@@ -40,6 +41,7 @@ SANDBOX_WORKER_ENV_KEYS = (
     "QDRANT_DISTANCE",
     "SECRET_KEY",
     "SANDBOX_RUNTIME_ENABLED",
+    "INTERNAL_API_TOKEN",
     "SANDBOX_LEGACY_FALLBACK_ENABLED",
     "SANDBOX_WORKSPACE_ROOT",
     "SANDBOX_MAX_DISK_MB",
@@ -214,6 +216,15 @@ def _sandbox_worker_container_env() -> dict[str, str]:
     if api_base_url:
         env["API_BASE_URL"] = _map_local_url_to_host_gateway(api_base_url)
 
+    api_internal_base_url = (
+        env.get("API_INTERNAL_BASE_URL")
+        or api_base_url
+        or "http://host.docker.internal:8000"
+    )
+    env["API_INTERNAL_BASE_URL"] = _map_local_url_to_host_gateway(
+        api_internal_base_url
+    )
+
     artifact_upload_base_url = env.get("SANDBOX_ARTIFACT_UPLOAD_BASE_URL")
     if artifact_upload_base_url:
         env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = _map_local_url_to_host_gateway(
@@ -222,6 +233,7 @@ def _sandbox_worker_container_env() -> dict[str, str]:
     elif api_base_url:
         env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = env["API_BASE_URL"]
 
+    env["UPLOAD_STORAGE_MODE"] = "remote"
     return env
 
 
