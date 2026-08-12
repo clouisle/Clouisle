@@ -19,6 +19,17 @@ let activeTab = ''
 let lastBlobParts: unknown[] = []
 let createdUrl = ''
 let appendedLink: { href?: string; download?: string; clicked?: boolean } | null = null
+// The window.setTimeout mock stores callbacks by id instead of firing them, so
+// debounce delay and cancellation are observable; tests flush them explicitly.
+const pendingTimers = new Map<number, () => void>()
+let nextTimerId = 1
+
+/** Run every pending setTimeout callback in scheduling order. */
+function flushTimers() {
+  const callbacks = [...pendingTimers.values()]
+  pendingTimers.clear()
+  callbacks.forEach((callback) => callback())
+}
 
 function setStateValue<T>(index: number, value: T | ((current: T) => T)) {
   stateValues[index] = typeof value === 'function'
@@ -184,6 +195,8 @@ beforeEach(() => {
   lastBlobParts = []
   createdUrl = 'blob:test-url'
   appendedLink = null
+  pendingTimers.clear()
+  nextTimerId = 1
   globalThis.navigator = { clipboard: { writeText } } as Navigator
   globalThis.Blob = TestBlob as typeof Blob
   globalThis.URL.createObjectURL = mock(() => createdUrl)
@@ -197,8 +210,14 @@ beforeEach(() => {
   } as unknown as Document
   globalThis.window = {
     location: { href: 'http://localhost:3000', origin: 'http://localhost:3000' },
-    setTimeout: (callback: () => void) => { callback(); return 1 },
-    clearTimeout: () => {},
+    setTimeout: (callback: () => void) => {
+      const id = nextTimerId++
+      pendingTimers.set(id, callback)
+      return id
+    },
+    clearTimeout: (id?: number) => {
+      if (id !== undefined) pendingTimers.delete(id)
+    },
   } as unknown as Window & typeof globalThis
   globalThis.fetch = mock(async () => ({ ok: true, text: async () => '', blob: async () => new TestBlob([]) })) as unknown as typeof fetch
 })
@@ -258,7 +277,9 @@ test('copy toggles copied state and close delegates to parent', async () => {
   click(findByAriaLabel(tree, 'closeCodePreview'))
 
   expect(writeText).toHaveBeenCalledWith('<h1>Hi</h1>')
-  expect(stateValues[0]).toBe(false)
+  expect(stateValues[0]).toBe(true) // copied
+  flushTimers()
+  expect(stateValues[0]).toBe(false) // copied resets after the debounce
   expect(close).toHaveBeenCalled()
 })
 
@@ -559,34 +580,49 @@ test('mermaid re-fits when the viewport resizes until the user adjusts manually'
   const nodes = walk(tree)
   effects[4]?.()
 
-  // Panel resized -> debounced fit recomputes the zoom
+  // Panel resized -> debounced fit recomputes the zoom once flushed
   resizeCallback?.()
+  expect(pendingTimers.size).toBe(1)
+  flushTimers()
   expect(stateValues[5]).toBe(0.75) // min(800/1000, 600/800)
 
   viewport.getBoundingClientRect = () => ({ width: 1248, height: 1048 })
   resizeCallback?.()
+  flushTimers()
   expect(stateValues[5]).toBeCloseTo(1.2, 10) // min(1200/1000, 1000/800)
   // The resize-end fit re-centers the diagram
   expect(stateValues[6]).toEqual({ x: 0, y: 0 })
 
-  // User zooms in manually -> further resizes must not override the view
-  click(nodes.find((node) => resolve(node.props['aria-label']) === 'mermaidZoomIn'))
-  expect(stateValues[5]).toBeCloseTo(1.3, 10)
+  // A resize while a fit is already pending cancels the earlier debounce
   viewport.getBoundingClientRect = () => ({ width: 1048, height: 848 })
   resizeCallback?.()
-  expect(stateValues[5]).toBeCloseTo(1.3, 10)
-  // No re-fit, but the pan compensates the centering drift (dx=-200, dy=-200)
+  expect(pendingTimers.size).toBe(1)
+  resizeCallback?.() // clears the pending fit, schedules a new one
+  expect(pendingTimers.size).toBe(1)
+  flushTimers()
+  expect(stateValues[5]).toBeCloseTo(1, 10) // only the latest fit ran
+
+  // User zooms in manually -> further resizes must not override the view
+  click(nodes.find((node) => resolve(node.props['aria-label']) === 'mermaidZoomIn'))
+  expect(stateValues[5]).toBeCloseTo(1.1, 10)
+  viewport.getBoundingClientRect = () => ({ width: 1248, height: 1048 })
+  resizeCallback?.()
+  expect(pendingTimers.size).toBe(1)
+  flushTimers()
+  expect(stateValues[5]).toBeCloseTo(1.1, 10)
+  // No re-fit, but the pan compensates the centering drift (dx=200, dy=200)
   // so the diagram stays visually anchored instead of following the mouse.
-  expect(stateValues[6]).toEqual({ x: 100, y: 100 })
+  expect(stateValues[6]).toEqual({ x: -100, y: -100 })
   // The transition disabled for the compensation is restored after the resize
   expect(diagram.style.transition).toBe('')
 
   // "Fit to view" returns to the automatic-follow mode: the next resize refits
   click(nodes.find((node) => resolve(node.props['aria-label']) === 'mermaidFitToView'))
-  expect(stateValues[5]).toBeCloseTo(1, 10)
-  viewport.getBoundingClientRect = () => ({ width: 1248, height: 1048 })
-  resizeCallback?.()
   expect(stateValues[5]).toBeCloseTo(1.2, 10)
+  viewport.getBoundingClientRect = () => ({ width: 1048, height: 848 })
+  resizeCallback?.()
+  flushTimers()
+  expect(stateValues[5]).toBeCloseTo(1, 10)
 })
 
 test('artifact preview loads same-origin content and renders it in the matching mode', async () => {
