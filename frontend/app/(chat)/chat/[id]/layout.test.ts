@@ -29,7 +29,7 @@ test('uses generic metadata when the public agent is unavailable', async () => {
   })
 })
 
-test('builds agent metadata and converts relative icons to backend URLs', async () => {
+test('builds agent metadata; favicon stays proxied, openGraph uses backend URLs', async () => {
   fetchMock.mockResolvedValueOnce({
     ok: true,
     json: () =>
@@ -41,7 +41,9 @@ test('builds agent metadata and converts relative icons to backend URLs', async 
   await expect(generateMetadata({ params: Promise.resolve({ id: 'agent-1' }) })).resolves.toEqual({
     title: 'Weather',
     description: 'Chat with Weather',
-    icons: { icon: 'https://backend.example.test/weather.svg' },
+    // The browser resolves the favicon against the frontend origin, so the
+    // path must stay relative to go through the Next.js API proxy.
+    icons: { icon: '/weather.svg' },
     openGraph: {
       title: 'Weather',
       description: 'Chat with Weather',
@@ -70,7 +72,8 @@ test('uses the public avatar before the configured icon', async () => {
   ).resolves.toMatchObject({
     title: 'Support',
     description: 'Answers questions',
-    icons: { icon: 'https://backend.example.test/avatars/support.png' },
+    icons: { icon: '/avatars/support.png' },
+    openGraph: { images: ['https://backend.example.test/avatars/support.png'] },
   })
 })
 

@@ -236,6 +236,29 @@ export default function PublicChatPage({
     document.title = agent.name
   }, [agent?.name])
 
+  // Tab favicon follows the agent logo when it is an image URL; otherwise the
+  // app default (root layout) stays. Like DynamicFavicon, existing favicon
+  // links are replaced and restored on cleanup so the browser never mixes the
+  // agent logo with the default icons.
+  React.useEffect(() => {
+    const icon = agent?.icon || agent?.avatar_url
+    const isImageUrl = Boolean(icon && (icon.startsWith('http') || icon.startsWith('/')))
+    if (!isImageUrl || !icon) return
+
+    const existingLinks = Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']"))
+    existingLinks.forEach((link) => link.remove())
+
+    const link = document.createElement('link')
+    link.rel = 'icon'
+    link.href = `${icon}?v=${Date.now()}`
+    document.head.appendChild(link)
+
+    return () => {
+      link.remove()
+      existingLinks.forEach((existingLink) => document.head.appendChild(existingLink))
+    }
+  }, [agent?.icon, agent?.avatar_url])
+
   // Fetch agent and conversations when logged in
   React.useEffect(() => {
     const fetchData = async () => {
