@@ -413,6 +413,7 @@ async def batch_add_team_models(
 
     # 创建新授权
     results = []
+    audit_added = []
     for model_id in batch_in.model_ids:
         if model_id in existing_set:
             continue
@@ -428,6 +429,7 @@ async def batch_add_team_models(
             daily_request_limit=batch_in.daily_request_limit,
             monthly_request_limit=batch_in.monthly_request_limit,
         )
+        audit_added.append(AuditLogService.snapshot(team_model, "team_model"))
 
         results.append(
             {
@@ -492,6 +494,7 @@ async def batch_add_team_models(
             "model_count": len(results),
             "model_ids": [str(m) for m in batch_in.model_ids],
         },
+        changes={"after": {"models": audit_added}} if audit_added else None,
     )
 
     return success(data=results, msg_key="team_models_authorized")
@@ -521,6 +524,7 @@ async def batch_remove_team_models(
         team_id=team_id, model_id__in=batch_in.model_ids
     ).prefetch_related("model")
     model_names = [tm.model.name for tm in team_models]
+    audit_removed = [AuditLogService.snapshot(tm, "team_model") for tm in team_models]
 
     deleted_count = await TeamModel.filter(
         team_id=team_id, model_id__in=batch_in.model_ids
@@ -560,6 +564,7 @@ async def batch_remove_team_models(
             "deleted_count": deleted_count,
             "model_names": model_names,
         },
+        changes={"before": {"models": audit_removed}} if audit_removed else None,
     )
 
     return success(

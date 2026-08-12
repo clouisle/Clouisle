@@ -250,6 +250,7 @@ async def add_team_member(
         operation="update",
         status="success",
         request=request,
+        changes={"after": AuditLogService.snapshot(new_member, "team_member")},
         metadata={
             "added_user_id": str(user_to_add.id),
             "added_username": user_to_add.username,
@@ -444,6 +445,7 @@ async def remove_team_member(
                 status_code=403,
             )
 
+    audit_before = AuditLogService.snapshot(membership, "team_member")
     await AuditLogService.log(
         user=current_user,
         action="remove_team_member",
@@ -453,6 +455,7 @@ async def remove_team_member(
         operation="update",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={
             "removed_user_id": str(target_user.id),
             "removed_username": target_user.username,

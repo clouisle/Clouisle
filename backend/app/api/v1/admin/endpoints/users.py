@@ -604,6 +604,8 @@ async def force_password_change(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
+
     # Set force password change flag
     user.force_password_change = True
     await user.save()
@@ -627,6 +629,9 @@ async def force_password_change(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        ),
     )
 
     return success(msg_key="user_updated")
@@ -704,6 +709,7 @@ async def exempt_password_expiration(
         )
 
     # Update exemption status
+    audit_before = AuditLogService.snapshot(user, "user")
     user.password_expiration_exempt = data.exempt
 
     # If granting exemption, clear force_password_change flag
@@ -722,7 +728,9 @@ async def exempt_password_expiration(
         operation="update",
         status="success",
         request=request,
-        changes={"password_expiration_exempt": data.exempt},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        ),
     )
 
     return success(msg_key="user_updated")

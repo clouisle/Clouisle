@@ -356,6 +356,12 @@ async def delete_relation(
 ):
     """Delete a memory relation."""
     try:
+        relation = await MemoryRelation.filter(
+            id=relation_id, user_id=current_user.id
+        ).first()
+        audit_before = (
+            AuditLogService.snapshot(relation, "memory_relation") if relation else None
+        )
         await MemoryService.delete_relation(
             user_id=current_user.id,
             relation_id=relation_id,
@@ -370,6 +376,7 @@ async def delete_relation(
             operation="delete",
             status="success",
             request=request,
+            changes={"before": audit_before} if audit_before else None,
         )
 
         return success(

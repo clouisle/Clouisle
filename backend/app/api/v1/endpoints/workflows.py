@@ -1631,6 +1631,7 @@ async def delete_workflow_run(
     await check_workflow_access(run.workflow_id, current_user, require_write=True)
 
     workflow_id = run.workflow_id
+    audit_before = AuditLogService.snapshot(run, "workflow_run")
     await run.delete()
 
     await AuditLogService.log(
@@ -1642,6 +1643,7 @@ async def delete_workflow_run(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"workflow_id": str(workflow_id)},
     )
 
@@ -1746,6 +1748,9 @@ async def create_workflow_version(
         status="success",
         request=request,
         metadata={"workflow_id": str(workflow_id), "version": workflow.version},
+        changes={
+            "after": AuditLogService.snapshot(workflow_version, "workflow_version")
+        },
     )
 
     return success(

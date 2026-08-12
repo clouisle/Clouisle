@@ -54,6 +54,7 @@ async def admin_disconnect_sso(
             )
 
     provider_name = connection.provider.name
+    audit_before = AuditLogService.snapshot(connection, "sso_connection")
 
     await connection.delete()
 
@@ -66,6 +67,7 @@ async def admin_disconnect_sso(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"provider": provider_name, "target_user_id": str(target_user.id)},
     )
 

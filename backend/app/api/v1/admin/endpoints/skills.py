@@ -265,6 +265,16 @@ async def install_skill_import(
             "skipped_count": len(result.skipped),
             "error_count": len(result.errors),
         },
+        changes=(
+            {
+                "after": {
+                    "installed_ids": [str(i) for i in result.installed],
+                    "updated_ids": [str(i) for i in result.updated],
+                }
+            }
+            if result.installed or result.updated
+            else None
+        ),
     )
     return success(data=result, msg_key="skill_import_installed")
 

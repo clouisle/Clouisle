@@ -169,6 +169,23 @@ class AuditLogService:
         ),
         "conversation": ("title",),
         "skill": ("name", "display_name", "is_enabled", "version"),
+        "team_member": ("team_id", "user_id", "role"),
+        "tool_share": ("tool_id", "shared_with_team_id", "permission"),
+        "workflow_run": ("status", "trigger_type", "is_debug"),
+        "workflow_version": (
+            "version",
+            "definition",
+            "variables",
+            "trigger_type",
+            "trigger_config",
+            "description",
+        ),
+        "sso_connection": (
+            "provider_id",
+            "provider_user_id",
+            "provider_username",
+            "provider_email",
+        ),
     }
 
     @staticmethod

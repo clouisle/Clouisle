@@ -1602,6 +1602,7 @@ async def share_tool(
             "shared_with_team_id": str(share_data.team_id),
             "permission": share_data.permission,
         },
+        changes={"after": AuditLogService.snapshot(share, "tool_share")},
     )
 
     return success(
@@ -1709,6 +1710,7 @@ async def unshare_tool(
         )
 
     # 删除共享记录
+    audit_before = AuditLogService.snapshot(share, "tool_share")
     await share.delete()
 
     await AuditLogService.log(
@@ -1720,6 +1722,7 @@ async def unshare_tool(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={
             "team_id": str(tool.team_id),
             "unshared_from_team_id": str(team_id),

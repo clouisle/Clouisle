@@ -638,7 +638,16 @@ async def test_exemption_clears_forced_change_and_audits(fake_request, admin):
 
     assert target.password_expiration_exempt is True
     assert target.force_password_change is False
-    assert audit.await_args.kwargs["changes"] == {"password_expiration_exempt": True}
+    assert audit.await_args.kwargs["changes"] == {
+        "before": {
+            "password_expiration_exempt": False,
+            "force_password_change": True,
+        },
+        "after": {
+            "password_expiration_exempt": True,
+            "force_password_change": False,
+        },
+    }
 
 
 @pytest.mark.anyio
