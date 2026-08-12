@@ -77,8 +77,12 @@ Rules:
   `bulk_force_password_change`) or record a before list
   (`batch_delete_conversations` titles).
 - Do not wire events with no field-level change (auth/read/execute events,
-  password-only operations, auto-processing pipelines) — they keep their
-  operation-level audit and would only add noise.
+  operations that change only secret fields, auto-processing pipelines) —
+  they keep their operation-level audit and would only add noise. Password
+  *flag* operations that mutate registered non-secret fields are wired:
+  `force_password_change` and `exempt_password_expiration` record field-level
+  diffs; only operations changing exclusively secret fields
+  (`change_password`, `reset_password_expiration`) are excluded.
 
 To add a new resource type: register its plain columns in
 `AuditLogService.SNAPSHOT_FIELDS` in `app/services/audit_log.py`, then follow
