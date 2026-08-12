@@ -265,6 +265,14 @@ describe('PublicChatPage', () => {
     expect(faviconHref?.startsWith('/api/v1/upload/files/logo.png?v=')).toBe(true)
   })
 
+  test('prefers avatar_url over a non-image icon for the favicon', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, icon: '🤖', avatar_url: '/api/v1/upload/files/logo.png' })
+    render()
+    await flush()
+
+    expect(faviconHref?.startsWith('/api/v1/upload/files/logo.png?v=')).toBe(true)
+  })
+
   test('keeps the default favicon when the agent has no image logo', async () => {
     getPublicAgent.mockResolvedValueOnce({ ...agent, icon: '🤖' })
     render()

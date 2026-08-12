@@ -241,7 +241,9 @@ export default function PublicChatPage({
   // links are replaced and restored on cleanup so the browser never mixes the
   // agent logo with the default icons.
   React.useEffect(() => {
-    const icon = agent?.icon || agent?.avatar_url
+    // Same precedence as the layout metadata: avatar_url wins over icon, so a
+    // non-image icon (emoji/character) cannot shadow a real logo URL.
+    const icon = agent?.avatar_url || agent?.icon
     const isImageUrl = Boolean(icon && (icon.startsWith('http') || icon.startsWith('/')))
     if (!isImageUrl || !icon) return
 
