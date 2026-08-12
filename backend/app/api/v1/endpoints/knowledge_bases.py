@@ -1583,6 +1583,7 @@ async def reprocess_document(
     await delete_lexical_document(doc.id, kb.team_id)
 
     # Reset status
+    audit_before = AuditLogService.snapshot(doc, "document")
     doc.status = DocumentStatus.PENDING.value
     doc.error_message = None  # type: ignore[assignment]
     await doc.save()
@@ -1611,6 +1612,9 @@ async def reprocess_document(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(doc, "document")
+        ),
         metadata={"knowledge_base_id": str(kb_id)},
     )
 
@@ -2241,6 +2245,7 @@ async def rechunk_document(
     await delete_lexical_document(doc.id, kb.team_id)
 
     # Store the rechunk settings in document metadata
+    audit_before = AuditLogService.snapshot(doc, "document")
     if not doc.metadata:
         doc.metadata = {}
     doc.metadata["rechunk_settings"] = {
@@ -2288,6 +2293,9 @@ async def rechunk_document(
             "chunk_size": rechunk_in.chunk_size,
             "chunk_overlap": rechunk_in.chunk_overlap,
         },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(doc, "document")
+        ),
     )
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")

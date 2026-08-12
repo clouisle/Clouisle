@@ -765,9 +765,16 @@ async def bulk_force_password_change(
 
     # Update all users
     success_count = 0
+    audit_diffs = []
     for user in users:
+        audit_before = AuditLogService.snapshot(user, "user")
         user.force_password_change = True
         await user.save()
+        diff = AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        )
+        if diff:
+            audit_diffs.append({"user_id": str(user.id), **diff})
 
         # Send notification
         await AutoNotificationService.send_to_user(
@@ -789,6 +796,7 @@ async def bulk_force_password_change(
         operation="update",
         status="success",
         request=request,
+        changes={"diffs": audit_diffs} if audit_diffs else None,
         metadata={
             "user_ids": [str(uid) for uid in data.user_ids],
             "count": success_count,
