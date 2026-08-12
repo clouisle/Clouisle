@@ -36,8 +36,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // 允许开发环境访问本地图片
-  allowedDevOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8000', 'http://127.0.0.1:8000'],
+  // 开发环境放行所有 Origin（仅 dev server 使用，不进入生产构建），
+  // 便于局域网/其他设备访问时 HMR WebSocket 不被 Origin 校验拦截
+  allowedDevOrigins: ['*'],
   // API 代理转发
   async rewrites() {
     const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://localhost:8000';
