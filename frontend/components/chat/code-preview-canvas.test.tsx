@@ -195,7 +195,10 @@ beforeEach(() => {
     },
     createElement: () => ({ click() { this.clicked = true } }),
   } as unknown as Document
-  globalThis.window = { setTimeout: (callback: () => void) => { callback(); return 1 } } as unknown as Window & typeof globalThis
+  globalThis.window = {
+    setTimeout: (callback: () => void) => { callback(); return 1 },
+    clearTimeout: () => {},
+  } as unknown as Window & typeof globalThis
 })
 
 test('renders iframe previews and escapes javascript closing script tags', () => {
@@ -503,4 +506,74 @@ test('mermaid error state renders translated renderer message', () => {
   )
 
   expect(text(tree)).toContain('mermaidError:syntax error')
+})
+
+test('mermaid auto-fits a freshly rendered diagram into the viewport', () => {
+  const svgElement = { getBoundingClientRect: () => ({ width: 2000, height: 1200 }) }
+  const diagram = {
+    style: { transform: '', transition: '' },
+    querySelector: () => svgElement,
+  }
+  const viewport = { getBoundingClientRect: () => ({ width: 848, height: 548 }) }
+  const tree = render(
+    { id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' },
+    [false, 'preview', '<svg><text>ok</text></svg>', null, false, 1, { x: 0, y: 0 }, false, '', ''],
+    [undefined, viewport, diagram]
+  )
+  walk(tree)
+  effects[3]?.()
+
+  // min((848-48)/2000, (548-48)/1200) = min(0.4, 0.4167) — the tall diagram is scaled down
+  expect(stateValues[5]).toBe(0.4)
+  expect(stateValues[6]).toEqual({ x: 0, y: 0 })
+})
+
+test('mermaid re-fits when the viewport resizes until the user adjusts manually', () => {
+  let resizeCallback: (() => void) | undefined
+  globalThis.ResizeObserver = class {
+    constructor(callback: () => void) { resizeCallback = callback }
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  }
+  // Real DOM rects include the current transform, which the fit math cancels
+  // out; mirror that here so the assertions match the browser.
+  const svgElement = {
+    getBoundingClientRect: () => ({
+      width: 1000 * (refValues[3] as number),
+      height: 800 * (refValues[3] as number),
+    }),
+  }
+  const diagram = {
+    style: { transform: '', transition: '' },
+    querySelector: () => svgElement,
+  }
+  const viewport = { getBoundingClientRect: () => ({ width: 848, height: 648 }) }
+  const tree = render(
+    { id: 'mmd', language: 'mermaid', kind: 'mermaid', code: 'graph TD; A-->B;' },
+    [false, 'preview', '<svg><text>ok</text></svg>', null, false, 1, { x: 0, y: 0 }, false, '', ''],
+    [undefined, viewport, diagram]
+  )
+  const nodes = walk(tree)
+  effects[4]?.()
+
+  // Panel resized -> debounced fit recomputes the zoom
+  resizeCallback?.()
+  expect(stateValues[5]).toBe(0.75) // min(800/1000, 600/800)
+
+  viewport.getBoundingClientRect = () => ({ width: 1248, height: 1048 })
+  resizeCallback?.()
+  expect(stateValues[5]).toBeCloseTo(1.2, 10) // min(1200/1000, 1000/800)
+  // The resize-end fit re-centers the diagram
+  expect(stateValues[6]).toEqual({ x: 0, y: 0 })
+
+  // User zooms in manually -> further resizes must not override the view
+  click(nodes.find((node) => resolve(node.props['aria-label']) === 'mermaidZoomIn'))
+  expect(stateValues[5]).toBeCloseTo(1.3, 10)
+  viewport.getBoundingClientRect = () => ({ width: 1048, height: 848 })
+  resizeCallback?.()
+  expect(stateValues[5]).toBeCloseTo(1.3, 10)
+  // No re-fit, but the pan compensates the centering drift (dx=-200, dy=-200)
+  // so the diagram stays visually anchored instead of following the mouse.
+  expect(stateValues[6]).toEqual({ x: 100, y: 100 })
 })

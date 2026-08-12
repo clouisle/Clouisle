@@ -22,6 +22,7 @@ let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 const MERMAID_MIN_ZOOM = 0.05
 const MERMAID_MAX_ZOOM = 15
 const MERMAID_ZOOM_STEP = 0.1
+const MERMAID_FIT_DEBOUNCE_MS = 150
 const SOURCE_SEGMENT_BATCH_SIZE = 5
 // React 19.2 types predate the `credentialless` iframe attribute (Chromium 110+).
 // credentialless moves the iframe into its own renderer process, so heavy user
@@ -243,6 +244,12 @@ function MermaidPreview({ code }: { code: string }) {
   const diagramRef = React.useRef<HTMLDivElement>(null)
   const zoomRef = React.useRef(1)
   const gestureStartZoomRef = React.useRef(1)
+  // Becomes true as soon as the user zooms or pans manually; auto re-fit on
+  // container resize stops then so it never overrides the user's view.
+  const hasUserAdjustedRef = React.useRef(false)
+  // Browser `setTimeout` returns a number (DOM lib), not Node's Timeout.
+  const fitTimerRef = React.useRef<number | null>(null)
+  const lastViewportSizeRef = React.useRef<{ width: number; height: number } | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -278,7 +285,105 @@ function MermaidPreview({ code }: { code: string }) {
     setIsDragging(false)
     zoomRef.current = 1
     gestureStartZoomRef.current = 1
+    hasUserAdjustedRef.current = false
   }, [code])
+
+  // Fits the diagram into the viewport (minus padding). The rect is already
+  // scaled by the current transform, so `* zoom` cancels it out and yields the
+  // absolute zoom regardless of where the user is zoomed.
+  const applyFitToView = React.useCallback(() => {
+    const viewport = viewportRef.current
+    const diagram = diagramRef.current
+    const svgElement = diagram?.querySelector('svg')
+    if (!viewport || !diagram || !svgElement) {
+      return
+    }
+
+    const viewportRect = viewport.getBoundingClientRect()
+    const svgRect = svgElement.getBoundingClientRect()
+    if (viewportRect.width <= 0 || viewportRect.height <= 0 || svgRect.width <= 0 || svgRect.height <= 0) {
+      return
+    }
+
+    const nextZoom = clampMermaidZoom(Math.min(
+      (viewportRect.width - 48) / svgRect.width * zoomRef.current,
+      (viewportRect.height - 48) / svgRect.height * zoomRef.current
+    ))
+
+    zoomRef.current = nextZoom
+    setZoom(nextZoom)
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+  }, [])
+
+  // Fit a freshly rendered diagram into the viewport instead of showing it at
+  // its natural size (mermaid only clamps the width via max-width, so tall
+  // diagrams overflow vertically until the user clicks "fit to view").
+  React.useEffect(() => {
+    if (!svg) {
+      return
+    }
+    applyFitToView()
+  }, [svg, applyFitToView])
+
+  // Keep the diagram fitted while the preview pane is being resized, unless
+  // the user has manually zoomed or panned. Debounced so a drag does not
+  // recompute the fit on every resize frame.
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || !svg) {
+      return
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      const currentViewport = viewportRef.current
+      if (!currentViewport) {
+        return
+      }
+
+      // The diagram is centered, so a pane resize shifts its center by half
+      // the size delta and makes the diagram look like it is being dragged by
+      // the mouse (visible when the cursor outruns the pane, e.g. fast drags).
+      // Compensate the pan so the diagram stays visually anchored while the
+      // pane resizes.
+      const viewportRect = currentViewport.getBoundingClientRect()
+      const previousSize = lastViewportSizeRef.current
+      lastViewportSizeRef.current = { width: viewportRect.width, height: viewportRect.height }
+      if (previousSize) {
+        const dx = viewportRect.width - previousSize.width
+        const dy = viewportRect.height - previousSize.height
+        if (dx !== 0 || dy !== 0) {
+          if (diagramRef.current) {
+            diagramRef.current.style.transition = 'none'
+          }
+          setPan((current) => ({ x: current.x - dx / 2, y: current.y - dy / 2 }))
+        }
+      }
+
+      if (hasUserAdjustedRef.current) {
+        return
+      }
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current)
+      }
+      fitTimerRef.current = window.setTimeout(() => {
+        fitTimerRef.current = null
+        if (diagramRef.current) {
+          diagramRef.current.style.transition = ''
+        }
+        applyFitToView()
+      }, MERMAID_FIT_DEBOUNCE_MS)
+    })
+
+    resizeObserver.observe(viewport)
+    return () => {
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current)
+        fitTimerRef.current = null
+      }
+      resizeObserver.disconnect()
+    }
+  }, [svg, applyFitToView])
 
   const handleWheel = React.useCallback((event: WheelEvent) => {
     if (!svg || event.deltaY === 0) {
@@ -294,6 +399,7 @@ function MermaidPreview({ code }: { code: string }) {
     const delta = event.deltaY * deltaModeFactor
     const nextZoom = clampMermaidZoom(zoomRef.current * Math.exp(-delta * 0.0025))
     zoomRef.current = nextZoom
+    hasUserAdjustedRef.current = true
     setZoom(nextZoom)
   }, [svg])
 
@@ -315,6 +421,7 @@ function MermaidPreview({ code }: { code: string }) {
 
     const nextZoom = clampMermaidZoom(gestureStartZoomRef.current * scale)
     zoomRef.current = nextZoom
+    hasUserAdjustedRef.current = true
     setZoom(nextZoom)
   }, [svg])
 
@@ -357,31 +464,6 @@ function MermaidPreview({ code }: { code: string }) {
     }
     downloadMermaidSvg(svg)
   }, [svg])
-
-  const handleFitToView = React.useCallback(() => {
-    const viewport = viewportRef.current
-    const diagram = diagramRef.current
-    const svgElement = diagram?.querySelector('svg')
-    if (!viewport || !diagram || !svgElement) {
-      return
-    }
-
-    const viewportRect = viewport.getBoundingClientRect()
-    const svgRect = svgElement.getBoundingClientRect()
-    if (viewportRect.width <= 0 || viewportRect.height <= 0 || svgRect.width <= 0 || svgRect.height <= 0) {
-      return
-    }
-
-    const nextZoom = clampMermaidZoom(Math.min(
-      (viewportRect.width - 48) / svgRect.width * zoom,
-      (viewportRect.height - 48) / svgRect.height * zoom
-    ))
-
-    zoomRef.current = nextZoom
-    setZoom(nextZoom)
-    setPan({ x: 0, y: 0 })
-    setIsDragging(false)
-  }, [zoom])
 
   const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!svg) {
@@ -430,6 +512,7 @@ function MermaidPreview({ code }: { code: string }) {
 
     setPan(nextPan)
     setIsDragging(false)
+    hasUserAdjustedRef.current = true
     event.currentTarget.releasePointerCapture(event.pointerId)
     if (diagramRef.current) {
       diagramRef.current.style.transition = ''
@@ -480,7 +563,7 @@ function MermaidPreview({ code }: { code: string }) {
       >
         <Tooltip>
           <TooltipTrigger
-            onClick={handleFitToView}
+            onClick={applyFitToView}
             disabled={!svg}
             render={
               <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidFitToView')}>
@@ -492,7 +575,10 @@ function MermaidPreview({ code }: { code: string }) {
         </Tooltip>
         <Tooltip>
           <TooltipTrigger
-            onClick={() => setZoom((current) => clampMermaidZoom(current - MERMAID_ZOOM_STEP))}
+            onClick={() => {
+              hasUserAdjustedRef.current = true
+              setZoom((current) => clampMermaidZoom(current - MERMAID_ZOOM_STEP))
+            }}
             disabled={zoom <= MERMAID_MIN_ZOOM}
             render={
               <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidZoomOut')}>
@@ -504,7 +590,10 @@ function MermaidPreview({ code }: { code: string }) {
         </Tooltip>
         <Tooltip>
           <TooltipTrigger
-            onClick={() => setZoom((current) => clampMermaidZoom(current + MERMAID_ZOOM_STEP))}
+            onClick={() => {
+              hasUserAdjustedRef.current = true
+              setZoom((current) => clampMermaidZoom(current + MERMAID_ZOOM_STEP))
+            }}
             disabled={zoom >= MERMAID_MAX_ZOOM}
             render={
               <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t('mermaidZoomIn')}>
