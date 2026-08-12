@@ -343,6 +343,7 @@ async def delete_account(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": AuditLogService.snapshot(current_user, "user")},
         metadata={"self_deletion": True},
     )
 
