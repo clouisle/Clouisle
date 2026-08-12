@@ -294,6 +294,7 @@ export function ChatContainer({
 
     if (conversationChanged) {
       shouldAutoFollowRef.current = false;
+      hasPositionedRef.current = false;
       return;
     }
 

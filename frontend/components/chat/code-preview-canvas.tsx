@@ -299,6 +299,10 @@ function MermaidPreview({ code }: { code: string }) {
       return
     }
 
+    // An explicit fit returns to the automatic-follow mode, so re-enable the
+    // resize refit that manual zoom/pan disabled.
+    hasUserAdjustedRef.current = false
+
     const viewportRect = viewport.getBoundingClientRect()
     const svgRect = svgElement.getBoundingClientRect()
     if (viewportRect.width <= 0 || viewportRect.height <= 0 || svgRect.width <= 0 || svgRect.height <= 0) {
@@ -361,6 +365,17 @@ function MermaidPreview({ code }: { code: string }) {
       }
 
       if (hasUserAdjustedRef.current) {
+        // The transition is disabled above for the pan compensation; restore it
+        // once the resize settles so later zoom/pan changes keep animating.
+        if (fitTimerRef.current !== null) {
+          window.clearTimeout(fitTimerRef.current)
+        }
+        fitTimerRef.current = window.setTimeout(() => {
+          fitTimerRef.current = null
+          if (diagramRef.current) {
+            diagramRef.current.style.transition = ''
+          }
+        }, MERMAID_FIT_DEBOUNCE_MS)
         return
       }
       if (fitTimerRef.current !== null) {

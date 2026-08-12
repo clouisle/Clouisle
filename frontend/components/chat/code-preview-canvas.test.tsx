@@ -576,4 +576,13 @@ test('mermaid re-fits when the viewport resizes until the user adjusts manually'
   // No re-fit, but the pan compensates the centering drift (dx=-200, dy=-200)
   // so the diagram stays visually anchored instead of following the mouse.
   expect(stateValues[6]).toEqual({ x: 100, y: 100 })
+  // The transition disabled for the compensation is restored after the resize
+  expect(diagram.style.transition).toBe('')
+
+  // "Fit to view" returns to the automatic-follow mode: the next resize refits
+  click(nodes.find((node) => resolve(node.props['aria-label']) === 'mermaidFitToView'))
+  expect(stateValues[5]).toBeCloseTo(1, 10)
+  viewport.getBoundingClientRect = () => ({ width: 1248, height: 1048 })
+  resizeCallback?.()
+  expect(stateValues[5]).toBeCloseTo(1.2, 10)
 })

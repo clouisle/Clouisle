@@ -340,6 +340,28 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(scroller.scrollTop).toBe(500)
   })
 
+  test('re-positions at the newest message when the conversation changes', () => {
+    const scrollTo = mock()
+    const history = Array.from({ length: 50 }, (_, index) => message(`m-${index}`))
+    const attach = (tree: ReactNode, scrollTop: number) => {
+      const divs = findAll(tree, 'div')
+      ;(divs[1].props.ref as { current: unknown }).current = { scrollHeight: 10000, scrollTop, clientHeight: 400, scrollTo }
+      ;(divs[2].props.ref as { current: unknown }).current = {}
+    }
+
+    let tree = render({ messages: history, conversationId: 'c1' })
+    attach(tree, 9600)
+    effects.forEach((effect) => effect())
+    scrollTo.mockClear()
+
+    // Switch conversation while the scroller still holds the old position
+    tree = render({ messages: history, conversationId: 'c2' })
+    attach(tree, 4000)
+    effects.forEach((effect) => effect())
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 10001, behavior: 'auto' })
+  })
+
   test('memo comparison notices each delegated prop change', () => {
     const shared = {
       message: message('a'), isCurrentStreaming: false, renderPart: mock(), onRegenerate: mock(),
