@@ -198,6 +198,11 @@ export function ChatContainer({
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
   const shouldAutoFollowRef = useRef(true);
+  // Set once the container has positioned itself at the newest message on mount.
+  const hasPositionedRef = useRef(false);
+  // Scroll anchor captured when "load older" is clicked, to keep the reading
+  // position stable once the older batch is inserted above the viewport.
+  const pendingLoadOlderRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
@@ -250,11 +255,17 @@ export function ChatContainer({
 
   const atBottomThreshold = 24;
 
+  const isScrollerAtBottom = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return true;
+    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= atBottomThreshold;
+  }, []);
+
   const updateAtBottomState = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
 
-    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= atBottomThreshold;
+    const atBottom = isScrollerAtBottom();
     isAtBottomRef.current = atBottom;
     shouldAutoFollowRef.current = atBottom;
 
@@ -263,7 +274,7 @@ export function ChatContainer({
       showScrollButtonRef.current = nextShowButton;
       setShowScrollButton(nextShowButton);
     }
-  }, [messages.length]);
+  }, [isScrollerAtBottom, messages.length]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const scroller = scrollerRef.current;
@@ -283,6 +294,7 @@ export function ChatContainer({
 
     if (conversationChanged) {
       shouldAutoFollowRef.current = false;
+      hasPositionedRef.current = false;
       return;
     }
 
@@ -306,7 +318,7 @@ export function ChatContainer({
   }, [autoScroll, conversationId, isLoading, isStreaming, messages, scrollToBottom]);
 
   useIsomorphicLayoutEffect(() => {
-    if (!autoScroll || !shouldAutoFollowRef.current) {
+    if (!autoScroll) {
       return;
     }
 
@@ -315,8 +327,23 @@ export function ChatContainer({
       return;
     }
 
+    if (!hasPositionedRef.current) {
+      // Initial placement: start at the newest message.
+      hasPositionedRef.current = true;
+      scrollToBottom('auto');
+      return;
+    }
+
+    // Follow the stream only while the user is actually at the bottom. The
+    // scroll event is delivered asynchronously after the user's wheel input,
+    // so shouldAutoFollowRef can lag by one frame; checking the live position
+    // here prevents a chunk commit from yanking the view back down while the
+    // user is reading history.
+    if (!isScrollerAtBottom()) {
+      return;
+    }
     scrollToBottom('auto');
-  }, [autoScroll, isStreaming, lastMessageText, lastMessageId, scrollToBottom, updateAtBottomState]);
+  }, [autoScroll, isStreaming, lastMessageText, lastMessageId, scrollToBottom, updateAtBottomState, isScrollerAtBottom]);
 
   useIsomorphicLayoutEffect(() => {
     const scroller = scrollerRef.current;
@@ -331,7 +358,12 @@ export function ChatContainer({
 
       frameId = requestAnimationFrame(() => {
         const currentScroller = scrollerRef.current;
-        if (!currentScroller || !shouldAutoFollowRef.current) return;
+        if (!currentScroller) return;
+        // Same live-position check as the streaming follow: never pull the
+        // view down when the user has scrolled away from the bottom.
+        if (currentScroller.scrollHeight - currentScroller.scrollTop - currentScroller.clientHeight > atBottomThreshold) {
+          return;
+        }
         currentScroller.scrollTo({ top: currentScroller.scrollHeight + 1, behavior: 'auto' });
       });
     });
@@ -348,6 +380,33 @@ export function ChatContainer({
   const setMessageElement = useCallback((messageId: string, element: HTMLDivElement | null) => {
     messageRefs.current[messageId] = element;
   }, []);
+
+  const handleLoadOlder = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (scroller) {
+      pendingLoadOlderRef.current = {
+        scrollHeight: scroller.scrollHeight,
+        scrollTop: scroller.scrollTop,
+      };
+    }
+    setRenderedMessageCount((count) => Math.min(messages.length, count + MESSAGE_RENDER_BATCH_SIZE));
+  }, [messages.length]);
+
+  // After an older batch is inserted above the viewport, keep the reading
+  // position stable by shifting scrollTop by the added height (the scroller
+  // has overflow-anchor:none, so the browser will not do this for us).
+  useIsomorphicLayoutEffect(() => {
+    const anchor = pendingLoadOlderRef.current;
+    if (!anchor) return;
+    pendingLoadOlderRef.current = null;
+
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const delta = scroller.scrollHeight - anchor.scrollHeight;
+    if (delta !== 0) {
+      scroller.scrollTop = anchor.scrollTop + delta;
+    }
+  });
 
   const requestMessageScrollIntoView = useCallback((messageId: string) => {
     const scroller = scrollerRef.current;
@@ -377,7 +436,7 @@ export function ChatContainer({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setRenderedMessageCount((count) => Math.min(messages.length, count + MESSAGE_RENDER_BATCH_SIZE))}
+                onClick={handleLoadOlder}
               >
                 {t('message.loadOlderMessages', { count: Math.min(hiddenMessageCount, MESSAGE_RENDER_BATCH_SIZE) })}
               </Button>

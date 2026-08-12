@@ -41,7 +41,9 @@ def user(**overrides: object) -> SimpleNamespace:
         "save": AsyncMock(),
         "delete": AsyncMock(),
         "update_from_dict": AsyncMock(),
-        "roles": SimpleNamespace(clear=AsyncMock(), add=AsyncMock()),
+        "roles": SimpleNamespace(
+            clear=AsyncMock(), add=AsyncMock(), all=AsyncMock(return_value=[])
+        ),
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -367,7 +369,8 @@ async def test_update_user_updates_password_and_roles(
     monkeypatch.setattr(
         users_endpoints.security, "get_password_hash", MagicMock(return_value="hashed")
     )
-    monkeypatch.setattr(users_endpoints.AuditLogService, "log", AsyncMock())
+    audit = AsyncMock()
+    monkeypatch.setattr(users_endpoints.AuditLogService, "log", audit)
     notify = AsyncMock()
     monkeypatch.setattr(users_endpoints.AutoNotificationService, "send_to_user", notify)
     monkeypatch.setattr(
@@ -384,6 +387,8 @@ async def test_update_user_updates_password_and_roles(
     target.update_from_dict.assert_awaited_once_with({"hashed_password": "hashed"})
     target.roles.clear.assert_awaited_once()
     target.roles.add.assert_awaited_once_with(admin_role)
+    assert audit.await_args.kwargs["changes"]["before"]["roles"] == []
+    assert audit.await_args.kwargs["changes"]["after"]["roles"] == ["admin"]
     notify.assert_awaited_once()
     assert result["data"] == {"ok": True}
 

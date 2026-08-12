@@ -5,6 +5,7 @@ This section contains frontend engineering conventions and implementation guides
 ## Documents
 
 - [Frontend conventions](conventions.md)
+- [Dev server allowed origins (LAN access)](dev-server-origins.md)
 
 ## Related docs
 

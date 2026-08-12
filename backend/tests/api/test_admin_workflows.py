@@ -393,6 +393,10 @@ async def test_update_workflow_applies_fields_increments_version_and_audits(
         "before": {"version": 3},
         "after": {"version": 4},
     }
+    assert (
+        audit_mock.await_args.kwargs["changes"]["before"]["version"]
+        != audit_mock.await_args.kwargs["changes"]["after"]["version"]
+    )
     assert audit_mock.await_args.kwargs["metadata"]["fields_updated"] == [
         "name",
         "description",

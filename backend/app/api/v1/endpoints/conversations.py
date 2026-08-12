@@ -630,6 +630,7 @@ async def delete_conversation_admin(
     )
 
     conv_title = conversation.title or str(conversation_id)
+    audit_before = AuditLogService.snapshot(conversation, "conversation")
     # Delete conversation (cascades to messages)
     await conversation.delete()
 
@@ -642,6 +643,7 @@ async def delete_conversation_admin(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")
@@ -712,6 +714,9 @@ async def batch_delete_conversations(
         )
 
     # Delete conversations
+    deleted_titles = sorted(
+        getattr(conv, "title", None) or "" for conv in conversations
+    )
     deleted_count = await Conversation.filter(id__in=ids).delete()
 
     await AuditLogService.log(
@@ -723,6 +728,7 @@ async def batch_delete_conversations(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": {"titles": deleted_titles}},
         metadata={"deleted_count": deleted_count, "ids": [str(id) for id in ids]},
     )
 

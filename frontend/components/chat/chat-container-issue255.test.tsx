@@ -279,6 +279,89 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(scrollTo).not.toHaveBeenCalled()
   })
 
+  test('does not yank the view to the bottom when a chunk commits before the scroll event lands', () => {
+    const scrollTo = mock()
+    const history = Array.from({ length: 100 }, (_, index) => message(`m-${index}`, index % 2 === 0 ? 'user' : 'assistant'))
+    const streamed = (n: number) => [...history.slice(0, -1), message('last', 'assistant', `answer ${'x'.repeat(n)}`)]
+
+    // Mount long history and position at the newest message
+    let tree = render({ messages: history, conversationId: 'c1' })
+    let divs = findAll(tree, 'div')
+    const scroller = { scrollHeight: 10000, scrollTop: 9600, clientHeight: 400, scrollTo }
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    effects.forEach((effect) => effect())
+    scrollTo.mockClear()
+
+    // Streaming starts; first chunk while still at the bottom follows
+    tree = render({ messages: streamed(10), conversationId: 'c1', isStreaming: true })
+    divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    effects.forEach((effect) => effect())
+    scrollTo.mockClear()
+
+    // The user wheels up: the scroller has moved, but the browser has not yet
+    // delivered the scroll event (delivered asynchronously), so the follow
+    // ref is still stale. A chunk committing inside this window must NOT
+    // drag the view back to the bottom.
+    scroller.scrollTop = 4000
+    scroller.scrollHeight = 10400
+
+    tree = render({ messages: streamed(60), conversationId: 'c1', isStreaming: true })
+    divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    effects.forEach((effect) => effect())
+
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  test('keeps the reading position stable when loading older messages', () => {
+    const scrollTo = mock()
+    const messages = Array.from({ length: 45 }, (_, index) => message(`m-${index}`))
+    let tree = render({ messages })
+    let divs = findAll(tree, 'div')
+    const scroller = { scrollHeight: 500, scrollTop: 100, clientHeight: 300, scrollTo }
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    effects.forEach((effect) => effect())
+    scrollTo.mockClear()
+
+    // Click "load older": anchor captured, batch inserted above the viewport
+    ;(findAll(tree, 'button')[0].props.onClick as () => void)()
+    scroller.scrollHeight = 900
+    tree = render({ messages })
+    divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    effects.forEach((effect) => effect())
+
+    expect(scroller.scrollTop).toBe(500)
+  })
+
+  test('re-positions at the newest message when the conversation changes', () => {
+    const scrollTo = mock()
+    const history = Array.from({ length: 50 }, (_, index) => message(`m-${index}`))
+    const attach = (tree: ReactNode, scrollTop: number) => {
+      const divs = findAll(tree, 'div')
+      ;(divs[1].props.ref as { current: unknown }).current = { scrollHeight: 10000, scrollTop, clientHeight: 400, scrollTo }
+      ;(divs[2].props.ref as { current: unknown }).current = {}
+    }
+
+    let tree = render({ messages: history, conversationId: 'c1' })
+    attach(tree, 9600)
+    effects.forEach((effect) => effect())
+    scrollTo.mockClear()
+
+    // Switch conversation while the scroller still holds the old position
+    tree = render({ messages: history, conversationId: 'c2' })
+    attach(tree, 4000)
+    effects.forEach((effect) => effect())
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 10001, behavior: 'auto' })
+  })
+
   test('memo comparison notices each delegated prop change', () => {
     const shared = {
       message: message('a'), isCurrentStreaming: false, renderPart: mock(), onRegenerate: mock(),

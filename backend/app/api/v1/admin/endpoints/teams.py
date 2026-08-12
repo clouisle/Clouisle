@@ -96,6 +96,7 @@ async def create_team(
         operation="create",
         status="success",
         request=request,
+        changes={"after": AuditLogService.snapshot(team, "team")},
     )
 
     return success(data=team, msg_key="team_created")
@@ -122,6 +123,7 @@ async def delete_team(
             msg_key="cannot_delete_default_team",
         )
 
+    audit_before = AuditLogService.snapshot(team, "team")
     await AuditLogService.log(
         user=current_user,
         action="delete_team",
@@ -131,6 +133,7 @@ async def delete_team(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     await team.delete()

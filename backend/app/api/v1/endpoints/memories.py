@@ -85,6 +85,7 @@ async def create_entity(
             status="success",
             request=request,
             metadata={"entity_type": body.entity_type.value},
+            changes={"after": AuditLogService.snapshot(entity, "memory_entity")},
         )
 
         return success(EntityResponse.model_validate(entity))
@@ -158,6 +159,8 @@ async def update_entity(
                 msg_key="memory_entity_not_found",
             )
 
+        audit_before = AuditLogService.snapshot(entity, "memory_entity")
+
         # Update fields
         if body.name is not None:
             entity.name = body.name
@@ -181,6 +184,9 @@ async def update_entity(
             operation="update",
             status="success",
             request=request,
+            changes=AuditLogService.build_changes(
+                audit_before, AuditLogService.snapshot(entity, "memory_entity")
+            ),
         )
 
         return success(EntityResponse.model_validate(entity))
@@ -207,6 +213,7 @@ async def delete_entity(
             id=entity_id, user_id=current_user.id
         ).first()
         entity_name = entity.name if entity else str(entity_id)
+        audit_before = AuditLogService.snapshot(entity, "memory_entity")
 
         await MemoryService.delete_entity(
             user_id=current_user.id,
@@ -222,6 +229,7 @@ async def delete_entity(
             operation="delete",
             status="success",
             request=request,
+            changes={"before": audit_before},
         )
 
         return success(
@@ -314,6 +322,7 @@ async def create_relation(
                 "target_entity_id": str(body.target_entity_id),
                 "relation_type": body.relation_type.value,
             },
+            changes={"after": AuditLogService.snapshot(relation, "memory_relation")},
         )
 
         return success(RelationResponse.model_validate(relation))
@@ -347,6 +356,12 @@ async def delete_relation(
 ):
     """Delete a memory relation."""
     try:
+        relation = await MemoryRelation.filter(
+            id=relation_id, user_id=current_user.id
+        ).first()
+        audit_before = (
+            AuditLogService.snapshot(relation, "memory_relation") if relation else None
+        )
         await MemoryService.delete_relation(
             user_id=current_user.id,
             relation_id=relation_id,
@@ -361,6 +376,7 @@ async def delete_relation(
             operation="delete",
             status="success",
             request=request,
+            changes={"before": audit_before} if audit_before else None,
         )
 
         return success(

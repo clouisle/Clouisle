@@ -44,6 +44,7 @@ docker-compose -f deploy/docker-compose.dev.yml up -d
 - Treat this file as a quick entrypoint only.
 - Follow existing code patterns in the touched module.
 - Keep admin/platform boundaries isolated.
+- Record field-level before/after diffs in audit logs via `AuditLogService.snapshot`/`build_changes` (see `docs/dev/backend/audit-logging.md`).
 - Keep detailed implementation guidance in `docs/dev/`.
 - Update docs when architecture or conventions change.
 

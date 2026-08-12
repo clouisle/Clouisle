@@ -37,6 +37,7 @@ let variableValues: Record<string, unknown> = {}
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
 let observerCallback: IntersectionObserverCallback | undefined
+let faviconHref: string | null = null
 const router = { push }
 const searchParams = { get: (key: string) => query.get(key), toString: () => query.toString() }
 const translate = (key: string, values?: Record<string, unknown>) => values ? `${key}:${JSON.stringify(values)}` : key
@@ -168,6 +169,7 @@ beforeEach(() => {
   chatContainerProps = {}
   chatInputProps = {}
   observerCallback = undefined
+  faviconHref = null
   for (const fn of [push, getPublicAgent, getConversations, getConversation, deleteConversation, updateConversation, uploadFileWithProgress, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace]) fn.mockReset()
   validateVariables.mockReturnValue(true)
   convertBackendMessages.mockImplementation((messages: unknown[]) => messages.map((message, index) => ({ id: `converted-${index}`, role: 'user', content: String(message) })))
@@ -184,7 +186,17 @@ beforeEach(() => {
     configurable: true,
     value: { innerWidth: 1024, history: { pushState: historyPush, replaceState: historyReplace } },
   })
-  Object.defineProperty(globalThis, 'document', { configurable: true, value: { title: '' } })
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: {
+      title: '',
+      head: {
+        appendChild: (node: { href?: string }) => { if (node?.href) faviconHref = node.href },
+      },
+      createElement: (tag: string) => tag === 'link' ? { rel: '', href: '', remove: () => { faviconHref = null } } : {},
+      querySelectorAll: () => [] as Array<{ remove(): void }>,
+    },
+  })
   Object.defineProperty(globalThis, 'IntersectionObserver', {
     configurable: true,
     value: class {
@@ -243,6 +255,30 @@ describe('PublicChatPage', () => {
     expect(chatContainerProps.onEditMessage).toBe(editMessage)
     expect(chatContainerProps.onSwitchVersion).toBe(switchVersion)
     expect(chatInputProps.onStop).toBe(stop)
+  })
+
+  test('sets the tab favicon to the agent logo only when it is an image URL', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, avatar_url: '/api/v1/upload/files/logo.png' })
+    render()
+    await flush()
+
+    expect(faviconHref?.startsWith('/api/v1/upload/files/logo.png?v=')).toBe(true)
+  })
+
+  test('prefers avatar_url over a non-image icon for the favicon', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, icon: '🤖', avatar_url: '/api/v1/upload/files/logo.png' })
+    render()
+    await flush()
+
+    expect(faviconHref?.startsWith('/api/v1/upload/files/logo.png?v=')).toBe(true)
+  })
+
+  test('keeps the default favicon when the agent has no image logo', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, icon: '🤖' })
+    render()
+    await flush()
+
+    expect(faviconHref).toBeNull()
   })
 
   test('selects, resets, paginates, renames, and deletes conversations', async () => {

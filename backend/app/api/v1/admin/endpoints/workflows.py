@@ -222,6 +222,7 @@ async def create_workflow(
             "trigger_type": workflow.trigger_type.value,
             "version": workflow.version,
         },
+        changes={"after": AuditLogService.snapshot(workflow, "workflow")},
     )
     return success(
         data=WorkflowOut.model_validate(workflow).model_dump(),
@@ -246,6 +247,7 @@ async def update_workflow(
     current_user: User = Depends(deps.PermissionChecker("admin:app:update")),
 ) -> Any:
     workflow = await _get_workflow(workflow_id, detail=True)
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
 
     if workflow_in.name is not None and workflow_in.name != workflow.name:
         existing = (
@@ -260,7 +262,6 @@ async def update_workflow(
             )
 
     updated_fields = []
-    old_version = workflow.version
 
     if workflow_in.name is not None:
         workflow.name = workflow_in.name
@@ -305,10 +306,9 @@ async def update_workflow(
         operation="update",
         status="success",
         request=request,
-        changes={
-            "before": {"version": old_version},
-            "after": {"version": workflow.version},
-        },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
         metadata={
             "fields_updated": updated_fields,
             "team_id": str(workflow.team_id),
@@ -330,7 +330,7 @@ async def publish_workflow(
     current_user: User = Depends(deps.PermissionChecker("admin:app:publish")),
 ) -> Any:
     workflow = await _get_workflow(workflow_id, detail=True)
-    old_status = workflow.status
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
     existing_version = await WorkflowVersion.filter(
         workflow_id=workflow_id, version=workflow.version
     ).first()
@@ -357,10 +357,9 @@ async def publish_workflow(
         operation="update",
         status="success",
         request=request,
-        changes={
-            "before": {"status": old_status.value},
-            "after": {"status": workflow.status.value},
-        },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
         metadata={
             "team_id": str(workflow.team_id),
             "visibility": workflow.visibility.value,
@@ -381,7 +380,7 @@ async def unpublish_workflow(
     current_user: User = Depends(deps.PermissionChecker("admin:app:publish")),
 ) -> Any:
     workflow = await _get_workflow(workflow_id, detail=True)
-    old_status = workflow.status
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
     workflow.status = WorkflowStatus.DRAFT
     await workflow.save()
     await AuditLogService.log(
@@ -393,10 +392,9 @@ async def unpublish_workflow(
         operation="update",
         status="success",
         request=request,
-        changes={
-            "before": {"status": old_status.value},
-            "after": {"status": workflow.status.value},
-        },
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
         metadata={
             "team_id": str(workflow.team_id),
             "visibility": workflow.visibility.value,
@@ -450,6 +448,7 @@ async def duplicate_workflow(
             "trigger_type": workflow.trigger_type.value,
             "version": workflow.version,
         },
+        changes={"after": AuditLogService.snapshot(new_workflow, "workflow")},
     )
     return success(
         data=WorkflowOut.model_validate(new_workflow).model_dump(),
@@ -464,6 +463,7 @@ async def delete_workflow(
     current_user: User = Depends(deps.PermissionChecker("admin:app:delete")),
 ) -> Any:
     workflow = await _get_workflow(workflow_id)
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
     await AuditLogService.log(
         user=current_user,
         action="admin_delete_workflow",
@@ -473,6 +473,7 @@ async def delete_workflow(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={
             "team_id": str(workflow.team_id),
             "visibility": workflow.visibility.value,

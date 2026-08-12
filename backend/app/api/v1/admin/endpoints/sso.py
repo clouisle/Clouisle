@@ -54,6 +54,7 @@ async def admin_disconnect_sso(
             )
 
     provider_name = connection.provider.name
+    audit_before = AuditLogService.snapshot(connection, "sso_connection")
 
     await connection.delete()
 
@@ -66,6 +67,7 @@ async def admin_disconnect_sso(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"provider": provider_name, "target_user_id": str(target_user.id)},
     )
 
@@ -126,6 +128,7 @@ async def create_provider(
         operation="create",
         status="success",
         request=request,
+        changes={"after": AuditLogService.snapshot(provider, "sso_provider")},
     )
 
     return success(data=SSOProviderAdmin.model_validate(provider))
@@ -144,6 +147,8 @@ async def update_provider(
         raise BusinessError(
             code=ResponseCode.SSO_PROVIDER_NOT_FOUND, msg_key="sso_provider_not_found"
         )
+
+    audit_before = AuditLogService.snapshot(provider, "sso_provider")
 
     if data.name and data.name != provider.name:
         existing = await SSOProvider.filter(name=data.name).first()
@@ -168,6 +173,9 @@ async def update_provider(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(provider, "sso_provider")
+        ),
     )
 
     return success(data=SSOProviderAdmin.model_validate(provider))
@@ -187,6 +195,7 @@ async def delete_provider(
         )
 
     provider_name = provider.name
+    audit_before = AuditLogService.snapshot(provider, "sso_provider")
     await provider.delete()
 
     await AuditLogService.log(
@@ -198,6 +207,7 @@ async def delete_provider(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     return success()

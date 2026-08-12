@@ -36,8 +36,34 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // 允许开发环境访问本地图片
-  allowedDevOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:8000', 'http://127.0.0.1:8000'],
+  // Dev-only LAN access to the dev server (e.g. http://192.168.0.31:3000).
+  // Next.js matches each entry literally or as a wildcard domain pattern; a
+  // bare '*' is rejected as a pattern and never matches, so only private
+  // (RFC1918) LAN ranges are listed here. Add extra hosts or hostnames via
+  // DEV_ALLOWED_ORIGINS (comma-separated) when a machine isn't covered.
+  // See docs/dev/frontend/dev-server-origins.md. Not used in production builds.
+  allowedDevOrigins: [
+    ...(process.env.DEV_ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean),
+    '192.168.*.*',
+    '10.*.*.*',
+    '172.16.*.*',
+    '172.17.*.*',
+    '172.18.*.*',
+    '172.19.*.*',
+    '172.20.*.*',
+    '172.21.*.*',
+    '172.22.*.*',
+    '172.23.*.*',
+    '172.24.*.*',
+    '172.25.*.*',
+    '172.26.*.*',
+    '172.27.*.*',
+    '172.28.*.*',
+    '172.29.*.*',
+    '172.30.*.*',
+    '172.31.*.*',
+    '*.local',
+  ],
   // API 代理转发
   async rewrites() {
     const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://localhost:8000';

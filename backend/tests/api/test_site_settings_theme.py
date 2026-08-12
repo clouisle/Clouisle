@@ -376,6 +376,41 @@ async def test_bulk_update_handles_existing_default_and_unknown_keys(monkeypatch
         "updated_keys": ["site_name", "allow_registration"],
         "count": 2,
     }
+    assert audit.await_args.kwargs["changes"]["before"]["values"] == {
+        "site_name": "Old",
+        "allow_registration": None,
+    }
+    assert audit.await_args.kwargs["changes"]["after"]["values"] == {
+        "site_name": "New",
+        "allow_registration": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_masks_sensitive_keys_in_changes(monkeypatch):
+    monkeypatch.setattr(
+        site_settings.SiteSetting, "filter", lambda **kwargs: Query(None)
+    )
+    set_value = AsyncMock()
+    monkeypatch.setattr(site_settings.SiteSetting, "set_value", set_value)
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "get_all_by_category",
+        AsyncMock(return_value={}),
+    )
+    audit = AsyncMock()
+    monkeypatch.setattr(site_settings.AuditLogService, "log", audit)
+
+    await site_settings.bulk_update_settings(
+        request=MagicMock(),
+        data=SiteSettingBulkUpdate(settings={"smtp_password": "super-secret-value"}),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+
+    changes = audit.await_args.kwargs["changes"]
+    assert changes["before"]["values"]["smtp_password"] == "***"
+    assert changes["after"]["values"]["smtp_password"] == "***"
+    assert "super-secret" not in str(changes)
 
 
 @pytest.mark.asyncio
@@ -456,6 +491,15 @@ async def test_auto_notification_update_validates_before_persistence(monkeypatch
 async def test_reset_category_and_audit(monkeypatch):
     set_value = AsyncMock()
     monkeypatch.setattr(site_settings.SiteSetting, "set_value", set_value)
+
+    class _NoRow:
+        def filter(self, *, key=None):
+            return self
+
+        async def first(self):
+            return None
+
+    monkeypatch.setattr(site_settings.SiteSetting, "filter", _NoRow().filter)
     monkeypatch.setattr(
         site_settings.SiteSetting,
         "get_all_by_category",
@@ -476,6 +520,12 @@ async def test_reset_category_and_audit(monkeypatch):
         call.kwargs["category"] == "security" for call in set_value.await_args_list
     )
     assert audit.await_args.kwargs["metadata"]["count"] == set_value.await_count
+    changes = audit.await_args.kwargs["changes"]
+    assert changes is not None
+    assert set(changes["before"]["values"]) == set(
+        audit.await_args.kwargs["metadata"]["reset_keys"]
+    )
+    assert set(changes["before"]["values"]) == set(changes["after"]["values"])
 
 
 @pytest.mark.asyncio

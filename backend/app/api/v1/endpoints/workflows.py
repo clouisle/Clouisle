@@ -487,6 +487,7 @@ async def create_workflow(
         status="success",
         request=request,
         metadata={"team_id": str(workflow_in.team_id)},
+        changes={"after": AuditLogService.snapshot(workflow, "workflow")},
     )
 
     # Reload with relations
@@ -670,6 +671,7 @@ async def update_workflow(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
     await deps.check_scoped_permission(
         current_user, "workflow:update", "team", workflow.team_id
     )
@@ -725,6 +727,9 @@ async def update_workflow(
         status="success",
         request=request,
         metadata={"team_id": str(workflow.team_id)},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
     )
 
     # Reload with relations
@@ -748,6 +753,7 @@ async def delete_workflow(
     )
 
     workflow_name = workflow.name
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
 
     # Delete workflow (cascades to runs and node executions)
     await workflow.delete()
@@ -761,6 +767,7 @@ async def delete_workflow(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     return success(data={"id": str(workflow_id)}, msg_key="workflow_deleted")
@@ -776,6 +783,7 @@ async def publish_workflow(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
 
     # Check if this version already has a snapshot
     existing_version = await WorkflowVersion.filter(
@@ -807,6 +815,9 @@ async def publish_workflow(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
     )
 
     return success(
@@ -825,6 +836,7 @@ async def unpublish_workflow(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
 
     workflow.status = WorkflowStatus.DRAFT
     await workflow.save()
@@ -838,6 +850,9 @@ async def unpublish_workflow(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
     )
 
     return success(
@@ -888,6 +903,7 @@ async def duplicate_workflow(
             "source_workflow_id": str(workflow_id),
             "source_workflow_name": workflow.name,
         },
+        changes={"after": AuditLogService.snapshot(new_workflow, "workflow")},
     )
 
     # Reload with relations
@@ -911,6 +927,7 @@ async def regenerate_webhook_token(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
     await deps.check_scoped_permission(
         current_user, "workflow:update", "team", workflow.team_id
     )
@@ -927,6 +944,9 @@ async def regenerate_webhook_token(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
     )
 
     return success(
@@ -1611,6 +1631,7 @@ async def delete_workflow_run(
     await check_workflow_access(run.workflow_id, current_user, require_write=True)
 
     workflow_id = run.workflow_id
+    audit_before = AuditLogService.snapshot(run, "workflow_run")
     await run.delete()
 
     await AuditLogService.log(
@@ -1622,6 +1643,7 @@ async def delete_workflow_run(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
         metadata={"workflow_id": str(workflow_id)},
     )
 
@@ -1726,6 +1748,9 @@ async def create_workflow_version(
         status="success",
         request=request,
         metadata={"workflow_id": str(workflow_id), "version": workflow.version},
+        changes={
+            "after": AuditLogService.snapshot(workflow_version, "workflow_version")
+        },
     )
 
     return success(
@@ -1748,6 +1773,7 @@ async def restore_workflow_version(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
     await deps.check_scoped_permission(
         current_user, "workflow:update", "team", workflow.team_id
     )
@@ -1811,6 +1837,9 @@ async def restore_workflow_version(
         status="success",
         request=request,
         metadata={"workflow_id": str(workflow_id), "restored_from_version": version},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
     )
 
     return success(

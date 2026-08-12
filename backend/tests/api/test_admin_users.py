@@ -93,7 +93,9 @@ def _user(**overrides):
         "save": AsyncMock(),
         "delete": AsyncMock(),
         "update_from_dict": AsyncMock(),
-        "roles": SimpleNamespace(clear=AsyncMock(), add=AsyncMock()),
+        "roles": SimpleNamespace(
+            clear=AsyncMock(), add=AsyncMock(), all=AsyncMock(return_value=[])
+        ),
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -493,6 +495,8 @@ async def test_update_user_password_roles_audit_and_notification(fake_request, a
         "password",
         "roles",
     ]
+    assert audit.await_args.kwargs["changes"]["before"]["roles"] == []
+    assert audit.await_args.kwargs["changes"]["after"]["roles"] == ["editor"]
     notify.assert_awaited_once()
 
 
@@ -634,7 +638,16 @@ async def test_exemption_clears_forced_change_and_audits(fake_request, admin):
 
     assert target.password_expiration_exempt is True
     assert target.force_password_change is False
-    assert audit.await_args.kwargs["changes"] == {"password_expiration_exempt": True}
+    assert audit.await_args.kwargs["changes"] == {
+        "before": {
+            "password_expiration_exempt": False,
+            "force_password_change": True,
+        },
+        "after": {
+            "password_expiration_exempt": True,
+            "force_password_change": False,
+        },
+    }
 
 
 @pytest.mark.anyio

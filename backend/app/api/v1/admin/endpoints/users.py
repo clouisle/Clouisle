@@ -238,6 +238,7 @@ async def create_user(
         operation="create",
         status="success",
         request=request,
+        changes={"after": AuditLogService.snapshot(user, "user")},
     )
 
     return success(data=await serialize_user_with_sso(user), msg_key="user_created")
@@ -363,6 +364,7 @@ async def activate_user(
             msg_key="user_already_active",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     user.is_active = True
     user.approval_status = "approved"
     await user.save(update_fields=["is_active", "approval_status"])
@@ -378,6 +380,9 @@ async def activate_user(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(updated_user, "user")
+        ),
     )
 
     await AutoNotificationService.send_to_user(
@@ -418,6 +423,7 @@ async def deactivate_user(
             msg_key="user_already_inactive",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     user.is_active = False
     user.approval_status = "approved"
     await user.save(update_fields=["is_active", "approval_status"])
@@ -433,6 +439,9 @@ async def deactivate_user(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(updated_user, "user")
+        ),
     )
 
     await AutoNotificationService.send_to_user(
@@ -463,6 +472,7 @@ async def update_user(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     user_data = user_in.model_dump(exclude_unset=True)
 
     password_changed = False
@@ -481,8 +491,11 @@ async def update_user(
         user_data["hashed_password"] = security.get_password_hash(password)
         password_changed = True
 
+    roles_before: list[str] | None = None
+    roles_after: list[str] | None = None
     if "roles" in user_data:
         role_names = user_data.pop("roles")
+        roles_before = sorted(r.name for r in await user.roles.all())
         roles = []
         for role_name in role_names:
             role = await Role.filter(name=role_name).first()
@@ -490,11 +503,21 @@ async def update_user(
                 roles.append(role)
         await user.roles.clear()
         await user.roles.add(*roles)
+        roles_after = sorted({r.name for r in roles})
 
     await user.update_from_dict(user_data)
     await user.save()
 
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
+
+    changes = AuditLogService.build_changes(
+        audit_before, AuditLogService.snapshot(updated_user, "user")
+    )
+    if roles_before is not None and roles_before != roles_after:
+        # 仅角色集合变化的请求也要记录：合并角色差异
+        changes = changes or {"before": {}, "after": {}}
+        changes["before"]["roles"] = roles_before
+        changes["after"]["roles"] = roles_after
 
     await AuditLogService.log(
         user=current_user,
@@ -508,6 +531,7 @@ async def update_user(
         metadata={
             "fields_updated": list(user_in.model_dump(exclude_unset=True).keys())
         },
+        changes=changes,
     )
 
     if password_changed:
@@ -543,6 +567,7 @@ async def delete_user(
             msg_key="cannot_delete_superuser",
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
     await AuditLogService.log(
         user=current_user,
         action="delete_user",
@@ -552,6 +577,7 @@ async def delete_user(
         operation="delete",
         status="success",
         request=request,
+        changes={"before": audit_before},
     )
 
     await user.delete()
@@ -578,6 +604,8 @@ async def force_password_change(
             status_code=404,
         )
 
+    audit_before = AuditLogService.snapshot(user, "user")
+
     # Set force password change flag
     user.force_password_change = True
     await user.save()
@@ -601,6 +629,9 @@ async def force_password_change(
         operation="update",
         status="success",
         request=request,
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        ),
     )
 
     return success(msg_key="user_updated")
@@ -678,6 +709,7 @@ async def exempt_password_expiration(
         )
 
     # Update exemption status
+    audit_before = AuditLogService.snapshot(user, "user")
     user.password_expiration_exempt = data.exempt
 
     # If granting exemption, clear force_password_change flag
@@ -696,7 +728,9 @@ async def exempt_password_expiration(
         operation="update",
         status="success",
         request=request,
-        changes={"password_expiration_exempt": data.exempt},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        ),
     )
 
     return success(msg_key="user_updated")
@@ -731,9 +765,16 @@ async def bulk_force_password_change(
 
     # Update all users
     success_count = 0
+    audit_diffs = []
     for user in users:
+        audit_before = AuditLogService.snapshot(user, "user")
         user.force_password_change = True
         await user.save()
+        diff = AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(user, "user")
+        )
+        if diff:
+            audit_diffs.append({"user_id": str(user.id), **diff})
 
         # Send notification
         await AutoNotificationService.send_to_user(
@@ -755,6 +796,7 @@ async def bulk_force_password_change(
         operation="update",
         status="success",
         request=request,
+        changes={"diffs": audit_diffs} if audit_diffs else None,
         metadata={
             "user_ids": [str(uid) for uid in data.user_ids],
             "count": success_count,

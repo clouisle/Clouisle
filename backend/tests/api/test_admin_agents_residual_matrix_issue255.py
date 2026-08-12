@@ -288,6 +288,77 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
     item.save.assert_awaited_once()
     create_kb.assert_awaited_once()
     assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 28
+    assert audit.await_args.kwargs["changes"]["before"]["knowledge_bases"] == []
+    assert audit.await_args.kwargs["changes"]["after"]["knowledge_bases"] == [
+        {
+            "knowledge_base_id": str(kb_config.knowledge_base_id),
+            "retrieval_top_k": 7,
+            "score_threshold": 0.5,
+            "search_mode": "hybrid",
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_update_agent_records_kb_configuration_only_changes(admin):
+    item = _agent()
+    kb_id = uuid4()
+    old_row = SimpleNamespace(
+        knowledge_base_id=kb_id,
+        retrieval_top_k=3,
+        score_threshold=0.3,
+        search_mode="dense",
+    )
+    kb_config = SimpleNamespace(
+        knowledge_base_id=kb_id,
+        retrieval_top_k=7,
+        score_threshold=0.5,
+        search_mode="hybrid",
+    )
+    delete_query = _Query([])
+    update = AgentUpdate.model_construct(knowledge_base_configs=[kb_config])
+    refreshed = _agent(id=item.id, team_id=item.team_id)
+
+    with (
+        patch.object(agents, "_get_agent", AsyncMock(return_value=item)),
+        patch.object(
+            agents.AgentKnowledgeBase,
+            "filter",
+            side_effect=[_Query([old_row]), delete_query],
+        ),
+        patch.object(agents.AgentKnowledgeBase, "create", AsyncMock()),
+        patch.object(
+            agents.KnowledgeBase, "filter", return_value=_Query(SimpleNamespace())
+        ),
+        patch.object(agents.Agent, "get", return_value=_Query(refreshed)),
+        patch.object(agents.AuditLogService, "log", AsyncMock()) as audit,
+        patch.object(
+            agents, "build_agent_out", AsyncMock(return_value={"id": item.id})
+        ),
+    ):
+        response = await agents.update_agent(
+            MagicMock(), item.id, update, current_user=admin
+        )
+
+    assert response["data"] == {"id": item.id}
+    before = audit.await_args.kwargs["changes"]["before"]["knowledge_bases"]
+    after = audit.await_args.kwargs["changes"]["after"]["knowledge_bases"]
+    assert before == [
+        {
+            "knowledge_base_id": str(kb_id),
+            "retrieval_top_k": 3,
+            "score_threshold": 0.3,
+            "search_mode": "dense",
+        }
+    ]
+    assert after == [
+        {
+            "knowledge_base_id": str(kb_id),
+            "retrieval_top_k": 7,
+            "score_threshold": 0.5,
+            "search_mode": "hybrid",
+        }
+    ]
 
 
 @pytest.mark.anyio

@@ -45,15 +45,21 @@ export async function generateMetadata({
     }
   }
   
-  // Build icon URL
+  // The favicon <link> is requested by the browser from the frontend origin,
+  // so relative paths (e.g. /api/v1/upload/files/...) must stay relative and
+  // go through the Next.js API proxy (with auth cookies). openGraph images
+  // need an absolute backend URL because external crawlers cannot resolve
+  // relative paths.
   let iconUrl: string | undefined
+  let ogImageUrl: string | undefined
   if (agent.avatar_url) {
-    // avatar_url is already a full path like /api/v1/upload/files/...
-    iconUrl = agent.avatar_url.startsWith('http')
+    iconUrl = agent.avatar_url
+    ogImageUrl = agent.avatar_url.startsWith('http')
       ? agent.avatar_url
       : `${getServerBackendOrigin()}${agent.avatar_url}`
   } else if (agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))) {
-    iconUrl = agent.icon.startsWith('http')
+    iconUrl = agent.icon
+    ogImageUrl = agent.icon.startsWith('http')
       ? agent.icon
       : `${getServerBackendOrigin()}${agent.icon}`
   }
@@ -65,7 +71,7 @@ export async function generateMetadata({
     openGraph: {
       title: agent.name,
       description: agent.description || `Chat with ${agent.name}`,
-      images: iconUrl ? [iconUrl] : undefined,
+      images: ogImageUrl ? [ogImageUrl] : undefined,
     },
   }
 }
