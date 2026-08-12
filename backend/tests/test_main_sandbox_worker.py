@@ -9,7 +9,28 @@ from main import (
     main,
     start_sandbox_worker,
     start_sandbox_worker_container,
+    start_worker,
 )
+
+
+def test_start_worker_consumes_all_task_queues_by_default():
+    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
+        start_worker()
+
+    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
+    mock_run.assert_called_once_with(
+        [
+            sys.executable,
+            "-m",
+            "celery",
+            "-A",
+            "app.core.celery:celery_app",
+            "worker",
+            "--loglevel=info",
+            "--concurrency=4",
+            "--queues=default,knowledge,workflow",
+        ]
+    )
 
 
 def test_start_sandbox_worker_uses_solo_pool_by_default():
