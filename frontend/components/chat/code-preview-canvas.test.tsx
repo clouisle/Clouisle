@@ -196,9 +196,11 @@ beforeEach(() => {
     createElement: () => ({ click() { this.clicked = true } }),
   } as unknown as Document
   globalThis.window = {
+    location: { href: 'http://localhost:3000', origin: 'http://localhost:3000' },
     setTimeout: (callback: () => void) => { callback(); return 1 },
     clearTimeout: () => {},
   } as unknown as Window & typeof globalThis
+  globalThis.fetch = mock(async () => ({ ok: true, text: async () => '', blob: async () => new TestBlob([]) })) as unknown as typeof fetch
 })
 
 test('renders iframe previews and escapes javascript closing script tags', () => {
@@ -585,4 +587,58 @@ test('mermaid re-fits when the viewport resizes until the user adjusts manually'
   viewport.getBoundingClientRect = () => ({ width: 1248, height: 1048 })
   resizeCallback?.()
   expect(stateValues[5]).toBeCloseTo(1.2, 10)
+})
+
+test('artifact preview loads same-origin content and renders it in the matching mode', async () => {
+  globalThis.fetch = mock(async () => ({ ok: true, text: async () => 'graph TD; A-->B;' }))
+  const tree = render({
+    id: 'art',
+    kind: 'artifact',
+    file: { url: '/api/v1/files/diagram.mmd', filename: 'diagram.mmd', mimeType: 'text/plain' },
+  })
+  walk(tree)
+  effects[0]?.()
+  await Bun.sleep(0)
+
+  expect(stateValues[1]).toBe('graph TD; A-->B;') // textContent
+  expect(stateValues[2]).toBe(false)              // isLoading
+  expect(stateValues[3]).toBe(false)              // loadFailed
+})
+
+test('artifact preview reports load failures and rejects cross-origin URLs', async () => {
+  globalThis.fetch = mock(async () => ({ ok: false }))
+  const failing = render({
+    id: 'art',
+    kind: 'artifact',
+    file: { url: '/api/v1/files/broken.mmd', filename: 'broken.mmd', mimeType: 'text/plain' },
+  })
+  walk(failing)
+  effects[0]?.()
+  await Bun.sleep(0)
+  expect(stateValues[3]).toBe(true) // loadFailed
+
+  // Cross-origin URLs are rejected without fetching
+  globalThis.fetch = mock()
+  const cross = render({
+    id: 'art',
+    kind: 'artifact',
+    file: { url: 'https://evil.example/x.mmd', filename: 'x.mmd', mimeType: 'text/plain' },
+  })
+  walk(cross)
+  effects[0]?.()
+  await Bun.sleep(0)
+  expect(stateValues[3]).toBe(true)
+  expect(globalThis.fetch).not.toHaveBeenCalled()
+})
+
+test('artifact preview downloads the original file', () => {
+  const tree = render({
+    id: 'art',
+    kind: 'artifact',
+    file: { url: '/api/v1/files/report.mmd', filename: 'report.mmd', mimeType: 'text/plain' },
+  })
+  walk(tree)
+  click(findByAriaLabel(tree, 'mermaidDownloadLabel'))
+
+  expect(appendedLink).toMatchObject({ href: '/api/v1/files/report.mmd', download: 'report.mmd', clicked: true })
 })
