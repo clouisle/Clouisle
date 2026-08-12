@@ -31,6 +31,59 @@ When adding a new audit event, include:
 
 Add `resource_name`, `changes`, and `metadata` when they help explain the operation.
 
+## Field-level before/after diffs
+
+Every direct CRUD mutation of a snapshot-capable resource records `changes` via
+three `AuditLogService` static helpers:
+
+- `snapshot(instance, resource_type)` — JSON-safe snapshot of the registered
+  plain columns of an already-fetched row. **Zero extra queries**: never pass a
+  lazy relation descriptor (e.g. `team`, `created_by`) — only plain columns and
+  raw `<fk>_id` UUID columns.
+- `build_changes(before, after)` — `{"before": {...}, "after": {...}}` with only
+  changed keys; returns `None` when nothing changed (pass `changes=None`).
+- `_json_safe` (used internally by `snapshot`) — orjson-safe (Enum/UUID/
+  datetime/Decimal), truncates values to 500 chars, converts oversized
+  structures to preview strings, and masks nested sensitive keys (`token`,
+  `api_key`, `email`, ...) before serializing.
+
+### Wiring recipe
+
+```python
+# update: snapshot right after fetch, diff after save/reload
+audit_before = AuditLogService.snapshot(entity, "agent")
+...mutate + save + reload...
+changes = AuditLogService.build_changes(
+    audit_before, AuditLogService.snapshot(entity, "agent")
+)
+
+# create
+changes = {"after": AuditLogService.snapshot(created, "agent")}
+
+# delete: snapshot before the destructive call
+changes = {"before": AuditLogService.snapshot(entity, "agent")}
+```
+
+Rules:
+
+- Never add a field the sanitizer cannot key-match (`credentials`, `config`,
+  `http_config`, `mcp_config`, `trigger_config`, `hashed_password`, `api_key`,
+  ...) — the `changes` column is sanitized by key, so such containers would
+  persist raw secrets.
+- Relation-only mutations must also produce a diff: merge association IDs
+  before/after (see `admin_update_agent` knowledge_base_ids, `admin_update_user`
+  roles).
+- Batch operations snapshot each row in the loop (`batch_*_team_models`,
+  `bulk_force_password_change`) or record a before list
+  (`batch_delete_conversations` titles).
+- Do not wire events with no field-level change (auth/read/execute events,
+  password-only operations, auto-processing pipelines) — they keep their
+  operation-level audit and would only add noise.
+
+To add a new resource type: register its plain columns in
+`AuditLogService.SNAPSHOT_FIELDS` in `app/services/audit_log.py`, then follow
+the wiring recipe above at the endpoint's existing `log(...)` call.
+
 ## i18n requirements for new actions
 
 Every new audit action must add translations in both backend and frontend.
