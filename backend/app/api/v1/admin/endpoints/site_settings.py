@@ -43,6 +43,17 @@ THEME_COLOR_SETTING_KEYS = {
     for key in DEFAULT_SETTINGS
     if key.startswith("theme_") and key.endswith("_color")
 }
+
+
+def _setting_stored_str(value: Any, value_type: str) -> Optional[str]:
+    """将设置值转为 set_value 的存储字符串形式（与 set_value 规则一致）。"""
+    if value_type == "bool":
+        return "true" if value else "false"
+    if value_type == "json":
+        return json.dumps(value) if value is not None else None
+    return str(value) if value is not None else None
+
+
 SENSITIVE_SETTING_KEYS = {
     "dingtalk_app_secret",
     "dingtalk_secret",
@@ -444,29 +455,49 @@ async def bulk_update_settings(
     await _validate_storage_settings_update(data.settings)
 
     updated_keys = []
+    before_values: dict[str, object] = {}
+    after_values: dict[str, object] = {}
     for key, value in data.settings.items():
         setting = await SiteSetting.filter(key=key).first()
         if setting:
+            value_type = setting.value_type
+            old_value = SiteSetting._convert_value(setting.value, value_type)
             await SiteSetting.set_value(
                 key=key,
                 value=value,
-                value_type=setting.value_type,
+                value_type=value_type,
                 category=setting.category,
                 description=setting.description,
                 is_public=setting.is_public,
             )
-            updated_keys.append(key)
         elif key in DEFAULT_SETTINGS:
             config = DEFAULT_SETTINGS[key]
+            value_type = config["type"]
+            old_value = None
             await SiteSetting.set_value(
                 key=key,
                 value=value,
-                value_type=config["type"],
+                value_type=value_type,
                 category=config["category"],
                 description=config["desc"],
                 is_public=config["public"],
             )
-            updated_keys.append(key)
+        else:
+            continue
+        updated_keys.append(key)
+        new_value = SiteSetting._convert_value(
+            _setting_stored_str(value, value_type), value_type
+        )
+        if old_value != new_value:
+            before_values[key] = "***" if key in SENSITIVE_SETTING_KEYS else old_value
+            after_values[key] = "***" if key in SENSITIVE_SETTING_KEYS else new_value
+
+    changes = None
+    if before_values or after_values:
+        changes = {
+            "before": {"values": before_values},
+            "after": {"values": after_values},
+        }
 
     await AuditLogService.log(
         user=current_user,
@@ -477,6 +508,7 @@ async def bulk_update_settings(
         operation="update",
         status="success",
         request=request,
+        changes=changes,
         metadata={
             "updated_keys": updated_keys,
             "count": len(updated_keys),
@@ -506,15 +538,9 @@ async def reset_settings(
             else None
         )
         # 与 set_value 的存储规则一致：先转成存储字符串，再转回规范值比较
-        if config["type"] == "bool":
-            stored_str = "true" if config["value"] else "false"
-        elif config["type"] == "json":
-            stored_str = (
-                json.dumps(config["value"]) if config["value"] is not None else None
-            )
-        else:
-            stored_str = str(config["value"]) if config["value"] is not None else None
-        new_value = SiteSetting._convert_value(stored_str, config["type"])
+        new_value = SiteSetting._convert_value(
+            _setting_stored_str(config["value"], config["type"]), config["type"]
+        )
         await SiteSetting.set_value(
             key=key,
             value=config["value"],
