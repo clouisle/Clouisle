@@ -61,13 +61,57 @@ The sandbox-worker image installs Bubblewrap and enables isolation. When isolati
 
 ## Security Model
 
-- The sandbox worker and Bubblewrap processes run as a **non-root user**.
-- Docker Compose and Helm disable privilege escalation and drop all Linux capabilities.
+- The task payload executes inside a fresh Bubblewrap **user + mount namespace**, never in the worker's own namespaces.
+- The supplied deployments run the sandbox worker as **root with `CAP_SYS_ADMIN` added to the runtime default cap set**: the image's non-root user has empty effective capabilities, and a privileged worker can create user namespaces even on hosts that gate unprivileged user namespaces. The worker keeps `allowPrivilegeEscalation=false` and `seccomp=unconfined` (sandbox worker only).
 - Rootless Bubblewrap needs namespace and mount syscalls. The supplied deployment uses `seccomp=unconfined` for the sandbox worker; clusters that prohibit this setting must provide a Localhost seccomp profile allowing the required syscalls.
 - Only the current workspace and its temporary directory are writable inside the task namespace.
 - The dependency cache and required runtime directories are read-only.
 - The child receives a filtered environment rather than the worker's full process environment.
 - Session workspaces are cleaned after TTL expiry.
+
+## Host Kernel Requirements
+
+Bubblewrap creates a new user namespace with `unshare(CLONE_NEWUSER)`. The **supplied deployments** run the worker as root with `CAP_SYS_ADMIN`, so user namespace creation is privileged and works even on hosts that restrict non-privileged user namespaces — no host sysctl changes are required.
+
+Custom deployments that keep the worker **non-root** rely on the host kernel permitting unprivileged user namespaces; otherwise every sandbox job fails with:
+
+```text
+bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.
+```
+
+Several common host distributions restrict this by default, and `seccomp=unconfined` does **not** help here because the restriction is enforced below the container seccomp profile:
+
+| Distribution | Restriction | Fix |
+|---|---|---|
+| Ubuntu 23.10+ | AppArmor blocks user namespaces for unprivileged processes (`kernel.apparmor_restrict_unprivileged_userns=1`) | `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` |
+| Debian / older kernels | User namespace cloning disabled (`kernel.unprivileged_userns_clone=0`) | `sysctl -w kernel.unprivileged_userns_clone=1` |
+
+Check the current state and verify that a user namespace can actually be created:
+
+```bash
+sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone 2>/dev/null
+unshare -U true && echo "user namespaces OK"
+```
+
+Make the change persistent:
+
+```bash
+echo 'kernel.apparmor_restrict_unprivileged_userns=0' > /etc/sysctl.d/99-clouisle-userns.conf
+sysctl --system
+```
+
+Notes:
+
+- The sysctl is a **host/node-level** setting. In Kubernetes it cannot be set per pod: apply it to every node (custom node image, `/etc/sysctl.d/` on self-managed nodes, or the equivalent node bootstrap for managed clusters).
+- Enabling unprivileged user namespaces is the standard prerequisite for rootless containers (Bubblewrap, Flatpak, Podman).
+
+### Hardening: contain the worker's `CAP_SYS_ADMIN`
+
+The sandbox task runs in a fresh Bubblewrap user + mount namespace, so it cannot directly reach the worker container's capabilities. If a task ever escapes Bubblewrap, however, it lands inside the worker container as root with `CAP_SYS_ADMIN`. On a default Docker daemon the container shares the host's initial user namespace, which makes that capability host-user-namespace-scoped and exposes well-known escape chains (cgroup `release_agent`, remounting `/proc` to write `kernel.core_pattern`, sysctl writes) in principle.
+
+For Docker Compose deployments, enable **daemon user namespace remapping** (`"userns-remap": "default"` in `/etc/docker/daemon.json`) to place every container in a nested user namespace — `CAP_SYS_ADMIN` then only applies to the container's own user namespace and the host-escape chains no longer work. The sandbox worker still creates its Bubblewrap user namespace (privileged inside the remapped namespace), so sandbox functionality is unaffected. See [Deployment Guide → User Namespace Remapping](../deployment/DEPLOYMENT.md#user-namespace-remapping-hardening) for configuration, verification, and volume ownership impact.
+
+For Kubernetes, daemon-level remapping does not apply; rely on NetworkPolicy for outbound sandbox traffic, keep Bubblewrap updated, and monitor its CVEs, or use node-level user namespace support where the cluster provides it.
 
 ## Development
 
@@ -81,7 +125,7 @@ uv run --project backend main.py sandbox-worker -c 1
 uv run --project backend main.py sandbox-worker --local-dev -c 1
 ```
 
-To enable the same isolation on a supported Linux host, install Bubblewrap and set:
+To enable the same isolation on a Linux host (the host must permit unprivileged user namespaces, see [Host Kernel Requirements](#host-kernel-requirements)), install Bubblewrap and set:
 
 ```bash
 SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true

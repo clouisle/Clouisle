@@ -128,11 +128,16 @@ sandboxWorker:
   replicas: 1
   command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
   securityContext:
+    # bwrap must create user/mount namespaces. The image USER is a non-root
+    # account whose effective caps are always empty, so the worker runs as
+    # root (runAsUser 0 overrides the image USER) and adds CAP_SYS_ADMIN on
+    # top of the runtime default cap set. The task payload still executes
+    # inside a fresh Bubblewrap user+mount namespace.
     allowPrivilegeEscalation: false
     capabilities:
-      drop:
-        - ALL
-    runAsNonRoot: true
+      add:
+        - SYS_ADMIN
+    runAsUser: 0
     seccompProfile:
       type: Unconfined
   resources:

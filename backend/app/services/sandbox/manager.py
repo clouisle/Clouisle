@@ -49,6 +49,19 @@ BLOCKED_ENV = frozenset(
     }
 )
 
+BWRAP_USER_NS_ERROR_MARKER = "No permissions to create new namespace"
+
+
+def translate_sandbox_error(message: str | None) -> str | None:
+    """Map known isolation-binary failures to actionable messages.
+
+    Keeps the raw payload in ``stderr`` while surfacing an actionable,
+    localized explanation in ``error``.
+    """
+    if not message or BWRAP_USER_NS_ERROR_MARKER not in message:
+        return message
+    return t("sandbox_userns_unavailable")
+
 
 class SandboxManager:
     def __init__(
@@ -214,7 +227,7 @@ class SandboxManager:
             if process_result.timed_out:
                 error = t("request_timeout")
             elif not success:
-                error = process_result.stderr.strip() or t(
+                error = translate_sandbox_error(process_result.stderr.strip()) or t(
                     "sandbox_process_exit_code",
                     exit_code=process_result.exit_code,
                 )
@@ -504,8 +517,11 @@ async function __execute__() {{
             error=None
             if process_result.exit_code == 0
             else resolve_user_visible_error(
-                stderr.strip()
-                or t("sandbox_process_exit_code", exit_code=process_result.exit_code),
+                translate_sandbox_error(stderr.strip())
+                or t(
+                    "sandbox_process_exit_code",
+                    exit_code=process_result.exit_code,
+                ),
                 fallback_key="code_tool_execution_failed",
             ),
             stdout=stdout,

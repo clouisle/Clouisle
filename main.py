@@ -280,6 +280,20 @@ def start_sandbox_worker_container(
         "host.docker.internal:host-gateway",
         "--name",
         f"clouisle-sandbox-worker-dev-{os.getpid()}",
+        # Mirror the sandbox-worker security options from deploy/docker-compose.yml:
+        # rootless bwrap needs namespace/mount syscalls that the default seccomp
+        # profile blocks, so the container must run with seccomp unconfined.
+        # The worker runs as root (effective caps of the image's non-root USER
+        # are always empty) and adds CAP_SYS_ADMIN on top of the runtime
+        # default cap set.
+        "--security-opt",
+        "seccomp=unconfined",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--cap-add",
+        "SYS_ADMIN",
+        "--user",
+        "0",
     ]
     for key, value in _sandbox_worker_container_env().items():
         cmd.extend(["-e", f"{key}={value}"])

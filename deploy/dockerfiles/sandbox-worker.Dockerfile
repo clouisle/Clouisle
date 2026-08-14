@@ -52,6 +52,11 @@ ENV PYTHONUNBUFFERED=1 \
     SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap \
     PATH="/app/backend/.venv/bin:$PATH"
 
+# Safe image default. Supplied deployments (Docker Compose, Helm, plain K8s,
+# and main.py --local-dev) run this container as root (user "0" / runAsUser: 0)
+# with CAP_SYS_ADMIN added so bwrap can create user/mount namespaces even on
+# hosts that gate unprivileged user namespaces; the task payload still
+# executes inside a fresh Bubblewrap user+mount namespace.
 USER clouisle
 
 CMD ["python", "main.py", "sandbox-worker"]
