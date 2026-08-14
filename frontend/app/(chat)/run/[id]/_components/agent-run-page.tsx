@@ -165,7 +165,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
               </div>
             )}
             <ChatInput value={input} onChange={setInput} onSubmit={handleSendMessage} onStop={stop} placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')} disabled={runLoading && !isStreaming} isLoading={runLoading} isStreaming={isStreaming} />
-            <p className="text-[11px] text-center text-muted-foreground mt-2">{metadata.powered_by_text || t('aiGeneratedDisclaimer')}</p>
+            {metadata.powered_by_text && <p className="text-[11px] text-center text-muted-foreground mt-2">{metadata.powered_by_text}</p>}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-14T22:34:07.764Z
+// GENERATED — 2026-08-14T22:36:10.531Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
