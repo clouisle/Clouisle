@@ -45,7 +45,7 @@
 - Regression scope: existing agent create/update/detail/copy/audit/package tests keep passing; frontend chat page tests keep passing; full coverage gates.
 
 ## Risks & Mitigation
-- Tortoise auto-creates tables (no Alembic); adding a column to an existing DB requires `create_all` on new installs only — existing deployments need a manual `ALTER TABLE agents ADD COLUMN powered_by_text` (documented; the project has no migration runner).
+- Tortoise auto-creates tables (no Alembic); new installs get the column via `create_all`. Already-deployed databases are handled by `init_agent_powered_by_text()` in `backend/app/core/init_data.py`, which probes `information_schema.columns` and runs `ALTER TABLE agents ADD COLUMN powered_by_text TEXT` when missing (same pattern as the tools_credentials migration), invoked before `Tortoise.generate_schemas()` in `init_db()`.
 - Frontend coverage: new form field and footer branch add lines to `page.tsx`/`agent-config-form.tsx`; add focused tests.
 - Rollback: revert the field addition; the footer falls back to nothing (hidden) — no crash.
 

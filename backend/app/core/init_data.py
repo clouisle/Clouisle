@@ -635,6 +635,52 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
+async def init_agent_powered_by_text():
+    """
+    Add powered_by_text column to existing agents tables.
+    Handles the migration for the agent-level chat footer config feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent powered_by_text field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agents table exists first
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping powered_by_text migration"
+        )
+        return
+
+    # Check if powered_by_text column exists
+    _, rows = await conn.execute_query(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'powered_by_text'
+        """
+    )
+    if rows:
+        logger.info("powered_by_text column already exists")
+        return
+
+    logger.info("Adding powered_by_text column to agents table...")
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agents
+        ADD COLUMN powered_by_text TEXT
+        """,
+    )
+    logger.info("Added powered_by_text column to agents table")
+    logger.info("Agent powered_by_text migration complete")
+
+
 async def init_agent_visibility_values():
     """
     Normalize legacy agent visibility values.
@@ -2744,6 +2790,13 @@ async def init_db():
     except Exception as e:
         logger.warning(
             f"Agent tools_credentials migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_agent_powered_by_text()
+    except Exception as e:
+        logger.warning(
+            f"Agent powered_by_text migration failed (may be first run): {e}"
         )
 
     try:

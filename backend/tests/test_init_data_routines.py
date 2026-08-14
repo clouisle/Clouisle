@@ -129,3 +129,54 @@ async def test_notification_tables_existing_state_executes_only_probes(
         "SELECT table_name FROM information_schema.tables" in awaited.args[0]
         for awaited in conn.execute_query.await_args_list
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_powered_by_text_column_is_added_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(1, ["agents"]), (1, [])]  # table probe, column probe
+        )
+    )
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_agent_powered_by_text()
+
+    assert migration.await_count == 1
+    assert "ADD COLUMN powered_by_text TEXT" in migration.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_agent_powered_by_text_skips_when_column_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[(1, ["agents"]), (1, [{"column_name": "powered_by_text"}])]
+        )
+    )
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_agent_powered_by_text()
+
+    migration.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_agent_powered_by_text_skips_without_agents_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(1, [])))
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_agent_powered_by_text()
+
+    migration.assert_not_awaited()
