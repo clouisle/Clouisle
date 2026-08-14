@@ -1,919 +1,314 @@
-# SDK Examples
+# HTTP API Examples
 
-This guide provides comprehensive SDK examples for integrating Clouisle into your applications.
+Clouisle does **not** publish official SDK packages (Python, JavaScript, Go, Ruby, or otherwise). The API is a standard REST + JSON interface served over HTTPS, and the OpenAPI specification is available at:
 
-## Python SDK
+- **Swagger UI**: `https://your-domain.com/docs`
+- **OpenAPI JSON**: `https://your-domain.com/api/v1/openapi.json`
 
-### Installation
+Any HTTP client can call the API directly. This guide provides copy-pasteable examples in the most common languages. If you need a typed client, generate one from the OpenAPI spec (e.g. `openapi-generator`, `openapi-typescript`).
+
+## Common Setup
+
+All requests use:
+
+- Base URL: `https://your-domain.com/api/v1`
+- JSON request/response bodies (unless noted)
+- `Authorization: Bearer <token>` header (JWT or `clou_` API key)
+- Unified response envelope: `{"code": 0, "data": ..., "msg": "success"}`
+
+## Authentication
+
+### Login (JWT)
+
+`POST /api/v1/login/access-token` — form-encoded `username` and `password`.
+
+**curl:**
+```bash
+curl -X POST "https://your-domain.com/api/v1/login/access-token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=your_username&password=your_password"
+```
+
+**Python:**
+```python
+import requests
+
+response = requests.post(
+    "https://your-domain.com/api/v1/login/access-token",
+    data={"username": "your_username", "password": "your_password"},
+)
+token = response.json()["data"]["access_token"]
+```
+
+The token is valid for the `session_timeout_days` site setting (default 30 days).
+
+### API Key
+
+Create a key via the UI or `POST /api/v1/api-keys`, then send it as a Bearer token:
 
 ```bash
-pip install clouisle-sdk
-# or
-uv add clouisle-sdk
+export CLOUISLE_API_KEY="clou_your_full_key_here"
+curl -X GET "https://your-domain.com/api/v1/agents" \
+  -H "Authorization: Bearer $CLOUISLE_API_KEY"
 ```
 
-### Basic Setup
+## Agent Examples
 
-```python
-from clouisle import CloudisleClient
-
-# Initialize client
-client = CloudisleClient(
-    base_url="https://your-domain.com",
-    api_key="your-api-key"
-)
-
-# Or with JWT token
-client = CloudisleClient(
-    base_url="https://your-domain.com",
-    token="your-jwt-token"
-)
-```
-
-### Agent Management
-
-```python
-# List agents
-agents = client.agents.list(
-    page=1,
-    page_size=20,
-    status="active"
-)
-
-for agent in agents.items:
-    print(f"{agent.name} - {agent.model}")
-
-# Get agent
-agent = client.agents.get("agent-123")
-print(f"Agent: {agent.name}")
-print(f"Model: {agent.model}")
-print(f"Status: {agent.status}")
-
-# Create agent
-agent = client.agents.create(
-    name="Customer Support Agent",
-    model="gpt-4-turbo",
-    system_prompt="You are a helpful customer support agent.",
-    temperature=0.7,
-    max_tokens=2000,
-    team_id="team-123"
-)
-print(f"Created: {agent.id}")
-
-# Update agent
-agent = client.agents.update(
-    "agent-123",
-    name="Updated Agent Name",
-    system_prompt="Updated system prompt",
-    temperature=0.8
-)
-
-# Delete agent
-client.agents.delete("agent-123")
-```
-
-### Conversations
-
-```python
-# Start conversation
-conversation = client.conversations.create(
-    agent_id="agent-123",
-    title="Customer Inquiry"
-)
-
-# Send message
-message = client.conversations.send_message(
-    conversation.id,
-    content="Hello! I need help with my order."
-)
-print(f"Response: {message.response}")
-
-# Stream message
-for token in client.conversations.stream_message(
-    conversation.id,
-    content="Tell me a story"
-):
-    print(token, end='', flush=True)
-
-# Get messages
-messages = client.conversations.get_messages(conversation.id)
-for msg in messages.items:
-    print(f"{msg.role}: {msg.content}")
-
-# List conversations
-conversations = client.conversations.list(
-    agent_id="agent-123",
-    page=1,
-    page_size=20
-)
-```
-
-### Knowledge Bases
-
-```python
-# Create knowledge base
-kb = client.knowledge_bases.create(
-    name="Product Documentation",
-    description="All product manuals and guides",
-    embedding_model="text-embedding-3-large",
-    chunk_size=1000,
-    chunk_overlap=200
-)
-
-# Upload document
-document = client.knowledge_bases.upload_document(
-    kb.id,
-    file_path="/path/to/document.pdf",
-    metadata={
-        "category": "manual",
-        "version": "2.0"
-    }
-)
-
-# Upload from URL
-document = client.knowledge_bases.upload_from_url(
-    kb.id,
-    url="https://example.com/document.pdf",
-    filename="product-manual.pdf"
-)
-
-# Search knowledge base
-results = client.knowledge_bases.search(
-    kb.id,
-    query="How to reset password?",
-    top_k=5,
-    score_threshold=0.7
-)
-
-for result in results:
-    print(f"Score: {result.score}")
-    print(f"Content: {result.content}")
-    print(f"Source: {result.metadata.get('source')}")
-    print()
-
-# List documents
-documents = client.knowledge_bases.list_documents(
-    kb.id,
-    page=1,
-    page_size=20
-)
-
-# Delete document
-client.knowledge_bases.delete_document(kb.id, document.id)
-```
-
-### Workflows
-
-```python
-# Create workflow
-workflow = client.workflows.create(
-    name="Customer Inquiry Handler",
-    description="Automated customer inquiry processing",
-    trigger_type="webhook",
-    nodes=[
-        {
-            "id": "start",
-            "type": "start",
-            "config": {
-                "input_parameters": [
-                    {"name": "customer_email", "type": "string", "required": True},
-                    {"name": "inquiry_text", "type": "string", "required": True}
-                ]
-            }
-        },
-        {
-            "id": "analyze",
-            "type": "llm",
-            "config": {
-                "model": "gpt-4-turbo",
-                "system_prompt": "Analyze customer inquiry",
-                "user_prompt": "{{inquiry_text}}",
-                "output_variable": "analysis"
-            }
-        },
-        {
-            "id": "end",
-            "type": "end",
-            "config": {
-                "output": {
-                    "status": "success",
-                    "data": "{{analysis}}"
-                }
-            }
-        }
-    ],
-    edges=[
-        {"from": "start", "to": "analyze"},
-        {"from": "analyze", "to": "end"}
-    ]
-)
-
-# Execute workflow
-execution = client.workflows.execute(
-    workflow.id,
-    input_data={
-        "customer_email": "customer@example.com",
-        "inquiry_text": "I need help with my order"
-    }
-)
-
-# Wait for completion
-execution = client.workflows.wait_for_completion(
-    workflow.id,
-    execution.id,
-    timeout=60
-)
-
-print(f"Status: {execution.status}")
-print(f"Output: {execution.output}")
-
-# Get execution history
-executions = client.workflows.list_executions(
-    workflow.id,
-    page=1,
-    page_size=20
-)
-```
-
-### Tools
-
-```python
-# List tools
-tools = client.tools.list()
-
-# Get tool
-tool = client.tools.get("tool-123")
-
-# Execute tool
-result = client.tools.execute(
-    "web_search",
-    parameters={
-        "query": "latest AI news",
-        "num_results": 5
-    }
-)
-
-# Create custom tool
-tool = client.tools.create(
-    name="Custom Calculator",
-    description="Perform calculations",
-    parameters={
-        "type": "object",
-        "properties": {
-            "expression": {
-                "type": "string",
-                "description": "Math expression to evaluate"
-            }
-        },
-        "required": ["expression"]
-    },
-    code="""
-def execute(expression):
-    try:
-        result = eval(expression)
-        return {"result": result}
-    except Exception as e:
-        return {"error": str(e)}
-"""
-)
-```
-
-### Batch Operations
-
-```python
-# Batch create agents
-results = client.agents.batch_create([
-    {
-        "name": "Agent 1",
-        "model": "gpt-4-turbo",
-        "system_prompt": "You are helpful."
-    },
-    {
-        "name": "Agent 2",
-        "model": "claude-3-5-sonnet",
-        "system_prompt": "You are helpful."
-    }
-])
-
-print(f"Success: {results.summary.success_count}")
-print(f"Failed: {results.summary.failed_count}")
-
-# Batch delete
-results = client.agents.batch_delete([
-    "agent-123",
-    "agent-456",
-    "agent-789"
-])
-```
-
-### Error Handling
-
-```python
-from clouisle.exceptions import (
-    CloudisleError,
-    AuthenticationError,
-    PermissionError,
-    NotFoundError,
-    RateLimitError
-)
-
-try:
-    agent = client.agents.get("agent-123")
-
-except AuthenticationError as e:
-    print(f"Authentication failed: {e.message}")
-    # Refresh token or re-authenticate
-
-except PermissionError as e:
-    print(f"Permission denied: {e.message}")
-    # Check user permissions
-
-except NotFoundError as e:
-    print(f"Resource not found: {e.message}")
-    # Handle missing resource
-
-except RateLimitError as e:
-    print(f"Rate limit exceeded: {e.message}")
-    print(f"Retry after: {e.retry_after} seconds")
-    # Wait and retry
-
-except CloudisleError as e:
-    print(f"API error: {e.message}")
-    print(f"Error code: {e.code}")
-```
-
-### Async Support
-
-```python
-import asyncio
-from clouisle import AsyncCloudisleClient
-
-async def main():
-    # Initialize async client
-    client = AsyncCloudisleClient(
-        base_url="https://your-domain.com",
-        api_key="your-api-key"
-    )
-
-    # Async operations
-    agents = await client.agents.list()
-    agent = await client.agents.get("agent-123")
-
-    # Async streaming
-    async for token in client.conversations.stream_message(
-        "conv-123",
-        content="Hello!"
-    ):
-        print(token, end='', flush=True)
-
-    # Close client
-    await client.close()
-
-# Run
-asyncio.run(main())
-```
-
-## JavaScript/TypeScript SDK
-
-### Installation
+### List Agents
 
 ```bash
-npm install @clouisle/sdk
-# or
-yarn add @clouisle/sdk
-# or
-bun add @clouisle/sdk
+curl -X GET "https://your-domain.com/api/v1/agents?team_id=550e8400-e29b-41d4-a716-446655440000&page=1&page_size=20" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN"
 ```
 
-### Basic Setup
+**Python:**
+```python
+import requests
 
-```typescript
-import { CloudisleClient } from '@clouisle/sdk';
+result = requests.get(
+    "https://your-domain.com/api/v1/agents",
+    headers={"Authorization": f"Bearer {token}"},
+    params={"team_id": "550e8400-e29b-41d4-a716-446655440000", "page": 1, "page_size": 20},
+).json()
 
-// Initialize client
-const client = new CloudisleClient({
-  baseUrl: 'https://your-domain.com',
-  apiKey: 'your-api-key'
-});
-
-// Or with JWT token
-const client = new CloudisleClient({
-  baseUrl: 'https://your-domain.com',
-  token: 'your-jwt-token'
-});
+for agent in result["data"]["items"]:
+    print(agent["id"], agent["name"], agent["status"])
 ```
 
-### Agent Management
+### Create an Agent
 
-```typescript
-// List agents
-const agents = await client.agents.list({
-  page: 1,
-  pageSize: 20,
-  status: 'active'
-});
+`POST /api/v1/agents` — `team_id` is required (UUID); `model_id` is a TeamModel authorization UUID (optional); `model` in responses is a `ModelInfo` object.
 
-agents.items.forEach(agent => {
-  console.log(`${agent.name} - ${agent.model}`);
-});
-
-// Get agent
-const agent = await client.agents.get('agent-123');
-console.log(`Agent: ${agent.name}`);
-
-// Create agent
-const newAgent = await client.agents.create({
-  name: 'Customer Support Agent',
-  model: 'gpt-4-turbo',
-  systemPrompt: 'You are a helpful customer support agent.',
-  temperature: 0.7,
-  maxTokens: 2000,
-  teamId: 'team-123'
-});
-
-// Update agent
-const updated = await client.agents.update('agent-123', {
-  name: 'Updated Agent Name',
-  systemPrompt: 'Updated system prompt',
-  temperature: 0.8
-});
-
-// Delete agent
-await client.agents.delete('agent-123');
+**curl:**
+```bash
+curl -X POST "https://your-domain.com/api/v1/agents" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Support Agent",
+    "team_id": "550e8400-e29b-41d4-a716-446655440000",
+    "model_id": "550e8400-e29b-41d4-a716-446655440001",
+    "system_prompt": "You are a helpful customer support agent.",
+    "max_iterations": 5,
+    "visibility": "team"
+  }'
 ```
 
-### Conversations
+### Chat with an Agent
 
-```typescript
-// Start conversation
-const conversation = await client.conversations.create({
-  agentId: 'agent-123',
-  title: 'Customer Inquiry'
-});
+`POST /api/v1/agents/{agent_id}/chat` — conversations are created implicitly; pass `conversation_id` to continue one.
 
-// Send message
-const message = await client.conversations.sendMessage(
-  conversation.id,
+**Python:**
+```python
+import requests
+
+result = requests.post(
+    f"https://your-domain.com/api/v1/agents/{agent_id}/chat",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "message": "Hello! I need help with my order.",
+        "conversation_id": None,
+        "variables": {},
+    },
+).json()
+
+conversation_id = result["data"]["conversation_id"]
+print(result["data"]["message"]["content"])
+```
+
+### Stream a Chat (SSE)
+
+`POST /api/v1/agents/{agent_id}/chat/stream` — see [SSE Streaming](./sse-streaming.md).
+
+**JavaScript:**
+```javascript
+const response = await fetch(
+  `https://your-domain.com/api/v1/agents/${agentId}/chat/stream`,
   {
-    content: 'Hello! I need help with my order.'
-  }
-);
-console.log(`Response: ${message.response}`);
-
-// Stream message
-const stream = await client.conversations.streamMessage(
-  conversation.id,
-  {
-    content: 'Tell me a story'
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    body: JSON.stringify({ message: 'Tell me a story', conversation_id: null, variables: {} }),
   }
 );
 
-for await (const token of stream) {
-  process.stdout.write(token);
-}
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
 
-// Get messages
-const messages = await client.conversations.getMessages(conversation.id);
-messages.items.forEach(msg => {
-  console.log(`${msg.role}: ${msg.content}`);
-});
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
 
-// List conversations
-const conversations = await client.conversations.list({
-  agentId: 'agent-123',
-  page: 1,
-  pageSize: 20
-});
-```
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split('\n');
+  buffer = lines.pop() || '';
 
-### Knowledge Bases
-
-```typescript
-// Create knowledge base
-const kb = await client.knowledgeBases.create({
-  name: 'Product Documentation',
-  description: 'All product manuals and guides',
-  embeddingModel: 'text-embedding-3-large',
-  chunkSize: 1000,
-  chunkOverlap: 200
-});
-
-// Upload document
-const document = await client.knowledgeBases.uploadDocument(
-  kb.id,
-  {
-    file: fileBlob,
-    metadata: {
-      category: 'manual',
-      version: '2.0'
+  let eventType = '';
+  for (const line of lines) {
+    if (line.startsWith('event: ')) {
+      eventType = line.slice(7);
+    } else if (line.startsWith('data: ') && eventType) {
+      const data = JSON.parse(line.slice(6));
+      if (eventType === 'content_delta') process.stdout.write(data.delta);
+      if (eventType === 'message_end') console.log('\n[Done]');
+      eventType = '';
     }
   }
-);
-
-// Upload from URL
-const doc = await client.knowledgeBases.uploadFromUrl(
-  kb.id,
-  {
-    url: 'https://example.com/document.pdf',
-    filename: 'product-manual.pdf'
-  }
-);
-
-// Search knowledge base
-const results = await client.knowledgeBases.search(kb.id, {
-  query: 'How to reset password?',
-  topK: 5,
-  scoreThreshold: 0.7
-});
-
-results.forEach(result => {
-  console.log(`Score: ${result.score}`);
-  console.log(`Content: ${result.content}`);
-  console.log(`Source: ${result.metadata.source}`);
-  console.log();
-});
-```
-
-### Workflows
-
-```typescript
-// Create workflow
-const workflow = await client.workflows.create({
-  name: 'Customer Inquiry Handler',
-  description: 'Automated customer inquiry processing',
-  triggerType: 'webhook',
-  nodes: [
-    {
-      id: 'start',
-      type: 'start',
-      config: {
-        inputParameters: [
-          { name: 'customer_email', type: 'string', required: true },
-          { name: 'inquiry_text', type: 'string', required: true }
-        ]
-      }
-    },
-    {
-      id: 'analyze',
-      type: 'llm',
-      config: {
-        model: 'gpt-4-turbo',
-        systemPrompt: 'Analyze customer inquiry',
-        userPrompt: '{{inquiry_text}}',
-        outputVariable: 'analysis'
-      }
-    },
-    {
-      id: 'end',
-      type: 'end',
-      config: {
-        output: {
-          status: 'success',
-          data: '{{analysis}}'
-        }
-      }
-    }
-  ],
-  edges: [
-    { from: 'start', to: 'analyze' },
-    { from: 'analyze', to: 'end' }
-  ]
-});
-
-// Execute workflow
-const execution = await client.workflows.execute(workflow.id, {
-  customer_email: 'customer@example.com',
-  inquiry_text: 'I need help with my order'
-});
-
-// Wait for completion
-const completed = await client.workflows.waitForCompletion(
-  workflow.id,
-  execution.id,
-  { timeout: 60000 }
-);
-
-console.log(`Status: ${completed.status}`);
-console.log(`Output: ${completed.output}`);
-```
-
-### Error Handling
-
-```typescript
-import {
-  CloudisleError,
-  AuthenticationError,
-  PermissionError,
-  NotFoundError,
-  RateLimitError
-} from '@clouisle/sdk';
-
-try {
-  const agent = await client.agents.get('agent-123');
-
-} catch (error) {
-  if (error instanceof AuthenticationError) {
-    console.error(`Authentication failed: ${error.message}`);
-    // Refresh token or re-authenticate
-
-  } else if (error instanceof PermissionError) {
-    console.error(`Permission denied: ${error.message}`);
-    // Check user permissions
-
-  } else if (error instanceof NotFoundError) {
-    console.error(`Resource not found: ${error.message}`);
-    // Handle missing resource
-
-  } else if (error instanceof RateLimitError) {
-    console.error(`Rate limit exceeded: ${error.message}`);
-    console.error(`Retry after: ${error.retryAfter} seconds`);
-    // Wait and retry
-
-  } else if (error instanceof CloudisleError) {
-    console.error(`API error: ${error.message}`);
-    console.error(`Error code: ${error.code}`);
-  }
 }
 ```
 
-### React Hooks
+## Conversation Examples
 
-```typescript
-import { useAgent, useConversation, useKnowledgeBase } from '@clouisle/react';
-
-function AgentComponent() {
-  const { agent, loading, error } = useAgent('agent-123');
-
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return (
-    <div>
-      <h1>{agent.name}</h1>
-      <p>Model: {agent.model}</p>
-    </div>
-  );
-}
-
-function ChatComponent({ agentId }) {
-  const {
-    conversation,
-    messages,
-    sendMessage,
-    loading
-  } = useConversation(agentId);
-
-  const handleSend = async (content: string) => {
-    await sendMessage(content);
-  };
-
-  return (
-    <div>
-      <div className="messages">
-        {messages.map(msg => (
-          <div key={msg.id}>
-            <strong>{msg.role}:</strong> {msg.content}
-          </div>
-        ))}
-      </div>
-      <input
-        onKeyPress={(e) => {
-          if (e.key === 'Enter') {
-            handleSend(e.target.value);
-            e.target.value = '';
-          }
-        }}
-        disabled={loading}
-      />
-    </div>
-  );
-}
-```
-
-## Go SDK
-
-### Installation
+### List Conversations
 
 ```bash
-go get github.com/clouisle/clouisle-go
+curl -X GET "https://your-domain.com/api/v1/conversations?agent_id=550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN"
 ```
 
-### Basic Setup
+### Get a Conversation (with Messages)
 
-```go
-package main
+```python
+import requests
 
-import (
-    "context"
-    "fmt"
-    "github.com/clouisle/clouisle-go"
-)
+conversation = requests.get(
+    f"https://your-domain.com/api/v1/conversations/{conversation_id}",
+    headers={"Authorization": f"Bearer {token}"},
+).json()
 
-func main() {
-    // Initialize client
-    client := clouisle.NewClient(
-        "https://your-domain.com",
-        clouisle.WithAPIKey("your-api-key"),
-    )
-
-    ctx := context.Background()
-
-    // List agents
-    agents, err := client.Agents.List(ctx, &clouisle.ListAgentsParams{
-        Page:     1,
-        PageSize: 20,
-        Status:   "active",
-    })
-    if err != nil {
-        panic(err)
-    }
-
-    for _, agent := range agents.Items {
-        fmt.Printf("%s - %s\n", agent.Name, agent.Model)
-    }
-}
+for msg in conversation["data"]["messages"]:
+    print(msg["role"], msg["content"])
 ```
 
-### Agent Management
-
-```go
-// Get agent
-agent, err := client.Agents.Get(ctx, "agent-123")
-if err != nil {
-    panic(err)
-}
-
-// Create agent
-agent, err := client.Agents.Create(ctx, &clouisle.CreateAgentParams{
-    Name:         "Customer Support Agent",
-    Model:        "gpt-4-turbo",
-    SystemPrompt: "You are a helpful customer support agent.",
-    Temperature:  0.7,
-    MaxTokens:    2000,
-    TeamID:       "team-123",
-})
-
-// Update agent
-agent, err := client.Agents.Update(ctx, "agent-123", &clouisle.UpdateAgentParams{
-    Name:         clouisle.String("Updated Name"),
-    Temperature:  clouisle.Float64(0.8),
-})
-
-// Delete agent
-err := client.Agents.Delete(ctx, "agent-123")
-```
-
-### Error Handling
-
-```go
-import "github.com/clouisle/clouisle-go/errors"
-
-agent, err := client.Agents.Get(ctx, "agent-123")
-if err != nil {
-    switch e := err.(type) {
-    case *errors.AuthenticationError:
-        fmt.Printf("Authentication failed: %s\n", e.Message)
-    case *errors.PermissionError:
-        fmt.Printf("Permission denied: %s\n", e.Message)
-    case *errors.NotFoundError:
-        fmt.Printf("Resource not found: %s\n", e.Message)
-    case *errors.RateLimitError:
-        fmt.Printf("Rate limit exceeded, retry after %d seconds\n", e.RetryAfter)
-    default:
-        fmt.Printf("Error: %s\n", err)
-    }
-    return
-}
-```
-
-## Ruby SDK
-
-### Installation
+### Batch Delete Conversations
 
 ```bash
-gem install clouisle
+curl -X DELETE "https://your-domain.com/api/v1/conversations?ids=550e8400-e29b-41d4-a716-446655440000&ids=550e8400-e29b-41d4-a716-446655440001" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN"
 ```
 
-### Basic Setup
+## Knowledge Base Examples
 
-```ruby
-require 'clouisle'
+### Upload a Document
 
-# Initialize client
-client = Clouisle::Client.new(
-  base_url: 'https://your-domain.com',
-  api_key: 'your-api-key'
-)
-
-# List agents
-agents = client.agents.list(page: 1, page_size: 20, status: 'active')
-agents.items.each do |agent|
-  puts "#{agent.name} - #{agent.model}"
-end
-
-# Create agent
-agent = client.agents.create(
-  name: 'Customer Support Agent',
-  model: 'gpt-4-turbo',
-  system_prompt: 'You are a helpful customer support agent.',
-  temperature: 0.7,
-  max_tokens: 2000,
-  team_id: 'team-123'
-)
-
-# Send message
-message = client.conversations.send_message(
-  'conv-123',
-  content: 'Hello!'
-)
-puts "Response: #{message.response}"
+```bash
+curl -X POST "https://your-domain.com/api/v1/knowledge-bases/$KB_ID/documents/upload" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN" \
+  -F "file=@/path/to/document.pdf"
 ```
 
-## Best Practices
+### Search
 
-### 1. Use Environment Variables
+`POST /api/v1/knowledge-bases/{kb_id}/search`:
 
 ```python
-import os
+import requests
 
-client = CloudisleClient(
-    base_url=os.getenv('CLOUISLE_BASE_URL'),
-    api_key=os.getenv('CLOUISLE_API_KEY')
-)
+result = requests.post(
+    f"https://your-domain.com/api/v1/knowledge-bases/{kb_id}/search",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "query": "How to reset password?",
+        "search_mode": "hybrid",
+        "top_k": 5,
+    },
+).json()
+
+for item in result["data"]["results"]:
+    print(item["document_name"], item["score"])
 ```
 
-### 2. Implement Retry Logic
+## Workflow Examples
 
-```python
-from clouisle.retry import RetryConfig
+### Run a Workflow
 
-client = CloudisleClient(
-    base_url="https://your-domain.com",
-    api_key="your-api-key",
-    retry_config=RetryConfig(
-        max_retries=3,
-        initial_delay=1.0,
-        max_delay=60.0
-    )
-)
+`POST /api/v1/workflows/{workflow_id}/run`:
+
+**curl:**
+```bash
+curl -X POST "https://your-domain.com/api/v1/workflows/$WORKFLOW_ID/run" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"customer_email": "customer@example.com", "inquiry_text": "I need help"}}'
 ```
 
-### 3. Use Async for Better Performance
-
-```python
-import asyncio
-
-async def process_agents():
-    async with AsyncCloudisleClient(...) as client:
-        # Fetch multiple agents in parallel
-        agents = await asyncio.gather(
-            client.agents.get("agent-1"),
-            client.agents.get("agent-2"),
-            client.agents.get("agent-3")
-        )
-        return agents
-```
-
-### 4. Handle Errors Gracefully
-
-```typescript
-async function safeGetAgent(id: string) {
-  try {
-    return await client.agents.get(id);
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      console.log(`Agent ${id} not found`);
-      return null;
-    }
-    throw error;
-  }
+**Response** includes `run_id` and `stream_url`:
+```json
+{
+  "code": 0,
+  "data": {
+    "run_id": "550e8400-e29b-41d4-a716-446655440000",
+    "stream_url": "/api/v1/workflows/runs/550e8400-e29b-41d4-a716-446655440000/stream"
+  },
+  "msg": "success"
 }
 ```
 
-### 5. Use Pagination Efficiently
+### Stream Workflow Events (SSE)
+
+```bash
+curl -N "https://your-domain.com/api/v1/workflows/runs/$RUN_ID/stream?from_sequence=0" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN"
+```
+
+Events: `workflow_start`, `workflow_complete`, `workflow_error`, `node_start`, `node_complete`, `node_error`, `node_skip`, `token`, `chunk`, `output`, `progress`, `status`, `iteration_start`, `iteration_complete`, `debug`. See [SSE Streaming](./sse-streaming.md).
+
+### Trigger a Workflow via Webhook
+
+`POST /api/v1/workflows/webhook/{webhook_token}` with a `clou_` API key:
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/workflows/webhook/$WEBHOOK_TOKEN" \
+  -H "Authorization: Bearer $CLOUISLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"customer_email": "customer@example.com", "inquiry_text": "I need help"}'
+```
+
+## Error Handling
+
+Always check `code` before using `data`. Validation failures return HTTP 422 with a field → messages dictionary:
 
 ```python
-# Fetch all agents efficiently
-all_agents = []
-page = 1
+import requests
 
-while True:
-    result = client.agents.list(page=page, page_size=100)
-    all_agents.extend(result.items)
+response = requests.post(
+    "https://your-domain.com/api/v1/agents",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"name": "x"},  # missing required team_id
+)
+result = response.json()
 
-    if not result.has_next:
-        break
+if result["code"] != 0:
+    if result["code"] == 1001:
+        for field, messages in result["data"]["errors"].items():
+            print(f"{field}: {', '.join(messages)}")
+    else:
+        print(f"Error {result['code']}: {result['msg']}")
+```
 
-    page += 1
+## Generating a Client from OpenAPI
+
+Because there is no official SDK, generate a typed client from the OpenAPI spec:
+
+```bash
+# TypeScript types
+npx openapi-typescript https://your-domain.com/api/v1/openapi.json -o api.d.ts
+
+# OpenAPI Generator (Python, Java, Go, ...)
+openapi-generator generate -i https://your-domain.com/api/v1/openapi.json -g python -o ./client
 ```
 
 ## Related Documentation
 
-- [API Reference](./endpoints/) - Complete API documentation
 - [Quick Start](./quick-start.md) - Getting started guide
+- [API Reference](./endpoints/) - Complete API documentation
 - [Best Practices](./api-best-practices.md) - API best practices
 - [Error Handling](./error-handling.md) - Error handling guide
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

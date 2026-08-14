@@ -117,7 +117,7 @@ The container sets `UPLOAD_STORAGE_MODE=remote`: it reads authorized attachments
 
 The container image installs Bubblewrap and enables `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true` with `SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap`. Each executable task receives its current workspace as a real `/workspace` bind mount. Direct host execution keeps isolation disabled unless both variables are set explicitly on a Linux host with working unprivileged user namespaces.
 
-Docker and Kubernetes must allow the namespace and mount syscalls used by rootless Bubblewrap. The supplied Compose and Helm configurations keep the worker non-root, disable privilege escalation, drop all capabilities, and use a worker-specific unconfined seccomp profile. Use an equivalent Localhost profile when cluster policy prohibits `Unconfined`.
+Docker and Kubernetes must allow the namespace and mount syscalls used by rootless Bubblewrap. The supplied Compose and Helm configurations run the worker as root with `CAP_SYS_ADMIN` added to the runtime default cap set so it can create user/mount namespaces even on hosts that gate non-privileged user namespaces, keep privilege escalation disabled, and use a worker-specific unconfined seccomp profile. Use an equivalent Localhost profile when cluster policy prohibits `Unconfined`.
 
 Production compose includes a `sandbox-worker` service. Set `SANDBOX_WORKER_CONCURRENCY` to tune its Celery concurrency.
 

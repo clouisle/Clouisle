@@ -42,7 +42,7 @@ Viewer (lowest permissions)
 
 | Permission | Owner | Admin | Member | Viewer |
 |------------|-------|-------|--------|--------|
-| Invite members | ✅ | ✅ | ❌ | ❌ |
+| Add members | ✅ | ✅ | ❌ | ❌ |
 | Remove members | ✅ | ✅ | ❌ | ❌ |
 | Change member roles | ✅ | ❌ | ❌ | ❌ |
 
@@ -68,8 +68,11 @@ Viewer (lowest permissions)
 
 | Permission | Owner | Admin | Member | Viewer |
 |------------|-------|-------|--------|--------|
-| Create/edit/delete tools | ✅ | ✅ | ❌ | ❌ |
-| Create/edit/delete skills | ✅ | ✅ | ❌ | ❌ |
+| Create tools | ✅ | ✅ | ✅ | ❌ |
+| Edit own tools | ✅ | ✅ | ✅ | ❌ |
+| Edit others' tools | ✅ | ✅ | ❌ | ❌ |
+| Delete tools | ✅ | ✅ | ✅ | ❌ |
+| Create/edit/delete skills | ✅ | ✅ | ✅ | ❌ |
 | Execute approved tools | ✅ | ✅ | ✅ | ✅ |
 | Execute approved skills | ✅ | ✅ | ✅ | ✅ |
 
@@ -79,10 +82,8 @@ Viewer (lowest permissions)
 |------------|-------|-------|--------|--------|
 | Create knowledge bases | ✅ | ✅ | ✅ | ❌ |
 | Upload documents | ✅ | ✅ | ✅ | ❌ |
-| Update own documents | ✅ | ✅ | ✅ | ❌ |
-| Update others' documents | ✅ | ✅ | ❌ | ❌ |
-| Delete own documents | ✅ | ✅ | ✅ | ❌ |
-| Delete others' documents | ✅ | ✅ | ❌ | ❌ |
+| Update documents (rename) | ✅ | ✅ | ✅ | ❌ |
+| Delete documents | ✅ | ✅ | ✅ | ❌ |
 | Search documents | ✅ | ✅ | ✅ | ✅ |
 
 ### API Keys
@@ -97,11 +98,12 @@ Viewer (lowest permissions)
 
 ### Audit & Analytics
 
+Audit logs, admin dashboards, and data export are **global admin capabilities**, not team roles. They are granted by a global role with the corresponding `admin:*` / `audit:*` permissions — a team role alone never grants them.
+
 | Permission | Owner | Admin | Member | Viewer |
 |------------|-------|-------|--------|--------|
-| View team analytics | ✅ | ✅ | ❌ | ❌ |
-| View audit logs | ✅ | ✅ | ❌ | ❌ |
-| Export data | ✅ | ✅ | ❌ | ❌ |
+| View audit logs (admin dashboard) | global role | global role | ❌ | ❌ |
+| View admin dashboards | global role | global role | ❌ | ❌ |
 
 ## Scope Boundary
 
@@ -116,7 +118,6 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Full administrative access
 - Can delete the team
 - Can transfer ownership
-- Manages billing (if applicable)
 - Final authority on all decisions
 
 ### Owner Permissions
@@ -124,14 +125,13 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 **Exclusive permissions:**
 - Delete team
 - Transfer ownership to another member
-- Access billing information
-- Configure payment methods
-- Manage subscription
+- Change member roles
 
 **Shared with Admin:**
-- Invite/remove members
+- Add/remove members
 - Update team settings
-- View audit logs
+
+> **Note:** Billing and subscriptions are **not implemented**.
 
 ### Owner Limitations
 
@@ -191,28 +191,21 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 ### Admin Permissions
 
 **Member management:**
-- Invite new members
+- Add new members (by user ID)
 - Remove members (except Owner)
-- Approve join requests
-- View member activity
+- Change member roles (except Owner)
 
 **Resource management:**
 - Create/update/delete team resources allowed by team-scoped RBAC
 - Manage agents, workflows, knowledge bases
 - Configure resource settings
-- Monitor resource usage
 
 **Team settings:**
-- Update team name and description
-- Configure team preferences
-- Manage integrations
-- Set team policies
+- Update team name, description, and avatar
 
 **Monitoring:**
-- View team analytics
-- Access audit logs
-- Export team data
-- Generate reports
+- View team resources and usage
+- Audit logs / admin dashboards require a global role with the corresponding `admin:*` / `audit:*` permissions — a team Admin role alone does not grant them
 
 ### Admin Limitations
 
@@ -220,7 +213,6 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Delete the team
 - Transfer ownership
 - Remove or demote Owner
-- Access billing (unless Owner grants access)
 - Change own role to Owner
 
 ## Member Role
@@ -256,23 +248,26 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 
 **Own resource management:**
 - Manage own API keys
-- Update own knowledge base documents
+- Update knowledge base documents
 
-**Safety boundary:**
-- Creating, editing, or deleting tools requires team Owner/Admin because tools can call external systems or execute code
-- Creating, editing, or deleting skills requires team Owner/Admin because skills can execute automation and affect shared runtime behavior
+**Tools & skills:**
+- Members can create, edit (own tools), and delete tools and skills (they hold `tool:create/update/delete` and `skill:create/update/delete`)
+- Editing others' tools requires the team Owner/Admin
+
+**Knowledge bases:**
+- Members can create KBs, upload/rename/delete documents, and search (they hold `kb:create/update/delete`)
+- Document deletion is not restricted by document ownership — the `kb:delete` permission applies team-wide
 
 ### Member Limitations
 
 **Cannot:**
 - Manage team settings
-- Invite or remove members
+- Add or remove members
 - Change member roles
 - Delete or publish agents and workflows
-- Update others' resources
-- Delete others' resources
+- Update others' tools
 - View audit logs
-- Access team analytics
+- Access admin dashboards
 
 ## Viewer Role
 
@@ -306,7 +301,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Update any resources
 - Delete any resources
 - Manage team settings
-- Invite members
+- Add members
 - Upload documents
 - Create API keys
 
@@ -320,40 +315,9 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 
 When a default team is configured, new users can be added automatically as `viewer`, `member`, or `admin`. If no role is configured, the default is `member`. `owner` is never assigned automatically.
 
-## Custom Roles (If Available)
+## Custom Roles
 
-### Creating Custom Roles
-
-**If your organization supports custom roles:**
-
-1. Go to **Team Settings** → **Roles**
-2. Click **"Create Custom Role"**
-3. Enter role name
-4. Select permissions
-5. Save role
-6. Assign to members
-
-**Custom role example:**
-```
-┌─────────────────────────────────────────┐
-│ Create Custom Role                      │
-├─────────────────────────────────────────┤
-│                                         │
-│ Role Name:                              │
-│ [Content Creator___________]            │
-│                                         │
-│ Permissions:                            │
-│ ☑ Create agents                         │
-│ ☑ Update own agents                     │
-│ ☑ Upload documents                      │
-│ ☑ Update own documents                  │
-│ ☐ Delete others' resources              │
-│ ☐ Manage team settings                  │
-│                                         │
-│ [Cancel]  [Create Role]                 │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Custom roles are **not implemented**. Teams use the four fixed roles (Owner, Admin, Member, Viewer), each mapped to a fixed set of permissions.
 
 ## Changing Member Roles
 

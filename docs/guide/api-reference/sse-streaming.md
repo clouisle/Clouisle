@@ -49,17 +49,38 @@ curl -X POST "https://your-domain.com/api/v1/agents/{agent_id}/chat/stream" \
 
 ### Workflow Streaming
 
-**Enable streaming in workflow execution:**
+Workflow runs stream via SSE over a separate endpoint. First, start the run:
 
 ```bash
 curl -X POST "https://your-domain.com/api/v1/workflows/{workflow_id}/run" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "inputs": {...},
-    "stream": true
+    "inputs": {...}
   }'
 ```
+
+The response returns `run_id` and `stream_url`:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "run_id": "run-789",
+    "stream_url": "/api/v1/workflows/runs/run-789/stream"
+  },
+  "msg": "success"
+}
+```
+
+Then subscribe to the stream (SSE GET, optional `from_sequence` query parameter for resuming after a disconnect):
+
+```bash
+curl -N "https://your-domain.com/api/v1/workflows/runs/{run_id}/stream?from_sequence=0" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+> **Note:** `WorkflowRunRequest` accepts only `inputs` — there is no `stream` field. Streaming is always consumed via `GET /api/v1/workflows/runs/{run_id}/stream`. Runs triggered by the workflow webhook (`POST /api/v1/workflows/webhook/{webhook_token}`) are publicly streamable; user-triggered runs require authentication.
 
 ## SSE Response Format
 
@@ -98,8 +119,12 @@ data: <json_data>
 | `content_delta` | Response content delta (text token) |
 | `tool_call` | Tool call with tool name and arguments |
 | `tool_result` | Tool execution result |
-| `user_input_request` | Agent requests user input with predefined options |
+| `media_result` | UI-only media payload for rendering in the assistant body (not for LLM replay) |
+| `compression_start` | Context compression started |
+| `compression_end` | Context compression finished |
 | `output_truncated` | Output was truncated due to max output token limit |
+| `iteration_cap_reached` | The agent reached the max tool-call iteration cap |
+| `user_input_request` | Declared event type; currently **no emitter** exists in the backend |
 | `message_end` | Message ended with token usage statistics |
 | `error` | Error occurred |
 
@@ -221,10 +246,12 @@ data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 
 **error event:**
 ```json
 {
-  "code": 6102,
-  "msg": "Model API error"
+  "code": 0,
+  "msg": "Something went wrong, please try again later"
 }
 ```
+
+The `error` event carries the error `code` (0 indicates a generic failure) and a localized message. For agent chat streams, the stream is terminated after the `error` event.
 
 **message_end event:**
 ```json
@@ -258,75 +285,111 @@ data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 
 **Event sequence:**
 
 ```
-event: start
-data: {"run_id": "run-789", "workflow_id": "workflow-123"}
+event: workflow_start
+data: {"event": "workflow_start", "data": {"run_id": "run-789", "workflow_id": "workflow-123"}, "node_id": null, "timestamp": "2026-02-11T14:30:00Z", "sequence": 1}
 
 event: node_start
-data: {"node_id": "node-1", "node_type": "start"}
+data: {"event": "node_start", "data": {}, "node_id": "node-1", "timestamp": "2026-02-11T14:30:00Z", "sequence": 2}
 
 event: node_complete
-data: {"node_id": "node-1", "duration": 0.1}
+data: {"event": "node_complete", "data": {"duration": 0.1}, "node_id": "node-1", "timestamp": "2026-02-11T14:30:00Z", "sequence": 3}
 
 event: node_start
-data: {"node_id": "node-2", "node_type": "http_request"}
+data: {"event": "node_start", "data": {}, "node_id": "node-2", "timestamp": "2026-02-11T14:30:01Z", "sequence": 4}
 
 event: progress
-data: {"progress": 0.33, "message": "Fetching document..."}
+data: {"event": "progress", "data": {"progress": 0.33, "message": "Fetching document..."}, "node_id": "node-2", "timestamp": "2026-02-11T14:30:02Z", "sequence": 5}
 
 event: node_complete
-data: {"node_id": "node-2", "duration": 2.5, "output": {...}}
+data: {"event": "node_complete", "data": {"duration": 2.5, "output": {}}, "node_id": "node-2", "timestamp": "2026-02-11T14:30:03Z", "sequence": 6}
 
-event: end
-data: {"status": "completed", "duration": 83, "output": {...}}
+event: workflow_complete
+data: {"event": "workflow_complete", "data": {"status": "completed", "duration": 83, "output": {}}, "node_id": null, "timestamp": "2026-02-11T14:31:23Z", "sequence": 7}
 ```
 
+### Event Types
+
+| Event Type | Description |
+|------------|-------------|
+| `workflow_start` | Workflow execution started |
+| `workflow_complete` | Workflow completed successfully |
+| `workflow_error` | Workflow failed |
+| `node_start` | Node execution started |
+| `node_complete` | Node completed |
+| `node_error` | Node failed |
+| `node_skip` | Node skipped (branch not taken) |
+| `token` | LLM token streaming |
+| `chunk` | Generic chunk output |
+| `output` | Final output |
+| `progress` | Progress update |
+| `status` | Status change |
+| `iteration_start` | Iteration started |
+| `iteration_complete` | Iteration completed |
+| `debug` | Debug info (only in debug mode) |
+
+Each SSE event's `data` payload is a JSON object with `event` (event type), `data` (event-specific payload), `node_id` (associated node, if any), `timestamp`, and `sequence` (monotonic sequence number used with the `from_sequence` resume parameter).
+
 ### Event Details
+
+Workflow events use the standard SSE envelope. `data.data` holds the event-specific payload (shown here abbreviated).
 
 **Node start event:**
 ```json
 {
-  "type": "node_start",
+  "event": "node_start",
+  "data": {},
   "node_id": "node-2",
-  "node_type": "http_request",
-  "node_name": "Fetch Document",
-  "timestamp": "2026-02-11T14:30:01Z"
+  "timestamp": "2026-02-11T14:30:01Z",
+  "sequence": 4
 }
 ```
 
 **Node complete event:**
 ```json
 {
-  "type": "node_complete",
+  "event": "node_complete",
+  "data": {
+    "duration": 2.5,
+    "output": {
+      "text": "Document content...",
+      "size": 2500
+    }
+  },
   "node_id": "node-2",
-  "status": "completed",
-  "duration": 2.5,
-  "output": {
-    "text": "Document content...",
-    "size": 2500
-  }
+  "timestamp": "2026-02-11T14:30:03Z",
+  "sequence": 6
 }
 ```
 
 **Progress event:**
 ```json
 {
-  "type": "progress",
-  "progress": 0.33,
-  "nodes_completed": 2,
-  "nodes_total": 6,
-  "message": "Fetching document..."
+  "event": "progress",
+  "data": {
+    "progress": 0.33,
+    "nodes_completed": 2,
+    "nodes_total": 6,
+    "message": "Fetching document..."
+  },
+  "node_id": "node-2",
+  "timestamp": "2026-02-11T14:30:02Z",
+  "sequence": 5
 }
 ```
 
 **Node error event:**
 ```json
 {
-  "type": "node_error",
+  "event": "node_error",
+  "data": {
+    "error": {
+      "message": "HTTP request failed",
+      "details": "Connection timeout"
+    }
+  },
   "node_id": "node-2",
-  "error": {
-    "message": "HTTP request failed",
-    "details": "Connection timeout"
-  }
+  "timestamp": "2026-02-11T14:30:04Z",
+  "sequence": 7
 }
 ```
 
@@ -628,22 +691,14 @@ eventSource.onerror = (error) => {
 // In your event handler
 function handleEvent(eventType, data) {
   if (eventType === 'error') {
-    switch (data.code) {
-      case 2002:
-        // Token expired - refresh and retry
-        refreshToken().then(() => reconnect());
-        break;
-      case 5400:
-        // Rate limit - wait and retry
-        setTimeout(() => reconnect(), 5000);
-        break;
-      default:
-        // Other error - show to user
-        showError(data.msg);
-    }
+    // The stream is terminated after an error event
+    console.error(`Stream error (${data.code}): ${data.msg}`);
+    reconnect();
   }
 }
 ```
+
+**Note:** authentication failures for SSE endpoints are reported as HTTP status codes before the stream starts (e.g. 401/403 for invalid tokens) — not as stream events.
 
 ### Timeout Handling
 
@@ -714,7 +769,7 @@ function handleEvent(eventType, data) {
 **Problem**: No events received
 
 **Solutions:**
-1. Check `stream: true` in request
+1. Use the correct streaming endpoint (`POST /api/v1/agents/{agent_id}/chat/stream`, `GET /api/v1/workflows/runs/{run_id}/stream`)
 2. Verify authentication
 3. Check network connectivity
 4. Verify endpoint supports streaming

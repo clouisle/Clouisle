@@ -26,6 +26,10 @@ These permissions are for dashboard management functions, typically only admin r
 | `admin:memory:read` | View memory records |
 | `admin:conversation:read/delete` | Dashboard conversation management |
 | `admin:notification:create/delete` | Dashboard notification management |
+| `admin:team:read/create/update/delete` | System-wide team management |
+| `admin:app:read/create/update/delete/publish/duplicate` | Agent and workflow (App) management across teams |
+| `admin:capability:read/create/update/delete/execute` | Tool and skill (Capability) management across teams |
+| `admin:knowledge-base:read/test/create/update/delete` | Knowledge base management from admin |
 | `admin:settings:read` | View site settings |
 | `admin:settings:update` | Modify site settings |
 | `admin:sso:read` | View SSO providers and configuration |
@@ -41,9 +45,10 @@ These permissions are for managing business resources. All users may have them, 
 |------------|-------------|
 | `team:read/create/update/delete/manage` | Team management |
 | `agent:read/create/update/delete/publish/chat` | Agent management |
-| `workflow:read/create/update/delete/publish/run` | Workflow management |
-| `kb:read/create/update/delete` | Knowledge base management |
+| `workflow:read/create/update/delete/publish/run/execute` | Workflow management |
+| `kb:read/test/create/update/delete` | Knowledge base management |
 | `tool:read/create/update/delete/execute` | Tool management |
+| `skill:read/create/update/delete/execute` | Skill management |
 | `apikey:read/create/update/delete` | API Key management |
 | `conversation:read/delete` | Conversation management |
 
@@ -90,11 +95,15 @@ These permissions are for managing business resources. All users may have them, 
 | `workflow:read/run` | ✓ | ✓ | ✓ | ✓ |
 | `workflow:create/update` | ✓ | ✓ | ✓ | |
 | `workflow:delete/publish` | ✓ | ✓ | | |
+| `workflow:execute` | ✓ | ✓ | | |
 | `kb:read` | ✓ | ✓ | ✓ | ✓ |
+| `kb:test` | ✓ | ✓ | ✓ | ✓ |
 | `kb:create/update` | ✓ | ✓ | ✓ | |
-| `kb:delete` | ✓ | ✓ | | |
+| `kb:delete` | ✓ | ✓ | ✓ | |
 | `tool:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `tool:create/update/delete` | ✓ | ✓ | | |
+| `tool:create/update/delete` | ✓ | ✓ | ✓ | |
+| `skill:read/execute` | ✓ | ✓ | ✓ | ✓ |
+| `skill:create/update/delete` | ✓ | ✓ | ✓ | |
 | `apikey:read` | ✓ | ✓ | ✓ | |
 | `apikey:create/update/delete` | ✓ | ✓ | ✓ | |
 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
@@ -243,14 +252,17 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 |-----------|---------------------|:-----------:|:-----:|:------:|:------:|
 | Dashboard | `admin:dashboard:access` | ✓ | ✓ | | |
 | Teams | `team:read` | ✓ | ✓ | ✓ | ✓ |
-| Knowledge Bases | `kb:read` | ✓ | ✓ | ✓ | ✓ |
+| Knowledge Bases | `admin:knowledge-base:read` | ✓ | ✓ | | |
 | Activities | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
 | Users | `admin:user:read` | ✓ | ✓ | | |
 | Roles | `admin:role:read` | ✓ | ✓ | | |
 | Permissions | `admin:permission:read` | ✓ | ✓ | | |
 | API Keys | `apikey:read` | ✓ | ✓ | ✓ | |
 | Models | `admin:model:read` | ✓ | ✓ | | |
-| Tools | `tool:read` | ✓ | ✓ | ✓ | ✓ |
+| Apps | `admin:app:read` | ✓ | ✓ | | |
+| Capabilities | `admin:capability:read` | ✓ | ✓ | | |
+| Memories | `admin:memory:read` | ✓ | ✓ | | |
+| Observability | `admin:dashboard:access` | ✓ | ✓ | | |
 | Notifications | `admin:dashboard:access` | ✓ | ✓ | | |
 | Audit Logs | `audit:read` | ✓ | ✓ | | |
 | Site Settings | `admin:settings:read` | ✓ | ✓ | | |

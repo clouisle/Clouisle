@@ -302,7 +302,7 @@ Handles the provider callback. This URL is used as the redirect/callback URI whe
 
 ### Admin Endpoints
 
-All admin endpoints require superuser authentication.
+Admin endpoints are protected by permission checks rather than a hard superuser requirement: listing providers requires `admin:sso:read`, while creating, updating, deleting, and testing providers (as well as disconnecting user SSO connections) require `admin:sso:update`. The `Admin` role has `admin:sso:read`; `admin:sso:update` is limited to Super Admin.
 
 ```http
 GET    /api/v1/sso/admin/providers

@@ -22,26 +22,7 @@ Single Sign-On (SSO) allows you to log in to Clouisle using your existing organi
 
 1. Go to the Clouisle login page
 2. Look for SSO login buttons below the standard login form
-3. Available providers are displayed as buttons:
-
-```
-┌─────────────────────────────────────┐
-│         Login to Clouisle           │
-├─────────────────────────────────────┤
-│                                     │
-│  Email: [________________]          │
-│  Password: [________________]       │
-│                                     │
-│  [Login]                            │
-│                                     │
-│  ─────────── OR ───────────         │
-│                                     │
-│  [🔵 Continue with Google]          │
-│  [⚫ Continue with GitHub]          │
-│  [🔷 Continue with Microsoft]       │
-│                                     │
-└─────────────────────────────────────┘
-```
+3. Available providers are displayed as buttons
 
 **Note**: SSO providers are configured by your administrator. If you don't see SSO options, contact your administrator.
 
@@ -56,7 +37,7 @@ Single Sign-On (SSO) allows you to log in to Clouisle using your existing organi
 3. Enter your credentials on the provider's page
 4. Grant permission for Clouisle to access your profile
 5. You'll be redirected back to Clouisle
-6. Your account is automatically created
+6. Your account is automatically created (if `sso_auto_create_users` is enabled)
 7. You're logged in and redirected to the platform
 
 **Example - Google SSO:**
@@ -83,42 +64,26 @@ Single Sign-On (SSO) allows you to log in to Clouisle using your existing organi
 
 ## SSO Account Linking
 
-### Linking SSO to Existing Account
+### Linking SSO to an Existing Account
 
-If you already have a Clouisle account with password authentication:
+There is **no user-side "Connect" action** for SSO providers. Instead, linking happens automatically during login:
 
-**Steps:**
+- When you log in with an SSO provider whose email matches an existing Clouisle account, the SSO connection is linked to that account (email matching `sso_match_by_email` is enabled by default)
+- If no matching account exists, a new account is created automatically (when `sso_auto_create_users` is enabled)
 
-1. Log in with your username and password
-2. Go to **Profile Settings** → **Security**
-3. Find **"Connected Accounts"** section
-4. Click **"Connect"** next to the SSO provider
-5. You'll be redirected to the provider
-6. Authorize the connection
-7. You're redirected back to Clouisle
-8. SSO provider is now linked to your account
+If you have an existing account and want SSO login to apply to it, log in with the provider that uses the same email address.
 
-**Example:**
-```
-Connected Accounts:
-┌─────────────────────────────────────┐
-│ Google:     [Connect]               │
-│ GitHub:     [Connect]               │
-│ Microsoft:  [Connect]               │
-└─────────────────────────────────────┘
-```
-
-### Unlinking SSO Provider
+### Disconnecting an SSO Provider
 
 **Steps:**
 
-1. Go to **Profile Settings** → **Security**
-2. Find **"Connected Accounts"** section
+1. Open **Profile Settings** → **Account** tab
+2. Find the **"Connected Accounts"** section
 3. Click **"Disconnect"** next to the provider
 4. Confirm disconnection
 5. Provider is unlinked
 
-**Warning**: If you unlink all SSO providers and don't have a password set, you won't be able to log in. Set a password first.
+**Note**: If you disconnect all SSO providers, you can still log in with your username/password (local accounts remain usable unless password login is disabled by policy).
 
 ## SSO Providers
 
@@ -131,12 +96,6 @@ Connected Accounts:
 - Email address
 - Profile information (name, avatar)
 
-**Login flow:**
-1. Click "Continue with Google"
-2. Select your Google account
-3. Click "Allow"
-4. Logged in to Clouisle
-
 ### GitHub OAuth
 
 **What you need:**
@@ -145,12 +104,6 @@ Connected Accounts:
 **Permissions requested:**
 - Email address
 - Profile information (username, avatar)
-
-**Login flow:**
-1. Click "Continue with GitHub"
-2. Enter GitHub credentials (if not logged in)
-3. Click "Authorize"
-4. Logged in to Clouisle
 
 ### Microsoft OAuth
 
@@ -161,22 +114,10 @@ Connected Accounts:
 - Email address
 - Profile information (name, avatar)
 
-**Login flow:**
-1. Click "Continue with Microsoft"
-2. Enter Microsoft credentials
-3. Click "Accept"
-4. Logged in to Clouisle
-
 ### SAML
 
 **What you need:**
 - SAML identity provider configured by your organization
-
-**Login flow:**
-1. Click "Continue with SAML" or your organization's SSO button
-2. Redirected to your organization's login page
-3. Enter your organizational credentials
-4. Logged in to Clouisle
 
 **Note**: SAML configuration is managed by your administrator.
 
@@ -185,29 +126,21 @@ Connected Accounts:
 **What you need:**
 - CAS server configured by your organization
 
-**Login flow:**
-1. Click "Continue with CAS"
-2. Redirected to CAS login page
-3. Enter your credentials
-4. Logged in to Clouisle
-
 ## Account Provisioning
 
 ### Automatic Account Creation
 
-When you log in with SSO for the first time:
+When you log in with SSO for the first time (and automatic creation is enabled):
 
 **What happens:**
 1. Clouisle receives your profile information from the provider
 2. A new account is created automatically
 3. Your email, name, and avatar are populated
-4. You're assigned to the default team (if configured)
-5. You're logged in immediately
+4. You're logged in immediately
 
 **Account details:**
-- **Email**: From SSO provider (cannot be changed)
+- **Email**: From SSO provider
 - **Username**: Generated from email or name
-- **Name**: From SSO provider (can be changed later)
 - **Avatar**: From SSO provider (can be changed later)
 
 ### Email Verification
@@ -222,16 +155,14 @@ When you log in with SSO for the first time:
 ### SSO Security Features
 
 **Benefits:**
-- **No password storage**: Clouisle doesn't store your password
+- **No password storage**: Clouisle doesn't store a password for SSO-only accounts
 - **Provider security**: Leverages provider's security features (2FA, etc.)
-- **Centralized control**: Administrator can disable access from provider
-- **Session management**: Single logout from provider logs you out everywhere
+- **Centralized control**: Administrator can disable access from the provider
 
 ### Session Management
 
 **SSO sessions:**
-- Session lifetime: 30 minutes of inactivity (default)
-- Refresh: Activity extends the session
+- Session lifetime: same as normal sessions — the configured session timeout (default 30 days)
 - Logout: Logs you out of Clouisle only (not the provider)
 
 **To log out from both:**
@@ -241,16 +172,8 @@ When you log in with SSO for the first time:
 ### Two-Factor Authentication (2FA)
 
 **SSO with 2FA:**
-- If your SSO provider has 2FA enabled, it applies to Clouisle login
-- Clouisle's built-in 2FA is not used for SSO accounts
-- Configure 2FA in your SSO provider settings
-
-**Example - Google 2FA:**
-1. Enable 2FA in your Google account
-2. When logging in to Clouisle via Google:
-   - Enter Google password
-   - Enter 2FA code from Google Authenticator
-   - Logged in to Clouisle
+- If your SSO provider has 2FA enabled, it applies to your Clouisle login
+- Clouisle's built-in TOTP 2FA can additionally be enabled on your account from Profile Settings
 
 ## Troubleshooting
 
@@ -280,9 +203,8 @@ When you log in with SSO for the first time:
 **Problem**: Cannot create account because email is already registered
 
 **Solutions:**
-1. Log in with your existing username and password
-2. Link the SSO provider in Profile Settings
-3. Or contact administrator to merge accounts
+1. Log in with the SSO provider matching the existing account's email (the connection links automatically)
+2. Or contact your administrator to merge accounts
 
 ### Redirected to Wrong Page
 
@@ -310,7 +232,7 @@ When you log in with SSO for the first time:
 **Problem**: Account is locked after successful SSO authentication
 
 **Solutions:**
-1. Your account may have been deactivated by administrator
+1. Your account may have been deactivated by an administrator
 2. Contact administrator to reactivate your account
 3. Check if your organization has access policies
 
@@ -322,20 +244,18 @@ When you log in with SSO for the first time:
 - Use SSO when available for easier login
 - Enable 2FA on your SSO provider account
 - Keep your SSO provider account secure
-- Link multiple SSO providers for backup access
 - Log out when using shared computers
 
 **❌ Don't:**
 - Share your SSO provider credentials
 - Use SSO on untrusted devices
-- Ignore security warnings from provider
+- Ignore security warnings from the provider
 - Leave sessions active on public computers
 
 ### Account Security
 
 **✅ Do:**
-- Set a backup password even if using SSO
-- Link multiple authentication methods
+- Keep a local password if your organization allows password login as a fallback
 - Review connected accounts regularly
 - Monitor login notifications
 - Report suspicious activity immediately
@@ -344,34 +264,18 @@ When you log in with SSO for the first time:
 - Rely solely on one SSO provider
 - Ignore security notifications
 - Share your account with others
-- Use SSO on public/shared computers without logging out
 
 ## Switching Between SSO and Password
 
 ### From SSO to Password
 
-If you want to use password authentication instead of SSO:
-
-**Steps:**
-1. Log in with SSO
-2. Go to **Profile Settings** → **Security**
-3. Click **"Set Password"**
-4. Enter a new password
-5. Confirm password
-6. Click **"Save"**
-7. You can now log in with either SSO or password
+There is no standalone "Set Password" endpoint. If your account was created via SSO, use **Change Password** in Profile Settings (which requires your current password) or ask an administrator to reset the password.
 
 ### From Password to SSO
 
-If you want to use SSO instead of password:
-
-**Steps:**
-1. Log in with password
-2. Go to **Profile Settings** → **Security**
-3. Link your SSO provider (see "Linking SSO to Existing Account")
-4. You can now log in with either method
-
-**Optional**: Remove password to use SSO only (not recommended)
+1. Log in with the SSO provider that uses the same email as your account
+2. The SSO connection is linked automatically
+3. You can now log in with either method
 
 ## Administrator Configuration
 
@@ -389,7 +293,6 @@ If you're an administrator setting up SSO:
 - [Login and Registration](./login-register.md) - Standard login guide
 - [Password Management](./password-management.md) - Password security
 - [Profile Settings](../profile/profile-settings.md) - Account settings
-- [SSO Configuration](../../admin-guide/settings/sso-configuration.md) - Admin guide
 
 ## Getting Help
 
@@ -399,7 +302,6 @@ If you need assistance with SSO:
 2. **Documentation**: Review this guide
 3. **IT Department**: Contact your organization's IT support
 4. **Administrator**: Reach out to your Clouisle administrator
-5. **Support**: Contact Clouisle support team
 
 ---
 

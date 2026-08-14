@@ -2647,6 +2647,9 @@ msgstr "进程退出码：{exit_code}"
 msgid "sandbox_missing_executable_payload"
 msgstr "沙箱任务缺少可执行内容"
 
+msgid "sandbox_userns_unavailable"
+msgstr "沙箱隔离不可用：宿主内核不允许非特权用户命名空间。请在宿主内核启用（所需 sysctl 配置详见代码沙箱部署文档）。"
+
 msgid "sandbox_disk_limit_exceeded"
 msgstr "沙箱在 {stage} 阶段超出磁盘限制：{usage_bytes} > {limit_bytes}"
 

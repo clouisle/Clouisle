@@ -9,14 +9,28 @@
 3. **定义输出格式**: 结构期望
 4. **使用示例**: Few-shot 学习
 
-详细内容请参考英文版本。
+## 系统提示词设计
 
----
+```
+你是一个[角色]，负责[目的]。
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+你的职责：
+- [任务 1]
+- [任务 2]
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+准则：
+- [准则 1]
+- [准则 2]
+```
+
+## 常见陷阱
+
+- ❌ 指令含糊不清
+- ❌ 提示词过长（超出 token 限制）
+- ❌ 没有示例
+- ✅ 清晰、简洁、带示例
+
+## 相关文档
+
+- [Agent vs Workflow](../concepts/agent-vs-workflow_zh-CN.md) - 对比指南
+- [工作流设计模式](./workflow-patterns_zh-CN.md) - 常见工作流模式

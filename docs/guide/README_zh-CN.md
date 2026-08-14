@@ -306,7 +306,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 
 ## 参与贡献
 
-我们欢迎贡献！请查看 [贡献指南](../CONTRIBUTING.md) 了解详情。
+我们欢迎贡献！请查看 [贡献指南](../../CONTRIBUTING.md) 了解详情。
 
 开发环境搭建和命令（代码检查、测试、构建等）请参考 [开发指南](getting-started/development_zh-CN.md)。
 
@@ -323,7 +323,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 
 ## 许可证
 
-Clouisle 采用 [GPL v3](../LICENSE) 许可证开源。
+Clouisle 采用 [GPL v3](../../LICENSE) 许可证开源。
 
 ---
 

@@ -11,7 +11,6 @@ As an administrator, you can:
 - **Manage documents**: Upload, process, and organize documents
 - **Monitor indexing**: Track document processing and embeddings
 - **Configure search**: Optimize search settings
-- **Set limits**: Control storage and document limits
 - **Troubleshoot**: Debug indexing and search issues
 
 ## Accessing Knowledge Base Management
@@ -53,20 +52,17 @@ The KB list shows:
    - **Name**: KB display name
    - **Description**: KB purpose and content
    - **Team**: Select team owner
-   - **Embedding Model**: Choose embedding model
-   - **Chunking Strategy**: Select chunking method
+   - **Embedding Model**: Choose embedding model (optional, can be set later)
+   - **Rerank Model**: Choose rerank model (optional)
 
 3. Configure settings:
-   - **Chunk Size**: Token count per chunk
-   - **Chunk Overlap**: Overlap between chunks
-   - **Separator**: Chunk separator
-   - **Metadata**: Enable metadata extraction
+   - **Chunk Size**: Characters per chunk (default 1000)
+   - **Chunk Overlap**: Overlap between chunks (default 100)
+   - **Separator**: Custom chunk separator (optional)
+   - **Rerank**: Enable reranking for retrieval
+   - **Search Mode**: `vector`, `fulltext`, or `hybrid` (default `hybrid`)
 
-4. Set permissions:
-   - **Visibility**: Private (team only) or Public
-   - **Allow sharing**: Enable KB sharing
-
-5. Click **Create Knowledge Base**
+4. Click **Create Knowledge Base**
 
 ### Knowledge Base Configuration
 
@@ -75,35 +71,31 @@ The KB list shows:
 Name: Product Documentation
 Description: Complete product documentation and guides
 Team: Support Team
-Status: Active
-Visibility: Private
+Status: active
 ```
 
 **Embedding Configuration:**
 ```yaml
-Embedding Model: text-embedding-3-small
-Dimensions: 1536
-Batch Size: 100
+Embedding Model: text-embedding-3-small (TeamModel of type embedding)
+Rerank Model: bge-reranker-large (optional)
 ```
 
 **Chunking Strategy:**
 ```yaml
-Strategy: Semantic
-Chunk Size: 512 tokens
-Chunk Overlap: 50 tokens
-Min Chunk Size: 100 tokens
-Max Chunk Size: 1000 tokens
+Chunk Size: 1000 characters
+Chunk Overlap: 100 characters
 Separator: "\n\n"
 ```
 
 **Search Settings:**
 ```yaml
-Default Top K: 5
-Score Threshold: 0.7
+Default Search Mode: hybrid   # vector, fulltext, or hybrid
+Top K: 5
+Score Threshold: 0.0
 Rerank: Enabled
-Rerank Model: bge-reranker-large
-Hybrid Search: Enabled
-Keyword Weight: 0.3
+Dense Weight: 1.0
+Lexical Weight: 1.0
+RRF K: 60
 ```
 
 ## Document Management
@@ -114,34 +106,23 @@ Keyword Weight: 0.3
 1. Select knowledge base
 2. Click **Upload Document**
 3. Choose file
-4. Enter metadata (optional):
-   - Title
-   - Category
-   - Tags
-   - Custom fields
-5. Click **Upload**
+4. Click **Upload**
+
+Documents are uploaded via `POST /api/v1/knowledge-bases/{kb_id}/documents/upload` (multipart). After upload, documents are processed (extract → chunk → embed → index); processing can also be triggered or retried explicitly with the `/process`, `/process-with-chunks`, `/reprocess`, and `/retry-failed-chunks` endpoints.
 
 **Bulk Upload:**
-1. Select knowledge base
-2. Click **Bulk Upload**
-3. Choose multiple files or ZIP
-4. Configure batch settings:
-   - Default category
-   - Default tags
-   - Processing priority
-5. Click **Upload All**
+> **Note:** Not implemented / Roadmap. There is no ZIP/multi-file bulk upload with batch settings. Upload files one at a time; a URL can be added via `POST /api/v1/knowledge-bases/{kb_id}/documents/url`.
 
 **Supported Formats:**
 - PDF
 - DOCX, DOC
 - XLSX, XLS
 - TXT
-- MD (Markdown)
+- MD, Markdown
 - CSV
 - JSON
 - HTML
-- XML
-- PPTX, PPT
+- PPTX
 
 ### Document Processing
 
@@ -220,85 +201,50 @@ Statistics:
 
 ### Knowledge Base Statistics
 
-**Overview Metrics:**
+`GET /api/v1/knowledge-bases/{kb_id}/stats` returns per-KB statistics, including:
+
 - Total documents
-- Total size
 - Total chunks
 - Total embeddings
-- Storage used
-- Processing queue
-
-**Usage Metrics:**
-- Search queries (24h, 7d, 30d)
-- Average response time
-- Cache hit rate
-- Top queries
-- Failed queries
+- Processing status counts
+- Embedding configuration and dimension
 
 ### View Statistics
 
 1. Select knowledge base
 2. Click **Statistics** tab
-3. View metrics:
-   - **Documents**: Count, size, status
-   - **Search**: Queries, performance
-   - **Storage**: Used, available, trend
-   - **Processing**: Queue, success rate
+3. View metrics
 
-4. Filter by date range
-5. Export statistics
+> **Note:** Not implemented / Roadmap: search-query analytics (queries, response times, cache hit rate, top queries), storage usage trends, and statistics export are not available.
 
 ### Document Analytics
 
-**Per-Document Metrics:**
-- View count
-- Search appearances
-- Average relevance score
-- Last accessed
-- Access frequency
-
-**View Document Analytics:**
-1. Select knowledge base
-2. Click **Documents** tab
-3. Click **Analytics** column
-4. View document metrics
+> **Note:** Not implemented / Roadmap. There is no per-document analytics (view count, search appearances, relevance scores, access frequency).
 
 ## Search Configuration
 
 ### Search Settings
 
-**Vector Search:**
-```yaml
-Enabled: true
-Top K: 5
-Score Threshold: 0.7
-Distance Metric: Cosine
-```
+Retrieval is configured per KB via the KB settings:
 
-**Keyword Search:**
+**Search Mode:**
 ```yaml
-Enabled: true
-Analyzer: Standard
-Min Score: 0.5
-Boost Fields:
-  title: 2.0
-  content: 1.0
+Search Mode: hybrid   # vector, fulltext, or hybrid
+Top K: 5
+Score Threshold: 0.0
 ```
 
 **Hybrid Search:**
 ```yaml
-Enabled: true
-Vector Weight: 0.7
-Keyword Weight: 0.3
-Fusion Method: RRF
+Dense Weight: 1.0     # dense RRF weight
+Lexical Weight: 1.0   # lexical RRF weight
+RRF K: 60
 ```
 
 **Reranking:**
 ```yaml
-Enabled: true
-Model: bge-reranker-large
-Top N: 10
-Rerank Top K: 5
+Rerank Enabled: true
+Rerank Score Threshold: (optional)
 ```
 
 ### Update Search Settings
@@ -306,10 +252,10 @@ Rerank Top K: 5
 1. Select knowledge base
 2. Click **Settings** → **Search**
 3. Configure search options:
-   - Vector search
-   - Keyword search
-   - Hybrid search
-   - Reranking
+   - Search mode (`vector`, `fulltext`, `hybrid`)
+   - Top K and score threshold
+   - Dense/lexical weights and RRF K for hybrid fusion
+   - Reranking toggle
 4. Test search
 5. Click **Save Changes**
 
@@ -322,7 +268,6 @@ Rerank Top K: 5
 4. Configure search parameters:
    - Search mode
    - Top K
-   - Filters
 5. View results:
    - Matched chunks
    - Relevance scores
@@ -333,26 +278,7 @@ Rerank Top K: 5
 
 ### Embedding Models
 
-**Available Models:**
-- OpenAI text-embedding-3-small (1536 dims)
-- OpenAI text-embedding-3-large (3072 dims)
-- OpenAI text-embedding-ada-002 (1536 dims)
-- Custom models
-
-**Model Comparison:**
-```yaml
-text-embedding-3-small:
-  Dimensions: 1536
-  Cost: $0.02 / 1M tokens
-  Performance: Good
-  Speed: Fast
-
-text-embedding-3-large:
-  Dimensions: 3072
-  Cost: $0.13 / 1M tokens
-  Performance: Excellent
-  Speed: Medium
-```
+Embedding models are regular platform models with `model_type = embedding` (for example OpenAI `text-embedding-3-small` or compatible local models), granted to teams via model authorization. A KB references one embedding model (`embedding_model_id`) and optionally a rerank model (`rerank_model_id`).
 
 ### Change Embedding Model
 
@@ -361,90 +287,21 @@ text-embedding-3-large:
 1. Select knowledge base
 2. Click **Settings** → **Embeddings**
 3. Choose new embedding model
-4. Review impact:
-   - Documents to reindex
-   - Estimated time
-   - Estimated cost
-5. Confirm change
-6. Monitor reindexing progress
+4. Confirm change
+5. Reprocess / re-embed documents to index them with the new model
 
 ### Reindex Knowledge Base
 
-**Full Reindex:**
-1. Select knowledge base
-2. Click **Reindex**
-3. Choose options:
-   - Re-generate embeddings
-   - Re-chunk documents
-   - Update metadata
-4. Confirm reindex
-5. Monitor progress
+Documents are (re)processed through the document endpoints rather than a single "reindex" action:
 
-**Reindex Status:**
-```yaml
-Status: In Progress
-Started: 2026-02-11 15:00:00
-Progress: 45/120 documents (37.5%)
-Estimated Time: 15 minutes
-Errors: 0
-```
+- `POST /{kb_id}/documents/{doc_id}/reprocess` — reprocess a document
+- `POST /{kb_id}/documents/{doc_id}/rechunk` — re-chunk a document
+- `POST /{kb_id}/documents/{doc_id}/retry-failed-chunks` — retry failed chunk embeddings
+- `POST /{kb_id}/documents/{doc_id}/chunks/{chunk_id}/retry-embedding` — retry a single chunk
 
 ## Storage Management
 
-### Storage Statistics
-
-**Storage Overview:**
-```yaml
-Total Storage: 10 GB
-Used Storage: 6.2 GB (62%)
-Available: 3.8 GB (38%)
-Document Count: 1,245
-Average Document Size: 5.1 MB
-```
-
-**Storage by Team:**
-```yaml
-Support Team: 2.5 GB (40%)
-Sales Team: 1.8 GB (29%)
-Engineering Team: 1.9 GB (31%)
-```
-
-### Storage Limits
-
-**Set Team Limits:**
-1. Navigate to **Teams** → Select team
-2. Go to **Limits** tab
-3. Configure storage limits:
-   - Max storage per team
-   - Max documents per KB
-   - Max document size
-   - Max KBs per team
-
-4. Save limits
-
-**Limit Configuration:**
-```yaml
-Max Storage: 10 GB
-Max Documents per KB: 1000
-Max Document Size: 100 MB
-Max KBs per Team: 10
-```
-
-### Storage Cleanup
-
-**Cleanup Options:**
-- Delete orphaned chunks
-- Remove old versions
-- Compress embeddings
-- Archive old documents
-
-**Run Cleanup:**
-1. Navigate to **Admin** → **Storage**
-2. Click **Cleanup**
-3. Select cleanup options
-4. Review impact
-5. Confirm cleanup
-6. Monitor progress
+> **Note:** Not implemented / Roadmap. There is no storage dashboard, per-team storage limits, or storage cleanup for knowledge bases. The only storage-related configuration is the maximum upload size (`kb_document_max_upload_size_mb`) in **Site Settings** → **Storage**.
 
 ## Troubleshooting
 
@@ -508,12 +365,9 @@ Max KBs per Team: 10
    - Check top K value
    - Test different search modes
 
-4. **Check Qdrant:**
-   ```bash
-   Admin → System → Services
-   Check Qdrant status
-   View Qdrant logs
-   ```
+4. **Check the vector store:**
+   - Verify the Qdrant service is healthy and reachable
+   - Check Qdrant logs
 
 5. **Reindex if needed:**
    ```bash
@@ -546,10 +400,11 @@ Max KBs per Team: 10
    - Switch to text-embedding-3-small
    - Reduce dimensions if possible
 
-4. **Set limits:**
-   - Max documents per KB
-   - Max embeddings per day
-   - Cost alerts
+4. **Review usage:**
+   - Check KB statistics for embedding counts
+   - Remove or reprocess unnecessary documents
+
+> **Note:** Not implemented / Roadmap: per-KB document limits, daily embedding quotas, and cost alerts are not available.
 
 ### Slow Search Performance
 
@@ -573,15 +428,11 @@ Max KBs per Team: 10
    - Use filters
 
 3. **Check Qdrant performance:**
-   ```bash
-   Admin → System → Services
-   View Qdrant metrics
-   Check resource usage
-   ```
+   - Review Qdrant resource usage (CPU/memory) and indexes
+   - Check Qdrant metrics and logs
 
 4. **Scale Qdrant:**
-   - Increase resources
-   - Add replicas
+   - Increase resources or add replicas at the infrastructure level
    - Optimize indexes
 
 ## Best Practices
@@ -644,50 +495,11 @@ Max KBs per Team: 10
 
 ### Bulk Actions
 
-**Available Actions:**
-- Upload documents
-- Delete documents
-- Reprocess documents
-- Update metadata
-- Change category
-- Add tags
-- Export documents
-
-**Perform Bulk Action:**
-```bash
-1. Select documents (checkbox)
-2. Click "Bulk Actions"
-3. Choose action
-4. Configure options
-5. Review changes
-6. Confirm execution
-```
+> **Note:** Not implemented / Roadmap. There are no bulk document actions (bulk upload/delete/reprocess/metadata updates). Documents are managed individually through the document endpoints.
 
 ### Import/Export
 
-**Export Knowledge Base:**
-```bash
-1. Select knowledge base
-2. Click "Export"
-3. Choose format:
-   - JSON (with embeddings)
-   - JSON (without embeddings)
-   - CSV (metadata only)
-4. Download file
-```
-
-**Import Knowledge Base:**
-```bash
-1. Click "Import"
-2. Upload file (JSON)
-3. Review KB configuration
-4. Map team
-5. Choose import options:
-   - Import documents
-   - Import embeddings
-   - Import settings
-6. Confirm import
-```
+> **Note:** Not implemented / Roadmap. There is no knowledge base import/export (JSON/CSV, with or without embeddings).
 
 ## API Access
 
@@ -697,20 +509,21 @@ See [Knowledge Bases API](../../api-reference/endpoints/knowledge-bases.md) for 
 
 **Common Operations:**
 ```python
-# List all KBs (admin)
-kbs = api.get("/api/v1/knowledge-bases", params={"all_teams": True})
+# List KBs — filters: team_id, search, status, own_only (no all_teams parameter)
+kbs = api.get("/api/v1/knowledge-bases", params={"team_id": "team-123"})
 
 # Create KB for team
 kb = api.post("/api/v1/knowledge-bases", json={
     "name": "Product Docs",
     "team_id": "team-123",
-    "embedding_model": "text-embedding-3-small"
+    "embedding_model_id": "model-456",
+    "settings": {"chunk_size": 1000, "chunk_overlap": 100, "search_mode": "hybrid"}
 })
 
 # Upload document
 with open("document.pdf", "rb") as f:
     doc = api.post(
-        f"/api/v1/knowledge-bases/{kb_id}/documents",
+        f"/api/v1/knowledge-bases/{kb_id}/documents/upload",
         files={"file": f}
     )
 

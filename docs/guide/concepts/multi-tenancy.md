@@ -98,11 +98,11 @@ Some resources have additional user-level isolation:
 
 **Conversations**:
 - Regular users can only see their own conversations
-- Admins (with `dashboard:access` permission) can see all conversations in their teams
+- Users with the `admin:dashboard:access` permission (or super admins) can see all conversations in their teams; team-scoped access additionally requires the `owner` or `admin` team role
 
 **API Keys**:
 - Users can only see and manage their own API keys
-- Admins can see all API keys in their teams
+- Only super admins can see all API keys across teams
 
 ### Super Admin Access
 
@@ -120,12 +120,12 @@ Resources can have different visibility levels that control who can access them:
 |------------|-------------|----------------|
 | **Private** | Only creator can access | Resource creator only |
 | **Team** | Team members can access | All members of the resource's team |
-| **Public** | Anyone can access | All users across all teams |
+
+> **Note:** A legacy `public` visibility value exists only for database compatibility and is normalized to `team` at startup. In practice, resources are `private` or `team` only.
 
 **Example use cases**:
 - **Private**: Personal draft agents, experimental workflows
 - **Team**: Production agents, shared knowledge bases
-- **Public**: Template agents, public documentation
 
 ## Multi-Team Membership
 
@@ -205,17 +205,13 @@ WHERE team_id IN (
   SELECT team_id FROM team_memberships
   WHERE user_id = current_user_id
 )
-OR visibility = 'public'
 ```
 
 **Get specific agent**:
 ```sql
 SELECT * FROM agents
 WHERE id = agent_id
-AND (
-  team_id IN (SELECT team_id FROM team_memberships WHERE user_id = current_user_id)
-  OR visibility = 'public'
-)
+AND team_id IN (SELECT team_id FROM team_memberships WHERE user_id = current_user_id)
 ```
 
 ### Creating Resources
@@ -348,14 +344,9 @@ Rate limits are applied per-user, not per-team:
 - Resource becomes accessible to all team members
 - Useful when moving from draft to production
 
-**Team → Public**:
-- Resource becomes accessible to all users
-- Useful for sharing templates or examples
-- Cannot be reversed if resource is used by other teams
-
-**Public → Team**:
-- Resource becomes restricted to team members
-- Only possible if no other teams are using it
+**Team → Private**:
+- Resource becomes restricted to the creator
+- Useful when taking a resource back for maintenance or personal use
 
 ## Related Documentation
 

@@ -1,28 +1,356 @@
 # 多租户模型
 
-Clouisle 实现基于团队的多租户模型，提供安全的数据隔离。
+Clouisle 实现基于团队的多租户模型，在支持灵活协作的同时提供安全的数据隔离。本文档解释多租户在 Clouisle 中的工作原理及其对数据访问和安全的影响。
+
+## 概述
+
+Clouisle 的多租户围绕 **团队（Team）** 概念构建。每个资源（智能体、工作流、知识库等）都属于一个团队，用户可以以不同角色成为多个团队的成员。
 
 ## 核心概念
 
 ### 团队
 
-团队是 Clouisle 中数据隔离的主要单位。
+**团队**是 Clouisle 中数据隔离的主要单位。可以把团队想象为平台内的工作区或组织。
+
+**关键特征**：
+- 每个资源必须恰好属于一个团队
+- 用户可以成为多个团队的成员
+- 每个团队拥有自己的一套资源
+- 团队之间完全隔离（超级管理员除外）
+
+**示例**：
+```
+公司 XYZ
+├── 工程团队
+│   ├── 成员：Alice（Owner）、Bob（Admin）、Carol（Member）
+│   ├── 智能体：代码审查机器人、文档助手
+│   └── 知识库：工程文档、API 参考
+│
+└── 市场团队
+    ├── 成员：Alice（Member）、David（Owner）、Eve（Member）
+    ├── 智能体：内容生成器、社交媒体机器人
+    └── 知识库：市场材料、品牌指南
+```
+
+在该示例中：
+- Alice 是两个团队的成员（工程团队 Owner，市场团队 Member）
+- 工程团队无法访问市场团队的资源
+- 每个团队都有自己隔离的智能体和知识库
 
 ### 团队角色
 
-- **Owner**: 完全控制权
-- **Admin**: 管理成员和资源
-- **Member**: 创建和管理资源
-- **Viewer**: 只读访问
+每个团队成员都有一个决定其在该团队内权限的角色：
 
-详细内容请参考英文版本。
+| 角色 | 权限 | 使用场景 |
+|------|------|----------|
+| **Owner** | 完全控制权，可删除团队、转让所有权 | 团队创建者、主要管理员 |
+| **Admin** | 管理成员，创建/编辑/删除资源 | 团队管理员 |
+| **Member** | 创建和管理自己的资源，使用团队资源 | 普通团队成员 |
+| **Viewer** | 对团队资源只读访问 | 观察者、审计人员 |
 
----
+**角色层级**：
+```
+Owner > Admin > Member > Viewer
+```
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+### 资源所有权
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+Clouisle 中的每个资源都有两个所有权属性：
+
+1. **团队**：资源属于哪个团队
+2. **创建者**：哪个用户创建了资源
+
+**示例**：
+```json
+{
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "客服机器人",
+  "team_id": "660e8400-e29b-41d4-a716-446655440001",
+  "created_by": "770e8400-e29b-41d4-a716-446655440002",
+  "visibility": "team"
+}
+```
+
+## 数据隔离
+
+### 团队级隔离
+
+**工作原理**：
+1. 用户发起请求时，系统识别其所属的团队
+2. 数据库查询自动过滤结果，仅包含这些团队的资源
+3. 用户无法访问非其成员团队的资源
+
+**实现**：
+```python
+# 查询中的自动团队过滤
+if user.is_superuser:
+    # 超级管理员可以看到所有内容
+    agents = await Agent.all()
+else:
+    # 普通用户只能看到其团队的资源
+    user_team_ids = [membership.team_id for membership in user.team_memberships]
+    agents = await Agent.filter(team_id__in=user_team_ids)
+```
+
+### 用户级隔离
+
+部分资源还有额外的用户级隔离：
+
+**对话**：
+- 普通用户只能看到自己的对话
+- 拥有 `admin:dashboard:access` 权限的用户（或超级管理员）可以看到其团队内的所有对话；团队范围内的访问还需要 `owner` 或 `admin` 团队角色
+
+**API 密钥**：
+- 用户只能查看和管理自己的 API 密钥
+- 只有超级管理员可以查看跨团队的所有 API 密钥
+
+### 超级管理员访问
+
+**超级管理员**绕过所有隔离：
+- 可以访问任何团队的资源
+- 可以查看和管理所有用户
+- 可以访问系统级设置
+- 用于平台管理和支持
+
+## 可见性级别
+
+资源可以有不同的可见性级别，控制谁能访问它们：
+
+| 可见性 | 说明 | 谁能访问 |
+|--------|------|----------|
+| **Private** | 仅创建者可访问 | 仅资源创建者 |
+| **Team** | 团队成员可访问 | 资源所属团队的所有成员 |
+
+> **Note:** 遗留的 `public` 可见性值仅为数据库兼容而保留，启动时会被规范化为 `team`。实际上，资源只有 `private` 或 `team` 两种。
+
+**示例使用场景**：
+- **Private**：个人草稿智能体、实验性工作流
+- **Team**：生产环境智能体、共享知识库
+
+## 多团队成员身份
+
+用户可以同时属于多个团队，实现跨团队协作。
+
+### 好处
+
+**灵活性**：
+- 用户可以参与多个项目/部门
+- 跨团队分享专业知识
+- 为不同工作维护独立上下文
+
+**示例场景**：
+```
+Alice 的团队：
+├── 工程团队（Owner）
+│   └── 可以管理所有工程资源
+├── 市场团队（Member）
+│   └── 可以创建内容、使用市场智能体
+└── 高管团队（Viewer）
+    └── 可以查看报告和仪表板
+```
+
+### 上下文切换
+
+使用资源时，用户隐式地在某个团队的上下文中工作：
+
+**创建资源**：
+```
+POST /api/v1/agents
+{
+  "name": "新智能体",
+  "team_id": "engineering-team-id",  // 显式指定团队
+  ...
+}
+```
+
+**列出资源**：
+```
+GET /api/v1/agents?team_id=engineering-team-id  // 按团队过滤
+```
+
+## 权限模型
+
+Clouisle 中的权限在两个层面工作：
+
+### 1. 系统级权限
+
+由用户角色（Super Admin、Admin、Member、Viewer）控制：
+- 决定对仪表板功能的访问
+- 控制用户管理能力
+- 管理系统设置
+
+### 2. 团队级权限
+
+由团队角色（Owner、Admin、Member、Viewer）控制：
+- 决定用户能在团队内做什么
+- 控制资源创建和管理
+- 管理团队成员资格
+
+**权限检查流程**：
+```
+1. 检查用户是否有系统级权限（例如 "agent:create"）
+2. 检查用户是否为目标团队的成员
+3. 检查用户的团队角色是否允许该操作
+4. 检查资源可见性设置
+```
+
+## 数据访问模式
+
+### 读取资源
+
+**列出我可访问的所有智能体**：
+```sql
+SELECT * FROM agents
+WHERE team_id IN (
+  SELECT team_id FROM team_memberships
+  WHERE user_id = current_user_id
+)
+```
+
+**获取特定智能体**：
+```sql
+SELECT * FROM agents
+WHERE id = agent_id
+AND team_id IN (SELECT team_id FROM team_memberships WHERE user_id = current_user_id)
+```
+
+### 创建资源
+
+**创建智能体**：
+1. 用户必须是目标团队的成员
+2. 用户必须拥有 `agent:create` 权限
+3. 用户的团队角色必须允许创建（Member 及以上）
+4. 智能体以 `team_id` 设置为目标团队创建
+
+### 更新资源
+
+**更新智能体**：
+1. 用户必须是智能体所属团队的成员
+2. 用户必须拥有 `agent:update` 权限
+3. 用户的团队角色必须允许更新（自己的资源 Member 及以上，他人的资源需 Admin）
+
+### 删除资源
+
+**删除智能体**：
+1. 用户必须是智能体所属团队的成员
+2. 用户必须拥有 `agent:delete` 权限
+3. 用户的团队角色必须允许删除（通常为 Admin 或 Owner）
+
+## 安全考虑
+
+### 防止数据泄露
+
+**团队 ID 验证**：
+- 始终验证用户是否是目标团队的成员
+- 绝不信任未经校验的客户端提供的团队 ID
+- 使用服务端团队成员资格检查
+
+**资源访问检查**：
+```python
+async def check_team_access(user: User, team_id: str):
+    if user.is_superuser:
+        return True
+
+    membership = await TeamMembership.filter(
+        user_id=user.id,
+        team_id=team_id
+    ).first()
+
+    if not membership:
+        raise PermissionError("User is not a member of this team")
+
+    return True
+```
+
+### 审计日志
+
+所有团队相关操作都会被记录：
+- 团队创建/删除
+- 成员添加/移除
+- 角色变更
+- 跨团队资源访问
+
+### 速率限制
+
+速率限制按用户而非按团队应用：
+- 防止跨多个团队滥用
+- 确保公平的资源使用
+- 防御恶意行为者
+
+## 最佳实践
+
+### 给管理员
+
+**团队结构**：
+- 根据组织结构（部门、项目）创建团队
+- 使用描述性团队名称
+- 记录团队目的和成员标准
+
+**角色分配**：
+- 遵循最小权限原则
+- 谨慎分配 Owner 角色（每团队仅 1-2 人）
+- 对只读访问需求使用 Viewer 角色
+- 定期审计团队成员资格
+
+**资源组织**：
+- 使用一致的命名约定
+- 设置适当的可见性级别
+- 记录资源用途
+- 定期清理未使用的资源
+
+### 给开发者
+
+**API 使用**：
+- 创建资源时始终指定 `team_id`
+- 列出资源时按 `team_id` 过滤
+- 优雅处理团队成员资格错误
+- 适当时缓存团队成员资格检查
+
+**测试**：
+- 使用多个团队的用户测试
+- 使用无团队的用户测试
+- 测试跨团队访问尝试
+- 测试基于角色的访问控制
+
+## 常见场景
+
+### 场景 1：用户加入新团队
+
+**会发生什么**：
+1. 用户收到邀请或被管理员添加
+2. 用户接受邀请（如需要）
+3. 用户根据其角色获得对所有团队资源的访问权
+4. 用户现在可以在新团队中创建资源
+
+### 场景 2：用户离开团队
+
+**会发生什么**：
+1. 用户的团队成员资格被移除
+2. 用户失去对所有团队资源的访问权
+3. 用户创建的资源保留在团队中
+4. 用户的对话和 API 密钥对团队管理员仍可访问
+
+### 场景 3：团队被删除
+
+**会发生什么**：
+1. 所有团队资源被删除（智能体、工作流、知识库）
+2. 所有团队成员资格被移除
+3. 审计日志为合规保留
+4. 操作不可逆（需要确认）
+
+### 场景 4：资源可见性变更
+
+**Private → Team**：
+- 资源变为对所有团队成员可访问
+- 适合从草稿转向生产
+
+**Team → Private**：
+- 资源变为仅创建者可访问
+- 适合将资源收回维护或个人使用
+
+## 相关文档
+
+- [权限系统](../admin-guide/permissions/PERMISSIONS.md) - 详细权限模型
+- [团队管理](../admin-guide/teams/team-management.md) - 管理团队
+- [用户管理](../admin-guide/users/user-management.md) - 管理用户
+- [安全清单](../operations/security-checklist.md) - 安全最佳实践

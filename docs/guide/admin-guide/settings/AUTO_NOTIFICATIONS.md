@@ -196,7 +196,7 @@ Business Module → AutoNotificationService → In-app Notification
 | Notification Type Enum | `app/models/notification.py` | `AutoNotificationType` |
 | Auto Notification Service | `app/services/auto_notification.py` | `AutoNotificationService` |
 | Configuration Storage | `app/models/site_setting.py` | `auto_notification_config` |
-| API Endpoint | `app/api/v1/endpoints/site_settings.py` | `/auto-notifications` |
+| API Endpoint | `app/api/v1/admin/endpoints/site_settings.py` | `/auto-notifications` |
 | Login Anomaly Detection | `app/core/login_anomaly.py` | Login pattern analysis |
 | API Key Check | `app/tasks/api_key.py` | Scheduled task |
 

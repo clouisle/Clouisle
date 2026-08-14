@@ -10,14 +10,19 @@
 | 平衡 | GPT-4 | ⚡⚡ | ⭐⭐⭐ |
 | 质量 | GPT-4 Turbo | ⚡⚡ | ⭐⭐⭐⭐ |
 
-详细内容请参考英文版本。
+## 缓存策略
 
----
+- 缓存频繁访问的数据
+- 使用 Redis 存储会话
+- 适当时缓存 LLM 响应
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+## 数据库优化
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+- 在频繁查询的字段上添加索引
+- 使用连接池
+- 优化查询模式
+
+## 相关文档
+
+- [系统架构](../concepts/architecture_zh-CN.md) - 架构概述
+- [知识库优化](./kb-optimization_zh-CN.md) - 检索调优

@@ -14,8 +14,9 @@ The Clouisle API uses a unified error response format with specific error codes 
 {
   "code": 1001,
   "data": {
-    "field": "email",
-    "error": "Email is required"
+    "errors": {
+      "email": ["Email is required"]
+    }
   },
   "msg": "Validation failed"
 }
@@ -24,7 +25,7 @@ The Clouisle API uses a unified error response format with specific error codes 
 **Response Fields:**
 
 - `code`: Error code (non-zero indicates error)
-- `data`: Additional error details (optional)
+- `data`: Additional error details (optional); for validation errors it is a dictionary mapping field names to arrays of messages
 - `msg`: Human-readable error message
 
 ### HTTP Status Codes
@@ -33,14 +34,13 @@ The Clouisle API uses a unified error response format with specific error codes 
 |-------------|---------|-----------|
 | 200 | OK | Successful request |
 | 201 | Created | Resource created successfully |
-| 400 | Bad Request | Invalid request data |
+| 400 | Bad Request | `BusinessError` default for invalid requests |
 | 401 | Unauthorized | Authentication failed |
-| 403 | Forbidden | Permission denied |
+| 403 | Forbidden | Permission denied / invalid JWT |
 | 404 | Not Found | Resource not found |
-| 409 | Conflict | Resource conflict |
-| 429 | Too Many Requests | Rate limit exceeded |
+| 422 | Unprocessable Entity | Pydantic validation error (code `1001`) |
+| 429 | Too Many Requests | Quota exceeded (model quota, TOTP lockout) |
 | 500 | Internal Server Error | Server error |
-| 503 | Service Unavailable | Service temporarily unavailable |
 
 ## Error Code Ranges
 
@@ -61,30 +61,33 @@ The Clouisle API uses a unified error response format with specific error codes 
 | 6000-6099 | Knowledge Base | KB errors |
 | 6100-6199 | Model | Model errors |
 | 6200-6299 | Agent | Agent errors |
-| 6300-6399 | Tool | Tool errors |
+| 6300-6399 | SSO | SSO errors |
 
 ### Common Error Codes
 
 **General Errors (1000-1999):**
-- `1000`: Bad request
-- `1001`: Validation failed
-- `1002`: Internal server error
+- `1000`: Unknown error
+- `1001`: Validation failed (HTTP 422)
+- `1002`: Bad request
+- `1003`: Internal server error
 
 **Authentication Errors (2000-2999):**
 - `2000`: Unauthorized
-- `2001`: Invalid credentials
-- `2002`: Token expired
-- `2003`: Invalid token
+- `2001`: Invalid token
+- `2002`: Token expired (API key)
+- `2003`: Invalid credentials (wrong password or invalid/expired JWT)
 
 **Permission Errors (3000-3999):**
 - `3000`: Permission denied
-- `3001`: Not team member
+- `3001`: Insufficient privileges
+- `3002`: Not team member
 
 **Resource Errors (4000-4999):**
 - `4000`: Resource not found
+- `4001`: User not found
 
 **Rate Limiting (5400-5499):**
-- `5400`: Rate limit exceeded
+- `5400`: Rate limited (email quota / provider rate limit)
 
 ## Error Handling Patterns
 
@@ -123,7 +126,7 @@ class CloudisleAPI:
         try:
             result = response.json()
         except ValueError:
-            raise ApiError(1002, "Invalid JSON response")
+            raise ApiError(1003, "Invalid JSON response")
 
         # Check for API error
         if result.get('code', 0) != 0:
@@ -145,27 +148,34 @@ class CloudisleAPI:
             return self._handle_response(response)
 
         except requests.exceptions.HTTPError as e:
-            # Handle HTTP errors
-            if e.response.status_code == 401:
+            # Handle HTTP errors (code 1002 = bad request; 1003 = internal error)
+            if e.response.status_code == 400:
+                result = e.response.json()
+                raise ApiError(result.get('code', 1002), result.get('msg', 'Bad request'))
+            elif e.response.status_code == 401:
                 raise ApiError(2000, "Unauthorized - check your token")
             elif e.response.status_code == 403:
                 raise ApiError(3000, "Permission denied")
             elif e.response.status_code == 404:
                 raise ApiError(4000, "Resource not found")
+            elif e.response.status_code == 422:
+                result = e.response.json()
+                raise ApiError(1001, result.get('msg', 'Validation failed'), result.get('data'))
             elif e.response.status_code == 429:
-                retry_after = e.response.headers.get('Retry-After', 60)
-                raise ApiError(5400, f"Rate limit exceeded. Retry after {retry_after}s")
+                # Quota exceeded (e.g. model quota 6103, TOTP lockout 5312)
+                result = e.response.json()
+                raise ApiError(result.get('code', 0), result.get('msg', 'Quota exceeded'))
             else:
-                raise ApiError(1002, f"HTTP error: {e.response.status_code}")
+                raise ApiError(1003, f"HTTP error: {e.response.status_code}")
 
         except requests.exceptions.ConnectionError:
-            raise ApiError(1002, "Connection error - check your network")
+            raise ApiError(1003, "Connection error - check your network")
 
         except requests.exceptions.Timeout:
-            raise ApiError(1002, "Request timeout")
+            raise ApiError(1003, "Request timeout")
 
         except requests.exceptions.RequestException as e:
-            raise ApiError(1002, f"Request failed: {str(e)}")
+            raise ApiError(1003, f"Request failed: {str(e)}")
 
     def get(self, endpoint: str, **kwargs) -> Dict[Any, Any]:
         """GET request."""
@@ -231,7 +241,7 @@ class CloudisleAPI {
       try {
         result = await response.json();
       } catch (e) {
-        throw new ApiError(1002, 'Invalid JSON response');
+        throw new ApiError(1003, 'Invalid JSON response');
       }
 
       // Check for API error
@@ -253,16 +263,16 @@ class CloudisleAPI {
 
       // Handle network errors
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new ApiError(1002, 'Network error - check your connection');
+        throw new ApiError(1003, 'Network error - check your connection');
       }
 
       // Handle timeout
       if (error.name === 'AbortError') {
-        throw new ApiError(1002, 'Request timeout');
+        throw new ApiError(1003, 'Request timeout');
       }
 
       // Unknown error
-      throw new ApiError(1002, `Request failed: ${error.message}`);
+      throw new ApiError(1003, `Request failed: ${error.message}`);
     }
   }
 
@@ -338,10 +348,9 @@ def retry_with_backoff(
             if 2000 <= e.code < 3000:
                 raise
 
-            # Retry rate limit errors
-            if e.code == 5400:
-                retry_after = e.data.get('retry_after', delay)
-                time.sleep(retry_after)
+            # Retry quota errors with a fixed delay
+            if e.code == 6103:
+                time.sleep(30)
                 continue
 
             # Last attempt, raise error
@@ -390,10 +399,9 @@ async function retryWithBackoff(
         throw error;
       }
 
-      // Retry rate limit errors
-      if (error.code === 5400) {
-        const retryAfter = error.data.retry_after || delay;
-        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      // Retry quota errors with a fixed delay
+      if (error.code === 6103) {
+        await new Promise(resolve => setTimeout(resolve, 30000));
         continue;
       }
 
@@ -420,15 +428,15 @@ const agents = await retryWithBackoff(
 
 ### Field Validation
 
-**Error Response:**
+**Error Response (HTTP 422):**
 
 ```json
 {
   "code": 1001,
   "data": {
-    "field": "email",
-    "error": "Invalid email format",
-    "value": "invalid-email"
+    "errors": {
+      "email": ["Invalid email format"]
+    }
   },
   "msg": "Validation failed"
 }
@@ -444,9 +452,9 @@ try:
     })
 except ApiError as e:
     if e.code == 1001:
-        field = e.data.get('field')
-        error = e.data.get('error')
-        print(f"Validation error on {field}: {error}")
+        for field, messages in e.data.get('errors', {}).items():
+            for message in messages:
+                print(f"Validation error on {field}: {message}")
 ```
 
 ### Multiple Field Errors
@@ -457,16 +465,10 @@ except ApiError as e:
 {
   "code": 1001,
   "data": {
-    "errors": [
-      {
-        "field": "email",
-        "error": "Invalid email format"
-      },
-      {
-        "field": "password",
-        "error": "Password too short"
-      }
-    ]
+    "errors": {
+      "email": ["Invalid email format"],
+      "password": ["String should have at least 8 characters"]
+    }
   },
   "msg": "Validation failed"
 }
@@ -479,25 +481,27 @@ try:
     user = api.post('/users', json=data)
 except ApiError as e:
     if e.code == 1001 and 'errors' in e.data:
-        for error in e.data['errors']:
-            print(f"{error['field']}: {error['error']}")
+        for field, messages in e.data['errors'].items():
+            for message in messages:
+                print(f"{field}: {message}")
 ```
 
 ## Rate Limiting
 
-### Handle Rate Limits
+### Handle Quota / Rate Limit Errors
 
-**Rate Limit Response:**
+Clouisle does not implement per-request throttling with `retry_after` payloads. Code `5400` is raised for email-sending quotas and mapped model-provider rate limits; model quota exhaustion uses `6103`.
+
+**Rate Limit Response (email quota):**
 
 ```json
 {
   "code": 5400,
   "data": {
-    "retry_after": 60,
-    "limit": "100 requests per minute",
-    "reset_at": "2026-02-11T16:01:00Z"
+    "limit": 100,
+    "period": "hour"
   },
-  "msg": "Rate limit exceeded"
+  "msg": "Email sending rate limit exceeded. Please try again later."
 }
 ```
 
@@ -509,12 +513,17 @@ import time
 try:
     result = api.get('/agents')
 except ApiError as e:
-    if e.code == 5400:
-        retry_after = e.data.get('retry_after', 60)
-        print(f"Rate limited. Waiting {retry_after} seconds...")
-        time.sleep(retry_after)
+    if e.code == 6103:
+        # Model quota exceeded - wait and retry later
+        print("Model quota exceeded. Waiting 30 seconds...")
+        time.sleep(30)
         result = api.get('/agents')  # Retry
+    elif e.code == 5400:
+        # Email/quota limit - wait for the window to reset
+        print("Rate limited. Retry after the quota window resets.")
 ```
+
+> **Note:** If you receive an HTTP 429, the `Retry-After` header is not guaranteed to be present — the response `data` carries the relevant limit information instead.
 
 ## Best Practices
 
@@ -574,31 +583,29 @@ class ResilientAPI:
             return self.api.request(method, endpoint, **kwargs)
 
         except ApiError as e:
-            # Handle token expiration
-            if e.code == 2002:
-                print("Token expired, refreshing...")
-                self.refresh_token()
+            # Handle JWT expiration (2003) - login again
+            if e.code == 2003:
+                print("JWT invalid/expired, logging in again...")
+                self.login_again()
                 return self.api.request(method, endpoint, **kwargs)
 
-            # Handle rate limiting
-            elif e.code == 5400:
-                retry_after = e.data.get('retry_after', 60)
-                print(f"Rate limited, waiting {retry_after}s...")
-                time.sleep(retry_after)
-                return self.api.request(method, endpoint, **kwargs)
+            # Handle API key expiry (2002)
+            elif e.code == 2002:
+                print("API key expired, create a new key...")
+                raise
 
-            # Handle temporary errors
-            elif e.code == 1002:
-                print("Temporary error, retrying...")
-                time.sleep(5)
+            # Handle quota limits
+            elif e.code == 6103:
+                print("Model quota exceeded, waiting 30s...")
+                time.sleep(30)
                 return self.api.request(method, endpoint, **kwargs)
 
             else:
                 raise
 
-    def refresh_token(self):
-        """Refresh authentication token."""
-        # Implement token refresh logic
+    def login_again(self):
+        """Re-authenticate to get a fresh JWT."""
+        # Implement login logic
         pass
 ```
 

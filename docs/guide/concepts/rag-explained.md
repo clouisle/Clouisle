@@ -14,9 +14,11 @@ RAG combines information retrieval with language model generation to provide acc
 
 ## RAG Modes in Clouisle
 
-- **Disabled**: No knowledge base retrieval
-- **Before LLM**: Retrieve documents, then generate response
-- **After LLM**: Generate response, then verify with documents
+Agents expose three RAG modes (`RAGMode`):
+
+- **Off**: No knowledge base retrieval, even if knowledge bases are configured
+- **Auto**: Traditional RAG — relevant chunks are retrieved automatically on every message
+- **Agentic**: Agentic RAG — the agent decides when to search based on the conversation
 
 ## When to Use RAG
 

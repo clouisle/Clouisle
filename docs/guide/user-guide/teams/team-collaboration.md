@@ -1,29 +1,27 @@
 # Team Collaboration
 
-This guide explains how to collaborate effectively with team members in Clouisle.
+This guide explains how to collaborate with team members in Clouisle.
 
 ## Overview
 
 Team collaboration enables you to:
 
-- **Work together**: Collaborate on shared resources
-- **Share knowledge**: Access team knowledge bases
+- **Share resources**: Use team agents, workflows, and knowledge bases
 - **Coordinate workflows**: Run team workflows together
-- **Communicate**: Mention and notify team members
-- **Track activity**: Monitor team progress
-- **Organize work**: Structure team projects
+- **Track activity**: Review workflow execution history
+- **Stay informed**: Receive team notifications
+
+> **Note:** Shared conversations, @mentions, team activity feeds, document comments, and in-app team messaging are **not implemented**. Collaboration happens through shared resources and team notifications.
 
 ## Shared Resources
 
 ### Accessing Team Resources
 
-**Team resources are shared among all members:**
+**Team resources are shared among members:**
 
-1. **Agents**: Team agents available to all
+1. **Agents**: Team agents available to members
 2. **Workflows**: Shared workflows
 3. **Knowledge Bases**: Team document repositories
-4. **Conversations**: Shared chat conversations
-5. **API Keys**: Team API keys (if permitted)
 
 **Resource visibility:**
 ```
@@ -34,7 +32,6 @@ Team collaboration enables you to:
 │ 🤖 Agents (23)                          │
 │    • Customer Support Agent (Team)     │
 │    • Content Writer (Team)             │
-│    • My Personal Agent (Personal)      │
 │                                         │
 │ ⚙️ Workflows (15)                       │
 │    • Document Summarizer (Team)        │
@@ -42,295 +39,59 @@ Team collaboration enables you to:
 │                                         │
 │ 📚 Knowledge Bases (8)                  │
 │    • Product Documentation (Team)      │
-│    • Marketing Materials (Team)        │
 │                                         │
 └─────────────────────────────────────────┘
 ```
 
 ### Using Team Agents
 
-**Chat with team agents:**
-
 1. Go to **Agents** section
-2. Filter by current team
-3. Select team agent
+2. Filter by the current team
+3. Select a team agent
 4. Start chatting
-5. Agent has access to team knowledge bases
-
-**Team agent indicator:**
-```
-┌─────────────────────────────────────────┐
-│ 🤖 Customer Support Agent               │
-│ Team: Marketing Team                    │
-│ Created by: Alice                       │
-│ Status: Published                       │
-│                                         │
-│ This agent helps with customer support │
-│ inquiries and has access to our        │
-│ product documentation.                  │
-│                                         │
-│ [Start Chat] [View Details]             │
-└─────────────────────────────────────────┘
-```
+5. The agent has access to the team's knowledge bases
 
 ### Running Team Workflows
 
-**Execute team workflows:**
-
 1. Go to **Workflows** section
-2. Select team workflow
+2. Select a team workflow
 3. Click **"Run"**
 4. Provide inputs
-5. Monitor execution
+5. Monitor the execution
 6. View results
 
 **Workflow execution history:**
-- All team members can view execution history
+- All team members can view the execution history (subject to role permissions)
 - See who ran workflows and when
-- Access execution results
-- Replay previous runs
+- Access execution results and node details
 
 ### Accessing Team Knowledge Bases
 
-**Browse team documents:**
-
 1. Go to **Knowledge Bases** section
-2. Select team knowledge base
+2. Select a team knowledge base
 3. Browse or search documents
-4. View and download documents
-5. Upload new documents (if permitted)
+4. View and download documents (permissions apply)
 
 **Permissions:**
-- View: All team members
+- View/search: Members and above (Viewer too)
 - Upload: Members and above
-- Delete: Admins and Owners
+- Delete: Members and above (role-based)
 
-## Shared Conversations
+## Team Notifications
 
-### Creating Shared Conversations
+Team-related automatic notifications are delivered to the in-app notification center:
 
-**Share conversations with team:**
+| Type | When |
+|------|------|
+| `team.member_added` | A member is added (notifies the new member and the team) |
+| `team.member_removed` | A member is removed |
+| `team.role_changed` | A member's role changes |
+| `team.ownership_transferred` | Ownership is transferred |
+| `team.model_granted` / `team.model_revoked` | Team model access changes |
 
-1. Open a conversation
-2. Click **"Share"** button
-3. Select team members
-4. Choose permission level:
-   - **View**: Read-only
-   - **Comment**: Can add comments
-   - **Edit**: Can send messages
-5. Click **"Share"**
+These are global auto-notifications; delivery channels are configured by administrators (see [Notification Preferences](../settings/notification-preferences.md)).
 
-**Share dialog:**
-```
-┌─────────────────────────────────────────┐
-│ Share Conversation                      │
-├─────────────────────────────────────────┤
-│                                         │
-│ Share with:                             │
-│ [Search team members...________]        │
-│                                         │
-│ Selected Members:                       │
-│ • Alice (Edit)           [Remove]       │
-│ • Bob (View)             [Remove]       │
-│                                         │
-│ Or share with entire team:              │
-│ ☐ Share with all team members           │
-│                                         │
-│ Permissions:                            │
-│ ○ View only                             │
-│ ○ Can comment                           │
-│ ● Can edit (send messages)              │
-│                                         │
-│ [Cancel]  [Share]                       │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-### Collaborating in Conversations
-
-**Real-time collaboration:**
-
-- See who's viewing the conversation
-- Typing indicators show who's typing
-- Messages appear in real-time
-- Notifications for new messages
-
-**Collaboration features:**
-```
-┌─────────────────────────────────────────┐
-│ Product Analysis                 [👥 3] │
-├─────────────────────────────────────────┤
-│                                         │
-│ You: Can you analyze this data?         │
-│ 10:00 AM                                │
-│                                         │
-│ Agent: Sure! Here's my analysis...      │
-│ 10:01 AM                                │
-│                                         │
-│ Alice: Great insights! Can we also...   │
-│ 10:02 AM                                │
-│                                         │
-│ Bob is typing...                        │
-│                                         │
-│ [Type your message...___________] [Send]│
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-## Mentions and Notifications
-
-### Mentioning Team Members
-
-**Tag team members in conversations:**
-
-1. Type `@` in message
-2. Select team member from list
-3. Member receives notification
-4. Member can click to view conversation
-
-**Mention syntax:**
-```
-@alice Can you review this analysis?
-
-@bob @carol Please check the workflow results
-```
-
-**Mention notification:**
-```
-📢 Alice mentioned you
-
-In conversation: Product Analysis
-
-"@alice Can you review this analysis?"
-
-[View Conversation]
-```
-
-### Notification Settings
-
-**Configure team notifications:**
-
-1. Go to **Profile Settings** → **Notifications**
-2. Configure team notification preferences:
-   - Mentions
-   - Team updates
-   - Resource changes
-   - Workflow completions
-3. Save settings
-
-**Team notification options:**
-```
-┌─────────────────────────────────────────┐
-│ Team Notifications                      │
-├─────────────────────────────────────────┤
-│                                         │
-│ ☑ Mentions in conversations             │
-│ ☑ Team member joins/leaves              │
-│ ☑ New team resources                    │
-│ ☑ Workflow completions                  │
-│ ☑ Document uploads                      │
-│ ☐ All team activity                     │
-│                                         │
-│ Frequency:                              │
-│ ● Real-time                             │
-│ ○ Hourly digest                         │
-│ ○ Daily digest                          │
-│                                         │
-│ [Save Preferences]                      │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-## Team Activity Feed
-
-### Viewing Team Activity
-
-**Monitor team activity:**
-
-1. Go to team dashboard
-2. View **Activity Feed** section
-3. See recent team actions
-
-**Activity feed:**
-```
-┌─────────────────────────────────────────┐
-│ Team Activity                           │
-├─────────────────────────────────────────┤
-│                                         │
-│ Today                                   │
-│ ─────────────────────────────────────  │
-│ 🤖 Alice created "Content Writer" agent │
-│    2 hours ago                          │
-│                                         │
-│ ⚙️ Bob ran "SEO Analysis" workflow      │
-│    3 hours ago                          │
-│                                         │
-│ 📄 Carol uploaded "Q3 Report.pdf"       │
-│    5 hours ago                          │
-│                                         │
-│ Yesterday                               │
-│ ─────────────────────────────────────  │
-│ 👤 David joined the team                │
-│    Yesterday at 2:30 PM                 │
-│                                         │
-│ 🤖 Alice updated "Support Agent"        │
-│    Yesterday at 10:00 AM                │
-│                                         │
-│ [Load More Activity]                    │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-### Activity Types
-
-**Tracked activities:**
-
-| Activity | Description |
-|----------|-------------|
-| **Agent** | Created, updated, deleted, published |
-| **Workflow** | Created, updated, executed, deleted |
-| **Document** | Uploaded, updated, deleted |
-| **Member** | Joined, left, role changed |
-| **Team** | Settings updated, name changed |
-| **Conversation** | Shared, unshared |
-
-### Filtering Activity
-
-**Filter activity feed:**
-
-1. Click **"Filters"** button
-2. Select activity types
-3. Select date range
-4. Select team members
-5. Apply filters
-
-**Filter options:**
-```
-┌─────────────────────────────────────────┐
-│ Activity Filters                        │
-├─────────────────────────────────────────┤
-│                                         │
-│ Activity Type:                          │
-│ ☑ Agents                                │
-│ ☑ Workflows                             │
-│ ☑ Documents                             │
-│ ☑ Members                               │
-│ ☐ Settings                              │
-│                                         │
-│ Date Range:                             │
-│ ● Today                                 │
-│ ○ Last 7 days                           │
-│ ○ Last 30 days                          │
-│ ○ Custom                                │
-│                                         │
-│ Team Members:                           │
-│ ☑ All members                           │
-│ ☐ Specific members                      │
-│                                         │
-│ [Clear]  [Apply]                        │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** There is no per-team notification configuration and no mention-based notifications.
 
 ## Collaborative Workflows
 
@@ -338,28 +99,21 @@ In conversation: Product Analysis
 
 **Work together on workflows:**
 
-1. **Design**: Multiple members can edit workflow
+1. **Design**: Members with permission can edit workflows
 2. **Test**: Run and debug together
-3. **Execute**: Any member can run workflow
-4. **Monitor**: View execution history
+3. **Execute**: Members can run workflows
+4. **Monitor**: View the execution history
 5. **Improve**: Iterate based on results
-
-**Workflow collaboration features:**
-- Real-time editing (if supported)
-- Version history
-- Execution history
-- Comments and notes
-- Shared results
 
 ### Workflow Execution Tracking
 
 **Monitor team workflow executions:**
 
-1. Go to workflow
-2. View **History** tab
-3. See all team executions
-4. Filter by team member
-5. View execution details
+1. Go to the workflow
+2. View the **History** tab
+3. See the team's executions
+4. Filter by status/date/user
+5. View execution details and node executions
 
 **Execution history:**
 ```
@@ -370,106 +124,8 @@ In conversation: Product Analysis
 │ ✅ Run #156 - Alice                     │
 │    Completed • 1m 23s • 2 hours ago    │
 │                                         │
-│ ✅ Run #155 - Bob                       │
-│    Completed • 2m 10s • 5 hours ago    │
-│                                         │
 │ ❌ Run #154 - Carol                     │
 │    Failed • 0m 45s • Yesterday         │
-│                                         │
-│ ✅ Run #153 - You                       │
-│    Completed • 1m 45s • 2 days ago     │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-## Document Collaboration
-
-### Collaborative Document Management
-
-**Work together on documents:**
-
-1. **Upload**: Any member can upload
-2. **Organize**: Categorize and tag together
-3. **Search**: Everyone can search
-4. **Update**: Update metadata collaboratively
-5. **Review**: Review and approve documents
-
-### Document Comments
-
-**Add comments to documents:**
-
-1. Open document
-2. Click **"Add Comment"** button
-3. Enter comment
-4. Mention team members if needed
-5. Submit comment
-
-**Document comments:**
-```
-┌─────────────────────────────────────────┐
-│ Sales Report Q3 2026.pdf                │
-├─────────────────────────────────────────┤
-│                                         │
-│ Comments (3)                            │
-│ ─────────────────────────────────────  │
-│                                         │
-│ Alice • 2 hours ago                     │
-│ Great analysis! @bob can you review    │
-│ the revenue projections?               │
-│                                         │
-│ Bob • 1 hour ago                        │
-│ Looks good. I'll add more details      │
-│ about Q4 forecast.                     │
-│                                         │
-│ You • 30 minutes ago                    │
-│ Thanks everyone! Let's discuss in      │
-│ tomorrow's meeting.                    │
-│                                         │
-│ [Add Comment...___________] [Post]      │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-## Team Communication
-
-### In-App Messaging
-
-**Direct messages with team members:**
-
-1. Click on team member
-2. Select **"Send Message"**
-3. Type message
-4. Send
-
-**Note**: Some organizations may use external chat tools (Slack, Teams).
-
-### Team Announcements
-
-**Important team updates:**
-
-1. Admins/Owners can post announcements
-2. Announcements appear in team dashboard
-3. All members receive notifications
-
-**Announcement:**
-```
-┌─────────────────────────────────────────┐
-│ 📢 Team Announcement                    │
-├─────────────────────────────────────────┤
-│                                         │
-│ Posted by: Alice (Owner)                │
-│ Date: 2026-02-11 10:00 AM               │
-│                                         │
-│ Team Meeting Tomorrow                   │
-│                                         │
-│ We'll have a team meeting tomorrow at  │
-│ 2 PM to discuss Q1 goals and review    │
-│ our progress on the content strategy.  │
-│                                         │
-│ Please review the Q4 report before     │
-│ the meeting.                           │
-│                                         │
-│ [Acknowledge] [Add to Calendar]         │
 │                                         │
 └─────────────────────────────────────────┘
 ```
@@ -479,55 +135,25 @@ In conversation: Product Analysis
 ### Effective Collaboration
 
 **✅ Do:**
-- Communicate clearly with team
-- Use mentions to notify relevant members
-- Share useful resources
-- Document your work
-- Provide context in conversations
-- Respond to mentions promptly
-- Keep team informed of progress
+- Use descriptive names for shared resources
+- Keep resources organized
+- Document resource purpose
+- Keep the team informed via notifications
 
 **❌ Don't:**
-- Work in isolation
-- Ignore team notifications
-- Forget to share important findings
-- Modify others' work without discussion
-- Delete shared resources without notice
-- Spam team with unnecessary notifications
+- Create duplicate resources
+- Delete shared resources without discussion
 
 ### Resource Management
 
 **✅ Do:**
 - Use descriptive names for resources
 - Add clear descriptions
-- Tag resources appropriately
 - Keep resources organized
-- Archive old resources
-- Document resource purpose
 
 **❌ Don't:**
 - Create duplicate resources
-- Use generic names
-- Leave resources undocumented
-- Forget to clean up
 - Hoard resources
-
-### Communication
-
-**✅ Do:**
-- Be clear and concise
-- Use mentions appropriately
-- Respond in timely manner
-- Provide context
-- Ask questions when unsure
-- Share knowledge
-
-**❌ Don't:**
-- Overuse mentions
-- Ignore messages
-- Assume everyone knows context
-- Be vague
-- Keep information to yourself
 
 ## Troubleshooting
 
@@ -536,51 +162,25 @@ In conversation: Product Analysis
 **Problem**: Resource not visible or accessible
 
 **Solutions:**
-1. Check if you're in correct team
-2. Verify resource is published
+1. Check if you're in the correct team
+2. Verify the resource is published
 3. Check your role permissions
 4. Refresh the page
-5. Contact team admin
-6. Verify resource wasn't deleted
+5. Contact the team admin
 
-### Mentions Not Working
+### Not Receiving Team Notifications
 
-**Problem**: Team member not receiving mentions
-
-**Solutions:**
-1. Check spelling of username
-2. Verify member is in team
-3. Check member's notification settings
-4. Try mentioning again
-5. Use direct message instead
-6. Contact administrator
-
-### Cannot Share Conversation
-
-**Problem**: Share button is disabled
+**Problem**: No team notifications
 
 **Solutions:**
-1. Check if you have permission
-2. Verify conversation is not private
-3. Check if team allows sharing
-4. Try different browser
-5. Contact administrator
-
-### Activity Feed Not Updating
-
-**Problem**: Recent activity not showing
-
-**Solutions:**
-1. Refresh the page
-2. Check date range filter
-3. Check activity type filter
-4. Clear browser cache
-5. Try different browser
-6. Contact administrator
+1. Verify you're a member of the team
+2. Check the notification center at `/app/notifications`
+3. Ask the administrator whether the auto-notification type is enabled
+4. Refresh the page
 
 ## Related Documentation
 
-- [Joining Teams](./joining-teams.md) - How to join teams
+- [Joining Teams](./joining-teams.md) - How team membership works
 - [Team Roles](./team-roles.md) - Understanding roles
 - [Chatting with Agents](../chat/chatting-with-agents.md) - Chat features
 - [Workflow History](../workflows/workflow-history.md) - Workflow tracking
@@ -592,8 +192,7 @@ If you need assistance with team collaboration:
 1. **Documentation**: Review this guide
 2. **Team Members**: Ask your team members
 3. **Team Admin**: Contact your team admin
-4. **Support**: Contact your organization's support team
-5. **Administrator**: Reach out to your Clouisle administrator
+4. **Administrator**: Reach out to your Clouisle administrator
 
 ---
 

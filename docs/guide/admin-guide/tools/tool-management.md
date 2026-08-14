@@ -7,12 +7,10 @@ This guide covers how to manage tools and integrations as an administrator.
 As an administrator, you can:
 
 - **View all tools**: Access all available tools
-- **Add tools**: Configure new tools and integrations
+- **Add tools**: Configure new tools
 - **Update tools**: Modify tool settings
 - **Test tools**: Verify tool functionality
-- **Monitor usage**: Track tool usage and performance
-- **Set limits**: Control tool access and usage
-- **Manage integrations**: Configure third-party services
+- **Share tools**: Share custom tools with other teams
 
 ## Accessing Tool Management
 
@@ -27,17 +25,15 @@ As an administrator, you can:
 The tool list shows:
 
 - **Tool name**
-- **Type** (Built-in, Custom, Integration)
-- **Category** (Search, Data, Communication, etc.)
-- **Status** (Active, Inactive, Testing)
-- **Usage** (calls, success rate)
+- **Type** (Builtin, Custom — HTTP or Code, MCP)
+- **Category** (Time, Math, Search, Web, File, Code, Sandbox, API, Data, etc.)
+- **Status** (Enabled / Disabled)
 - **Last used**
 
 **Filters:**
 - Type
 - Category
 - Status
-- Date range
 
 **Search:**
 - Search by tool name or description
@@ -46,95 +42,55 @@ The tool list shows:
 
 ### Available Built-in Tools
 
-**Search Tools:**
-- **Web Search**: Search the internet
-- **Knowledge Base Search**: Search internal KBs
-- **Document Search**: Search documents
+**Time Tools:**
+- **Get Current Time**: Get current time in a timezone
+- **Format Datetime**: Format date/time strings
 
-**Data Tools:**
-- **Calculator**: Perform calculations
-- **Date/Time**: Get current date/time
-- **Unit Converter**: Convert units
+**Math Tools:**
+- **Calculate**: Evaluate mathematical expressions
+- **Unit Convert**: Convert between units
 
-**Communication Tools:**
-- **Email**: Send emails
-- **Slack**: Send Slack messages
-- **Webhook**: Trigger webhooks
+**Search / Web Tools:**
+- **Web Search**: Search the web (requires Tavily API key)
+- **Fetch Webpage**: Fetch and extract webpage content
 
-**Utility Tools:**
-- **JSON Parser**: Parse JSON data
-- **Text Processor**: Process text
-- **File Reader**: Read files
+**File Tools:**
+- **MarkItDown**: Parse PDF, Word, Excel, PowerPoint, and text files
+
+**Generation Tools:**
+- **Generate Image**: Generate images
+- **Generate Video**: Generate videos
+
+**Sandbox Tools:**
+- **Bash**: Run commands in the code sandbox
+- **Read / Write / Edit**: File operations inside the sandbox workspace
+- **Artifact**: Collect files from the sandbox workspace
+
+> **Note:** Knowledge base retrieval is not a built-in tool; it is configured per agent as RAG.
 
 ### Configure Built-in Tools
 
 **Web Search Tool:**
 ```yaml
 Tool: Web Search
-Type: Built-in
+Type: Builtin
 Category: Search
-Status: Active
+Status: Enabled
 
 Configuration:
-  Search Engine: Google
-  API Key: AIza...
-  Max Results: 5
-  Safe Search: Moderate
-  Language: en
-  Region: US
-
-Limits:
-  Max Calls per Day: 1000
-  Max Calls per Agent: 100
-  Timeout: 10 seconds
+  API Key: TAVILY_API_KEY
 ```
+
+Web Search is powered by **Tavily**. The API key is stored under the tool configuration key `TAVILY_API_KEY`; query parameters (e.g. `max_results`) are passed by the agent at call time. There is no Google Custom Search configuration.
 
 **Update Configuration:**
 1. Select tool
 2. Click **Configure**
-3. Update settings:
-   - API credentials
-   - Parameters
-   - Limits
+3. Update API credentials
 4. Test tool
 5. Save changes
 
-**Calculator Tool:**
-```yaml
-Tool: Calculator
-Type: Built-in
-Category: Data
-Status: Active
-
-Configuration:
-  Precision: 10 decimals
-  Allow Complex Numbers: true
-  Max Expression Length: 1000 chars
-
-Limits:
-  Max Calls per Minute: 60
-  Timeout: 5 seconds
-```
-
-**Email Tool:**
-```yaml
-Tool: Email
-Type: Built-in
-Category: Communication
-Status: Active
-
-Configuration:
-  SMTP Host: smtp.gmail.com
-  SMTP Port: 587
-  SMTP Security: TLS
-  From Email: noreply@your-domain.com
-  From Name: Clouisle
-
-Limits:
-  Max Emails per Day: 1000
-  Max Recipients per Email: 10
-  Max Attachment Size: 10 MB
-```
+> **Note:** Built-in tools other than `web_search` do not require configuration. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
 
 ## Custom Tools
 
@@ -297,90 +253,7 @@ Example Response:
 
 ### Available Integrations
 
-**CRM Integrations:**
-- Salesforce
-- HubSpot
-- Pipedrive
-
-**Communication:**
-- Slack
-- Microsoft Teams
-- Discord
-
-**Productivity:**
-- Google Workspace
-- Microsoft 365
-- Notion
-
-**Development:**
-- GitHub
-- GitLab
-- Jira
-
-### Configure Integration
-
-**Slack Integration:**
-```yaml
-Integration: Slack
-Type: Integration
-Category: Communication
-Status: Active
-
-Configuration:
-  Workspace: your-workspace
-  Bot Token: xoxb-...
-  Signing Secret: ...
-  App ID: A...
-
-Capabilities:
-  - Send messages
-  - Post to channels
-  - Send DMs
-  - Upload files
-  - Get channel list
-  - Get user list
-
-Limits:
-  Max Messages per Minute: 60
-  Max File Size: 100 MB
-```
-
-**Setup Slack Integration:**
-1. Navigate to **Tools** → **Integrations**
-2. Click **Add Integration**
-3. Select **Slack**
-4. Click **Connect to Slack**
-5. Authorize app in Slack
-6. Configure settings:
-   - Default channel
-   - Message format
-   - Notification preferences
-7. Test integration
-8. Save settings
-
-**GitHub Integration:**
-```yaml
-Integration: GitHub
-Type: Integration
-Category: Development
-Status: Active
-
-Configuration:
-  Organization: your-org
-  Access Token: ghp_...
-  Webhook Secret: ...
-
-Capabilities:
-  - Create issues
-  - Create pull requests
-  - Get repository info
-  - Search code
-  - Get commit history
-
-Limits:
-  Rate Limit: 5000 requests/hour
-  Max File Size: 100 MB
-```
+> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP or Code), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the notification channel settings (DingTalk, WeChat Work, Feishu, Slack, webhook) in Site Settings.
 
 ## Testing Tools
 
@@ -446,197 +319,48 @@ Validation: Passed
 
 ### Usage Statistics
 
-**Overview Metrics:**
-- Total tool calls (24h, 7d, 30d)
-- Success rate
-- Average response time
-- Error rate
-- Most used tools
-
-**View Tool Statistics:**
-1. Select tool
-2. Click **Statistics** tab
-3. View metrics:
-   - **Usage**: Calls, success rate
-   - **Performance**: Response time
-   - **Errors**: Error types, frequency
-   - **Top Users**: Users by usage
-   - **Top Agents**: Agents using this tool
-
-4. Filter by date range
-5. Export statistics
-
-**Tool Usage Report:**
-```yaml
-Tool: Web Search
-Period: 2026-02-01 to 2026-02-11
-
-Usage:
-  Total Calls: 5,234
-  Successful: 5,123 (97.9%)
-  Failed: 111 (2.1%)
-
-Performance:
-  Average Response Time: 1.2s
-  Min: 0.5s
-  Max: 5.3s
-  P50: 1.1s
-  P95: 2.8s
-  P99: 4.2s
-
-Top Users:
-  1. john.doe@example.com: 1,234 calls
-  2. jane.smith@example.com: 987 calls
-  3. bob.wilson@example.com: 765 calls
-
-Top Agents:
-  1. Customer Support Agent: 2,345 calls
-  2. Research Assistant: 1,456 calls
-  3. Content Creator: 789 calls
-
-Error Breakdown:
-  Rate Limit Exceeded: 45 (40.5%)
-  Timeout: 34 (30.6%)
-  Invalid Query: 23 (20.7%)
-  API Error: 9 (8.1%)
-```
-
-### Usage by Team
-
-**Team Usage Report:**
-```yaml
-Period: 2026-02-01 to 2026-02-11
-
-Support Team:
-  Total Calls: 2,345
-  Tools Used:
-    - Web Search: 1,234 calls
-    - CRM Lookup: 678 calls
-    - Email: 433 calls
-
-Sales Team:
-  Total Calls: 1,678
-  Tools Used:
-    - CRM Lookup: 987 calls
-    - Email: 456 calls
-    - Calendar: 235 calls
-
-Engineering Team:
-  Total Calls: 1,211
-  Tools Used:
-    - GitHub: 567 calls
-    - Web Search: 345 calls
-    - Calculator: 299 calls
-```
+> **Note:** Not implemented / Roadmap. There is no tool usage tracking UI or API (calls, success rate, response time, error breakdowns, top users/agents, per-team reports). The tool test endpoints (`POST /api/v1/admin/tools/test`, `/execute-code`) are the only way to exercise tools from admin; runtime usage is not aggregated.
 
 ## Tool Limits
 
 ### Set Tool Limits
 
-**Global Limits:**
-1. Navigate to **Admin** → **Tools** → **Limits**
-2. Configure global limits:
-   - Max calls per minute
-   - Max calls per day
-   - Max concurrent calls
-   - Timeout
-
-3. Save limits
-
-**Tool-Specific Limits:**
-1. Select tool
-2. Click **Limits** tab
-3. Configure limits:
-   - Per user
-   - Per team
-   - Per agent
-   - Global
-
-4. Save limits
-
-**Limit Configuration:**
-```yaml
-Tool: Web Search
-
-Global Limits:
-  Max Calls per Minute: 100
-  Max Calls per Day: 10,000
-  Max Concurrent Calls: 10
-  Timeout: 10 seconds
-
-Per User Limits:
-  Max Calls per Minute: 10
-  Max Calls per Day: 1,000
-
-Per Team Limits:
-  Max Calls per Minute: 50
-  Max Calls per Day: 5,000
-
-Per Agent Limits:
-  Max Calls per Execution: 5
-  Max Calls per Day: 500
-```
+> **Note:** Not implemented / Roadmap. There are no global, tool-specific, per-user, per-team, or per-agent call limits (calls per minute/day, concurrency, timeout) for tools, and no rate-limit responses with `Retry-After`.
 
 ### Rate Limiting
 
-**Rate Limit Behavior:**
-- Requests exceeding limit are rejected
-- 429 status code returned
-- Retry-After header included
-- User notified of limit
-
-**Rate Limit Response:**
-```json
-{
-  "code": 5400,
-  "msg": "Rate limit exceeded",
-  "data": {
-    "tool": "web_search",
-    "limit": "10 calls per minute",
-    "retry_after": 45
-  }
-}
-```
+> **Note:** Not implemented / Roadmap. Tools are not rate limited.
 
 ## Tool Status Management
 
 ### Tool Statuses
 
-**Active:**
+**Enabled:**
 - Tool is operational
 - Available for use
 - Appears in tool selection
 
-**Inactive:**
+**Disabled:**
 - Tool is disabled
 - Cannot be used
 - Hidden from users
 
-**Testing:**
-- Tool is being tested
-- Only available to admins
-- Not visible to users
-
-**Deprecated:**
-- Tool is deprecated
-- Still usable but not recommended
-- Warning shown to users
+> **Note:** Tools have a single enabled/disabled state. There are no `testing` or `deprecated` statuses. Custom tools can be toggled via `POST /api/v1/admin/tools/{tool_id}/toggle`.
 
 ### Change Tool Status
 
-**Activate Tool:**
+**Enable Tool:**
 ```bash
 1. Select tool
-2. Click "Activate"
-3. Confirm activation
+2. Set "Enabled" to on
+3. Confirm
 ```
 
-**Deactivate Tool:**
+**Disable Tool:**
 ```bash
 1. Select tool
-2. Click "Deactivate"
-3. Review impact
-4. Confirm deactivation
+2. Set "Enabled" to off
+3. Confirm
 ```
 
 ## Troubleshooting
@@ -655,11 +379,9 @@ Per Agent Limits:
    - Check endpoint URL
    - Test connectivity
 
-2. **Check tool logs:**
-   ```bash
-   Admin → Tools → Select tool
-   Logs → View recent errors
-   ```
+2. **Check audit logs:**
+   - Review audit log entries for the tool's team
+   - Check application logs for the tool execution
 
 3. **Common errors:**
    - **Authentication failed**: Invalid credentials
@@ -678,26 +400,17 @@ Per Agent Limits:
 
 **Symptoms:**
 - Unexpected API costs
-- Cost alerts triggered
 
 **Solutions:**
 
 1. **Review usage:**
-   ```bash
-   Admin → Tools → Costs
-   View cost breakdown
-   ```
-
+   - Identify which agents use the tool and how often
 2. **Optimize usage:**
-   - Set stricter limits
    - Cache results
    - Use cheaper alternatives
    - Optimize tool calls
 
-3. **Set cost alerts:**
-   - Daily cost limit
-   - Monthly cost limit
-   - Alert thresholds
+> **Note:** Not implemented / Roadmap: cost dashboards and cost alerts are not available.
 
 ### Slow Tool Response
 
@@ -707,18 +420,12 @@ Per Agent Limits:
 
 **Solutions:**
 
-1. **Check performance metrics:**
-   ```bash
-   Admin → Tools → Statistics
-   View response time trends
-   ```
-
+1. **Test the tool:**
+   - Use the tool test panel to measure response time
 2. **Optimize tool:**
    - Increase timeout
    - Reduce data transfer
-   - Use caching
    - Optimize endpoint
-
 3. **Check external service:**
    - Review service status
    - Check for outages
@@ -730,8 +437,6 @@ Per Agent Limits:
 
 **✅ Do:**
 - Test tools before enabling
-- Set appropriate limits
-- Monitor usage and costs
 - Rotate credentials regularly
 - Document tool purposes
 - Keep tools updated
@@ -739,11 +444,8 @@ Per Agent Limits:
 
 **❌ Don't:**
 - Enable untested tools
-- Allow unlimited usage
-- Ignore cost alerts
 - Use static credentials forever
 - Skip documentation
-- Use deprecated tools
 - Ignore errors
 
 ### Security
@@ -788,32 +490,34 @@ Per Agent Limits:
 
 ### Manage Tools via API
 
+Admin tool endpoints live under `/api/v1/admin/tools` and require `admin:capability:*` permissions.
+
 **List Tools:**
 ```python
-# List all tools
-tools = api.get("/api/v1/tools")
+# List tools (admin)
+tools = api.get("/api/v1/admin/tools", params={"page": 1, "page_size": 20})
 
-# List tools by category
-tools = api.get("/api/v1/tools", params={"category": "search"})
+# Get tool filter options
+filters = api.get("/api/v1/admin/tools/filters")
 ```
 
-**Call Tool:**
+**Test Tool:**
 ```python
-# Call tool
-result = api.post("/api/v1/tools/web_search/call", json={
-    "query": "artificial intelligence",
-    "max_results": 5
+# Test a tool (builtin, custom, or MCP)
+result = api.post("/api/v1/admin/tools/test", json={
+    "tool_name": "web_search",
+    "arguments": {"query": "artificial intelligence", "max_results": 5}
+})
+
+# Execute code directly
+code_result = api.post("/api/v1/admin/tools/execute-code", json={
+    "language": "python",
+    "code": "return params['a'] + params['b']",
+    "params": {"a": 1, "b": 2}
 })
 ```
 
-**Get Tool Usage:**
-```python
-# Get tool usage statistics
-usage = api.get("/api/v1/tools/web_search/usage", params={
-    "start_date": "2026-02-01",
-    "end_date": "2026-02-11"
-})
-```
+> **Note:** `POST /api/v1/tools/web_search/call` and `GET /api/v1/tools/web_search/usage` do not exist. Tool configuration (e.g. `TAVILY_API_KEY`) is managed via `GET/POST/PUT/DELETE /api/v1/admin/tools/config[/{tool_name}]`.
 
 ## Related Documentation
 

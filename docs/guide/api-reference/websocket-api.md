@@ -1,868 +1,255 @@
-# WebSocket API Guide
+# Real-Time Streaming API
 
-This guide explains how to use WebSocket connections for real-time communication with Clouisle.
+Clouisle does **not** provide a WebSocket endpoint. There is no `wss://.../ws` connection, no message protocol, and no channel subscription system.
 
-## Overview
+Real-time functionality is implemented with **Server-Sent Events (SSE)** over plain HTTP, which is simpler, works through proxies/load balancers, and auto-reconnects:
 
-WebSocket API provides real-time, bidirectional communication for chat conversations, live updates, and streaming responses. Unlike HTTP polling, WebSocket maintains a persistent connection for instant data exchange.
+| Use Case | Endpoint | Method |
+|----------|----------|--------|
+| Agent chat (token-by-token) | `/api/v1/agents/{agent_id}/chat/stream` | POST |
+| Workflow execution events | `/api/v1/workflows/runs/{run_id}/stream` | GET |
 
-## Use Cases
+## What SSE Gives You
 
-- **Real-time Chat**: Stream agent responses token-by-token
-- **Live Updates**: Receive instant notifications about events
-- **Workflow Monitoring**: Track workflow execution in real-time
-- **Document Processing**: Monitor document processing progress
-- **Collaborative Editing**: Sync changes across multiple users
+- **One-way streaming**: server → client over a standard HTTP response
+- **Automatic reconnection**: SSE clients reconnect and resume (workflow stream supports `from_sequence`)
+- **Event-based framing**: `event:` + `data:` lines
+- **Works with fetch**, `EventSource`-style parsers, `curl -N`, and any HTTP client
 
-## Connection
+If you were looking for push notifications, those are delivered via the notification system (in-app, email, Feishu/Slack/webhook channels), and workflow completion can be tracked by streaming or polling the run.
 
-### WebSocket URL
+## 1. Streaming Chat (Agent)
 
-```
-wss://your-domain.com/api/v1/ws
-```
+### Start the Stream
 
-**Protocol**: Use `wss://` (secure WebSocket) in production
-
-### Authentication
-
-**Query Parameter:**
-```
-wss://your-domain.com/api/v1/ws?token=YOUR_JWT_TOKEN
-```
-
-**Or Header (if supported by client):**
-```
-Authorization: Bearer YOUR_JWT_TOKEN
-```
-
-### Connection Lifecycle
-
-1. **Connect**: Establish WebSocket connection
-2. **Authenticate**: Send auth message (if not using query param)
-3. **Subscribe**: Subscribe to channels/events
-4. **Exchange**: Send and receive messages
-5. **Disconnect**: Close connection gracefully
-
-## Message Format
-
-### Standard Message Structure
-
-```json
-{
-  "type": "message_type",
-  "id": "msg_123",
-  "timestamp": "2026-02-11T16:00:00Z",
-  "data": {
-    "key": "value"
-  }
-}
-```
-
-**Fields:**
-- `type`: Message type (e.g., "chat.message", "workflow.update")
-- `id`: Unique message ID
-- `timestamp`: Message timestamp (ISO 8601)
-- `data`: Message payload
-
-### Message Types
-
-**Client → Server:**
-- `auth` - Authenticate connection
-- `subscribe` - Subscribe to channel
-- `unsubscribe` - Unsubscribe from channel
-- `chat.send` - Send chat message
-- `ping` - Keep-alive ping
-
-**Server → Client:**
-- `auth.success` - Authentication successful
-- `auth.error` - Authentication failed
-- `subscribed` - Subscription confirmed
-- `unsubscribed` - Unsubscription confirmed
-- `chat.message` - Chat message received
-- `chat.token` - Streaming token
-- `chat.complete` - Message complete
-- `event` - Event notification
-- `error` - Error message
-- `pong` - Keep-alive pong
-
-## Authentication
-
-### Authenticate After Connection
-
-```json
-{
-  "type": "auth",
-  "data": {
-    "token": "YOUR_JWT_TOKEN"
-  }
-}
-```
-
-**Response (Success):**
-```json
-{
-  "type": "auth.success",
-  "data": {
-    "user_id": "user-123",
-    "expires_at": "2026-02-11T16:30:00Z"
-  }
-}
-```
-
-**Response (Error):**
-```json
-{
-  "type": "auth.error",
-  "data": {
-    "error": "Invalid token"
-  }
-}
-```
-
-## Subscriptions
-
-### Subscribe to Channel
-
-```json
-{
-  "type": "subscribe",
-  "data": {
-    "channel": "conversation:conv-123"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "type": "subscribed",
-  "data": {
-    "channel": "conversation:conv-123"
-  }
-}
-```
-
-### Available Channels
-
-**Conversation Channels:**
-- `conversation:{conversation_id}` - Specific conversation
-- `agent:{agent_id}` - All conversations for agent
-
-**Workflow Channels:**
-- `workflow:{workflow_id}` - Workflow execution updates
-- `workflow:execution:{execution_id}` - Specific execution
-
-**Document Channels:**
-- `document:{document_id}` - Document processing updates
-- `kb:{kb_id}` - All documents in knowledge base
-
-**Team Channels:**
-- `team:{team_id}` - Team-wide events
-- `user:{user_id}` - User-specific events
-
-### Unsubscribe from Channel
-
-```json
-{
-  "type": "unsubscribe",
-  "data": {
-    "channel": "conversation:conv-123"
-  }
-}
-```
-
-## Chat Messages
-
-### Send Message
-
-```json
-{
-  "type": "chat.send",
-  "data": {
-    "conversation_id": "conv-123",
+```bash
+curl -N -X POST "https://your-domain.com/api/v1/agents/{agent_id}/chat/stream" \
+  -H "Authorization: Bearer YOUR_TOKEN_OR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
     "message": "Hello, how can you help me?",
-    "stream": true
-  }
-}
+    "conversation_id": null,
+    "variables": {}
+  }'
 ```
 
-### Receive Streaming Response
+**Response headers:**
 
-**Token Stream:**
-```json
-{
-  "type": "chat.token",
-  "data": {
-    "conversation_id": "conv-123",
-    "message_id": "msg-456",
-    "token": "Hello",
-    "index": 0
-  }
-}
+```
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+X-Accel-Buffering: no
 ```
 
-```json
-{
-  "type": "chat.token",
-  "data": {
-    "conversation_id": "conv-123",
-    "message_id": "msg-456",
-    "token": " there",
-    "index": 1
-  }
-}
+### Event Flow
+
+```
+event: message_start
+data: {"conversation_id": "...", "message_id": "..."}
+
+event: content_delta
+data: {"delta": "Hello"}
+
+event: content_delta
+data: {"delta": " there"}
+
+event: message_end
+data: {"usage": {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17}, "timing": {...}, "version_number": 1, "version_count": 1}
+
+event: error
+data: {"code": 0, "msg": "Something went wrong, please try again later"}
 ```
 
-**Completion:**
-```json
-{
-  "type": "chat.complete",
-  "data": {
-    "conversation_id": "conv-123",
-    "message_id": "msg-456",
-    "full_message": "Hello there! How can I help you today?",
-    "metadata": {
-      "model": "gpt-4-turbo",
-      "tokens": 12,
-      "duration": 1.5
+**Event types:** `message_start`, `rag_start`, `rag_context`, `reasoning_start`, `reasoning_delta`, `reasoning_end`, `content_delta`, `tool_call`, `tool_result`, `media_result`, `compression_start`, `compression_end`, `output_truncated`, `iteration_cap_reached`, `message_end`, `error` (see [SSE Streaming](./sse-streaming.md) for the full reference; `user_input_request` is declared but has no emitter).
+
+### Client Example (JavaScript)
+
+```javascript
+async function streamChat(agentId, message, conversationId = null) {
+  const response = await fetch(
+    `https://your-domain.com/api/v1/agents/${agentId}/chat/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer YOUR_TOKEN',
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({ message, conversation_id: conversationId, variables: {} }),
+    }
+  );
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventType = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.slice(7);
+      } else if (line.startsWith('data: ') && eventType) {
+        const data = JSON.parse(line.slice(6));
+        handleChatEvent(eventType, data);
+        eventType = '';
+      }
     }
   }
 }
-```
 
-### Receive Non-Streaming Response
-
-```json
-{
-  "type": "chat.message",
-  "data": {
-    "conversation_id": "conv-123",
-    "message_id": "msg-456",
-    "message": "Hello there! How can I help you today?",
-    "metadata": {
-      "model": "gpt-4-turbo",
-      "tokens": 12,
-      "duration": 1.5
-    }
+function handleChatEvent(type, data) {
+  switch (type) {
+    case 'message_start':
+      console.log(`Conversation: ${data.conversation_id}`);
+      break;
+    case 'content_delta':
+      process.stdout.write(data.delta);
+      break;
+    case 'message_end':
+      console.log(`\nDone. usage=${JSON.stringify(data.usage)}`);
+      break;
+    case 'error':
+      console.error(`Error ${data.code}: ${data.msg}`);
+      break;
   }
 }
 ```
 
-## Event Notifications
+### Client Example (Python)
 
-### Event Message
+```python
+import requests
+import json
 
-```json
-{
-  "type": "event",
-  "data": {
-    "event": "workflow.completed",
-    "resource_id": "wf-exec-123",
-    "resource_type": "workflow_execution",
-    "details": {
-      "status": "success",
-      "duration": 45
-    }
-  }
-}
+def stream_chat(agent_id, message):
+    response = requests.post(
+        f"https://your-domain.com/api/v1/agents/{agent_id}/chat/stream",
+        headers={
+            "Authorization": "Bearer YOUR_TOKEN",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        },
+        json={"message": message, "conversation_id": None, "variables": {}},
+        stream=True,
+    )
+
+    event_type = ""
+    for line in response.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8")
+        if line.startswith("event: "):
+            event_type = line[7:]
+        elif line.startswith("data: ") and event_type:
+            data = json.loads(line[6:])
+            if event_type == "content_delta":
+                print(data.get("delta", ""), end="", flush=True)
+            elif event_type == "message_end":
+                print("\n[Done]")
+            elif event_type == "error":
+                print(f"\nError {data.get('code')}: {data.get('msg')}")
+            event_type = ""
 ```
 
-## Keep-Alive
+## 2. Streaming Workflow Execution
 
-### Ping
+### Start the Run
 
-Send ping every 30 seconds to keep connection alive:
-
-```json
-{
-  "type": "ping"
-}
+```bash
+curl -X POST "https://your-domain.com/api/v1/workflows/{workflow_id}/run" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {...}}'
 ```
 
-**Response:**
-```json
-{
-  "type": "pong",
-  "timestamp": "2026-02-11T16:00:00Z"
-}
+**Response** contains `run_id` and `stream_url`.
+
+### Subscribe to the Stream
+
+```bash
+curl -N "https://your-domain.com/api/v1/workflows/runs/{run_id}/stream?from_sequence=0" \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
+
+**Event types:** `workflow_start`, `workflow_complete`, `workflow_error`, `node_start`, `node_complete`, `node_error`, `node_skip`, `token`, `chunk`, `output`, `progress`, `status`, `iteration_start`, `iteration_complete`, `debug`.
+
+Each event's `data` is `{"event": ..., "data": ..., "node_id": ..., "timestamp": ..., "sequence": ...}`. Use `from_sequence=<last sequence>` to resume after a disconnect.
+
+**Python example:**
+
+```python
+import requests
+import json
+
+def stream_workflow(run_id):
+    response = requests.get(
+        f"https://your-domain.com/api/v1/workflows/runs/{run_id}/stream?from_sequence=0",
+        headers={"Authorization": "Bearer YOUR_TOKEN"},
+        stream=True,
+    )
+
+    event_type = ""
+    for line in response.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8")
+        if line.startswith("event: "):
+            event_type = line[7:]
+        elif line.startswith("data: ") and event_type:
+            payload = json.loads(line[6:])
+            print(f"[{event_type}] node={payload.get('node_id')} data={json.dumps(payload.get('data'), ensure_ascii=False)}")
+            event_type = ""
+```
+
+## Comparison: WebSocket vs SSE
+
+| Aspect | WebSocket | SSE (used by Clouisle) |
+|--------|-----------|------------------------|
+| Direction | Bidirectional | Server → client only (client sends via normal HTTP) |
+| Protocol | `ws://`/`wss://` upgrade | Plain HTTP, `text/event-stream` |
+| Auto-reconnect | Manual | Built-in |
+| Resume | Manual | Workflow stream supports `from_sequence` |
+| Proxy/load balancer friendliness | Often problematic | Works with standard HTTP infrastructure |
+| Binary data | Native | Not applicable (JSON text) |
 
 ## Error Handling
 
-### Error Message
-
-```json
-{
-  "type": "error",
-  "data": {
-    "code": 4001,
-    "message": "Subscription failed",
-    "details": {
-      "channel": "conversation:conv-123",
-      "reason": "Permission denied"
-    }
-  }
-}
-```
-
-### Error Codes
-
-- `4000`: Bad request
-- `4001`: Subscription failed
-- `4002`: Authentication required
-- `4003`: Permission denied
-- `4004`: Resource not found
-- `4005`: Rate limit exceeded
-
-## Python Examples
-
-### Basic WebSocket Client
-
-```python
-import asyncio
-import websockets
-import json
-
-async def connect_websocket(token):
-    """Connect to WebSocket and handle messages."""
-    uri = f"wss://your-domain.com/api/v1/ws?token={token}"
-
-    async with websockets.connect(uri) as websocket:
-        print("Connected to WebSocket")
-
-        # Subscribe to conversation
-        await websocket.send(json.dumps({
-            "type": "subscribe",
-            "data": {
-                "channel": "conversation:conv-123"
-            }
-        }))
-
-        # Receive messages
-        async for message in websocket:
-            data = json.loads(message)
-            print(f"Received: {data['type']}")
-
-            if data['type'] == 'chat.token':
-                print(data['data']['token'], end='', flush=True)
-            elif data['type'] == 'chat.complete':
-                print(f"\n\nComplete: {data['data']['full_message']}")
-
-# Usage
-asyncio.run(connect_websocket('YOUR_JWT_TOKEN'))
-```
-
-### Send Chat Message
-
-```python
-async def send_chat_message(websocket, conversation_id, message):
-    """Send chat message via WebSocket."""
-    await websocket.send(json.dumps({
-        "type": "chat.send",
-        "data": {
-            "conversation_id": conversation_id,
-            "message": message,
-            "stream": True
-        }
-    }))
-
-# Usage
-async with websockets.connect(uri) as websocket:
-    await send_chat_message(websocket, "conv-123", "Hello!")
-```
-
-### Handle Streaming Response
-
-```python
-async def handle_streaming_response(websocket):
-    """Handle streaming chat response."""
-    full_message = ""
-
-    async for message in websocket:
-        data = json.loads(message)
-
-        if data['type'] == 'chat.token':
-            token = data['data']['token']
-            full_message += token
-            print(token, end='', flush=True)
-
-        elif data['type'] == 'chat.complete':
-            print(f"\n\nFull message: {full_message}")
-            break
-
-        elif data['type'] == 'error':
-            print(f"\nError: {data['data']['message']}")
-            break
-```
-
-### WebSocket Client with Reconnection
-
-```python
-import asyncio
-import websockets
-import json
-from typing import Callable
-
-class WebSocketClient:
-    """WebSocket client with auto-reconnection."""
-
-    def __init__(self, url: str, token: str):
-        self.url = url
-        self.token = token
-        self.websocket = None
-        self.running = False
-        self.handlers = {}
-
-    def on(self, message_type: str, handler: Callable):
-        """Register message handler."""
-        self.handlers[message_type] = handler
-
-    async def connect(self):
-        """Connect to WebSocket."""
-        uri = f"{self.url}?token={self.token}"
-        self.websocket = await websockets.connect(uri)
-        self.running = True
-        print("Connected to WebSocket")
-
-    async def disconnect(self):
-        """Disconnect from WebSocket."""
-        self.running = False
-        if self.websocket:
-            await self.websocket.close()
-            print("Disconnected from WebSocket")
-
-    async def send(self, message_type: str, data: dict):
-        """Send message."""
-        if not self.websocket:
-            raise Exception("Not connected")
-
-        await self.websocket.send(json.dumps({
-            "type": message_type,
-            "data": data
-        }))
-
-    async def subscribe(self, channel: str):
-        """Subscribe to channel."""
-        await self.send("subscribe", {"channel": channel})
-
-    async def listen(self):
-        """Listen for messages with auto-reconnection."""
-        while self.running:
-            try:
-                if not self.websocket:
-                    await self.connect()
-
-                async for message in self.websocket:
-                    data = json.loads(message)
-                    message_type = data['type']
-
-                    # Call registered handler
-                    if message_type in self.handlers:
-                        await self.handlers[message_type](data['data'])
-
-            except websockets.exceptions.ConnectionClosed:
-                print("Connection closed, reconnecting...")
-                await asyncio.sleep(5)
-            except Exception as e:
-                print(f"Error: {e}")
-                await asyncio.sleep(5)
-
-# Usage
-client = WebSocketClient(
-    "wss://your-domain.com/api/v1/ws",
-    "YOUR_JWT_TOKEN"
-)
-
-# Register handlers
-async def on_token(data):
-    print(data['token'], end='', flush=True)
-
-async def on_complete(data):
-    print(f"\n\nComplete: {data['full_message']}")
-
-client.on('chat.token', on_token)
-client.on('chat.complete', on_complete)
-
-# Connect and listen
-async def main():
-    await client.connect()
-    await client.subscribe("conversation:conv-123")
-    await client.listen()
-
-asyncio.run(main())
-```
-
-## JavaScript Examples
-
-### Basic WebSocket Client
-
-```javascript
-const ws = new WebSocket('wss://your-domain.com/api/v1/ws?token=YOUR_JWT_TOKEN');
-
-ws.onopen = () => {
-  console.log('Connected to WebSocket');
-
-  // Subscribe to conversation
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    data: {
-      channel: 'conversation:conv-123'
-    }
-  }));
-};
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Received:', data.type);
-
-  if (data.type === 'chat.token') {
-    process.stdout.write(data.data.token);
-  } else if (data.type === 'chat.complete') {
-    console.log('\n\nComplete:', data.data.full_message);
-  }
-};
-
-ws.onerror = (error) => {
-  console.error('WebSocket error:', error);
-};
-
-ws.onclose = () => {
-  console.log('Disconnected from WebSocket');
-};
-```
-
-### Send Chat Message
-
-```javascript
-function sendChatMessage(ws, conversationId, message) {
-  ws.send(JSON.stringify({
-    type: 'chat.send',
-    data: {
-      conversation_id: conversationId,
-      message: message,
-      stream: true
-    }
-  }));
-}
-
-// Usage
-sendChatMessage(ws, 'conv-123', 'Hello!');
-```
-
-### WebSocket Client Class
-
-```javascript
-class WebSocketClient {
-  constructor(url, token) {
-    this.url = url;
-    this.token = token;
-    this.ws = null;
-    this.handlers = {};
-    this.reconnectDelay = 5000;
-  }
-
-  on(messageType, handler) {
-    this.handlers[messageType] = handler;
-  }
-
-  connect() {
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(`${this.url}?token=${this.token}`);
-
-      this.ws.onopen = () => {
-        console.log('Connected to WebSocket');
-        resolve();
-      };
-
-      this.ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        const messageType = data.type;
-
-        if (this.handlers[messageType]) {
-          this.handlers[messageType](data.data);
-        }
-      };
-
-      this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        reject(error);
-      };
-
-      this.ws.onclose = () => {
-        console.log('Connection closed, reconnecting...');
-        setTimeout(() => this.connect(), this.reconnectDelay);
-      };
-    });
-  }
-
-  disconnect() {
-    if (this.ws) {
-      this.ws.close();
-    }
-  }
-
-  send(messageType, data) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket not connected');
-    }
-
-    this.ws.send(JSON.stringify({
-      type: messageType,
-      data: data
-    }));
-  }
-
-  subscribe(channel) {
-    this.send('subscribe', { channel });
-  }
-
-  unsubscribe(channel) {
-    this.send('unsubscribe', { channel });
-  }
-}
-
-// Usage
-const client = new WebSocketClient(
-  'wss://your-domain.com/api/v1/ws',
-  'YOUR_JWT_TOKEN'
-);
-
-// Register handlers
-client.on('chat.token', (data) => {
-  process.stdout.write(data.token);
-});
-
-client.on('chat.complete', (data) => {
-  console.log('\n\nComplete:', data.full_message);
-});
-
-// Connect
-await client.connect();
-await client.subscribe('conversation:conv-123');
-```
-
-### React WebSocket Hook
-
-```javascript
-import { useEffect, useRef, useState } from 'react';
-
-function useWebSocket(url, token) {
-  const [connected, setConnected] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const wsRef = useRef(null);
-
-  useEffect(() => {
-    const ws = new WebSocket(`${url}?token=${token}`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('Connected');
-      setConnected(true);
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setMessages(prev => [...prev, data]);
-    };
-
-    ws.onclose = () => {
-      console.log('Disconnected');
-      setConnected(false);
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, [url, token]);
-
-  const send = (messageType, data) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: messageType,
-        data: data
-      }));
-    }
-  };
-
-  const subscribe = (channel) => {
-    send('subscribe', { channel });
-  };
-
-  return { connected, messages, send, subscribe };
-}
-
-// Usage in component
-function ChatComponent({ conversationId, token }) {
-  const { connected, messages, send, subscribe } = useWebSocket(
-    'wss://your-domain.com/api/v1/ws',
-    token
-  );
-
-  useEffect(() => {
-    if (connected) {
-      subscribe(`conversation:${conversationId}`);
-    }
-  }, [connected, conversationId]);
-
-  const sendMessage = (message) => {
-    send('chat.send', {
-      conversation_id: conversationId,
-      message: message,
-      stream: true
-    });
-  };
-
-  return (
-    <div>
-      <div>Status: {connected ? 'Connected' : 'Disconnected'}</div>
-      <div>
-        {messages.map((msg, i) => (
-          <div key={i}>{msg.type}: {JSON.stringify(msg.data)}</div>
-        ))}
-      </div>
-      <button onClick={() => sendMessage('Hello!')}>
-        Send Message
-      </button>
-    </div>
-  );
-}
-```
+- Authentication errors are returned as **HTTP status codes** before the stream begins (401/403)
+- Mid-stream failures are emitted as `event: error` with `{"code": ..., "msg": ...}`, after which the stream ends
+- For chat streams, partial content is persisted and the round is marked `error`
 
 ## Best Practices
 
-### Connection Management
-
 **✅ Do:**
-- Implement auto-reconnection
-- Handle connection errors gracefully
-- Send keep-alive pings
-- Close connections properly
-- Monitor connection state
-- Use connection pooling for multiple channels
-- Implement exponential backoff for reconnection
+- Handle all documented event types
+- Buffer incomplete SSE lines before parsing
+- Add a client-side idle timeout for chat streams
+- Resume workflow streams using `from_sequence`
+- Close connections when done
 
 **❌ Don't:**
-- Ignore connection errors
-- Skip keep-alive pings
-- Leave connections open indefinitely
-- Create multiple connections unnecessarily
-- Reconnect immediately after failure
-- Forget to clean up on disconnect
-
-### Message Handling
-
-**✅ Do:**
-- Validate message format
-- Handle all message types
-- Process messages asynchronously
-- Implement message queuing
-- Log important messages
-- Handle partial messages
-- Implement timeout for responses
-
-**❌ Don't:**
-- Assume message format
-- Ignore unknown message types
-- Block on message processing
-- Process messages synchronously
-- Skip message logging
-- Expect complete messages always
-- Wait indefinitely for responses
-
-### Performance
-
-**✅ Do:**
-- Use binary frames for large data
-- Compress messages when possible
-- Batch multiple updates
-- Implement message throttling
-- Monitor memory usage
-- Clean up old messages
-- Use efficient JSON parsing
-
-**❌ Don't:**
-- Send large text messages
-- Skip compression
-- Send updates individually
-- Send unlimited messages
-- Keep all messages in memory
-- Accumulate messages indefinitely
-- Use slow JSON parsers
-
-### Security
-
-**✅ Do:**
-- Use WSS (secure WebSocket)
-- Validate authentication tokens
-- Implement rate limiting
-- Validate all incoming data
-- Use CORS properly
-- Monitor for abuse
-- Log security events
-
-**❌ Don't:**
-- Use WS (insecure)
-- Skip token validation
-- Allow unlimited messages
-- Trust incoming data
-- Ignore CORS
-- Skip abuse monitoring
-- Forget security logging
-
-## Troubleshooting
-
-### Connection Failed
-
-**Problem:** Cannot establish WebSocket connection
-
-**Solutions:**
-1. Check WebSocket URL is correct
-2. Verify authentication token
-3. Check firewall/proxy settings
-4. Ensure WSS is supported
-5. Review server logs
-
-### Connection Drops
-
-**Problem:** Connection drops frequently
-
-**Solutions:**
-1. Implement keep-alive pings
-2. Check network stability
-3. Increase timeout values
-4. Implement auto-reconnection
-5. Monitor server health
-
-### Messages Not Received
-
-**Problem:** Not receiving expected messages
-
-**Solutions:**
-1. Verify subscription to correct channel
-2. Check message handlers are registered
-3. Review server logs
-4. Test with simple messages
-5. Check permissions
-
-### High Latency
-
-**Problem:** Messages arrive with delay
-
-**Solutions:**
-1. Check network latency
-2. Optimize message size
-3. Use compression
-4. Check server load
-5. Monitor connection quality
+- Try to open a WebSocket — there is no WebSocket endpoint
+- Send chat messages over the workflow stream (or vice versa)
+- Parse partial JSON lines — wait for the full `data:` line
+- Block the UI thread while reading the stream
 
 ## Related Documentation
 
-- [Chat API](./endpoints/conversations.md) - Chat endpoints
-- [Streaming](./streaming.md) - SSE streaming
-- [Webhooks](./webhooks-guide.md) - Webhook events
-- [Authentication](./authentication.md) - Authentication methods
+- [SSE Streaming](./sse-streaming.md) - Full SSE event reference
+- [Quick Start](./quick-start.md) - Getting started guide
+- [Workflows API](./endpoints/workflows.md) - Workflow endpoints
+- [Agents API](./endpoints/agents.md) - Agent chat endpoints
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

@@ -23,7 +23,9 @@ cp .env.example .env
 ```
 
 生成安全密码并更新 `.env`。请为以下字段设置强随机值：
-`SECRET_KEY`、`POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`QDRANT_API_KEY`。
+`SECRET_KEY`、`QDRANT_API_KEY`。
+
+注意：开发基础设施（`deploy/docker-compose.dev.yml`）使用**固定硬编码凭据**，不读取 `.env`：PostgreSQL 为 `postgres` / `password`，Redis 密码为 `clouisle-redis-cbd3c07d`。只有 `QDRANT_API_KEY` 从 `.env` 读取（必填）。只有在同时修改 dev compose 文件与之匹配时，才需要在 `.env` 中设置 `POSTGRES_PASSWORD` / `REDIS_PASSWORD`。
 
 ## 3. 启动基础设施
 
@@ -63,7 +65,7 @@ bun run --cwd frontend dev
 
 - **前端**：http://localhost:3000
 - **API 文档**：http://localhost:8000/docs
-- **默认管理员**：查看 `.env` 获取初始凭据
+- **首个账号**：没有预置的默认管理员——首个注册用户会自动成为超级管理员
 
 ## 开发命令
 

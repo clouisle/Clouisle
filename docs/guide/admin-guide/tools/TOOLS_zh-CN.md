@@ -138,7 +138,7 @@
 | `textwrap` | 文本换行 |
 | `difflib` | 差异比较 |
 
-**不可用：** `requests`、`numpy`、`pandas`、`httpx` 或任何第三方包。
+**默认不可用：** `requests`、`numpy`、`pandas`、`httpx` 或其他第三方包。但代码工具可以声明第三方依赖（Python 用 `python_packages`，JavaScript 用 `js_packages`），沙箱会将其安装到隔离的缓存环境中。每个包必须固定精确版本（如 `requests==2.32.3`），自定义包索引 / npm registry URL 必须是纯 `http(s)://` URL 且不能内嵌凭证。
 
 #### JavaScript
 
@@ -168,7 +168,7 @@ Node.js 核心模块（需要 require）：
 | `util` | 工具函数 |
 | `http` / `https` | HTTP 请求 |
 
-**不可用：** `axios`、`lodash`、`moment`、`dayjs` 或任何 npm 包。
+**默认不可用：** `axios`、`lodash`、`moment`、`dayjs` 或其他 npm 包。与 Python 相同，`js_packages` 可以声明固定精确版本的 npm 包（如 `axios@1.7.9`），执行时会安装到隔离的缓存环境中。
 
 ### 编写代码
 
@@ -254,9 +254,9 @@ return hash;
 | 限制 | 详情 |
 |------|------|
 | **超时** | 最长执行时间 30 秒 |
-| **无第三方包** | 仅可使用标准库模块 |
-| **无文件系统访问** | 无法读写文件 |
-| **无持久状态** | 每次执行相互隔离 |
+| **第三方包** | 可选；必须固定精确版本（`requests==2.32.3`、`axios@1.7.9`），安装到隔离的缓存环境 |
+| **文件系统访问** | 仅限任务的 `/workspace` 目录。平台内置的 `bash`、`read`、`write`、`edit`、`artifact` 工具只在 `/workspace` 内操作；写入 `/workspace` 之外的文件会被拒绝 |
+| **无持久状态** | 每次执行相互隔离；工作区是临时的，运行结束后清理 |
 | **受限环境** | 仅有最小环境变量（PATH、HOME、LANG） |
 
 ---

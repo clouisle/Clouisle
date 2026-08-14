@@ -36,15 +36,13 @@
 
 ## 架构总览
 
-Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 个基础设施服务**：
+Clouisle 使用 **3 个 Docker 镜像**，运行为 **5 个应用服务** + **3 个基础设施服务**：
 
 ```
                          ┌─────────────────────────────────────────────┐
                          │              Frontend Container             │
-  Browser ──────────────►│  Nginx (:3000)                              │
-                         │    ├── /api/*  ──► proxy to api:8000    │
-                         │    ├── /_next/static/* ──► local files      │
-                         │    └── /*  ──► Node.js SSR (:3001 internal) │
+  Browser ──────────────►│  Next.js standalone (node server.js, :3000) │
+                         │    └── /api/*  ──► Next rewrites → api:8000 │
                          └──────────────────┬──────────────────────────┘
                                             │
                          ┌──────────────────▼──────────────────────────┐
@@ -60,6 +58,8 @@ Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 
                                                        Celery Beat
                                                        (scheduler)
 ```
+
+frontend 容器直接运行 Next.js standalone 服务（`node server.js`，端口 3000），**不包含 Nginx**；API 请求通过 Next.js rewrites（`/api/:path*`）转发到后端。`deploy/nginx/default.conf` 是可选的外部 Nginx 示例，不属于前端镜像。
 
 | 镜像 | 服务 | 说明 |
 |------|------|------|
@@ -209,7 +209,47 @@ SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
 
 生产环境应保持这两个配置。每个任务只会将当前任务/会话目录挂载到 `/workspace`，不会向任务命名空间挂载其他会话或 `/app/uploads`。
 
-Rootless Bubblewrap 需要 namespace/mount 系统调用。项目提供的 Compose 服务使用 `no-new-privileges`、丢弃全部 capabilities，并仅对 sandbox-worker 设置 `seccomp=unconfined`。除非替换为允许必要系统调用的 Localhost seccomp profile，否则不要删除该 seccomp 配置。
+Rootless Bubblewrap 需要 namespace/mount 系统调用。项目提供的 Compose 服务仅对 sandbox-worker 设置 `seccomp=unconfined`，Worker 以 root 运行并在运行时默认 cap 集上叠加 `CAP_SYS_ADMIN`，并保持 `no-new-privileges`。除非替换为允许必要系统调用的 Localhost seccomp profile，否则不要删除该 seccomp 配置。
+
+特权 Worker 直接创建 Bubblewrap 用户命名空间，因此项目提供的部署即使宿主限制非特权用户命名空间（如 Ubuntu 23.10+ 的 `kernel.apparmor_restrict_unprivileged_userns=1`、Debian 的 `kernel.unprivileged_userns_clone=0`）也能正常工作——**无需修改宿主 sysctl**。自定义部署若保持 Worker 非 root，则需要在节点级别允许非特权用户命名空间（见 [代码沙箱 → 宿主内核要求](../concepts/code-sandbox_zh-CN.md#宿主内核要求)）；否则所有沙箱任务都会失败，报错为 `bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.`
+
+### 用户命名空间重映射（加固）
+
+沙箱任务运行在全新的 Bubblewrap 用户+挂载命名空间内，无法直接触及 Worker 容器的 capabilities。但如果任务成功逃出 Bubblewrap（bwrap 或内核漏洞），落点就是**容器内 root + `CAP_SYS_ADMIN`**。默认 Docker daemon 下容器与宿主共享初始用户命名空间，该 capability 是宿主 userns 级别的，经典逃逸链（cgroup `release_agent`、重挂 `/proc` 写入 `kernel.core_pattern`、sysctl 写入）在原理上可达。
+
+**Docker daemon 用户命名空间重映射**可以收敛此风险：每个容器被放入嵌套用户命名空间，`CAP_SYS_ADMIN` 只作用于容器自身的 userns，上述宿主逃逸链全部失效。沙箱 Worker 仍能在重映射后的命名空间内特权创建自己的 Bubblewrap userns，沙箱功能不受影响。
+
+在 Docker 宿主的 `/etc/docker/daemon.json` 启用并重启 daemon：
+
+```json
+{
+  "userns-remap": "default"
+}
+```
+
+```bash
+systemctl restart docker
+```
+
+`default` 使用 `dockremap` 用户及 `/etc/subuid`、`/etc/subgid` 中的子 uid/gid 范围（多数发行版 Docker 会自动创建）。验证 daemon 已重映射、容器 root 对应映射后的非零宿主 uid：
+
+```bash
+docker info | grep -i userns          # 期望 "userns: remap"（而非 "host"）
+docker run --rm alpine cat /proc/self/uid_map   # 期望 "0 100000 65536" 样式映射，而非 "0 0 4294967295"
+```
+
+对本次部署的影响：
+
+- **只有命名卷**——项目 Compose 全部使用命名卷（`postgres_data`、`redis_data`、`qdrant_data`、`uploads_data`），无宿主 bind mount。Docker 会在首次使用时自动将命名卷属主改为重映射 uid 范围。**启用前已存在**的卷需手动重设一次属主，例如：
+  ```bash
+  docker run --rm -v uploads_data:/v -v postgres_data:/p alpine sh -c \
+    'chown -R 100000:100000 /v /p'
+  ```
+  （uid 以 `docker info` 显示的实际重映射范围为准）。
+- **daemon 上所有容器都会被重映射**（daemon 级设置）。需要看到宿主 uid 的服务可按容器用 `userns_mode: "host"` 退出重映射；Clouisle 提供的服务均不需要。
+- 启用后重启全部服务（`docker compose up -d`），确保每个容器都运行在重映射的 userns 内。
+
+Kubernetes 不适用 daemon 级重映射：需节点级用户命名空间支持（containerd + Kubernetes `UserNamespaces` 特性，1.31+）才能在支持的集群达到同等收敛；否则依赖 NetworkPolicy 限制沙箱出网、及时升级 Bubblewrap 并关注其 CVE。
 
 ### 卷挂载
 
@@ -247,7 +287,7 @@ volumes:
   - /data/clouisle/uploads:/app/uploads
 ```
 
-> **重要**：`uploads_data` 在 `backend` 与 `worker` 间共享。两者都需要读写权限以处理上传文档。若使用主机路径挂载，请在启动前确保目录存在且权限正确。
+> **重要**：`uploads_data` 卷**仅**由 `api` 服务挂载。`worker` 与 `sandbox-worker` 服务没有 uploads 卷；它们通过带认证的内部上传网关访问上传文件（`UPLOAD_STORAGE_MODE=remote`、`API_INTERNAL_BASE_URL` + `INTERNAL_API_TOKEN`，端点为 `/internal/uploads/`）。
 
 ### 端口映射
 
@@ -255,7 +295,7 @@ volumes:
 
 | 服务 | 主机端口 | 容器端口 | 用途 |
 |------|----------|----------|------|
-| frontend | 3000 | 3000 | Web UI（Nginx） |
+| frontend | 3000 | 3000 | Web UI（Next.js standalone） |
 | backend | 8000 | 8000 | API（Gunicorn） |
 | db | 5432 | 5432 | PostgreSQL |
 | redis | 6379 | 6379 | Redis |
@@ -276,7 +316,7 @@ volumes:
       - "6333:6333"    # Remove
   api:
     ports:
-      - "8000:8000"    # Remove — frontend Nginx proxies API requests
+      - "8000:8000"    # Remove — frontend Next rewrites proxy API requests
 ```
 
 ### 自定义域名与 HTTPS
@@ -319,7 +359,7 @@ server {
 
         # Streaming
         proxy_buffering off;
-        proxy_read_timeout 300s;
+        proxy_read_timeout 1800s;
     }
 }
 ```
@@ -338,7 +378,7 @@ BACKEND_CORS_ORIGINS=https://example.com
 # Scale Celery workers (safe to run multiple)
 docker compose up -d --scale worker=4
 
-# Scale backend API (safe to run multiple behind Nginx)
+# Scale backend API (safe to run multiple behind the frontend/external proxy)
 docker compose up -d --scale api=2
 
 # NEVER scale beat beyond 1
@@ -405,25 +445,27 @@ kubectl -n clouisle get pods
 
 ### 清单结构
 
-该清单包含 11 组资源，并使用 YAML anchor 去重重复配置：
+该清单包含 13 组资源，不使用 YAML anchor，每段均显式写出：
 
 | # | 资源 | 类型 | 说明 |
 |---|------|------|------|
 | 1 | Namespace | Namespace | `clouisle` |
-| 2 | ConfigMap | ConfigMap | 非敏感配置 |
-| 3 | Secret | Secret | 密码与密钥（**必须编辑**） |
-| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service，10Gi 存储 |
+| 2 | ConfigMap | ConfigMap | `clouisle-config`，非敏感配置 |
+| 3 | Secret | Secret | `clouisle-secret`，6 个 key（**必须编辑/生成**） |
+| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service，`postgres-data` 10Gi |
 | 5 | Redis | Deployment + Service | |
-| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service，10Gi 存储 |
-| 7 | Backend | Deployment + Service | 2 副本，端口 8000 |
-| 8 | Worker | Deployment | 2 副本，无 Service |
-| 9 | Beat | Deployment | 1 副本，`Recreate` 策略 |
-| 10 | Frontend | Deployment + Service | 2 副本，端口 3000 |
-| 11 | Ingress | Ingress | `/api` → backend，`/` → frontend |
+| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service，`qdrant-data` 10Gi |
+| 7 | Uploads | PVC | `uploads-data` 10Gi，ReadWriteMany |
+| 8 | API | Deployment + Service | 2 副本，端口 8000 |
+| 9 | Worker | Deployment | 2 副本，无 Service |
+| 10 | Sandbox Worker | Deployment | 1 副本，无 Service |
+| 11 | Beat | Deployment | 1 副本，`Recreate` 策略 |
+| 12 | Frontend | Deployment + Service | 2 副本，端口 3000 |
+| 13 | Ingress | Ingress | `/api` → api:8000，`/` → frontend:3000 |
 
 ### Secrets 配置
 
-应用前，先替换 Secret 段中的 base64 占位值：
+应用前，先替换 Secret 段中的 base64 占位值。`clouisle-secret` Secret 共有 **6 个 key**：
 
 ```bash
 # Generate base64-encoded values
@@ -431,6 +473,8 @@ echo -n 'your-strong-secret-key' | base64
 echo -n 'your-postgres-password' | base64
 echo -n 'your-redis-password' | base64
 echo -n 'your-qdrant-api-key' | base64
+echo -n 'your-sandbox-artifact-key' | base64
+echo -n 'your-internal-gateway-token' | base64
 ```
 
 在 `clouisle.yaml` 中替换：
@@ -441,16 +485,21 @@ data:
   POSTGRES_PASSWORD: <paste-base64-here>
   REDIS_PASSWORD: <paste-base64-here>
   QDRANT_API_KEY: <paste-base64-here>
+  SANDBOX_ARTIFACT_UPLOAD_API_KEY: <paste-base64-here>
+  INTERNAL_API_TOKEN: <paste-base64-here>
 ```
+
+> **说明**：`INTERNAL_API_TOKEN` 与 `SANDBOX_ARTIFACT_UPLOAD_API_KEY` 为必填——`deploy/install.sh` 会在其生成的输出副本中生成这两个值（K8s 模式输出 `0600` 权限的文件，需审阅后手动应用）。api、worker 与 sandbox-worker 通过 `INTERNAL_API_TOKEN_FILE` 挂载从 Secret 读取 `INTERNAL_API_TOKEN`。
 
 > **提示**：生产环境建议使用外部密钥管理（Vault、AWS Secrets Manager 等）配合 External Secrets Operator，而不是将明文/编码后的密钥直接放在 YAML 中。
 
 ### 持久化存储
 
-| PVC | 大小 | 使用方 | StorageClass |
-|-----|------|--------|--------------|
-| `postgres-data` | 10Gi | PostgreSQL | default |
-| `qdrant-data` | 10Gi | Qdrant | default |
+| PVC | 大小 | 使用方 | 访问模式 |
+|-----|------|--------|----------|
+| `postgres-data` | 10Gi | PostgreSQL | ReadWriteOnce |
+| `qdrant-data` | 10Gi | Qdrant | ReadWriteOnce |
+| `uploads-data` | 10Gi | API（uploads） | ReadWriteMany |
 
 如需修改容量或存储类，编辑 PVC 定义：
 
@@ -463,30 +512,7 @@ spec:
       storage: 50Gi                       # Adjust size
 ```
 
-backend 与 worker 的 `uploads` 卷默认使用 `emptyDir`。生产环境请改为 PVC 或共享文件系统（如 NFS、EFS），以便上传文件在 Pod 重启后仍保留，且 backend/worker 均可访问：
-
-```yaml
-# Replace in the anchors section:
-- &uploads-volume
-  name: uploads
-  persistentVolumeClaim:
-    claimName: clouisle-uploads
-
-# Add a new PVC:
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: clouisle-uploads
-  namespace: clouisle
-spec:
-  accessModes: [ReadWriteMany]    # Must be RWX for multi-pod access
-  resources:
-    requests:
-      storage: 20Gi
-```
-
-> **重要**：`ReadWriteMany` 需要支持 RWX 的存储类（NFS、CephFS、EFS 等）。常见块存储（如 gp2、gp3）仅支持 `ReadWriteOnce`。
+`uploads-data` PVC（10Gi，`ReadWriteMany`）由 `api` Deployment 挂载到 `/app/uploads`。worker 与 sandbox-worker **不挂载**该卷——它们通过带认证的内部上传网关读写授权文档并上传沙箱产物。仅当使用本地上传存储且将 `api` 扩容到多个副本时才需要 `ReadWriteMany`；使用 `ReadWriteOnce` 时请保持 `api` 为单副本（worker 与 sandbox-worker 副本数仍可独立扩展）。
 
 ### Ingress 与 TLS
 
@@ -520,11 +546,11 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
 
-同时更新 ConfigMap：
+同时更新 ConfigMap（`API_BASE_URL` 保持内部地址，公网域名放入 `PUBLIC_API_URL`）：
 
 ```yaml
 data:
-  API_BASE_URL: "https://your-domain.com"
+  PUBLIC_API_URL: "https://your-domain.com"
   FRONTEND_URL: "https://your-domain.com"
   BACKEND_CORS_ORIGINS: "https://your-domain.com"
 ```
@@ -652,18 +678,16 @@ kubectl -n clouisle top pods
 ```
 Browser
   │
-  ├── Page requests (HTML/SSR) ──► Nginx (:3000) ──► Node.js (:3001 internal)
+  ├── Page requests (HTML/SSR) ──► Node.js SSR（frontend 容器，:3000）
   │
-  └── API requests (/api/*) ──► Nginx (:3000) ──► Backend Gunicorn (:8000)
+  └── API requests (/api/*) ──► Next rewrites（frontend 容器）──► Backend Gunicorn (:8000)
 ```
 
-frontend 容器中运行两个进程：
-1. **Nginx**（3000 端口，外部）负责路由、静态文件和代理
-2. **Node.js**（3001 端口，内部）负责 SSR
+frontend 容器运行 Next.js standalone 服务（`node server.js`），监听 3000 端口。它负责 SSR，并通过 Next.js rewrites（`frontend/next.config.ts`，目标取自 `BACKEND_INTERNAL_URL`，默认 `http://api:8000`）将 `/api/*` 请求代理到后端。
 
 ### Header 转发
 
-Nginx 在 `/api/*` 请求中向 backend 转发以下 Header：
+可选的外部 Nginx（`deploy/nginx/default.conf`，置于 frontend 容器之前时）在 `/api/*` 请求中向后端转发以下 Header：
 
 | Header | 值 | 用途 |
 |--------|----|------|
@@ -683,10 +707,10 @@ Gunicorn 配置了 `--forwarded-allow-ips *` 以信任这些代理头。
 如果在 frontend 容器前再加一层反向代理（Nginx、Caddy、Traefik、云 LB），请确保链路为：
 
 ```
-External Proxy → Frontend Nginx (:3000) → Backend Gunicorn (:8000)
+External Proxy → frontend 容器（node server.js，:3000）→ Next rewrites → Backend Gunicorn (:8000)
 ```
 
-外部代理必须正确设置 `X-Real-IP` 和 `X-Forwarded-For`，frontend Nginx 会继续透传给 backend。
+外部代理必须正确设置 `X-Real-IP` 和 `X-Forwarded-For`。若外部代理直接代理 `/api/*` 到后端，则需转发同样的 Header 集合（`deploy/nginx/default.conf` 示例展示了完整集合）。
 
 ---
 
@@ -791,7 +815,7 @@ docker compose up -d
 
 # 4. Verify
 docker compose ps
-docker compose logs --tail=50 backend
+docker compose logs --tail=50 api
 ```
 
 ### Kubernetes
@@ -803,9 +827,10 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/c
 docker push registry.example.com/clouisle/api:v2.0.0
 docker push registry.example.com/clouisle/frontend:v2.0.0
 
-# 2. Update image tags in clouisle.yaml (the anchors at the top)
-#    - &backend-image registry.example.com/clouisle/api:v2.0.0
-#    - &frontend-image registry.example.com/clouisle/frontend:v2.0.0
+# 2. 更新 clouisle.yaml 中的镜像引用
+#    （各工作负载的 `image:` —— 如 api/worker/beat 的 `clouisle-backend`、
+#    sandbox-worker 的 `clouisle-sandbox-worker`、frontend 的 `clouisle-frontend`、
+#    以及 PostgreSQL 的 `clouisle-postgres-pg-search`）
 
 # 3. Apply
 kubectl apply -f deploy/k8s/clouisle.yaml
@@ -830,7 +855,8 @@ kubectl -n clouisle rollout status deployment frontend
 - [ ] **网络隔离**：Compose 下基础设施服务（db、redis、qdrant）不应对外访问；K8s 下默认使用 ClusterIP（不对外）
 - [ ] **定期备份**：配置 PostgreSQL 与 Qdrant 自动备份
 - [ ] **资源限制**：按实际负载调整 K8s 清单中的 CPU/内存 limits
-- [ ] **验证沙箱隔离**：保持 `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`，确认 Sandbox Worker 镜像存在 `/usr/bin/bwrap`，并保留 Worker 专用 seccomp 配置
+- [ ] **验证沙箱隔离**：保持 `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`，确认 Sandbox Worker 镜像存在 `/usr/bin/bwrap`，保留 Worker 专用 seccomp 配置，并确认 Worker 以 root + `CAP_SYS_ADMIN` 运行（容器内 `grep CapEff /proc/self/status` 非零）——若为非 root Worker 配置，则需确认宿主允许非特权用户命名空间（`unshare -U true`）
+- [ ] **Docker daemon 加固（Compose）**：考虑启用用户命名空间重映射（`/etc/docker/daemon.json` 的 `userns-remap`），让 Worker 的 `CAP_SYS_ADMIN` 被限制在嵌套 userns 内（见[用户命名空间重映射（加固）](#用户命名空间重映射加固)）；启用后需重设既有卷属主
 - [ ] **镜像扫描**：部署前对 Docker 镜像进行漏洞扫描
 
 ---
@@ -856,7 +882,7 @@ kubectl -n clouisle exec statefulset/postgres -- pg_isready -U postgres
 
 ### Frontend 访问 API 返回 502
 
-frontend Nginx 将 `/api/*` 代理到 `http://api:8000`。502 说明 backend 不可达。
+frontend 容器通过 Next.js rewrites（目标取自 `BACKEND_INTERNAL_URL`）将 `/api/*` 代理到 `http://api:8000`。502 说明 backend 不可达。
 
 ```bash
 # Check if backend is running
@@ -885,6 +911,16 @@ docker compose exec worker python -c "import redis; r = redis.Redis(host='redis'
 - Redis 尚未就绪
 - 队列名称配置错误
 
+### 沙箱任务报 bwrap 用户命名空间错误
+
+```text
+bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.
+```
+
+使用项目提供的部署时出现该报错，说明 Worker 实际并未以 root + `CAP_SYS_ADMIN` 运行（镜像的非 root 用户 effective capabilities 恒为空，仅加 `cap_add` 无效——部署必须设置 `user: "0"` / `runAsUser: 0`）。在容器内验证：`grep CapEff /proc/self/status` 应为非零。
+
+自定义部署若保持 Worker 非 root，则宿主内核必须允许非特权用户命名空间，需要在**节点级别**修复（`seccomp=unconfined` 无效）：Ubuntu 23.10+ 执行 `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`；Debian 执行 `sysctl -w kernel.unprivileged_userns_clone=1`，并通过 `/etc/sysctl.d/` 持久化，最后用 `unshare -U true` 验证。详见 [代码沙箱 → 宿主内核要求](../concepts/code-sandbox_zh-CN.md#宿主内核要求)。在 Kubernetes 中需对每个节点生效，无法按 Pod 设置。
+
 ### Beat 重复执行定时任务
 
 确保只有 1 个 beat 实例在运行：
@@ -901,15 +937,15 @@ K8s 中 beat Deployment 使用 `strategy: Recreate`，确保新 Pod 启动前旧
 
 ### 上传文件不可访问
 
-`uploads` 卷必须在 `backend` 与 `worker` 之间共享：
+项目提供的部署中，`uploads_data` 卷**仅**由 `api` 服务挂载；worker 通过带认证的内部上传网关（`/internal/uploads/...`，由 `INTERNAL_API_TOKEN` 保护）访问文件：
 
 ```bash
-# Docker Compose — verify both mount the same volume
+# Docker Compose — api 挂载该卷；worker 不应挂载
 docker compose exec api ls -la /app/uploads
-docker compose exec worker ls -la /app/uploads
+docker compose exec api env | grep -E "UPLOAD_STORAGE_MODE|INTERNAL_API_TOKEN"
 ```
 
-在 Kubernetes 中，若使用 `emptyDir`，Pod 重启后文件会丢失。请改为 `ReadWriteMany` 模式的 PVC（见[持久化存储](#持久化存储)）。
+若设置了 `UPLOAD_STORAGE_MODE=remote`（worker）但网关令牌缺失或不一致，文档处理会因认证错误失败——请重新生成并在 api 与各 worker 间共享同一个 `INTERNAL_API_TOKEN`。Kubernetes 中 `uploads-data` 是 10Gi 的 `ReadWriteMany` PVC，仅由 `api` 挂载（见[持久化存储](#持久化存储)）。
 
 ### 内存不足 / OOMKilled
 
@@ -928,8 +964,8 @@ kubectl -n clouisle describe pod <pod-name>    # Check "Last State" for OOMKille
 
 ### LLM 请求超时
 
-默认代理超时为 300 秒（5 分钟）。若 LLM 操作较长：
+默认代理超时为 1800 秒（30 分钟）。若 LLM 操作较长：
 
-- Frontend Nginx：编辑 `deploy/nginx/default.conf` 中的 `proxy_read_timeout`
+- 可选外部 Nginx：编辑 `deploy/nginx/default.conf` 中的 `proxy_read_timeout` / `proxy_send_timeout`
 - K8s Ingress：编辑 `nginx.ingress.kubernetes.io/proxy-read-timeout` 注解
-- Gunicorn：编辑 backend Dockerfile CMD 中的 `--timeout`
+- Gunicorn：编辑 `main.py` 中 `start_server` 命令的 `--timeout`（生产 gunicorn 调用）——项目提供的 Compose/K8s `api` 命令未覆盖该值

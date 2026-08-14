@@ -2083,6 +2083,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Sandbox session is required",
         "zh": "需要沙箱会话",
     },
+    "sandbox_userns_unavailable": {
+        "en": "Sandbox isolation unavailable: the host kernel does not permit unprivileged user namespaces. Enable them on the host kernel (see the code sandbox deployment docs for the required sysctl settings).",
+        "zh": "沙箱隔离不可用：宿主内核不允许非特权用户命名空间。请在宿主内核启用（所需 sysctl 配置详见代码沙箱部署文档）。",
+    },
     "search_completed": {"en": "Search completed", "zh": "搜索完成"},
     "session_expired_new_login": {
         "en": "Your session has expired due to a new login from another device",

@@ -9,10 +9,10 @@ As an administrator, you can:
 - **View audit logs**: Access all system activity logs
 - **Search logs**: Find specific events and actions
 - **Filter logs**: Narrow down logs by criteria
-- **Export logs**: Download logs for analysis
+- **Export logs**: Download logs for analysis (CSV or JSON)
 - **Archive logs**: Manage log retention
 - **Monitor activity**: Track user and system actions
-- **Generate reports**: Create audit reports
+- **Inspect changes**: Review field-level before/after changes with sensitive data redacted
 
 ## Accessing Audit Logs
 
@@ -99,7 +99,7 @@ Changes:
   after:
     email: alice.smith@example.com
     full_name: Alice Smith
-    role: user
+    role: Member
     is_active: true
 ```
 
@@ -115,10 +115,10 @@ Operation: update
 Status: success
 Changes:
   before:
-    role: user
+    role: Member
     is_active: true
   after:
-    role: admin
+    role: Admin
     is_active: true
 ```
 
@@ -214,11 +214,11 @@ Operation: update
 Status: success
 Changes:
   before:
-    temperature: 0.7
-    max_tokens: 2048
+    max_iterations: 5
+    system_prompt: "You are a helpful assistant."
   after:
-    temperature: 0.8
-    max_tokens: 4096
+    max_iterations: 8
+    system_prompt: "You are a helpful customer support agent."
 ```
 
 **Agent Publish:**
@@ -262,9 +262,9 @@ Operation: create
 Status: success
 Metadata:
   scopes:
-    - agent:read
-    - agent:chat
-    - workflow:execute
+    - chat
+  agent_count: 2
+  workflow_count: 1
   expires_at: 2027-02-11
 ```
 
@@ -399,14 +399,18 @@ Metadata:
 
 ### Search Audit Logs
 
-**Search Options:**
-- **Text Search**: Search in all fields
-- **User**: Filter by user email
-- **Action**: Filter by action type
-- **Resource Type**: Filter by resource
-- **Status**: Success or failure
-- **Date Range**: Filter by time period
-- **IP Address**: Filter by source IP
+The audit log list endpoint (`GET /api/v1/admin/audit-logs`) supports the following query parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `user_id` | Filter by user UUID |
+| `team_id` | Filter by team UUID |
+| `action` | Filter by one or more action types |
+| `resource_type` | Filter by resource type (user, team, agent, workflow, etc.) |
+| `resource_id` | Filter by resource UUID |
+| `status` | Filter by status (`success`, `failed`, etc.) |
+| `start_date` / `end_date` | Filter by time period |
+| `search` | Free-text search over resource name, resource ID, and IP address |
 
 **Search Example:**
 ```bash
@@ -419,6 +423,8 @@ Metadata:
 4. View filtered results
 ```
 
+> **Note:** There is no dedicated IP address filter parameter. IP-based lookup is covered by the `search` text field, which matches resource name, resource ID, and IP address.
+
 ### Advanced Filters
 
 **Filter by Multiple Criteria:**
@@ -429,37 +435,15 @@ Filters:
   Resource Type: agent
   Status: success
   Date Range: 2026-02-01 to 2026-02-11
-  IP Address: 192.168.1.*
+  Search: 192.168.1.*
 ```
 
 **Filter by Changes:**
-```yaml
-Filters:
-  Changed Field: role
-  Before Value: user
-  After Value: admin
-  Date Range: Last 30 days
-```
+> **Note:** Not implemented / Roadmap. Audit logs cannot be filtered by changed field, before value, or after value. The field-level `changes` payload is visible in log details and exports only.
 
 ### Saved Searches
 
-**Save Search:**
-1. Configure search filters
-2. Click **Save Search**
-3. Enter search name
-4. Save search
-
-**Use Saved Search:**
-1. Click **Saved Searches**
-2. Select saved search
-3. View results
-
-**Saved Search Examples:**
-- Failed login attempts
-- Admin actions
-- User deletions
-- Permission changes
-- High-value operations
+> **Note:** Not implemented / Roadmap. There is no saved-search feature. Re-run the filters you need; there are no named, persisted search configurations.
 
 ## Viewing Audit Log Details
 
@@ -487,17 +471,16 @@ Resource Information:
 Request Information:
   IP Address: 192.168.1.100
   User Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
-  Request ID: req-789
-  Session ID: sess-012
+  Auth Method: password
 
 Changes:
   before:
-    temperature: 0.7
-    max_tokens: 2048
+    name: Customer Support Agent
+    max_iterations: 5
     system_prompt: "You are a helpful assistant."
   after:
-    temperature: 0.8
-    max_tokens: 4096
+    name: Customer Support Agent
+    max_iterations: 8
     system_prompt: "You are a helpful customer support agent."
 
 Metadata:
@@ -507,17 +490,20 @@ Metadata:
   duration: 1.2s
 ```
 
+### Sensitive Data Redaction
+
+When an entry records field-level changes, the `before` / `after` payloads are processed by `AuditLogService.sanitize_changes` before storage:
+
+- **Sensitive fields are redacted**: keys containing `password`, `hashed_password`, `api_key`, `secret_key`, `access_token`, `refresh_token`, `private_key`, `secret`, or `token` are masked. String values longer than 8 characters show only the first 8 characters followed by `***`; other values are replaced with `***`.
+- **Email addresses are partially masked** (e.g. `a***e@example.com`).
+- **Nested dictionaries are processed recursively**.
+- **Values are truncated** to a maximum field length (500 characters), and oversized structures are replaced with a preview string.
+
+Because of this redaction, raw secrets never appear in audit logs.
+
 ### Related Logs
 
-View related audit logs:
-
-1. Click log entry
-2. Click **Related Logs** tab
-3. View logs related to:
-   - Same user
-   - Same resource
-   - Same session
-   - Same time period
+> **Note:** Not implemented / Roadmap. There is no "Related Logs" view. To find related entries, filter by the same `user_id`, `resource_id`, or time range.
 
 ## Exporting Audit Logs
 
@@ -526,21 +512,20 @@ View related audit logs:
 **Export Formats:**
 - CSV
 - JSON
-- PDF (report format)
-- Excel
+
+The export endpoint (`GET /api/v1/admin/audit-logs/export?format=csv|json`) accepts the same filters as the list endpoint and returns up to 10,000 matching logs. CSV columns are: ID, Time, User, Action, Resource Type, Resource Name, Operation, Status, IP Address, Error Message. JSON exports the full serialized entries (including `changes`).
 
 **Export Logs:**
 1. Apply filters (optional)
 2. Click **Export**
-3. Select format
-4. Choose fields to include
-5. Click **Download**
+3. Select format (CSV or JSON)
+4. Click **Download**
 
 **CSV Export Example:**
 ```csv
-timestamp,user,action,resource_type,resource_name,status,ip_address
-2026-02-11 14:30:00,john.doe@example.com,update_agent,agent,Customer Support Agent,success,192.168.1.100
-2026-02-11 14:25:00,jane.smith@example.com,create_workflow,workflow,Customer Processing,success,192.168.1.101
+ID,Time,User,Action,Resource Type,Resource Name,Operation,Status,IP Address,Error Message
+log-12345,2026-02-11T14:30:00Z,john.doe@example.com,update_agent,agent,Customer Support Agent,update,success,192.168.1.100,
+log-12346,2026-02-11T14:25:00Z,jane.smith@example.com,create_workflow,workflow,Customer Processing,create,success,192.168.1.101,
 ```
 
 **JSON Export Example:**
@@ -562,121 +547,22 @@ timestamp,user,action,resource_type,resource_name,status,ip_address
       "before": {"temperature": 0.7},
       "after": {"temperature": 0.8}
     }
-  }
+…
 ]
 ```
 
 ### Scheduled Exports
 
-**Create Scheduled Export:**
-1. Navigate to **Audit Logs** → **Exports**
-2. Click **Schedule Export**
-3. Configure:
-   - Export name
-   - Filters
-   - Format
-   - Schedule (daily, weekly, monthly)
-   - Delivery method (email, S3, etc.)
-4. Save schedule
-
-**Scheduled Export Example:**
-```yaml
-Export Name: Weekly Admin Actions
-Filters:
-  Action: create_user, update_user, delete_user, update_site_setting
-  Date Range: Last 7 days
-Format: CSV
-Schedule: Every Monday at 9 AM
-Delivery: Email to admin@example.com
-```
+> **Note:** Not implemented / Roadmap. There is no scheduled export (daily/weekly/monthly) and no delivery to email or S3. Exports are manual only.
 
 ## Audit Reports
 
-### Generate Report
+### Report Types
 
-**Report Types:**
-- User activity report
-- Admin actions report
-- Security events report
-- Resource changes report
-- Failed operations report
-- Custom report
-
-**Generate Report:**
-1. Navigate to **Audit Logs** → **Reports**
-2. Select report type
-3. Configure parameters:
-   - Date range
-   - Users (optional)
-   - Actions (optional)
-   - Resource types (optional)
-4. Click **Generate Report**
-5. View or download report
-
-### User Activity Report
-
-**Report Contents:**
-```yaml
-Report: User Activity Report
-Period: 2026-02-01 to 2026-02-11
-Generated: 2026-02-11 16:00:00
-
-Summary:
-  Total Users: 45
-  Active Users: 38
-  Total Actions: 12,345
-  Failed Actions: 23
-
-Top Users by Activity:
-  1. john.doe@example.com: 1,234 actions
-  2. jane.smith@example.com: 987 actions
-  3. bob.wilson@example.com: 765 actions
-
-Actions by Type:
-  agent:chat: 5,678 (46%)
-  kb:search: 2,345 (19%)
-  workflow:execute: 1,234 (10%)
-  agent:update: 987 (8%)
-  Other: 2,101 (17%)
-
-Actions by Day:
-  2026-02-11: 1,456
-  2026-02-10: 1,234
-  2026-02-09: 1,123
-  ...
-```
-
-### Security Events Report
-
-**Report Contents:**
-```yaml
-Report: Security Events Report
-Period: 2026-02-01 to 2026-02-11
-
-Failed Login Attempts:
-  Total: 45
-  Unique Users: 12
-  Unique IPs: 8
-
-Top Failed Logins:
-  john.doe@example.com: 15 attempts
-  jane.smith@example.com: 10 attempts
-
-Password Changes:
-  Total: 23
-  User-initiated: 20
-  Admin-initiated: 3
-
-Permission Changes:
-  Total: 15
-  Granted: 10
-  Revoked: 5
-
-Account Status Changes:
-  Activated: 5
-  Deactivated: 2
-  Locked: 1
-```
+> **Note:** Not implemented / Roadmap. There is no report generator (user activity, admin actions, security events, resource changes, failed operations, or custom reports). The following statistics endpoints provide the available aggregates instead:
+>
+> - `GET /api/v1/admin/audit-logs/stats` — total logs, today's logs, failed logs, active users (last 7 days), top 5 actions, top 5 users
+> - `GET /api/v1/admin/audit-logs/stats/retention` — configured retention days, cutoff date, logs to archive, oldest log, next archive time
 
 ## Log Retention and Archival
 
@@ -685,116 +571,54 @@ Account Status Changes:
 **Default Retention:**
 ```yaml
 Retention Policy:
-  Active Logs: 90 days
-  Archived Logs: 7 years
-  Compliance Logs: Indefinite
+  Audit Log Retention: 365 days
 ```
 
+The retention period is stored in the site setting `audit_log_retention_days` (default **365** days, range 30-3650).
+
 **Configure Retention:**
-1. Navigate to **Admin** → **Settings** → **Audit Logs**
-2. Configure retention:
-   - Active log retention (days)
-   - Archive retention (years)
-   - Compliance log retention
-3. Save settings
+1. Navigate to **Admin** → **Site Settings** → **Storage**
+2. Set **Audit log retention (days)**
+3. Set the **Archive file storage path** (default `/var/log/clouisle/audit_archives`)
+4. Save settings
 
 ### Archive Logs
 
 **Manual Archive:**
 1. Navigate to **Audit Logs** → **Archive**
-2. Select date range to archive
-3. Choose archive location:
-   - Local storage
-   - S3
-   - Azure Blob
-4. Click **Archive**
+2. Click **Archive**
+3. The archiving task runs asynchronously (requires `audit:export`); track its status via the returned task ID
 
-**Automatic Archive:**
-```yaml
-Archive Schedule: Daily at 2 AM
-Archive Logs Older Than: 90 days
-Archive Location: S3
-Bucket: clouisle-audit-logs
-Compression: gzip
-Encryption: AES-256
-```
+**How Archiving Works:**
+- The archive task (`tasks.archive_old_audit_logs`) selects logs older than the retention cutoff
+- Logs are exported to local JSON files grouped by month, e.g. `/var/log/clouisle/audit_archives/audit_logs_202602.json` (existing monthly files are appended to)
+- Archived logs are then deleted from the database
 
 **Trigger Archive:**
 ```yaml
 Action: trigger_audit_log_archive
 User: admin@example.com
-Timestamp: 2026-02-11 02:00:00
-Status: success
+Timestamp: 2026-02-11 10:00:00
+Status: pending
 Metadata:
-  logs_archived: 45,678
-  date_range: 2025-11-01 to 2026-01-31
-  archive_size: 125 MB
-  archive_location: s3://clouisle-audit-logs/2026-02/archive-20260211.gz
+  task_id: <celery-task-id>
 ```
+
+> **Note:** Archiving is manual only — there is no scheduled (e.g. daily 2 AM) automatic archive, and no S3/Azure/Blob archive destinations. Archive output is written to the local path configured in `audit_log_archive_path`.
 
 ### Restore Archived Logs
 
-**Restore Logs:**
-1. Navigate to **Audit Logs** → **Archive**
-2. Select archive to restore
-3. Choose date range
-4. Click **Restore**
-5. Wait for restoration
-6. View restored logs
+> **Note:** Not implemented / Roadmap. There is no restore workflow for archived logs. Monthly JSON archive files under the archive path remain available for manual inspection.
 
 ## Monitoring and Alerts
 
 ### Real-time Monitoring
 
-**Monitor Dashboard:**
-- Recent activity (last 5 minutes)
-- Failed operations
-- Security events
-- Admin actions
-- High-value operations
-
-**Real-time Alerts:**
-```yaml
-Alert: Multiple Failed Login Attempts
-User: john.doe@example.com
-Count: 5 attempts in 2 minutes
-IP Address: 203.0.113.45
-Action: Account locked
-Notification: Email sent to admin
-```
+> **Note:** Not implemented / Roadmap. There is no real-time monitoring dashboard for audit logs. Aggregate counters are available through the statistics endpoints (`GET /api/v1/admin/audit-logs/stats` and `/stats/retention`).
 
 ### Configure Alerts
 
-**Alert Types:**
-- Failed login threshold
-- Admin action performed
-- User deleted
-- Permission changed
-- High-value operation
-- Unusual activity pattern
-
-**Create Alert:**
-1. Navigate to **Audit Logs** → **Alerts**
-2. Click **Create Alert**
-3. Configure:
-   - Alert name
-   - Trigger conditions
-   - Threshold
-   - Notification method
-   - Recipients
-4. Save alert
-
-**Alert Example:**
-```yaml
-Alert Name: Failed Login Threshold
-Trigger: login_failed
-Condition: Count > 5 in 5 minutes
-Notification: Email, Slack
-Recipients:
-  - admin@example.com
-  - security@example.com
-Action: Lock account after 5 attempts
-```
+> **Note:** Not implemented / Roadmap. There is no alert engine for audit logs. Site settings such as `audit_alert_enabled`, `audit_alert_webhook`, and the failed-login thresholds exist as dormant configuration but are not consumed by any monitoring or notification code.
 
 ## Best Practices
 

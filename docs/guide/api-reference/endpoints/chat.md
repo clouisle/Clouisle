@@ -10,9 +10,12 @@ The Chat API allows you to:
 - **Stream responses**: Receive real-time streaming responses
 - **Manage conversations**: Create, list, and delete conversations
 - **View history**: Access conversation history
-- **Share conversations**: Share with team members
 
-**Base URL**: `/api/v1/chat`
+Chat endpoints live under the agents router; conversation-management endpoints live under their own router.
+
+**Base URLs**:
+- Chat: `/api/v1/agents`
+- Conversations: `/api/v1/conversations`
 
 ## Authentication
 
@@ -21,6 +24,8 @@ All endpoints require authentication via JWT token or API key.
 **Required scopes:**
 - `agent:read` - View agents
 - `agent:chat` - Chat with agents
+- `conversation:read` - List and view conversations
+- `conversation:delete` - Delete conversations
 
 ## Send Message
 
@@ -44,7 +49,6 @@ POST /api/v1/agents/{agent_id}/chat
 {
   "message": "What are your business hours?",
   "conversation_id": "conv-123",
-  "stream": false,
   "files": [
     {
       "name": "document.pdf",
@@ -52,9 +56,15 @@ POST /api/v1/agents/{agent_id}/chat
       "type": "application/pdf"
     }
   ],
-  "context": {
-    "user_id": "user-456",
-    "session_id": "session-789"
+  "file_urls": [
+    {
+      "asset_id": "asset-456",
+      "url": "https://your-domain.com/api/v1/upload/files/asset-456",
+      "filename": "report.pdf"
+    }
+  ],
+  "variables": {
+    "customer_tier": "premium"
   }
 }
 ```
@@ -63,11 +73,13 @@ POST /api/v1/agents/{agent_id}/chat
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `message` | string | Yes | User message |
+| `message` | string | Yes | User message (max 32000 chars) |
+| `images` | array | No | Images for vision (name, url, type) |
+| `files` | array | No | Parsed files for upload (deprecated, use `file_urls`) |
+| `file_urls` | array | No | Raw uploaded Asset metadata (`asset_id`, `url`, `filename`) |
 | `conversation_id` | string | No | Conversation UUID (creates new if not provided) |
-| `stream` | boolean | No | Enable streaming (default: false) |
-| `files` | array | No | Attached files |
-| `context` | object | No | Additional context |
+| `variables` | object | No | Variable values for the chat input form |
+| `history_override` | array | No | Override conversation history (used for version switching/regeneration) |
 
 ### Request Example
 
@@ -90,25 +102,38 @@ curl -X POST "https://your-domain.com/api/v1/agents/agent-123/chat" \
   "code": 0,
   "data": {
     "conversation_id": "conv-123",
-    "message_id": "msg-456",
-    "response": "Our business hours are Monday-Friday, 9 AM to 5 PM EST.",
-    "sources": [
-      {
-        "document_id": "doc-789",
-        "document_name": "Business Hours Policy",
-        "chunk_id": "chunk-012",
-        "content": "Business hours: Monday-Friday, 9 AM to 5 PM EST",
-        "score": 0.95
-      }
-    ],
-    "tool_calls": [],
-    "tokens_used": {
+    "message": {
+      "id": "msg-456",
+      "conversation_id": "conv-123",
+      "role": "assistant",
+      "content": "Our business hours are Monday-Friday, 9 AM to 5 PM EST.",
+      "tool_calls": [],
+      "tool_name": null,
+      "model_used": "gpt-4",
+      "token_usage": {
+        "prompt": 150,
+        "completion": 25,
+        "total": 175
+      },
+      "duration_ms": 2300,
+      "rag_context": [
+        {
+          "document_id": "doc-789",
+          "document_name": "Business Hours Policy",
+          "chunk_id": "chunk-012",
+          "content": "Business hours: Monday-Friday, 9 AM to 5 PM EST",
+          "score": 0.95
+        }
+      ],
+      "created_at": "2026-02-11T16:00:00Z",
+      "version_number": 1,
+      "version_count": 1
+    },
+    "usage": {
       "prompt": 150,
       "completion": 25,
       "total": 175
-    },
-    "response_time": 2.3,
-    "created_at": "2026-02-11T16:00:00Z"
+    }
   },
   "msg": "success"
 }
@@ -116,7 +141,11 @@ curl -X POST "https://your-domain.com/api/v1/agents/agent-123/chat" \
 
 ### Response (Streaming)
 
-When `stream: true`, the response is sent as Server-Sent Events (SSE).
+Streaming is a separate endpoint; there is no `stream` flag on `POST /chat`.
+
+**Endpoint:** `POST /api/v1/agents/{agent_id}/chat/stream`
+
+The request body is the same `ChatRequest` payload. The response is sent as Server-Sent Events (SSE).
 
 **Content-Type**: `text/event-stream`
 
@@ -160,8 +189,11 @@ GET /api/v1/conversations
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
 | `page_size` | integer | No | 20 | Items per page (max: 100) |
+| `team_id` | string | No | - | Filter by team |
 | `agent_id` | string | No | - | Filter by agent ID |
-| `search` | string | No | - | Search by title or content |
+| `user_id` | string | No | - | Filter by user (admin/dashboard access only) |
+| `search` | string | No | - | Search by title |
+| `untitled_only` | boolean | No | false | Show only untitled conversations |
 
 ### Request Example
 
@@ -181,20 +213,20 @@ curl -X GET "https://your-domain.com/api/v1/conversations?page=1&page_size=20" \
     "items": [
       {
         "id": "conv-123",
-        "title": "Business Hours Inquiry",
         "agent_id": "agent-456",
         "agent_name": "Customer Support Agent",
+        "agent_icon": "🤖",
+        "title": "Business Hours Inquiry",
         "message_count": 5,
-        "last_message": "Thank you for the information!",
-        "last_message_at": "2026-02-11T16:05:00Z",
         "created_at": "2026-02-11T16:00:00Z",
-        "updated_at": "2026-02-11T16:05:00Z"
+        "updated_at": "2026-02-11T16:05:00Z",
+        "user_id": "user-123",
+        "user_name": "alice"
       }
     ],
     "total": 42,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 3
+    "page_size": 20
   },
   "msg": "success"
 }
@@ -232,31 +264,41 @@ curl -X GET "https://your-domain.com/api/v1/conversations/conv-123" \
   "code": 0,
   "data": {
     "id": "conv-123",
-    "title": "Business Hours Inquiry",
     "agent_id": "agent-456",
     "agent_name": "Customer Support Agent",
+    "agent_icon": "🤖",
+    "title": "Business Hours Inquiry",
+    "variables": {},
     "message_count": 5,
+    "token_usage": 875,
     "created_at": "2026-02-11T16:00:00Z",
     "updated_at": "2026-02-11T16:05:00Z",
     "messages": [
       {
         "id": "msg-001",
+        "conversation_id": "conv-123",
         "role": "user",
         "content": "What are your business hours?",
-        "created_at": "2026-02-11T16:00:00Z"
+        "created_at": "2026-02-11T16:00:00Z",
+        "version_number": 1,
+        "version_count": 1
       },
       {
         "id": "msg-002",
+        "conversation_id": "conv-123",
         "role": "assistant",
         "content": "Our business hours are Monday-Friday, 9 AM to 5 PM EST.",
-        "sources": [
+        "tool_calls": [],
+        "rag_context": [
           {
             "document_id": "doc-789",
             "document_name": "Business Hours Policy",
             "score": 0.95
           }
         ],
-        "created_at": "2026-02-11T16:00:02Z"
+        "created_at": "2026-02-11T16:00:02Z",
+        "version_number": 1,
+        "version_count": 1
       }
     ]
   },
@@ -266,93 +308,16 @@ curl -X GET "https://your-domain.com/api/v1/conversations/conv-123" \
 
 ## Get Conversation Messages
 
-Get messages from a conversation with pagination.
-
-### Endpoint
-
-```
-GET /api/v1/conversations/{conversation_id}/messages
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `conversation_id` | string | Yes | Conversation UUID |
-
-### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 50 | Items per page (max: 100) |
-| `before` | string | No | - | Get messages before this message ID |
-| `after` | string | No | - | Get messages after this message ID |
-
-### Request Example
-
-```bash
-curl -X GET "https://your-domain.com/api/v1/conversations/conv-123/messages?page=1&page_size=50" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-### Response
-
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "items": [
-      {
-        "id": "msg-001",
-        "conversation_id": "conv-123",
-        "role": "user",
-        "content": "What are your business hours?",
-        "files": [],
-        "created_at": "2026-02-11T16:00:00Z"
-      },
-      {
-        "id": "msg-002",
-        "conversation_id": "conv-123",
-        "role": "assistant",
-        "content": "Our business hours are Monday-Friday, 9 AM to 5 PM EST.",
-        "sources": [
-          {
-            "document_id": "doc-789",
-            "document_name": "Business Hours Policy",
-            "chunk_id": "chunk-012",
-            "content": "Business hours: Monday-Friday, 9 AM to 5 PM EST",
-            "score": 0.95
-          }
-        ],
-        "tool_calls": [],
-        "tokens_used": {
-          "prompt": 150,
-          "completion": 25,
-          "total": 175
-        },
-        "created_at": "2026-02-11T16:00:02Z"
-      }
-    ],
-    "total": 5,
-    "page": 1,
-    "page_size": 50,
-    "has_more": false
-  },
-  "msg": "success"
-}
-```
+> **Note:** Not implemented / Roadmap. There is no paginated `GET /conversations/{id}/messages` endpoint. Messages are included inline in `GET /api/v1/conversations/{conversation_id}` (see [Get Conversation](#get-conversation)).
 
 ## Update Conversation
 
-Update conversation details.
+Update conversation details (e.g. rename). This endpoint lives under the agents router.
 
 ### Endpoint
 
 ```
-PATCH /api/v1/conversations/{conversation_id}
+PATCH /api/v1/agents/conversations/{conversation_id}
 ```
 
 ### Path Parameters
@@ -372,7 +337,7 @@ PATCH /api/v1/conversations/{conversation_id}
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/conversations/conv-123" \
+curl -X PATCH "https://your-domain.com/api/v1/agents/conversations/conv-123" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -433,107 +398,37 @@ curl -X DELETE "https://your-domain.com/api/v1/conversations/conv-123" \
 
 ## Regenerate Response
 
-Regenerate the last assistant response.
+Regenerate an assistant message. This endpoint lives under the agents router and is addressed by `agent_id` + `message_id` (no `conversation_id` in the path).
 
 ### Endpoint
 
 ```
-POST /api/v1/conversations/{conversation_id}/messages/{message_id}/regenerate
+POST /api/v1/agents/{agent_id}/messages/{message_id}/regenerate
 ```
 
 ### Path Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `conversation_id` | string | Yes | Conversation UUID |
+| `agent_id` | string | Yes | Agent UUID |
 | `message_id` | string | Yes | Message UUID to regenerate |
 
 ### Request Body
 
 ```json
 {
-  "stream": false
+  "variables": {}
 }
 ```
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/conversations/conv-123/messages/msg-002/regenerate" \
+curl -X POST "https://your-domain.com/api/v1/agents/agent-123/messages/msg-002/regenerate" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "stream": false
-  }'
-```
-
-### Response
-
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "message_id": "msg-003",
-    "response": "Our business hours are Monday through Friday, from 9:00 AM to 5:00 PM Eastern Standard Time.",
-    "sources": [
-      {
-        "document_id": "doc-789",
-        "document_name": "Business Hours Policy",
-        "score": 0.95
-      }
-    ],
-    "tokens_used": {
-      "total": 180
-    },
-    "created_at": "2026-02-11T16:15:00Z"
-  },
-  "msg": "success"
-}
-```
-
-## Share Conversation
-
-Share a conversation with team members.
-
-### Endpoint
-
-```
-POST /api/v1/conversations/{conversation_id}/share
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `conversation_id` | string | Yes | Conversation UUID |
-
-### Request Body
-
-```json
-{
-  "user_ids": ["user-001", "user-002"],
-  "permission": "view"
-}
-```
-
-### Request Fields
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `user_ids` | array | Yes | User IDs to share with |
-| `permission` | string | No | Permission level: view, comment, edit (default: view) |
-
-### Request Example
-
-```bash
-curl -X POST "https://your-domain.com/api/v1/conversations/conv-123/share" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_ids": ["user-001", "user-002"],
-    "permission": "view"
+    "variables": {}
   }'
 ```
 
@@ -546,133 +441,49 @@ curl -X POST "https://your-domain.com/api/v1/conversations/conv-123/share" \
   "code": 0,
   "data": {
     "conversation_id": "conv-123",
-    "shared_with": [
-      {
-        "user_id": "user-001",
-        "user_name": "Alice",
-        "permission": "view"
+    "message": {
+      "id": "msg-003",
+      "conversation_id": "conv-123",
+      "role": "assistant",
+      "content": "Our business hours are Monday through Friday, from 9:00 AM to 5:00 PM Eastern Standard Time.",
+      "token_usage": {
+        "total": 180
       },
-      {
-        "user_id": "user-002",
-        "user_name": "Bob",
-        "permission": "view"
-      }
-    ]
+      "created_at": "2026-02-11T16:15:00Z",
+      "version_number": 2,
+      "version_count": 2
+    },
+    "usage": {
+      "total": 180
+    }
   },
-  "msg": "Conversation shared successfully"
+  "msg": "success"
 }
 ```
+
+## Share Conversation
+
+> **Note:** Not implemented / Roadmap. There is no conversation-sharing endpoint.
 
 ## Unshare Conversation
 
-Remove sharing access from a user.
-
-### Endpoint
-
-```
-DELETE /api/v1/conversations/{conversation_id}/share/{user_id}
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `conversation_id` | string | Yes | Conversation UUID |
-| `user_id` | string | Yes | User UUID to unshare with |
-
-### Request Example
-
-```bash
-curl -X DELETE "https://your-domain.com/api/v1/conversations/conv-123/share/user-001" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-### Response
-
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": null,
-  "msg": "Conversation unshared successfully"
-}
-```
+> **Note:** Not implemented / Roadmap. There is no conversation-unsharing endpoint.
 
 ## Export Conversation
 
-Export conversation to various formats.
-
-### Endpoint
-
-```
-GET /api/v1/conversations/{conversation_id}/export
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `conversation_id` | string | Yes | Conversation UUID |
-
-### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `format` | string | No | json | Export format: json, markdown, pdf |
-
-### Request Example
-
-```bash
-curl -X GET "https://your-domain.com/api/v1/conversations/conv-123/export?format=markdown" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -o conversation.md
-```
-
-### Response
-
-**Success (200 OK):**
-
-Returns file in requested format.
-
-**Markdown example:**
-```markdown
-# Business Hours Inquiry
-
-**Date**: 2026-02-11
-
-## Conversation
-
-**You** (16:00:00):
-What are your business hours?
-
-**Customer Support Agent** (16:00:02):
-Our business hours are Monday-Friday, 9 AM to 5 PM EST.
-
-**Sources**:
-- Business Hours Policy (score: 0.95)
-```
+> **Note:** Not implemented / Roadmap. There is no conversation-export endpoint.
 
 ## Error Codes
 
 | Code | Message | Description |
 |------|---------|-------------|
 | `6200` | Agent not found | Agent does not exist |
-| `4000` | Conversation not found | Conversation does not exist |
-| `4000` | Message not found | Message does not exist |
+| `6210` | Conversation not found | Conversation does not exist |
+| `6211` | Message not found | Message does not exist |
 | `3000` | Permission denied | Insufficient permissions |
 | `1001` | Validation failed | Invalid request data |
 
-## Rate Limits
-
-| Endpoint | Limit |
-|----------|-------|
-| `POST /api/v1/agents/{id}/chat` | 60/minute |
-| `GET /api/v1/conversations` | 100/minute |
-| `GET /api/v1/conversations/{id}` | 100/minute |
-| `GET /api/v1/conversations/{id}/messages` | 100/minute |
-| `PATCH /api/v1/conversations/{id}` | 30/minute |
-| `DELETE /api/v1/conversations/{id}` | 10/minute |
+> **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints.
 
 ## Best Practices
 
@@ -697,14 +508,11 @@ Our business hours are Monday-Friday, 9 AM to 5 PM EST.
 **✅ Do:**
 - Use descriptive conversation titles
 - Clean up old conversations
-- Export important conversations
-- Share conversations appropriately
 - Monitor conversation count
 
 **❌ Don't:**
 - Create unnecessary conversations
 - Keep all conversations forever
-- Share sensitive conversations
 - Forget to delete test conversations
 
 ## Code Examples
@@ -741,7 +549,7 @@ response = chat_with_agent(
     conversation_id="conv-123"
 )
 
-print(f"Response: {response['response']}")
+print(f"Response: {response['message']['content']}")
 print(f"Conversation ID: {response['conversation_id']}")
 ```
 
@@ -779,7 +587,7 @@ const response = await chatWithAgent(
   'conv-123'
 );
 
-console.log('Response:', response.response);
+console.log('Response:', response.message.content);
 console.log('Conversation ID:', response.conversation_id);
 ```
 

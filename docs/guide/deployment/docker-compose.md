@@ -2,6 +2,8 @@
 
 This guide explains how to deploy Clouisle using Docker and Docker Compose.
 
+> **Note**: The example snippets below are representative summaries. The authoritative files are `deploy/docker-compose.yml` (production) and `deploy/docker-compose.dev.yml` (local development) — always use those when in doubt.
+
 ## Overview
 
 Docker deployment provides:
@@ -60,13 +62,18 @@ docker compose version
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | bash
 ```
 
-Choose Docker Compose when prompted. The installer downloads the current deployment files, generates required secrets, validates the configuration, pulls images, and starts the services.
+Choose Docker Compose when prompted. The installer downloads the current deployment files into an installation directory (default `/opt/clouisle`), generates required secrets, validates the configuration, pulls images, and starts the services. For non-interactive installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
+```
 
 ### Manual Installation from Source
 
 ```bash
 git clone https://github.com/clouisle/Clouisle.git
-cd Clouisle
+cd Clouisle/deploy
 ```
 
 ### Configure Environment
@@ -77,18 +84,28 @@ cd Clouisle
 cp .env.example .env
 ```
 
-**Edit `.env` file:**
+**Edit `.env` file** (see [Environment Variables](./environment-variables.md) for the full reference):
 
 ```bash
-# Basic Configuration
-SITE_URL=https://your-domain.com
-FRONTEND_URL=https://your-domain.com
+# General
+SECRET_KEY=generate-a-secure-random-key-here
+TIMEZONE=Asia/Shanghai
+
+# URLs (internal service names)
+API_BASE_URL=http://api:8000
+PUBLIC_API_URL=
+API_INTERNAL_BASE_URL=http://api:8000
+FRONTEND_URL=http://localhost:3000
+BACKEND_CORS_ORIGINS=["http://localhost:3000"]
+
+# Worker -> API internal file gateway (required)
+INTERNAL_API_TOKEN=generate-a-secure-random-token
 
 # Database
-POSTGRES_SERVER=postgres
+POSTGRES_SERVER=db
 POSTGRES_PORT=5432
 POSTGRES_DB=clouisle
-POSTGRES_USER=clouisle
+POSTGRES_USER=postgres
 POSTGRES_PASSWORD=change-this-password
 
 # Redis
@@ -97,31 +114,26 @@ REDIS_PORT=6379
 REDIS_PASSWORD=change-this-password
 
 # Qdrant (Vector Database)
-QDRANT_HOST=qdrant
-QDRANT_PORT=6333
+VECTOR_BACKEND=qdrant
+QDRANT_URL=http://qdrant:6333
+QDRANT_API_KEY=
 
-# Security
-SECRET_KEY=generate-a-secure-random-key-here
-JWT_SECRET=generate-another-secure-key-here
+# Sandbox artifact upload (optional auth key)
+SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
+SANDBOX_ARTIFACT_UPLOAD_API_KEY=
 
-# Email (Optional)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-
-# LLM Provider (Required)
-OPENAI_API_KEY=your-openai-api-key
+# External APIs (optional)
+TAVILY_API_KEY=
 ```
 
-**Generate secure keys:**
+**Generate the required token and keys:**
 
 ```bash
 # Generate SECRET_KEY
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+openssl rand -base64 32
 
-# Generate JWT_SECRET
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+# Generate INTERNAL_API_TOKEN (required by docker-compose.yml)
+openssl rand -hex 32
 ```
 
 ### Start Services
@@ -138,32 +150,23 @@ docker compose up -d
 docker compose ps
 ```
 
-**Expected output:**
+**Expected services** (8 total — 5 application + 3 infrastructure):
+
 ```
-NAME                COMMAND                  SERVICE    STATUS
-clouisle-backend    "uvicorn app.main:ap…"   backend    Up
-clouisle-frontend   "docker-entrypoint.s…"   frontend   Up
-clouisle-postgres   "docker-entrypoint.s…"   postgres   Up
-clouisle-redis      "docker-entrypoint.s…"   redis      Up
-clouisle-qdrant     "/qdrant/qdrant"         qdrant     Up
-clouisle-celery     "celery -A app.core.…"   celery     Up
+NAME                     COMMAND                             SERVICE          STATUS
+clouisle-db-1            "postgres -c shared_…"              db               Up (healthy)
+clouisle-redis-1         "docker-entrypoint.s…"              redis            Up (healthy)
+clouisle-qdrant-1        "/qdrant/qdrant"                    qdrant           Up (healthy)
+clouisle-api-1           "python main.py server…"            api              Up (healthy)
+clouisle-worker-1        "python main.py worker…"            worker           Up
+clouisle-sandbox-worker-1 "python main.py sandbox…"          sandbox-worker   Up
+clouisle-beat-1          "python main.py beat"               beat             Up
+clouisle-frontend-1      "node server.js"                    frontend         Up
 ```
 
 ### Initialize Database
 
-**Run database migrations:**
-
-```bash
-docker compose exec api alembic upgrade head
-```
-
-**Create initial admin user:**
-
-```bash
-docker compose exec api python -m app.scripts.create_admin \
-  --email admin@example.com \
-  --password your-secure-password
-```
+No migration step is required — Clouisle uses Tortoise ORM and creates/updates tables automatically at startup (there is no Alembic). No admin seeding is needed either: **the first registered user automatically becomes a superuser** (bypasses registration restrictions and is assigned the Super Admin role).
 
 ### Access Application
 
@@ -173,216 +176,192 @@ docker compose exec api python -m app.scripts.create_admin \
 http://localhost:3000
 ```
 
-**Login with admin credentials:**
-- Email: admin@example.com
-- Password: your-secure-password
+Register the first account to create the initial superuser, then configure LLM providers and site settings through the admin UI.
 
 ## Docker Compose Configuration
 
 ### docker-compose.yml
 
-**Production configuration:**
+The production Compose file (`deploy/docker-compose.yml`) defines these services:
+
+| Service | Image | Command | Ports |
+|---------|-------|---------|-------|
+| `db` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` | `postgres -c shared_preload_libraries=pg_search,pg_stat_statements` | 5432 |
+| `redis` | `redis:7-alpine` | `redis-server --requirepass …` (when password set) | 6379 |
+| `qdrant` | `qdrant/qdrant:v1.18.3` | default | 6333 |
+| `api` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 8000 |
+| `worker` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py worker -c 4 -Q default,knowledge,workflow` | — |
+| `sandbox-worker` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest` | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | — |
+| `beat` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py beat` | — |
+| `frontend` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest` | `node server.js` (image default) | 3000 |
+
+There is **no `nginx` service** in Compose. The frontend container runs the Next.js standalone server and proxies `/api/*` to the backend via Next.js rewrites (`BACKEND_INTERNAL_URL`).
+
+Representative excerpt (condensed; see `deploy/docker-compose.yml` for the full file):
 
 ```yaml
-version: '3.8'
-
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: clouisle-postgres
+  db:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-clouisle}
+    command: ["postgres", "-c", "shared_preload_libraries=pg_search,pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
-  # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: clouisle-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: >
+      sh -c '
+        if [ -n "$REDIS_PASSWORD" ]; then
+          redis-server --requirepass "$REDIS_PASSWORD"
+        else
+          redis-server
+        fi
+      '
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
 
-  # Qdrant Vector Database
   qdrant:
     image: qdrant/qdrant:v1.18.3
-    container_name: clouisle-qdrant
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
     volumes:
       - qdrant_data:/qdrant/storage
     ports:
       - "6333:6333"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
 
-  # Backend API
   api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: clouisle-backend
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+    command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
+    env_file: .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - QDRANT_URL=http://qdrant:6333
-      - SECRET_KEY=${SECRET_KEY}
-      - JWT_SECRET=${JWT_SECRET}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      API_BASE_URL: http://api:8000
+      POSTGRES_SERVER: db
+      REDIS_HOST: redis
+      QDRANT_URL: http://qdrant:6333
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     volumes:
-      - ./api:/app
-      - backend_uploads:/app/uploads
+      - uploads_data:/app/uploads
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-
-  # Celery Worker
-  celery:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: clouisle-celery
-    command: celery -A app.core.celery worker --loglevel=info
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - QDRANT_URL=http://qdrant:6333
-      - SECRET_KEY=${SECRET_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./api:/app
-      - backend_uploads:/app/uploads
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     depends_on:
-      - postgres
-      - redis
-      - qdrant
-    restart: unless-stopped
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
 
-  # Celery Beat (Scheduler)
-  celery-beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: clouisle-celery-beat
-    command: celery -A app.core.celery beat --loglevel=info
+  worker:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+    command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
+    env_file: .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-    volumes:
-      - ./api:/app
+      UPLOAD_STORAGE_MODE: remote
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+    # no uploads volume — files are fetched through the API gateway
     depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
+      db: { condition: service_healthy }
+      api: { condition: service_healthy }
 
-  # Frontend
+  sandbox-worker:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
+    command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
+    user: "0"
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=unconfined
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      UPLOAD_STORAGE_MODE: remote
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+    depends_on:
+      db: { condition: service_healthy }
+      api: { condition: service_healthy }
+
+  beat:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+    command: ["python", "main.py", "beat"]
+    env_file: .env
+    depends_on:
+      db: { condition: service_healthy }
+      api: { condition: service_started }
+
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=${SITE_URL}/api
-    container_name: clouisle-frontend
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
     environment:
-      - NEXT_PUBLIC_API_URL=${SITE_URL}/api
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000}
     ports:
       - "3000:3000"
     depends_on:
-      - backend
-    restart: unless-stopped
-
-  # Nginx Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    container_name: clouisle-nginx
-    volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./deploy/nginx/ssl:/etc/nginx/ssl:ro
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - backend
-      - frontend
-    restart: unless-stopped
+      api: { condition: service_started }
 
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
-  backend_uploads:
+  uploads_data:
 ```
 
 ### Development Configuration
 
-**docker-compose.dev.yml:**
+`deploy/docker-compose.dev.yml` (local development infrastructure):
 
 ```yaml
-version: '3.8'
-
 services:
-  postgres:
-    image: postgres:15-alpine
+  db:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
     environment:
-      POSTGRES_DB: clouisle_dev
-      POSTGRES_USER: clouisle
-      POSTGRES_PASSWORD: dev_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: clouisle
     ports:
       - "5432:5432"
+    command: ["postgres", "-c", "shared_preload_libraries=pg_search,pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     volumes:
-      - postgres_dev_data:/var/lib/postgresql/data
+      - postgres17_data:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
     ports:
       - "6379:6379"
+    command: ["redis-server", "--requirepass", "clouisle-redis-cbd3c07d"]
     volumes:
-      - redis_dev_data:/data
+      - redis_data:/data
 
   qdrant:
     image: qdrant/qdrant:v1.18.3
     ports:
       - "6333:6333"
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     volumes:
-      - qdrant_dev_data:/qdrant/storage
+      - qdrant_data:/qdrant/storage
 
 volumes:
-  postgres_dev_data:
-  redis_dev_data:
-  qdrant_dev_data:
+  postgres17_data:
+  redis_data:
+  qdrant_data:
 ```
 
 **Start development services:**
@@ -421,7 +400,7 @@ docker compose up
 docker compose down
 ```
 
-**Stop and remove volumes:**
+**Stop and remove volumes (DESTROYS DATA):**
 
 ```bash
 docker compose down -v
@@ -465,6 +444,10 @@ docker compose logs -f
 
 ```bash
 docker compose logs -f api
+docker compose logs -f worker
+docker compose logs -f sandbox-worker
+docker compose logs -f beat
+docker compose logs -f frontend
 ```
 
 **View last 100 lines:**
@@ -477,37 +460,28 @@ docker compose logs --tail=100 api
 
 ### Update Application
 
-**Pull latest changes:**
-
 ```bash
-git pull origin main
-```
-
-**Rebuild and restart:**
-
-```bash
-docker compose build
-docker compose up -d
-```
-
-**Run migrations:**
-
-```bash
-docker compose exec api alembic upgrade head
-```
-
-### Update Docker Images
-
-**Pull latest images:**
-
-```bash
+# Pull latest images and restart
 docker compose pull
+docker compose up -d
 ```
 
-**Restart services:**
+No manual migration step is needed — schema updates run automatically at backend startup (Tortoise ORM; no Alembic).
+
+### Scaling
 
 ```bash
-docker compose up -d
+# Scale Celery workers (safe to run multiple)
+docker compose up -d --scale worker=4
+
+# Scale API (safe to run multiple behind the frontend proxy)
+docker compose up -d --scale api=2
+
+# Scale sandbox workers
+docker compose up -d --scale sandbox-worker=2
+
+# NEVER scale beat beyond 1
+# docker compose up -d --scale beat=2  ← DO NOT DO THIS
 ```
 
 ## Backup and Restore
@@ -517,7 +491,7 @@ docker compose up -d
 **Create backup:**
 
 ```bash
-docker compose exec postgres pg_dump -U clouisle clouisle > backup_$(date +%Y%m%d_%H%M%S).sql
+docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d_%H%M%S).sql
 ```
 
 **Automated backup script:**
@@ -531,7 +505,7 @@ DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/clouisle_$DATE.sql"
 
 # Create backup
-docker compose exec -T postgres pg_dump -U clouisle clouisle > "$BACKUP_FILE"
+docker compose exec -T db pg_dump -U postgres clouisle > "$BACKUP_FILE"
 
 # Compress backup
 gzip "$BACKUP_FILE"
@@ -558,14 +532,14 @@ echo "Backup completed: $BACKUP_FILE.gz"
 docker compose down
 
 # Start only database
-docker compose up -d postgres
+docker compose up -d db
 
 # Wait for database to be ready
 sleep 10
 
 # Restore backup
 gunzip -c backup_20260211_020000.sql.gz | \
-  docker compose exec -T postgres psql -U clouisle clouisle
+  docker compose exec -T db psql -U postgres clouisle
 
 # Start all services
 docker compose up -d
@@ -573,37 +547,23 @@ docker compose up -d
 
 ### Volume Backup
 
-**Backup volumes:**
+The Compose named volumes are `postgres_data`, `redis_data`, `qdrant_data`, `uploads_data` (project-prefixed, e.g. `deploy_postgres_data`):
 
 ```bash
 # Backup postgres data
 docker run --rm \
-  -v clouisle_postgres_data:/data \
+  -v deploy_postgres_data:/data \
   -v $(pwd):/backup \
-  alpine tar czf /backup/postgres_data.tar.gz /data
+  alpine tar czf /backup/postgres_data.tar.gz -C /data .
 
-# Backup uploads
+# Backup uploads (mounted by api only)
 docker run --rm \
-  -v clouisle_backend_uploads:/data \
+  -v deploy_uploads_data:/data \
   -v $(pwd):/backup \
-  alpine tar czf /backup/uploads.tar.gz /data
+  alpine tar czf /backup/uploads.tar.gz -C /data .
 ```
 
-**Restore volumes:**
-
-```bash
-# Restore postgres data
-docker run --rm \
-  -v clouisle_postgres_data:/data \
-  -v $(pwd):/backup \
-  alpine tar xzf /backup/postgres_data.tar.gz -C /
-
-# Restore uploads
-docker run --rm \
-  -v clouisle_backend_uploads:/data \
-  -v $(pwd):/backup \
-  alpine tar xzf /backup/uploads.tar.gz -C /
-```
+See [Backup & Recovery](./backup-recovery.md) for the full backup/restore procedures.
 
 ## Monitoring
 
@@ -618,18 +578,16 @@ docker compose ps
 **Check backend health:**
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/health
 ```
 
 **Expected response:**
+
 ```json
-{
-  "status": "healthy",
-  "database": "connected",
-  "redis": "connected",
-  "qdrant": "connected"
-}
+{"code": 0, "data": {"status": "healthy"}, "msg": "success"}
 ```
+
+Qdrant exposes its own health endpoint at `http://localhost:6333/healthz`.
 
 ### Resource Usage
 
@@ -642,7 +600,7 @@ docker stats
 **View specific service:**
 
 ```bash
-docker stats clouisle-backend
+docker stats clouisle-api-1
 ```
 
 ### Logs Monitoring
@@ -685,7 +643,7 @@ docker compose config
 
 4. **Rebuild images:**
 ```bash
-docker compose build --no-cache
+docker compose pull
 docker compose up -d
 ```
 
@@ -697,17 +655,17 @@ docker compose up -d
 
 1. **Check database is running:**
 ```bash
-docker compose ps postgres
+docker compose ps db
 ```
 
 2. **Check database logs:**
 ```bash
-docker compose logs postgres
+docker compose logs db
 ```
 
 3. **Test connection:**
 ```bash
-docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
+docker compose exec db psql -U postgres -d clouisle -c "SELECT 1"
 ```
 
 4. **Verify credentials:**
@@ -726,22 +684,7 @@ docker compose exec api env | grep POSTGRES
 docker stats
 ```
 
-2. **Increase Docker memory limit:**
-```bash
-# Edit Docker Desktop settings
-# Or edit /etc/docker/daemon.json
-{
-  "default-ulimits": {
-    "memlock": {
-      "Hard": -1,
-      "Name": "memlock",
-      "Soft": -1
-    }
-  }
-}
-```
-
-3. **Restart Docker:**
+2. **Restart Docker:**
 ```bash
 sudo systemctl restart docker
 ```
@@ -772,7 +715,7 @@ docker system prune -a --volumes
 3. **Check volume sizes:**
 ```bash
 docker volume ls
-docker volume inspect clouisle_postgres_data
+docker volume inspect deploy_postgres_data
 ```
 
 ## Best Practices
@@ -790,8 +733,7 @@ docker volume inspect clouisle_postgres_data
 
 **❌ Don't:**
 - Use default passwords
-- Expose unnecessary ports
-- Run as root
+- Expose unnecessary ports (remove the db/redis/qdrant/api port mappings in production)
 - Commit secrets to git
 - Skip security updates
 
@@ -801,15 +743,11 @@ docker volume inspect clouisle_postgres_data
 - Use volume mounts for data
 - Enable health checks
 - Monitor resource usage
-- Use multi-stage builds
-- Optimize images
 - Use caching
 
 **❌ Don't:**
-- Use bind mounts for data
 - Skip health checks
 - Ignore resource limits
-- Use large base images
 - Rebuild unnecessarily
 
 ### Maintenance
@@ -826,16 +764,16 @@ docker volume inspect clouisle_postgres_data
 - Skip backups
 - Ignore errors
 - Update without testing
-- Forget to migrate
 - Delete old backups immediately
 
 ## Related Documentation
 
 - [Environment Variables](./environment-variables.md) - Configuration reference
+- [Deployment Guide](./DEPLOYMENT.md) - Full deployment guide
 - [Kubernetes Deployment](./kubernetes.md) - K8s deployment
 - [Troubleshooting](./troubleshooting.md) - Common issues
-- [Security Best Practices](../best-practices/security.md) - Security guide
+- [Backup & Recovery](./backup-recovery.md) - Backup procedures
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

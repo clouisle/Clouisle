@@ -14,16 +14,20 @@ Embeddings are numerical representations of text that capture semantic meaning.
 
 ## Embedding Models
 
-- OpenAI text-embedding-ada-002
-- Cohere embed-multilingual-v3.0
-- Custom models
+- OpenAI `text-embedding-ada-002` (configurable model ID)
+- Custom OpenAI-compatible embedding endpoints
+- Other providers registered in the model registry (e.g. Azure OpenAI, Google, DeepSeek, Ollama) that expose embedding models
 
-## Chunking Strategies
+## Chunking
 
-- Fixed size (500-1000 tokens)
-- Sentence-based
-- Paragraph-based
-- Semantic chunking
+Clouisle splits documents with LangChain's character-based `RecursiveCharacterTextSplitter`:
+
+- `chunk_size` defaults to **1000 characters** (configurable per knowledge base)
+- `chunk_overlap` defaults to **100 characters**
+- Recursive separators in priority order: paragraphs, newlines, Chinese/English sentence punctuation, words, then individual characters
+- Custom separators can be configured per knowledge base
+
+There is no semantic/ML-based chunking; splitting is deterministic and character-level.
 
 ---
 

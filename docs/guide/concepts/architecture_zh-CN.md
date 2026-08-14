@@ -58,7 +58,8 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 - **ORM**: Tortoise ORM with AsyncPG
 - **任务队列**: Celery + Redis
 - **向量数据库**: Qdrant
-- **LLM 框架**: LangChain + LangGraph
+- **LLM 框架**: 基于 LangChain 的聊天、嵌入和文本分块适配器
+- **工作流引擎**: 自研 `WorkflowOrchestrator`（LangGraph 仅为声明的依赖，运行时未使用）
 - **文档处理**: MarkItDown
 
 **主要特性**:
@@ -70,10 +71,10 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 
 ### 基础设施层
 
-**数据库**: PostgreSQL 16
+**数据库**: PostgreSQL 17（带 `pg_search` 全文搜索）
 - 存储所有应用数据（用户、团队、智能体、工作流等）
 - ACID 合规性确保数据完整性
-- 全文搜索功能
+- 通过 `pg_search` 扩展实现全文搜索功能
 
 **缓存与队列**: Redis 7
 - 会话存储
@@ -94,7 +95,7 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 #### 1. 用户请求流程
 
 ```
-浏览器 → Nginx (前端) → Next.js SSR → API 请求 → FastAPI 后端
+浏览器 → （可选外部反向代理 / Ingress）→ Next.js SSR（node server.js）→ API 请求 → FastAPI 后端
                                                       ↓
                                                  PostgreSQL
                                                       ↓
@@ -132,7 +133,7 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 #### 4. 工作流执行流程
 
 ```
-触发 → FastAPI → Celery 任务 → LangGraph 引擎
+触发 → FastAPI → Celery 任务 → 工作流编排器
                                     ↓
                                节点执行
                                (LLM, 工具, 代码等)
@@ -163,7 +164,7 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 
 **Celery Beat**:
 - **必须恰好运行 1 个实例**（定时任务）
-- 使用数据库锁防止重复
+- 以裸调度器运行，无数据库锁——请保持单实例以避免重复调度
 
 ### 垂直扩展
 
@@ -213,10 +214,10 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 
 ### 缓存策略
 
-**Redis 缓存**:
-- 用户会话（30 分钟 TTL）
-- 站点设置（5 分钟 TTL）
-- 速率限制计数器（1 小时 TTL）
+**缓存策略**:
+- 用户会话（默认 30 天，可通过 `session_timeout_days` 站点设置配置；`config.py` 中 JWT 兜底 8 天）
+- 站点设置（无缓存——每次查找直接读取数据库）
+- 速率限制计数器（1 小时 TTL，存储于 Redis）
 
 **数据库索引**:
 - 主键（UUID）
@@ -286,8 +287,8 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 - 错误堆栈跟踪
 
 **访问日志**:
-- Nginx 访问日志（前端）
-- Gunicorn 访问日志（后端）
+- Next.js standalone 服务器日志（前端；容器只运行 `node server.js`，**不含 Nginx** —— `deploy/nginx/default.conf` 是可选的外部反向代理示例，不在镜像内）
+- Gunicorn 访问日志（后端；生产模式通过 `python main.py server --no-reload` 运行 Gunicorn + `uvicorn.workers.UvicornWorker`）
 - API 端点使用情况
 
 ### 指标
@@ -305,10 +306,8 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 ### 健康检查
 
 **端点**:
-- `/api/v1/health` - 基本健康检查
-- `/api/v1/health/db` - 数据库连接
-- `/api/v1/health/redis` - Redis 连接
-- `/api/v1/health/qdrant` - Qdrant 连接
+- `/api/v1/health` — 公开基本健康检查（容器 HEALTHCHECK 使用 `curl -f http://localhost:8000/api/v1/health`）
+- `/api/v1/admin/observability/system/health` — 管理端可观测性健康检查（CPU/内存/磁盘/数据库/Redis/Worker），需 `admin:dashboard:access` 权限
 
 ## 未来架构考虑
 

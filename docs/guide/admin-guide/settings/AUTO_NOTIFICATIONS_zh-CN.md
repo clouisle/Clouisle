@@ -196,7 +196,7 @@ Content-Type: application/json
 | 通知类型枚举 | `app/models/notification.py` | `AutoNotificationType` |
 | 自动通知服务 | `app/services/auto_notification.py` | `AutoNotificationService` |
 | 配置存储 | `app/models/site_setting.py` | `auto_notification_config` |
-| API 端点 | `app/api/v1/endpoints/site_settings.py` | `/auto-notifications` |
+| API 端点 | `app/api/v1/admin/endpoints/site_settings.py` | `/auto-notifications` |
 | 登录异常检测 | `app/core/login_anomaly.py` | 登录模式分析 |
 | API Key 检查 | `app/tasks/api_key.py` | 定时任务 |
 

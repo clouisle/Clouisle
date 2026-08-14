@@ -302,7 +302,7 @@ GET /api/v1/sso/callback/{provider_name}
 
 ### 管理接口
 
-所有管理接口需要超级管理员认证。
+管理接口通过权限检查保护，而非强制超级管理员：查看提供商列表需要 `admin:sso:read`；创建、更新、删除、测试提供商以及解除用户 SSO 连接需要 `admin:sso:update`。`Admin` 角色拥有 `admin:sso:read`；`admin:sso:update` 仅限 Super Admin。
 
 ```http
 GET    /api/v1/sso/admin/providers

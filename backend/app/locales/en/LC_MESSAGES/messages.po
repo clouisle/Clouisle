@@ -2646,6 +2646,9 @@ msgstr "Process exited with code {exit_code}"
 msgid "sandbox_missing_executable_payload"
 msgstr "Sandbox job has no executable payload"
 
+msgid "sandbox_userns_unavailable"
+msgstr "Sandbox isolation unavailable: the host kernel does not permit unprivileged user namespaces. Enable them on the host kernel (see the code sandbox deployment docs for the required sysctl settings)."
+
 msgid "sandbox_disk_limit_exceeded"
 msgstr "Sandbox disk limit exceeded during {stage}: {usage_bytes} > {limit_bytes}"
 

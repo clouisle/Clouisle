@@ -207,6 +207,15 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     assert "POSTGRES_SERVER=host.docker.internal" in cmd
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
     assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
+    # Rootless bwrap needs namespace/mount syscalls the default seccomp
+    # profile blocks; the local-dev container must mirror the sandbox-worker
+    # security options used by Docker Compose and Helm.
+    assert cmd[cmd.index("seccomp=unconfined") - 1] == "--security-opt"
+    assert "no-new-privileges:true" in cmd
+    # The image USER is non-root with empty effective caps; the worker must
+    # run as root and add CAP_SYS_ADMIN (compose parity).
+    assert cmd[cmd.index("--user") + 1] == "0"
+    assert cmd[cmd.index("--cap-add") + 1] == "SYS_ADMIN"
 
 
 def test_sandbox_worker_local_dev_cli_dispatches_container_mode(

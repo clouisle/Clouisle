@@ -2,13 +2,14 @@
 
 This guide covers deploying Clouisle on Kubernetes.
 
+> **Note**: The example snippets below are representative summaries. The authoritative files are `deploy/helm/clouisle/` (Helm chart) and `deploy/k8s/clouisle.yaml` (single-file manifest) — always use those when in doubt.
+
 ## Overview
 
 Kubernetes deployment provides:
 
-- **High availability**: Multiple replicas and auto-scaling
+- **High availability**: Multiple replicas and rolling updates
 - **Load balancing**: Automatic traffic distribution
-- **Rolling updates**: Zero-downtime deployments
 - **Self-healing**: Automatic pod restart on failure
 - **Resource management**: CPU and memory limits
 - **Secrets management**: Secure credential storage
@@ -26,27 +27,36 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
-
 The existing Secret must include a unique non-empty `INTERNAL_API_TOKEN` shared by the API, worker, and sandbox-worker.
 For production, create `clouisle-secret` and use `deploy/helm/clouisle/values-production.yaml`:
 
 ```bash
+kubectl create namespace clouisle
+kubectl -n clouisle create secret generic clouisle-secret \
+  --from-literal=SECRET_KEY='replace-with-strong-random-key' \
+  --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
+  --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key' \
+  --from-literal=SANDBOX_ARTIFACT_UPLOAD_API_KEY='replace-with-sandbox-artifact-key' \
+  --from-literal=INTERNAL_API_TOKEN="$(openssl rand -base64 32)"
+
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
   --create-namespace \
   -f deploy/helm/clouisle/values-production.yaml
 ```
 
-The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fallback for debugging or non-Helm environments.
+The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fallback for debugging or non-Helm environments. `deploy/install.sh` (`CLOUISLE_DEPLOYMENT=k8s`) generates a separate, secret-filled copy (mode `0600`) that you review and apply manually.
 
 ## Prerequisites
 
 ### Requirements
 
 **Kubernetes Cluster:**
-- Kubernetes 1.24+
+- Kubernetes 1.25+
 - kubectl configured
-- Helm 3.0+
+- Helm 3.0+ (only for the Helm chart option)
+- An Ingress controller (e.g. ingress-nginx)
 
 **Resources:**
 - Minimum: 4 CPU, 16GB RAM
@@ -54,7 +64,7 @@ The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fall
 - Storage: 100GB+ persistent volumes
 
 **External Services:**
-- PostgreSQL 17+ with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded (or use in-cluster)
+- PostgreSQL 17+ with pg_search 0.24.3 installed and `pg_search,pg_stat_statements` preloaded (or use in-cluster — the supplied `clouisle-postgres-pg-search` image provides this)
 - Redis 6+ (or use in-cluster)
 - Qdrant 1.7+ (or use in-cluster)
 
@@ -93,252 +103,200 @@ helm version
 ┌─────────────────────────────────────────────────┐
 │                   Ingress                       │
 │            (nginx-ingress-controller)           │
+│        /api → api:8000    / → frontend:3000     │
 └─────────────────────────────────────────────────┘
                       │
         ┌─────────────┴─────────────┐
         │                           │
 ┌───────▼────────┐         ┌────────▼───────┐
-│   Frontend     │         │    Backend     │
-│   (Next.js)    │         │   (FastAPI)    │
+│   Frontend     │         │      API       │
+│   (Next.js)    │         │    (FastAPI)   │
 │   Deployment   │         │   Deployment   │
-│   3 replicas   │         │   3 replicas   │
+│   2 replicas   │         │   2 replicas   │
 └────────────────┘         └────────────────┘
                                    │
         ┌──────────────────────────┼──────────────────────────┐
         │                          │                          │
 ┌───────▼────────┐      ┌──────────▼─────────┐    ┌─────────▼────────┐
 │   PostgreSQL   │      │       Redis        │    │      Qdrant      │
-│   StatefulSet  │      │    StatefulSet     │    │   StatefulSet    │
+│   StatefulSet  │      │    Deployment      │    │   StatefulSet    │
 │   1 replica    │      │     1 replica      │    │    1 replica     │
 └────────────────┘      └────────────────────┘    └──────────────────┘
         │                          │                          │
 ┌───────▼────────┐      ┌──────────▼─────────┐    ┌─────────▼────────┐
-│  PVC (100GB)   │      │    PVC (10GB)      │    │   PVC (50GB)     │
+│ PVC 10Gi       │      │   emptyDir         │    │  PVC 10Gi        │
 └────────────────┘      └────────────────────┘    └──────────────────┘
 ```
 
-## Namespace Setup
+Additional workloads not shown: `worker` (Deployment, 2 replicas), `sandbox-worker` (Deployment, 1 replica), `beat` (Deployment, exactly 1 replica, `Recreate` strategy), and the `uploads-data` PVC (10Gi, `ReadWriteMany`, mounted only by `api`).
 
-### Create Namespace
+## Single-File Manifest
 
-```bash
-# Create namespace
-kubectl create namespace clouisle
-
-# Set as default namespace
-kubectl config set-context --current --namespace=clouisle
-```
-
-### Create Namespace YAML
-
-```yaml
-# namespace.yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: clouisle
-  labels:
-    name: clouisle
-    environment: production
-```
+All resources are defined in a single file: `deploy/k8s/clouisle.yaml`.
 
 ```bash
-kubectl apply -f namespace.yaml
+# 1. Edit the manifest — replace secret placeholders and set your domain
+vi deploy/k8s/clouisle.yaml
+
+# 2. Apply everything. Backend workloads wait for PostgreSQL via
+#    wait-for-postgres init containers, so there is no startup race.
+kubectl apply -f deploy/k8s/clouisle.yaml
+
+# 3. Wait for infrastructure
+kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
+
+# 4. Verify all pods
+kubectl -n clouisle get pods
 ```
+
+### Manifest Sections
+
+The manifest contains 13 resource sections. It does **not** use YAML anchors — each section is written out explicitly:
+
+| # | Resource | Kind | Notes |
+|---|----------|------|-------|
+| 1 | Namespace | Namespace | `clouisle` |
+| 2 | ConfigMap | ConfigMap | `clouisle-config`, non-sensitive configuration |
+| 3 | Secret | Secret | `clouisle-secret`, 6 keys (**must edit/generate**) |
+| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service, `postgres-data` 10Gi |
+| 5 | Redis | Deployment + Service | |
+| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service, `qdrant-data` 10Gi |
+| 7 | Uploads | PVC | `uploads-data` 10Gi, ReadWriteMany |
+| 8 | API | Deployment + Service | 2 replicas, port 8000 |
+| 9 | Worker | Deployment | 2 replicas, no Service |
+| 10 | Sandbox Worker | Deployment | 1 replica, no Service |
+| 11 | Beat | Deployment | 1 replica, `Recreate` strategy |
+| 12 | Frontend | Deployment + Service | 2 replicas, port 3000 |
+| 13 | Ingress | Ingress | `/api` → api:8000, `/` → frontend:3000 |
 
 ## Secrets Management
 
 ### Create Secrets
 
-**Database Credentials:**
+The manifest uses a **single Secret** `clouisle-secret` with 6 keys:
 
 ```bash
-kubectl create secret generic postgres-secret \
-  --from-literal=username=clouisle \
-  --from-literal=password=your-secure-password \
-  --from-literal=database=clouisle \
-  -n clouisle
+kubectl create secret generic clouisle-secret -n clouisle \
+  --from-literal=SECRET_KEY='your-secret-key' \
+  --from-literal=POSTGRES_PASSWORD='your-postgres-password' \
+  --from-literal=REDIS_PASSWORD='your-redis-password' \
+  --from-literal=QDRANT_API_KEY='your-qdrant-api-key' \
+  --from-literal=SANDBOX_ARTIFACT_UPLOAD_API_KEY='your-sandbox-artifact-key' \
+  --from-literal=INTERNAL_API_TOKEN='your-internal-gateway-token'
 ```
 
-**Redis Password:**
+> **Note**: `INTERNAL_API_TOKEN` is required and shared by the api, worker, and sandbox-worker workloads (mounted via `INTERNAL_API_TOKEN_FILE`). `SANDBOX_ARTIFACT_UPLOAD_API_KEY` is used for sandbox artifact upload authentication.
+
+When editing the manifest template directly, base64-encode each value:
 
 ```bash
-kubectl create secret generic redis-secret \
-  --from-literal=password=your-redis-password \
-  -n clouisle
+echo -n 'your-strong-secret-key' | base64
 ```
-
-**Application Secrets:**
-
-```bash
-kubectl create secret generic app-secret \
-  --from-literal=secret-key=your-secret-key \
-  --from-literal=jwt-secret=your-jwt-secret \
-  --from-literal=openai-api-key=sk-... \
-  --from-literal=anthropic-api-key=sk-ant-... \
-  -n clouisle
-```
-
-**Secrets YAML:**
 
 ```yaml
-# secrets.yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: postgres-secret
+  name: clouisle-secret
   namespace: clouisle
 type: Opaque
-stringData:
-  username: clouisle
-  password: your-secure-password
-  database: clouisle
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: redis-secret
-  namespace: clouisle
-type: Opaque
-stringData:
-  password: your-redis-password
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: app-secret
-  namespace: clouisle
-type: Opaque
-stringData:
-  secret-key: your-secret-key
-  jwt-secret: your-jwt-secret
-  openai-api-key: sk-...
-  anthropic-api-key: sk-ant-...
+data:
+  SECRET_KEY: <paste-base64-here>
+  POSTGRES_PASSWORD: <paste-base64-here>
+  REDIS_PASSWORD: <paste-base64-here>
+  QDRANT_API_KEY: <paste-base64-here>
+  SANDBOX_ARTIFACT_UPLOAD_API_KEY: <paste-base64-here>
+  INTERNAL_API_TOKEN: <paste-base64-here>
 ```
 
-```bash
-kubectl apply -f secrets.yaml
-```
+> **Tip**: For production, consider using an external secret manager (Vault, AWS Secrets Manager, etc.) with the External Secrets Operator instead of storing secrets in YAML. `deploy/install.sh` in Kubernetes mode generates a separate `0600` output file with strong values and does not apply it automatically.
 
 ## ConfigMap
 
 ### Application Configuration
 
+The non-sensitive configuration lives in the `clouisle-config` ConfigMap:
+
 ```yaml
-# configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: app-config
+  name: clouisle-config
   namespace: clouisle
 data:
-  # Site Configuration
-  SITE_NAME: "Clouisle"
-  SITE_URL: "https://your-domain.com"
-  FRONTEND_URL: "https://your-domain.com"
-
-  # Database Configuration
-  POSTGRES_SERVER: "postgres-service"
+  PROJECT_NAME: "Clouisle"
+  TIMEZONE: "Asia/Shanghai"
+  API_BASE_URL: "http://api:8000"
+  PUBLIC_API_URL: ""
+  API_INTERNAL_BASE_URL: "http://api:8000"
+  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
+  FRONTEND_URL: "http://frontend:3000"
+  BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
+  POSTGRES_SERVER: "postgres"
   POSTGRES_PORT: "5432"
-
-  # Redis Configuration
-  REDIS_HOST: "redis-service"
+  POSTGRES_USER: "postgres"
+  POSTGRES_DB: "clouisle"
+  REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-
-  # Qdrant Configuration
-  QDRANT_HOST: "qdrant-service"
-  QDRANT_PORT: "6333"
-
-  # Feature Flags
-  ENABLE_REGISTRATION: "true"
-  ENABLE_SSO: "true"
-
-  # CORS
-  CORS_ORIGINS: "https://your-domain.com"
+  VECTOR_BACKEND: "qdrant"
+  QDRANT_URL: "http://qdrant:6333"
+  QDRANT_COLLECTION_PREFIX: "kb_dim"
+  QDRANT_DISTANCE: "Cosine"
+  RETRIEVAL_HYBRID_KILL_SWITCH: "false"
+  RETRIEVAL_SHADOW_ENABLED: "false"
 ```
 
-```bash
-kubectl apply -f configmap.yaml
-```
+For your public domain, put the public origin into `PUBLIC_API_URL` and set `FRONTEND_URL`/`BACKEND_CORS_ORIGINS` accordingly (keep `API_BASE_URL` internal).
 
 ## Persistent Volumes
 
-### Storage Class
+The manifest declares three PVCs directly in `deploy/k8s/clouisle.yaml` (there is no separate `storage-class.yaml`/`pvc.yaml`):
+
+| PVC | Size | Used By | Access Mode |
+|-----|------|---------|-------------|
+| `postgres-data` | 10Gi | PostgreSQL | ReadWriteOnce |
+| `qdrant-data` | 10Gi | Qdrant | ReadWriteOnce |
+| `uploads-data` | 10Gi | API (uploads) | ReadWriteMany |
 
 ```yaml
-# storage-class.yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: clouisle-storage
-provisioner: kubernetes.io/aws-ebs  # Change based on cloud provider
-parameters:
-  type: gp3
-  fsType: ext4
-allowVolumeExpansion: true
-reclaimPolicy: Retain
-volumeBindingMode: WaitForFirstConsumer
-```
-
-### Persistent Volume Claims
-
-```yaml
-# pvc.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: postgres-pvc
+  name: postgres-data
   namespace: clouisle
 spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: clouisle-storage
-  resources:
-    requests:
-      storage: 100Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-  namespace: clouisle
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: clouisle-storage
+  accessModes: [ReadWriteOnce]
   resources:
     requests:
       storage: 10Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: qdrant-pvc
-  namespace: clouisle
+```
+
+To change the size or add a `storageClassName`, edit the PVC definitions in `clouisle.yaml`:
+
+```yaml
 spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: clouisle-storage
+  accessModes: [ReadWriteOnce]
+  storageClassName: your-storage-class    # Add this line
   resources:
     requests:
-      storage: 50Gi
+      storage: 50Gi                       # Adjust size
 ```
 
-```bash
-kubectl apply -f storage-class.yaml
-kubectl apply -f pvc.yaml
-```
+> **Important**: `uploads-data` (ReadWriteMany) is mounted only by the `api` Deployment at `/app/uploads`. Workers and sandbox-worker do **not** mount it — they read/write authorized documents and upload sandbox artifacts through the authenticated internal upload gateway. `ReadWriteMany` is only required when scaling `api` beyond one replica with local upload storage; with `ReadWriteOnce` keep `api` at one replica. `ReadWriteMany` requires a storage class that supports it (NFS, CephFS, EFS, etc.).
 
-## Database Deployment
+## PostgreSQL Deployment
 
 ### PostgreSQL StatefulSet
 
+The supplied PostgreSQL image is `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` (PostgreSQL 17 with pg_search). It runs with `shared_preload_libraries=pg_search,pg_stat_statements`. Condensed excerpt:
+
 ```yaml
-# postgres.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres-service
+  name: postgres
   namespace: clouisle
 spec:
   selector:
@@ -346,7 +304,7 @@ spec:
   ports:
     - port: 5432
       targetPort: 5432
-  clusterIP: None
+  clusterIP: None          # headless
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -354,7 +312,7 @@ metadata:
   name: postgres
   namespace: clouisle
 spec:
-  serviceName: postgres-service
+  serviceName: postgres
   replicas: 1
   selector:
     matchLabels:
@@ -365,79 +323,50 @@ spec:
         app: postgres
     spec:
       containers:
-      - name: postgres
-        image: postgres:14
-        ports:
-        - containerPort: 5432
-        env:
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: username
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: password
-        - name: POSTGRES_DB
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: database
-        - name: PGDATA
-          value: /var/lib/postgresql/data/pgdata
-        volumeMounts:
-        - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1000m"
-          limits:
-            memory: "4Gi"
-            cpu: "2000m"
-        livenessProbe:
-          exec:
-            command:
-            - pg_isready
-            - -U
-            - clouisle
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - pg_isready
-            - -U
-            - clouisle
-          initialDelaySeconds: 5
-          periodSeconds: 5
-  volumeClaimTemplates:
-  - metadata:
-      name: postgres-storage
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      storageClassName: clouisle-storage
-      resources:
-        requests:
-          storage: 100Gi
+        - name: postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          args:
+            - "-c"
+            - "shared_preload_libraries=pg_search,pg_stat_statements"
+            - "-c"
+            - "pg_stat_statements.track=all"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef: { name: clouisle-config, key: POSTGRES_USER }
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef: { name: clouisle-config, key: POSTGRES_DB }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: clouisle-secret, key: POSTGRES_PASSWORD }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
 ```
 
-```bash
-kubectl apply -f postgres.yaml
-```
+See the full StatefulSet (resources, probes) in `deploy/k8s/clouisle.yaml`.
 
 ## Redis Deployment
 
-### Redis StatefulSet
+Redis runs as a **Deployment** with an `emptyDir` data volume (a cache; data is recoverable):
 
 ```yaml
-# redis.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: redis-service
+  name: redis
   namespace: clouisle
 spec:
   selector:
@@ -445,15 +374,13 @@ spec:
   ports:
     - port: 6379
       targetPort: 6379
-  clusterIP: None
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: redis
   namespace: clouisle
 spec:
-  serviceName: redis-service
   replicas: 1
   selector:
     matchLabels:
@@ -464,83 +391,55 @@ spec:
         app: redis
     spec:
       containers:
-      - name: redis
-        image: redis:7-alpine
-        ports:
-        - containerPort: 6379
-        command:
-        - redis-server
-        - --requirepass
-        - $(REDIS_PASSWORD)
-        - --appendonly
-        - "yes"
-        env:
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: redis-secret
-              key: password
-        volumeMounts:
-        - name: redis-storage
-          mountPath: /data
-        resources:
-          requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "1000m"
-        livenessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 5
-          periodSeconds: 5
-  volumeClaimTemplates:
-  - metadata:
-      name: redis-storage
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      storageClassName: clouisle-storage
-      resources:
-        requests:
-          storage: 10Gi
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              if [ -n "$REDIS_PASSWORD" ]; then
+                redis-server --requirepass "$REDIS_PASSWORD"
+              else
+                redis-server
+              fi
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: clouisle-secret, key: REDIS_PASSWORD }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: data
+          emptyDir: {}
 ```
 
-```bash
-kubectl apply -f redis.yaml
-```
+(Helm deployments use a 5Gi PVC for Redis persistence instead.)
 
 ## Qdrant Deployment
 
-### Qdrant StatefulSet
+Qdrant runs as a StatefulSet with a headless Service and the `qdrant-data` PVC (10Gi):
 
 ```yaml
-# qdrant.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: qdrant-service
+  name: qdrant
   namespace: clouisle
 spec:
   selector:
     app: qdrant
   ports:
-    - name: http
-      port: 6333
+    - port: 6333
       targetPort: 6333
-    - name: grpc
-      port: 6334
-      targetPort: 6334
-  clusterIP: None
+  clusterIP: None          # headless
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -548,7 +447,7 @@ metadata:
   name: qdrant
   namespace: clouisle
 spec:
-  serviceName: qdrant-service
+  serviceName: qdrant
   replicas: 1
   selector:
     matchLabels:
@@ -559,56 +458,35 @@ spec:
         app: qdrant
     spec:
       containers:
-      - name: qdrant
-        image: qdrant/qdrant:v1.18.3
-        ports:
-        - containerPort: 6333
-          name: http
-        - containerPort: 6334
-          name: grpc
-        volumeMounts:
-        - name: qdrant-storage
-          mountPath: /qdrant/storage
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1000m"
-          limits:
-            memory: "4Gi"
-            cpu: "2000m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 6333
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 6333
-          initialDelaySeconds: 5
-          periodSeconds: 5
-  volumeClaimTemplates:
-  - metadata:
-      name: qdrant-storage
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      storageClassName: clouisle-storage
-      resources:
-        requests:
-          storage: 50Gi
+        - name: qdrant
+          image: qdrant/qdrant:v1.18.3
+          env:
+            - name: QDRANT__SERVICE__API_KEY
+              valueFrom:
+                secretKeyRef: { name: clouisle-secret, key: QDRANT_API_KEY }
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 6333
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 6333
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: qdrant-data
 ```
 
-```bash
-kubectl apply -f qdrant.yaml
-```
+## API Deployment
 
-## Backend Deployment
-
-### Backend Deployment and Service
+### API Deployment and Service
 
 ```yaml
-# backend.yaml
 apiVersion: v1
 kind: Service
 metadata:
@@ -620,7 +498,6 @@ spec:
   ports:
     - port: 8000
       targetPort: 8000
-  type: ClusterIP
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -628,7 +505,12 @@ metadata:
   name: api
   namespace: clouisle
 spec:
-  replicas: 3
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: api
@@ -638,110 +520,78 @@ spec:
         app: api
     spec:
       initContainers:
-      - name: wait-for-postgres
-        image: busybox:1.35
-        command: ['sh', '-c', 'until nc -z postgres-service 5432; do echo waiting for postgres; sleep 2; done;']
-      - name: run-migrations
-        image: your-registry/clouisle-backend:latest
-        command: ['alembic', 'upgrade', 'head']
-        envFrom:
-        - configMapRef:
-            name: app-config
-        env:
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: username
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: password
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: secret-key
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          command:
+            - sh
+            - -ec
+            - |
+              until pg_isready -h "$POSTGRES_SERVER" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "Waiting for PostgreSQL at ${POSTGRES_SERVER}:${POSTGRES_PORT}..."
+                sleep 2
+              done
+          env:
+            - name: POSTGRES_SERVER
+              valueFrom: { configMapKeyRef: { name: clouisle-config, key: POSTGRES_SERVER } }
+            - name: POSTGRES_PORT
+              valueFrom: { configMapKeyRef: { name: clouisle-config, key: POSTGRES_PORT } }
+            - name: POSTGRES_USER
+              valueFrom: { configMapKeyRef: { name: clouisle-config, key: POSTGRES_USER } }
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: clouisle-config, key: POSTGRES_DB } }
       containers:
-      - name: api
-        image: your-registry/clouisle-backend:latest
-        ports:
-        - containerPort: 8000
-        envFrom:
-        - configMapRef:
-            name: app-config
-        env:
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: username
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: password
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: redis-secret
-              key: password
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: secret-key
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: jwt-secret
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: openai-api-key
-        - name: ANTHROPIC_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: anthropic-api-key
-        resources:
-          requests:
-            memory: "2Gi"
-            cpu: "1000m"
-          limits:
-            memory: "4Gi"
-            cpu: "2000m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+        - name: api
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+          command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: clouisle-config }
+            - secretRef: { name: clouisle-secret }
+          env:
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads-data
+        - name: internal-api-token
+          secret:
+            secretName: clouisle-secret
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 ```
 
-```bash
-kubectl apply -f backend.yaml
-```
+> **Note**: There is no Alembic migration init container — schema creation/updates run automatically at startup (Tortoise ORM). The `wait-for-postgres` init container (pg_isready) replaces the old busybox-wait pattern.
 
 ## Frontend Deployment
 
 ### Frontend Deployment and Service
 
 ```yaml
-# frontend.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-service
+  name: frontend
   namespace: clouisle
 spec:
   selector:
@@ -749,7 +599,6 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-  type: ClusterIP
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -757,7 +606,7 @@ metadata:
   name: frontend
   namespace: clouisle
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: frontend
@@ -767,194 +616,230 @@ spec:
         app: frontend
     spec:
       containers:
-      - name: frontend
-        image: your-registry/clouisle-frontend:latest
-        ports:
-        - containerPort: 3000
-        env:
-        - name: NEXT_PUBLIC_API_URL
-          value: "https://your-domain.com/api"
-        - name: NEXT_PUBLIC_SITE_URL
-          value: "https://your-domain.com"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+        - name: frontend
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
 ```
 
-```bash
-kubectl apply -f frontend.yaml
-```
+The frontend runs the Next.js standalone server (`node server.js`); it proxies `/api/*` to the backend via Next.js rewrites (backend URL from `BACKEND_INTERNAL_URL`, defaulting to `http://api:8000`). There is no `NEXT_PUBLIC_API_URL` runtime env in the supplied manifest (it is baked in at image build time).
 
-## Celery Workers
+## Worker and Beat Deployments
 
-### Celery Worker Deployment
+### Worker Deployment
 
 ```yaml
-# celery-worker.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: celery-worker
+  name: worker
   namespace: clouisle
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: celery-worker
+      app: worker
   template:
     metadata:
       labels:
-        app: celery-worker
+        app: worker
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          command: ["sh", "-ec", "until pg_isready -h \"$POSTGRES_SERVER\" -p \"$POSTGRES_PORT\" -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"; do sleep 2; done"]
+          env: # POSTGRES_* from clouisle-config (same as api)
       containers:
-      - name: celery-worker
-        image: your-registry/clouisle-backend:latest
-        command: ['celery', '-A', 'app.core.celery', 'worker', '--loglevel=info']
-        envFrom:
-        - configMapRef:
-            name: app-config
-        env:
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: username
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: password
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: redis-secret
-              key: password
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: secret-key
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: openai-api-key
-        resources:
-          requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "1000m"
----
+        - name: worker
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+          command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
+          envFrom:
+            - configMapRef: { name: clouisle-config }
+            - secretRef: { name: clouisle-secret }
+          env:
+            - name: UPLOAD_STORAGE_MODE
+              value: "remote"
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
+          volumeMounts:
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
+      volumes:
+        - name: internal-api-token
+          secret:
+            secretName: clouisle-secret
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
+```
+
+### Sandbox Worker Deployment
+
+Runs 1 replica of the `clouisle-sandbox-worker` image. Because the image's non-root user has empty effective capabilities, the deployment runs it as root (`runAsUser: 0`) with `CAP_SYS_ADMIN` added, `allowPrivilegeEscalation: false`, and an unconfined seccomp profile so Bubblewrap can create user/mount namespaces:
+
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: celery-beat
+  name: sandbox-worker
   namespace: clouisle
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: celery-beat
+      app: sandbox-worker
   template:
     metadata:
       labels:
-        app: celery-beat
+        app: sandbox-worker
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          command: ["sh", "-ec", "until pg_isready -h \"$POSTGRES_SERVER\" -p \"$POSTGRES_PORT\" -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"; do sleep 2; done"]
+          env: # POSTGRES_* from clouisle-config
       containers:
-      - name: celery-beat
-        image: your-registry/clouisle-backend:latest
-        command: ['celery', '-A', 'app.core.celery', 'beat', '--loglevel=info']
-        envFrom:
-        - configMapRef:
-            name: app-config
-        env:
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: redis-secret
-              key: password
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "200m"
+        - name: sandbox-worker
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
+          command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
+          envFrom:
+            - configMapRef: { name: clouisle-config }
+            - secretRef: { name: clouisle-secret }
+          env:
+            - name: UPLOAD_STORAGE_MODE
+              value: "remote"
+            - name: INTERNAL_API_TOKEN_FILE
+              value: /var/run/secrets/clouisle/internal-api-token
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                - SYS_ADMIN
+            runAsUser: 0
+            seccompProfile:
+              type: Unconfined
+          volumeMounts:
+            - name: internal-api-token
+              mountPath: /var/run/secrets/clouisle
+              readOnly: true
+      volumes:
+        - name: internal-api-token
+          secret:
+            secretName: clouisle-secret
+            items:
+              - key: INTERNAL_API_TOKEN
+                path: internal-api-token
 ```
 
-```bash
-kubectl apply -f celery-worker.yaml
+> **Note**: The task payload still executes inside a fresh Bubblewrap user+mount namespace. See [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements) and the deployment guide's sandbox section for details and hardening (user namespace remapping).
+
+### Beat Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  namespace: clouisle
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: beat
+  template:
+    metadata:
+      labels:
+        app: beat
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
+          command: ["sh", "-ec", "until pg_isready -h \"$POSTGRES_SERVER\" -p \"$POSTGRES_PORT\" -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"; do sleep 2; done"]
+          env: # POSTGRES_* from clouisle-config
+      containers:
+        - name: beat
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+          command: ["python", "main.py", "beat"]
+          envFrom:
+            - configMapRef: { name: clouisle-config }
+            - secretRef: { name: clouisle-secret }
 ```
+
+> **Important**: Keep beat at exactly one replica — multiple beat instances cause duplicate scheduled tasks. The `Recreate` strategy ensures the old pod is fully terminated before a new one starts.
 
 ## Ingress Configuration
 
 ### Nginx Ingress
 
 ```yaml
-# ingress.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: clouisle-ingress
   namespace: clouisle
   annotations:
-    kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
 spec:
-  tls:
-  - hosts:
-    - your-domain.com
-    secretName: clouisle-tls
+  ingressClassName: nginx
   rules:
-  - host: your-domain.com
-    http:
-      paths:
-      - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: api
-            port:
-              number: 8000
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend-service
-            port:
-              number: 3000
+    - host: clouisle.example.com    # Replace with your domain
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
 ```
 
-```bash
-kubectl apply -f ingress.yaml
-```
+The `proxy-read-timeout`/`proxy-send-timeout` annotations (1800s) matter for long LLM streaming requests.
 
-## Horizontal Pod Autoscaler
-
-### HPA Configuration
+To enable TLS with cert-manager (automatic Let's Encrypt), add:
 
 ```yaml
-# hpa.yaml
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - clouisle.example.com
+      secretName: clouisle-tls
+```
+
+## Horizontal Pod Autoscaler (optional)
+
+The supplied manifest does **not** include HPA resources — replica counts are static. Add an HPA manually when you need CPU-based autoscaling:
+
+```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -965,106 +850,39 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: api
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 10
   metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: frontend-hpa
-  namespace: clouisle
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: frontend
-  minReplicas: 3
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-```
-
-```bash
-kubectl apply -f hpa.yaml
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
 ```
 
 ## Monitoring
 
-### Prometheus ServiceMonitor
+The supplied manifest does not expose a Prometheus `/metrics` endpoint or ServiceMonitor. Monitor the standard Kubernetes signals (`kubectl top`, logs, Ingress metrics) and Clouisle's admin observability features instead.
 
-```yaml
-# servicemonitor.yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: clouisle-backend
-  namespace: clouisle
-spec:
-  selector:
-    matchLabels:
-      app: api
-  endpoints:
-  - port: http
-    path: /metrics
-    interval: 30s
-```
-
-## Deployment
-
-### Deploy All Components
+## Deploy All Components
 
 ```bash
-# Create namespace
-kubectl apply -f namespace.yaml
-
-# Create secrets
-kubectl apply -f secrets.yaml
-
-# Create configmap
-kubectl apply -f configmap.yaml
-
-# Create storage
-kubectl apply -f storage-class.yaml
-kubectl apply -f pvc.yaml
-
-# Deploy databases
-kubectl apply -f postgres.yaml
-kubectl apply -f redis.yaml
-kubectl apply -f qdrant.yaml
+# The single manifest contains everything: namespace, config, secrets, storage,
+# databases, application workloads, and ingress.
+kubectl apply -f deploy/k8s/clouisle.yaml
 
 # Wait for databases to be ready
 kubectl wait --for=condition=ready pod -l app=postgres -n clouisle --timeout=300s
 kubectl wait --for=condition=ready pod -l app=redis -n clouisle --timeout=300s
 kubectl wait --for=condition=ready pod -l app=qdrant -n clouisle --timeout=300s
 
-# Deploy application
-kubectl apply -f backend.yaml
-kubectl apply -f frontend.yaml
-kubectl apply -f celery-worker.yaml
-
-# Deploy ingress
-kubectl apply -f ingress.yaml
-
-# Deploy HPA
-kubectl apply -f hpa.yaml
+# Watch application rollout
+kubectl -n clouisle rollout status deployment/api
+kubectl -n clouisle rollout status deployment/worker
+kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status deployment/beat
+kubectl -n clouisle rollout status deployment/frontend
 ```
 
 ### Verify Deployment
@@ -1079,9 +897,6 @@ kubectl get svc -n clouisle
 # Check ingress
 kubectl get ingress -n clouisle
 
-# Check HPA
-kubectl get hpa -n clouisle
-
 # View logs
 kubectl logs -f deployment/api -n clouisle
 kubectl logs -f deployment/frontend -n clouisle
@@ -1093,10 +908,10 @@ kubectl logs -f deployment/frontend -n clouisle
 
 ```bash
 # Update backend image
-kubectl set image deployment/api api=your-registry/clouisle-backend:v1.1.0 -n clouisle
+kubectl set image deployment/api api=registry.example.com/clouisle/clouisle-backend:v1.1.0 -n clouisle
 
 # Update frontend image
-kubectl set image deployment/frontend frontend=your-registry/clouisle-frontend:v1.1.0 -n clouisle
+kubectl set image deployment/frontend frontend=registry.example.com/clouisle/clouisle-frontend:v1.1.0 -n clouisle
 
 # Check rollout status
 kubectl rollout status deployment/api -n clouisle
@@ -1122,26 +937,13 @@ kubectl rollout history deployment/api -n clouisle
 
 ```bash
 # Backup PostgreSQL
-kubectl exec -n clouisle postgres-0 -- pg_dump -U clouisle clouisle > backup.sql
+kubectl exec -n clouisle statefulset/postgres -- pg_dump -U postgres clouisle > backup.sql
 
 # Restore PostgreSQL
-kubectl exec -i -n clouisle postgres-0 -- psql -U clouisle clouisle < backup.sql
+kubectl exec -i -n clouisle statefulset/postgres -- psql -U postgres clouisle < backup.sql
 ```
 
-### Volume Snapshots
-
-```yaml
-# volumesnapshot.yaml
-apiVersion: snapshot.storage.k8s.io/v1
-kind: VolumeSnapshot
-metadata:
-  name: postgres-snapshot
-  namespace: clouisle
-spec:
-  volumeSnapshotClassName: csi-snapclass
-  source:
-    persistentVolumeClaimName: postgres-pvc
-```
+See [Backup & Recovery](./backup-recovery.md) for the full procedures (Qdrant snapshot API, `uploads-data` PVC, Redis persistence).
 
 ## Troubleshooting
 
@@ -1162,14 +964,13 @@ kubectl get events -n clouisle --sort-by='.lastTimestamp'
 
 ```bash
 # Test PostgreSQL connection
-kubectl exec -it postgres-0 -n clouisle -- psql -U clouisle
-
-# Test Redis connection
-kubectl exec -it redis-0 -n clouisle -- redis-cli ping
+kubectl exec -it statefulset/postgres -n clouisle -- pg_isready -U postgres
 
 # Check service DNS
-kubectl run -it --rm debug --image=busybox --restart=Never -n clouisle -- nslookup postgres-service
+kubectl run -it --rm debug --image=busybox --restart=Never -n clouisle -- nslookup postgres
 ```
+
+If application pods stay in `Init:0/1`, the `wait-for-postgres` init container is waiting — verify the `POSTGRES_*` values in `clouisle-config` match the database.
 
 ### Resource Issues
 
@@ -1186,10 +987,10 @@ kubectl describe node <node-name>
 
 **✅ Do:**
 - Use resource limits and requests
-- Enable horizontal pod autoscaling
 - Use liveness and readiness probes
-- Store secrets securely
+- Store secrets securely (Secret, not ConfigMap)
 - Use persistent volumes for data
+- Keep `beat` at exactly one replica
 - Enable monitoring and logging
 - Regular backups
 - Use rolling updates
@@ -1198,18 +999,18 @@ kubectl describe node <node-name>
 - Run without resource limits
 - Skip health checks
 - Store secrets in ConfigMaps
-- Use emptyDir for data
+- Scale `beat` beyond 1 replica
 - Ignore monitoring
 - Skip backups
 - Force delete pods
 
 ## Related Documentation
 
+- [Deployment Guide](./DEPLOYMENT.md) - Full deployment guide
 - [Docker Compose Deployment](./docker-compose.md) - Docker deployment
 - [Environment Variables](./environment-variables.md) - Configuration
 - [Troubleshooting](./troubleshooting.md) - Common issues
-- [Monitoring](../operations/monitoring.md) - Monitoring guide
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

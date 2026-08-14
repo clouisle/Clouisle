@@ -9,9 +9,9 @@ User management allows administrators to:
 - **Create users**: Add new users to the system
 - **Manage accounts**: Update user information and settings
 - **Control access**: Activate, deactivate, and delete users
-- **Assign roles**: Set user permissions and team memberships
-- **Monitor activity**: Track user actions and usage
-- **Enforce policies**: Apply security and compliance rules
+- **Assign roles**: Set user roles and team memberships
+- **Enforce policies**: Apply password and security policies
+- **Communicate**: Send emails to users
 
 ## Accessing User Management
 
@@ -26,7 +26,7 @@ User management allows administrators to:
 
 **Or:**
 
-- Navigate directly to `/admin/users`
+- Navigate directly to `/users`
 
 ### User List
 
@@ -44,12 +44,12 @@ User management allows administrators to:
 │    [View] [Edit] [...]                             │
 │                                                     │
 │ 👤 Bob Smith (bob@example.com)                      │
-│    Status: Active • Role: User                     │
+│    Status: Active • Role: Member                   │
 │    Teams: 2 • Last login: Yesterday                │
 │    [View] [Edit] [...]                             │
 │                                                     │
 │ 👤 Carol Davis (carol@example.com)                  │
-│    Status: Inactive • Role: User                   │
+│    Status: Inactive • Role: Viewer                 │
 │    Teams: 1 • Last login: 30 days ago              │
 │    [View] [Edit] [...]                             │
 │                                                     │
@@ -68,10 +68,10 @@ User management allows administrators to:
    - **Username**: Unique username
    - **Full Name**: User's full name
    - **Password**: Initial password (or auto-generate)
-   - **Role**: System role (Admin, User)
+   - **Role**: Global role (Super Admin, Admin, Member, Viewer)
    - **Teams**: Assign to teams (optional)
 3. Click **"Create User"**
-4. User receives welcome email
+4. User is created
 
 **Create user form:**
 ```
@@ -91,15 +91,14 @@ User management allows administrators to:
 │ Password: *                             │
 │ [••••••••••] [Generate] [Show]          │
 │                                         │
-│ System Role:                            │
+│ Global Role:                            │
+│ ○ Super Admin                           │
 │ ○ Admin                                 │
-│ ● User                                  │
+│ ● Member                                │
+│ ○ Viewer                                │
 │                                         │
 │ Teams: (optional)                       │
 │ [Select teams...________] [+ Add]       │
-│                                         │
-│ ☑ Send welcome email                    │
-│ ☑ Require password change on first login│
 │                                         │
 │ [Cancel]  [Create User]                 │
 │                                         │
@@ -108,86 +107,44 @@ User management allows administrators to:
 
 ### Bulk User Import
 
-**Import multiple users from CSV:**
-
-1. Click **"Import Users"** button
-2. Download CSV template
-3. Fill in user information
-4. Upload CSV file
-5. Review import preview
-6. Confirm import
-7. Users are created
-
-**CSV format:**
-```csv
-email,username,full_name,role,teams
-alice@example.com,alice,Alice Johnson,user,"Marketing,Sales"
-bob@example.com,bob,Bob Smith,user,Engineering
-carol@example.com,carol,Carol Davis,admin,""
-```
-
-**Import preview:**
-```
-┌─────────────────────────────────────────┐
-│ Import Preview (3 users)                │
-├─────────────────────────────────────────┤
-│                                         │
-│ ✅ alice@example.com                    │
-│    Username: alice                      │
-│    Teams: Marketing, Sales              │
-│                                         │
-│ ✅ bob@example.com                      │
-│    Username: bob                        │
-│    Teams: Engineering                   │
-│                                         │
-│ ⚠️ carol@example.com                    │
-│    Warning: Email already exists        │
-│    Action: Skip                         │
-│                                         │
-│ Summary:                                │
-│ • 2 users will be created               │
-│ • 1 user will be skipped                │
-│                                         │
-│ [Cancel]  [Import Users]                │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap. There is no CSV user import with preview. Users are created one at a time (`POST /api/v1/admin/users`) or provisioned automatically through SSO when `sso_auto_create_users` is enabled.
 
 ### SSO User Provisioning
 
 **Automatic user creation via SSO:**
 
 1. Configure SSO provider
-2. Enable auto-provisioning
+2. Enable `sso_auto_create_users` in the SSO settings
 3. Users log in via SSO
 4. Accounts created automatically
-5. Assigned to default team (if configured)
+5. Assigned to the default role and default team (if configured)
 
-**Auto-provisioning settings:**
+**Auto-provisioning settings (Site Settings → Security/SSO):**
 ```
 ┌─────────────────────────────────────────┐
 │ SSO Auto-Provisioning                   │
 ├─────────────────────────────────────────┤
 │                                         │
 │ ☑ Enable auto-provisioning              │
+│    (sso_auto_create_users)              │
 │                                         │
 │ Default Role:                           │
-│ ● User                                  │
-│ ○ Admin                                 │
+│ (default_role_id — Viewer by default)   │
 │                                         │
 │ Default Team:                           │
-│ [Select team...________] (optional)     │
+│ (default_team_id + default_team_role)   │
 │                                         │
-│ Email Domain Restrictions:              │
-│ [example.com________] [+ Add]           │
-│                                         │
-│ ☑ Require email verification            │
-│ ☑ Send welcome email                    │
+│ ☑ Match by email                        │
+│    (sso_match_by_email)                 │
+│ ☐ Require approval                      │
+│    (sso_require_approval)               │
 │                                         │
 │ [Save Settings]                         │
 │                                         │
 └─────────────────────────────────────────┘
 ```
+
+> **Note:** Not implemented / Roadmap: email-domain restrictions for SSO provisioning are not available.
 
 ## Viewing User Details
 
@@ -208,66 +165,34 @@ carol@example.com,carol,Carol Davis,admin,""
 │ 👤 alice@example.com                    │
 │    Username: alice                      │
 │    Status: ✅ Active                    │
-│    Role: Admin                          │
+│    Global Role: Admin                   │
 │                                         │
 │ Account Information:                    │
 │ • Created: 2026-01-15 10:00:00         │
 │ • Last Login: 2 hours ago              │
 │ • Login Count: 234                     │
 │ • Failed Logins: 0                     │
+│ • Password Expiration: exempt/expiring │
 │                                         │
 │ Teams (3):                              │
 │ • Marketing Team (Owner)               │
 │ • Sales Team (Admin)                   │
 │ • Support Team (Member)                │
 │                                         │
-│ Resources:                              │
-│ • Agents: 12                           │
-│ • Workflows: 8                         │
-│ • Conversations: 45                    │
-│ • API Keys: 3                          │
-│                                         │
 │ Security:                               │
-│ • 2FA: ✅ Enabled                       │
+│ • 2FA: ✅ Enabled (admin status)        │
 │ • SSO: ✅ Google                        │
 │ • Last Password Change: 30 days ago    │
 │                                         │
-│ [View Activity] [Reset Password]        │
-│ [Deactivate] [Delete]                  │
+│ [Force Password Change] [Deactivate]    │
+│ [Delete]                                │
 │                                         │
 └─────────────────────────────────────────┘
 ```
 
 ### User Activity
 
-**View user activity log:**
-
-1. Open user details
-2. Click **"View Activity"** tab
-3. See recent actions
-
-**Activity log:**
-```
-┌─────────────────────────────────────────┐
-│ User Activity - Alice Johnson           │
-├─────────────────────────────────────────┤
-│                                         │
-│ Today                                   │
-│ ─────────────────────────────────────  │
-│ 14:30 • Created agent "Content Writer" │
-│ 12:15 • Ran workflow "SEO Analysis"    │
-│ 10:00 • Logged in from 192.168.1.100   │
-│                                         │
-│ Yesterday                               │
-│ ─────────────────────────────────────  │
-│ 16:45 • Uploaded document to KB        │
-│ 14:20 • Updated agent "Support Bot"    │
-│ 09:30 • Logged in from 192.168.1.100   │
-│                                         │
-│ [Load More Activity]                    │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap. There is no per-user activity view inside user management. User actions can be reviewed through **Audit Logs** filtered by the user.
 
 ## Editing Users
 
@@ -301,9 +226,11 @@ carol@example.com,carol,Carol Davis,admin,""
 │ [alice___________________]              │
 │ (Cannot be changed)                     │
 │                                         │
-│ System Role:                            │
+│ Global Role:                            │
+│ ○ Super Admin                           │
 │ ● Admin                                 │
-│ ○ User                                  │
+│ ○ Member                                │
+│ ○ Viewer                                │
 │                                         │
 │ Status:                                 │
 │ ● Active                                │
@@ -314,50 +241,24 @@ carol@example.com,carol,Carol Davis,admin,""
 └─────────────────────────────────────────┘
 ```
 
-### Reset Password
+### Password Policies (Admin)
 
-**Reset user password:**
+There is no "reset password to a temporary password" flow. Administrators manage password policy per user instead:
 
-1. Open user details
-2. Click **"Reset Password"**
-3. Choose method:
-   - **Generate temporary password**
-   - **Send reset email**
-4. Confirm action
-5. User receives new password or reset link
+- **Force password change**: `POST /api/v1/admin/users/{user_id}/force-password-change` — requires the user to set a new password
+- **Reset password expiration**: `POST /api/v1/admin/users/{user_id}/reset-password-expiration` — restarts the expiration timer
+- **Exempt from expiration**: `POST /api/v1/admin/users/{user_id}/exempt-password-expiration`
+- **Bulk force password change**: `POST /api/v1/admin/users/bulk-force-password-change`
+- **Password expiration overview**: `GET /api/v1/admin/users/password-expiration-stats` and `GET /api/v1/admin/users/expiring-passwords`
 
-**Reset password dialog:**
-```
-┌─────────────────────────────────────────┐
-│ Reset Password - Alice Johnson          │
-├─────────────────────────────────────────┤
-│                                         │
-│ Choose reset method:                    │
-│                                         │
-│ ● Generate temporary password           │
-│   User will receive email with          │
-│   temporary password and must change    │
-│   it on first login.                    │
-│                                         │
-│ ○ Send password reset link              │
-│   User will receive email with link     │
-│   to reset their password.              │
-│                                         │
-│ [Cancel]  [Reset Password]              │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap: generating a temporary password or sending a reset email from the admin panel is not available.
 
 ### Manage Team Memberships
 
-**Add/remove user from teams:**
+**View user's teams:**
 
 1. Open user details
-2. Go to **"Teams"** tab
-3. Click **"Add to Team"** or **"Remove from Team"**
-4. Select team
-5. Choose role (for adding)
-6. Confirm action
+2. View the user's teams and roles
 
 **Team management:**
 ```
@@ -370,22 +271,19 @@ carol@example.com,carol,Carol Davis,admin,""
 │ Marketing Team                          │
 │ Role: Owner                             │
 │ Joined: 2026-01-15                     │
-│ [Change Role] [Remove]                  │
 │                                         │
 │ Sales Team                              │
 │ Role: Admin                             │
 │ Joined: 2026-01-20                     │
-│ [Change Role] [Remove]                  │
 │                                         │
 │ Support Team                            │
 │ Role: Member                            │
 │ Joined: 2026-02-01                     │
-│ [Change Role] [Remove]                  │
-│                                         │
-│ [+ Add to Team]                         │
 │                                         │
 └─────────────────────────────────────────┘
 ```
+
+> **Note:** Adding/removing users and changing team roles is done from the **Teams** page (Add Member, Change Role, Remove Member, Transfer Ownership), not from the user detail view.
 
 ## User Status Management
 
@@ -489,94 +387,35 @@ carol@example.com,carol,Carol Davis,admin,""
 
 ### Bulk Actions
 
-**Perform actions on multiple users:**
+**Available bulk actions:**
 
-1. Select users (checkboxes)
-2. Click **"Bulk Actions"** dropdown
-3. Choose action:
-   - Activate
-   - Deactivate
-   - Add to team
-   - Remove from team
-   - Export data
-   - Delete
-4. Confirm action
-5. Action applied to all selected users
+- **Bulk force password change**: `POST /api/v1/admin/users/bulk-force-password-change` — force selected users to change their password
+- **Send email**: `POST /api/v1/admin/users/send-email` — send an email to selected users
 
-**Bulk actions toolbar:**
-```
-┌─────────────────────────────────────────┐
-│ 5 users selected                        │
-│ [Bulk Actions ▼] [Clear Selection]     │
-│                                         │
-│ • Activate                              │
-│ • Deactivate                            │
-│ • Add to Team                           │
-│ • Remove from Team                      │
-│ • Export Data                           │
-│ • Delete                                │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap: bulk activate/deactivate, bulk add/remove from teams, bulk export, and bulk delete are not available.
 
 ### Bulk Import/Export
 
-**Export user data:**
-
-1. Click **"Export"** button
-2. Select export format:
-   - CSV
-   - JSON
-   - Excel
-3. Choose fields to export
-4. Click **"Export"**
-5. File is downloaded
-
-**Export options:**
-```
-┌─────────────────────────────────────────┐
-│ Export Users                            │
-├─────────────────────────────────────────┤
-│                                         │
-│ Format:                                 │
-│ ● CSV                                   │
-│ ○ JSON                                  │
-│ ○ Excel                                 │
-│                                         │
-│ Fields:                                 │
-│ ☑ Email                                 │
-│ ☑ Username                              │
-│ ☑ Full Name                             │
-│ ☑ Status                                │
-│ ☑ Role                                  │
-│ ☑ Teams                                 │
-│ ☑ Created Date                          │
-│ ☑ Last Login                            │
-│                                         │
-│ Filters:                                │
-│ Status: [All ▼]                         │
-│ Role: [All ▼]                           │
-│                                         │
-│ [Cancel]  [Export]                      │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap. There is no user export (CSV/JSON/Excel) and no user import.
 
 ## User Permissions
 
 ### System Roles
 
-**Available system roles:**
+**Available global roles:**
 
 | Role | Permissions |
 |------|-------------|
-| **Admin** | Full system access, user management, settings |
-| **User** | Standard user access, create resources |
+| **Super Admin** | All permissions (`*`) |
+| **Admin** | Dashboard access, system read visibility, team-scoped resource management |
+| **Member** | Daily resource creation and editing without dashboard access |
+| **Viewer** | Default read-only role with chat/run/execute permissions |
 
 **Changing user role:**
 
 1. Open user details
 2. Edit user
-3. Change **System Role**
+3. Change **Global Role**
 4. Save changes
 5. User permissions updated
 
@@ -597,11 +436,9 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 
 **Security settings per user:**
 
-1. **Password Policy**: Enforce strong passwords
-2. **2FA**: Require two-factor authentication
-3. **Session Management**: Control active sessions
-4. **Login Restrictions**: IP whitelist, time-based access
-5. **Account Lockout**: Auto-lock after failed attempts
+1. **Password Policy**: Enforced globally (Site Settings → Security)
+2. **2FA (TOTP)**: Check status and disable per user (admin endpoints)
+3. **Password Expiration**: Force change, reset expiration, or exempt per user
 
 **Security settings:**
 ```
@@ -611,59 +448,30 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 │                                         │
 │ Password:                               │
 │ • Last Changed: 30 days ago            │
-│ • Strength: Strong                     │
+│ • Expiration: exempt/expiring          │
 │ [Force Password Change]                 │
+│ [Reset Password Expiration]             │
+│ [Exempt from Expiration]                │
 │                                         │
 │ Two-Factor Authentication:              │
 │ • Status: ✅ Enabled                    │
 │ • Method: Authenticator App            │
-│ [Disable 2FA] [Reset 2FA]              │
-│                                         │
-│ Active Sessions (2):                    │
-│ • Chrome on macOS (current)            │
-│ • Safari on iOS                        │
-│ [Revoke All Sessions]                   │
-│                                         │
-│ Login History:                          │
-│ • Last Login: 2 hours ago              │
-│ • Failed Attempts: 0                   │
-│ • Account Locked: No                   │
-│ [View Full History]                     │
+│ [Disable 2FA]                           │
 │                                         │
 └─────────────────────────────────────────┘
 ```
+
+> **Note:** Admin TOTP endpoints are `GET /api/v1/admin/totp/users/{user_id}/status` and `POST /api/v1/admin/totp/users/{user_id}/disable` (superuser only).
+>
+> Not implemented / Roadmap: per-user session management (active sessions list, revoke sessions) and login history views are not available in user management. Account lockout is enforced by the global login policy (`max_login_attempts`, `lockout_duration_minutes`).
 
 ### Audit Logging
 
 **Track user actions:**
 
 1. All user actions are logged
-2. View audit logs per user
-3. Export logs for compliance
-4. Monitor suspicious activity
-
-**Audit log:**
-```
-┌─────────────────────────────────────────┐
-│ Audit Log - Alice Johnson               │
-├─────────────────────────────────────────┤
-│                                         │
-│ 2026-02-11 14:30:00                     │
-│ Action: create_agent                    │
-│ Resource: Content Writer                │
-│ IP: 192.168.1.100                      │
-│ Status: Success                         │
-│                                         │
-│ 2026-02-11 12:15:00                     │
-│ Action: run_workflow                    │
-│ Resource: SEO Analysis                  │
-│ IP: 192.168.1.100                      │
-│ Status: Success                         │
-│                                         │
-│ [Export Logs] [Filter]                  │
-│                                         │
-└─────────────────────────────────────────┘
-```
+2. Review audit logs filtered by user (Audit Logs page)
+3. Export logs for compliance (CSV/JSON from Audit Logs)
 
 ## Best Practices
 
@@ -673,18 +481,15 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 - Review user accounts regularly
 - Deactivate inactive users
 - Enforce strong password policies
-- Enable 2FA for all users
+- Enable 2FA for privileged accounts
 - Monitor failed login attempts
 - Document user changes
-- Use bulk operations for efficiency
-- Export user data for backup
 
 **❌ Don't:**
 - Create unnecessary admin accounts
 - Share user credentials
 - Skip deactivation when users leave
 - Ignore security alerts
-- Delete users without backup
 - Forget to transfer ownership
 - Allow weak passwords
 
@@ -695,8 +500,6 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 - Monitor audit logs
 - Set password expiration
 - Lock accounts after failed attempts
-- Review active sessions
-- Enforce IP restrictions (if needed)
 - Regular security audits
 
 **❌ Don't:**
@@ -705,7 +508,6 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 - Allow unlimited login attempts
 - Skip audit log reviews
 - Share admin credentials
-- Forget to revoke access
 
 ## Troubleshooting
 
@@ -718,9 +520,8 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 2. Verify username is unique
 3. Check email format
 4. Verify password meets requirements
-5. Check user limit not reached
-6. Review error message
-7. Contact support
+5. Review error message
+6. Contact support
 
 ### User Cannot Log In
 
@@ -749,9 +550,9 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 ## Related Documentation
 
 - [Team Management](./team-management.md) - Managing teams
-- [Security Settings](../settings/security-settings.md) - Security configuration
-- [Audit Logs](../audit-logs/viewing-logs.md) - Viewing audit logs
-- [SSO Configuration](../settings/sso-configuration.md) - SSO setup
+- [System Settings](../settings/system-settings.md) - Security configuration
+- [Audit Logs](../audit-logs/audit-log-management.md) - Viewing audit logs
+- [SSO Configuration](../settings/SSO.md) - SSO setup
 
 ## Getting Help
 

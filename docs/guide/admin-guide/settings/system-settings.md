@@ -6,34 +6,29 @@ This guide covers how to configure system-wide settings as an administrator.
 
 As an administrator, you can configure:
 
-- **General settings**: Site name, URL, branding
-- **Authentication**: Login methods, SSO, security
-- **Email**: SMTP configuration, templates
-- **Storage**: File storage, limits, cleanup
-- **Features**: Enable/disable features
-- **Security**: Password policies, session settings
-- **API**: Rate limits, CORS, webhooks
-- **Integrations**: Third-party services
+- **General**: Site name, URL, description, default language, theming
+- **Security**: Registration, password policy, sessions, model endpoint allowlist
+- **Notifications**: SMTP/email, DingTalk, WeChat Work, Feishu, Slack, webhook, auto notifications
+- **Storage**: Upload storage backend (local or S3-compatible object storage), KB upload size, audit log retention and archive path
+- **SSO**: SSO providers and global SSO behavior
 
 ## Accessing System Settings
 
 ### Admin Dashboard
 
 1. Log in as administrator
-2. Navigate to **Admin** → **Settings**
-3. View settings categories
+2. Navigate to **Admin** → **Site Settings** (Settings section in the sidebar)
+3. Choose a category from the settings sub-navigation
 
 ### Settings Categories
 
-- **General**: Basic site configuration
-- **Authentication**: Login and security
-- **Email**: Email server and templates
-- **Storage**: File storage configuration
-- **Features**: Feature flags
-- **Security**: Security policies
-- **API**: API configuration
-- **Integrations**: External services
-- **Advanced**: Advanced options
+- **General** (`/site-settings`)
+- **Security** (`/site-settings/security`)
+- **Notifications** (`/site-settings/notifications`)
+- **Storage** (`/site-settings/storage`)
+- **SSO** (`/site-settings/sso`)
+
+> **Note:** Settings are stored as key-value site settings and exposed through `GET /api/v1/admin/site-settings` (single key: `GET/PUT /api/v1/admin/site-settings/{key}`, bulk update: `PUT /api/v1/admin/site-settings`). Viewing requires `admin:settings:read`; updating requires `admin:settings:update`.
 
 ## General Settings
 
@@ -41,11 +36,12 @@ As an administrator, you can configure:
 
 **Configuration:**
 ```yaml
-Site Name: Clouisle
-Site URL: https://your-domain.com
-Site Description: Enterprise AI Agent Platform
-Admin Email: admin@your-domain.com
-Support Email: support@your-domain.com
+site_name: Clouisle
+site_url: https://your-domain.com
+site_description: Enterprise AI Agent Platform
+site_icon: https://your-domain.com/icon.png
+default_language: en        # en or zh
+auth_page_layout: centered  # centered or split
 ```
 
 **Update Site Information:**
@@ -53,255 +49,152 @@ Support Email: support@your-domain.com
 2. Update fields:
    - Site name
    - Site URL
-   - Description
-   - Contact emails
+   - Site description
+   - Site icon URL
+   - Default language
 3. Click **Save Changes**
 
 ### Branding
 
-**Logo and Favicon:**
+**Theme:**
 ```yaml
-Logo: /uploads/logo.png
-Logo (Dark Mode): /uploads/logo-dark.png
-Favicon: /uploads/favicon.ico
-Primary Color: #3B82F6
-Secondary Color: #10B981
+theme_mode: light          # light or dark
+theme_primary_color: #3B82F6
+theme_branding_display: icon_and_name   # icon, name, or both
 ```
+
+Additional theme tokens (primary foreground, background, foreground, card, sidebar, navbar, accent, chart colors, etc.) can be customized per color token.
 
 **Update Branding:**
-1. Navigate to **Settings** → **General** → **Branding**
-2. Upload logo files:
-   - Logo (light mode)
-   - Logo (dark mode)
-   - Favicon
-3. Set brand colors:
-   - Primary color
-   - Secondary color
-4. Click **Save Changes**
-
-### Localization
-
-**Configuration:**
-```yaml
-Default Language: English
-Available Languages:
-  - English (en)
-  - Chinese (zh)
-Default Timezone: UTC
-Date Format: YYYY/MM/DD
-Time Format: 24-hour
-```
-
-**Update Localization:**
-1. Navigate to **Settings** → **General** → **Localization**
-2. Configure:
-   - Default language
-   - Available languages
-   - Default timezone
-   - Date/time formats
+1. Navigate to **Settings** → **General**
+2. Adjust theme mode and color tokens
 3. Click **Save Changes**
 
-## Authentication Settings
+### Legal & Compliance
 
-### Login Methods
+```yaml
+icp_record: ""             # ICP record number
+icp_record_url: ""
+show_terms_of_service: false
+terms_of_service_url: ""
+show_privacy_policy: false
+privacy_policy_url: ""
+require_terms_acceptance: false
+```
+
+## Security Settings
+
+### Registration
 
 **Configuration:**
 ```yaml
-Email/Password: Enabled
-SSO: Enabled
-API Keys: Enabled
-Registration: Enabled
-Email Verification: Required
-```
-
-**Update Login Methods:**
-1. Navigate to **Settings** → **Authentication**
-2. Toggle login methods:
-   - Email/Password login
-   - SSO login
-   - API key authentication
-3. Configure registration:
-   - Allow registration
-   - Require email verification
-   - Auto-approve accounts
-4. Click **Save Changes**
-
-### SSO Configuration
-
-**Supported Providers:**
-- Google OAuth
-- GitHub OAuth
-- Microsoft Azure AD
-- SAML 2.0
-- CAS
-- Custom OIDC
-
-**Configure SSO Provider:**
-1. Navigate to **Settings** → **Authentication** → **SSO**
-2. Click **Add Provider**
-3. Select provider type
-4. Enter configuration:
-   - Client ID
-   - Client Secret
-   - Callback URL
-   - Scopes
-5. Test connection
-6. Enable provider
-7. Click **Save**
-
-**Google OAuth Example:**
-```yaml
-Provider: Google
-Client ID: 123456789.apps.googleusercontent.com
-Client Secret: GOCSPX-...
-Callback URL: https://your-domain.com/api/v1/auth/sso/google/callback
-Scopes:
-  - openid
-  - email
-  - profile
-Enabled: true
-```
-
-**SAML Configuration Example:**
-```yaml
-Provider: SAML
-Entity ID: https://your-domain.com
-SSO URL: https://idp.example.com/sso
-SLO URL: https://idp.example.com/slo
-Certificate: |
-  -----BEGIN CERTIFICATE-----
-  ...
-  -----END CERTIFICATE-----
-Attribute Mapping:
-  email: http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
-  name: http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name
-Enabled: true
+allow_registration: true
+require_approval: true     # admin approval for new users
+email_verification: true
+allow_account_deletion: true
+default_role_id: <Viewer role>    # set automatically at initialization
+default_team_id: ""
+default_team_role: member         # viewer, member, or admin
 ```
 
 ### Password Policy
 
 **Configuration:**
 ```yaml
-Minimum Length: 8
-Require Uppercase: true
-Require Lowercase: true
-Require Numbers: true
-Require Special Characters: true
-Password Expiry: 90 days
-Password History: 5 passwords
-Max Login Attempts: 5
-Lockout Duration: 30 minutes
+min_password_length: 8
+require_uppercase: true
+require_number: true
+require_special_char: false
 ```
 
-**Update Password Policy:**
-1. Navigate to **Settings** → **Authentication** → **Password Policy**
-2. Configure requirements:
-   - Minimum length
-   - Character requirements
-   - Expiry settings
-   - History settings
-3. Configure lockout:
-   - Max login attempts
-   - Lockout duration
-4. Click **Save Changes**
+> **Note:** There is no `require_lowercase` setting.
+
+**Password Expiration:**
+```yaml
+password_expiration_enabled: false
+password_expiration_days: 90
+password_expiration_warning_days: 7
+password_history_count: 5
+password_min_age_days: 0
+force_password_change_on_first_login: false
+```
 
 ### Session Settings
 
 **Configuration:**
 ```yaml
-Session Timeout: 30 minutes
-Remember Me Duration: 30 days
-Max Concurrent Sessions: 5
-Force Logout on Password Change: true
+session_timeout_days: 30
+single_session: false      # allow only a single session per user
+max_login_attempts: 5      # before account lockout
+lockout_duration_minutes: 15
+enable_captcha: false
 ```
 
-**Update Session Settings:**
-1. Navigate to **Settings** → **Authentication** → **Sessions**
-2. Configure:
-   - Session timeout
-   - Remember me duration
-   - Max concurrent sessions
-   - Force logout options
-3. Click **Save Changes**
+> **Note:** There is no "max concurrent sessions" counter. The relevant control is the `single_session` boolean, and the session lifetime is `session_timeout_days` (default 30 days).
 
-## Email Settings
+### Two-Factor Authentication
 
-### SMTP Configuration
+```yaml
+require_totp: false        # require all users to enable TOTP
+```
+
+Admin TOTP statistics and per-user status/disable endpoints are available under `/api/v1/admin/totp`.
+
+### Model Endpoint Allowlist
+
+Before saving or testing a model with a new API endpoint:
+
+1. Navigate to **Settings** → **Security**.
+2. Add the endpoint Origin to **Model Endpoint Allowlist**, one per line.
+3. Include only the scheme, hostname, and non-default port, for example `https://gateway.example.com` or `http://ollama.internal:11434`.
+4. Save the Security settings, then save or test the model again.
+
+> **Security:** Prefer HTTPS for remote endpoints. Use HTTP only for endpoints on a trusted private network because API keys and model traffic are otherwise sent without transport encryption.
+
+Matching is exact. URL paths are ignored, but the scheme, hostname, and port must all match. Removing an Origin blocks subsequent model discovery, connection tests, and runtime requests without restarting the service.
+
+## Notification Settings
+
+### SMTP (Email)
 
 **Configuration:**
 ```yaml
-SMTP Host: smtp.gmail.com
-SMTP Port: 587
-SMTP Security: TLS
-SMTP Username: noreply@your-domain.com
-SMTP Password: ********
-From Email: noreply@your-domain.com
-From Name: Clouisle
+smtp_enabled: true
+smtp_host: smtp.gmail.com
+smtp_port: 587
+smtp_encryption: tls       # none, ssl, or tls
+smtp_username: noreply@your-domain.com
+smtp_password: ********
+email_sender_name: Clouisle
+email_sender_address: noreply@your-domain.com
 ```
 
 **Update SMTP Settings:**
-1. Navigate to **Settings** → **Email** → **SMTP**
-2. Enter SMTP details:
-   - Host
-   - Port
-   - Security (TLS/SSL)
-   - Username
-   - Password
-3. Set from address:
-   - From email
-   - From name
-4. Click **Test Connection**
+1. Navigate to **Settings** → **Notifications**
+2. Enter SMTP details
+3. Set sender name and address
+4. Click **Test** (POST `/api/v1/admin/site-settings/test-email`)
 5. Click **Save Changes**
+
+### External Notification Channels
+
+The following channels can be enabled and configured (each with its own settings page section and a test endpoint):
+
+| Channel | Key settings | Test endpoint |
+|---------|--------------|---------------|
+| DingTalk | `dingtalk_enabled`, type (`webhook` or `app`), webhook URL/secret or app key/secret/agent ID | `/test-dingtalk` |
+| WeChat Work | `wechat_enabled`, type (`webhook` or `app`), webhook URL or corp ID/agent ID/app secret | `/test-wechat` |
+| Feishu | `feishu_enabled`, type (`webhook` or `app`), webhook URL/secret or app ID/secret | `/test-feishu` |
+| Slack | `slack_enabled`, incoming webhook URL | `/test-slack` |
+| Webhook | `webhook_enabled`, URL, method, custom headers, body template, HMAC secret | `/test-webhook` |
+
+### Auto Notifications
+
+The **Auto Notifications** tab (GET/PUT `/api/v1/admin/site-settings/auto-notifications`) controls which event types create notifications and which external channels receive them. See [Auto Notifications](./AUTO_NOTIFICATIONS.md) for details.
 
 ### Email Templates
 
-**Available Templates:**
-- Welcome email
-- Email verification
-- Password reset
-- Password changed
-- Account locked
-- Team invitation
-- Workflow notification
-- Agent response
-
-**Edit Email Template:**
-1. Navigate to **Settings** → **Email** → **Templates**
-2. Select template
-3. Edit template:
-   - Subject
-   - Body (HTML/Text)
-   - Variables
-4. Preview template
-5. Click **Save Changes**
-
-**Template Variables:**
-```
-{{user_name}}        - User's full name
-{{user_email}}       - User's email
-{{site_name}}        - Site name
-{{site_url}}         - Site URL
-{{verification_url}} - Email verification URL
-{{reset_url}}        - Password reset URL
-{{team_name}}        - Team name
-{{invitation_url}}   - Team invitation URL
-```
-
-**Example Template:**
-```html
-Subject: Welcome to {{site_name}}!
-
-Body:
-<html>
-<body>
-  <h1>Welcome, {{user_name}}!</h1>
-  <p>Thank you for joining {{site_name}}.</p>
-  <p>To get started, please verify your email address:</p>
-  <a href="{{verification_url}}">Verify Email</a>
-  <p>If you have any questions, contact us at {{support_email}}.</p>
-</body>
-</html>
-```
+> **Note:** Not implemented / Roadmap. There is no email template editor. Notification messages are generated from built-in i18n translations (`app/core/i18n.py`).
 
 ## Storage Settings
 
@@ -309,434 +202,91 @@ Body:
 
 **Configuration:**
 ```yaml
-Storage Backend: Local
-Storage Path: /app/uploads
-Max Upload Size: 100 MB
-Allowed File Types:
-  - PDF
-  - DOCX
-  - XLSX
-  - TXT
-  - MD
-  - CSV
-  - JSON
-  - Images (PNG, JPG, GIF)
+upload_storage_backend: local   # local or object (S3-compatible)
+kb_document_max_upload_size_mb: (1-1024)
 ```
 
 **Update Storage Settings:**
 1. Navigate to **Settings** → **Storage**
 2. Configure storage:
-   - Storage backend (Local, S3, Azure)
-   - Storage path/bucket
-   - Max upload size
-   - Allowed file types
+   - Storage backend (`local` or `object` — S3-compatible object storage)
+   - Max KB document upload size
 3. Click **Save Changes**
 
-### S3 Configuration
+> **Note:** Azure Blob storage is not supported. There is no public object-storage URL setting and no storage cleanup feature.
+
+### Object Storage (S3-compatible)
 
 **Configuration:**
 ```yaml
-Storage Backend: S3
-S3 Bucket: clouisle-uploads
-S3 Region: us-east-1
-S3 Access Key: AKIA...
-S3 Secret Key: ********
-S3 Endpoint: https://s3.amazonaws.com
-S3 Public URL: https://cdn.your-domain.com
+upload_storage_backend: object
+object_storage_endpoint: https://s3.amazonaws.com
+object_storage_bucket: clouisle-uploads
+object_storage_region: us-east-1
+object_storage_access_key: AKIA...
+object_storage_secret_key: ********
+object_storage_force_path_style: true
+object_storage_secure: true
 ```
 
-**Configure S3:**
-1. Navigate to **Settings** → **Storage** → **S3**
-2. Enter S3 details:
-   - Bucket name
-   - Region
-   - Access key
-   - Secret key
-   - Endpoint (optional)
-   - Public URL (optional)
-3. Click **Test Connection**
+**Configure Object Storage:**
+1. Navigate to **Settings** → **Storage**
+2. Enter the endpoint, bucket, region, access key, and secret key
+3. Configure path-style URLs and HTTPS options
 4. Click **Save Changes**
 
-### Storage Cleanup
+### Audit Log Retention
 
-**Configuration:**
 ```yaml
-Auto Cleanup: Enabled
-Cleanup Schedule: Daily at 2 AM
-Delete Orphaned Files: After 7 days
-Delete Temp Files: After 1 day
-Archive Old Files: After 90 days
+audit_log_retention_days: 365     # 30-3650
+audit_log_archive_path: /var/log/clouisle/audit_archives
 ```
 
-**Update Cleanup Settings:**
-1. Navigate to **Settings** → **Storage** → **Cleanup**
-2. Configure cleanup:
-   - Enable auto cleanup
-   - Cleanup schedule
-   - Retention periods
-3. Click **Save Changes**
+Logs older than the retention period are archived (manually triggered) to monthly JSON files under the archive path and then deleted. See [Audit Log Management](../audit-logs/audit-log-management.md) for details.
 
-## Feature Settings
+## SSO Settings
 
-### Feature Flags
+### Global SSO Behavior
 
-**Available Features:**
+Configured in **Settings** → **Security** (SSO section) or **Settings** → **SSO**:
+
 ```yaml
-Agents: Enabled
-Workflows: Enabled
-Knowledge Bases: Enabled
-API Keys: Enabled
-Teams: Enabled
-SSO: Enabled
-Webhooks: Enabled
-Audit Logs: Enabled
-Analytics: Enabled
-Marketplace: Disabled
+sso_enabled: false
+sso_allow_password_login: true
+sso_auto_create_users: true
+sso_require_approval: false
+sso_match_by_email: true
 ```
 
-**Toggle Features:**
-1. Navigate to **Settings** → **Features**
-2. Toggle features on/off
-3. Click **Save Changes**
+### SSO Providers
 
-**Note:** Disabling features will hide them from users but preserve data.
+SSO providers are managed in **Settings** → **SSO**. Providers are created generically with a name and protocol — there is no preset picker (Google, GitHub, Azure AD, etc.); each provider's configuration and attribute mapping are entered manually. See [SSO Configuration](./SSO.md) for the full guide.
 
-### Registration Settings
+## Feature Flags and Other Settings
 
-**Configuration:**
-```yaml
-Allow Registration: true
-Require Email Verification: true
-Auto-Approve Accounts: false
-Default Role: User
-Default Team: None
-Max Users: Unlimited
-```
-
-**Update Registration:**
-1. Navigate to **Settings** → **Features** → **Registration**
-2. Configure:
-   - Allow registration
-   - Email verification
-   - Auto-approval
-   - Default role
-   - Default team
-   - User limit
-3. Click **Save Changes**
-
-## Security Settings
-
-### Security Headers
-
-**Configuration:**
-```yaml
-HSTS: Enabled
-HSTS Max Age: 31536000
-X-Frame-Options: DENY
-X-Content-Type-Options: nosniff
-X-XSS-Protection: 1; mode=block
-Content-Security-Policy: default-src 'self'
-```
-
-**Update Security Headers:**
-1. Navigate to **Settings** → **Security** → **Headers**
-2. Configure headers:
-   - HSTS
-   - X-Frame-Options
-   - CSP
-3. Click **Save Changes**
-
-### CORS Settings
-
-**Configuration:**
-```yaml
-CORS Enabled: true
-Allowed Origins:
-  - https://your-domain.com
-  - https://app.your-domain.com
-Allowed Methods:
-  - GET
-  - POST
-  - PUT
-  - PATCH
-  - DELETE
-Allowed Headers:
-  - Authorization
-  - Content-Type
-Allow Credentials: true
-Max Age: 3600
-```
-
-**Update CORS:**
-1. Navigate to **Settings** → **Security** → **CORS**
-2. Configure CORS:
-   - Enable CORS
-   - Allowed origins
-   - Allowed methods
-   - Allowed headers
-3. Click **Save Changes**
-
-### IP Whitelist
-
-**Configuration:**
-```yaml
-IP Whitelist Enabled: false
-Allowed IPs:
-  - 192.168.1.0/24
-  - 10.0.0.0/8
-Whitelist Admin Only: true
-```
-
-**Update IP Whitelist:**
-1. Navigate to **Settings** → **Security** → **IP Whitelist**
-2. Enable IP whitelist
-3. Add allowed IPs/ranges
-4. Configure scope (all users or admin only)
-5. Click **Save Changes**
-
-## API Settings
-
-### Rate Limiting
-
-**Configuration:**
-```yaml
-Rate Limiting Enabled: true
-Default Limit: 100 requests/minute
-Burst Limit: 200 requests
-Anonymous Limit: 10 requests/minute
-Admin Limit: 1000 requests/minute
-```
-
-**Update Rate Limits:**
-1. Navigate to **Settings** → **API** → **Rate Limiting**
-2. Configure limits:
-   - Enable rate limiting
-   - Default limit
-   - Burst limit
-   - Anonymous limit
-   - Admin limit
-3. Click **Save Changes**
-
-### API Keys
-
-**Configuration:**
-```yaml
-API Keys Enabled: true
-Max Keys per User: 10
-Key Expiry: 365 days
-Require Key Rotation: true
-Rotation Period: 90 days
-```
-
-**Update API Key Settings:**
-1. Navigate to **Settings** → **API** → **API Keys**
-2. Configure:
-   - Enable API keys
-   - Max keys per user
-   - Key expiry
-   - Rotation requirements
-3. Click **Save Changes**
-
-### Webhooks
-
-**Configuration:**
-```yaml
-Webhooks Enabled: true
-Max Webhooks per Team: 20
-Webhook Timeout: 30 seconds
-Max Retries: 3
-Retry Backoff: Exponential
-```
-
-**Update Webhook Settings:**
-1. Navigate to **Settings** → **API** → **Webhooks**
-2. Configure:
-   - Enable webhooks
-   - Max webhooks per team
-   - Timeout
-   - Retry policy
-3. Click **Save Changes**
-
-## Integration Settings
-
-### LLM Providers
-
-**Configuration:**
-```yaml
-OpenAI:
-  Enabled: true
-  API Key: sk-...
-  Organization: org-...
-
-Anthropic:
-  Enabled: true
-  API Key: sk-ant-...
-
-Azure OpenAI:
-  Enabled: false
-  API Key: ...
-  Endpoint: https://your-resource.openai.azure.com
-  API Version: 2024-02-15-preview
-```
-
-**Update LLM Providers:**
-1. Navigate to **Settings** → **Integrations** → **LLM Providers**
-2. Configure each provider:
-   - Enable/disable
-   - API key
-   - Additional settings
-3. Test connection
-4. Click **Save Changes**
-
-### Analytics
-
-**Configuration:**
-```yaml
-Analytics Enabled: true
-Google Analytics: UA-...
-Mixpanel: ...
-Custom Analytics: Enabled
-```
-
-**Update Analytics:**
-1. Navigate to **Settings** → **Integrations** → **Analytics**
-2. Configure analytics:
-   - Enable analytics
-   - Google Analytics ID
-   - Mixpanel token
-   - Custom analytics
-3. Click **Save Changes**
-
-## Advanced Settings
-
-### Maintenance Mode
-
-**Configuration:**
-```yaml
-Maintenance Mode: Disabled
-Maintenance Message: "System maintenance in progress"
-Allow Admin Access: true
-Scheduled Maintenance: None
-```
-
-**Enable Maintenance Mode:**
-1. Navigate to **Settings** → **Advanced** → **Maintenance**
-2. Enable maintenance mode
-3. Set maintenance message
-4. Configure admin access
-5. Click **Save Changes**
-
-### Database
-
-**Configuration:**
-```yaml
-Database Pool Size: 20
-Max Connections: 100
-Connection Timeout: 30 seconds
-Query Timeout: 60 seconds
-```
-
-**Update Database Settings:**
-1. Navigate to **Settings** → **Advanced** → **Database**
-2. Configure:
-   - Pool size
-   - Max connections
-   - Timeouts
-3. Click **Save Changes**
-4. Restart application
-
-### Cache
-
-**Configuration:**
-```yaml
-Cache Enabled: true
-Cache Backend: Redis
-Cache TTL: 300 seconds
-Cache Prefix: clouisle:
-```
-
-**Update Cache Settings:**
-1. Navigate to **Settings** → **Advanced** → **Cache**
-2. Configure:
-   - Enable cache
-   - Cache backend
-   - TTL
-   - Prefix
-3. Click **Save Changes**
-
-## Backup and Restore
-
-### Backup Settings
-
-**Export Settings:**
-1. Navigate to **Settings** → **Backup**
-2. Click **Export Settings**
-3. Download JSON file
-
-**Import Settings:**
-1. Navigate to **Settings** → **Backup**
-2. Click **Import Settings**
-3. Upload JSON file
-4. Review changes
-5. Confirm import
-
-### Reset Settings
-
-**Reset to Defaults:**
-1. Navigate to **Settings** → **Advanced** → **Reset**
-2. Select settings to reset:
-   - All settings
-   - Specific category
-3. Confirm reset
-4. Settings restored to defaults
-
-## Best Practices
-
-### Configuration
-
-**✅ Do:**
-- Document all configuration changes
-- Test settings in staging first
-- Backup settings before major changes
-- Use environment variables for secrets
-- Review settings regularly
-- Monitor system after changes
-- Keep settings organized
-
-**❌ Don't:**
-- Change multiple settings at once
-- Skip testing
-- Forget to backup
-- Hardcode secrets
-- Ignore warnings
-- Make changes during peak hours
-
-### Security
-
-**✅ Do:**
-- Use strong password policies
-- Enable 2FA for admins
-- Rotate API keys regularly
-- Use HTTPS everywhere
-- Enable security headers
-- Monitor audit logs
-- Restrict admin access
-
-**❌ Don't:**
-- Use weak passwords
-- Disable security features
-- Share admin credentials
-- Allow HTTP
-- Ignore security warnings
-- Skip audit logs
-- Grant unnecessary permissions
+> **Note:** Not implemented / Roadmap. The following are **not** configurable system settings:
+>
+> - Feature flags (enabling/disabling agents, workflows, KBs, etc.)
+> - Email templates
+> - Security headers (HSTS, CSP, X-Frame-Options)
+> - CORS configuration
+> - IP whitelisting
+> - API rate limiting
+> - Webhook configuration as a general system feature
+> - Third-party integrations (Salesforce, HubSpot, Slack apps, analytics like Google Analytics/Mixpanel)
+> - Maintenance mode
+> - Database pool / cache settings
+> - Settings export/import and reset-to-defaults workflows
+>
+> Model endpoints are restricted via the **Model Endpoint Allowlist** (Security) instead of a global integration registry.
 
 ## Related Documentation
 
 - [Environment Variables](../../deployment/environment-variables.md) - Environment config
 - [Security Best Practices](../../best-practices/security.md) - Security guide
+- [Auto Notifications](./AUTO_NOTIFICATIONS.md) - Notification types and channels
+- [SSO Configuration](./SSO.md) - Single sign-on setup
 - [User Management](../users/user-management.md) - User admin
-- [Team Management](../teams/team-management.md) - Team admin
 
 ---
 

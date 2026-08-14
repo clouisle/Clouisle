@@ -9,10 +9,14 @@ from uuid import uuid4
 
 import pytest
 from app.core.config import settings
+from app.core.i18n import t
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.upload_gateway import UploadGatewayError, read as read_upload
 
-from app.services.sandbox.manager import SandboxManager
+from app.services.sandbox.manager import (
+    SandboxManager,
+    translate_sandbox_error,
+)
 from app.services.sandbox.models import (
     SandboxArtifact,
     SandboxArtifactLimits,
@@ -981,6 +985,47 @@ class TestSandboxManager:
         assert timed_out.error
         assert plain.success is True
         assert plain.result == "value"
+
+    def test_translate_sandbox_error_maps_bwrap_userns_failure(self):
+        raw = (
+            "bwrap: No permissions to create new namespace, likely because the "
+            "kernel does not allow non-privileged user namespaces."
+        )
+        assert translate_sandbox_error(raw) == t("sandbox_userns_unavailable")
+        assert translate_sandbox_error("ordinary failure") == "ordinary failure"
+        assert translate_sandbox_error(None) is None
+        assert translate_sandbox_error("") == ""
+
+    @pytest.mark.anyio
+    async def test_run_job_surfaces_actionable_error_for_bwrap_userns_failure(
+        self, tmp_path: Path
+    ):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        workspace = workspace_manager.prepare("job-1")
+        metadata = SandboxResult(job_id="job-1").metadata
+        launcher = MagicMock()
+        launcher.launch = AsyncMock(
+            return_value=ProcessLaunchResult(
+                exit_code=1,
+                stderr=(
+                    "bwrap: No permissions to create new namespace, likely because "
+                    "the kernel does not allow non-privileged user namespaces.\n"
+                ),
+            )
+        )
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            process_launcher=launcher,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        failed = await manager._run_job(
+            SandboxJob(job_id="job-1", command=["python3"]), workspace, metadata
+        )
+
+        assert failed.success is False
+        assert failed.error == t("sandbox_userns_unavailable")
+        assert "No permissions to create new namespace" in failed.stderr
 
     def test_link_node_modules_guards_and_links(self, tmp_path: Path):
         workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))

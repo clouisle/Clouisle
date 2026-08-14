@@ -4,40 +4,28 @@ This guide explains how to access Clouisle through login and registration.
 
 ## Registration Methods
 
-Clouisle supports two registration methods:
+Clouisle supports self-registration when it is enabled by administrators.
 
-### 1. Self-Registration
-
-If enabled by administrators, you can create an account directly.
+### Self-Registration
 
 **Steps:**
 
 1. Navigate to the login page: `https://your-domain.com`
 2. Click **"Sign Up"** or **"Register"**
 3. Fill in the registration form:
-   - **Username**: Unique identifier (3-20 characters)
+   - **Username**: Unique identifier (max 50 characters)
    - **Email**: Valid email address
-   - **Password**: Strong password (8+ characters, mix of letters, numbers, symbols)
+   - **Password**: Strong password (8+ characters, see Password Requirements below)
    - **Confirm Password**: Re-enter password
 4. If human verification is shown, click **"Click to verify you are human"**
 5. Click **"Register"**
-6. Check your email for verification link (if email verification is enabled)
-7. Click the verification link to activate your account
+6. Check your email for the verification link/code (if email verification is enabled)
+7. Verify your email to activate your account
 8. Log in with your credentials
 
-**Note**: If admin approval is required, you'll see a message that your account is pending approval. Wait for an administrator to activate your account.
+**Note**: The first registered user is automatically promoted to Super Admin. If admin approval is required (`require_approval`), you'll see a message that your account is pending approval, and administrators receive a global notification. New users may be automatically added to the configured default team.
 
-### 2. Invitation-Based Registration
-
-Administrators can invite users via email.
-
-**Steps:**
-
-1. Receive invitation email from administrator
-2. Click the invitation link in the email
-3. Fill in your password and other required information
-4. Click **"Complete Registration"**
-5. Log in with your credentials
+> **Note:** There is no invitation-based registration flow. Users are created via self-registration, by administrators (admin user management), or automatically through SSO (when `sso_auto_create_users` is enabled).
 
 ## Login Methods
 
@@ -49,13 +37,13 @@ Administrators can invite users via email.
 2. Enter your **username** or **email**
 3. Enter your **password**
 4. If human verification is shown, click **"Click to verify you are human"**
-5. (Optional) Check **"Remember me"** to stay logged in
-6. Click **"Log In"**
+5. Click **"Log In"**
 
 **Security Features:**
-- Account lockout after multiple failed attempts
+- Account lockout after multiple failed attempts (default 5 attempts, 15 minutes)
 - CAPTCHA verification (if enabled)
 - Session timeout for security
+- 2FA via TOTP (if enabled)
 
 ### SSO (Single Sign-On) Login
 
@@ -64,13 +52,13 @@ If your organization has configured SSO, you can log in with your corporate cred
 **Steps:**
 
 1. Navigate to the login page
-2. Click the SSO provider button (e.g., "Sign in with Google", "Sign in with GitHub")
+2. Click the SSO provider button (e.g., "Continue with Google", "Continue with GitHub")
 3. Authenticate with your SSO provider
 4. You'll be redirected back to Clouisle and logged in automatically
 
 **First-time SSO login:**
-- If your email matches an existing account, the SSO connection will be linked
-- If no account exists, a new account will be created automatically (if enabled)
+- If your email matches an existing account, the SSO connection is linked to it (email matching is enabled by default)
+- If no account exists, a new account is created automatically (if `sso_auto_create_users` is enabled)
 
 **Supported SSO Providers:**
 - OAuth2/OIDC (Google, GitHub, GitLab, etc.)
@@ -85,9 +73,7 @@ After your first successful login:
 
 1. **Welcome Screen**: You'll see a welcome message
 2. **Profile Setup**: Complete your profile information (optional)
-3. **Team Assignment**:
-   - If invited to a team, you'll see it in your teams list
-   - If no team assigned, you may need to create one or wait for invitation
+3. **Team Assignment**: You may be assigned to the default team (if configured) or added to a team by an administrator
 4. **Dashboard Access**:
    - Regular users see the platform interface
    - Administrators see the admin dashboard
@@ -96,16 +82,8 @@ After your first successful login:
 
 ### Session Duration
 
-- **Default**: 30 minutes of inactivity
-- **Remember Me**: Extended session (configurable by admin)
-- **Single Session Mode**: Only one active session per user (if enabled)
-
-### Staying Logged In
-
-**"Remember Me" option:**
-- Keeps you logged in for extended period
-- Useful for personal devices
-- **Don't use on shared computers**
+- Sessions last until the configured **session timeout** (`session_timeout_days`, in days, default 30) — there is no "Remember Me" option and no inactivity-based logout
+- **Single Session Mode**: Only one active session per user (if enabled by admin) — logging in elsewhere invalidates the previous session
 
 ### Logging Out
 
@@ -114,38 +92,34 @@ After your first successful login:
 2. Select **"Logout"**
 3. You'll be redirected to the login page
 
-**Automatic Logout:**
-- After session timeout (inactivity)
-- When administrator deactivates your account
-- When you log in from another device (if single session mode enabled)
-
 ## Account Security
 
 ### Password Requirements
 
-Clouisle enforces strong password policies:
+Clouisle enforces password policies (configurable by administrators):
 
 - **Minimum length**: 8 characters (configurable)
-- **Complexity**: Mix of uppercase, lowercase, numbers, and symbols
-- **No common passwords**: Dictionary words and common patterns are rejected
-- **No reuse**: Can't reuse recent passwords (if enabled)
+- **Uppercase letter**: Required by default
+- **Number**: Required by default
+- **Special character**: Not required by default
+- **No reuse**: Cannot reuse a recent password (default: last 5 passwords)
+- There is **no** dictionary/weak-password check
 
 ### Login Security Features
 
 **Account Lockout:**
 - After 5 failed login attempts (configurable)
-- Account locked for 15 minutes
+- Account locked for 15 minutes (configurable)
 - Contact administrator if locked out repeatedly
 
 **Human Verification:**
 - Required on login and self-registration when enabled by administrators (except the first bootstrap user)
 - Complete it by clicking the verification control before submitting
 - If it fails, expires, or cannot load, retry the verification control
-- Works with existing account lockout and login anomaly controls as the risk-control fallback
 
 **Login Anomaly Detection:**
 - System tracks your usual login locations and devices
-- Notifies you of logins from new locations
+- Notifies you of logins from new locations (security notification)
 - Check notifications if you see anomaly alerts
 
 ### Two-Factor Authentication (2FA)
@@ -153,18 +127,15 @@ Clouisle enforces strong password policies:
 If enabled by your organization:
 
 1. Enter username and password
-2. Enter verification code from:
-   - Authenticator app (Google Authenticator, Authy)
-   - SMS (if configured)
-   - Email (if configured)
+2. Enter the 6-digit code from your authenticator app (TOTP)
 3. Click **"Verify"**
 
 **Setting up 2FA:**
-1. Go to **Profile Settings** → **Security**
+1. Open **Profile Settings** (profile menu) → **Account** tab
 2. Click **"Enable Two-Factor Authentication"**
-3. Scan QR code with authenticator app
-4. Enter verification code to confirm
-5. Save backup codes in a safe place
+3. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.)
+4. Enter the verification code to confirm
+5. Save the backup codes in a safe place
 
 ## Troubleshooting
 
@@ -186,9 +157,9 @@ If enabled by your organization:
 **Solution:**
 1. Click **"Forgot Password?"** on login page
 2. Enter your email address
-3. Check your email for reset link
-4. Click the link and enter new password
-5. Log in with new password
+3. Check your email for the reset link
+4. Click the link and enter a new password
+5. Log in with your new password
 
 See [Password Management](./password-management.md) for details.
 
@@ -197,9 +168,9 @@ See [Password Management](./password-management.md) for details.
 **Problem**: "Account locked" message after failed login attempts
 
 **Solutions:**
-1. Wait 15 minutes for automatic unlock
+1. Wait for the automatic unlock (15 minutes by default)
 2. Contact administrator for immediate unlock
-3. Use password reset if you forgot password
+3. Use password reset if you forgot your password
 
 ### Email Verification Not Received
 
@@ -208,7 +179,7 @@ See [Password Management](./password-management.md) for details.
 **Solutions:**
 1. Check spam/junk folder
 2. Wait a few minutes (email may be delayed)
-3. Click **"Resend Verification Email"** on login page
+3. Click **"Resend Verification Email"**
 4. Verify email address is correct
 5. Contact administrator if still not received
 
@@ -231,7 +202,7 @@ See [SSO User Guide](./sso-user-guide.md) for SSO-specific troubleshooting.
 
 **Solution:**
 - Your account requires administrator approval
-- Wait for administrator to activate your account
+- Wait for an administrator to activate your account
 - You'll receive an email when approved
 - Contact administrator if waiting too long
 
@@ -241,9 +212,8 @@ See [SSO User Guide](./sso-user-guide.md) for SSO-specific troubleshooting.
 
 **Solutions:**
 1. Log in again
-2. Enable "Remember Me" for longer sessions
-3. Contact administrator to adjust session timeout
-4. Check if you're logged in on another device (single session mode)
+2. Contact administrator to adjust the session timeout
+3. Check if you're logged in on another device (single session mode)
 
 ## Best Practices
 
@@ -262,23 +232,19 @@ See [SSO User Guide](./sso-user-guide.md) for SSO-specific troubleshooting.
 - Use the same password as other services
 - Stay logged in on public computers
 - Ignore login anomaly notifications
-- Use simple or common passwords
 
 ### Account Management
 
 **Regular Tasks:**
-- Update password every 90 days (if required)
-- Review active sessions periodically
-- Check login history for suspicious activity
+- Update your password when required
+- Review login notifications for suspicious activity
 - Keep profile information current
-- Update notification preferences
 
 ## Related Documentation
 
 - [Password Management](./password-management.md) - Change and reset passwords
 - [SSO User Guide](./sso-user-guide.md) - Single Sign-On details
 - [Profile Settings](../profile/profile-settings.md) - Manage your profile
-- [Security Best Practices](../../operations/security-checklist.md) - Security guidelines
 
 ## Getting Help
 

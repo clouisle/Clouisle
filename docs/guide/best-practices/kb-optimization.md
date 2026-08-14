@@ -4,6 +4,8 @@ Optimizing knowledge base performance.
 
 ## Chunking Strategies
 
+> **Note:** The presets below are recommendations, not hard defaults. Clouisle chunks by characters with a default `chunk_size` of 1000 and `chunk_overlap` of 100; there is no built-in per-document-type preset table.
+
 | Document Type | Chunk Size | Overlap |
 |---------------|------------|---------|
 | General docs | 500-1000 tokens | 10-20% |
@@ -12,9 +14,11 @@ Optimizing knowledge base performance.
 
 ## Search Parameters
 
-- **top_k**: 3-5 for most cases
-- **score_threshold**: 0.7-0.8 for quality
-- **max_tokens**: 2000-4000 for context
+> **Note:** The values below are recommendations, not hard defaults. The implementation defaults to `top_k = 5` and `score_threshold = 0.0`; context length is governed by a token budget rather than a fixed `max_tokens`.
+
+- **top_k**: 3-5 for most cases (recommended)
+- **score_threshold**: 0.7-0.8 for quality (recommended)
+- **max_tokens**: 2000-4000 for context (recommended; actual limits follow the configured token budget)
 
 ## When to Re-index
 

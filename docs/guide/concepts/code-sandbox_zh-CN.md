@@ -63,13 +63,57 @@ Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离。启用隔离后，�
 
 ## 安全模型
 
-- Sandbox Worker 和 Bubblewrap 进程均以**非 root 用户**运行。
-- Docker Compose 和 Helm 禁止提权并丢弃全部 Linux capabilities。
+- 任务负载在全新的 Bubblewrap **用户+挂载命名空间**内执行，绝不会运行在 Worker 自身的命名空间里。
+- 项目提供的部署让 Sandbox Worker 以 **root** 运行并在运行时默认 cap 集上**叠加 `CAP_SYS_ADMIN`**：镜像的非 root 用户 effective capabilities 恒为空，而特权 Worker 即使在宿主禁止非特权用户命名空间时也能创建用户命名空间。Worker 保持 `allowPrivilegeEscalation=false`，并仅对 sandbox-worker 使用 `seccomp=unconfined`。
 - Rootless Bubblewrap 需要 namespace/mount 系统调用。项目部署默认对 sandbox-worker 使用 `seccomp=unconfined`；禁止该设置的集群需要提供允许必要系统调用的 Localhost seccomp profile。
 - 任务命名空间内只有当前工作空间及其临时目录可写。
 - 依赖缓存及必要运行时目录只读挂载。
 - 子进程只接收过滤后的环境变量，而不是 Worker 的完整进程环境。
 - 会话过期后自动清理工作目录。
+
+## 宿主内核要求
+
+Bubblewrap 通过 `unshare(CLONE_NEWUSER)` 创建新的用户命名空间。**项目提供的部署**让 Worker 以 root + `CAP_SYS_ADMIN` 运行，用户命名空间创建走特权路径，即使宿主限制非特权用户命名空间也能正常工作——**无需修改宿主 sysctl**。
+
+自定义部署若保持 Worker **非 root**，则依赖宿主内核允许非特权用户命名空间，否则所有沙箱任务都会失败，报错为：
+
+```text
+bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.
+```
+
+部分常见宿主发行版默认限制该能力，且 `seccomp=unconfined` **无法**解决——限制发生在容器 seccomp profile 更底层的宿主内核：
+
+| 发行版 | 限制 | 修复 |
+|---|---|---|
+| Ubuntu 23.10+ | AppArmor 禁止非特权进程创建用户命名空间（`kernel.apparmor_restrict_unprivileged_userns=1`） | `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` |
+| Debian / 旧内核 | 用户命名空间克隆被禁用（`kernel.unprivileged_userns_clone=0`） | `sysctl -w kernel.unprivileged_userns_clone=1` |
+
+检查当前状态并验证用户命名空间确实可创建：
+
+```bash
+sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone 2>/dev/null
+unshare -U true && echo "user namespaces OK"
+```
+
+使修改持久化：
+
+```bash
+echo 'kernel.apparmor_restrict_unprivileged_userns=0' > /etc/sysctl.d/99-clouisle-userns.conf
+sysctl --system
+```
+
+注意事项：
+
+- sysctl 是**宿主/节点级**设置。在 Kubernetes 中无法按 Pod 设置：需要对每个节点生效（自管节点写入 `/etc/sysctl.d/`，托管集群使用自定义节点镜像或等效的节点初始化配置）。
+- 允许非特权用户命名空间是 rootless 容器（Bubblewrap、Flatpak、Podman）的标准前提。
+
+### 加固：收敛 Worker 的 `CAP_SYS_ADMIN`
+
+沙箱任务运行在全新的 Bubblewrap 用户+挂载命名空间内，无法直接触及 Worker 容器的 capabilities。但如果任务成功逃出 Bubblewrap，落点就是**容器内 root + `CAP_SYS_ADMIN`**。默认 Docker daemon 下容器与宿主共享初始用户命名空间，该 capability 是宿主 userns 级别的，经典逃逸链（cgroup `release_agent`、重挂 `/proc` 写入 `kernel.core_pattern`、sysctl 写入）在原理上可达。
+
+Docker Compose 部署建议启用 **daemon 用户命名空间重映射**（`/etc/docker/daemon.json` 中 `"userns-remap": "default"`），让每个容器进入嵌套用户命名空间——`CAP_SYS_ADMIN` 只作用于容器自身 userns，宿主逃逸链全部失效。沙箱 Worker 仍能在重映射后的命名空间内特权创建自己的 Bubblewrap userns，沙箱功能不受影响。配置、验证方法与卷属主影响见[部署指南 → 用户命名空间重映射](../deployment/DEPLOYMENT_zh-CN.md#用户命名空间重映射加固)。
+
+Kubernetes 不适用 daemon 级重映射：依赖 NetworkPolicy 限制沙箱出网、及时升级 Bubblewrap 并关注其 CVE，或在集群提供节点级用户命名空间支持时使用该能力。
 
 ## 开发
 
@@ -83,7 +127,7 @@ uv run --project backend main.py sandbox-worker -c 1
 uv run --project backend main.py sandbox-worker --local-dev -c 1
 ```
 
-如需在支持 user namespace 的 Linux 宿主机上启用同等隔离，请安装 Bubblewrap 并设置：
+如需在 Linux 宿主机上启用同等隔离（宿主需允许非特权用户命名空间，见上文「宿主内核要求」），请安装 Bubblewrap 并设置：
 
 ```bash
 SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
