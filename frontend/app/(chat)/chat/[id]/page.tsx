@@ -1005,12 +1005,15 @@ export default function PublicChatPage({
               } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
-              <div className="flex-1 min-h-full flex flex-col items-center px-4 py-8">
-                {/* Logo, welcome, description, and suggestions start near the
-                    top of the page; the composer follows directly below them
-                    and the remaining space is absorbed beneath it, so the
-                    composition reads as one upper block instead of a
-                    symmetric centered one. */}
+              <div className="flex-1 self-stretch flex flex-col items-center px-4 pt-6 pb-8">
+                {/* The composer is anchored at the vertical center of the
+                    page: the top section absorbs the space above it and the
+                    spacer mirrors it below, so the composer lands exactly on
+                    the center line (pt-6/pb-8 offset compensates the
+                    header/footer height asymmetry). Welcome content hugs the
+                    composer; the section scrolls on short viewports so it can
+                    never push the composer off the center line. */}
+                <div className="flex w-full flex-1 min-h-0 flex-col items-center justify-end overflow-y-auto pb-4">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
@@ -1041,12 +1044,6 @@ export default function PublicChatPage({
                   {agent.opening_message || t('welcomeMessage')}
                 </h1>
 
-                {agent.description && !agent.opening_message && (
-                  <p className="text-muted-foreground text-center max-w-lg text-base">
-                    {agent.description}
-                  </p>
-                )}
-
                 {/* Suggested Questions */}
                 {agent.suggested_questions && agent.suggested_questions.length > 0 && (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-3xl mt-8">
@@ -1063,11 +1060,13 @@ export default function PublicChatPage({
                 )}
 
                 {variablePanel}
+                </div>
 
-                {/* Composer - follows the welcome content */}
-                <div className="w-full mt-6 shrink-0">{composer}</div>
+                {/* Composer - anchored at the vertical center */}
+                <div className="w-full shrink-0">{composer}</div>
 
-                {/* Bottom spacer absorbs the remaining space */}
+                {/* Bottom spacer mirrors the top section so the composer sits
+                    exactly on the center line */}
                 <div className="min-h-0 flex-1" />
               </div>
             }
