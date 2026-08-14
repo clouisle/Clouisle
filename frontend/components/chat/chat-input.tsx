@@ -501,7 +501,7 @@ export function ChatInput({
               render={
                 <button
                   type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 transition-colors"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 transition-colors"
                   onClick={onStop}
                 >
                   <StopCircle className="h-5 w-5" />
@@ -519,8 +519,8 @@ export function ChatInput({
                   className={cn(
                     'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
                     canSubmit
-                      ? 'bg-foreground text-background hover:bg-foreground/90'
-                      : 'bg-muted text-muted-foreground cursor-not-allowed'
+                      ? 'bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90'
+                      : 'bg-muted text-muted-foreground cursor-not-allowed dark:bg-white/10'
                   )}
                   onClick={handleSubmit}
                   disabled={!canSubmit}
