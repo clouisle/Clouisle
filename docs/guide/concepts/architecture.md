@@ -96,7 +96,7 @@ Clouisle uses a modern, scalable architecture with clear separation between fron
 #### 1. User Request Flow
 
 ```
-Browser → Nginx (Frontend) → Next.js SSR → API Request → FastAPI Backend
+Browser → (optional external reverse proxy / Ingress) → Next.js SSR (node server.js) → API Request → FastAPI Backend
                                                               ↓
                                                          PostgreSQL
                                                               ↓
@@ -288,8 +288,8 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 - Error stack traces
 
 **Access Logs**:
-- Nginx access logs (frontend)
-- Gunicorn access logs (backend)
+- Next.js standalone server logs (frontend; the container runs `node server.js` and does **not** include Nginx — `deploy/nginx/default.conf` is an optional external reverse-proxy example, not part of the image)
+- Gunicorn access logs (backend; production mode runs Gunicorn + `uvicorn.workers.UvicornWorker` via `python main.py server --no-reload`)
 - API endpoint usage
 
 ### Metrics
@@ -307,7 +307,8 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 ### Health Checks
 
 **Endpoints**:
-- `/api/v1/health` - Basic health check (the only health endpoint)
+- `/api/v1/health` — public basic health check (container HEALTHCHECK uses `curl -f http://localhost:8000/api/v1/health`)
+- `/api/v1/admin/observability/system/health` — admin observability health (CPU/memory/disk/database/Redis/worker), requires `admin:dashboard:access`
 
 ## Future Architecture Considerations
 

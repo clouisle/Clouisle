@@ -95,7 +95,7 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 #### 1. 用户请求流程
 
 ```
-浏览器 → Nginx (前端) → Next.js SSR → API 请求 → FastAPI 后端
+浏览器 → （可选外部反向代理 / Ingress）→ Next.js SSR（node server.js）→ API 请求 → FastAPI 后端
                                                       ↓
                                                  PostgreSQL
                                                       ↓
@@ -287,8 +287,8 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 - 错误堆栈跟踪
 
 **访问日志**:
-- Nginx 访问日志（前端）
-- Gunicorn 访问日志（后端）
+- Next.js standalone 服务器日志（前端；容器只运行 `node server.js`，**不含 Nginx** —— `deploy/nginx/default.conf` 是可选的外部反向代理示例，不在镜像内）
+- Gunicorn 访问日志（后端；生产模式通过 `python main.py server --no-reload` 运行 Gunicorn + `uvicorn.workers.UvicornWorker`）
 - API 端点使用情况
 
 ### 指标
@@ -306,7 +306,8 @@ Clouisle 采用现代化、可扩展的架构，前端、后端和基础设施�
 ### 健康检查
 
 **端点**:
-- `/api/v1/health` - 基本健康检查（唯一健康检查端点）
+- `/api/v1/health` — 公开基本健康检查（容器 HEALTHCHECK 使用 `curl -f http://localhost:8000/api/v1/health`）
+- `/api/v1/admin/observability/system/health` — 管理端可观测性健康检查（CPU/内存/磁盘/数据库/Redis/Worker），需 `admin:dashboard:access` 权限
 
 ## 未来架构考虑
 
