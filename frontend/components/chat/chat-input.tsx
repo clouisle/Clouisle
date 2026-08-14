@@ -433,7 +433,7 @@ export function ChatInput({
 
       {/* Input Area - OpenAI Style */}
       <div className={cn(
-        'flex items-end gap-1 border bg-background shadow-sm pl-1 pr-1.5 py-1.5',
+        'flex items-end gap-1 border bg-background dark:bg-muted shadow-sm pl-1 pr-1.5 py-1.5',
         isMultiline ? 'rounded-2xl' : 'rounded-full',
         isDragging && 'opacity-50'
       )}>
@@ -455,7 +455,7 @@ export function ChatInput({
                   <button
                     type="button"
                     className={cn(
-                      'flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors',
+                      'flex h-9 w-9 items-center justify-center rounded-full hover:bg-accent transition-colors',
                       (disabled || files.length >= maxFiles) && 'opacity-50 cursor-not-allowed'
                     )}
                     onClick={() => fileInputRef.current?.click()}
@@ -488,7 +488,7 @@ export function ChatInput({
             disabled={disabled}
             data-testid="chat-input"
             className={cn(
-              'min-h-9 max-h-32 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-1.5 px-2 text-base md:text-base',
+              'min-h-9 max-h-32 resize-none border-0 bg-transparent dark:bg-transparent shadow-none focus-visible:ring-0 py-1.5 px-2 text-base md:text-base',
               'placeholder:text-muted-foreground/60'
             )}
           />
