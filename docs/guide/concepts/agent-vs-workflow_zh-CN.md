@@ -8,6 +8,13 @@
 - 交互式聊天界面
 - 多轮对话
 - 自主决策
+- 根据上下文使用工具
+
+**使用场景**:
+- 客服聊天机器人
+- 个人助理
+- 问答系统
+- 交互式帮助系统
 
 ## Workflow
 
@@ -15,15 +22,25 @@
 - 可视化节点编辑器
 - 预定义执行路径
 - 显式控制流
+- 可重复的过程
 
-详细对比请参考英文版本。
+**使用场景**:
+- 数据处理流水线
+- 自动化报告
+- API 集成
+- 定时任务
 
----
+## 对比
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+| 特性 | Agent | Workflow |
+|------|-------|----------|
+| 界面 | 聊天 | 可视化编辑器 |
+| 执行 | 自主 | 确定性 |
+| 控制 | AI 驱动 | 用户定义 |
+| 使用场景 | 交互式 | 自动化 |
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+## 相关文档
+
+- [RAG 详解](./rag-explained_zh-CN.md) - 检索增强生成
+- [系统架构](./architecture_zh-CN.md) - 架构概述
+- [工作流设计模式](../best-practices/workflow-patterns_zh-CN.md) - 常见工作流模式

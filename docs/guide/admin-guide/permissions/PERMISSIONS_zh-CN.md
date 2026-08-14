@@ -17,10 +17,17 @@
 
 | 权限 | 说明 |
 |------|------|
-| `user:read/create/update/delete` | 用户管理 |
-| `role:read/create/update/delete` | 角色管理 |
-| `permission:read` | 查看权限列表 |
-| `model:read/create/update/delete` | 模型管理 |
+| `admin:user:read/create/update/delete` | 用户管理 |
+| `admin:role:read/create/update/delete` | 角色管理 |
+| `admin:permission:read` | 查看权限列表 |
+| `admin:model:read/create/update/delete` | 模型管理 |
+| `admin:memory:read` | 查看记忆记录 |
+| `admin:conversation:read/delete` | 后台对话管理 |
+| `admin:notification:create/delete` | 后台通知管理 |
+| `admin:team:read/create/update/delete` | 全局团队管理 |
+| `admin:app:read/create/update/delete/publish/duplicate` | 跨团队 Agent 与工作流（App）管理 |
+| `admin:capability:read/create/update/delete/execute` | 跨团队工具与技能（Capability）管理 |
+| `admin:knowledge-base:read/test/create/update/delete` | 后台知识库管理 |
 | `admin:settings:read` | 查看站点设置 |
 | `admin:settings:update` | 修改站点设置 |
 | `admin:sso:read` | 查看 SSO 提供商与配置 |
@@ -36,9 +43,10 @@
 |------|------|
 | `team:read/create/update/delete/manage` | 团队管理 |
 | `agent:read/create/update/delete/publish/chat` | Agent 管理 |
-| `workflow:read/create/update/delete/publish/run` | 工作流管理 |
-| `kb:read/create/update/delete` | 知识库管理 |
+| `workflow:read/create/update/delete/publish/run/execute` | 工作流管理 |
+| `kb:read/test/create/update/delete` | 知识库管理 |
 | `tool:read/create/update/delete/execute` | 工具管理 |
+| `skill:read/create/update/delete/execute` | 技能管理 |
 | `apikey:read/create/update/delete` | API Key 管理 |
 | `conversation:read/delete` | 对话管理 |
 
@@ -85,11 +93,15 @@
 | `workflow:read/run` | ✓ | ✓ | ✓ | ✓ |
 | `workflow:create/update` | ✓ | ✓ | ✓ | |
 | `workflow:delete/publish` | ✓ | ✓ | | |
+| `workflow:execute` | ✓ | ✓ | | |
 | `kb:read` | ✓ | ✓ | ✓ | ✓ |
+| `kb:test` | ✓ | ✓ | ✓ | ✓ |
 | `kb:create/update` | ✓ | ✓ | ✓ | |
-| `kb:delete` | ✓ | ✓ | | |
+| `kb:delete` | ✓ | ✓ | ✓ | |
 | `tool:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `tool:create/update/delete` | ✓ | ✓ | | |
+| `tool:create/update/delete` | ✓ | ✓ | ✓ | |
+| `skill:read/execute` | ✓ | ✓ | ✓ | ✓ |
+| `skill:create/update/delete` | ✓ | ✓ | ✓ | |
 | `apikey:read` | ✓ | ✓ | ✓ | |
 | `apikey:create/update/delete` | ✓ | ✓ | ✓ | |
 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
@@ -217,14 +229,17 @@ Member / Viewer (无 admin:dashboard:access)
 |--------|---------|:-----------:|:-----:|:------:|:------:|
 | 仪表盘 | `admin:dashboard:access` | ✓ | ✓ | | |
 | 团队 | `team:read` | ✓ | ✓ | ✓ | ✓ |
-| 知识库 | `kb:read` | ✓ | ✓ | ✓ | ✓ |
+| 知识库 | `admin:knowledge-base:read` | ✓ | ✓ | | |
 | 活动 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
 | 用户 | `admin:user:read` | ✓ | ✓ | | |
 | 角色 | `admin:role:read` | ✓ | ✓ | | |
-| 权限 | `permission:read` | ✓ | ✓ | | |
-| API Keys | `apikey:read` | ✓ | ✓ | ✓ | ✓ |
+| 权限 | `admin:permission:read` | ✓ | ✓ | | |
+| API Keys | `apikey:read` | ✓ | ✓ | ✓ | |
 | 模型 | `admin:model:read` | ✓ | ✓ | | |
-| 工具 | `tool:read` | ✓ | ✓ | ✓ | ✓ |
+| Apps | `admin:app:read` | ✓ | ✓ | | |
+| Capabilities | `admin:capability:read` | ✓ | ✓ | | |
+| Memories | `admin:memory:read` | ✓ | ✓ | | |
+| Observability | `admin:dashboard:access` | ✓ | ✓ | | |
 | 通知 | `admin:dashboard:access` | ✓ | ✓ | | |
 | 审计日志 | `audit:read` | ✓ | ✓ | | |
 | 站点设置 | `admin:settings:read` | ✓ | ✓ | | |
@@ -241,7 +256,7 @@ Member / Viewer (无 admin:dashboard:access)
 
 ```python
 # 方式 1：单一权限检查
-current_user: User = Depends(PermissionChecker("user:read"))
+current_user: User = Depends(PermissionChecker("admin:user:read"))
 
 # 方式 2：超级管理员专用（已废弃，改用权限检查）
 # current_user: User = Depends(get_current_active_superuser)

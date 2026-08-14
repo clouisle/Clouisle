@@ -2,6 +2,8 @@
 
 This guide covers deploying Clouisle with high availability (HA) for production environments.
 
+> **Note**: This is a **theoretical reference guide**, not a description of the supplied deployment files. The HA components discussed here (HAProxy + Keepalived, Patroni failover, Redis Sentinel, Qdrant Cluster, Route53 DNS failover, Prometheus alerting) are **not implemented** in `deploy/` — the supplied Compose/K8s deployments run single instances of PostgreSQL, Redis, and Qdrant with health checks, and replicate the API/worker/frontend workloads. Use the guidance below as an operator's recipe for building on top of the standard deployment. The real health endpoint is `GET /api/v1/health` (response `{"code": 0, "data": {"status": "healthy"}, "msg": "success"}`).
+
 ## Overview
 
 High availability ensures:
@@ -125,7 +127,7 @@ frontend https_front
 # Backend - API
 backend backend_api
     balance roundrobin
-    option httpchk GET /health
+    option httpchk GET /api/v1/health
     http-check expect status 200
 
     server backend1 backend-1:8000 check inter 2000 rise 2 fall 3
@@ -643,51 +645,21 @@ volumes:
 
 **Application Health Endpoint:**
 
+The backend exposes `GET /api/v1/health` (defined in `backend/app/main.py`):
+
 ```python
-# app/api/v1/endpoints/health.py
-from fastapi import APIRouter, status
-from app.core.database import database
-from app.core.redis import redis_client
-from app.core.qdrant import qdrant_client
-
-router = APIRouter()
-
-@router.get("/health")
-async def health_check():
-    """Comprehensive health check"""
-    health = {
-        "status": "healthy",
-        "checks": {}
-    }
-
-    # Check database
-    try:
-        await database.execute("SELECT 1")
-        health["checks"]["database"] = "healthy"
-    except Exception as e:
-        health["checks"]["database"] = f"unhealthy: {str(e)}"
-        health["status"] = "unhealthy"
-
-    # Check Redis
-    try:
-        await redis_client.ping()
-        health["checks"]["redis"] = "healthy"
-    except Exception as e:
-        health["checks"]["redis"] = f"unhealthy: {str(e)}"
-        health["status"] = "unhealthy"
-
-    # Check Qdrant
-    try:
-        qdrant_client.get_collections()
-        health["checks"]["qdrant"] = "healthy"
-    except Exception as e:
-        health["checks"]["qdrant"] = f"unhealthy: {str(e)}"
-        health["status"] = "unhealthy"
-
-    status_code = status.HTTP_200_OK if health["status"] == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
-
-    return health, status_code
+@app.get(f"{settings.API_V1_STR}/health")
+async def health():
+    return success(data={"status": "healthy"})
 ```
+
+Response:
+
+```json
+{"code": 0, "data": {"status": "healthy"}, "msg": "success"}
+```
+
+Configure HAProxy/LB checks against `/api/v1/health`, not `/health`. Qdrant's health endpoint is `GET /healthz` on port 6333. Deeper dependency checks (database, Redis) are the job of the application's own logging/observability — the health endpoint does not probe them.
 
 ### Graceful Shutdown
 
@@ -856,7 +828,7 @@ docker compose exec postgres-replica psql -U clouisle -c "SELECT pg_is_in_recove
 docker compose stop backend1
 
 # Verify traffic redirects
-curl -v http://load-balancer/health
+curl -v http://load-balancer/api/v1/health
 
 # Should still return 200 OK
 ```

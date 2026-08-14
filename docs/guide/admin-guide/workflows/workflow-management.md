@@ -8,9 +8,8 @@ As an administrator, you can:
 
 - **View all workflows**: Access workflows across all teams
 - **Create workflows**: Set up workflows for teams
-- **Monitor execution**: Track workflow runs and performance
-- **Manage triggers**: Configure webhook and schedule triggers
-- **Set limits**: Control workflow resource usage
+- **Monitor execution**: Track workflow runs
+- **Manage triggers**: Configure manual and webhook triggers
 - **Troubleshoot**: Debug failed executions
 
 ## Accessing Workflow Management
@@ -18,8 +17,8 @@ As an administrator, you can:
 ### Admin Dashboard
 
 1. Log in as administrator
-2. Navigate to **Admin** → **Workflows**
-3. View workflow management interface
+2. Navigate to **Apps** in the sidebar (**Resources** section)
+3. View the workflow management interface
 
 ### Workflow List View
 
@@ -27,19 +26,16 @@ The workflow list shows:
 
 - **Workflow name and description**
 - **Team ownership**
-- **Status** (Active, Inactive, Draft)
+- **Status** (Draft, Published, Archived)
 - **Trigger type** (Manual, Webhook, Schedule)
 - **Execution count**
-- **Success rate**
 - **Last execution**
 - **Created date**
 
 **Filters:**
 - Team
-- Status (Active, Inactive, Draft)
+- Status (Draft, Published, Archived)
 - Trigger type
-- Date range
-- Success/failure status
 
 **Search:**
 - Search by workflow name or description
@@ -104,7 +100,7 @@ The workflow list shows:
 Name: Customer Inquiry Processing
 Description: Process and route customer inquiries
 Team: Support Team
-Status: Active
+Status: draft            # draft, published, or archived
 Version: 1.2.0
 ```
 
@@ -112,31 +108,24 @@ Version: 1.2.0
 
 **Manual Trigger:**
 ```yaml
-Type: Manual
+Type: manual
 Requires Input: true
-Input Schema:
-  customer_email: string
-  inquiry_text: string
-  priority: enum [low, medium, high]
 ```
 
 **Webhook Trigger:**
 ```yaml
-Type: Webhook
-URL: https://your-domain.com/api/v1/workflows/wf-123/trigger
-Method: POST
-Authentication: API Key
-Headers:
-  X-Webhook-Secret: secret-key
+Type: webhook
+Endpoint: POST /api/v1/workflows/webhook/{webhook_token}
+Authentication: Optional API key in Authorization header
 ```
 
 **Schedule Trigger:**
 ```yaml
-Type: Schedule
+Type: schedule
 Cron: "0 9 * * 1-5"  # 9 AM weekdays
-Timezone: America/New_York
-Enabled: true
 ```
+
+> **Note:** Schedule (cron) triggers are **not implemented**: `trigger_type = cron` and the cron expression can be stored in `trigger_config`, but the Celery beat schedule contains no workflow cron task, so scheduled runs are never executed. Publish/unpublish and manual/webhook execution are the working paths.
 
 ### Node Configuration Example
 
@@ -183,50 +172,35 @@ Output Variable: kb_results
 
 ### Execution Dashboard
 
-**Overview Metrics:**
-- Total executions (24h, 7d, 30d)
-- Success rate
-- Average execution time
-- Active workflows
-- Failed executions
-- Cost
-
-**Real-time Monitoring:**
-- Currently running workflows
-- Queued executions
-- Recent completions
-- Recent failures
+> **Note:** Not implemented / Roadmap: there is no real-time execution dashboard (running/queued executions, success rate, average execution time, cost). Run statistics are available via `GET /api/v1/workflows/runs/stats` (team-filterable) and `GET /api/v1/workflows/{workflow_id}/stats` (+ `/stats/trends`).
 
 ### View Execution History
 
 1. Select workflow
 2. Click **Execution History** tab
-3. View execution list:
-   - Execution ID
-   - Status (Running, Completed, Failed)
+3. View run list:
+   - Run ID
+   - Status (running, completed, failed, etc.)
    - Start time
    - Duration
    - Trigger source
    - Input/Output
 
-4. Filter by:
-   - Status
-   - Date range
-   - Trigger type
+Run history endpoints: `GET /api/v1/workflows/runs`, `GET /api/v1/workflows/{workflow_id}/runs`, and `GET /api/v1/workflows/{workflow_id}/runs/mine` (own runs).
 
-5. Click execution to view details
+4. Click a run to view details
 
 ### Execution Details
 
 **Execution Information:**
 ```yaml
-Execution ID: exec-789
+Run ID: run-789
 Workflow: Customer Inquiry Processing
-Status: Completed
+Status: completed
 Started: 2026-02-11 14:30:00
 Completed: 2026-02-11 14:30:45
 Duration: 45 seconds
-Trigger: Webhook
+Trigger: webhook
 ```
 
 **Node Execution Timeline:**
@@ -239,122 +213,80 @@ Trigger: Webhook
 [End] → 11.1s
 ```
 
-**Input/Output:**
-```json
-Input:
-{
-  "customer_email": "customer@example.com",
-  "inquiry_text": "How do I reset my password?",
-  "priority": "medium"
-}
-
-Output:
-{
-  "response": "To reset your password, visit...",
-  "kb_articles": ["article-123", "article-456"],
-  "assigned_agent": "agent-789"
-}
-```
-
-**Logs:**
-```
-[14:30:00] Workflow started
-[14:30:02] LLM node: Analyzing inquiry
-[14:30:05] LLM node: Analysis complete
-[14:30:05] Condition node: Priority is medium
-[14:30:05] Tool node: Searching knowledge base
-[14:30:07] Tool node: Found 3 articles
-[14:30:07] LLM node: Generating response
-[14:30:11] LLM node: Response generated
-[14:30:11] Workflow completed successfully
-```
+Run details are available via `GET /api/v1/workflows/runs/{run_id}` (with `GET /runs/{run_id}/nodes` for node-level execution); streamed node events via `GET /api/v1/workflows/runs/{run_id}/stream`.
 
 ## Workflow Status Management
 
 ### Workflow Statuses
-
-**Active:**
-- Workflow is operational
-- Can be triggered
-- Appears in user interface
-
-**Inactive:**
-- Workflow is disabled
-- Cannot be triggered
-- Hidden from users
-- Preserves configuration
 
 **Draft:**
 - Workflow is being edited
 - Cannot be triggered
 - Only visible to editors
 
+**Published:**
+- Workflow is operational
+- Can be triggered
+- Appears in user interface
+
+**Archived:**
+- Workflow is archived
+- Not visible in normal lists
+- Configuration preserved
+
 ### Change Workflow Status
 
-**Activate Workflow:**
+**Publish Workflow:**
 ```bash
 1. Select workflow
-2. Click "Activate"
-3. Verify configuration
-4. Confirm activation
+2. Click "Publish"
+3. Confirm publication
+4. Workflow status becomes "published"
 ```
 
-**Deactivate Workflow:**
+**Unpublish Workflow:**
 ```bash
 1. Select workflow
-2. Click "Deactivate"
-3. Optionally stop running executions
-4. Confirm deactivation
+2. Click "Unpublish"
+3. Confirm unpublish
+4. Workflow status returns to "draft"
 ```
+
+> **Note:** There is no active/inactive status. Archiving is a model-level status (`archived`) applied via updates; publish/unpublish are the admin lifecycle actions (`POST /api/v1/admin/workflows/{id}/publish` and `/unpublish`).
 
 ## Webhook Management
 
 ### View Webhooks
 
-1. Navigate to **Webhooks** tab
-2. View webhook list:
-   - Webhook URL
-   - Workflow name
-   - Status (Active, Inactive)
-   - Request count
-   - Last triggered
-   - Success rate
+A workflow with trigger type `webhook` gets a webhook token. The endpoint is:
+
+```
+POST /api/v1/workflows/webhook/{webhook_token}
+```
 
 ### Create Webhook
 
 1. Edit workflow
 2. Set trigger type to **Webhook**
-3. Click **Generate Webhook URL**
-4. Configure webhook:
-   - Authentication method
-   - Secret key
-   - Allowed IPs
-   - Rate limit
-
-5. Save webhook
+3. Save — a `webhook_token` is generated
+4. Regenerate the token anytime via `POST /api/v1/workflows/{workflow_id}/regenerate-webhook-token`
 
 ### Webhook Configuration
 
 ```yaml
-Webhook URL: https://your-domain.com/api/v1/workflows/wf-123/trigger
-Authentication: API Key
-API Key: wh_abc123...
-Secret: whsec_xyz789...
-Allowed IPs:
-  - 192.168.1.0/24
-  - 10.0.0.0/8
-Rate Limit: 100 requests/minute
-Retry Policy:
-  Max Retries: 3
-  Backoff: Exponential
+Endpoint: POST /api/v1/workflows/webhook/{webhook_token}
+Authentication: Optional API key in the Authorization header
 ```
+
+The webhook payload is the workflow input (either raw JSON or `{"inputs": {...}}`). If the workflow's trigger config defines an API key, requests must present it in the `Authorization` header; the token itself is matched with constant-time comparison.
+
+> **Note:** Not implemented / Roadmap: `wh_...`/`whsec_...` credential pairs, IP allowlists, per-webhook rate limits, retry policies, and webhook request logs are not available.
 
 ### Test Webhook
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/workflows/wf-123/trigger" \
+curl -X POST "https://your-domain.com/api/v1/workflows/webhook/TOKEN" \
   -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "X-Webhook-Secret: whsec_xyz789..." \
   -H "Content-Type: application/json" \
   -d '{
     "customer_email": "test@example.com",
@@ -365,136 +297,33 @@ curl -X POST "https://your-domain.com/api/v1/workflows/wf-123/trigger" \
 
 ### Webhook Logs
 
-View webhook request logs:
-
-1. Select webhook
-2. Click **Logs** tab
-3. View request history:
-   - Timestamp
-   - Source IP
-   - Request payload
-   - Response status
-   - Execution ID
-   - Error (if any)
+> **Note:** Not implemented / Roadmap. There is no per-webhook request log view. Triggered runs appear in the workflow run history (`GET /api/v1/workflows/runs`).
 
 ## Schedule Management
 
 ### View Schedules
 
-1. Navigate to **Schedules** tab
-2. View schedule list:
-   - Workflow name
-   - Cron expression
-   - Next run time
-   - Last run time
-   - Status (Active, Paused)
-   - Success rate
-
-### Create Schedule
-
-1. Edit workflow
-2. Set trigger type to **Schedule**
-3. Configure schedule:
-   - Cron expression
-   - Timezone
-   - Start date (optional)
-   - End date (optional)
-
-4. Test cron expression
-5. Save schedule
-
-### Schedule Configuration
-
-```yaml
-Cron Expression: "0 9 * * 1-5"
-Description: Every weekday at 9 AM
-Timezone: America/New_York
-Start Date: 2026-02-01
-End Date: 2026-12-31
-Enabled: true
-```
-
-**Common Cron Patterns:**
-```
-Every hour:        0 * * * *
-Every day at 9 AM: 0 9 * * *
-Every Monday:      0 0 * * 1
-Every 15 minutes:  */15 * * * *
-First of month:    0 0 1 * *
-```
-
-### Pause/Resume Schedule
-
-**Pause Schedule:**
-```bash
-1. Select schedule
-2. Click "Pause"
-3. Confirm pause
-```
-
-**Resume Schedule:**
-```bash
-1. Select paused schedule
-2. Click "Resume"
-3. Confirm resume
-```
+> **Note:** Not implemented / Roadmap. Scheduled (cron) workflow triggers are not executed: `trigger_type = cron` can be stored with a cron expression in `trigger_config`, but no Celery beat task dispatches workflow runs on a schedule, and there is no schedule list, next-run time, or pause/resume management.
 
 ## Workflow Limits
 
 ### Set Team Limits
 
-1. Navigate to **Teams** → Select team
-2. Go to **Limits** tab
-3. Configure workflow limits:
-   - Max workflows per team
-   - Max executions per day
-   - Max concurrent executions
-   - Max execution time
-   - Max cost per month
-
-4. Save limits
-
-### Limit Types
-
-**Resource Limits:**
-```yaml
-Max Workflows: 50
-Max Nodes per Workflow: 100
-Max Webhooks: 20
-Max Schedules: 10
-```
-
-**Execution Limits:**
-```yaml
-Max Executions per Day: 10000
-Max Concurrent Executions: 50
-Max Execution Time: 300 seconds
-Max Retries: 3
-```
-
-**Cost Limits:**
-```yaml
-Max LLM Calls per Execution: 10
-Max Tokens per Execution: 10000
-Max Cost per Month: $1000
-```
+> **Note:** Not implemented / Roadmap. There are no per-team workflow quotas (max workflows, max executions per day, concurrency, execution time, cost caps) and no resource/execution/cost limit configuration.
 
 ## Troubleshooting
 
 ### Workflow Execution Failed
 
 **Symptoms:**
-- Execution status is "Failed"
-- Error message in logs
+- Run status is "failed"
+- Error message in run details
 
 **Solutions:**
 
-1. **Check execution logs:**
-   ```bash
-   Admin → Workflows → Select workflow
-   Execution History → Select failed execution
-   View logs and error details
-   ```
+1. **Check run details:**
+   - Open the failed run in **Execution History**
+   - Review node executions and error details
 
 2. **Common errors:**
    - **Node timeout**: Increase timeout or optimize node
@@ -503,40 +332,26 @@ Max Cost per Month: $1000
    - **LLM error**: Verify model availability and API key
    - **Tool error**: Check tool configuration
 
-3. **Retry execution:**
-   ```bash
-   Select failed execution
-   Click "Retry"
-   Optionally modify input
-   Confirm retry
-   ```
+3. **Re-run:**
+   - Trigger the workflow again (`POST /api/v1/workflows/{workflow_id}/run`) with corrected input
 
 ### Webhook Not Triggering
 
 **Symptoms:**
 - Webhook requests not received
-- No executions triggered
+- No runs triggered
 
 **Solutions:**
 
-1. **Verify webhook URL:**
-   - Check URL is correct
-   - Test with curl
+1. **Verify webhook endpoint:**
+   - Confirm the workflow's trigger type is `webhook`
+   - POST to `/api/v1/workflows/webhook/{webhook_token}`; test with curl
 
 2. **Check authentication:**
-   - Verify API key is valid
-   - Check secret matches
+   - If the trigger config defines an API key, verify it is sent in the `Authorization` header
 
-3. **Check IP whitelist:**
-   - Verify source IP is allowed
-   - Add IP to whitelist if needed
-
-4. **Check webhook logs:**
-   ```bash
-   Admin → Webhooks → Select webhook
-   Logs → View recent requests
-   Check for errors
-   ```
+3. **Check the workflow status:**
+   - The workflow must be published; unpublished workflows reject webhook triggers
 
 ### Schedule Not Running
 
@@ -546,23 +361,7 @@ Max Cost per Month: $1000
 
 **Solutions:**
 
-1. **Check schedule status:**
-   - Verify schedule is active
-   - Check cron expression is valid
-
-2. **Check timezone:**
-   - Verify timezone is correct
-   - Account for DST changes
-
-3. **Check execution limits:**
-   - Verify not hitting daily limit
-   - Check concurrent execution limit
-
-4. **Check schedule logs:**
-   ```bash
-   Admin → Schedules → Select schedule
-   Execution History → View recent runs
-   ```
+> **Note:** Scheduled (cron) triggers are not implemented — no Celery beat task dispatches workflow runs. Use manual runs or webhook triggers instead.
 
 ### High Execution Time
 
@@ -576,7 +375,6 @@ Max Cost per Month: $1000
    - Reduce LLM max_tokens
    - Use faster models
    - Optimize tool calls
-   - Add caching
 
 2. **Use parallel execution:**
    - Identify independent nodes
@@ -586,14 +384,9 @@ Max Cost per Month: $1000
 3. **Add timeouts:**
    - Set node timeouts
    - Handle timeout gracefully
-   - Add retry logic
 
 4. **Monitor performance:**
-   ```bash
-   Admin → Workflows → Select workflow
-   Statistics → View performance metrics
-   Identify slow nodes
-   ```
+   - Review run duration in run history (`GET /api/v1/workflows/runs/stats`, `GET /api/v1/workflows/{workflow_id}/stats`)
 
 ## Best Practices
 
@@ -641,88 +434,56 @@ Max Cost per Month: $1000
 ### Security
 
 **✅ Do:**
-- Use webhook authentication
-- Validate input data
-- Limit webhook IPs
-- Rotate secrets regularly
+- Use webhook authentication (API key in Authorization header)
+- Regenerate webhook tokens when compromised
 - Enable audit logging
 - Monitor for abuse
-- Set rate limits
 
 **❌ Don't:**
-- Allow unauthenticated webhooks
 - Trust input blindly
-- Allow all IPs
-- Use static secrets forever
+- Use static tokens forever
 - Disable audit logs
 - Ignore suspicious activity
-- Allow unlimited requests
+
+> **Note:** Not implemented / Roadmap: webhook IP allowlists and rate limits are not available.
 
 ## Bulk Operations
 
 ### Bulk Actions
 
-**Available Actions:**
-- Activate/Deactivate
-- Change team
-- Archive
-- Delete
-- Export configuration
-
-**Perform Bulk Action:**
-```bash
-1. Select workflows (checkbox)
-2. Click "Bulk Actions"
-3. Choose action
-4. Configure options
-5. Review changes
-6. Confirm execution
-```
+> **Note:** Not implemented / Roadmap. There are no bulk workflow actions (activate/deactivate, change team, archive, delete, export configuration). Lifecycle operations are performed per workflow: publish, unpublish, duplicate, and delete.
 
 ### Import/Export
 
-**Export Workflows:**
-```bash
-1. Select workflows
-2. Click "Export"
-3. Choose format (JSON, YAML)
-4. Download file
-```
-
-**Import Workflows:**
-```bash
-1. Click "Import"
-2. Upload file (JSON/YAML)
-3. Review workflows
-4. Map teams
-5. Confirm import
-```
+> **Note:** Not implemented / Roadmap. There is no workflow import/export (JSON/YAML).
 
 ## API Access
 
 ### Manage Workflows via API
 
-See [Workflows API](../../api-reference/endpoints/workflows.md) for details.
+Admin workflow endpoints live under `/api/v1/admin/workflows` and require `admin:app:*` permissions. See [Workflows API](../../api-reference/endpoints/workflows.md) for details.
 
 **Common Operations:**
 ```python
-# List all workflows (admin)
-workflows = api.get("/api/v1/workflows", params={"all_teams": True})
+# List workflows (admin) — no all_teams parameter
+workflows = api.get("/api/v1/admin/workflows", params={"page": 1, "page_size": 20})
 
 # Create workflow for team
-workflow = api.post("/api/v1/workflows", json={
+workflow = api.post("/api/v1/admin/workflows", json={
     "name": "Customer Processing",
     "team_id": "team-123",
     "definition": {...}
 })
 
-# Execute workflow
-execution = api.post(f"/api/v1/workflows/{workflow_id}/execute", json={
+# Run workflow (runs, not /execute)
+run = api.post(f"/api/v1/workflows/{workflow_id}/run", json={
     "input": {"customer_email": "test@example.com"}
 })
 
-# Get execution status
-status = api.get(f"/api/v1/workflows/executions/{execution_id}")
+# Get run status
+status = api.get(f"/api/v1/workflows/runs/{run_id}")
+# or for the current user's own runs:
+status = api.get(f"/api/v1/workflows/{workflow_id}/runs/mine/{run_id}")
 ```
 
 ## Related Documentation

@@ -8,8 +8,9 @@ The Tools API allows you to:
 
 - **List tools**: Get all available tools
 - **Get tool details**: Retrieve tool information
-- **Execute tools**: Call tools directly
-- **Manage custom tools**: Create and configure tools (admin only)
+- **Test tools**: Execute a tool once with arguments
+- **Execute code**: Run code directly in the sandbox
+- **Manage custom tools**: Create and configure tools
 
 **Base URL**: `/api/v1/tools`
 
@@ -19,8 +20,10 @@ All endpoints require authentication via JWT token or API key.
 
 **Required scopes:**
 - `tool:read` - View tools
-- `tool:use` - Execute tools
-- `tool:manage` - Manage tools (admin only)
+- `tool:create` - Create tools
+- `tool:update` - Update tools
+- `tool:delete` - Delete tools
+- `tool:execute` - Execute/test tools
 
 ## List Tools
 
@@ -37,10 +40,13 @@ GET /api/v1/tools
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
-| `category` | string | No | - | Filter by category |
-| `type` | string | No | - | Filter by type: builtin, custom, integration |
-| `is_active` | boolean | No | - | Filter by active status |
+| `page_size` | integer | No | 10 | Items per page (max: 100) |
+| `search` | string | No | - | Search by name or display name |
+| `type` | array | No | - | Filter by type: `builtin`, `custom`, `mcp` (repeatable) |
+| `category` | array | No | - | Filter by category (repeatable) |
+| `status` | array | No | - | Filter by enabled status (repeatable) |
+| `team_id` | array | No | - | Filter by owning team (repeatable) |
+| `creator` | array | No | - | Filter by creator (repeatable) |
 
 ### Request Example
 
@@ -60,37 +66,47 @@ curl -X GET "https://your-domain.com/api/v1/tools?category=search" \
     "items": [
       {
         "id": "tool-123",
-        "name": "Web Search",
+        "name": "web_search",
+        "display_name": "Web Search",
         "description": "Search the internet for information",
-        "category": "search",
         "type": "builtin",
-        "is_active": true,
-        "capabilities": {
-          "max_results": 10,
-          "supports_filters": true
-        },
+        "category": "search",
+        "icon": "🔍",
         "parameters": [
           {
             "name": "query",
             "type": "string",
-            "required": true,
-            "description": "Search query"
+            "description": "Search query",
+            "required": true
           },
           {
             "name": "max_results",
             "type": "integer",
+            "description": "Maximum number of results",
             "required": false,
-            "default": 5,
-            "description": "Maximum number of results"
+            "default": 5
           }
         ],
-        "created_at": "2026-01-15T10:00:00Z"
+        "is_enabled": true,
+        "requires_config": false,
+        "config_fields": [],
+        "custom_type": null,
+        "http_config": null,
+        "code_config": null,
+        "mcp_config": null,
+        "team_id": null,
+        "created_by_id": null,
+        "created_by_name": null,
+        "is_owned": true,
+        "owner_team_id": null,
+        "owner_team_name": null,
+        "share_permission": null,
+        "shared_with_count": 0
       }
     ],
     "total": 15,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 1
+    "page_size": 10
   },
   "msg": "success"
 }
@@ -100,22 +116,24 @@ curl -X GET "https://your-domain.com/api/v1/tools?category=search" \
 
 Get details of a specific tool.
 
-### Endpoint
+### Endpoints
 
 ```
-GET /api/v1/tools/{tool_id}
+GET /api/v1/tools/id/{tool_id}
+GET /api/v1/tools/name/{tool_name}?team_id={team_id}
 ```
 
 ### Path Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `tool_id` | string | Yes | Tool UUID |
+| `tool_id` | string | Yes | Tool UUID (for `GET /id/{tool_id}`) |
+| `tool_name` | string | Yes | Tool name (for `GET /name/{tool_name}`) |
 
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/tools/tool-123" \
+curl -X GET "https://your-domain.com/api/v1/tools/id/tool-123" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -128,95 +146,67 @@ curl -X GET "https://your-domain.com/api/v1/tools/tool-123" \
   "code": 0,
   "data": {
     "id": "tool-123",
-    "name": "Web Search",
+    "name": "web_search",
+    "display_name": "Web Search",
     "description": "Search the internet for information",
-    "category": "search",
     "type": "builtin",
-    "is_active": true,
+    "category": "search",
     "icon": "🔍",
-    "capabilities": {
-      "max_results": 10,
-      "supports_filters": true,
-      "supports_pagination": true
-    },
     "parameters": [
       {
         "name": "query",
         "type": "string",
-        "required": true,
         "description": "Search query",
-        "validation": {
-          "min_length": 1,
-          "max_length": 500
-        }
+        "required": true
       },
       {
         "name": "max_results",
         "type": "integer",
-        "required": false,
-        "default": 5,
         "description": "Maximum number of results",
-        "validation": {
-          "min": 1,
-          "max": 10
-        }
+        "required": false,
+        "default": 5
       }
     ],
-    "response_schema": {
-      "type": "object",
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "title": {"type": "string"},
-              "url": {"type": "string"},
-              "snippet": {"type": "string"}
-            }
-          }
-        }
-      }
-    },
-    "usage_stats": {
-      "total_calls": 12345,
-      "success_rate": 98.5,
-      "avg_response_time": 1.2
-    },
-    "created_at": "2026-01-15T10:00:00Z",
-    "updated_at": "2026-02-11T15:30:00Z"
+    "is_enabled": true,
+    "requires_config": false,
+    "config_fields": [],
+    "custom_type": null,
+    "http_config": null,
+    "code_config": null,
+    "mcp_config": null,
+    "team_id": null,
+    "created_by_id": null,
+    "created_by_name": null,
+    "is_owned": true,
+    "owner_team_id": null,
+    "owner_team_name": null,
+    "share_permission": null,
+    "shared_with_count": 0,
+    "created_at": null,
+    "updated_at": null
   },
   "msg": "success"
 }
 ```
 
-## Execute Tool
+## Test Tool
 
-Execute a tool with given parameters.
+Execute a tool once by name with arguments. There is no standalone `POST /tools/{tool_id}/execute` endpoint.
 
 ### Endpoint
 
 ```
-POST /api/v1/tools/{tool_id}/execute
+POST /api/v1/tools/test
 ```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `tool_id` | string | Yes | Tool UUID |
 
 ### Request Body
 
 ```json
 {
-  "parameters": {
+  "name": "web_search",
+  "arguments": {
     "query": "artificial intelligence",
     "max_results": 5
-  },
-  "context": {
-    "user_id": "user-456",
-    "conversation_id": "conv-789"
   }
 }
 ```
@@ -225,17 +215,18 @@ POST /api/v1/tools/{tool_id}/execute
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `parameters` | object | Yes | Tool parameters |
-| `context` | object | No | Execution context |
+| `name` | string | Yes | Tool name |
+| `arguments` | object | No | Tool arguments |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/tools/tool-123/execute" \
+curl -X POST "https://your-domain.com/api/v1/tools/test" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "parameters": {
+    "name": "web_search",
+    "arguments": {
       "query": "artificial intelligence",
       "max_results": 5
     }
@@ -250,30 +241,21 @@ curl -X POST "https://your-domain.com/api/v1/tools/tool-123/execute" \
 {
   "code": 0,
   "data": {
-    "execution_id": "exec-456",
-    "tool_id": "tool-123",
-    "status": "completed",
+    "name": "web_search",
+    "success": true,
     "result": {
       "results": [
         {
           "title": "Artificial Intelligence - Wikipedia",
           "url": "https://en.wikipedia.org/wiki/Artificial_intelligence",
           "snippet": "Artificial intelligence (AI) is intelligence demonstrated by machines..."
-        },
-        {
-          "title": "What is AI? | IBM",
-          "url": "https://www.ibm.com/topics/artificial-intelligence",
-          "snippet": "Artificial intelligence leverages computers and machines..."
         }
-      ],
-      "total_results": 5
+      ]
     },
-    "metadata": {
-      "execution_time": 1.2,
-      "tokens_used": 0,
-      "cost": 0.0
-    },
-    "executed_at": "2026-02-11T16:00:00Z"
+    "error": null,
+    "logs": null,
+    "artifacts": [],
+    "duration_ms": 1200
   },
   "msg": "success"
 }
@@ -285,42 +267,109 @@ curl -X POST "https://your-domain.com/api/v1/tools/tool-123/execute" \
 {
   "code": 1001,
   "data": {
-    "field": "parameters.query",
+    "field": "arguments.query",
     "error": "Query is required"
   },
   "msg": "Validation failed"
 }
 ```
 
-## Create Custom Tool
+## Execute Code
 
-Create a custom tool (admin only).
+Run JavaScript/Python code directly in the sandbox without saving a tool.
 
 ### Endpoint
 
 ```
-POST /api/v1/tools
+POST /api/v1/tools/execute-code
 ```
 
 ### Request Body
 
 ```json
 {
-  "name": "CRM Lookup",
+  "language": "python",
+  "code": "print(1 + 1)",
+  "params": {},
+  "timeout": 30,
+  "python_packages": ["requests"]
+}
+```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `language` | string | Yes | Code language: `javascript`, `python` |
+| `code` | string | Yes | Code content |
+| `params` | object | No | Input parameters |
+| `timeout` | number | No | Timeout in seconds (1-60, default: 30) |
+| `command` | array | No | Custom command (argv array) |
+| `python_packages` | array | No | Python packages to install |
+| `js_packages` | array | No | JavaScript packages to install |
+| `python_package_index_url` | string | No | Python package mirror URL |
+| `node_package_registry_url` | string | No | JavaScript package registry URL |
+| `artifacts` | array | No | Sandbox artifact configuration |
+| `limits` | object | No | Resource limits (timeout_seconds, disk_mb, max_stdout_kb, max_stderr_kb) |
+
+### Request Example
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/tools/execute-code" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "language": "python",
+    "code": "print(1 + 1)"
+  }'
+```
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "success": true,
+    "result": "2\n",
+    "error": null,
+    "logs": null,
+    "artifacts": [],
+    "duration_ms": 350
+  },
+  "msg": "success"
+}
+```
+
+## Create Custom Tool
+
+Create a custom tool. `team_id` is a required query parameter.
+
+### Endpoint
+
+```
+POST /api/v1/tools?team_id={team_id}
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `team_id` | string | Yes | Team UUID that owns the tool |
+
+### Request Body
+
+```json
+{
+  "name": "crm_lookup",
+  "display_name": "CRM Lookup",
   "description": "Look up customer information in CRM",
   "category": "data",
   "type": "custom",
+  "custom_type": "http",
   "icon": "👤",
-  "endpoint": {
-    "url": "https://api.crm.example.com/customers/{customer_id}",
-    "method": "GET",
-    "authentication": {
-      "type": "api_key",
-      "header": "X-API-Key",
-      "value": "crm_..."
-    },
-    "timeout": 30
-  },
   "parameters": [
     {
       "name": "customer_id",
@@ -329,39 +378,61 @@ POST /api/v1/tools
       "description": "Customer ID to lookup"
     }
   ],
-  "response_schema": {
-    "type": "object",
-    "properties": {
-      "customer_id": {"type": "string"},
-      "name": {"type": "string"},
-      "email": {"type": "string"}
-    }
-  }
+  "http_config": {
+    "method": "GET",
+    "url": "https://api.crm.example.com/customers/{customer_id}",
+    "headers": {
+      "X-API-Key": "crm_..."
+    },
+    "timeout": 30
+  },
+  "credentials": {},
+  "is_enabled": true
 }
 ```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Tool name (unique identifier, max 100 chars) |
+| `display_name` | string | Yes | Display name (max 100 chars) |
+| `description` | string | No | Tool description |
+| `icon` | string | No | Icon (emoji or URL, max 100 chars) |
+| `category` | string | No | Tool category (default: `other`) |
+| `type` | string | No | Tool type: `builtin`, `custom`, `mcp` (default: `custom`) |
+| `custom_type` | string | No | Custom tool type: `http`, `code`, `mcp` (only for `type=custom`) |
+| `parameters` | array | No | Parameter definitions (`name`, `type`, `description`, `required`, `enum`, `default`) |
+| `http_config` | object | No | HTTP config (`method`, `url`, `headers`, `query_params`, `body_template`, `content_type`, `form_fields`, `timeout`, `response_path`) |
+| `code_config` | object | No | Code config (`language`, `code`, `command`, `python_packages`, `js_packages`, `artifacts`, `limits`) |
+| `mcp_config` | object | No | MCP Server config (`transport`, `command`, `args`, `env`, `url`, `headers`) |
+| `credentials` | object | No | Tool credentials |
+| `is_enabled` | boolean | No | Enabled status (default: true) |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/tools" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+curl -X POST "https://your-domain.com/api/v1/tools?team_id=team-123" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "CRM Lookup",
+    "name": "crm_lookup",
+    "display_name": "CRM Lookup",
     "description": "Look up customer information in CRM",
     "category": "data",
     "type": "custom",
-    "endpoint": {
-      "url": "https://api.crm.example.com/customers/{customer_id}",
-      "method": "GET"
-    },
+    "custom_type": "http",
     "parameters": [
       {
         "name": "customer_id",
         "type": "string",
         "required": true
       }
-    ]
+    ],
+    "http_config": {
+      "method": "GET",
+      "url": "https://api.crm.example.com/customers/{customer_id}"
+    }
   }'
 ```
 
@@ -374,10 +445,17 @@ curl -X POST "https://your-domain.com/api/v1/tools" \
   "code": 0,
   "data": {
     "id": "tool-789",
-    "name": "CRM Lookup",
+    "name": "crm_lookup",
+    "display_name": "CRM Lookup",
+    "description": "Look up customer information in CRM",
     "type": "custom",
-    "is_active": true,
-    "created_at": "2026-02-11T16:00:00Z"
+    "category": "data",
+    "custom_type": "http",
+    "is_enabled": true,
+    "team_id": "team-123",
+    "created_at": "2026-02-11T16:00:00Z",
+    "updated_at": "2026-02-11T16:00:00Z",
+    "created_by_name": "alice"
   },
   "msg": "Tool created successfully"
 }
@@ -385,12 +463,12 @@ curl -X POST "https://your-domain.com/api/v1/tools" \
 
 ## Update Tool
 
-Update tool configuration (admin only).
+Update tool configuration.
 
 ### Endpoint
 
 ```
-PATCH /api/v1/tools/{tool_id}
+PUT /api/v1/tools/{tool_id}
 ```
 
 ### Path Parameters
@@ -405,9 +483,9 @@ All fields are optional. Only include fields you want to update.
 
 ```json
 {
-  "name": "CRM Lookup (Updated)",
-  "is_active": true,
-  "endpoint": {
+  "display_name": "CRM Lookup (Updated)",
+  "is_enabled": true,
+  "http_config": {
     "timeout": 60
   }
 }
@@ -416,11 +494,12 @@ All fields are optional. Only include fields you want to update.
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/tools/tool-789" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+curl -X PUT "https://your-domain.com/api/v1/tools/tool-789" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "is_active": true
+    "display_name": "CRM Lookup (Updated)",
+    "is_enabled": true
   }'
 ```
 
@@ -433,9 +512,14 @@ curl -X PATCH "https://your-domain.com/api/v1/tools/tool-789" \
   "code": 0,
   "data": {
     "id": "tool-789",
-    "name": "CRM Lookup (Updated)",
-    "is_active": true,
-    "updated_at": "2026-02-11T16:05:00Z"
+    "name": "crm_lookup",
+    "display_name": "CRM Lookup (Updated)",
+    "type": "custom",
+    "is_enabled": true,
+    "team_id": "team-123",
+    "created_at": "2026-02-11T16:00:00Z",
+    "updated_at": "2026-02-11T16:05:00Z",
+    "created_by_name": "alice"
   },
   "msg": "Tool updated successfully"
 }
@@ -443,7 +527,7 @@ curl -X PATCH "https://your-domain.com/api/v1/tools/tool-789" \
 
 ## Delete Tool
 
-Delete a custom tool (admin only).
+Delete a custom tool.
 
 ### Endpoint
 
@@ -461,7 +545,7 @@ DELETE /api/v1/tools/{tool_id}
 
 ```bash
 curl -X DELETE "https://your-domain.com/api/v1/tools/tool-789" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ### Response
@@ -476,172 +560,19 @@ curl -X DELETE "https://your-domain.com/api/v1/tools/tool-789" \
 }
 ```
 
-## Test Tool
-
-Test tool execution (admin only).
-
-### Endpoint
-
-```
-POST /api/v1/tools/{tool_id}/test
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `tool_id` | string | Yes | Tool UUID |
-
-### Request Body
-
-```json
-{
-  "parameters": {
-    "customer_id": "12345"
-  }
-}
-```
-
-### Request Example
-
-```bash
-curl -X POST "https://your-domain.com/api/v1/tools/tool-789/test" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parameters": {
-      "customer_id": "12345"
-    }
-  }'
-```
-
-### Response
-
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "success": true,
-    "result": {
-      "customer_id": "12345",
-      "name": "John Doe",
-      "email": "john@example.com"
-    },
-    "execution_time": 0.5,
-    "validation": {
-      "passed": true,
-      "schema_valid": true,
-      "response_format": "valid"
-    }
-  },
-  "msg": "Tool test successful"
-}
-```
-
 ## Get Tool Usage
 
-Get usage statistics for a tool (admin only).
-
-### Endpoint
-
-```
-GET /api/v1/tools/{tool_id}/usage
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `tool_id` | string | Yes | Tool UUID |
-
-### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `start_date` | string | No | 30 days ago | Start date (ISO 8601) |
-| `end_date` | string | No | Now | End date (ISO 8601) |
-| `group_by` | string | No | day | Group by: hour, day, week, month |
-
-### Request Example
-
-```bash
-curl -X GET "https://your-domain.com/api/v1/tools/tool-123/usage?start_date=2026-02-01&end_date=2026-02-11" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
-```
-
-### Response
-
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "tool_id": "tool-123",
-    "tool_name": "Web Search",
-    "period": {
-      "start": "2026-02-01T00:00:00Z",
-      "end": "2026-02-11T23:59:59Z"
-    },
-    "summary": {
-      "total_calls": 5234,
-      "successful_calls": 5123,
-      "failed_calls": 111,
-      "success_rate": 97.9,
-      "avg_response_time": 1.2,
-      "total_cost": 0.0
-    },
-    "daily_stats": [
-      {
-        "date": "2026-02-11",
-        "calls": 567,
-        "successful": 555,
-        "failed": 12,
-        "avg_response_time": 1.1
-      },
-      {
-        "date": "2026-02-10",
-        "calls": 489,
-        "successful": 478,
-        "failed": 11,
-        "avg_response_time": 1.3
-      }
-    ],
-    "top_users": [
-      {
-        "user_id": "user-123",
-        "user_email": "john@example.com",
-        "calls": 234
-      }
-    ]
-  },
-  "msg": "success"
-}
-```
+> **Note:** Not implemented / Roadmap. There is no per-tool usage statistics endpoint.
 
 ## Error Codes
 
 | Code | Message | Description |
 |------|---------|-------------|
-| `6300` | Tool not found | Tool does not exist |
-| `6301` | Tool execution failed | Tool execution error |
-| `6302` | Invalid tool parameters | Parameters validation failed |
-| `6303` | Tool timeout | Tool execution timeout |
+| `4000` | Not found | Tool does not exist |
 | `3000` | Permission denied | Insufficient permissions |
 | `1001` | Validation failed | Invalid request data |
 
-## Rate Limits
-
-| Endpoint | Limit |
-|----------|-------|
-| `GET /api/v1/tools` | 100/minute |
-| `GET /api/v1/tools/{id}` | 100/minute |
-| `POST /api/v1/tools/{id}/execute` | 60/minute |
-| `POST /api/v1/tools` | 10/minute (admin) |
-| `PATCH /api/v1/tools/{id}` | 30/minute (admin) |
-| `DELETE /api/v1/tools/{id}` | 10/minute (admin) |
+> **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints. (Codes `6300`-`6306` are reserved for SSO errors and are not used by the Tools API.)
 
 ## Code Examples
 
@@ -665,15 +596,16 @@ def list_tools(token):
     else:
         raise Exception(f"Error: {result['msg']}")
 
-def execute_tool(token, tool_id, parameters):
-    """Execute a tool."""
-    url = f"https://your-domain.com/api/v1/tools/{tool_id}/execute"
+def test_tool(token, name, arguments):
+    """Execute a tool once."""
+    url = "https://your-domain.com/api/v1/tools/test"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
     data = {
-        "parameters": parameters
+        "name": name,
+        "arguments": arguments
     }
 
     response = requests.post(url, headers=headers, json=data)
@@ -687,12 +619,12 @@ def execute_tool(token, tool_id, parameters):
 # Usage
 tools = list_tools("YOUR_TOKEN")
 for tool in tools:
-    print(f"Tool: {tool['name']} ({tool['category']})")
+    print(f"Tool: {tool['display_name']} ({tool['category']})")
 
 # Execute web search
-result = execute_tool(
+result = test_tool(
     "YOUR_TOKEN",
-    "tool-123",
+    "web_search",
     {"query": "artificial intelligence", "max_results": 5}
 )
 print(f"Search results: {result['results']}")
@@ -720,9 +652,9 @@ async function listTools(token) {
   }
 }
 
-async function executeTool(token, toolId, parameters) {
+async function testTool(token, name, arguments) {
   const response = await fetch(
-    `https://your-domain.com/api/v1/tools/${toolId}/execute`,
+    'https://your-domain.com/api/v1/tools/test',
     {
       method: 'POST',
       headers: {
@@ -730,7 +662,8 @@ async function executeTool(token, toolId, parameters) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        parameters: parameters,
+        name: name,
+        arguments: arguments,
       }),
     }
   );
@@ -747,13 +680,13 @@ async function executeTool(token, toolId, parameters) {
 // Usage
 const tools = await listTools('YOUR_TOKEN');
 tools.forEach(tool => {
-  console.log(`Tool: ${tool.name} (${tool.category})`);
+  console.log(`Tool: ${tool.display_name} (${tool.category})`);
 });
 
 // Execute web search
-const result = await executeTool(
+const result = await testTool(
   'YOUR_TOKEN',
-  'tool-123',
+  'web_search',
   { query: 'artificial intelligence', max_results: 5 }
 );
 console.log('Search results:', result.results);

@@ -28,12 +28,13 @@ curl -X POST "https://your-domain.com/api/v1/login/access-token" \
   "code": 0,
   "data": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer",
-    "expires_in": 1800
+    "token_type": "bearer"
   },
   "msg": "Login successful"
 }
 ```
+
+The response contains only `access_token` and `token_type`. There is no `expires_in` field. If the administrator enforces a password change, the response additionally includes `force_password_change: true` and `reason` (`"expired"` or `"force"`).
 
 ### Using the Token
 
@@ -46,9 +47,10 @@ curl -X GET "https://your-domain.com/api/v1/users/me" \
 
 ### Token Expiration
 
-- **Default lifetime**: 30 minutes
-- **Refresh**: Login again to get a new token
-- **Expired token**: Returns `401 Unauthorized` with code `2002`
+- **Default lifetime**: The access token is valid for the `session_timeout_days` site setting (default **30 days**, configurable by administrators)
+- **JWT fallback**: If the site setting is absent, the JWT configuration falls back to `ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 8` (8 days)
+- **Refresh**: There is no refresh endpoint — login again to get a new token
+- **Expired JWT**: Returns `403 Forbidden` with code `2003` (`INVALID_CREDENTIALS`); only **API key** expiry returns `401 Unauthorized` with code `2002` (`TOKEN_EXPIRED`)
 
 ### Logout
 
@@ -80,9 +82,10 @@ API keys are created through the web interface or API:
 2. Click **"Create API Key"**
 3. Configure key settings:
    - Name
-   - Scopes (permissions)
+   - Scopes (stored for reference; access is enforced via user roles and agent/workflow associations)
+   - Restricted agents / workflows (optional)
    - Expiration date (optional)
-   - Rate limit (optional)
+   - Rate limit (optional, informational only)
 4. Click **"Create"**
 5. **Copy the key immediately** (shown only once)
 
@@ -98,7 +101,10 @@ curl -X POST "https://your-domain.com/api/v1/api-keys" \
   -d '{
     "name": "Production API Key",
     "scopes": ["agent:read", "agent:chat", "kb:read"],
-    "expires_at": "2027-12-31T23:59:59Z"
+    "rate_limit": 1000,
+    "expires_at": "2027-12-31T23:59:59Z",
+    "agent_ids": [],
+    "workflow_ids": []
   }'
 ```
 
@@ -108,10 +114,11 @@ curl -X POST "https://your-domain.com/api/v1/api-keys" \
   "code": 0,
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "key": "clou_1234567890abcdefghijklmnopqrstuvwxyz",
-    "prefix": "clou_1234",
+    "key": "clou_1234567890abcdef...",
+    "key_prefix": "clou_1234567",
     "name": "Production API Key",
     "scopes": ["agent:read", "agent:chat", "kb:read"],
+    "rate_limit": 1000,
     "created_at": "2026-02-11T10:00:00Z",
     "expires_at": "2027-12-31T23:59:59Z"
   },
@@ -119,7 +126,7 @@ curl -X POST "https://your-domain.com/api/v1/api-keys" \
 }
 ```
 
-**⚠️ Important**: The full API key is only shown once. Store it securely.
+**⚠️ Important**: The full API key is only shown once at creation time. The `key_prefix` field stores the first 12 characters of the key for identification; it cannot be used to authenticate.
 
 ### Using an API Key
 
@@ -134,42 +141,28 @@ curl -X GET "https://your-domain.com/api/v1/agents" \
 
 API keys follow this format:
 ```
-clou_[40 random characters]
+clou_<64 hexadecimal characters>
 ```
 
-Example: `clou_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8`
+The key is generated from 32 random bytes (`secrets.token_hex(32)`), so the full key is 68 characters long including the `clou_` prefix.
+
+Example: `clou_a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890`
 
 ### API Key Scopes
 
-Scopes control what the API key can access:
+The `scopes` field is stored on the key (default `["chat"]`) but is **not** used for authorization checks. Access control for API-key-authenticated requests is enforced through:
 
-| Scope | Description |
-|-------|-------------|
-| `agent:read` | Read agents |
-| `agent:create` | Create agents |
-| `agent:update` | Update agents |
-| `agent:delete` | Delete agents |
-| `agent:chat` | Chat with agents |
-| `workflow:read` | Read workflows |
-| `workflow:run` | Execute workflows |
-| `kb:read` | Read knowledge bases |
-| `kb:create` | Create knowledge bases |
-| `kb:update` | Update knowledge bases |
-| `*` | All permissions (use with caution) |
+- **User roles/permissions**: the key authenticates as its owning user, whose role permissions govern what the user can do
+- **`agent_ids` / `workflow_ids` associations**: the key can optionally be restricted to specific agents and workflows. If no agents/workflows are associated, the key may access all agents/workflows the owning user can reach; if associations exist, access to any other agent/workflow is denied
 
-**Example - Read-only access:**
-```json
-{
-  "scopes": ["agent:read", "workflow:read", "kb:read"]
-}
-```
-
-**Example - Chat-only access:**
-```json
-{
-  "scopes": ["agent:read", "agent:chat"]
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Key name (1-100 chars) |
+| `scopes` | string[] | Stored, not enforced; defaults to `["chat"]` |
+| `rate_limit` | integer | Stored on the key (default 1000 per minute, 0 = unlimited); not enforced by middleware |
+| `expires_at` | datetime \| null | Optional expiration |
+| `agent_ids` | UUID[] | Agents this key may access (empty = all) |
+| `workflow_ids` | UUID[] | Workflows this key may access (empty = all) |
 
 ### API Key Expiration
 
@@ -200,14 +193,14 @@ Scopes control what the API key can access:
 
 ### Common Error Codes
 
-| Code | Message | Description |
-|------|---------|-------------|
-| `2000` | Unauthorized | No authentication provided |
-| `2001` | Invalid credentials | Wrong username/password |
-| `2002` | Token expired | JWT token or API key expired |
-| `2003` | Invalid token | Malformed or invalid token |
-| `2004` | Account inactive | User account deactivated |
-| `2005` | Account locked | Too many failed login attempts |
+| Code | HTTP Status | Message | Description |
+|------|-------------|---------|-------------|
+| `2000` | 401 | Unauthorized | No authentication provided |
+| `2001` | 401 | Invalid token | Malformed/revoked token or invalid API key |
+| `2002` | 401 | Token expired | **API key** expired |
+| `2003` | 403 | Invalid credentials | Wrong username/password, or JWT expired/invalid |
+| `2004` | 401 | Inactive user | User account deactivated or pending approval |
+| `5300` | 403 | Account locked | Too many failed login attempts |
 
 ### Error Response Format
 
@@ -215,24 +208,26 @@ Scopes control what the API key can access:
 {
   "code": 2000,
   "data": null,
-  "msg": "Unauthorized: Authentication required"
+  "msg": "Not authenticated"
 }
 ```
 
 ### Handling Authentication Errors
 
-**401 Unauthorized:**
+**401/403 Unauthorized:**
 ```python
 response = requests.get(url, headers=headers)
 
-if response.status_code == 401:
+if response.status_code in (401, 403):
     data = response.json()
     if data['code'] == 2002:
-        # Token expired, refresh token
-        new_token = refresh_token()
-        # Retry request
-    elif data['code'] == 2000:
-        # No auth provided, add auth header
+        # API key expired - create a new key
+        pass
+    elif data['code'] == 2003:
+        # JWT invalid/expired - login again
+        login_again()
+    elif data['code'] in (2000, 2001):
+        # No auth provided / invalid token, check header
         pass
 ```
 
@@ -243,7 +238,7 @@ if response.status_code == 401:
 **✅ Do:**
 - Store tokens securely (encrypted storage)
 - Use HTTPS for all API requests
-- Implement token refresh logic
+- Re-authenticate (login again) before tokens expire — there is no refresh endpoint
 - Clear tokens on logout
 - Set appropriate token lifetime
 
@@ -273,29 +268,16 @@ if response.status_code == 401:
 
 ### Rate Limiting
 
-API keys are subject to rate limits:
+There is no per-endpoint or per-key request throttling middleware, and no `X-RateLimit-*` response headers. The `rate_limit` field on an API key is stored for informational purposes but is not enforced.
 
-**Default limits:**
-- 1000 requests per hour per key
-- 100 requests per minute per key
+Rate limiting exists only for specific security-sensitive flows:
 
-**Rate limit headers:**
-```
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 999
-X-RateLimit-Reset: 1644580800
-```
+- **Login attempts**: account lockout after failed attempts (default 5 attempts within a 15-minute window)
+- **TOTP verification**: temporary lockout after repeated failures
+- **Email sending**: a quota of 100 emails/hour; exceeding it returns code `5400`
+- **Model provider rate limits**: provider HTTP 429 errors are mapped to code `5400` during knowledge-base processing
 
-**Rate limit exceeded:**
-```json
-{
-  "code": 5400,
-  "data": {
-    "retry_after": 3600
-  },
-  "msg": "Rate limit exceeded. Retry after 3600 seconds"
-}
-```
+See [Rate Limiting](./rate-limiting.md) for details.
 
 ## Code Examples
 
@@ -441,18 +423,21 @@ curl -X GET "https://your-domain.com/api/v1/agents" \
   -H "Authorization: Bearer clou_your_api_key"
 ```
 
-### Verify Scopes
+### Verify Access Control
+
+Access control for API keys is based on the owning user's role permissions plus the key's agent/workflow associations:
 
 ```bash
-# This should succeed (if key has agent:read scope)
+# This should succeed (if the owning user can read agents)
 curl -X GET "https://your-domain.com/api/v1/agents" \
   -H "Authorization: Bearer YOUR_API_KEY"
 
-# This should fail (if key doesn't have agent:create scope)
-curl -X POST "https://your-domain.com/api/v1/agents" \
+# This succeeds only if the key is associated with this agent,
+# or is associated with no agents at all
+curl -X POST "https://your-domain.com/api/v1/agents/{agent_id}/chat" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Test Agent"}'
+  -d '{"message": "Hello"}'
 ```
 
 ## Related Documentation

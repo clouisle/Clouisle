@@ -22,7 +22,10 @@ cd clouisle
 cp deploy/.env.example deploy/.env
 
 # Edit deploy/.env with secure random values for:
-#   SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, QDRANT_API_KEY
+#   SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, QDRANT_API_KEY,
+#   SANDBOX_ARTIFACT_UPLOAD_API_KEY, INTERNAL_API_TOKEN
+# INTERNAL_API_TOKEN is REQUIRED — docker compose refuses to start without it.
+# Generate one with: openssl rand -hex 32
 ```
 
 ## 3. Start Clouisle
@@ -39,9 +42,9 @@ docker compose --env-file .env up -d
 
 ## First Steps
 
-1. Log in with the default admin credentials (set in `.env`)
+1. Register your first account — there is no seeded default admin; the first user to register is automatically promoted to Super Admin
 2. Create your first team
-3. Add an AI model (Settings → Models)
+3. Add an AI model (Models in the sidebar)
 4. Create a knowledge base and upload documents
 5. Build an AI agent and start chatting
 

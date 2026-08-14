@@ -59,7 +59,8 @@ Clouisle uses a modern, scalable architecture with clear separation between fron
 - **ORM**: Tortoise ORM with AsyncPG
 - **Task Queue**: Celery + Redis
 - **Vector Database**: Qdrant
-- **LLM Framework**: LangChain + LangGraph
+- **LLM Framework**: LangChain-based adapters for chat, embeddings, and text splitting
+- **Workflow Engine**: Self-built `WorkflowOrchestrator` (LangGraph is a declared dependency but is not used at runtime)
 - **Document Processing**: MarkItDown
 
 **Key Features**:
@@ -71,10 +72,10 @@ Clouisle uses a modern, scalable architecture with clear separation between fron
 
 ### Infrastructure Layer
 
-**Database**: PostgreSQL 16
+**Database**: PostgreSQL 17 (with `pg_search` for full-text search)
 - Stores all application data (users, teams, agents, workflows, etc.)
 - ACID compliance for data integrity
-- Full-text search capabilities
+- Full-text search capabilities via the `pg_search` extension
 
 **Cache & Queue**: Redis 7
 - Session storage
@@ -133,7 +134,7 @@ Upload → FastAPI → Celery Task → MarkItDown → Text Extraction
 #### 4. Workflow Execution Flow
 
 ```
-Trigger → FastAPI → Celery Task → LangGraph Engine
+Trigger → FastAPI → Celery Task → Workflow Orchestrator
                                         ↓
                                    Node Execution
                                    (LLM, Tool, Code, etc.)
@@ -164,7 +165,7 @@ Trigger → FastAPI → Celery Task → LangGraph Engine
 
 **Celery Beat**:
 - **Must run exactly 1 instance** (scheduled tasks)
-- Uses database lock to prevent duplicates
+- Runs as a bare scheduler without a database lock — keep a single instance to avoid duplicate schedules
 
 ### Vertical Scaling
 
@@ -214,10 +215,10 @@ Trigger → FastAPI → Celery Task → LangGraph Engine
 
 ### Caching Strategy
 
-**Redis Caching**:
-- User sessions (30-minute TTL)
-- Site settings (5-minute TTL)
-- Rate limit counters (1-hour TTL)
+**Caching**:
+- User sessions (default 30 days, configurable via `session_timeout_days` site setting; JWT fallback of 8 days in `config.py`)
+- Site settings (no cache — read directly from the database on each lookup)
+- Rate limit counters (1-hour TTL, stored in Redis)
 
 **Database Indexing**:
 - Primary keys (UUID)
@@ -306,10 +307,7 @@ Trigger → FastAPI → Celery Task → LangGraph Engine
 ### Health Checks
 
 **Endpoints**:
-- `/api/v1/health` - Basic health check
-- `/api/v1/health/db` - Database connectivity
-- `/api/v1/health/redis` - Redis connectivity
-- `/api/v1/health/qdrant` - Qdrant connectivity
+- `/api/v1/health` - Basic health check (the only health endpoint)
 
 ## Future Architecture Considerations
 

@@ -20,9 +20,9 @@ Visual automation workflows with 15+ node types for complex business logic.
 
 ## RAG Modes
 
-- **Disabled**: No knowledge base retrieval
-- **Citation**: Explicit source citations
-- **Rewrite**: Seamless context integration
+- **off**: No knowledge base retrieval, even when knowledge bases are configured
+- **auto**: Traditional RAG — automatically retrieve on every message
+- **agentic**: Agentic RAG — the agent decides when to search
 
 For detailed explanations, see [Concepts](../concepts/).
 

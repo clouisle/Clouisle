@@ -23,7 +23,9 @@ cp .env.example .env
 ```
 
 Generate secure passwords and update `.env`. Set strong random values for:
-`SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `QDRANT_API_KEY`.
+`SECRET_KEY`, `QDRANT_API_KEY`.
+
+Note: the dev infrastructure (`deploy/docker-compose.dev.yml`) uses **fixed, hardcoded credentials** that ignore `.env`: PostgreSQL runs as `postgres` / `password` and Redis uses the password `clouisle-redis-cbd3c07d`. Only `QDRANT_API_KEY` is read from `.env` (it is required). Set `POSTGRES_PASSWORD` / `REDIS_PASSWORD` in `.env` only if you also edit the dev compose file to match.
 
 ## 3. Start Infrastructure
 
@@ -63,7 +65,7 @@ bun run --cwd frontend dev
 
 - **Frontend**: http://localhost:3000
 - **API Documentation**: http://localhost:8000/docs
-- **Default Admin**: Check `.env` for initial credentials
+- **First account**: there is no seeded default admin — the first user to register is automatically promoted to Super Admin
 
 ## Development Commands
 

@@ -30,35 +30,44 @@ import os
 from datetime import datetime, timedelta
 
 class TokenManager:
-    """Manage API tokens with auto-refresh."""
+    """Manage JWT tokens by re-authenticating before expiry.
+
+    There is no refresh endpoint; when the token nears expiry,
+    login again via POST /api/v1/login/access-token.
+    """
 
     def __init__(self):
         self.token = None
-        self.expires_at = None
-        self.refresh_token = os.getenv('CLOUISLE_REFRESH_TOKEN')
+        self.username = os.getenv('CLOUISLE_USERNAME')
+        self.password = os.getenv('CLOUISLE_PASSWORD')
 
     def get_token(self):
-        """Get valid token, refresh if needed."""
-        if not self.token or self.is_expired():
-            self.refresh()
+        """Get a valid token, re-authenticating if needed."""
+        if not self.token or self.is_expiring_soon():
+            self.login_again()
         return self.token
 
-    def is_expired(self):
-        """Check if token is expired or expiring soon."""
+    def is_expiring_soon(self):
+        """Return True when we have no token or it expires within a day.
+
+        The token lifetime is the session_timeout_days site setting
+        (default 30 days), so time-based refresh is usually unnecessary.
+        """
         if not self.expires_at:
             return True
-        # Refresh 5 minutes before expiration
-        return datetime.now() >= self.expires_at - timedelta(minutes=5)
+        return datetime.now() >= self.expires_at - timedelta(days=1)
 
-    def refresh(self):
-        """Refresh access token."""
+    def login_again(self):
+        """Obtain a fresh access token."""
         response = requests.post(
-            f"{API_BASE_URL}/api/v1/auth/refresh",
-            json={'refresh_token': self.refresh_token}
+            f"{API_BASE_URL}/api/v1/login/access-token",
+            data={
+                'username': self.username,
+                'password': self.password,
+            },
         )
         data = response.json()['data']
         self.token = data['access_token']
-        self.expires_at = datetime.fromisoformat(data['expires_at'])
 
 # Usage
 token_manager = TokenManager()
@@ -211,67 +220,44 @@ const agents = await retryWithBackoff(
 
 ### Respect Rate Limits
 
+Clouisle does not send `X-RateLimit-*` response headers. Rate limiting applies to specific security-sensitive flows (login lockout, TOTP lockout, email quota, model-provider rate limits). Follow these general practices:
+
 **✅ Do:**
-- Monitor rate limit headers
-- Implement rate limiting in client
-- Use exponential backoff on 429 errors
-- Batch requests when possible
+- Use exponential backoff on HTTP 429 responses
 - Cache responses
-- Use webhooks instead of polling
+- Use webhooks/SSE instead of polling
 - Spread requests over time
 
 **❌ Don't:**
-- Ignore rate limit headers
 - Retry immediately on 429
 - Send unnecessary requests
 - Skip caching
 - Poll for updates
 - Send burst requests
-- Ignore Retry-After header
 
 **Example (Python):**
 ```python
 import time
-from datetime import datetime
 
-class RateLimitedClient:
-    """API client with rate limiting."""
-
-    def __init__(self, api_client):
-        self.api = api_client
-        self.rate_limit = None
-        self.rate_remaining = None
-        self.rate_reset = None
+class QuotaAwareClient:
+    """API client with quota-aware retry."""
 
     def request(self, method, endpoint, **kwargs):
-        """Make request with rate limit handling."""
-        # Wait if rate limit exceeded
-        if self.rate_remaining == 0 and self.rate_reset:
-            wait_time = self.rate_reset - time.time()
-            if wait_time > 0:
-                print(f"Rate limit exceeded. Waiting {wait_time:.1f}s...")
-                time.sleep(wait_time)
-
         try:
-            response = self.api.request(method, endpoint, **kwargs)
-
-            # Update rate limit info from headers
-            self.rate_limit = response.headers.get('X-RateLimit-Limit')
-            self.rate_remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
-            self.rate_reset = float(response.headers.get('X-RateLimit-Reset', 0))
-
-            return response
-
+            return self.api.request(method, endpoint, **kwargs)
         except ApiError as e:
-            if e.code == 5400:  # Rate limit exceeded
-                retry_after = e.data.get('retry_after', 60)
-                print(f"Rate limited. Waiting {retry_after}s...")
-                time.sleep(retry_after)
+            if e.code == 6103:  # Model quota exceeded
+                print("Quota exceeded. Waiting 30s...")
+                time.sleep(30)
+                return self.request(method, endpoint, **kwargs)
+            if e.code == 5400:  # Email quota / provider rate limit
+                print("Rate limited. Wait for the quota window to reset.")
+                time.sleep(60)
                 return self.request(method, endpoint, **kwargs)
             raise
 
 # Usage
-client = RateLimitedClient(api)
+client = QuotaAwareClient()
 response = client.request('GET', '/api/v1/agents')
 ```
 
@@ -355,8 +341,7 @@ agents = cached_api.get('/api/v1/agents')  # Returns from cache
 ### Efficient Pagination
 
 **✅ Do:**
-- Use maximum page size (100)
-- Use cursor pagination for large datasets
+- Use a large page size (up to the endpoint's cap; some endpoints limit it to 100)
 - Fetch pages in parallel when order doesn't matter
 - Stop when you have enough data
 - Cache paginated results
@@ -718,7 +703,7 @@ def test_retry_on_rate_limit():
 
 - [ ] Use HTTPS for all requests
 - [ ] Store tokens securely
-- [ ] Implement token refresh
+- [ ] Re-authenticate when tokens expire (no refresh endpoint)
 - [ ] Handle all error codes
 - [ ] Implement retry logic
 - [ ] Respect rate limits

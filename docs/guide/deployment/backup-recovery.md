@@ -90,13 +90,13 @@ Transaction Logs:
 
 ```bash
 # Full database backup
-docker compose exec postgres pg_dump -U clouisle clouisle > backup_$(date +%Y%m%d_%H%M%S).sql
+docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Compressed backup
-docker compose exec postgres pg_dump -U clouisle clouisle | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
+docker compose exec db pg_dump -U postgres clouisle | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
 
 # Custom format (recommended)
-docker compose exec postgres pg_dump -U clouisle -Fc clouisle > backup_$(date +%Y%m%d_%H%M%S).dump
+docker compose exec db pg_dump -U postgres -Fc clouisle > backup_$(date +%Y%m%d_%H%M%S).dump
 ```
 
 **Automated Backup Script:**
@@ -115,7 +115,7 @@ BACKUP_FILE="$BACKUP_DIR/clouisle_$TIMESTAMP.dump"
 mkdir -p $BACKUP_DIR
 
 # Perform backup
-docker compose exec -T postgres pg_dump -U clouisle -Fc clouisle > $BACKUP_FILE
+docker compose exec -T db pg_dump -U postgres -Fc clouisle > $BACKUP_FILE
 
 # Compress backup
 gzip $BACKUP_FILE
@@ -152,26 +152,26 @@ crontab -e
 
 ```bash
 # Stop application
-docker compose stop backend frontend celery
+docker compose stop api worker beat frontend
 
 # Restore database
-docker compose exec -T postgres pg_restore -U clouisle -d clouisle -c < backup.dump
+docker compose exec -T db pg_restore -U postgres -d clouisle -c < backup.dump
 
 # Or from compressed backup
-gunzip -c backup.dump.gz | docker compose exec -T postgres pg_restore -U clouisle -d clouisle -c
+gunzip -c backup.dump.gz | docker compose exec -T db pg_restore -U postgres -d clouisle -c
 
 # Restart application
-docker compose start backend frontend celery
+docker compose start api worker beat frontend
 ```
 
 **Restore to New Database:**
 
 ```bash
 # Create new database
-docker compose exec postgres createdb -U clouisle clouisle_restored
+docker compose exec db createdb -U postgres clouisle_restored
 
 # Restore to new database
-docker compose exec -T postgres pg_restore -U clouisle -d clouisle_restored < backup.dump
+docker compose exec -T db pg_restore -U postgres -d clouisle_restored < backup.dump
 
 # Switch to restored database (update .env)
 POSTGRES_DB=clouisle_restored
@@ -337,13 +337,14 @@ echo "Starting full system backup..."
 
 # 1. Backup PostgreSQL
 echo "Backing up PostgreSQL..."
-docker compose exec -T postgres pg_dump -U clouisle -Fc clouisle > $BACKUP_DIR/postgres.dump
+docker compose exec -T db pg_dump -U postgres -Fc clouisle > $BACKUP_DIR/postgres.dump
 gzip $BACKUP_DIR/postgres.dump
 
-# 2. Backup Qdrant
+# 2. Backup Qdrant (volume tar — or use the snapshot API, see "Qdrant Backup")
 echo "Backing up Qdrant..."
 mkdir -p $BACKUP_DIR/qdrant
-docker compose exec -T qdrant tar -czf - /qdrant/storage > $BACKUP_DIR/qdrant/storage.tar.gz
+docker run --rm -v deploy_qdrant_data:/data -v $BACKUP_DIR/qdrant:/backup \
+  alpine tar czf /backup/storage.tar.gz -C /data .
 
 # 3. Backup Redis (optional)
 echo "Backing up Redis..."
@@ -352,14 +353,14 @@ docker compose cp redis:/data/dump.rdb $BACKUP_DIR/redis_dump.rdb
 
 # 4. Backup files
 echo "Backing up uploaded files..."
-tar -czf $BACKUP_DIR/uploads.tar.gz /app/uploads
+docker run --rm -v deploy_uploads_data:/data -v $BACKUP_DIR:/backup \
+  alpine tar czf /backup/uploads.tar.gz -C /data .
 
 # 5. Backup configuration
 echo "Backing up configuration..."
 tar -czf $BACKUP_DIR/config.tar.gz \
   .env \
-  docker-compose.yml \
-  nginx.conf
+  docker-compose.yml
 
 # 6. Create backup manifest
 cat > $BACKUP_DIR/manifest.txt <<EOF
@@ -456,7 +457,7 @@ echo "Backup uploaded to Azure"
 3. **Start Infrastructure:**
    ```bash
    # Start databases only
-   docker compose up -d postgres redis qdrant
+   docker compose up -d db redis qdrant
 
    # Wait for databases to be ready
    sleep 30
@@ -465,7 +466,7 @@ echo "Backup uploaded to Azure"
 4. **Restore PostgreSQL:**
    ```bash
    # Restore database
-   gunzip -c postgres.dump.gz | docker compose exec -T postgres pg_restore -U clouisle -d clouisle -c
+   gunzip -c postgres.dump.gz | docker compose exec -T db pg_restore -U postgres -d clouisle -c
    ```
 
 5. **Restore Qdrant:**
@@ -498,7 +499,7 @@ echo "Backup uploaded to Azure"
 8. **Verify Recovery:**
    ```bash
    # Check health
-   curl http://localhost:8000/health
+   curl http://localhost:8000/api/v1/health
 
    # Test login
    # Verify data integrity
@@ -563,14 +564,14 @@ fi
 # 4. Test database backup
 if [[ $BACKUP_FILE == *.dump* ]]; then
     # Create test database
-    docker compose exec postgres createdb -U clouisle test_restore
+    docker compose exec db createdb -U postgres test_restore
 
     # Try to restore
-    gunzip -c "$BACKUP_FILE" | docker compose exec -T postgres pg_restore -U clouisle -d test_restore
+    gunzip -c "$BACKUP_FILE" | docker compose exec -T db pg_restore -U postgres -d test_restore
 
     if [ $? -eq 0 ]; then
         echo "Database backup is valid"
-        docker compose exec postgres dropdb -U clouisle test_restore
+        docker compose exec db dropdb -U postgres test_restore
     else
         echo "ERROR: Database backup is invalid"
         exit 1
@@ -586,18 +587,19 @@ echo "Backup verification completed successfully"
 #!/bin/bash
 # test-restore.sh
 
-# Create test environment
-docker compose -f docker-compose.test.yml up -d
+# Use a scratch database on the running db service (there is no docker-compose.test.yml)
+docker compose exec db createdb -U postgres restore_test
 
 # Restore latest backup
 LATEST_BACKUP=$(ls -t /backups/postgres/*.dump.gz | head -1)
-gunzip -c $LATEST_BACKUP | docker compose -f docker-compose.test.yml exec -T postgres pg_restore -U clouisle -d clouisle
+gunzip -c $LATEST_BACKUP | docker compose exec -T db pg_restore -U postgres -d restore_test
 
-# Run smoke tests
-docker compose -f docker-compose.test.yml exec backend pytest tests/smoke/
+# Run smoke checks
+docker compose exec -T db psql -U postgres -d restore_test -c "SELECT count(*) FROM users;"
+curl -fsS http://localhost:8000/api/v1/health
 
 # Cleanup
-docker compose -f docker-compose.test.yml down -v
+docker compose exec db dropdb -U postgres restore_test
 
 echo "Restore test completed"
 ```

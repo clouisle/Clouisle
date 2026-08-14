@@ -70,7 +70,7 @@ Search:
 ```yaml
 # docker-compose.yml
 services:
-  backend:
+  api:
     deploy:
       resources:
         limits:
@@ -80,7 +80,7 @@ services:
           cpus: '2'
           memory: 4G
 
-  postgres:
+  db:
     deploy:
       resources:
         limits:
@@ -112,21 +112,21 @@ spec:
 **Backend Workers:**
 
 ```yaml
-# Increase backend workers (production mode)
+# Increase API workers (production mode)
 python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 
-# Or in docker-compose.yml
+# Or in docker-compose.yml (api service)
 command: python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 ```
 
 **Celery Workers:**
 
 ```yaml
-# Increase Celery concurrency
-celery -A app.core.celery worker --concurrency=8 --loglevel=info
+# Increase Celery concurrency (worker service)
+python main.py worker -c 8 -Q default,knowledge,workflow
 
 # Or in docker-compose.yml
-command: celery -A app.core.celery worker --concurrency=8 --loglevel=info
+command: python main.py worker -c 8 -Q default,knowledge,workflow
 ```
 
 ## Horizontal Scaling
@@ -138,7 +138,7 @@ command: celery -A app.core.celery worker --concurrency=8 --loglevel=info
 ```yaml
 # docker-compose.yml
 services:
-  backend:
+  api:
     deploy:
       replicas: 3
       update_config:
@@ -215,7 +215,7 @@ spec:
 ```yaml
 # docker-compose.yml
 services:
-  backend:
+  api:
     deploy:
       replicas: 3
       placement:
@@ -291,7 +291,7 @@ upstream backend {
     server backend-3:8000 max_fails=3 fail_timeout=30s;
 
     # Active health checks (nginx plus)
-    # health_check interval=10s fails=3 passes=2 uri=/health;
+    # health_check interval=10s fails=3 passes=2 uri=/api/v1/health;
 }
 ```
 
@@ -362,9 +362,9 @@ services:
     ports:
       - "6432:6432"
     depends_on:
-      - postgres
+      - db
 
-  backend:
+  api:
     environment:
       POSTGRES_SERVER: pgbouncer
       POSTGRES_PORT: 6432
@@ -412,36 +412,37 @@ CREATE INDEX idx_messages_conv_created ON messages(conversation_id, created_at D
 # docker-compose.yml
 services:
   postgres-primary:
-    image: postgres:14
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
     environment:
-      POSTGRES_USER: clouisle
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: clouisle
     volumes:
       - postgres-primary-data:/var/lib/postgresql/data
     command: >
       postgres
+      -c shared_preload_libraries=pg_search,pg_stat_statements
       -c wal_level=replica
       -c max_wal_senders=3
       -c max_replication_slots=3
 
   postgres-replica:
-    image: postgres:14
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
     environment:
-      POSTGRES_USER: clouisle
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      PGUSER: clouisle
+      PGUSER: postgres
       PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres-replica-data:/var/lib/postgresql/data
     command: >
       bash -c "
-      until pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U clouisle -v -P -W; do
+      until pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U postgres -v -P -W; do
         echo 'Waiting for primary to be ready...'
         sleep 1
       done
       echo 'standby_mode = on' > /var/lib/postgresql/data/recovery.conf
-      echo 'primary_conninfo = \"host=postgres-primary port=5432 user=clouisle password=${POSTGRES_PASSWORD}\"' >> /var/lib/postgresql/data/recovery.conf
+      echo 'primary_conninfo = \"host=postgres-primary port=5432 user=postgres password=${POSTGRES_PASSWORD}\"' >> /var/lib/postgresql/data/recovery.conf
       postgres
       "
 ```
@@ -625,54 +626,59 @@ DistributionConfig:
 **Task Configuration:**
 
 ```python
-# app/core/celery.py
+# backend/app/core/celery.py
 from celery import Celery
+from app.core.config import settings
 
+# Broker and result backend are derived from REDIS_HOST/PORT/PASSWORD:
+# redis://.../0 (broker), redis://.../1 (backend)
 celery_app = Celery(
     'clouisle',
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=REDIS_URL + '/0',
+    backend=REDIS_URL + '/1',
     broker_connection_retry_on_startup=True,
 )
 
 celery_app.conf.update(
     # Performance
     task_acks_late=True,
-    worker_prefetch_multiplier=4,
-    worker_max_tasks_per_child=1000,
-
-    # Timeouts
-    task_soft_time_limit=300,
-    task_time_limit=600,
+    task_reject_on_worker_lost=True,
+    task_track_started=True,
+    worker_prefetch_multiplier=1,        # one task per worker process at a time
+    worker_max_tasks_per_child=100,      # recycle worker processes every 100 tasks
 
     # Serialization
     task_serializer='json',
-    result_serializer='json',
     accept_content=['json'],
+    result_serializer='json',
 
     # Results
-    result_expires=3600,
-    result_backend_transport_options={
-        'master_name': 'mymaster',
-    },
+    result_expires=3600 * 24,            # 24 hours
+    visibility_timeout=settings.CELERY_VISIBILITY_TIMEOUT_SECONDS,
 )
 ```
 
 **Task Routing:**
 
 ```python
-# Route tasks to specific queues
+# backend/app/core/celery.py — task routes
 celery_app.conf.task_routes = {
-    'app.tasks.document.*': {'queue': 'documents'},
-    'app.tasks.embedding.*': {'queue': 'embeddings'},
-    'app.tasks.workflow.*': {'queue': 'workflows'},
-    'app.tasks.email.*': {'queue': 'emails'},
+    'app.tasks.knowledge_base.*': {'queue': 'knowledge'},
+    'app.tasks.workflow.*': {'queue': 'workflow'},
+    'app.tasks.sandbox.*': {'queue': 'sandbox'},
+    'app.tasks.usage.*': {'queue': 'default'},
+    'app.tasks.notification.*': {'queue': 'default'},
+    'app.tasks.audit_log.*': {'queue': 'default'},
+    'app.tasks.api_key.*': {'queue': 'default'},
+    'app.tasks.password_expiration.*': {'queue': 'default'},
+    'app.tasks.session_memory.*': {'queue': 'default'},
+    # ... (see backend/app/core/celery.py for the complete route table)
 }
 
-# Start workers for specific queues
-# celery -A app.core.celery worker -Q documents --concurrency=4
-# celery -A app.core.celery worker -Q embeddings --concurrency=2
-# celery -A app.core.celery worker -Q workflows --concurrency=8
+# The supplied worker service consumes all three main queues:
+#   python main.py worker -c 4 -Q default,knowledge,workflow
+# The sandbox-worker service consumes only the sandbox queue:
+#   python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}
 ```
 
 ### Message Queue Scaling
@@ -680,26 +686,22 @@ celery_app.conf.task_routes = {
 **Multiple Celery Workers:**
 
 ```yaml
-# docker-compose.yml
+# docker-compose.yml — scale the supplied worker service
 services:
-  celery-worker-general:
-    image: clouisle-backend
-    command: celery -A app.core.celery worker -Q default --concurrency=8
+  worker:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+    command: python main.py worker -c 4 -Q default,knowledge,workflow
     deploy:
       replicas: 3
 
-  celery-worker-documents:
-    image: clouisle-backend
-    command: celery -A app.core.celery worker -Q documents --concurrency=4
-    deploy:
-      replicas: 2
-
-  celery-worker-embeddings:
-    image: clouisle-backend
-    command: celery -A app.core.celery worker -Q embeddings --concurrency=2
+  sandbox-worker:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
+    command: python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}
     deploy:
       replicas: 2
 ```
+
+Note that knowledge-base document processing, workflow execution, and sandbox jobs are already split into separate queues (`knowledge`, `workflow`, `sandbox`) by the real route table, so a single `worker` service with `-Q default,knowledge,workflow` handles them together; scale it when queue lag appears.
 
 ## Vector Database Scaling
 

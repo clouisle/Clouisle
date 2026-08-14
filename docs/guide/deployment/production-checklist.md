@@ -21,7 +21,7 @@ Use this checklist to verify:
 - [ ] Strong password policy enabled (min 8 chars, complexity requirements)
 - [ ] 2FA enabled for admin accounts
 - [ ] JWT secret key is strong and unique
-- [ ] Session timeout configured appropriately (30 minutes)
+- [ ] Session timeout configured appropriately (default: 30 days via the `session_timeout_days` site setting; JWT config fallback `ACCESS_TOKEN_EXPIRE_MINUTES` = 11520 min / 8 days)
 - [ ] API key rotation policy in place
 - [ ] SSO configured and tested (if applicable)
 - [ ] Account lockout after failed login attempts (5 attempts)
@@ -131,7 +131,7 @@ Use this checklist to verify:
 - [ ] Access logs enabled
 
 **✅ Metrics:**
-- [ ] Prometheus metrics exposed
+- [ ] Prometheus metrics exposed — **Not applicable**: the backend does not expose a Prometheus `/metrics` endpoint or ServiceMonitor in the supplied deployments; use the admin observability features and Kubernetes/Ingress metrics instead
 - [ ] Key metrics tracked (RPS, latency, errors)
 - [ ] Resource metrics monitored (CPU, memory, disk)
 - [ ] Database metrics tracked
@@ -166,7 +166,7 @@ Use this checklist to verify:
 
 **✅ Database:**
 - [ ] Production database created
-- [ ] Database migrations applied
+- [ ] Database migrations applied — **Not applicable**: Clouisle uses Tortoise ORM; schema creation/updates run automatically at backend startup (no Alembic migrations to run)
 - [ ] Database user permissions restricted
 - [ ] Database backups automated
 - [ ] Connection limits configured

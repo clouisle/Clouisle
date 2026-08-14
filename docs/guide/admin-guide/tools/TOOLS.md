@@ -138,7 +138,7 @@ All Python standard library modules are available:
 | `textwrap` | Text wrapping |
 | `difflib` | Difference comparison |
 
-**Not Available:** `requests`, `numpy`, `pandas`, `httpx`, or any third-party packages.
+**Not Available by default:** `requests`, `numpy`, `pandas`, `httpx`, or other third-party packages. However, code tools may declare third-party dependencies (`python_packages` for Python, `js_packages` for JavaScript), which the sandbox installs into an isolated, cached environment. Each package must be pinned to an exact version (e.g. `requests==2.32.3`), and custom package index / npm registry URLs must be plain `http(s)://` URLs without embedded credentials.
 
 #### JavaScript
 
@@ -168,7 +168,7 @@ Node.js core modules (require needed):
 | `util` | Utility functions |
 | `http` / `https` | HTTP requests |
 
-**Not Available:** `axios`, `lodash`, `moment`, `dayjs`, or any npm packages.
+**Not available by default:** `axios`, `lodash`, `moment`, `dayjs`, or other npm packages. As with Python, `js_packages` may list npm packages pinned to an exact version (e.g. `axios@1.7.9`), which are installed into an isolated, cached environment for the execution.
 
 ### Writing Code
 
@@ -254,9 +254,9 @@ return hash;
 | Limitation | Details |
 |------------|---------|
 | **Timeout** | 30 seconds maximum execution time |
-| **No third-party packages** | Only standard library modules available |
-| **No file system access** | Cannot read/write files |
-| **No persistent state** | Each execution is isolated |
+| **Third-party packages** | Optional; must be pinned to an exact version (`requests==2.32.3`, `axios@1.7.9`) and are installed into an isolated, cached environment |
+| **File system access** | Confined to the job's `/workspace` directory. The platform's built-in `bash`, `read`, `write`, `edit`, and `artifact` tools operate on `/workspace` only; files written outside `/workspace` are rejected |
+| **No persistent state** | Each execution is isolated; workspaces are temporary and cleaned up after the run |
 | **Limited environment** | Minimal environment variables (PATH, HOME, LANG) |
 
 ---

@@ -5,9 +5,8 @@ This guide explains how to interact with AI agents in Clouisle for conversationa
 ## Overview
 
 AI Agents in Clouisle are conversational assistants that can:
-- Answer questions based on knowledge bases
+- Answer questions based on knowledge bases (RAG)
 - Use tools to perform actions
-- Execute workflows
 - Maintain context across multiple turns
 - Stream responses in real-time
 
@@ -55,12 +54,11 @@ AI Agents in Clouisle are conversational assistants that can:
 | Element | Description |
 |---------|-------------|
 | **Agent Name** | Current agent you're chatting with |
-| **Settings** | Agent configuration and parameters |
 | **Message History** | Scrollable conversation history |
 | **Input Box** | Type your messages here |
-| **Attach Button** | Upload files (if enabled) |
+| **Attach Button** | Upload files (if the agent enables attachments) |
 | **Send Button** | Send your message |
-| **Sources** | Referenced documents (if RAG enabled) |
+| **Sources** | Referenced documents (if RAG mode is enabled) |
 
 ## Sending Messages
 
@@ -69,36 +67,27 @@ AI Agents in Clouisle are conversational assistants that can:
 **Basic message:**
 1. Type your message in the input box
 2. Press **Enter** or click **Send**
-3. Wait for agent response (streaming)
+3. Wait for the agent response (streaming)
 
 **Multi-line message:**
 1. Type your message
-2. Press **Shift + Enter** for new line
+2. Press **Shift + Enter** for a new line
 3. Press **Enter** to send
-
-**Tips:**
-- Be specific and clear in your questions
-- Provide context when needed
-- Break complex questions into parts
-- Use proper grammar for better understanding
 
 ### File Uploads
 
-If the agent supports file uploads:
+If the agent supports file uploads (attachments enabled):
 
 1. Click the **📎 Attach** button
 2. Select file(s) from your computer
-3. Supported formats depend on agent configuration:
-   - Documents: PDF, DOCX, TXT, MD
-   - Images: PNG, JPG, JPEG (if vision enabled)
-   - Data: CSV, XLSX, JSON
-4. Wait for file to upload
+3. Supported formats depend on the agent's attachment configuration (PDF, DOCX, TXT, MD, CSV, XLSX, PPTX, images, etc.)
+4. Wait for the file to upload/parse
 5. Add your message or question about the file
 6. Click **Send**
 
-**File upload limits:**
-- Max file size: Configured by agent (typically 10-50 MB)
-- Max files per message: Configured by agent (typically 1-5)
+**Upload limits:**
+- All chat uploads are limited to **10 MB per file** (server-enforced)
+- Max files per message is configurable by the agent (default 5)
 
 See [File Uploads](./file-uploads.md) for detailed information.
 
@@ -109,7 +98,7 @@ See [File Uploads](./file-uploads.md) for detailed information.
 Agents stream responses in real-time:
 - Text appears word-by-word as generated
 - You can read while the agent is still typing
-- Stop generation by clicking **Stop** button
+- Stop generation by clicking the **Stop** button
 
 ### Response Components
 
@@ -123,12 +112,11 @@ It can include:
 - Links
 ```
 
-**Source Citations (RAG Mode):**
+**Source Citations (RAG):**
 ```
 📚 Sources:
 - document1.pdf (Page 5)
 - guide.md (Section 3)
-- api-docs.pdf (Page 12)
 ```
 
 **Tool Usage:**
@@ -151,40 +139,26 @@ Formulating response...
 **High-quality responses include:**
 - Direct answer to your question
 - Relevant context and details
-- Source citations (if using knowledge base)
+- Source citations (if using a knowledge base)
 - Clear structure and formatting
-- Follow-up suggestions
 
 **If response quality is poor:**
 - Rephrase your question more clearly
 - Provide more context
 - Break complex questions into simpler parts
-- Check if agent has access to relevant knowledge base
+- Check if the agent has access to a relevant knowledge base
 
 ## Agent Capabilities
 
 ### Knowledge Base Access (RAG)
 
-Agents can retrieve information from connected knowledge bases.
+Agents retrieve information from connected knowledge bases according to their RAG mode:
 
-**Citation Mode:**
-```
-You: What is the refund policy?
+- **off**: No retrieval, even if knowledge bases are configured
+- **auto**: Automatically retrieve on every message (traditional RAG)
+- **agentic**: The agent decides when to search (default)
 
-Agent: According to our policy document, refunds are
-processed within 14 days of request [1].
-
-[1] refund-policy.pdf, Page 2
-```
-
-**Rewrite Mode:**
-```
-You: What is the refund policy?
-
-Agent: Refunds are processed within 14 days of your
-request. You can initiate a refund by contacting
-customer support with your order number.
-```
+With retrieval enabled, the agent's responses can include the retrieved source chunks.
 
 **Tips for better RAG results:**
 - Ask specific questions
@@ -213,16 +187,6 @@ Agent: 🔧 Calculating...
 15% of $250 is $37.50
 ```
 
-**API Calls:**
-```
-You: Create a support ticket for login issue
-
-Agent: 🔧 Creating ticket...
-✅ Ticket #12345 created successfully
-Status: Open
-Priority: High
-```
-
 ### Multi-Turn Conversations
 
 Agents maintain context across messages:
@@ -234,16 +198,9 @@ Agent: Clouisle is an AI platform...
 You: How do I install it?
 Agent: To install Clouisle, follow these steps...
      [Agent remembers we're talking about Clouisle]
-
-You: What about Docker?
-Agent: For Docker installation of Clouisle...
-     [Agent maintains full context]
 ```
 
-**Context window:**
-- Agents remember recent messages (typically last 10-20 messages)
-- Very long conversations may lose early context
-- Start new conversation for unrelated topics
+Long conversations are automatically compressed to fit the model's context window.
 
 ## Advanced Features
 
@@ -252,19 +209,19 @@ Agent: For Docker installation of Clouisle...
 If you're not satisfied with a response:
 
 1. Hover over the agent's message
-2. Click **🔄 Regenerate** button
-3. Agent generates a new response
-4. Previous response is saved (can switch between versions)
+2. Click the **🔄 Regenerate** button
+3. The agent generates a new response
+4. The previous response is saved as a version (you can switch between versions)
 
 ### Message Editing
 
 Edit your sent messages:
 
 1. Hover over your message
-2. Click **✏️ Edit** button
+2. Click the **✏️ Edit** button
 3. Modify your message
 4. Press **Enter** to resend
-5. Conversation branches from this point
+5. The conversation branches from this point
 
 ### Message Branching
 
@@ -283,58 +240,15 @@ Branch 2 (regenerate):
 Agent: AI, or Artificial Intelligence...
 ```
 
-Navigate branches using arrow buttons.
+Navigate branches using the arrow buttons.
 
-### Copy and Share
+### Copy Message
 
-**Copy message:**
-1. Hover over message
-2. Click **📋 Copy** button
-3. Message copied to clipboard
+1. Hover over a message
+2. Click the **📋 Copy** button
+3. The message is copied to the clipboard
 
-**Share conversation:**
-1. Click **Share** button in top-right
-2. Choose sharing option:
-   - Copy link (if enabled)
-   - Export as text
-   - Export as markdown
-
-## Conversation Settings
-
-Access settings by clicking **⚙️ Settings** button:
-
-### Model Parameters
-
-Adjust agent behavior (if allowed):
-
-| Parameter | Range | Effect |
-|-----------|-------|--------|
-| **Temperature** | 0.0 - 2.0 | Creativity (0=focused, 2=creative) |
-| **Max Tokens** | 100 - 4000 | Response length |
-| **Top P** | 0.0 - 1.0 | Response diversity |
-
-**Presets:**
-- **Precise**: Temperature 0.3, focused answers
-- **Balanced**: Temperature 0.7, natural responses
-- **Creative**: Temperature 1.2, varied responses
-
-### RAG Settings
-
-If agent uses knowledge base:
-
-| Setting | Options | Description |
-|---------|---------|-------------|
-| **Retrieval Mode** | Citation / Rewrite | How sources are used |
-| **Top K** | 3-10 | Number of documents to retrieve |
-| **Score Threshold** | 0.5-0.9 | Minimum relevance score |
-
-### Tool Settings
-
-Enable/disable specific tools:
-- ☑️ Web Search
-- ☑️ Calculator
-- ☐ File Parser
-- ☑️ Custom Tools
+> **Note:** Conversation sharing and export are **not implemented**.
 
 ## Best Practices
 
@@ -367,13 +281,12 @@ Bad: "help"
 
 ### Managing Context
 
-**Start new conversation when:**
-- Switching to unrelated topic
-- Agent seems confused about context
-- Conversation becomes very long (>50 messages)
+**Start a new conversation when:**
+- Switching to an unrelated topic
+- The agent seems confused about context
 - You want a fresh start
 
-**Continue conversation when:**
+**Continue a conversation when:**
 - Asking follow-up questions
 - Building on previous answers
 - Maintaining context is important
@@ -387,33 +300,32 @@ Bad: "help"
 - Follow up for clarification
 
 **❌ Don't:**
-- Ask about information not in knowledge base
-- Expect agent to know real-time information
+- Ask about information not in the knowledge base
+- Expect the agent to know real-time information
 - Assume all documents are indexed
 
 ## Troubleshooting
 
 ### Agent Not Responding
 
-**Problem**: No response after sending message
+**Problem**: No response after sending a message
 
 **Solutions:**
-1. Check internet connection
+1. Check your internet connection
 2. Refresh the page
-3. Check if agent is active
+3. Check if the agent is published
 4. Try a different agent
-5. Contact administrator
+5. Contact the administrator
 
 ### Slow Responses
 
-**Problem**: Agent takes long time to respond
+**Problem**: Agent takes a long time to respond
 
 **Solutions:**
 1. Check your internet speed
-2. Reduce max tokens setting
-3. Simplify your question
-4. Try during off-peak hours
-5. Contact administrator about server load
+2. Simplify your question
+3. Try during off-peak hours
+4. Contact the administrator about server load
 
 ### Irrelevant Responses
 
@@ -422,8 +334,8 @@ Bad: "help"
 **Solutions:**
 1. Rephrase your question more clearly
 2. Provide more context
-3. Start new conversation (clear context)
-4. Check if agent has relevant knowledge base
+3. Start a new conversation (clear context)
+4. Check if the agent has a relevant knowledge base
 5. Try a different agent specialized for your topic
 
 ### Sources Not Showing
@@ -431,89 +343,37 @@ Bad: "help"
 **Problem**: No source citations in RAG mode
 
 **Solutions:**
-1. Verify agent has knowledge base connected
-2. Check RAG mode is enabled (not "Disabled")
+1. Verify the agent has a knowledge base connected
+2. Check the agent's RAG mode is not "off"
 3. Ask more specific questions
-4. Verify documents are indexed
-5. Lower score threshold in settings
+4. Verify documents are indexed (status: completed)
 
 ### File Upload Fails
 
 **Problem**: Cannot upload files
 
 **Solutions:**
-1. Check file size (must be under limit)
-2. Verify file format is supported
-3. Check if agent allows file uploads
+1. Check file size (must be under 10 MB)
+2. Verify the file format is supported
+3. Check if the agent allows file uploads
 4. Try a different file
-5. Contact administrator
+5. Contact the administrator
 
 See [File Uploads](./file-uploads.md) for detailed troubleshooting.
-
-## Tips and Tricks
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| **Enter** | Send message |
-| **Shift + Enter** | New line |
-| **Ctrl/Cmd + K** | New conversation |
-| **Ctrl/Cmd + /** | Focus input |
-| **Esc** | Stop generation |
-
-### Power User Features
-
-**Quick commands:**
-- Type `/help` for agent-specific help
-- Type `/clear` to clear conversation
-- Type `/settings` to open settings
-
-**Markdown formatting:**
-```
-**bold text**
-*italic text*
-`code`
-[link](url)
-- bullet list
-1. numbered list
-```
-
-### Getting Better Results
-
-**Iterative refinement:**
-1. Start with general question
-2. Review response
-3. Ask follow-up for details
-4. Refine based on answers
-
-**Example:**
-```
-You: Tell me about API authentication
-Agent: [General overview]
-
-You: What about JWT tokens specifically?
-Agent: [JWT details]
-
-You: Show me a code example
-Agent: [Code example]
-```
 
 ## Related Documentation
 
 - [File Uploads](./file-uploads.md) - Uploading files in chat
 - [Conversation Management](./conversation-management.md) - Managing conversations
-- [Agent Configuration](../../admin-guide/agents/agent-configuration.md) - Admin guide
-- [RAG Configuration](../../admin-guide/agents/rag-configuration.md) - RAG setup
+- [Agent Configuration](./agent-configuration.md) - Configuring agents
 
 ## Getting Help
 
 If you need assistance:
 
-1. **In-App Help**: Click **?** icon for agent-specific help
-2. **Documentation**: Review this guide and related docs
-3. **Support**: Contact your organization's support team
-4. **Administrator**: Reach out to your Clouisle administrator
+1. **Documentation**: Review this guide and related docs
+2. **Support**: Contact your organization's support team
+3. **Administrator**: Reach out to your Clouisle administrator
 
 ---
 

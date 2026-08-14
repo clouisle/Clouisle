@@ -22,7 +22,10 @@ cd clouisle
 cp deploy/.env.example deploy/.env
 
 # 编辑 deploy/.env，为以下字段设置强随机值：
-#   SECRET_KEY、POSTGRES_PASSWORD、REDIS_PASSWORD、QDRANT_API_KEY
+#   SECRET_KEY、POSTGRES_PASSWORD、REDIS_PASSWORD、QDRANT_API_KEY、
+#   SANDBOX_ARTIFACT_UPLOAD_API_KEY、INTERNAL_API_TOKEN
+# INTERNAL_API_TOKEN 为必填项——缺少时 docker compose 将拒绝启动。
+# 生成方式：openssl rand -hex 32
 ```
 
 ## 3. 启动 Clouisle
@@ -39,9 +42,9 @@ docker compose --env-file .env up -d
 
 ## 入门步骤
 
-1. 使用默认管理员凭据登录（在 `.env` 中配置）
+1. 注册你的第一个账号——没有预置的管理员凭据；首个注册用户会自动成为超级管理员
 2. 创建你的第一个团队
-3. 添加 AI 模型（设置 → 模型）
+3. 添加 AI 模型（侧边栏中的「模型」）
 4. 创建知识库并上传文档
 5. 构建 AI Agent 并开始对话
 

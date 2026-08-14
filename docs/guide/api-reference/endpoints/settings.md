@@ -1,685 +1,473 @@
 # Settings API
 
-This document describes the Settings API endpoints for managing system and team settings.
+This document describes the API endpoints for managing site settings.
 
 ## Overview
 
-The Settings API allows you to manage system-wide settings, team settings, and user preferences programmatically.
+The Settings API allows you to:
 
-## Endpoints
+- **Read site settings**: Get all settings (optionally filtered by category)
+- **Update settings**: Update a single setting or bulk-update many at once
+- **Reset settings**: Reset settings to defaults
+- **Read public settings**: Get the public (unauthenticated) subset of settings
+- **Test notification channels**: Send test emails/notifications
 
-### System Settings
+There are no team settings or per-user preference endpoints in this API. Team settings are managed through the Teams API (`/api/v1/teams`), and user preferences are managed through the Users API (`/api/v1/users/me`).
 
-#### Get System Settings
+**Base URLs**:
+- Admin: `/api/v1/admin/site-settings`
+- Public: `/api/v1/site-settings/public`
 
-Get all system settings or specific setting.
+## Authentication
 
-**Endpoint:**
+Admin endpoints require authentication with the `admin:settings:read` / `admin:settings:update` scope. The public endpoint requires no authentication.
+
+**Required scopes (admin):**
+- `admin:settings:read` - Read settings
+- `admin:settings:update` - Update and reset settings
+
+Settings are stored as key-value pairs, each with a `value_type`, `category`, `description`, and `is_public` flag. There are no fixed categories; each setting belongs to a category key such as `general`, `authentication`, `email`, `storage`, `security`, `features`, `notification`, etc.
+
+## Get All Settings (admin)
+
+Get all settings, optionally filtered by category.
+
+### Endpoint
+
 ```
-GET /api/v1/settings/system
-GET /api/v1/settings/system/{key}
+GET /api/v1/admin/site-settings
 ```
 
-**Authentication:** Required (Admin only)
+### Query Parameters
 
-**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `category` | string | No | Filter by category (e.g. `general`, `email`, `storage`) |
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `category` | string | Filter by category (optional) |
+### Request Example
 
-**Response:**
+```bash
+curl -X GET "https://your-domain.com/api/v1/admin/site-settings?category=general" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+### Response
+
+**Success (200 OK):**
+
 ```json
 {
   "code": 0,
   "data": {
-    "general": {
+    "settings": {
       "site_name": "Clouisle",
+      "site_description": "AI platform",
       "site_url": "https://your-domain.com",
-      "support_email": "support@example.com"
-    },
-    "authentication": {
-      "allow_registration": true,
-      "require_email_verification": true,
-      "session_timeout": 1800
-    },
-    "email": {
-      "smtp_host": "smtp.example.com",
-      "smtp_port": 587,
-      "smtp_user": "noreply@example.com",
-      "from_email": "noreply@example.com",
-      "from_name": "Clouisle"
+      "site_icon": ""
     }
   },
   "msg": "success"
 }
 ```
 
-**Example (Python):**
-```python
-# Get all system settings
-settings = api.get('/api/v1/settings/system')
+The `settings` object maps setting keys to their current values. Without a `category` filter, all settings are returned.
 
-# Get specific setting
-site_name = api.get('/api/v1/settings/system/general.site_name')
-print(f"Site name: {site_name['data']['value']}")
+## Get Setting (admin)
 
-# Get settings by category
-auth_settings = api.get('/api/v1/settings/system', params={
-    'category': 'authentication'
-})
+Get a single setting by key.
+
+### Endpoint
+
+```
+GET /api/v1/admin/site-settings/{key}
 ```
 
-**Example (JavaScript):**
-```javascript
-// Get all system settings
-const settings = await api.get('/api/v1/settings/system');
+### Path Parameters
 
-// Get specific setting
-const siteName = await api.get('/api/v1/settings/system/general.site_name');
-console.log(`Site name: ${siteName.data.value}`);
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Setting key (e.g. `site_name`) |
 
-// Get settings by category
-const authSettings = await api.get('/api/v1/settings/system', {
-  params: { category: 'authentication' }
-});
+### Request Example
+
+```bash
+curl -X GET "https://your-domain.com/api/v1/admin/site-settings/site_name" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
-#### Update System Settings
+### Response
 
-Update system settings.
+**Success (200 OK):**
 
-**Endpoint:**
-```
-PATCH /api/v1/settings/system
-PATCH /api/v1/settings/system/{key}
-```
-
-**Authentication:** Required (Admin only)
-
-**Request Body:**
 ```json
 {
-  "general": {
+  "code": 0,
+  "data": {
+    "key": "site_name",
+    "value": "Clouisle",
+    "value_type": "string",
+    "category": "general",
+    "description": "Site name",
+    "is_public": true
+  },
+  "msg": "success"
+}
+```
+
+### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Setting key |
+| `value` | any | Current value |
+| `value_type` | string | Value type (`string`, `integer`, `boolean`, `json`, etc.) |
+| `category` | string | Setting category |
+| `description` | string | Setting description |
+| `is_public` | boolean | Whether the value is exposed via the public endpoint |
+
+## Update Setting (admin)
+
+Update a single setting by key.
+
+### Endpoint
+
+```
+PUT /api/v1/admin/site-settings/{key}
+```
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Setting key |
+
+### Request Body
+
+```json
+{
+  "value": "My Clouisle Instance"
+}
+```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `value` | any | Yes | New value (validated against the setting's type/constraints) |
+
+### Request Example
+
+```bash
+curl -X PUT "https://your-domain.com/api/v1/admin/site-settings/site_name" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "value": "My Clouisle Instance"
+  }'
+```
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "key": "site_name",
+    "value": "My Clouisle Instance",
+    "value_type": "string",
+    "category": "general",
+    "description": "Site name",
+    "is_public": true
+  },
+  "msg": "Setting updated successfully"
+}
+```
+
+## Bulk Update Settings (admin)
+
+Update multiple settings in a single request.
+
+### Endpoint
+
+```
+PUT /api/v1/admin/site-settings
+```
+
+### Request Body
+
+```json
+{
+  "settings": {
     "site_name": "My Clouisle Instance",
-    "support_email": "support@mycompany.com"
-  },
-  "authentication": {
-    "session_timeout": 3600
+    "smtp_enabled": true,
+    "max_file_size_mb": 100
   }
 }
 ```
 
-**Response:**
-```json
-{
-  "code": 0,
-  "data": {
-    "updated": [
-      "general.site_name",
-      "general.support_email",
-      "authentication.session_timeout"
-    ]
-  },
-  "msg": "success"
-}
-```
+### Request Fields
 
-**Example (Python):**
-```python
-# Update multiple settings
-result = api.patch('/api/v1/settings/system', json={
-    'general': {
-        'site_name': 'My Clouisle Instance',
-        'support_email': 'support@mycompany.com'
-    },
-    'authentication': {
-        'session_timeout': 3600
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `settings` | object | Yes | Map of setting keys to new values |
+
+### Request Example
+
+```bash
+curl -X PUT "https://your-domain.com/api/v1/admin/site-settings" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "settings": {
+      "site_name": "My Clouisle Instance",
+      "smtp_enabled": true
     }
-})
-
-# Update single setting
-result = api.patch('/api/v1/settings/system/general.site_name', json={
-    'value': 'My Clouisle Instance'
-})
+  }'
 ```
 
-**Example (JavaScript):**
-```javascript
-// Update multiple settings
-const result = await api.patch('/api/v1/settings/system', {
-  general: {
-    site_name: 'My Clouisle Instance',
-    support_email: 'support@mycompany.com'
-  },
-  authentication: {
-    session_timeout: 3600
-  }
-});
+### Response
 
-// Update single setting
-const result = await api.patch('/api/v1/settings/system/general.site_name', {
-  value: 'My Clouisle Instance'
-});
-```
+**Success (200 OK):**
 
-#### Reset System Settings
-
-Reset settings to default values.
-
-**Endpoint:**
-```
-POST /api/v1/settings/system/reset
-```
-
-**Authentication:** Required (Admin only)
-
-**Request Body:**
-```json
-{
-  "keys": ["general.site_name", "authentication.session_timeout"],
-  "category": "authentication"
-}
-```
-
-**Response:**
 ```json
 {
   "code": 0,
   "data": {
-    "reset": [
-      "general.site_name",
-      "authentication.session_timeout"
-    ]
-  },
-  "msg": "success"
-}
-```
-
-### Team Settings
-
-#### Get Team Settings
-
-Get team settings.
-
-**Endpoint:**
-```
-GET /api/v1/teams/{team_id}/settings
-GET /api/v1/teams/{team_id}/settings/{key}
-```
-
-**Authentication:** Required (Team member)
-
-**Response:**
-```json
-{
-  "code": 0,
-  "data": {
-    "general": {
-      "name": "Engineering Team",
-      "description": "Product engineering team",
-      "visibility": "internal"
-    },
-    "limits": {
-      "max_agents": 50,
-      "max_knowledge_bases": 20,
-      "max_workflows": 100
-    },
-    "security": {
-      "require_2fa": true,
-      "session_timeout": 1800,
-      "allowed_ips": ["192.168.1.0/24"]
+    "settings": {
+      "site_name": "My Clouisle Instance",
+      "smtp_enabled": true
     }
   },
-  "msg": "success"
+  "msg": "Settings updated successfully"
 }
 ```
 
-**Example (Python):**
-```python
-# Get all team settings
-settings = api.get(f'/api/v1/teams/{team_id}/settings')
+**Note:** Updating storage settings (`upload_storage_backend`, `object_storage_*`) triggers backend validation to ensure the selected storage configuration is consistent. Updating `sso_allow_password_login` to `false` requires at least one superadmin with a bound SSO connection.
 
-# Get specific setting
-max_agents = api.get(f'/api/v1/teams/{team_id}/settings/limits.max_agents')
-print(f"Max agents: {max_agents['data']['value']}")
+## Reset Settings (admin)
+
+Reset settings (optionally within one category) to their default values.
+
+### Endpoint
+
+```
+POST /api/v1/admin/site-settings/reset
 ```
 
-**Example (JavaScript):**
-```javascript
-// Get all team settings
-const settings = await api.get(`/api/v1/teams/${teamId}/settings`);
+### Query Parameters
 
-// Get specific setting
-const maxAgents = await api.get(
-  `/api/v1/teams/${teamId}/settings/limits.max_agents`
-);
-console.log(`Max agents: ${maxAgents.data.value}`);
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `category` | string | No | Only reset settings in this category |
+
+### Request Example
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/admin/site-settings/reset?category=general" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
-#### Update Team Settings
+### Response
 
-Update team settings.
+**Success (200 OK):**
 
-**Endpoint:**
-```
-PATCH /api/v1/teams/{team_id}/settings
-PATCH /api/v1/teams/{team_id}/settings/{key}
-```
-
-**Authentication:** Required (Team admin)
-
-**Request Body:**
-```json
-{
-  "general": {
-    "name": "Updated Team Name",
-    "description": "Updated description"
-  },
-  "security": {
-    "require_2fa": true
-  }
-}
-```
-
-**Response:**
 ```json
 {
   "code": 0,
   "data": {
-    "updated": [
-      "general.name",
-      "general.description",
-      "security.require_2fa"
-    ]
+    "settings": {
+      "site_name": "Clouisle",
+      "site_description": "",
+      "site_url": ""
+    }
   },
-  "msg": "success"
+  "msg": "Settings reset successfully"
 }
 ```
 
-**Example (Python):**
-```python
-# Update team settings
-result = api.patch(f'/api/v1/teams/{team_id}/settings', json={
-    'general': {
-        'name': 'Updated Team Name',
-        'description': 'Updated description'
-    },
-    'security': {
-        'require_2fa': True
-    }
-})
+## Get Public Settings
+
+Get the public subset of settings (those with `is_public: true`). No authentication required.
+
+### Endpoint
+
+```
+GET /api/v1/site-settings/public
 ```
 
-**Example (JavaScript):**
-```javascript
-// Update team settings
-const result = await api.patch(`/api/v1/teams/${teamId}/settings`, {
-  general: {
-    name: 'Updated Team Name',
-    description: 'Updated description'
-  },
-  security: {
-    require_2fa: true
-  }
-});
+### Request Example
+
+```bash
+curl -X GET "https://your-domain.com/api/v1/site-settings/public"
 ```
 
-### User Preferences
+### Response
 
-#### Get User Preferences
+**Success (200 OK):**
 
-Get user preferences.
-
-**Endpoint:**
-```
-GET /api/v1/users/me/preferences
-GET /api/v1/users/me/preferences/{key}
-```
-
-**Authentication:** Required
-
-**Response:**
 ```json
 {
   "code": 0,
   "data": {
-    "notifications": {
-      "email_enabled": true,
-      "email_frequency": "immediate",
-      "push_enabled": true
-    },
-    "ui": {
-      "theme": "light",
-      "language": "en",
-      "timezone": "America/New_York"
-    },
-    "privacy": {
-      "show_online_status": true,
-      "allow_mentions": true
-    }
+    "site_name": "Clouisle",
+    "site_description": "AI platform",
+    "site_url": "https://your-domain.com",
+    "site_icon": "",
+    "auth_page_layout": "centered",
+    "theme_mode": "system",
+    "theme_primary_color": "",
+    "theme_primary_foreground_color": "",
+    "theme_background_color": "",
+    "theme_foreground_color": "",
+    "theme_card_color": "",
+    "theme_card_foreground_color": "",
+    "theme_border_color": "",
+    "theme_ring_color": "",
+    "theme_sidebar_color": "",
+    "theme_sidebar_foreground_color": "",
+    "theme_sidebar_primary_color": "",
+    "theme_sidebar_primary_foreground_color": "",
+    "theme_sidebar_accent_color": "",
+    "theme_sidebar_accent_foreground_color": "",
+    "theme_sidebar_border_color": "",
+    "theme_navbar_color": "",
+    "theme_navbar_foreground_color": "",
+    "theme_navbar_hover_color": "",
+    "theme_navbar_hover_foreground_color": "",
+    "theme_accent_color": "",
+    "theme_accent_foreground_color": "",
+    "theme_muted_color": "",
+    "theme_muted_foreground_color": ""
   },
   "msg": "success"
 }
 ```
 
-**Example (Python):**
-```python
-# Get all preferences
-prefs = api.get('/api/v1/users/me/preferences')
+## Auto Notifications Config
 
-# Get specific preference
-theme = api.get('/api/v1/users/me/preferences/ui.theme')
-print(f"Theme: {theme['data']['value']}")
+Get or update the global auto-notification configuration.
+
+### Endpoints
+
+```
+GET /api/v1/admin/site-settings/auto-notifications
+PUT /api/v1/admin/site-settings/auto-notifications
 ```
 
-**Example (JavaScript):**
-```javascript
-// Get all preferences
-const prefs = await api.get('/api/v1/users/me/preferences');
+### Request Body (PUT)
 
-// Get specific preference
-const theme = await api.get('/api/v1/users/me/preferences/ui.theme');
-console.log(`Theme: ${theme.data.value}`);
-```
-
-#### Update User Preferences
-
-Update user preferences.
-
-**Endpoint:**
-```
-PATCH /api/v1/users/me/preferences
-PATCH /api/v1/users/me/preferences/{key}
-```
-
-**Authentication:** Required
-
-**Request Body:**
 ```json
 {
-  "notifications": {
-    "email_frequency": "daily"
-  },
-  "ui": {
-    "theme": "dark",
-    "language": "zh"
-  }
+  "channels": ["email", "dingtalk", "wechat", "feishu", "webhook", "slack"]
 }
 ```
 
-**Response:**
+### Response
+
+**Success (200 OK):**
+
 ```json
 {
   "code": 0,
   "data": {
-    "updated": [
-      "notifications.email_frequency",
-      "ui.theme",
-      "ui.language"
-    ]
+    "channels": ["email", "dingtalk", "wechat"]
   },
   "msg": "success"
 }
 ```
 
-**Example (Python):**
-```python
-# Update preferences
-result = api.patch('/api/v1/users/me/preferences', json={
-    'notifications': {
-        'email_frequency': 'daily'
-    },
-    'ui': {
-        'theme': 'dark',
-        'language': 'zh'
-    }
-})
+## Test Notification Channels (admin)
+
+Send test notifications through the configured channels.
+
+### Endpoints
+
+```
+POST /api/v1/admin/site-settings/test-email
+POST /api/v1/admin/site-settings/test-dingtalk
+POST /api/v1/admin/site-settings/test-wechat
+POST /api/v1/admin/site-settings/test-feishu
+POST /api/v1/admin/site-settings/test-webhook
+POST /api/v1/admin/site-settings/test-slack
 ```
 
-**Example (JavaScript):**
-```javascript
-// Update preferences
-const result = await api.patch('/api/v1/users/me/preferences', {
-  notifications: {
-    email_frequency: 'daily'
-  },
-  ui: {
-    theme: 'dark',
-    language: 'zh'
-  }
-});
-```
+`test-email` accepts a body with the target recipient:
 
-## Setting Categories
-
-### System Settings Categories
-
-**General:**
-- `site_name`: Site name
-- `site_url`: Site URL
-- `support_email`: Support email
-- `logo_url`: Logo URL
-
-**Authentication:**
-- `allow_registration`: Allow user registration
-- `require_email_verification`: Require email verification
-- `session_timeout`: Session timeout (seconds)
-- `max_login_attempts`: Max failed login attempts
-- `lockout_duration`: Account lockout duration (seconds)
-
-**Email:**
-- `smtp_host`: SMTP server host
-- `smtp_port`: SMTP server port
-- `smtp_user`: SMTP username
-- `smtp_password`: SMTP password (encrypted)
-- `from_email`: From email address
-- `from_name`: From name
-
-**Storage:**
-- `storage_provider`: Storage provider (local, s3, azure)
-- `max_file_size`: Max file size (bytes)
-- `allowed_file_types`: Allowed file types
-
-**Security:**
-- `require_https`: Require HTTPS
-- `enable_cors`: Enable CORS
-- `allowed_origins`: Allowed CORS origins
-- `rate_limit_enabled`: Enable rate limiting
-- `rate_limit_requests`: Requests per minute
-
-**Features:**
-- `enable_registration`: Enable user registration
-- `enable_sso`: Enable SSO
-- `enable_api`: Enable API access
-- `enable_webhooks`: Enable webhooks
-
-### Team Settings Categories
-
-**General:**
-- `name`: Team name
-- `slug`: Team slug
-- `description`: Team description
-- `visibility`: Team visibility
-
-**Limits:**
-- `max_members`: Maximum members
-- `max_agents`: Maximum agents
-- `max_knowledge_bases`: Maximum knowledge bases
-- `max_workflows`: Maximum workflows
-- `max_storage`: Maximum storage (bytes)
-
-**Security:**
-- `require_2fa`: Require 2FA
-- `session_timeout`: Session timeout
-- `allowed_ips`: Allowed IP addresses
-- `allowed_domains`: Allowed email domains
-
-**API:**
-- `api_enabled`: Enable API access
-- `rate_limit_per_minute`: Rate limit per minute
-- `rate_limit_per_hour`: Rate limit per hour
-- `max_api_keys`: Maximum API keys per user
-
-### User Preferences Categories
-
-**Notifications:**
-- `email_enabled`: Enable email notifications
-- `email_frequency`: Email frequency (immediate, hourly, daily, weekly)
-- `push_enabled`: Enable push notifications
-- `in_app_enabled`: Enable in-app notifications
-
-**UI:**
-- `theme`: UI theme (light, dark, auto)
-- `language`: Interface language
-- `timezone`: User timezone
-- `date_format`: Date format
-- `time_format`: Time format (12h, 24h)
-
-**Privacy:**
-- `show_online_status`: Show online status
-- `allow_mentions`: Allow mentions
-- `show_email`: Show email to team members
-
-## Validation Rules
-
-### Setting Validation
-
-**Type Validation:**
-```python
+```json
 {
-  "session_timeout": {
-    "type": "integer",
-    "min": 300,
-    "max": 86400
-  },
-  "site_name": {
-    "type": "string",
-    "min_length": 3,
-    "max_length": 100
-  },
-  "require_2fa": {
-    "type": "boolean"
-  }
+  "to_email": "admin@example.com"
 }
 ```
 
-**Custom Validation:**
-```python
-def validate_setting(key, value):
-    """Validate setting value."""
-    if key == 'session_timeout':
-        if not 300 <= value <= 86400:
-            raise ValueError('Session timeout must be between 300 and 86400 seconds')
+The other endpoints take no body.
 
-    elif key == 'site_url':
-        if not value.startswith(('http://', 'https://')):
-            raise ValueError('Site URL must start with http:// or https://')
+### Request Example
 
-    elif key == 'smtp_port':
-        if value not in [25, 465, 587, 2525]:
-            raise ValueError('Invalid SMTP port')
-
-    return True
+```bash
+curl -X POST "https://your-domain.com/api/v1/admin/site-settings/test-email" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_email": "admin@example.com"
+  }'
 ```
 
-## Bulk Operations
+### Response
 
-### Bulk Update Settings
+**Success (200 OK):**
 
-**Update Multiple Settings:**
-```python
-# Bulk update system settings
-result = api.patch('/api/v1/settings/system/bulk', json={
-    'settings': [
-        {'key': 'general.site_name', 'value': 'My Site'},
-        {'key': 'authentication.session_timeout', 'value': 3600},
-        {'key': 'email.from_email', 'value': 'noreply@example.com'}
-    ]
-})
-
-# Response
+```json
 {
-    "code": 0,
-    "data": {
-        "success": [
-            "general.site_name",
-            "authentication.session_timeout",
-            "email.from_email"
-        ],
-        "failed": []
-    },
-    "msg": "success"
+  "code": 0,
+  "data": null,
+  "msg": "Test email sent successfully"
 }
 ```
 
-### Export Settings
+## Archive Audit Logs (admin)
 
-**Export Settings to JSON:**
-```python
-# Export system settings
-settings = api.get('/api/v1/settings/system/export')
+Trigger a background archive of old audit logs, and poll its status.
 
-# Save to file
-import json
-with open('settings.json', 'w') as f:
-    json.dump(settings['data'], f, indent=2)
+### Endpoints
+
+```
+POST /api/v1/admin/site-settings/archive-audit-logs
+GET  /api/v1/admin/site-settings/archive-audit-logs/{task_id}
 ```
 
-### Import Settings
+### Request Example
 
-**Import Settings from JSON:**
-```python
-# Load from file
-import json
-with open('settings.json', 'r') as f:
-    settings = json.load(f)
-
-# Import settings
-result = api.post('/api/v1/settings/system/import', json={
-    'settings': settings,
-    'overwrite': True
-})
+```bash
+curl -X POST "https://your-domain.com/api/v1/admin/site-settings/archive-audit-logs" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
-## Setting History
+### Response
 
-### Get Setting History
+**Success (200 OK):**
 
-**View Setting Changes:**
-```python
-# Get history for specific setting
-history = api.get('/api/v1/settings/system/general.site_name/history')
-
-# Response
+```json
 {
-    "code": 0,
-    "data": {
-        "items": [
-            {
-                "id": "hist-123",
-                "key": "general.site_name",
-                "old_value": "Clouisle",
-                "new_value": "My Clouisle",
-                "changed_by": "user-123",
-                "changed_at": "2026-02-11T16:00:00Z"
-            }
-        ],
-        "total": 1
-    },
-    "msg": "success"
+  "code": 0,
+  "data": {
+    "task_id": "celery-task-uuid"
+  },
+  "msg": "success"
 }
 ```
 
-### Revert Setting
+## Error Codes
 
-**Revert to Previous Value:**
-```python
-# Revert to specific version
-result = api.post('/api/v1/settings/system/general.site_name/revert', json={
-    'history_id': 'hist-123'
-})
-```
+| Code | Message | Description |
+|------|---------|-------------|
+| `1000` | Unknown error | General error |
+| `1001` | Validation failed | Setting value invalid |
+| `3000` | Permission denied | Insufficient permissions |
+| `4000` | Not found | Setting key not found |
+
+> **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints.
 
 ## Best Practices
 
@@ -687,56 +475,31 @@ result = api.post('/api/v1/settings/system/general.site_name/revert', json={
 
 **✅ Do:**
 - Validate settings before updating
-- Use bulk operations for multiple changes
-- Export settings before major changes
-- Track setting changes
-- Document custom settings
+- Use bulk updates for multiple changes
 - Test settings in staging
-- Use environment-specific settings
 
 **❌ Don't:**
 - Update settings without validation
-- Make changes directly in production
-- Skip backups
-- Ignore setting history
-- Use hardcoded values
+- Make changes directly in production without testing
 - Skip testing
-- Use same settings everywhere
 
 ### Security
 
 **✅ Do:**
 - Encrypt sensitive settings
 - Restrict access to admin settings
-- Audit setting changes
 - Use secure defaults
 - Validate all inputs
-- Log security-related changes
-- Review settings regularly
 
 **❌ Don't:**
 - Store passwords in plain text
-- Allow public access to settings
-- Skip audit logging
+- Allow public access to non-public settings
 - Use insecure defaults
 - Trust user input
-- Ignore security settings
-- Never review settings
-
-## Error Codes
-
-| Code | Message | Description |
-|------|---------|-------------|
-| 1001 | Validation failed | Setting value invalid |
-| 3000 | Permission denied | Insufficient permissions |
-| 4000 | Setting not found | Setting key not found |
-| 1000 | Invalid setting key | Setting key format invalid |
 
 ## Related Documentation
 
-- [System Settings](../admin-guide/settings/system-settings.md) - System configuration
-- [Team Settings](../user-guide/settings/team-settings.md) - Team configuration
-- [User Preferences](../user-guide/settings/notification-preferences.md) - User preferences
+- [System Settings](../../admin-guide/settings/system-settings.md) - System configuration
 - [Authentication](./authentication.md) - Authentication guide
 
 ---

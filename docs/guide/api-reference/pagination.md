@@ -4,7 +4,7 @@ This guide explains how to work with paginated API responses in Clouisle.
 
 ## Overview
 
-Pagination allows you to retrieve large datasets in manageable chunks. All list endpoints in Clouisle support pagination.
+Pagination allows you to retrieve large datasets in manageable chunks. List endpoints in Clouisle return page-based results.
 
 ## Pagination Parameters
 
@@ -15,7 +15,9 @@ Pagination allows you to retrieve large datasets in manageable chunks. All list 
 | Parameter | Type | Default | Max | Description |
 |-----------|------|---------|-----|-------------|
 | `page` | integer | 1 | - | Page number (1-indexed) |
-| `page_size` | integer | 20 | 100 | Items per page |
+| `page_size` | integer | 20 | varies | Items per page |
+
+`page_size` is not uniformly capped: most list endpoints accept any value, while some endpoints (e.g. conversations, admin observability) constrain it with `le=100`. Check the individual endpoint schema for the exact bound.
 
 **Example Request:**
 
@@ -35,10 +37,7 @@ curl -X GET "https://your-domain.com/api/v1/agents?page=2&page_size=50" \
     "items": [...],
     "total": 156,
     "page": 2,
-    "page_size": 50,
-    "total_pages": 4,
-    "has_next": true,
-    "has_prev": true
+    "page_size": 50
   },
   "msg": "success"
 }
@@ -50,9 +49,14 @@ curl -X GET "https://your-domain.com/api/v1/agents?page=2&page_size=50" \
 - `total`: Total number of items across all pages
 - `page`: Current page number
 - `page_size`: Number of items per page
-- `total_pages`: Total number of pages
-- `has_next`: Whether there is a next page
-- `has_prev`: Whether there is a previous page
+
+There are **no** `total_pages`, `has_next`, or `has_prev` fields, and no cursor-based pagination. Compute page boundaries client-side from `total` and `page_size`:
+
+```python
+total_pages = math.ceil(total / page_size)  # last page, for iteration
+has_next = page < total_pages
+has_prev = page > 1
+```
 
 ## Pagination Strategies
 
@@ -66,10 +70,6 @@ response = api.get("/api/v1/agents", params={"page": 1, "page_size": 20})
 
 # Get next page
 response = api.get("/api/v1/agents", params={"page": 2, "page_size": 20})
-
-# Get last page
-total_pages = response['data']['total_pages']
-response = api.get("/api/v1/agents", params={"page": total_pages, "page_size": 20})
 ```
 
 ### Iterate All Pages
@@ -77,11 +77,13 @@ response = api.get("/api/v1/agents", params={"page": total_pages, "page_size": 2
 **Python Example:**
 
 ```python
+import math
+
 def get_all_items(endpoint, params=None):
     """Fetch all items from paginated endpoint."""
     params = params or {}
     params['page'] = 1
-    params['page_size'] = 100  # Max page size
+    params['page_size'] = 100
 
     all_items = []
 
@@ -91,7 +93,8 @@ def get_all_items(endpoint, params=None):
 
         all_items.extend(data['items'])
 
-        if not data['has_next']:
+        total_pages = math.ceil(data['total'] / data['page_size'])
+        if params['page'] >= total_pages:
             break
 
         params['page'] += 1
@@ -118,7 +121,8 @@ async function getAllItems(endpoint, params = {}) {
 
     allItems.push(...data.items);
 
-    if (!data.has_next) {
+    const totalPages = Math.ceil(data.total / data.page_size);
+    if (params.page >= totalPages) {
       break;
     }
 
@@ -133,66 +137,12 @@ const allAgents = await getAllItems('/api/v1/agents');
 console.log(`Total agents: ${allAgents.length}`);
 ```
 
-### Cursor-Based Pagination
-
-Some endpoints support cursor-based pagination for better performance with large datasets.
-
-**Request:**
-
-```bash
-curl -X GET "https://your-domain.com/api/v1/conversations?cursor=eyJpZCI6MTIzfQ&limit=50" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-**Response:**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "items": [...],
-    "next_cursor": "eyJpZCI6MTczfQ",
-    "has_more": true
-  },
-  "msg": "success"
-}
-```
-
-**Iterate with Cursor:**
-
-```python
-def get_all_items_cursor(endpoint, params=None):
-    """Fetch all items using cursor pagination."""
-    params = params or {}
-    params['limit'] = 100
-
-    all_items = []
-    cursor = None
-
-    while True:
-        if cursor:
-            params['cursor'] = cursor
-
-        response = api.get(endpoint, params=params)
-        data = response['data']
-
-        all_items.extend(data['items'])
-
-        if not data.get('has_more'):
-            break
-
-        cursor = data.get('next_cursor')
-
-    return all_items
-```
-
 ## Best Practices
 
 ### Performance
 
 **✅ Do:**
-- Use maximum page size (100) for bulk operations
-- Use cursor pagination for large datasets
+- Use a large page size (up to the endpoint's cap) for bulk operations
 - Cache results when appropriate
 - Implement pagination in UI
 - Show loading indicators
@@ -232,40 +182,11 @@ def safe_paginate(endpoint, params=None):
 
         all_items.extend(data['items'])
 
-        if not data['has_next']:
+        total_pages = math.ceil(data['total'] / data['page_size'])
+        if params['page'] >= total_pages:
             break
 
         params['page'] += 1
-
-    return all_items
-```
-
-### Rate Limiting
-
-**Respect Rate Limits:**
-
-```python
-import time
-
-def paginate_with_rate_limit(endpoint, params=None, delay=0.1):
-    """Paginate with rate limiting."""
-    params = params or {}
-    params['page'] = 1
-    params['page_size'] = 100
-
-    all_items = []
-
-    while True:
-        response = api.get(endpoint, params=params)
-        data = response['data']
-
-        all_items.extend(data['items'])
-
-        if not data['has_next']:
-            break
-
-        params['page'] += 1
-        time.sleep(delay)  # Rate limit delay
 
     return all_items
 ```
@@ -295,7 +216,9 @@ function PaginatedList() {
       });
 
       setItems(response.data.items);
-      setTotalPages(response.data.total_pages);
+      setTotalPages(
+        Math.ceil(response.data.total / response.data.page_size)
+      );
     } catch (error) {
       console.error('Failed to fetch items:', error);
     } finally {
@@ -380,7 +303,10 @@ function InfiniteScrollList() {
       });
 
       setItems(prev => [...prev, ...response.data.items]);
-      setHasMore(response.data.has_next);
+      const totalPages = Math.ceil(
+        response.data.total / response.data.page_size
+      );
+      setHasMore(page < totalPages);
     } catch (error) {
       console.error('Failed to fetch items:', error);
     } finally {
@@ -411,9 +337,11 @@ function InfiniteScrollList() {
 ### Calculate Pagination Info
 
 ```python
+import math
+
 def calculate_pagination(total, page, page_size):
-    """Calculate pagination metadata."""
-    total_pages = (total + page_size - 1) // page_size
+    """Calculate pagination metadata client-side."""
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
     has_next = page < total_pages
     has_prev = page > 1
     start_index = (page - 1) * page_size
@@ -444,7 +372,7 @@ print(info['showing'])  # "51-100 of 156"
 def search_paginated(query, page=1, page_size=20):
     """Search with pagination."""
     response = api.get('/api/v1/agents', params={
-        'search': query,
+        'keyword': query,
         'page': page,
         'page_size': page_size
     })
@@ -476,23 +404,6 @@ results = filter_paginated({
 }, page=1)
 ```
 
-### Sort with Pagination
-
-```python
-def sort_paginated(sort_by, order='asc', page=1, page_size=20):
-    """Sort with pagination."""
-    response = api.get('/api/v1/agents', params={
-        'sort_by': sort_by,
-        'order': order,
-        'page': page,
-        'page_size': page_size
-    })
-    return response['data']
-
-# Usage
-results = sort_paginated('created_at', order='desc', page=1)
-```
-
 ## Troubleshooting
 
 ### Empty Results
@@ -507,13 +418,12 @@ results = sort_paginated('created_at', order='desc', page=1)
 
 ### Inconsistent Results
 
-**Problem:** Items appear/disappear between pages
+**Problem:** Items appear/disappear between pages (items created/deleted during iteration)
 
 **Solutions:**
-1. Use cursor pagination for consistency
-2. Sort by stable field (e.g., ID)
-3. Cache results if needed
-4. Use transactions for critical operations
+1. Ordering is fixed per endpoint (typically newest first)
+2. Cache results if needed
+3. Re-run the query to confirm the final state
 
 ### Performance Issues
 
@@ -521,18 +431,15 @@ results = sort_paginated('created_at', order='desc', page=1)
 
 **Solutions:**
 1. Increase page size
-2. Use cursor pagination
-3. Add database indexes
-4. Implement caching
-5. Use CDN for static data
+2. Add database indexes
+3. Implement caching
 
 ## Related Documentation
 
 - [Filtering Guide](./filtering.md) - Filtering results
-- [Sorting Guide](./sorting.md) - Sorting results
-- [Rate Limiting](./rate-limiting.md) - Rate limits
+- [Response Format](./response-format.md) - Response structure
 - [Error Handling](./error-handling.md) - Error handling
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

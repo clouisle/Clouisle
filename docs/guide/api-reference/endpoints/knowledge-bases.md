@@ -8,14 +8,14 @@ The Knowledge Bases API allows you to:
 
 - **List knowledge bases**: Get all accessible knowledge bases
 - **Get KB details**: Retrieve knowledge base information
-- **Create knowledge bases**: Create new knowledge bases (admin only)
-- **Update knowledge bases**: Modify KB configuration (admin only)
-- **Delete knowledge bases**: Remove knowledge bases (admin only)
+- **Create knowledge bases**: Create new knowledge bases
+- **Update knowledge bases**: Modify KB configuration
+- **Delete knowledge bases**: Remove knowledge bases
 - **Upload documents**: Add documents to knowledge bases
 - **Search documents**: Query documents with vector/keyword search
 - **Manage documents**: Update and delete documents
 
-**Base URL**: `/api/v1/kb`
+**Base URL**: `/api/v1/knowledge-bases`
 
 ## Authentication
 
@@ -23,6 +23,7 @@ All endpoints require authentication via JWT token or API key.
 
 **Required scopes:**
 - `kb:read` - List and view knowledge bases
+- `kb:test` - Run searches against knowledge bases
 - `kb:create` - Create knowledge bases
 - `kb:update` - Update knowledge bases and upload documents
 - `kb:delete` - Delete knowledge bases and documents
@@ -34,7 +35,7 @@ Get a list of all knowledge bases you have access to.
 ### Endpoint
 
 ```
-GET /api/v1/kb
+GET /api/v1/knowledge-bases
 ```
 
 ### Query Parameters
@@ -44,12 +45,13 @@ GET /api/v1/kb
 | `page` | integer | No | 1 | Page number |
 | `page_size` | integer | No | 20 | Items per page (max: 100) |
 | `team_id` | string | No | - | Filter by team ID |
+| `status` | array | No | - | Filter by status: `active`, `archived` (repeatable) |
 | `search` | string | No | - | Search by name or description |
 
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/kb?page=1&page_size=20" \
+curl -X GET "https://your-domain.com/api/v1/knowledge-bases?page=1&page_size=20" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -66,24 +68,42 @@ curl -X GET "https://your-domain.com/api/v1/kb?page=1&page_size=20" \
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "Product Documentation",
         "description": "Product docs and FAQs",
-        "team_id": "team-123",
-        "team_name": "Support Team",
-        "embedding_model": "text-embedding-3-small",
-        "chunk_size": 1000,
-        "chunk_overlap": 200,
-        "chunking_strategy": "semantic",
+        "icon": "📚",
+        "team": {
+          "id": "team-123",
+          "name": "Support Team",
+          "avatar_url": null
+        },
+        "created_by": {
+          "id": "user-001",
+          "username": "alice",
+          "avatar_url": null
+        },
+        "status": "active",
+        "embedding_model_id": "model-emb-01",
+        "embedding_model": {
+          "id": "model-emb-01",
+          "name": "text-embedding-3-small",
+          "provider": "openai",
+          "model_id": "text-embedding-3-small"
+        },
+        "rerank_model_id": "model-rerank-01",
+        "rerank_model": {
+          "id": "model-rerank-01",
+          "name": "bge-reranker-v2-m3",
+          "provider": "bge",
+          "model_id": "bge-reranker-v2-m3"
+        },
+        "embedding_dimension": 1536,
         "document_count": 156,
         "total_chunks": 2340,
-        "storage_used": 234567890,
-        "created_at": "2026-02-11T10:00:00Z",
-        "updated_at": "2026-02-11T15:30:00Z",
-        "created_by": "user-001"
+        "total_tokens": 456789,
+        "created_at": "2026-02-11T10:00:00Z"
       }
     ],
     "total": 42,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 3
+    "page_size": 20
   },
   "msg": "success"
 }
@@ -96,7 +116,7 @@ Get details of a specific knowledge base.
 ### Endpoint
 
 ```
-GET /api/v1/kb/{kb_id}
+GET /api/v1/knowledge-bases/{kb_id}
 ```
 
 ### Path Parameters
@@ -108,7 +128,7 @@ GET /api/v1/kb/{kb_id}
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000" \
+curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -123,30 +143,47 @@ curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "Product Documentation",
     "description": "Product docs and FAQs",
-    "team_id": "team-123",
-    "team_name": "Support Team",
-    "embedding_model": "text-embedding-3-small",
-    "chunk_size": 1000,
-    "chunk_overlap": 200,
-    "chunking_strategy": "semantic",
+    "icon": "📚",
+    "team": {
+      "id": "team-123",
+      "name": "Support Team",
+      "avatar_url": null
+    },
+    "created_by": {
+      "id": "user-001",
+      "username": "alice",
+      "avatar_url": null
+    },
+    "status": "active",
+    "embedding_model_id": "model-emb-01",
+    "embedding_model": {
+      "id": "model-emb-01",
+      "name": "text-embedding-3-small",
+      "provider": "openai",
+      "model_id": "text-embedding-3-small"
+    },
+    "rerank_model_id": "model-rerank-01",
+    "rerank_model": {
+      "id": "model-rerank-01",
+      "name": "bge-reranker-v2-m3",
+      "provider": "bge",
+      "model_id": "bge-reranker-v2-m3"
+    },
+    "embedding_dimension": 1536,
+    "settings": {
+      "chunk_size": 1000,
+      "chunk_overlap": 100,
+      "rerank_enabled": true,
+      "rerank_candidate_k": 10,
+      "search_mode": "hybrid",
+      "top_k": 5,
+      "score_threshold": 0.0
+    },
     "document_count": 156,
     "total_chunks": 2340,
-    "storage_used": 234567890,
-    "storage_limit": 10737418240,
+    "total_tokens": 456789,
     "created_at": "2026-02-11T10:00:00Z",
-    "updated_at": "2026-02-11T15:30:00Z",
-    "created_by": "user-001",
-    "stats": {
-      "documents_by_type": {
-        "pdf": 89,
-        "docx": 34,
-        "txt": 18,
-        "md": 15
-      },
-      "avg_document_size": 1504273,
-      "total_searches": 1234,
-      "last_search": "2026-02-11T14:30:00Z"
-    }
+    "updated_at": "2026-02-11T15:30:00Z"
   },
   "msg": "success"
 }
@@ -159,7 +196,7 @@ Create a new knowledge base.
 ### Endpoint
 
 ```
-POST /api/v1/kb
+POST /api/v1/knowledge-bases
 ```
 
 ### Request Body
@@ -168,11 +205,17 @@ POST /api/v1/kb
 {
   "name": "Product Documentation",
   "description": "Product docs and FAQs",
+  "icon": "📚",
   "team_id": "team-123",
-  "embedding_model": "text-embedding-3-small",
-  "chunk_size": 1000,
-  "chunk_overlap": 200,
-  "chunking_strategy": "semantic"
+  "embedding_model_id": "model-emb-01",
+  "rerank_model_id": "model-rerank-01",
+  "settings": {
+    "chunk_size": 1000,
+    "chunk_overlap": 100,
+    "rerank_enabled": true,
+    "rerank_candidate_k": 10,
+    "search_mode": "hybrid"
+  }
 }
 ```
 
@@ -182,23 +225,26 @@ POST /api/v1/kb
 |-------|------|----------|-------------|
 | `name` | string | Yes | KB name (max 100 chars) |
 | `description` | string | No | KB description (max 500 chars) |
+| `icon` | string | No | Icon name or emoji (max 50 chars) |
 | `team_id` | string | Yes | Team UUID |
-| `embedding_model` | string | No | Embedding model (default: text-embedding-3-small) |
-| `chunk_size` | integer | No | Chunk size in characters (default: 1000) |
-| `chunk_overlap` | integer | No | Chunk overlap (default: 200) |
-| `chunking_strategy` | string | No | Strategy: semantic, fixed, sentence (default: semantic) |
+| `embedding_model_id` | string | No | Embedding model UUID (must be authorized for the team) |
+| `rerank_model_id` | string | No | Rerank model UUID (must be authorized for the team) |
+| `settings` | object | No | KB settings: `chunk_size` (default 1000, min 100), `chunk_overlap` (default 100, min 0), `separator`, `rerank_enabled` (default true), `rerank_candidate_k` (default 10), `rerank_score_threshold`, `search_mode` (`vector`/`fulltext`/`hybrid`), `top_k`, `score_threshold`, `dense_weight`, `lexical_weight`, `rrf_k` |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/kb" \
+curl -X POST "https://your-domain.com/api/v1/knowledge-bases" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Product Documentation",
     "description": "Product docs and FAQs",
     "team_id": "team-123",
-    "chunk_size": 1000
+    "embedding_model_id": "model-emb-01",
+    "settings": {
+      "chunk_size": 1000
+    }
   }'
 ```
 
@@ -212,8 +258,22 @@ curl -X POST "https://your-domain.com/api/v1/kb" \
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "Product Documentation",
-    "team_id": "team-123",
-    "created_at": "2026-02-11T10:00:00Z"
+    "description": "Product docs and FAQs",
+    "team": {
+      "id": "team-123",
+      "name": "Support Team",
+      "avatar_url": null
+    },
+    "status": "active",
+    "settings": {
+      "chunk_size": 1000,
+      "chunk_overlap": 100
+    },
+    "document_count": 0,
+    "total_chunks": 0,
+    "total_tokens": 0,
+    "created_at": "2026-02-11T10:00:00Z",
+    "updated_at": "2026-02-11T10:00:00Z"
   },
   "msg": "Knowledge base created successfully"
 }
@@ -226,7 +286,7 @@ Update an existing knowledge base.
 ### Endpoint
 
 ```
-PATCH /api/v1/kb/{kb_id}
+PUT /api/v1/knowledge-bases/{kb_id}
 ```
 
 ### Path Parameters
@@ -243,14 +303,17 @@ All fields are optional. Only include fields you want to update.
 {
   "name": "Updated KB Name",
   "description": "Updated description",
-  "chunk_size": 1500
+  "icon": "📚",
+  "settings": {
+    "chunk_size": 1500
+  }
 }
 ```
 
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000" \
+curl -X PUT "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -282,7 +345,7 @@ Delete a knowledge base permanently.
 ### Endpoint
 
 ```
-DELETE /api/v1/kb/{kb_id}
+DELETE /api/v1/knowledge-bases/{kb_id}
 ```
 
 ### Path Parameters
@@ -294,7 +357,7 @@ DELETE /api/v1/kb/{kb_id}
 ### Request Example
 
 ```bash
-curl -X DELETE "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000" \
+curl -X DELETE "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -317,7 +380,7 @@ Upload a document to a knowledge base.
 ### Endpoint
 
 ```
-POST /api/v1/kb/{kb_id}/documents
+POST /api/v1/knowledge-bases/{kb_id}/documents/upload
 ```
 
 ### Path Parameters
@@ -332,23 +395,14 @@ POST /api/v1/kb/{kb_id}/documents
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file` | file | Yes | Document file |
-| `title` | string | No | Document title (default: filename) |
-| `description` | string | No | Document description |
-| `tags` | string | No | Comma-separated tags |
-| `category` | string | No | Document category |
-| `language` | string | No | Document language (default: auto-detect) |
+| `file` | file | Yes | Document file (`.pdf`, `.docx`, `.txt`, `.md`, etc.) |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/documents" \
+curl -X POST "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/documents/upload" \
   -H "Authorization: Bearer YOUR_TOKEN" \
-  -F "file=@document.pdf" \
-  -F "title=Sales Report Q3 2026" \
-  -F "description=Quarterly sales analysis" \
-  -F "tags=sales,q3,2026" \
-  -F "category=reports"
+  -F "file=@document.pdf"
 ```
 
 ### Response
@@ -360,17 +414,22 @@ curl -X POST "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-44665544
   "code": 0,
   "data": {
     "id": "doc-789",
-    "kb_id": "550e8400-e29b-41d4-a716-446655440000",
-    "title": "Sales Report Q3 2026",
-    "filename": "document.pdf",
-    "file_type": "pdf",
+    "knowledge_base_id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "document.pdf",
+    "doc_type": "pdf",
+    "file_path": "uploads/documents/doc-789.pdf",
     "file_size": 2345678,
-    "status": "processing",
-    "created_at": "2026-02-11T10:00:00Z"
+    "status": "pending",
+    "chunk_count": 0,
+    "token_count": 0,
+    "created_at": "2026-02-11T10:00:00Z",
+    "updated_at": "2026-02-11T10:00:00Z"
   },
   "msg": "Document uploaded successfully"
 }
 ```
+
+**Note:** URL-based documents use `POST /api/v1/knowledge-bases/{kb_id}/documents/url` with body `{"name": "...", "source_url": "...", "doc_type": "url"}`.
 
 ## List Documents
 
@@ -379,7 +438,7 @@ Get documents in a knowledge base.
 ### Endpoint
 
 ```
-GET /api/v1/kb/{kb_id}/documents
+GET /api/v1/knowledge-bases/{kb_id}/documents
 ```
 
 ### Path Parameters
@@ -394,14 +453,14 @@ GET /api/v1/kb/{kb_id}/documents
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
 | `page_size` | integer | No | 20 | Items per page (max: 100) |
-| `status` | string | No | - | Filter by status: processing, completed, failed |
-| `category` | string | No | - | Filter by category |
-| `search` | string | No | - | Search by title or content |
+| `status` | array | No | - | Filter by status: `pending`, `processing`, `completed`, `failed` (repeatable) |
+| `doc_type` | array | No | - | Filter by doc type: `pdf`, `docx`, `txt`, `md`, `url`, etc. (repeatable) |
+| `search` | string | No | - | Search by document name |
 
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/documents?page=1&page_size=20" \
+curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/documents?page=1&page_size=20&status=completed" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -416,28 +475,24 @@ curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440
     "items": [
       {
         "id": "doc-789",
-        "kb_id": "550e8400-e29b-41d4-a716-446655440000",
-        "title": "Sales Report Q3 2026",
-        "description": "Quarterly sales analysis",
-        "filename": "document.pdf",
-        "file_type": "pdf",
+        "name": "Sales Report Q3 2026.pdf",
+        "doc_type": "pdf",
+        "file_path": "uploads/documents/doc-789.pdf",
         "file_size": 2345678,
+        "source_url": null,
         "status": "completed",
-        "category": "reports",
-        "tags": ["sales", "q3", "2026"],
-        "language": "en",
-        "page_count": 15,
-        "word_count": 3450,
+        "error_message": null,
         "chunk_count": 45,
-        "created_at": "2026-02-11T10:00:00Z",
-        "updated_at": "2026-02-11T10:01:23Z",
-        "created_by": "user-001"
+        "token_count": 12345,
+        "metadata": {
+          "page_count": 15
+        },
+        "created_at": "2026-02-11T10:00:00Z"
       }
     ],
     "total": 156,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 8
+    "page_size": 20
   },
   "msg": "success"
 }
@@ -450,7 +505,7 @@ Get details of a specific document.
 ### Endpoint
 
 ```
-GET /api/v1/kb/{kb_id}/documents/{document_id}
+GET /api/v1/knowledge-bases/{kb_id}/documents/{document_id}
 ```
 
 ### Path Parameters
@@ -463,7 +518,7 @@ GET /api/v1/kb/{kb_id}/documents/{document_id}
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/documents/doc-789" \
+curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/documents/doc-789" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -476,32 +531,27 @@ curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440
   "code": 0,
   "data": {
     "id": "doc-789",
-    "kb_id": "550e8400-e29b-41d4-a716-446655440000",
-    "title": "Sales Report Q3 2026",
-    "description": "Quarterly sales analysis",
-    "filename": "document.pdf",
-    "file_type": "pdf",
+    "knowledge_base_id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Sales Report Q3 2026.pdf",
+    "doc_type": "pdf",
+    "file_path": "uploads/documents/doc-789.pdf",
     "file_size": 2345678,
-    "file_url": "https://storage.example.com/...",
+    "source_url": null,
     "status": "completed",
-    "category": "reports",
-    "tags": ["sales", "q3", "2026"],
-    "language": "en",
-    "page_count": 15,
-    "word_count": 3450,
+    "error_message": null,
     "chunk_count": 45,
-    "processing_time": 83,
+    "token_count": 12345,
+    "metadata": {
+      "page_count": 15
+    },
+    "uploaded_by": {
+      "id": "user-001",
+      "username": "alice",
+      "avatar_url": null
+    },
     "created_at": "2026-02-11T10:00:00Z",
     "updated_at": "2026-02-11T10:01:23Z",
-    "created_by": "user-001",
-    "chunks": [
-      {
-        "id": "chunk-001",
-        "content": "Q3 2026 Sales Report...",
-        "page": 1,
-        "position": 0
-      }
-    ]
+    "processed_at": "2026-02-11T10:01:23Z"
   },
   "msg": "success"
 }
@@ -514,7 +564,7 @@ Update document metadata.
 ### Endpoint
 
 ```
-PATCH /api/v1/kb/{kb_id}/documents/{document_id}
+PUT /api/v1/knowledge-bases/{kb_id}/documents/{document_id}
 ```
 
 ### Path Parameters
@@ -528,22 +578,18 @@ PATCH /api/v1/kb/{kb_id}/documents/{document_id}
 
 ```json
 {
-  "title": "Updated Title",
-  "description": "Updated description",
-  "tags": ["sales", "q3", "2026", "updated"],
-  "category": "reports"
+  "name": "Updated Title.pdf"
 }
 ```
 
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/documents/doc-789" \
+curl -X PUT "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/documents/doc-789" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Updated Title",
-    "tags": ["sales", "q3", "2026", "updated"]
+    "name": "Updated Title.pdf"
   }'
 ```
 
@@ -556,7 +602,13 @@ curl -X PATCH "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-4466554
   "code": 0,
   "data": {
     "id": "doc-789",
-    "title": "Updated Title",
+    "knowledge_base_id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Updated Title.pdf",
+    "doc_type": "pdf",
+    "status": "completed",
+    "chunk_count": 45,
+    "token_count": 12345,
+    "created_at": "2026-02-11T10:00:00Z",
     "updated_at": "2026-02-11T16:00:00Z"
   },
   "msg": "Document updated successfully"
@@ -570,7 +622,7 @@ Delete a document from knowledge base.
 ### Endpoint
 
 ```
-DELETE /api/v1/kb/{kb_id}/documents/{document_id}
+DELETE /api/v1/knowledge-bases/{kb_id}/documents/{document_id}
 ```
 
 ### Path Parameters
@@ -583,7 +635,7 @@ DELETE /api/v1/kb/{kb_id}/documents/{document_id}
 ### Request Example
 
 ```bash
-curl -X DELETE "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/documents/doc-789" \
+curl -X DELETE "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/documents/doc-789" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -606,7 +658,7 @@ Search documents using vector or keyword search.
 ### Endpoint
 
 ```
-POST /api/v1/kb/{kb_id}/search
+POST /api/v1/knowledge-bases/{kb_id}/search
 ```
 
 ### Path Parameters
@@ -620,13 +672,12 @@ POST /api/v1/kb/{kb_id}/search
 ```json
 {
   "query": "How to reset password",
-  "mode": "vector",
+  "search_mode": "hybrid",
   "top_k": 5,
-  "score_threshold": 0.7,
-  "filters": {
-    "category": "documentation",
-    "tags": ["authentication"]
-  }
+  "score_threshold": 0.0,
+  "filter_doc_ids": ["doc-789"],
+  "rerank_enabled": true,
+  "rerank_candidate_k": 10
 }
 ```
 
@@ -634,21 +685,27 @@ POST /api/v1/kb/{kb_id}/search
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `query` | string | Yes | Search query |
-| `mode` | string | No | Search mode: vector, keyword, hybrid (default: vector) |
+| `query` | string | Yes | Search query (max 1000 chars) |
+| `search_mode` | string | No | Search mode: `vector`, `fulltext`, `hybrid` (default: `hybrid`) |
 | `top_k` | integer | No | Number of results (default: 5, max: 20) |
-| `score_threshold` | float | No | Minimum relevance score (0.0-1.0, default: 0.5) |
-| `filters` | object | No | Filter by metadata |
+| `score_threshold` | float | No | Minimum dense similarity score (0.0-1.0, default: 0.0) |
+| `dense_weight` | float | No | Dense RRF weight (default: 1.0) |
+| `lexical_weight` | float | No | Lexical RRF weight (default: 1.0) |
+| `rrf_k` | integer | No | RRF rank constant (default: 60) |
+| `filter_doc_ids` | array | No | Restrict search to specific document IDs |
+| `rerank_enabled` | boolean | No | Override rerank enabled setting |
+| `rerank_candidate_k` | integer | No | Override rerank candidate pool size |
+| `rerank_score_threshold` | float | No | Override rerank score threshold (null disables) |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/search" \
+curl -X POST "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/search" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "How to reset password",
-    "mode": "vector",
+    "search_mode": "hybrid",
     "top_k": 5
   }'
 ```
@@ -662,35 +719,40 @@ curl -X POST "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-44665544
   "code": 0,
   "data": {
     "query": "How to reset password",
-    "mode": "vector",
     "results": [
       {
-        "document_id": "doc-789",
-        "document_title": "Password Management Guide",
         "chunk_id": "chunk-012",
+        "document_id": "doc-789",
+        "document_name": "Password Management Guide.pdf",
         "content": "To reset your password, go to the login page and click 'Forgot Password'...",
         "score": 0.95,
-        "page": 3,
         "metadata": {
-          "category": "documentation",
-          "tags": ["authentication", "password"]
-        }
-      },
-      {
-        "document_id": "doc-790",
-        "document_title": "User Authentication",
-        "chunk_id": "chunk-045",
-        "content": "Password reset process involves email verification...",
-        "score": 0.89,
-        "page": 5,
-        "metadata": {
-          "category": "documentation",
-          "tags": ["authentication"]
-        }
+          "page": 3
+        },
+        "search_type": "hybrid",
+        "dense_score": 0.93,
+        "lexical_score": 0.87,
+        "fusion_score": 0.95,
+        "rerank_score": 0.97,
+        "rerank_rank": 1
       }
     ],
-    "total_results": 2,
-    "search_time": 0.23
+    "total": 2,
+    "diagnostics": [],
+    "timings": [
+      {
+        "stage": "recall",
+        "latency_ms": 120
+      },
+      {
+        "stage": "rerank",
+        "latency_ms": 80
+      },
+      {
+        "stage": "total",
+        "latency_ms": 210
+      }
+    ]
   },
   "msg": "success"
 }
@@ -703,7 +765,7 @@ Get usage statistics for a knowledge base.
 ### Endpoint
 
 ```
-GET /api/v1/kb/{kb_id}/stats
+GET /api/v1/knowledge-bases/{kb_id}/stats
 ```
 
 ### Path Parameters
@@ -712,17 +774,10 @@ GET /api/v1/kb/{kb_id}/stats
 |-----------|------|----------|-------------|
 | `kb_id` | string | Yes | Knowledge base UUID |
 
-### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `start_date` | string | No | 30 days ago | Start date (ISO 8601) |
-| `end_date` | string | No | Now | End date (ISO 8601) |
-
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440000/stats" \
+curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a716-446655440000/stats" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -734,31 +789,28 @@ curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440
 {
   "code": 0,
   "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Product Documentation",
     "document_count": 156,
     "total_chunks": 2340,
-    "storage_used": 234567890,
-    "storage_limit": 10737418240,
-    "total_searches": 1234,
-    "avg_search_time": 0.23,
+    "total_tokens": 456789,
+    "documents_by_status": {
+      "completed": 147,
+      "pending": 0,
+      "processing": 3,
+      "failed": 6
+    },
     "documents_by_type": {
       "pdf": 89,
       "docx": 34,
       "txt": 18,
       "md": 15
     },
-    "documents_by_status": {
-      "completed": 147,
-      "processing": 3,
-      "failed": 6
-    },
-    "daily_stats": [
-      {
-        "date": "2026-02-11",
-        "documents_uploaded": 5,
-        "searches": 89,
-        "avg_search_time": 0.21
-      }
-    ]
+    "embedding_dimension": 1536,
+    "embedding_stats": {
+      "total_vectors": 2340,
+      "missing_vectors": 0
+    }
   },
   "msg": "success"
 }
@@ -769,24 +821,14 @@ curl -X GET "https://your-domain.com/api/v1/kb/550e8400-e29b-41d4-a716-446655440
 | Code | Message | Description |
 |------|---------|-------------|
 | `6000` | KB not found | Knowledge base does not exist |
-| `4000` | Document not found | Document does not exist |
+| `6001` | Name already exists | KB name is taken |
+| `6002` | Document not found | Document does not exist |
+| `6003` | Invalid document type | Document type is not supported |
+| `6004` | Document processing failed | Document processing error |
 | `3000` | Permission denied | Insufficient permissions |
 | `1001` | Validation failed | Invalid request data |
-| `5100` | Name already exists | KB name is taken |
-| `6001` | Document processing failed | Document processing error |
-| `6002` | Embedding failed | Embedding generation error |
 
-## Rate Limits
-
-| Endpoint | Limit |
-|----------|-------|
-| `GET /api/v1/kb` | 100/minute |
-| `GET /api/v1/kb/{id}` | 100/minute |
-| `POST /api/v1/kb` | 10/minute |
-| `PATCH /api/v1/kb/{id}` | 30/minute |
-| `DELETE /api/v1/kb/{id}` | 10/minute |
-| `POST /api/v1/kb/{id}/documents` | 10/minute |
-| `POST /api/v1/kb/{id}/search` | 60/minute |
+> **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints.
 
 ## Related Documentation
 

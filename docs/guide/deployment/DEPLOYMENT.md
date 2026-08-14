@@ -36,19 +36,17 @@ This guide covers deploying Clouisle in production using **Docker Compose** or *
 
 ## Architecture Overview
 
-Clouisle uses **2 Docker images** running as **4 application services** + **3 infrastructure services**:
+Clouisle uses **3 Docker images** running as **5 application services** + **3 infrastructure services**:
 
 ```
                          ┌─────────────────────────────────────────────┐
                          │              Frontend Container             │
-  Browser ──────────────►│  Nginx (:3000)                              │
-                         │    ├── /api/*  ──► proxy to api:8000    │
-                         │    ├── /_next/static/* ──► local files      │
-                         │    └── /*  ──► Node.js SSR (:3001 internal) │
+  Browser ──────────────►│  Next.js standalone (node server.js, :3000) │
+                         │    └── /api/*  ──► Next rewrites → api:8000 │
                          └──────────────────┬──────────────────────────┘
                                             │
                          ┌──────────────────▼──────────────────────────┐
-                         │             Backend Container               │
+                         │              Backend Container              │
                          │  Gunicorn + UvicornWorker (:8000)           │
                          │    └── FastAPI application                  │
                          └──────┬──────────┬───────────────────────────┘
@@ -60,6 +58,8 @@ Clouisle uses **2 Docker images** running as **4 application services** + **3 in
                                                        Celery Beat
                                                        (scheduler)
 ```
+
+The frontend container runs the Next.js standalone server directly (`node server.js`) on port 3000; it does **not** include Nginx. API requests are proxied by Next.js rewrites (`/api/:path*` → backend). `deploy/nginx/default.conf` is an optional external Nginx example, not part of the frontend image.
 
 | Image | Services | Description |
 |-------|----------|-------------|
@@ -198,7 +198,47 @@ SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
 
 Keep these values enabled for production. Each task receives its current job/session directory at `/workspace`; sibling workspaces and `/app/uploads` are not mounted into the task namespace.
 
-Rootless Bubblewrap needs namespace and mount syscalls. The supplied Compose service uses `no-new-privileges`, drops all capabilities, and sets `seccomp=unconfined` for sandbox-worker only. Do not remove that seccomp setting unless you replace it with a Localhost profile that permits the required syscalls.
+Rootless Bubblewrap needs namespace and mount syscalls. The supplied Compose service sets `seccomp=unconfined` for sandbox-worker only, runs the worker as root with `CAP_SYS_ADMIN` added to the runtime default cap set, and keeps `no-new-privileges` enabled. Do not remove the seccomp setting unless you replace it with a Localhost profile that permits the required syscalls.
+
+The privileged worker creates the Bubblewrap user namespace directly, so the supplied deployments work even on hosts that gate non-privileged user namespaces (e.g. Ubuntu 23.10+ via `kernel.apparmor_restrict_unprivileged_userns=1`, Debian via `kernel.unprivileged_userns_clone=0`) — no host sysctl changes are required. Custom deployments that keep the worker non-root need the host to permit unprivileged user namespaces at the node level (see [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements)); otherwise every sandbox job fails with `bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.`
+
+### User Namespace Remapping (Hardening)
+
+The sandbox task runs in a fresh Bubblewrap user + mount namespace, so it cannot directly reach the worker container's capabilities. However, if a task ever escapes Bubblewrap (a bwrap or kernel vulnerability), it lands inside the worker container **as root with `CAP_SYS_ADMIN`**. In a default Docker daemon the container shares the host's initial user namespace, so that capability is host-user-namespace-scoped and well-known escape chains (cgroup `release_agent`, remounting `/proc` to write `kernel.core_pattern`, sysctl writes) become reachable in principle.
+
+**Docker daemon user namespace remapping** contains this: every container is placed in a nested user namespace, so `CAP_SYS_ADMIN` only applies to the container's own user namespace and the host-escape chains above no longer work. The sandbox worker still creates its Bubblewrap user namespace (privileged inside the remapped namespace), so sandbox functionality is unaffected.
+
+Enable it in `/etc/docker/daemon.json` on the Docker host and restart the daemon:
+
+```json
+{
+  "userns-remap": "default"
+}
+```
+
+```bash
+systemctl restart docker
+```
+
+`default` uses the `dockremap` user and the subuid/subgid ranges from `/etc/subuid` / `/etc/subgid` (Docker creates both on most distributions). Verify the daemon is remapping and that container root is a mapped (non-zero) host uid:
+
+```bash
+docker info | grep -i userns          # expect "userns: remap" (not "host")
+docker run --rm alpine cat /proc/self/uid_map   # expect "0 100000 65536" style mapping, not "0 0 4294967295"
+```
+
+Impact on this deployment:
+
+- **Named volumes only** — the supplied Compose file uses named volumes (`postgres_data`, `redis_data`, `qdrant_data`, `uploads_data`), no host bind mounts. Docker auto-chowns named volumes to the remapped uid range on first use. Volumes created **before** enabling remapping must be re-chowned once, e.g.:
+  ```bash
+  docker run --rm -v uploads_data:/v -v postgres_data:/p alpine sh -c \
+    'chown -R 100000:100000 /v /p'
+  ```
+  (adjust the uid to the actual remap range shown by `docker info`).
+- **All containers on the daemon are remapped** (it is a daemon-wide setting). Services that must see host uids can opt out per container with `userns_mode: "host"` in Compose; Clouisle's supplied services do not need this.
+- Restart all services after enabling (`docker compose up -d`) so every container runs inside the remapped user namespace.
+
+For Kubernetes, daemon-level remapping does not apply; node-level user namespace support (containerd + the Kubernetes `UserNamespaces` feature, 1.31+) achieves the same containment on supporting clusters. Otherwise rely on NetworkPolicy for outbound sandbox traffic, keep Bubblewrap updated, and monitor its CVEs.
 
 ### Volume Mounts
 
@@ -236,7 +276,7 @@ volumes:
   - /data/clouisle/uploads:/app/uploads
 ```
 
-> **Important**: The `uploads_data` volume is shared between `backend` and `worker` services. Both need read/write access to process uploaded documents. If using host-path mounts, ensure the directory exists and has correct permissions before starting.
+> **Important**: The `uploads_data` volume is mounted **only** by the `api` service. The `worker` and `sandbox-worker` services have no uploads volume; they access uploaded files through the authenticated internal upload gateway (`UPLOAD_STORAGE_MODE=remote`, `API_INTERNAL_BASE_URL` + `INTERNAL_API_TOKEN`, endpoints under `/internal/uploads/`).
 
 ### Port Mapping
 
@@ -244,7 +284,7 @@ Default exposed ports:
 
 | Service | Host Port | Container Port | Purpose |
 |---------|-----------|---------------|---------|
-| frontend | 3000 | 3000 | Web UI (Nginx) |
+| frontend | 3000 | 3000 | Web UI (Next.js standalone) |
 | backend | 8000 | 8000 | API (Gunicorn) |
 | db | 5432 | 5432 | PostgreSQL |
 | redis | 6379 | 6379 | Redis |
@@ -265,7 +305,7 @@ Default exposed ports:
       - "6333:6333"    # Remove
   api:
     ports:
-      - "8000:8000"    # Remove — frontend Nginx proxies API requests
+      - "8000:8000"    # Remove — frontend Next rewrites proxy API requests
 ```
 
 ### Custom Domain & HTTPS
@@ -308,7 +348,7 @@ server {
 
         # Streaming
         proxy_buffering off;
-        proxy_read_timeout 300s;
+        proxy_read_timeout 1800s;
     }
 }
 ```
@@ -327,7 +367,7 @@ BACKEND_CORS_ORIGINS=https://example.com
 # Scale Celery workers (safe to run multiple)
 docker compose up -d --scale worker=4
 
-# Scale backend API (safe to run multiple behind Nginx)
+# Scale backend API (safe to run multiple behind the frontend/external proxy)
 docker compose up -d --scale api=2
 
 # NEVER scale beat beyond 1
@@ -394,25 +434,27 @@ kubectl -n clouisle get pods
 
 ### Manifest Structure
 
-The manifest contains 11 resource groups, using YAML anchors to deduplicate repeated values:
+The manifest contains 13 resource sections. It does **not** use YAML anchors — each section is written out explicitly:
 
 | # | Resource | Kind | Notes |
 |---|----------|------|-------|
 | 1 | Namespace | Namespace | `clouisle` |
-| 2 | ConfigMap | ConfigMap | Non-sensitive configuration |
-| 3 | Secret | Secret | Passwords and keys (**must edit**) |
-| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service, 10Gi storage |
+| 2 | ConfigMap | ConfigMap | `clouisle-config`, non-sensitive configuration |
+| 3 | Secret | Secret | `clouisle-secret`, 6 keys (**must edit/generate**) |
+| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service, `postgres-data` 10Gi |
 | 5 | Redis | Deployment + Service | |
-| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service, 10Gi storage |
-| 7 | Backend | Deployment + Service | 2 replicas, port 8000 |
-| 8 | Worker | Deployment | 2 replicas, no Service |
-| 9 | Beat | Deployment | 1 replica, `Recreate` strategy |
-| 10 | Frontend | Deployment + Service | 2 replicas, port 3000 |
-| 11 | Ingress | Ingress | `/api` → backend, `/` → frontend |
+| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service, `qdrant-data` 10Gi |
+| 7 | Uploads | PVC | `uploads-data` 10Gi, ReadWriteMany |
+| 8 | API | Deployment + Service | 2 replicas, port 8000 |
+| 9 | Worker | Deployment | 2 replicas, no Service |
+| 10 | Sandbox Worker | Deployment | 1 replica, no Service |
+| 11 | Beat | Deployment | 1 replica, `Recreate` strategy |
+| 12 | Frontend | Deployment + Service | 2 replicas, port 3000 |
+| 13 | Ingress | Ingress | `/api` → api:8000, `/` → frontend:3000 |
 
 ### Secrets Configuration
 
-Before applying, replace the base64 placeholder values in the Secret section:
+Before applying, replace the base64 placeholder values in the Secret section. The `clouisle-secret` Secret has **6 keys**:
 
 ```bash
 # Generate base64-encoded values
@@ -420,6 +462,8 @@ echo -n 'your-strong-secret-key' | base64
 echo -n 'your-postgres-password' | base64
 echo -n 'your-redis-password' | base64
 echo -n 'your-qdrant-api-key' | base64
+echo -n 'your-sandbox-artifact-key' | base64
+echo -n 'your-internal-gateway-token' | base64
 ```
 
 Replace in `clouisle.yaml`:
@@ -430,16 +474,21 @@ data:
   POSTGRES_PASSWORD: <paste-base64-here>
   REDIS_PASSWORD: <paste-base64-here>
   QDRANT_API_KEY: <paste-base64-here>
+  SANDBOX_ARTIFACT_UPLOAD_API_KEY: <paste-base64-here>
+  INTERNAL_API_TOKEN: <paste-base64-here>
 ```
+
+> **Note**: `INTERNAL_API_TOKEN` and `SANDBOX_ARTIFACT_UPLOAD_API_KEY` are required — `deploy/install.sh` generates them in its output copies (Kubernetes mode writes a `0600` file that you review and apply manually). The API, worker, and sandbox-worker workloads read `INTERNAL_API_TOKEN` from the Secret via the `INTERNAL_API_TOKEN_FILE` mount.
 
 > **Tip**: For production, consider using an external secret manager (Vault, AWS Secrets Manager, etc.) with the External Secrets Operator instead of storing secrets in YAML.
 
 ### Persistent Storage
 
-| PVC | Size | Used By | StorageClass |
+| PVC | Size | Used By | Access Mode |
 |-----|------|---------|-------------|
-| `postgres-data` | 10Gi | PostgreSQL | default |
-| `qdrant-data` | 10Gi | Qdrant | default |
+| `postgres-data` | 10Gi | PostgreSQL | ReadWriteOnce |
+| `qdrant-data` | 10Gi | Qdrant | ReadWriteOnce |
+| `uploads-data` | 10Gi | API (uploads) | ReadWriteMany |
 
 To change the storage size or class, edit the PVC definitions:
 
@@ -452,30 +501,7 @@ spec:
       storage: 50Gi                       # Adjust size
 ```
 
-The `uploads` volume for backend and worker uses `emptyDir` by default. For production, replace it with a PVC or a shared filesystem (e.g., NFS, EFS) so that uploaded files persist across pod restarts and are accessible by both backend and worker pods:
-
-```yaml
-# Replace in the anchors section:
-- &uploads-volume
-  name: uploads
-  persistentVolumeClaim:
-    claimName: clouisle-uploads
-
-# Add a new PVC:
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: clouisle-uploads
-  namespace: clouisle
-spec:
-  accessModes: [ReadWriteMany]    # Must be RWX for multi-pod access
-  resources:
-    requests:
-      storage: 20Gi
-```
-
-> **Important**: `ReadWriteMany` requires a storage class that supports it (NFS, CephFS, EFS, etc.). Standard block storage (gp2, gp3) only supports `ReadWriteOnce`.
+The `uploads-data` PVC (10Gi, `ReadWriteMany`) is mounted by the `api` Deployment at `/app/uploads`. Workers and sandbox-worker do **not** mount it — they read/write authorized documents and upload sandbox artifacts through the authenticated internal upload gateway. `ReadWriteMany` is only required when scaling `api` beyond one replica with local upload storage; with `ReadWriteOnce` keep `api` at one replica (worker and sandbox-worker replicas remain independently scalable).
 
 ### Ingress & TLS
 
@@ -509,11 +535,11 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
 
-Also update the ConfigMap:
+Also update the ConfigMap (keep `API_BASE_URL` internal; put the public origin in `PUBLIC_API_URL`):
 
 ```yaml
 data:
-  API_BASE_URL: "https://your-domain.com"
+  PUBLIC_API_URL: "https://your-domain.com"
   FRONTEND_URL: "https://your-domain.com"
   BACKEND_CORS_ORIGINS: "https://your-domain.com"
 ```
@@ -641,18 +667,16 @@ Understanding the request flow is important for debugging and configuring extern
 ```
 Browser
   │
-  ├── Page requests (HTML/SSR) ──► Nginx (:3000) ──► Node.js (:3001 internal)
+  ├── Page requests (HTML/SSR) ──► Node.js SSR (frontend container, :3000)
   │
-  └── API requests (/api/*) ──► Nginx (:3000) ──► Backend Gunicorn (:8000)
+  └── API requests (/api/*) ──► Next rewrites (frontend container) ──► Backend Gunicorn (:8000)
 ```
 
-The frontend container runs two processes:
-1. **Nginx** on port 3000 (external) — handles routing, static files, and proxying
-2. **Node.js** on port 3001 (internal) — handles server-side rendering
+The frontend container runs the Next.js standalone server (`node server.js`) on port 3000. It handles server-side rendering and proxies `/api/*` requests to the backend through Next.js rewrites (`frontend/next.config.ts`, destination from `BACKEND_INTERNAL_URL`, default `http://api:8000`).
 
 ### Header Forwarding
 
-Nginx forwards the following headers to the backend on `/api/*` requests:
+The optional external Nginx (`deploy/nginx/default.conf`) forwards the following headers to the backend on `/api/*` requests (when used in front of the frontend container):
 
 | Header | Value | Purpose |
 |--------|-------|---------|
@@ -672,10 +696,10 @@ Gunicorn is configured with `--forwarded-allow-ips *` to trust these proxy heade
 When placing an additional reverse proxy (Nginx, Caddy, Traefik, cloud LB) in front of the frontend container, ensure it forwards:
 
 ```
-External Proxy → Frontend Nginx (:3000) → Backend Gunicorn (:8000)
+External Proxy → frontend container (node server.js, :3000) → Next rewrites → Backend Gunicorn (:8000)
 ```
 
-The external proxy must set `X-Real-IP` and `X-Forwarded-For` correctly. The frontend Nginx will pass them through to the backend.
+The external proxy must set `X-Real-IP` and `X-Forwarded-For` correctly. If the external proxy itself proxies `/api/*` directly to the backend, it must forward the same headers (the `deploy/nginx/default.conf` example shows the full header set).
 
 ---
 
@@ -780,7 +804,7 @@ docker compose up -d
 
 # 4. Verify
 docker compose ps
-docker compose logs --tail=50 backend
+docker compose logs --tail=50 api
 ```
 
 ### Kubernetes
@@ -792,9 +816,10 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/c
 docker push registry.example.com/clouisle/api:v2.0.0
 docker push registry.example.com/clouisle/frontend:v2.0.0
 
-# 2. Update image tags in clouisle.yaml (the anchors at the top)
-#    - &backend-image registry.example.com/clouisle/api:v2.0.0
-#    - &frontend-image registry.example.com/clouisle/frontend:v2.0.0
+# 2. Update the image references in clouisle.yaml
+#    (each workload's `image:` — e.g. the api/worker/beat `clouisle-backend`,
+#    sandbox-worker `clouisle-sandbox-worker`, frontend `clouisle-frontend`,
+#    and the PostgreSQL `clouisle-postgres-pg-search` images)
 
 # 3. Apply
 kubectl apply -f deploy/k8s/clouisle.yaml
@@ -819,7 +844,8 @@ kubectl -n clouisle rollout status deployment frontend
 - [ ] **Network isolation** — In Docker Compose, infrastructure services (db, redis, qdrant) should not be accessible from outside. In K8s, they use ClusterIP services (no external access by default).
 - [ ] **Regular backups** — Set up automated PostgreSQL and Qdrant backups
 - [ ] **Resource limits** — Review and adjust CPU/memory limits in K8s manifests based on actual usage
-- [ ] **Verify sandbox isolation** — Keep `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`, ensure `/usr/bin/bwrap` exists in the sandbox-worker image, and retain the worker-specific seccomp configuration
+- [ ] **Verify sandbox isolation** — Keep `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`, ensure `/usr/bin/bwrap` exists in the sandbox-worker image, retain the worker-specific seccomp configuration, and confirm the worker runs as root with `CAP_SYS_ADMIN` (`grep CapEff /proc/self/status` non-zero in the container) — or, for non-root worker setups, that the host permits unprivileged user namespaces (`unshare -U true`)
+- [ ] **Docker daemon hardening (Compose)** — Consider enabling user namespace remapping (`userns-remap` in `/etc/docker/daemon.json`) so the worker's `CAP_SYS_ADMIN` is contained in a nested user namespace (see [User Namespace Remapping](#user-namespace-remapping-hardening)); re-chown pre-existing volumes after enabling
 - [ ] **Image scanning** — Scan Docker images for vulnerabilities before deploying
 
 ---
@@ -845,7 +871,7 @@ Common causes:
 
 ### Frontend returns 502 for API requests
 
-The frontend Nginx proxies `/api/*` to `http://api:8000`. A 502 means the backend is unreachable.
+The frontend container proxies `/api/*` to `http://api:8000` via Next.js rewrites (destination from `BACKEND_INTERNAL_URL`). A 502 means the backend is unreachable.
 
 ```bash
 # Check if backend is running
@@ -874,6 +900,16 @@ Common causes:
 - Redis not yet ready
 - Wrong queue names
 
+### Sandbox jobs fail with bwrap user namespace error
+
+```text
+bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.
+```
+
+With the supplied deployments this means the worker is not actually running as root with `CAP_SYS_ADMIN` (the image's non-root user has empty effective capabilities, so `cap_add` alone does nothing — the deployment must set `user: "0"` / `runAsUser: 0`). Verify inside the container: `grep CapEff /proc/self/status` must be non-zero.
+
+For custom deployments that keep the worker non-root, the host kernel must permit unprivileged user namespaces — fix at the **node level** (`seccomp=unconfined` does not help): on Ubuntu 23.10+ run `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; on Debian run `sysctl -w kernel.unprivileged_userns_clone=1`, then persist via `/etc/sysctl.d/` and verify with `unshare -U true`. See [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements). In Kubernetes apply the sysctl to every node; it cannot be set per pod.
+
 ### Beat running duplicate scheduled tasks
 
 Ensure only 1 beat instance is running:
@@ -890,15 +926,15 @@ The K8s beat Deployment uses `strategy: Recreate` to ensure the old pod is fully
 
 ### Uploaded files not accessible
 
-The `uploads` volume must be shared between `backend` and `worker` services:
+In the supplied deployments the `uploads_data` volume is mounted **only** by the `api` service; workers access files through the authenticated internal upload gateway (`/internal/uploads/...`, protected by `INTERNAL_API_TOKEN`):
 
 ```bash
-# Docker Compose — verify both mount the same volume
+# Docker Compose — api mounts the volume; worker must NOT have it mounted
 docker compose exec api ls -la /app/uploads
-docker compose exec worker ls -la /app/uploads
+docker compose exec api env | grep -E "UPLOAD_STORAGE_MODE|INTERNAL_API_TOKEN"
 ```
 
-In Kubernetes, if using `emptyDir`, files are lost on pod restart. Switch to a PVC with `ReadWriteMany` access mode (see [Persistent Storage](#persistent-storage)).
+If `UPLOAD_STORAGE_MODE=remote` is set (workers) but the gateway token is missing or mismatched, document processing fails with authentication errors — regenerate and share a single `INTERNAL_API_TOKEN` between api and the workers. In Kubernetes, `uploads-data` is the 10Gi `ReadWriteMany` PVC mounted only by `api` (see [Persistent Storage](#persistent-storage)).
 
 ### Out of memory / OOM killed
 
@@ -917,8 +953,8 @@ Adjust resource limits in `docker-compose.yml` (add `deploy.resources`) or in `c
 
 ### LLM requests timing out
 
-The default proxy timeout is 300 seconds (5 minutes). For very long LLM operations:
+The default proxy timeout is 1800 seconds (30 minutes). For very long LLM operations:
 
-- Frontend Nginx: edit `proxy_read_timeout` in `deploy/nginx/default.conf`
+- Optional external Nginx: edit `proxy_read_timeout` / `proxy_send_timeout` in `deploy/nginx/default.conf`
 - K8s Ingress: edit `nginx.ingress.kubernetes.io/proxy-read-timeout` annotation
-- Gunicorn: edit `--timeout` in the backend Dockerfile CMD
+- Gunicorn: edit `--timeout` in the `start_server` command in `main.py` (the production gunicorn invocation) — the supplied Compose/K8s `api` command does not override it

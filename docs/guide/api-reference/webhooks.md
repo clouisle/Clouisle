@@ -1,131 +1,139 @@
 # Webhooks
 
-This document explains how to use webhooks to receive real-time notifications from Clouisle.
+This document explains the webhook capabilities in Clouisle.
 
 ## Overview
 
-Webhooks allow you to:
+Clouisle has **two** webhook mechanisms:
 
-- **Receive notifications**: Get real-time updates about events
-- **Automate workflows**: Trigger actions based on events
-- **Integrate systems**: Connect Clouisle with external services
-- **Monitor activity**: Track important events
-- **Build integrations**: Create custom integrations
+1. **Outbound notifications (generic webhook)** — when a notification is sent with the `webhook` channel enabled, Clouisle POSTs a customizable payload to a single URL configured in site settings. There is no webhook-subscription CRUD API and no per-event-type subscriptions.
+2. **Inbound workflow trigger** — `POST /api/v1/workflows/webhook/{webhook_token}` starts a published workflow whose trigger type is `webhook`.
 
-## What are Webhooks?
+## Outbound Notifications (Generic Webhook)
 
-Webhooks are HTTP callbacks that send event data to your specified URL when events occur.
+### How it Works
 
-**How it works:**
-1. You configure a webhook URL
-2. Event occurs in Clouisle (e.g., workflow completes)
-3. Clouisle sends HTTP POST request to your URL
-4. Your server receives and processes the event
+1. An administrator configures a single webhook URL in **site settings** (fields `webhook_enabled`, `webhook_url`, `webhook_method`, `webhook_headers`, `webhook_body_template`, `webhook_secret`)
+2. When a notification (system/team notification, auto-notification, security alert, ...) is created with the `webhook` delivery channel enabled, Clouisle schedules an async task
+3. The task renders the body template with the notification's variables and sends the HTTP request
+4. The delivery status is recorded in the `notification_deliveries` table
 
-**Use cases:**
-- Notify external systems when workflows complete
-- Trigger workflows from external events
-- Sync data with other applications
-- Send notifications to chat platforms (Slack, Teams)
-- Log events to monitoring systems
+### Configuration (Site Settings)
 
-## Webhook Events
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `webhook_enabled` | bool | `false` | Enable generic webhook notifications |
+| `webhook_url` | string | `""` | Target URL |
+| `webhook_method` | string | `"POST"` | HTTP method (`POST` or `GET`) |
+| `webhook_headers` | json | `{}` | Custom request headers |
+| `webhook_body_template` | string | `{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}` | Body template with `{{title}}`, `{{content}}`, `{{link_url}}` placeholders |
+| `webhook_secret` | string | `""` | Secret for HMAC signature |
 
-### Available Events
+If the body template renders to valid JSON it is sent as JSON; otherwise it is sent as plain text. For `GET`, the variables are sent as query parameters.
 
-| Event Type | Description |
-|------------|-------------|
-| `workflow.started` | Workflow execution started |
-| `workflow.completed` | Workflow execution completed successfully |
-| `workflow.failed` | Workflow execution failed |
-| `workflow.stopped` | Workflow execution stopped manually |
-| `agent.created` | Agent created |
-| `agent.updated` | Agent updated |
-| `agent.deleted` | Agent deleted |
-| `agent.published` | Agent published |
-| `document.uploaded` | Document uploaded to KB |
-| `document.processed` | Document processing completed |
-| `document.failed` | Document processing failed |
-| `team.member_added` | Member added to team |
-| `team.member_removed` | Member removed from team |
+### Test the Webhook
 
-### Event Payload Structure
+**Endpoint:** `POST /api/v1/admin/site-settings/test-webhook`
 
-**All webhook payloads follow this structure:**
+**Authorization:** `admin:settings:update`
 
+Sends a test notification (title/content with the site name) through the configured webhook:
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/admin/site-settings/test-webhook" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+**Response:**
 ```json
 {
-  "event": "workflow.completed",
-  "timestamp": "2026-02-11T14:31:23Z",
-  "data": {
-    // Event-specific data
-  },
-  "webhook_id": "webhook-123",
-  "delivery_id": "delivery-456"
+  "code": 0,
+  "data": null,
+  "msg": "Test webhook sent"
 }
 ```
 
-## Creating Webhooks
+### Signature Verification
 
-### Via Web Interface
+When `webhook_secret` is configured, the outgoing request includes two signature headers computed as **HMAC-SHA256** over the **rendered body string**:
 
-**Steps:**
-
-1. Go to **Settings** → **Webhooks**
-2. Click **"Create Webhook"**
-3. Configure webhook:
-   - **URL**: Your endpoint URL
-   - **Events**: Select events to subscribe to
-   - **Secret**: Optional signing secret
-   - **Active**: Enable/disable webhook
-4. Click **"Create"**
-5. Test webhook
-6. Save configuration
-
-**Webhook form:**
 ```
-┌─────────────────────────────────────────┐
-│ Create Webhook                          │
-├─────────────────────────────────────────┤
-│                                         │
-│ Name:                                   │
-│ [Production Webhook_________]           │
-│                                         │
-│ URL: *                                  │
-│ [https://api.example.com/webhooks]      │
-│                                         │
-│ Events: *                               │
-│ ☑ workflow.completed                    │
-│ ☑ workflow.failed                       │
-│ ☐ agent.created                         │
-│ ☐ document.processed                    │
-│ [Select All] [Select None]              │
-│                                         │
-│ Secret: (optional)                      │
-│ [Generate Secret] [_______________]     │
-│                                         │
-│ ☑ Active                                │
-│                                         │
-│ [Cancel]  [Create Webhook]              │
-│                                         │
-└─────────────────────────────────────────┘
+X-Webhook-Signature: sha256=<hex digest>
+X-Webhook-Signature-256: <hex digest>
 ```
 
-### Via API
+**Verify on your receiving endpoint:**
 
-**Endpoint**: `POST /api/v1/webhooks`
+```python
+import hmac
+import hashlib
 
-**Request:**
+def verify_webhook_signature(payload: str, signature: str, secret: str) -> bool:
+    expected = hmac.new(
+        secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, f"sha256={expected}")
+```
+
+**Node.js:**
+```javascript
+const crypto = require('crypto');
+
+function verifyWebhookSignature(payload, signature, secret) {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(`sha256=${expected}`),
+    Buffer.from(signature)
+  );
+}
+```
+
+> **Note:** the signature is computed over the **raw body string** (before JSON parsing). Always verify against the raw request body.
+
+### Retry Behavior
+
+Delivery is handled by the Celery task `send_notification_webhook`:
+
+- **Max retries**: 3 (in addition to the initial attempt)
+- **Countdown**: `60 * (retries + 1)` seconds — 60s, 120s, 180s
+- **Success**: an HTTP 2xx response marks the delivery `success`
+- **Failure**: the delivery is marked `failed` with the error message, and the task retries per the schedule above
+
+### Delivery Records
+
+Each webhook delivery is tracked in the `notification_deliveries` table (channel `webhook`):
+
+- `status`: `pending` → `sending` → `success` / `failed`
+- `error_message`: failure reason (if any)
+- `retry_count`: number of retries performed
+- `sent_at`: timestamp of the successful send
+
+There is **no** public API for webhook delivery logs or statistics — query the database or the notification admin UI.
+
+## Inbound Workflow Trigger
+
+A published workflow with trigger type **webhook** can be started by any caller holding a valid `clou_` API key.
+
+**Endpoint:**
+```
+POST /api/v1/workflows/webhook/{webhook_token}
+```
+
+**Authorization:** `Authorization: Bearer clou_<api key>` (required; the key's owner is recorded as the caller)
+
+**Request:** the JSON body is the workflow's input variables:
+
 ```bash
-curl -X POST "https://your-domain.com/api/v1/webhooks" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+curl -X POST "https://your-domain.com/api/v1/workflows/webhook/$WEBHOOK_TOKEN" \
+  -H "Authorization: Bearer $CLOUISLE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Production Webhook",
-    "url": "https://api.example.com/webhooks",
-    "events": ["workflow.completed", "workflow.failed"],
-    "secret": "your-secret-key",
-    "active": true
+    "customer_email": "customer@example.com",
+    "inquiry_text": "I need help with my order"
   }'
 ```
 
@@ -134,201 +142,59 @@ curl -X POST "https://your-domain.com/api/v1/webhooks" \
 {
   "code": 0,
   "data": {
-    "id": "webhook-123",
-    "name": "Production Webhook",
-    "url": "https://api.example.com/webhooks",
-    "events": ["workflow.completed", "workflow.failed"],
-    "active": true,
-    "created_at": "2026-02-11T10:00:00Z"
+    "run_id": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "pending",
+    "stream_url": "/api/v1/workflows/runs/550e8400-e29b-41d4-a716-446655440000/stream"
   },
-  "msg": "Webhook created successfully"
+  "msg": "success"
 }
 ```
 
-## Event Payloads
+The `stream_url` can be polled via SSE (`GET /api/v1/workflows/runs/{run_id}/stream`) to track execution. Webhook-triggered runs are publicly streamable (no auth required); see [SSE Streaming](./sse-streaming.md).
 
-### workflow.completed
+### Requirements & Errors
 
-**Sent when a workflow execution completes successfully.**
+| Condition | Result |
+|-----------|--------|
+| Missing/invalid `Authorization` header | `2000` (`UNAUTHORIZED`), HTTP 401 |
+| API key format not `clou_...` | `2000` (`UNAUTHORIZED`) |
+| API key authentication failure | `2000` (`UNAUTHORIZED`) |
+| Unknown `webhook_token` | `1004` (`FORBIDDEN`), HTTP 403 |
+| Workflow not published | `1004` (`FORBIDDEN`) |
+| Workflow trigger type is not `webhook` | `1004` (`FORBIDDEN`) |
+| API key restricted to other workflows | `3000` (`PERMISSION_DENIED`), HTTP 403 |
 
-```json
-{
-  "event": "workflow.completed",
-  "timestamp": "2026-02-11T14:31:23Z",
-  "data": {
-    "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-    "workflow_name": "Document Summarizer",
-    "run_id": "run-789",
-    "status": "completed",
-    "started_at": "2026-02-11T14:30:00Z",
-    "completed_at": "2026-02-11T14:31:23Z",
-    "duration": 83,
-    "triggered_by": "user-001",
-    "trigger_type": "manual",
-    "inputs": {
-      "document_url": "https://example.com/document.pdf"
-    },
-    "output": {
-      "summary": "The document discusses...",
-      "word_count": 1234
-    },
-    "nodes_executed": 6,
-    "nodes_total": 6
-  },
-  "webhook_id": "webhook-123",
-  "delivery_id": "delivery-456"
-}
-```
+The webhook token is compared in constant time and can be regenerated via `POST /api/v1/workflows/{workflow_id}/regenerate-webhook-token`.
 
-### workflow.failed
+## Example Receiver
 
-**Sent when a workflow execution fails.**
-
-```json
-{
-  "event": "workflow.failed",
-  "timestamp": "2026-02-11T10:15:45Z",
-  "data": {
-    "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-    "workflow_name": "Document Summarizer",
-    "run_id": "run-788",
-    "status": "failed",
-    "started_at": "2026-02-11T10:15:00Z",
-    "failed_at": "2026-02-11T10:15:45Z",
-    "duration": 45,
-    "triggered_by": "webhook",
-    "trigger_type": "webhook",
-    "error": {
-      "node_id": "node-2",
-      "node_type": "http_request",
-      "message": "API call timeout",
-      "details": "Connection timeout after 30 seconds"
-    },
-    "nodes_executed": 2,
-    "nodes_total": 6
-  },
-  "webhook_id": "webhook-123",
-  "delivery_id": "delivery-457"
-}
-```
-
-### document.processed
-
-**Sent when a document finishes processing.**
-
-```json
-{
-  "event": "document.processed",
-  "timestamp": "2026-02-11T10:01:23Z",
-  "data": {
-    "kb_id": "550e8400-e29b-41d4-a716-446655440000",
-    "kb_name": "Product Documentation",
-    "document_id": "doc-789",
-    "document_title": "Sales Report Q3 2026",
-    "filename": "document.pdf",
-    "file_type": "pdf",
-    "file_size": 2345678,
-    "status": "completed",
-    "page_count": 15,
-    "word_count": 3450,
-    "chunk_count": 45,
-    "processing_time": 83,
-    "uploaded_by": "user-001"
-  },
-  "webhook_id": "webhook-123",
-  "delivery_id": "delivery-458"
-}
-```
-
-### agent.published
-
-**Sent when an agent is published.**
-
-```json
-{
-  "event": "agent.published",
-  "timestamp": "2026-02-11T16:00:00Z",
-  "data": {
-    "agent_id": "550e8400-e29b-41d4-a716-446655440000",
-    "agent_name": "Customer Support Agent",
-    "team_id": "team-123",
-    "team_name": "Support Team",
-    "version": 2,
-    "published_by": "user-001"
-  },
-  "webhook_id": "webhook-123",
-  "delivery_id": "delivery-459"
-}
-```
-
-## Receiving Webhooks
-
-### Endpoint Requirements
-
-**Your webhook endpoint must:**
-- Accept HTTP POST requests
-- Return 2xx status code (200-299) for success
-- Respond within 30 seconds
-- Use HTTPS (recommended)
-- Handle duplicate deliveries (idempotent)
-
-### Example Implementations
-
-**Python (Flask):**
+**Python (FastAPI/Flask-style):**
 
 ```python
-from flask import Flask, request, jsonify
 import hmac
 import hashlib
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+WEBHOOK_SECRET = "your-configured-webhook-secret"
 
-WEBHOOK_SECRET = "your-secret-key"
-
-@app.route('/webhooks', methods=['POST'])
+@app.route("/webhooks/clouisle", methods=["POST"])
 def handle_webhook():
-    # Verify signature
-    signature = request.headers.get('X-Clouisle-Signature')
-    if not verify_signature(request.data, signature):
+    payload = request.get_data(as_text=True)
+
+    signature = request.headers.get("X-Webhook-Signature")
+    expected = hmac.new(
+        WEBHOOK_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not signature or not hmac.compare_digest(signature, f"sha256={expected}"):
         return jsonify({"error": "Invalid signature"}), 401
 
-    # Parse payload
-    payload = request.json
-    event = payload['event']
-    data = payload['data']
-
-    # Handle event
-    if event == 'workflow.completed':
-        handle_workflow_completed(data)
-    elif event == 'workflow.failed':
-        handle_workflow_failed(data)
-    elif event == 'document.processed':
-        handle_document_processed(data)
-
+    data = request.get_json(silent=True) or request.form.to_dict()
+    print(f"Notification: {data.get('title')} - {data.get('content')}")
     return jsonify({"status": "success"}), 200
-
-def verify_signature(payload, signature):
-    expected = hmac.new(
-        WEBHOOK_SECRET.encode(),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(signature, expected)
-
-def handle_workflow_completed(data):
-    print(f"Workflow {data['workflow_name']} completed")
-    # Your logic here
-
-def handle_workflow_failed(data):
-    print(f"Workflow {data['workflow_name']} failed: {data['error']['message']}")
-    # Your logic here
-
-def handle_document_processed(data):
-    print(f"Document {data['document_title']} processed")
-    # Your logic here
-
-if __name__ == '__main__':
-    app.run(port=5000)
 ```
 
 **Node.js (Express):**
@@ -338,377 +204,84 @@ const express = require('express');
 const crypto = require('crypto');
 
 const app = express();
-app.use(express.json());
+const WEBHOOK_SECRET = 'your-configured-webhook-secret';
 
-const WEBHOOK_SECRET = 'your-secret-key';
+app.post(
+  '/webhooks/clouisle',
+  express.raw({ type: () => true }), // raw body for signature verification
+  (req, res) => {
+    const payload = req.body.toString();
+    const signature = req.headers['x-webhook-signature'];
 
-app.post('/webhooks', (req, res) => {
-  // Verify signature
-  const signature = req.headers['x-clouisle-signature'];
-  if (!verifySignature(req.body, signature)) {
-    return res.status(401).json({ error: 'Invalid signature' });
+    const expected = crypto
+      .createHmac('sha256', WEBHOOK_SECRET)
+      .update(payload)
+      .digest('hex');
+
+    if (!signature || !crypto.timingSafeEqual(
+      Buffer.from(`sha256=${expected}`),
+      Buffer.from(signature)
+    )) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(payload);
+    } catch {
+      data = { raw: payload };
+    }
+    console.log(`Notification: ${data.title} - ${data.content}`);
+    res.status(200).json({ status: 'success' });
   }
-
-  // Parse payload
-  const { event, data } = req.body;
-
-  // Handle event
-  switch (event) {
-    case 'workflow.completed':
-      handleWorkflowCompleted(data);
-      break;
-    case 'workflow.failed':
-      handleWorkflowFailed(data);
-      break;
-    case 'document.processed':
-      handleDocumentProcessed(data);
-      break;
-  }
-
-  res.status(200).json({ status: 'success' });
-});
-
-function verifySignature(payload, signature) {
-  const expected = crypto
-    .createHmac('sha256', WEBHOOK_SECRET)
-    .update(JSON.stringify(payload))
-    .digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expected)
-  );
-}
-
-function handleWorkflowCompleted(data) {
-  console.log(`Workflow ${data.workflow_name} completed`);
-  // Your logic here
-}
-
-function handleWorkflowFailed(data) {
-  console.log(`Workflow ${data.workflow_name} failed: ${data.error.message}`);
-  // Your logic here
-}
-
-function handleDocumentProcessed(data) {
-  console.log(`Document ${data.document_title} processed`);
-  // Your logic here
-}
-
-app.listen(5000, () => {
-  console.log('Webhook server listening on port 5000');
-});
+);
 ```
 
-## Security
-
-### Signature Verification
-
-**Clouisle signs all webhook payloads using HMAC-SHA256.**
-
-**Headers:**
-```
-X-Clouisle-Signature: <hmac_sha256_signature>
-X-Clouisle-Delivery: <delivery_id>
-X-Clouisle-Event: <event_type>
-```
-
-**Verification steps:**
-
-1. Get signature from `X-Clouisle-Signature` header
-2. Compute HMAC-SHA256 of raw request body using your secret
-3. Compare computed signature with received signature
-4. Use constant-time comparison to prevent timing attacks
-
-**Python example:**
-```python
-import hmac
-import hashlib
-
-def verify_signature(payload, signature, secret):
-    expected = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(signature, expected)
-```
-
-**Node.js example:**
-```javascript
-const crypto = require('crypto');
-
-function verifySignature(payload, signature, secret) {
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expected)
-  );
-}
-```
-
-### Best Practices
+## Best Practices
 
 **✅ Do:**
-- Always verify signatures
-- Use HTTPS for webhook URLs
-- Validate event types
-- Handle duplicate deliveries
-- Log webhook events
-- Implement retry logic
-- Use secrets for each webhook
-- Rotate secrets regularly
+- Verify `X-Webhook-Signature` against the **raw body** with constant-time comparison
+- Return a 2xx quickly from your receiver; Clouisle retries failures (3 retries at 60s/120s/180s)
+- Make your receiver idempotent — the same notification may be delivered more than once (initial attempt + retries)
+- Restrict inbound workflow-trigger API keys to the specific workflow via `workflow_ids`
 
 **❌ Don't:**
-- Skip signature verification
-- Use HTTP (unencrypted)
-- Trust payload without validation
-- Process events synchronously
-- Expose webhook URLs publicly
-- Hardcode secrets
-- Ignore failed deliveries
-
-## Testing Webhooks
-
-### Test Webhook
-
-**Send test event to webhook:**
-
-1. Go to **Settings** → **Webhooks**
-2. Select webhook
-3. Click **"Send Test Event"**
-4. Choose event type
-5. Click **"Send"**
-6. View delivery result
-
-**Test event payload:**
-```json
-{
-  "event": "test.event",
-  "timestamp": "2026-02-11T16:00:00Z",
-  "data": {
-    "message": "This is a test event"
-  },
-  "webhook_id": "webhook-123",
-  "delivery_id": "delivery-test-001"
-}
-```
-
-### Local Testing
-
-**Use ngrok for local testing:**
-
-```bash
-# Start ngrok
-ngrok http 5000
-
-# Use ngrok URL as webhook URL
-https://abc123.ngrok.io/webhooks
-```
-
-**Or use webhook.site:**
-1. Go to https://webhook.site
-2. Copy unique URL
-3. Use as webhook URL
-4. View received webhooks in browser
-
-## Webhook Deliveries
-
-### Viewing Deliveries
-
-**Check webhook delivery history:**
-
-1. Go to **Settings** → **Webhooks**
-2. Select webhook
-3. View **Deliveries** tab
-4. See all delivery attempts
-
-**Delivery list:**
-```
-┌─────────────────────────────────────────────────────┐
-│ Webhook Deliveries                                  │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│ ✅ workflow.completed                               │
-│    2026-02-11 14:31:23 • 200 OK • 45ms             │
-│    [View Details] [Redeliver]                      │
-│                                                     │
-│ ✅ workflow.failed                                  │
-│    2026-02-11 10:15:45 • 200 OK • 52ms             │
-│    [View Details] [Redeliver]                      │
-│                                                     │
-│ ❌ document.processed                               │
-│    2026-02-11 10:01:23 • 500 Error • Timeout       │
-│    [View Details] [Redeliver]                      │
-│                                                     │
-└─────────────────────────────────────────────────────┘
-```
-
-### Delivery Details
-
-**View delivery information:**
-
-```
-┌─────────────────────────────────────────┐
-│ Delivery Details                        │
-├─────────────────────────────────────────┤
-│                                         │
-│ Delivery ID: delivery-456               │
-│ Event: workflow.completed               │
-│ Status: ✅ Success (200 OK)             │
-│ Timestamp: 2026-02-11 14:31:23          │
-│ Response Time: 45ms                     │
-│                                         │
-│ Request:                                │
-│ POST https://api.example.com/webhooks   │
-│ Headers:                                │
-│   X-Clouisle-Signature: abc123...       │
-│   X-Clouisle-Delivery: delivery-456     │
-│   X-Clouisle-Event: workflow.completed  │
-│                                         │
-│ Payload:                                │
-│ {                                       │
-│   "event": "workflow.completed",        │
-│   "timestamp": "2026-02-11T14:31:23Z",  │
-│   ...                                   │
-│ }                                       │
-│                                         │
-│ Response:                               │
-│ Status: 200 OK                          │
-│ Body: {"status": "success"}             │
-│                                         │
-│ [Redeliver] [Close]                     │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-### Redelivery
-
-**Manually redeliver failed webhooks:**
-
-1. Find failed delivery
-2. Click **"Redeliver"**
-3. Confirm redelivery
-4. Webhook is sent again
-
-**Automatic retries:**
-- Failed deliveries are retried automatically
-- Retry schedule: 1m, 5m, 15m, 1h, 6h
-- Maximum 5 retry attempts
-- Exponential backoff
-
-## Managing Webhooks
-
-### List Webhooks
-
-**Endpoint**: `GET /api/v1/webhooks`
-
-**Response:**
-```json
-{
-  "code": 0,
-  "data": {
-    "items": [
-      {
-        "id": "webhook-123",
-        "name": "Production Webhook",
-        "url": "https://api.example.com/webhooks",
-        "events": ["workflow.completed", "workflow.failed"],
-        "active": true,
-        "created_at": "2026-02-11T10:00:00Z",
-        "last_delivery": "2026-02-11T14:31:23Z",
-        "success_rate": 0.98
-      }
-    ],
-    "total": 3
-  },
-  "msg": "success"
-}
-```
-
-### Update Webhook
-
-**Endpoint**: `PATCH /api/v1/webhooks/{webhook_id}`
-
-**Request:**
-```bash
-curl -X PATCH "https://your-domain.com/api/v1/webhooks/webhook-123" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://api.example.com/new-webhooks",
-    "events": ["workflow.completed", "workflow.failed", "document.processed"]
-  }'
-```
-
-### Delete Webhook
-
-**Endpoint**: `DELETE /api/v1/webhooks/{webhook_id}`
-
-**Request:**
-```bash
-curl -X DELETE "https://your-domain.com/api/v1/webhooks/webhook-123" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
+- Expect per-event webhook subscriptions or delivery-log APIs — only the single site-settings URL exists
+- Use HTTP (unencrypted) URLs
+- Trust the payload without validating it
+- Block on long processing inside the receiver
 
 ## Troubleshooting
 
-### Webhook Not Receiving Events
-
-**Problem**: No webhook deliveries
+### No Notifications Received
 
 **Solutions:**
-1. Check webhook is active
-2. Verify URL is correct and accessible
-3. Check event subscriptions
-4. Test with test event
-5. Check firewall/network settings
-6. Review webhook logs
+1. Check `webhook_enabled` is `true` and `webhook_url` is set in site settings
+2. Verify the notification was created with the `webhook` delivery channel
+3. Test with `POST /api/v1/admin/site-settings/test-webhook`
+4. Check the `notification_deliveries` table for the delivery status/error
 
 ### Signature Verification Failing
 
-**Problem**: Signature mismatch
-
 **Solutions:**
-1. Verify secret is correct
-2. Use raw request body (not parsed JSON)
-3. Check signature header name
-4. Use constant-time comparison
-5. Check HMAC algorithm (SHA256)
-6. Review implementation code
+1. Confirm `webhook_secret` matches on both sides
+2. Compute the signature over the **raw body string** (not the parsed JSON)
+3. Compare against either `X-Webhook-Signature` (`sha256=...` prefix) or `X-Webhook-Signature-256` (hex only)
 
 ### Deliveries Failing
 
-**Problem**: Webhook returns errors
-
 **Solutions:**
-1. Check endpoint is responding
-2. Verify endpoint returns 2xx status
-3. Check response time (<30s)
-4. Review endpoint logs
-5. Test endpoint manually
-6. Check for rate limiting
-
-### Duplicate Events
-
-**Problem**: Receiving same event multiple times
-
-**Solutions:**
-1. Implement idempotency using delivery_id
-2. Store processed delivery IDs
-3. Check for duplicate processing
-4. Use database transactions
-5. Handle retries gracefully
+1. Verify your endpoint responds 2xx within the 30s timeout
+2. Check the delivery `error_message` in `notification_deliveries`
+3. After 3 retries the delivery is marked failed; fix the receiver and trigger a new notification
 
 ## Related Documentation
 
-- [API Overview](../overview.md) - API introduction
-- [Authentication](../authentication.md) - Authentication methods
+- [Webhooks Guide](./webhooks-guide.md) - Outbound webhook configuration guide
+- [SSE Streaming](./sse-streaming.md) - Streaming workflow execution
 - [Workflows API](./endpoints/workflows.md) - Workflow endpoints
-- [Agents API](./endpoints/agents.md) - Agent endpoints
+- [Notifications API](./endpoints/settings.md) - Notification configuration
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

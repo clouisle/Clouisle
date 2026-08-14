@@ -8,22 +8,25 @@ The Users API allows you to:
 
 - **Get current user**: Retrieve authenticated user information
 - **Update profile**: Modify user profile and settings
+- **Change password**: Change the authenticated user's password
 - **List users**: Get all users (admin only)
 - **Create users**: Add new users (admin only)
 - **Update users**: Modify user accounts (admin only)
 - **Delete users**: Remove users (admin only)
 
-**Base URL**: `/api/v1/users`
+**Base URLs**:
+- Current user: `/api/v1/users`
+- Admin: `/api/v1/admin/users`
 
 ## Authentication
 
 All endpoints require authentication via JWT token or API key.
 
-**Required scopes:**
-- `user:read` - View user information
-- `user:update` - Update user information
-- `user:create` - Create users (admin only)
-- `user:delete` - Delete users (admin only)
+**Required scopes (admin):**
+- `admin:user:read` - View user information
+- `admin:user:create` - Create users
+- `admin:user:update` - Update user accounts
+- `admin:user:delete` - Delete users
 
 ## Get Current User
 
@@ -51,27 +54,23 @@ curl -X GET "https://your-domain.com/api/v1/users/me" \
   "code": 0,
   "data": {
     "id": "user-123",
-    "email": "john.doe@example.com",
     "username": "johndoe",
-    "full_name": "John Doe",
-    "avatar_url": "https://example.com/avatars/johndoe.jpg",
-    "role": "user",
+    "email": "john.doe@example.com",
     "is_active": true,
-    "is_verified": true,
+    "approval_status": "approved",
+    "is_superuser": false,
+    "avatar_url": "https://example.com/avatars/johndoe.jpg",
+    "locale": "en",
     "created_at": "2026-01-15T10:00:00Z",
     "last_login": "2026-02-11T14:30:00Z",
-    "preferences": {
-      "language": "en",
-      "timezone": "America/New_York",
-      "theme": "light"
-    },
-    "teams": [
-      {
-        "id": "team-456",
-        "name": "Marketing Team",
-        "role": "member"
-      }
-    ]
+    "auth_source": "local",
+    "external_id": null,
+    "email_verified": true,
+    "force_password_change": false,
+    "password_expiration_exempt": false,
+    "status": "active",
+    "roles": [],
+    "sso_connections": []
   },
   "msg": "success"
 }
@@ -84,20 +83,18 @@ Update the authenticated user's profile.
 ### Endpoint
 
 ```
-PATCH /api/v1/users/me
+PUT /api/v1/users/me
 ```
 
 ### Request Body
 
 ```json
 {
-  "full_name": "John Smith",
+  "username": "johnsmith",
+  "email": "john.smith@example.com",
   "avatar_url": "https://example.com/avatars/new-avatar.jpg",
-  "preferences": {
-    "language": "en",
-    "timezone": "America/Los_Angeles",
-    "theme": "dark"
-  }
+  "locale": "en",
+  "email_verification_code": "123456"
 }
 ```
 
@@ -105,21 +102,21 @@ PATCH /api/v1/users/me
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `full_name` | string | No | User's full name |
+| `username` | string | No | New username (must be unique) |
+| `email` | string | No | New email (must be unique; requires verification code if email verification is enabled) |
+| `email_verification_code` | string | No | Email verification code required when changing email |
 | `avatar_url` | string | No | Avatar image URL |
-| `preferences` | object | No | User preferences |
+| `locale` | string | No | Interface language (e.g. `en`, `zh`) |
 
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/users/me" \
+curl -X PUT "https://your-domain.com/api/v1/users/me" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "full_name": "John Smith",
-    "preferences": {
-      "theme": "dark"
-    }
+    "username": "johnsmith",
+    "avatar_url": "https://example.com/avatars/new-avatar.jpg"
   }'
 ```
 
@@ -132,13 +129,23 @@ curl -X PATCH "https://your-domain.com/api/v1/users/me" \
   "code": 0,
   "data": {
     "id": "user-123",
-    "full_name": "John Smith",
-    "preferences": {
-      "language": "en",
-      "timezone": "America/New_York",
-      "theme": "dark"
-    },
-    "updated_at": "2026-02-11T16:00:00Z"
+    "username": "johnsmith",
+    "email": "john.doe@example.com",
+    "is_active": true,
+    "approval_status": "approved",
+    "is_superuser": false,
+    "avatar_url": "https://example.com/avatars/new-avatar.jpg",
+    "locale": "en",
+    "created_at": "2026-01-15T10:00:00Z",
+    "last_login": "2026-02-11T14:30:00Z",
+    "auth_source": "local",
+    "external_id": null,
+    "email_verified": true,
+    "force_password_change": false,
+    "password_expiration_exempt": false,
+    "status": "active",
+    "roles": [],
+    "sso_connections": []
   },
   "msg": "Profile updated successfully"
 }
@@ -151,7 +158,7 @@ Change the authenticated user's password.
 ### Endpoint
 
 ```
-POST /api/v1/users/me/password
+POST /api/v1/users/me/change-password
 ```
 
 ### Request Body
@@ -168,12 +175,12 @@ POST /api/v1/users/me/password
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `current_password` | string | Yes | Current password |
-| `new_password` | string | Yes | New password (min 8 chars) |
+| `new_password` | string | Yes | New password (validated against password policy) |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/users/me/password" \
+curl -X POST "https://your-domain.com/api/v1/users/me/change-password" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -198,7 +205,7 @@ curl -X POST "https://your-domain.com/api/v1/users/me/password" \
 
 ```json
 {
-  "code": 2001,
+  "code": 2003,
   "data": null,
   "msg": "Current password is incorrect"
 }
@@ -211,7 +218,7 @@ Get a list of all users (admin only).
 ### Endpoint
 
 ```
-GET /api/v1/users
+GET /api/v1/admin/users
 ```
 
 ### Query Parameters
@@ -220,14 +227,15 @@ GET /api/v1/users
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
 | `page_size` | integer | No | 20 | Items per page (max: 100) |
-| `role` | string | No | - | Filter by role: admin, user |
-| `is_active` | boolean | No | - | Filter by active status |
-| `search` | string | No | - | Search by name or email |
+| `status` | array | No | - | Filter by status: `active`, `inactive`, `pending` (repeatable) |
+| `search` | string | No | - | Search by username or email |
+| `role` | array | No | - | Filter by role name (repeatable) |
+| `exclude_user_id` | array | No | - | User IDs to exclude from the result (repeatable) |
 
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/users?page=1&page_size=20" \
+curl -X GET "https://your-domain.com/api/v1/admin/users?page=1&page_size=20" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
@@ -242,22 +250,28 @@ curl -X GET "https://your-domain.com/api/v1/users?page=1&page_size=20" \
     "items": [
       {
         "id": "user-123",
-        "email": "john.doe@example.com",
         "username": "johndoe",
-        "full_name": "John Doe",
-        "avatar_url": "https://example.com/avatars/johndoe.jpg",
-        "role": "user",
+        "email": "john.doe@example.com",
         "is_active": true,
-        "is_verified": true,
+        "approval_status": "approved",
+        "is_superuser": false,
+        "avatar_url": "https://example.com/avatars/johndoe.jpg",
+        "locale": "en",
         "created_at": "2026-01-15T10:00:00Z",
         "last_login": "2026-02-11T14:30:00Z",
-        "team_count": 3
+        "auth_source": "local",
+        "external_id": null,
+        "email_verified": true,
+        "force_password_change": false,
+        "password_expiration_exempt": false,
+        "status": "active",
+        "roles": [],
+        "sso_connections": []
       }
     ],
     "total": 156,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 8
+    "page_size": 20
   },
   "msg": "success"
 }
@@ -270,7 +284,7 @@ Get details of a specific user (admin only).
 ### Endpoint
 
 ```
-GET /api/v1/users/{user_id}
+GET /api/v1/admin/users/{user_id}
 ```
 
 ### Path Parameters
@@ -282,7 +296,7 @@ GET /api/v1/users/{user_id}
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/users/user-123" \
+curl -X GET "https://your-domain.com/api/v1/admin/users/user-123" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
@@ -295,35 +309,23 @@ curl -X GET "https://your-domain.com/api/v1/users/user-123" \
   "code": 0,
   "data": {
     "id": "user-123",
-    "email": "john.doe@example.com",
     "username": "johndoe",
-    "full_name": "John Doe",
-    "avatar_url": "https://example.com/avatars/johndoe.jpg",
-    "role": "user",
+    "email": "john.doe@example.com",
     "is_active": true,
-    "is_verified": true,
+    "approval_status": "approved",
+    "is_superuser": false,
+    "avatar_url": "https://example.com/avatars/johndoe.jpg",
+    "locale": "en",
     "created_at": "2026-01-15T10:00:00Z",
     "last_login": "2026-02-11T14:30:00Z",
-    "login_count": 234,
-    "failed_login_count": 0,
-    "preferences": {
-      "language": "en",
-      "timezone": "America/New_York",
-      "theme": "light"
-    },
-    "teams": [
-      {
-        "id": "team-456",
-        "name": "Marketing Team",
-        "role": "member"
-      }
-    ],
-    "stats": {
-      "agents_created": 12,
-      "workflows_created": 8,
-      "conversations": 45,
-      "api_keys": 3
-    }
+    "auth_source": "local",
+    "external_id": null,
+    "email_verified": true,
+    "force_password_change": false,
+    "password_expiration_exempt": false,
+    "status": "active",
+    "roles": [],
+    "sso_connections": []
   },
   "msg": "success"
 }
@@ -336,20 +338,21 @@ Create a new user (admin only).
 ### Endpoint
 
 ```
-POST /api/v1/users
+POST /api/v1/admin/users
 ```
 
 ### Request Body
 
 ```json
 {
-  "email": "alice@example.com",
   "username": "alice",
-  "full_name": "Alice Johnson",
+  "email": "alice@example.com",
   "password": "secure_password",
-  "role": "user",
   "is_active": true,
-  "send_welcome_email": true
+  "approval_status": "approved",
+  "is_superuser": false,
+  "avatar_url": null,
+  "locale": "en"
 }
 ```
 
@@ -357,26 +360,25 @@ POST /api/v1/users
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `email` | string | Yes | User email (unique) |
 | `username` | string | Yes | Username (unique) |
-| `full_name` | string | Yes | User's full name |
-| `password` | string | Yes | Initial password (min 8 chars) |
-| `role` | string | No | User role: admin, user (default: user) |
+| `email` | string | Yes | User email (unique) |
+| `password` | string | Yes | Initial password |
 | `is_active` | boolean | No | Active status (default: true) |
-| `send_welcome_email` | boolean | No | Send welcome email (default: true) |
+| `approval_status` | string | No | Approval status (default: `approved`) |
+| `is_superuser` | boolean | No | Superuser flag (default: false) |
+| `avatar_url` | string | No | Avatar image URL |
+| `locale` | string | No | Interface language (default: `en`) |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/users" \
+curl -X POST "https://your-domain.com/api/v1/admin/users" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "alice@example.com",
     "username": "alice",
-    "full_name": "Alice Johnson",
-    "password": "secure_password",
-    "role": "user"
+    "email": "alice@example.com",
+    "password": "secure_password"
   }'
 ```
 
@@ -389,12 +391,23 @@ curl -X POST "https://your-domain.com/api/v1/users" \
   "code": 0,
   "data": {
     "id": "user-789",
-    "email": "alice@example.com",
     "username": "alice",
-    "full_name": "Alice Johnson",
-    "role": "user",
+    "email": "alice@example.com",
     "is_active": true,
-    "created_at": "2026-02-11T16:00:00Z"
+    "approval_status": "approved",
+    "is_superuser": false,
+    "avatar_url": null,
+    "locale": "en",
+    "created_at": "2026-02-11T16:00:00Z",
+    "last_login": null,
+    "auth_source": "local",
+    "external_id": null,
+    "email_verified": false,
+    "force_password_change": false,
+    "password_expiration_exempt": false,
+    "status": "active",
+    "roles": [],
+    "sso_connections": []
   },
   "msg": "User created successfully"
 }
@@ -404,11 +417,17 @@ curl -X POST "https://your-domain.com/api/v1/users" \
 
 ```json
 {
-  "code": 5001,
-  "data": {
-    "field": "email"
-  },
-  "msg": "User with this email already exists"
+  "code": 5002,
+  "data": null,
+  "msg": "Username already exists"
+}
+```
+
+```json
+{
+  "code": 5003,
+  "data": null,
+  "msg": "Email already exists"
 }
 ```
 
@@ -419,7 +438,7 @@ Update a user's information (admin only).
 ### Endpoint
 
 ```
-PATCH /api/v1/users/{user_id}
+PUT /api/v1/admin/users/{user_id}
 ```
 
 ### Path Parameters
@@ -434,21 +453,35 @@ All fields are optional. Only include fields you want to update.
 
 ```json
 {
-  "full_name": "Alice Smith",
-  "role": "admin",
-  "is_active": true
+  "email": "alice.smith@example.com",
+  "password": "new_password",
+  "is_active": true,
+  "avatar_url": null,
+  "locale": "en",
+  "roles": ["admin"]
 }
 ```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | No | New email |
+| `password` | string | No | New password |
+| `is_active` | boolean | No | Active status |
+| `avatar_url` | string | No | Avatar image URL |
+| `locale` | string | No | Interface language |
+| `roles` | array | No | Role names to assign |
 
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/users/user-789" \
+curl -X PUT "https://your-domain.com/api/v1/admin/users/user-789" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "full_name": "Alice Smith",
-    "role": "admin"
+    "is_active": true,
+    "roles": ["admin"]
   }'
 ```
 
@@ -461,9 +494,31 @@ curl -X PATCH "https://your-domain.com/api/v1/users/user-789" \
   "code": 0,
   "data": {
     "id": "user-789",
-    "full_name": "Alice Smith",
-    "role": "admin",
-    "updated_at": "2026-02-11T16:05:00Z"
+    "username": "alice",
+    "email": "alice@example.com",
+    "is_active": true,
+    "approval_status": "approved",
+    "is_superuser": false,
+    "avatar_url": null,
+    "locale": "en",
+    "created_at": "2026-02-11T16:00:00Z",
+    "last_login": null,
+    "auth_source": "local",
+    "external_id": null,
+    "email_verified": false,
+    "force_password_change": false,
+    "password_expiration_exempt": false,
+    "status": "active",
+    "roles": [
+      {
+        "id": "role-admin",
+        "name": "admin",
+        "description": null,
+        "is_system_role": true,
+        "permissions": []
+      }
+    ],
+    "sso_connections": []
   },
   "msg": "User updated successfully"
 }
@@ -476,7 +531,7 @@ Delete a user permanently (admin only).
 ### Endpoint
 
 ```
-DELETE /api/v1/users/{user_id}
+DELETE /api/v1/admin/users/{user_id}
 ```
 
 ### Path Parameters
@@ -488,7 +543,7 @@ DELETE /api/v1/users/{user_id}
 ### Request Example
 
 ```bash
-curl -X DELETE "https://your-domain.com/api/v1/users/user-789" \
+curl -X DELETE "https://your-domain.com/api/v1/admin/users/user-789" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
@@ -504,92 +559,21 @@ curl -X DELETE "https://your-domain.com/api/v1/users/user-789" \
 }
 ```
 
-## Reset User Password
+## Activate / Deactivate User (admin)
 
-Reset a user's password (admin only).
+Toggle a user's active status.
 
-### Endpoint
+### Endpoints
 
 ```
-POST /api/v1/users/{user_id}/reset-password
+POST /api/v1/admin/users/{user_id}/activate
+POST /api/v1/admin/users/{user_id}/deactivate
 ```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `user_id` | string | Yes | User UUID |
-
-### Request Body
-
-```json
-{
-  "new_password": "new_secure_password",
-  "send_email": true
-}
-```
-
-### Request Fields
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `new_password` | string | No | New password (if not provided, generates random) |
-| `send_email` | boolean | No | Send password reset email (default: true) |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/users/user-789/reset-password" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "send_email": true
-  }'
-```
-
-### Response
-
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "temporary_password": "Abc123!@#Xyz"
-  },
-  "msg": "Password reset successfully"
-}
-```
-
-## Get User Activity
-
-Get user activity log (admin only).
-
-### Endpoint
-
-```
-GET /api/v1/users/{user_id}/activity
-```
-
-### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `user_id` | string | Yes | User UUID |
-
-### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 50 | Items per page (max: 100) |
-| `start_date` | string | No | 30 days ago | Start date (ISO 8601) |
-| `end_date` | string | No | Now | End date (ISO 8601) |
-
-### Request Example
-
-```bash
-curl -X GET "https://your-domain.com/api/v1/users/user-789/activity?page=1&page_size=50" \
+curl -X POST "https://your-domain.com/api/v1/admin/users/user-789/deactivate" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
@@ -597,52 +581,31 @@ curl -X GET "https://your-domain.com/api/v1/users/user-789/activity?page=1&page_
 
 **Success (200 OK):**
 
-```json
-{
-  "code": 0,
-  "data": {
-    "items": [
-      {
-        "id": "activity-001",
-        "action": "create_agent",
-        "resource_type": "agent",
-        "resource_id": "agent-456",
-        "resource_name": "Customer Support Agent",
-        "timestamp": "2026-02-11T14:30:00Z",
-        "ip_address": "192.168.1.100",
-        "user_agent": "Mozilla/5.0..."
-      }
-    ],
-    "total": 234,
-    "page": 1,
-    "page_size": 50,
-    "total_pages": 5
-  },
-  "msg": "success"
-}
-```
+Returns the updated `UserSchema` with `is_active` toggled.
+
+## Reset User Password
+
+> **Note:** Not implemented / Roadmap. There is no direct password-reset endpoint. Admin alternatives under `/api/v1/admin/users/{user_id}`:
+> - `POST /{user_id}/force-password-change` - force the user to change their password at next login
+> - `POST /{user_id}/reset-password-expiration` - reset the password expiration timer
+> - `POST /{user_id}/exempt-password-expiration` - toggle password expiration exemption
+
+## Get User Activity
+
+> **Note:** Not implemented / Roadmap. There is no per-user activity endpoint. User actions are recorded in the audit log (`GET /api/v1/admin/audit-logs`).
 
 ## Error Codes
 
 | Code | Message | Description |
 |------|---------|-------------|
-| `4000` | User not found | User does not exist |
-| `2001` | Invalid credentials | Wrong password |
+| `4001` | User not found | User does not exist |
+| `2003` | Invalid credentials | Wrong password |
 | `3000` | Permission denied | Insufficient permissions |
 | `1001` | Validation failed | Invalid request data |
-| `5001` | User already exists | Email or username taken |
+| `5002` | Username already exists | Username is taken |
+| `5003` | Email already exists | Email is taken |
 
-## Rate Limits
-
-| Endpoint | Limit |
-|----------|-------|
-| `GET /api/v1/users/me` | 100/minute |
-| `PATCH /api/v1/users/me` | 30/minute |
-| `POST /api/v1/users/me/password` | 5/minute |
-| `GET /api/v1/users` | 100/minute (admin) |
-| `POST /api/v1/users` | 10/minute (admin) |
-| `PATCH /api/v1/users/{id}` | 30/minute (admin) |
-| `DELETE /api/v1/users/{id}` | 10/minute (admin) |
+> **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints.
 
 ## Best Practices
 
@@ -698,7 +661,7 @@ def get_current_user(token):
     else:
         raise Exception(f"Error: {result['msg']}")
 
-def update_profile(token, full_name, preferences):
+def update_profile(token, username, avatar_url=None, locale=None):
     """Update user profile."""
     url = "https://your-domain.com/api/v1/users/me"
     headers = {
@@ -706,11 +669,12 @@ def update_profile(token, full_name, preferences):
         "Content-Type": "application/json"
     }
     data = {
-        "full_name": full_name,
-        "preferences": preferences
+        "username": username,
+        "avatar_url": avatar_url,
+        "locale": locale
     }
 
-    response = requests.patch(url, headers=headers, json=data)
+    response = requests.put(url, headers=headers, json=data)
     result = response.json()
 
     if result['code'] == 0:
@@ -720,14 +684,10 @@ def update_profile(token, full_name, preferences):
 
 # Usage
 user = get_current_user("YOUR_TOKEN")
-print(f"User: {user['full_name']}")
+print(f"User: {user['username']}")
 
-updated = update_profile(
-    "YOUR_TOKEN",
-    "John Smith",
-    {"theme": "dark"}
-)
-print(f"Updated: {updated['full_name']}")
+updated = update_profile("YOUR_TOKEN", "johnsmith", locale="en")
+print(f"Updated: {updated['username']}")
 ```
 
 ### JavaScript
@@ -752,18 +712,19 @@ async function getCurrentUser(token) {
   }
 }
 
-async function updateProfile(token, fullName, preferences) {
+async function updateProfile(token, username, avatarUrl = null, locale = null) {
   const response = await fetch(
     'https://your-domain.com/api/v1/users/me',
     {
-      method: 'PATCH',
+      method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        full_name: fullName,
-        preferences: preferences,
+        username: username,
+        avatar_url: avatarUrl,
+        locale: locale,
       }),
     }
   );
@@ -779,14 +740,10 @@ async function updateProfile(token, fullName, preferences) {
 
 // Usage
 const user = await getCurrentUser('YOUR_TOKEN');
-console.log('User:', user.full_name);
+console.log('User:', user.username);
 
-const updated = await updateProfile(
-  'YOUR_TOKEN',
-  'John Smith',
-  { theme: 'dark' }
-);
-console.log('Updated:', updated.full_name);
+const updated = await updateProfile('YOUR_TOKEN', 'johnsmith', null, 'en');
+console.log('Updated:', updated.username);
 ```
 
 ## Related Documentation

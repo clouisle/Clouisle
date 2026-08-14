@@ -29,11 +29,10 @@ The list shows:
 | **Documents** | Number of documents |
 | **Chunks** | Number of text chunks |
 | **Updated** | Last update time |
-| **Status** | Active or Archived |
+| **Status** | Active, Processing, Error, or Archived |
 
 **Filtering:**
-- Filter by team (if member of multiple teams)
-- Filter by status (Active / Archived)
+- Filter by status
 - Search by name
 
 ## Knowledge Base Details
@@ -52,14 +51,12 @@ Shows knowledge base information:
 - Total tokens
 
 **Embedding Model:**
-- Model name (e.g., "text-embedding-3-large")
-- Dimensions (e.g., 1536)
-- Provider (e.g., "OpenAI")
+- Model name
+- Embedding dimension (set after the first document is processed)
 
 **Statistics:**
 - Document count by type (PDF, DOCX, etc.)
 - Processing status (Completed, Processing, Failed)
-- Storage usage
 
 ### Documents Tab
 
@@ -80,7 +77,7 @@ Lists all documents in the knowledge base:
 **Document Status:**
 - ✅ **Completed**: Successfully processed and indexed
 - ⏳ **Processing**: Currently being processed
-- ❌ **Failed**: Processing failed (see error message)
+- ❌ **Error**: Processing failed (see error message)
 - 📝 **Pending**: Waiting to be processed
 
 ### Search Tab
@@ -90,12 +87,12 @@ Search within the knowledge base:
 **Search Interface:**
 1. Enter your search query
 2. Select search mode:
-   - **Vector Search**: Semantic similarity
-   - **Keyword Search**: Exact term matching
-   - **Hybrid**: Combined (recommended)
+   - **Vector**: Semantic similarity
+   - **Fulltext**: Exact term matching (keyword/full-text)
+   - **Hybrid**: Combined (default, recommended)
 3. Adjust parameters:
    - **Top K**: Number of results (default: 5)
-   - **Score Threshold**: Minimum relevance (default: 0.7)
+   - **Score Threshold**: Minimum relevance (default: 0.0)
 4. Click **Search**
 
 **Search Results:**
@@ -128,8 +125,8 @@ Click on a document to open the viewer:
 **Viewer Features:**
 - **Preview**: View document content
 - **Metadata**: Document information
-- **Chunks**: View how document is chunked
-- **Download**: Download original file
+- **Chunks**: View how the document is chunked
+- **Download**: Download the original file
 
 ### Document Metadata
 
@@ -145,7 +142,6 @@ Shows document details:
 | **Status** | Processing status |
 | **Chunks** | Number of chunks |
 | **Tokens** | Total token count |
-| **Embedding Model** | Model used for embedding |
 
 ### Chunk View
 
@@ -173,7 +169,6 @@ agents..."
 - Understand how agents see the document
 - Verify chunking quality
 - Debug search issues
-- Optimize chunk settings
 
 ## Searching Documents
 
@@ -194,13 +189,12 @@ Results:
 3. "Security settings include password..." (0.76)
 ```
 
-### Keyword Search
+### Fulltext Search
 
 **Best for:**
 - Exact term matching
 - Product names, IDs
 - Technical terms
-- Acronyms
 
 **Example:**
 ```
@@ -218,16 +212,6 @@ Results:
 - Combines semantic and keyword matching
 - Recommended for most searches
 
-**Example:**
-```
-Query: "OAuth authentication setup"
-
-Results (combined):
-1. "OAuth 2.0 authentication configuration..." (0.91)
-2. "Setting up OAuth providers requires..." (0.87)
-3. "Authentication methods include OAuth..." (0.83)
-```
-
 ### Search Tips
 
 **✅ Do:**
@@ -235,12 +219,9 @@ Results (combined):
 - Be specific about what you're looking for
 - Try different phrasings if no results
 - Use hybrid search for best results
-- Adjust score threshold if too few/many results
 
 **❌ Don't:**
-- Use very short queries (1-2 words)
-- Expect results for information not in KB
-- Use special characters unnecessarily
+- Expect results for information not in the KB
 - Search for real-time information
 
 ## Filtering and Sorting
@@ -259,14 +240,9 @@ Results (combined):
 **By Status:**
 - Completed
 - Processing
-- Failed
+- Error
+- Pending
 - All statuses
-
-**By Date:**
-- Last 7 days
-- Last 30 days
-- Last 90 days
-- Custom range
 
 ### Sort Options
 
@@ -285,14 +261,7 @@ Results (combined):
 2. Click **Download** button
 3. File downloads to your computer
 
-**Note**: You can only download documents you have permission to access.
-
-### Bulk Download
-
-If enabled:
-1. Select multiple documents (checkboxes)
-2. Click **Download Selected**
-3. Files download as ZIP archive
+> **Note:** Bulk download as a ZIP archive is **not implemented** — documents are downloaded one at a time.
 
 ## Understanding Document Status
 
@@ -305,7 +274,7 @@ Document successfully processed:
 - Indexed and searchable
 
 **What you can do:**
-- Search within document
+- Search within the document
 - View chunks
 - Use in agent conversations
 - Download
@@ -315,37 +284,28 @@ Document successfully processed:
 Document currently being processed:
 - Text extraction in progress
 - Chunking and embedding
-- May take a few minutes
 
 **What you can do:**
 - Wait for completion
 - View basic metadata
 - Cannot search yet
 
-**Typical processing times:**
-- Small (1-10 pages): 10-30 seconds
-- Medium (10-100 pages): 30-120 seconds
-- Large (100+ pages): 2-10 minutes
-
-### Failed ❌
+### Error ❌
 
 Processing failed:
 - Error during text extraction
 - Unsupported format
 - Corrupted file
-- Processing timeout
 
 **What you can do:**
 - View error message
-- Download original file
+- Download the original file
 - Delete and re-upload
-- Contact administrator
+- Retry the failed chunks / reprocess
 
-**Common errors:**
-- "Unsupported file format"
-- "File corrupted or unreadable"
-- "Text extraction failed"
-- "Processing timeout"
+### Pending 📝
+
+Document uploaded but not yet processed — processing starts when the document is processed (automatically or via the process action).
 
 ## Knowledge Base Statistics
 
@@ -356,28 +316,12 @@ View statistics for the knowledge base:
 **Document Count:**
 - Total documents
 - By file type (PDF: 45, DOCX: 23, etc.)
-- By status (Completed: 65, Processing: 2, Failed: 1)
+- By status (Completed: 65, Processing: 2, Error: 1)
 
 **Content Statistics:**
 - Total chunks: 1,234
 - Total tokens: 456,789
 - Average chunks per document: 18
-- Average tokens per chunk: 370
-
-**Storage:**
-- Document storage: 125 MB
-- Vector storage: 45 MB
-- Total storage: 170 MB
-
-### Processing History
-
-View recent processing activity:
-
-| Time | Document | Status | Duration |
-|------|----------|--------|----------|
-| 2 min ago | report.pdf | ✅ Completed | 45s |
-| 5 min ago | guide.docx | ✅ Completed | 32s |
-| 10 min ago | data.xlsx | ❌ Failed | - |
 
 ## Best Practices
 
@@ -387,14 +331,11 @@ View recent processing activity:
 - Use search instead of scrolling through long lists
 - Filter by document type for specific formats
 - Sort by date to find recent documents
-- Use hybrid search for best results
 - Check document status before expecting results
 
 **❌ Don't:**
-- Browse without using filters (inefficient)
 - Expect instant results for large documents
 - Search for information not in the KB
-- Download documents unnecessarily
 
 ### Search Effectively
 
@@ -404,16 +345,10 @@ Good: "What is the refund policy for cancelled orders?"
 Bad: "refund"
 ```
 
-**For technical terms:**
-```
-Good: Use keyword or hybrid search
-Bad: Use only vector search for exact IDs
-```
-
 **For concepts:**
 ```
 Good: Use vector or hybrid search
-Bad: Use only keyword search for semantic queries
+Bad: Use only fulltext search for semantic queries
 ```
 
 ## Troubleshooting
@@ -423,12 +358,11 @@ Bad: Use only keyword search for semantic queries
 **Problem**: Search returns no results
 
 **Solutions:**
-1. Lower score threshold (try 0.5 instead of 0.7)
+1. Lower the score threshold (default is already 0.0)
 2. Increase top K (try 10 instead of 5)
-3. Try different search mode (hybrid)
+3. Try a different search mode (hybrid)
 4. Rephrase your query
 5. Verify documents are indexed (status: Completed)
-6. Check if information exists in KB
 
 ### Document Not Visible
 
@@ -437,9 +371,8 @@ Bad: Use only keyword search for semantic queries
 **Solutions:**
 1. Check if you're viewing the correct knowledge base
 2. Verify you have access to the team
-3. Check if document is still processing
+3. Check if the document is still processing
 4. Refresh the page
-5. Contact administrator
 
 ### Cannot Download Document
 
@@ -449,35 +382,31 @@ Bad: Use only keyword search for semantic queries
 1. Verify you have download permission
 2. Check if document processing completed
 3. Try a different browser
-4. Check internet connection
-5. Contact administrator
+4. Check your internet connection
 
 ### Search Results Irrelevant
 
 **Problem**: Search returns unrelated results
 
 **Solutions:**
-1. Increase score threshold (try 0.8)
+1. Increase the score threshold
 2. Be more specific in your query
-3. Use keyword search for exact terms
+3. Use fulltext search for exact terms
 4. Try hybrid search mode
-5. Verify document content matches your query
 
 ## Related Documentation
 
 - [Uploading Documents](./uploading-documents.md) - How to upload documents
 - [Searching](./searching.md) - Advanced search techniques
 - [Document Management](./document-management.md) - Managing documents
-- [KB Management](../../admin-guide/knowledge-base/kb-management.md) - Admin guide
 
 ## Getting Help
 
 If you need assistance:
 
-1. **Search Help**: Click **?** icon in search interface
-2. **Documentation**: Review this guide
-3. **Support**: Contact your organization's support team
-4. **Administrator**: Reach out to your KB administrator
+1. **Documentation**: Review this guide
+2. **Support**: Contact your organization's support team
+3. **Administrator**: Reach out to your KB administrator
 
 ---
 

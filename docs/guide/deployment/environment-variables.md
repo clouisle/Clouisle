@@ -1,24 +1,34 @@
 # Environment Variables
 
-This document provides a complete reference of all environment variables used in Clouisle.
+This document provides a complete reference of environment variables used in Clouisle.
 
 ## Overview
 
 Environment variables configure:
 
-- **Application settings**: URLs, ports, debug mode
+- **Application settings**: URLs, timezone, CORS
 - **Database connections**: PostgreSQL, Redis, Qdrant
-- **Security**: Secrets, keys, authentication
-- **Email**: SMTP configuration
-- **LLM providers**: API keys and settings
-- **Storage**: File upload configuration
-- **Features**: Enable/disable features
+- **Security**: Secret key, JWT algorithm, token lifetime
+- **Internal services**: API URLs, internal tokens, upload storage mode
+- **Retrieval & streaming**: Hybrid retrieval switches, stream timeouts
+- **Sandbox runtime**: Sandbox worker configuration
+- **External APIs**: Tavily search key
+
+## Configuration System
+
+Clouisle's configuration is not env-only. Values are resolved from three layers:
+
+1. **Environment variables** — read by `backend/app/core/config.py` (Pydantic `Settings`, loaded from `.env` at the project root or the deployment directory). All variables below are defined there.
+2. **Database `SiteSetting` model** — runtime settings that admins manage through the admin UI and are stored in PostgreSQL (`backend/app/models/site_setting.py`). These include SMTP/email, registration, SSO, upload size limits, session timeout, default language, and more. They are **not** environment variables.
+3. **LLM provider models** — LLM API keys, base URLs, and model configurations are stored in database models (admin-managed per provider), **not** in environment variables.
+
+Deployment files (`deploy/docker-compose.yml`, Helm values, `deploy/k8s/clouisle.yaml`) set the container-relevant values explicitly (e.g. `POSTGRES_SERVER=db`, `API_BASE_URL=http://api:8000`), overriding `.env` defaults.
 
 ## Configuration File
 
 ### .env File
 
-**Location**: Root directory of the project
+**Location**: Root directory of the project for local development; `<installation-directory>/.env` for Docker Compose deployments (see `deploy/.env.example`).
 
 **Format**:
 ```bash
@@ -30,112 +40,169 @@ ANOTHER_VARIABLE=another_value
 **Example .env file**:
 ```bash
 # Application
-SITE_URL=https://your-domain.com
-FRONTEND_URL=https://your-domain.com
-DEBUG=false
+PROJECT_NAME=Clouisle
+SECRET_KEY=changethis-to-a-secure-random-secret-key
+TIMEZONE=Asia/Shanghai
+API_BASE_URL=http://api:8000
+FRONTEND_URL=http://localhost:3000
+BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 
 # Database
-POSTGRES_SERVER=localhost
+POSTGRES_SERVER=db
 POSTGRES_PORT=5432
 POSTGRES_DB=clouisle
-POSTGRES_USER=clouisle
+POSTGRES_USER=postgres
 POSTGRES_PASSWORD=secure_password
 
 # Redis
-REDIS_HOST=localhost
+REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_PASSWORD=secure_password
 
-# Security
-SECRET_KEY=your-secret-key-here
-JWT_SECRET=your-jwt-secret-here
+# Qdrant
+VECTOR_BACKEND=qdrant
+QDRANT_URL=http://qdrant:6333
+QDRANT_API_KEY=
 
-# LLM
-OPENAI_API_KEY=sk-your-api-key-here
+# Internal services
+INTERNAL_API_TOKEN=generate-a-secure-random-token
+API_INTERNAL_BASE_URL=http://api:8000
+UPLOAD_STORAGE_MODE=remote
 ```
 
 ## Application Settings
 
-### SITE_URL
+### PROJECT_NAME
 
-**Description**: Public URL of the application
+**Description**: Display name of the application
 
-**Required**: Yes
+**Required**: No
 
-**Default**: None
+**Default**: `Clouisle`
 
 **Example**:
 ```bash
-SITE_URL=https://clouisle.example.com
+PROJECT_NAME=Clouisle
 ```
 
-**Usage**:
-- OAuth callback URLs
-- Email links
-- API documentation
-- Webhook URLs
+### API_BASE_URL
+
+**Description**: Internal API URL used by services (file access, sandbox artifact upload, internal calls). Put public domains in `PUBLIC_API_URL` / `FRONTEND_URL` / `BACKEND_CORS_ORIGINS`.
+
+**Required**: Yes in deployments
+
+**Default**: `http://localhost:8000`
+
+**Example**:
+```bash
+API_BASE_URL=http://api:8000
+```
+
+### PUBLIC_API_URL
+
+**Description**: Public API origin used when workflow file URLs must be absolute (browser-visible links)
+
+**Required**: No
+
+**Default**: *(empty)*
+
+**Example**:
+```bash
+PUBLIC_API_URL=https://example.com
+```
 
 ### FRONTEND_URL
 
-**Description**: Frontend application URL
+**Description**: Frontend URL, used for SSO redirect URIs
 
-**Required**: Yes
+**Required**: Yes in deployments
 
-**Default**: Same as SITE_URL
+**Default**: `http://localhost:3000`
 
 **Example**:
 ```bash
 FRONTEND_URL=https://clouisle.example.com
 ```
 
-**Usage**:
-- CORS configuration
-- Redirect URLs
-- Email templates
+### TIMEZONE
 
-### DEBUG
-
-**Description**: Enable debug mode
+**Description**: Server timezone (affects scheduled tasks)
 
 **Required**: No
 
-**Default**: `false`
-
-**Values**: `true`, `false`
+**Default**: `Asia/Shanghai`
 
 **Example**:
 ```bash
-DEBUG=false
+TIMEZONE=Asia/Shanghai
 ```
 
-**Warning**: Never enable in production!
+### BACKEND_CORS_ORIGINS
 
-### PORT
-
-**Description**: Backend server port
+**Description**: Allowed CORS origins. Accepts a JSON array or a comma-separated list.
 
 **Required**: No
 
-**Default**: `8000`
+**Default**: `["http://localhost:3000"]`
 
 **Example**:
 ```bash
-PORT=8000
+BACKEND_CORS_ORIGINS=["https://clouisle.example.com","https://app.example.com"]
 ```
 
-### LOG_LEVEL
+**Production**: Always specify exact origins, never `*`.
 
-**Description**: Logging level
+## Security Settings
 
-**Required**: No
+### SECRET_KEY
 
-**Default**: `INFO`
+**Description**: Application secret key used for JWT signing
 
-**Values**: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+**Required**: Yes
+
+**Default**: `changethis-to-a-secure-random-secret-key`
 
 **Example**:
 ```bash
-LOG_LEVEL=INFO
+SECRET_KEY=your-very-secure-random-key-here
+```
+
+**Generate**:
+```bash
+openssl rand -base64 32
+```
+
+**Security**:
+- Must be random and unique
+- Never commit to git
+- Change if compromised (changing it invalidates all existing sessions)
+
+### ALGORITHM
+
+**Description**: JWT signing algorithm
+
+**Required**: No
+
+**Default**: `HS256`
+
+**Values**: `HS256`, `HS384`, `HS512`
+
+**Example**:
+```bash
+ALGORITHM=HS256
+```
+
+### ACCESS_TOKEN_EXPIRE_MINUTES
+
+**Description**: JWT access token lifetime in minutes — the config fallback used by `create_access_token` when no explicit expiry is passed. Actual session duration is controlled by the database `session_timeout_days` site setting (admin-configurable, default **30 days**), which login/SSO flows pass as an explicit expiry; this env only kicks in when no explicit expiry is provided.
+
+**Required**: No
+
+**Default**: `11520` (8 days) — JWT fallback only; effective session default is the `session_timeout_days` site setting (30 days)
+
+**Example**:
+```bash
+ACCESS_TOKEN_EXPIRE_MINUTES=11520
 ```
 
 ## Database Configuration
@@ -152,7 +219,7 @@ LOG_LEVEL=INFO
 
 **Example**:
 ```bash
-POSTGRES_SERVER=postgres
+POSTGRES_SERVER=db
 ```
 
 #### POSTGRES_PORT
@@ -174,7 +241,7 @@ POSTGRES_PORT=5432
 
 **Required**: Yes
 
-**Default**: None
+**Default**: `clouisle`
 
 **Example**:
 ```bash
@@ -187,20 +254,20 @@ POSTGRES_DB=clouisle
 
 **Required**: Yes
 
-**Default**: None
+**Default**: `postgres`
 
 **Example**:
 ```bash
-POSTGRES_USER=clouisle
+POSTGRES_USER=postgres
 ```
 
 #### POSTGRES_PASSWORD
 
 **Description**: Database password
 
-**Required**: Yes
+**Required**: Yes (Compose refuses to start without it)
 
-**Default**: None
+**Default**: `password` (config default; `deploy/.env.example` leaves it empty)
 
 **Example**:
 ```bash
@@ -211,15 +278,15 @@ POSTGRES_PASSWORD=secure_password_here
 
 #### DATABASE_URL
 
-**Description**: Complete database connection URL
+**Description**: Complete database connection URL. If set, overrides the individual `POSTGRES_*` variables.
 
-**Required**: Alternative to individual settings
+**Required**: No
 
-**Format**: `postgresql://user:password@host:port/database`
+**Format**: `postgres://user:password@host:port/database`
 
 **Example**:
 ```bash
-DATABASE_URL=postgresql://clouisle:password@localhost:5432/clouisle
+DATABASE_URL=postgres://clouisle:password@db:5432/clouisle
 ```
 
 ### Redis
@@ -263,58 +330,34 @@ REDIS_PORT=6379
 REDIS_PASSWORD=secure_password_here
 ```
 
-#### REDIS_DB
-
-**Description**: Redis database number
-
-**Required**: No
-
-**Default**: `0`
-
-**Example**:
-```bash
-REDIS_DB=0
-```
-
-#### REDIS_URL
-
-**Description**: Complete Redis connection URL
-
-**Required**: Alternative to individual settings
-
-**Format**: `redis://[:password@]host:port/db`
-
-**Example**:
-```bash
-REDIS_URL=redis://:password@localhost:6379/0
-```
+The Celery broker and result backend are derived from `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` (`redis://.../0` broker, `redis://.../1` backend) in `backend/app/core/celery.py`. There are no separate `REDIS_URL`/`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` variables.
 
 ### Qdrant (Vector Database)
 
-#### QDRANT_HOST
+#### VECTOR_BACKEND
 
-**Description**: Qdrant server hostname
-
-**Required**: Yes
-
-**Default**: `localhost`
-
-**Example**:
-```bash
-QDRANT_HOST=qdrant
-```
-
-#### QDRANT_PORT
-
-**Description**: Qdrant server port
+**Description**: Vector database backend
 
 **Required**: No
 
-**Default**: `6333`
+**Default**: `qdrant`
 
 **Example**:
 ```bash
-QDRANT_PORT=6333
+VECTOR_BACKEND=qdrant
+```
+
+#### QDRANT_URL
+
+**Description**: Complete Qdrant connection URL
+
+**Required**: Yes
+
+**Format**: `http://host:port`
+
+**Example**:
+```bash
+QDRANT_URL=http://qdrant:6333
 ```
 
 #### QDRANT_API_KEY
@@ -330,437 +373,89 @@ QDRANT_PORT=6333
 QDRANT_API_KEY=your-api-key-here
 ```
 
-#### QDRANT_URL
+#### QDRANT_COLLECTION_PREFIX
 
-**Description**: Complete Qdrant connection URL
+**Description**: Qdrant collection name prefix
 
-**Required**: Alternative to individual settings
+**Required**: No
 
-**Format**: `http://host:port`
+**Default**: `kb_dim`
 
 **Example**:
 ```bash
-QDRANT_URL=http://qdrant:6333
+QDRANT_COLLECTION_PREFIX=kb_dim
 ```
 
-## Security Settings
+#### QDRANT_DISTANCE
 
-### SECRET_KEY
+**Description**: Vector distance metric
 
-**Description**: Application secret key for encryption
+**Required**: No
 
-**Required**: Yes
-
-**Default**: None
+**Default**: `Cosine`
 
 **Example**:
 ```bash
-SECRET_KEY=your-very-secure-random-key-here
+QDRANT_DISTANCE=Cosine
+```
+
+## Internal Service Configuration
+
+### INTERNAL_API_TOKEN / INTERNAL_API_TOKEN_FILE
+
+**Description**: Shared secret token that authenticates worker → API requests on the internal upload gateway (`/internal/uploads/...` in `backend/app/api/v1/endpoints/internal_uploads.py`). `INTERNAL_API_TOKEN_FILE` points at a file containing the token (used in Kubernetes); the file takes precedence when set.
+
+**Required**: Yes for Compose (`docker-compose.yml` fails fast if unset) and Kubernetes
+
+**Default**: *(empty)*
+
+**Example**:
+```bash
+INTERNAL_API_TOKEN=generate-a-secure-random-token
+# or
+INTERNAL_API_TOKEN_FILE=/var/run/secrets/clouisle/internal-api-token
 ```
 
 **Generate**:
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+openssl rand -hex 32
 ```
 
-**Security**:
-- Must be random and unique
-- Never commit to git
-- Change if compromised
+### API_INTERNAL_BASE_URL
 
-### JWT_SECRET
-
-**Description**: JWT token signing secret
-
-**Required**: Yes
-
-**Default**: None
-
-**Example**:
-```bash
-JWT_SECRET=your-jwt-secret-key-here
-```
-
-**Generate**:
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-**Security**:
-- Must be different from SECRET_KEY
-- Never commit to git
-- Changing invalidates all tokens
-
-### JWT_ALGORITHM
-
-**Description**: JWT signing algorithm
+**Description**: Internal base URL used by the worker process to reach the API for the upload gateway when `UPLOAD_STORAGE_MODE=remote`.
 
 **Required**: No
 
-**Default**: `HS256`
-
-**Values**: `HS256`, `HS384`, `HS512`
+**Default**: *(empty; Compose sets it to `http://api:8000`)*
 
 **Example**:
 ```bash
-JWT_ALGORITHM=HS256
+API_INTERNAL_BASE_URL=http://api:8000
 ```
 
-### JWT_EXPIRATION
+### UPLOAD_STORAGE_MODE
 
-**Description**: JWT token expiration time in seconds
-
-**Required**: No
-
-**Default**: `1800` (30 minutes)
-
-**Example**:
-```bash
-JWT_EXPIRATION=1800
-```
-
-### CORS_ORIGINS
-
-**Description**: Allowed CORS origins (comma-separated)
-
-**Required**: No
-
-**Default**: `*` (all origins)
-
-**Example**:
-```bash
-CORS_ORIGINS=https://clouisle.example.com,https://app.example.com
-```
-
-**Production**: Always specify exact origins
-
-## Email Configuration
-
-### SMTP_HOST
-
-**Description**: SMTP server hostname
-
-**Required**: For email features
-
-**Default**: None
-
-**Example**:
-```bash
-SMTP_HOST=smtp.gmail.com
-```
-
-### SMTP_PORT
-
-**Description**: SMTP server port
-
-**Required**: No
-
-**Default**: `587`
-
-**Common ports**:
-- `587`: TLS (recommended)
-- `465`: SSL
-- `25`: Unencrypted (not recommended)
-
-**Example**:
-```bash
-SMTP_PORT=587
-```
-
-### SMTP_USER
-
-**Description**: SMTP username
-
-**Required**: For email features
-
-**Default**: None
-
-**Example**:
-```bash
-SMTP_USER=your-email@gmail.com
-```
-
-### SMTP_PASSWORD
-
-**Description**: SMTP password or app password
-
-**Required**: For email features
-
-**Default**: None
-
-**Example**:
-```bash
-SMTP_PASSWORD=your-app-password
-```
-
-**Gmail**: Use app-specific password
-
-### SMTP_FROM_EMAIL
-
-**Description**: Default sender email address
-
-**Required**: No
-
-**Default**: Same as SMTP_USER
-
-**Example**:
-```bash
-SMTP_FROM_EMAIL=noreply@example.com
-```
-
-### SMTP_FROM_NAME
-
-**Description**: Default sender name
-
-**Required**: No
-
-**Default**: `Clouisle`
-
-**Example**:
-```bash
-SMTP_FROM_NAME=Clouisle Platform
-```
-
-### SMTP_TLS
-
-**Description**: Enable TLS encryption
-
-**Required**: No
-
-**Default**: `true`
-
-**Values**: `true`, `false`
-
-**Example**:
-```bash
-SMTP_TLS=true
-```
-
-## LLM Provider Configuration
-
-### OpenAI
-
-#### OPENAI_API_KEY
-
-**Description**: OpenAI API key
-
-**Required**: For OpenAI models
-
-**Default**: None
-
-**Example**:
-```bash
-OPENAI_API_KEY=sk-your-api-key-here
-```
-
-**Get key**: https://platform.openai.com/api-keys
-
-#### OPENAI_API_BASE
-
-**Description**: OpenAI API base URL
-
-**Required**: No
-
-**Default**: `https://api.openai.com/v1`
-
-**Example**:
-```bash
-OPENAI_API_BASE=https://api.openai.com/v1
-```
-
-**Use case**: Custom proxy or Azure OpenAI
-
-#### OPENAI_ORGANIZATION
-
-**Description**: OpenAI organization ID
-
-**Required**: No
-
-**Default**: None
-
-**Example**:
-```bash
-OPENAI_ORGANIZATION=org-your-org-id
-```
-
-### Anthropic
-
-#### ANTHROPIC_API_KEY
-
-**Description**: Anthropic API key
-
-**Required**: For Claude models
-
-**Default**: None
-
-**Example**:
-```bash
-ANTHROPIC_API_KEY=sk-ant-your-api-key-here
-```
-
-### Azure OpenAI
-
-#### AZURE_OPENAI_API_KEY
-
-**Description**: Azure OpenAI API key
-
-**Required**: For Azure OpenAI
-
-**Default**: None
-
-**Example**:
-```bash
-AZURE_OPENAI_API_KEY=your-azure-key-here
-```
-
-#### AZURE_OPENAI_ENDPOINT
-
-**Description**: Azure OpenAI endpoint URL
-
-**Required**: For Azure OpenAI
-
-**Default**: None
-
-**Example**:
-```bash
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-```
-
-#### AZURE_OPENAI_API_VERSION
-
-**Description**: Azure OpenAI API version
-
-**Required**: No
-
-**Default**: `2023-05-15`
-
-**Example**:
-```bash
-AZURE_OPENAI_API_VERSION=2023-05-15
-```
-
-## Storage Configuration
-
-### UPLOAD_DIR
-
-**Description**: Directory for file uploads
-
-**Required**: No
-
-**Default**: `./uploads`
-
-**Example**:
-```bash
-UPLOAD_DIR=/var/lib/clouisle/uploads
-```
-
-### MAX_UPLOAD_SIZE
-
-**Description**: Maximum file upload size in bytes
-
-**Required**: No
-
-**Default**: `104857600` (100 MB)
-
-**Example**:
-```bash
-MAX_UPLOAD_SIZE=104857600
-```
-
-**Convert**:
-- 10 MB = 10485760
-- 50 MB = 52428800
-- 100 MB = 104857600
-
-### STORAGE_BACKEND
-
-**Description**: Storage backend type
+**Description**: How worker processes access uploaded files: `local` (api process only) or `remote` (worker reaches files through the authenticated API gateway).
 
 **Required**: No
 
 **Default**: `local`
 
-**Values**: `local`, `s3`, `azure`, `gcs`
+**Values**: `local`, `remote`
 
 **Example**:
 ```bash
-STORAGE_BACKEND=local
+UPLOAD_STORAGE_MODE=remote
 ```
 
-### S3 Configuration
+In the supplied Compose/K8s deployments the `worker` and `sandbox-worker` services set `remote` — they have **no** uploads volume mount.
 
-#### AWS_ACCESS_KEY_ID
+## Retrieval Configuration
 
-**Description**: AWS access key ID
+### RETRIEVAL_HYBRID_KILL_SWITCH
 
-**Required**: For S3 storage
-
-**Default**: None
-
-**Example**:
-```bash
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-```
-
-#### AWS_SECRET_ACCESS_KEY
-
-**Description**: AWS secret access key
-
-**Required**: For S3 storage
-
-**Default**: None
-
-**Example**:
-```bash
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-```
-
-#### AWS_S3_BUCKET
-
-**Description**: S3 bucket name
-
-**Required**: For S3 storage
-
-**Default**: None
-
-**Example**:
-```bash
-AWS_S3_BUCKET=clouisle-uploads
-```
-
-#### AWS_REGION
-
-**Description**: AWS region
-
-**Required**: No
-
-**Default**: `us-east-1`
-
-**Example**:
-```bash
-AWS_REGION=us-west-2
-```
-
-## Feature Flags
-
-### ENABLE_REGISTRATION
-
-**Description**: Allow user registration
-
-**Required**: No
-
-**Default**: `true`
-
-**Values**: `true`, `false`
-
-**Example**:
-```bash
-ENABLE_REGISTRATION=true
-```
-
-### ENABLE_SSO
-
-**Description**: Enable SSO authentication
+**Description**: Emergency environment override that forces vector-only retrieval (disables the hybrid lexical/vector path). Lexical search uses pg_search in PostgreSQL; Qdrant remains the vector backend.
 
 **Required**: No
 
@@ -770,27 +465,12 @@ ENABLE_REGISTRATION=true
 
 **Example**:
 ```bash
-ENABLE_SSO=true
+RETRIEVAL_HYBRID_KILL_SWITCH=false
 ```
 
-### ENABLE_EMAIL_VERIFICATION
+### RETRIEVAL_SHADOW_ENABLED
 
-**Description**: Require email verification
-
-**Required**: No
-
-**Default**: `true`
-
-**Values**: `true`, `false`
-
-**Example**:
-```bash
-ENABLE_EMAIL_VERIFICATION=true
-```
-
-### ENABLE_2FA
-
-**Description**: Enable two-factor authentication
+**Description**: Run hybrid retrieval in shadow mode for rollout-excluded teams; stores IDs, ranks, versions, and latency only.
 
 **Required**: No
 
@@ -800,23 +480,100 @@ ENABLE_EMAIL_VERIFICATION=true
 
 **Example**:
 ```bash
-ENABLE_2FA=true
+RETRIEVAL_SHADOW_ENABLED=false
 ```
 
-### ENABLE_AUDIT_LOG
+### RAG_QUERY_CONTEXTUALIZATION_ENABLED
 
-**Description**: Enable audit logging
+**Description**: Enable best-effort standalone query rewrite for conversational AUTO retrieval.
 
 **Required**: No
 
-**Default**: `true`
+**Default**: `false`
 
 **Values**: `true`, `false`
 
 **Example**:
 ```bash
-ENABLE_AUDIT_LOG=true
+RAG_QUERY_CONTEXTUALIZATION_ENABLED=false
 ```
+
+### RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS
+
+**Description**: Timeout (seconds) for the contextualization LLM call.
+
+**Required**: No
+
+**Default**: `2.0`
+
+**Example**:
+```bash
+RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS=2.0
+```
+
+## Streaming Timeouts
+
+Streaming behavior defaults (seconds), all configurable in `config.py`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `STREAM_GLOBAL_TIMEOUT` | `3600` | Global cap for a streaming response (60 minutes) |
+| `STREAM_GLOBAL_TIMEOUT_WITH_TOOLS` | `5400` | Global cap when the agent has a tool runtime (90 minutes) |
+| `STREAM_HEARTBEAT_INTERVAL` | `15` | Heartbeat interval sent to the client |
+| `STREAM_IDLE_TIMEOUT` | `180` | Max seconds between model stream chunks |
+| `STREAM_HTTP_CONNECT_TIMEOUT` | `10` | LLM HTTP client connect timeout |
+| `STREAM_HTTP_READ_TIMEOUT` | `200` | LLM HTTP client read timeout |
+| `STREAM_HTTP_REASONING_READ_TIMEOUT` | `300` | LLM HTTP read timeout for reasoning models |
+| `STREAM_HTTP_WRITE_TIMEOUT` | `10` | LLM HTTP client write timeout |
+| `STREAM_TOOL_TIMEOUT_HTTP` | `30` | Tool execution timeout for HTTP tools |
+| `STREAM_TOOL_TIMEOUT_CODE` | `60` | Tool execution timeout for code tools |
+| `STREAM_TOOL_TIMEOUT_MCP` | `60` | Tool execution timeout for MCP tools |
+| `STREAM_TOOL_TIMEOUT_DOWNLOAD` | `60` | Tool execution timeout for downloads |
+
+## Celery / Background Tasks
+
+### CELERY_VISIBILITY_TIMEOUT_SECONDS
+
+**Description**: Celery broker visibility timeout (how long an unacked task stays reserved).
+
+**Required**: No
+
+**Default**: `3600`
+
+**Example**:
+```bash
+CELERY_VISIBILITY_TIMEOUT_SECONDS=3600
+```
+
+### KB_PROCESSING_RECOVERY_AFTER_SECONDS
+
+**Description**: Delay before knowledge-base processing tasks that died mid-flight are recovered and requeued.
+
+**Required**: No
+
+**Default**: `600`
+
+**Example**:
+```bash
+KB_PROCESSING_RECOVERY_AFTER_SECONDS=600
+```
+
+## External API Keys
+
+### TAVILY_API_KEY
+
+**Description**: Tavily web search API key (used by the built-in `web_search` tool). Only used as a fallback when no admin-managed search credentials exist.
+
+**Required**: No
+
+**Default**: None
+
+**Example**:
+```bash
+TAVILY_API_KEY=tvly-xxxxxxxx
+```
+
+> **Note**: LLM provider keys (OpenAI-compatible, Anthropic, etc.) are **not** environment variables — they are configured per provider in database models and managed through the admin UI.
 
 ## Sandbox Runtime
 
@@ -839,63 +596,35 @@ SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
 SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
 ```
 
-When enabled, Bubblewrap must be installed and usable. The supplied worker remains non-root, disables privilege escalation, and drops all capabilities. Rootless Bubblewrap needs namespace and mount syscalls, so the supplied Docker Compose and Helm configurations use an unconfined seccomp profile for this worker only. A cluster that prohibits `Unconfined` must provide an equivalent Localhost seccomp profile.
+When enabled, Bubblewrap must be installed and usable. Rootless Bubblewrap needs namespace and mount syscalls, so the supplied Docker Compose and Helm configurations use an unconfined seccomp profile for this worker only. A cluster that prohibits `Unconfined` must provide an equivalent Localhost seccomp profile. The supplied deployments run the worker as root with `CAP_SYS_ADMIN` added to the runtime default cap set so it can create user/mount namespaces even on hosts that gate non-privileged user namespaces; privilege escalation stays disabled. Custom deployments that keep the worker non-root need the host kernel to permit unprivileged user namespaces — on restricted hosts (Ubuntu 23.10+ with `kernel.apparmor_restrict_unprivileged_userns=1`, Debian with `kernel.unprivileged_userns_clone=0`) every sandbox job fails with `bwrap: No permissions to create new namespace` (see [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements)).
 
-## Celery Configuration
+### Sandbox Artifact Upload
 
-### CELERY_BROKER_URL
+| Variable | Default | Description |
+|---|---|---|
+| `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | *(empty)* | Internal API base URL used by sandbox workers to upload artifacts (Compose sets `http://api:8000`). Keep it internal, never `localhost` inside containers. |
+| `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | *(empty)* | Optional API-key authentication for sandbox artifact uploads |
+| `SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB` | `10` | Maximum single artifact file size in MB |
+| `SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB` | `10` | Maximum total artifact size per job in MB |
+| `SANDBOX_SESSION_CLEANUP_BATCH_SIZE` | `100` | Sandbox session cleanup batch size |
+| `SANDBOX_DEFAULT_PYTHON_BINARIES` | `/usr/local/bin/python3`, `/usr/bin/python3`, `/bin/python3` | Candidate Python interpreters for sandbox execution (JSON list) |
 
-**Description**: Celery broker URL (usually Redis)
+## Frontend Build & Runtime
 
-**Required**: For background tasks
+The frontend image is built with `bun run build`; these values are baked in as build-time ARGs (see `deploy/dockerfiles/frontend.Dockerfile`):
 
-**Default**: Same as REDIS_URL
+| Variable | Default | Description |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `/api/v1` | Browser-visible API base path used by the Next.js client |
+| `NEXT_PUBLIC_APP_VERSION` | `0.0.0-dev` | Version string shown in the UI |
+| `NEXT_PUBLIC_BUILD_DATE` | `unknown` | Build date string shown in the UI |
 
-**Example**:
-```bash
-CELERY_BROKER_URL=redis://:password@localhost:6379/0
-```
+Runtime environment variables for the frontend container:
 
-### CELERY_RESULT_BACKEND
-
-**Description**: Celery result backend URL
-
-**Required**: No
-
-**Default**: Same as CELERY_BROKER_URL
-
-**Example**:
-```bash
-CELERY_RESULT_BACKEND=redis://:password@localhost:6379/0
-```
-
-## Monitoring and Logging
-
-### SENTRY_DSN
-
-**Description**: Sentry error tracking DSN
-
-**Required**: No
-
-**Default**: None
-
-**Example**:
-```bash
-SENTRY_DSN=https://your-key@sentry.io/your-project
-```
-
-### SENTRY_ENVIRONMENT
-
-**Description**: Sentry environment name
-
-**Required**: No
-
-**Default**: `production`
-
-**Example**:
-```bash
-SENTRY_ENVIRONMENT=production
-```
+| Variable | Default | Description |
+|---|---|---|
+| `BACKEND_INTERNAL_URL` | `http://localhost:8000` | Backend URL the Next.js server uses for SSR and its `/api/*` rewrites (Compose sets `http://api:8000`) |
+| `DEV_ALLOWED_ORIGINS` | *(empty)* | Comma-separated extra origins allowed for dev-server LAN access (`allowedDevOrigins`); production builds ignore it |
 
 ## Best Practices
 
@@ -948,52 +677,39 @@ SENTRY_ENVIRONMENT=production
 
 ## Validation
 
-### Check Configuration
+There is no `app.scripts.check_config` command — `backend/app/scripts/` does not exist. Configuration is validated when the backend starts:
 
-**Validate environment variables:**
-
-```bash
-# Backend
-cd backend
-python -m app.scripts.check_config
-
-# Expected output
-✓ All required environment variables are set
-✓ Database connection successful
-✓ Redis connection successful
-✓ Qdrant connection successful
-```
+- Pydantic `Settings` fails fast on type errors (e.g. an invalid `BACKEND_CORS_ORIGINS` JSON).
+- `docker compose up` fails fast when required values are missing (e.g. `INTERNAL_API_TOKEN`, `POSTGRES_PASSWORD` in the supplied Compose file).
+- Runtime config (SMTP, SSO, upload limits, session timeout) is stored in and validated through the database `SiteSetting` model.
 
 ### Common Issues
 
 **Missing required variables:**
 ```
-Error: POSTGRES_PASSWORD is not set
+Error: INTERNAL_API_TOKEN is required
 ```
-
-**Solution**: Set the variable in .env
+**Solution**: Generate a token (`openssl rand -hex 32`) and set it in `.env` (or as a Kubernetes Secret).
 
 **Invalid format:**
 ```
 Error: POSTGRES_PORT must be an integer
 ```
-
 **Solution**: Check variable format
 
 **Connection failed:**
 ```
 Error: Cannot connect to database
 ```
-
-**Solution**: Verify host, port, credentials
+**Solution**: Verify host, port, credentials; in Compose these are the service names `db`, `redis`, `qdrant`.
 
 ## Related Documentation
 
 - [Docker Deployment](./docker-compose.md) - Docker setup
 - [Kubernetes Deployment](./kubernetes.md) - K8s setup
-- [Security Best Practices](../best-practices/security.md) - Security guide
+- [Deployment Guide](./DEPLOYMENT.md) - Full deployment guide
 - [Troubleshooting](./troubleshooting.md) - Common issues
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-08-14

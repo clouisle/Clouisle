@@ -9,8 +9,7 @@ Team management allows administrators to:
 - **Create teams**: Set up new teams
 - **Configure teams**: Update team settings
 - **Manage members**: Add, remove, and assign roles
-- **Monitor activity**: Track team usage and resources
-- **Control access**: Set team permissions and policies
+- **Transfer ownership**: Hand over team ownership
 - **Delete teams**: Remove teams when needed
 
 ## Accessing Team Management
@@ -26,7 +25,7 @@ Team management allows administrators to:
 
 **Or:**
 
-- Navigate directly to `/admin/teams`
+- Navigate directly to `/teams`
 
 ### Team List
 
@@ -68,12 +67,10 @@ Team management allows administrators to:
 1. Click **"+ Create Team"** button
 2. Fill in team information:
    - **Name**: Team name
-   - **Description**: Team description
-   - **Owner**: Assign team owner
-   - **Members**: Add initial members (optional)
-   - **Settings**: Configure team settings
+   - **Description**: Team description (optional)
+   - **Avatar URL**: Team avatar (optional)
 3. Click **"Create Team"**
-4. Team is created
+4. Team is created; you become its owner
 
 **Create team form:**
 ```
@@ -88,43 +85,15 @@ Team management allows administrators to:
 │ [Marketing and content creation team_]  │
 │ [_________________________________]     │
 │                                         │
-│ Owner: *                                │
-│ [Search users...________] [Select]      │
-│ Selected: Alice Johnson                 │
-│                                         │
-│ Initial Members: (optional)             │
-│ [Search users...________] [+ Add]       │
-│ • Bob Smith (Admin)      [Remove]       │
-│ • Carol Davis (Member)   [Remove]       │
-│                                         │
-│ Settings:                               │
-│ ☑ Allow members to invite others        │
-│ ☑ Allow public join requests            │
-│ ☐ Require admin approval for joins      │
-│                                         │
-│ Resource Limits:                        │
-│ Max Agents: [100_____]                  │
-│ Max Workflows: [50______]               │
-│ Max Storage: [10 GB___]                 │
+│ Avatar URL: (optional)                  │
+│ [https://example.com/team.png______]    │
 │                                         │
 │ [Cancel]  [Create Team]                 │
 │                                         │
 └─────────────────────────────────────────┘
 ```
 
-### Team Settings
-
-**Configurable settings:**
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Allow member invites** | Members can invite others | Enabled |
-| **Public join requests** | Allow join requests | Disabled |
-| **Require approval** | Admin approval for joins | Enabled |
-| **Max agents** | Maximum number of agents | 100 |
-| **Max workflows** | Maximum number of workflows | 50 |
-| **Max storage** | Maximum storage (GB) | 10 |
-| **Enable API keys** | Allow team API keys | Enabled |
+> **Note:** Not implemented / Roadmap: assigning an owner at creation, adding initial members, invite/join settings, and resource limits are not part of team creation. Team members are added after creation via **Add Member**; ownership is transferred via **Transfer Ownership**.
 
 ## Viewing Team Details
 
@@ -146,31 +115,16 @@ Team management allows administrators to:
 │    Owner: Alice Johnson                 │
 │    Admins: 2 • Members: 8 • Viewers: 1  │
 │                                         │
-│ Resources:                              │
-│ • Agents: 23 / 100                     │
-│ • Workflows: 15 / 50                   │
-│ • Knowledge Bases: 8                   │
-│ • Storage: 2.3 GB / 10 GB              │
-│                                         │
-│ Activity (Last 30 Days):                │
-│ • Total Conversations: 1,234           │
-│ • Workflow Executions: 456             │
-│ • Documents Uploaded: 89               │
-│ • API Calls: 12,345                    │
-│                                         │
-│ Settings:                               │
-│ • Member Invites: ✅ Enabled            │
-│ • Join Requests: ❌ Disabled            │
-│ • API Keys: ✅ Enabled                  │
-│                                         │
 │ Created: 2026-01-15 10:00:00           │
 │ Updated: 2026-02-11 15:30:00           │
 │                                         │
 │ [View Members] [View Resources]         │
-│ [View Activity] [Delete Team]           │
+│ [Delete Team]                           │
 │                                         │
 └─────────────────────────────────────────┘
 ```
+
+> **Note:** Not implemented / Roadmap: resource quotas (agents/workflows/storage limits), usage activity (conversations, executions, API calls), and team settings (member invites, join requests, API keys) are not displayed or configurable. Teams have no limit or invite settings.
 
 ### Team Members
 
@@ -381,8 +335,7 @@ Team management allows administrators to:
 3. Update fields:
    - Name
    - Description
-   - Settings
-   - Resource limits
+   - Avatar URL
 4. Click **"Save Changes"**
 
 **Edit team form:**
@@ -398,15 +351,8 @@ Team management allows administrators to:
 │ [Marketing and content creation team_]  │
 │ [_________________________________]     │
 │                                         │
-│ Settings:                               │
-│ ☑ Allow members to invite others        │
-│ ☑ Allow public join requests            │
-│ ☐ Require admin approval for joins      │
-│                                         │
-│ Resource Limits:                        │
-│ Max Agents: [100_____]                  │
-│ Max Workflows: [50______]               │
-│ Max Storage: [10 GB___]                 │
+│ Avatar URL: (optional)                  │
+│ [https://example.com/team.png______]    │
 │                                         │
 │ [Cancel]  [Save Changes]                │
 │                                         │
@@ -417,69 +363,11 @@ Team management allows administrators to:
 
 ### Team Activity
 
-**View team activity:**
-
-1. Open team details
-2. Click **"View Activity"** tab
-3. See recent team actions
-
-**Activity log:**
-```
-┌─────────────────────────────────────────┐
-│ Team Activity - Marketing Team          │
-├─────────────────────────────────────────┤
-│                                         │
-│ Today                                   │
-│ ─────────────────────────────────────  │
-│ 14:30 • Alice created agent            │
-│ 12:15 • Bob ran workflow               │
-│ 10:00 • Carol uploaded document        │
-│                                         │
-│ Yesterday                               │
-│ ─────────────────────────────────────  │
-│ 16:45 • David joined team              │
-│ 14:20 • Alice updated agent            │
-│ 09:30 • Bob created workflow           │
-│                                         │
-│ [Load More Activity] [Export]           │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap. There is no per-team activity log view or export.
 
 ### Team Analytics
 
-**View team analytics:**
-
-1. Open team details
-2. Click **"Analytics"** tab
-3. View usage statistics
-
-**Analytics dashboard:**
-```
-┌─────────────────────────────────────────┐
-│ Team Analytics - Last 30 Days           │
-├─────────────────────────────────────────┤
-│                                         │
-│ Usage Summary:                          │
-│ • Total Conversations: 1,234           │
-│ • Workflow Executions: 456             │
-│ • Documents Uploaded: 89               │
-│ • API Calls: 12,345                    │
-│                                         │
-│ Resource Usage:                         │
-│ • Agents: 23 / 100 (23%)               │
-│ • Workflows: 15 / 50 (30%)             │
-│ • Storage: 2.3 GB / 10 GB (23%)        │
-│                                         │
-│ Top Contributors:                       │
-│ 1. Alice Johnson - 456 actions         │
-│ 2. Bob Smith - 234 actions             │
-│ 3. Carol Davis - 123 actions           │
-│                                         │
-│ [View Detailed Report] [Export]         │
-│                                         │
-└─────────────────────────────────────────┘
-```
+> **Note:** Not implemented / Roadmap. There is no team analytics dashboard (usage summaries, resource usage, top contributors, detailed reports). Team-level usage is not tracked per team in the UI.
 
 ## Deleting Teams
 
@@ -526,15 +414,12 @@ Team management allows administrators to:
 
 ### Bulk Team Actions
 
-**Perform actions on multiple teams:**
+**Perform bulk delete:**
 
 1. Select teams (checkboxes)
 2. Click **"Bulk Actions"** dropdown
-3. Choose action:
-   - Export data
-   - Update settings
-   - Send announcement
-4. Confirm action
+3. Choose **Delete**
+4. Confirm deletion (each team is deleted via `DELETE /api/v1/admin/teams/{team_id}`)
 
 **Bulk actions toolbar:**
 ```
@@ -542,12 +427,11 @@ Team management allows administrators to:
 │ 3 teams selected                        │
 │ [Bulk Actions ▼] [Clear Selection]     │
 │                                         │
-│ • Export Team Data                      │
-│ • Update Settings                       │
-│ • Send Announcement                     │
-│ • Generate Report                       │
+│ • Delete                                │
 └─────────────────────────────────────────┘
 ```
+
+> **Note:** Not implemented / Roadmap: bulk export, bulk settings updates, announcements, and reports are not available. Bulk delete is the only bulk action.
 
 ## Best Practices
 
@@ -612,10 +496,9 @@ Team management allows administrators to:
 
 **Solutions:**
 1. Check team name is unique
-2. Verify owner is valid user
-3. Check team limit not reached
-4. Review error message
-5. Contact support
+2. Verify you have `admin:team:create` permission
+3. Review error message
+4. Contact support
 
 ### Cannot Add Member
 
@@ -624,9 +507,8 @@ Team management allows administrators to:
 **Solutions:**
 1. Check user exists
 2. Verify user not already member
-3. Check team member limit
-4. Verify permissions
-5. Try different role
+3. Verify permissions
+4. Try different role
 
 ### Cannot Delete Team
 
@@ -642,8 +524,8 @@ Team management allows administrators to:
 
 - [User Management](../users/user-management.md) - Managing users
 - [Team Roles](../../user-guide/teams/team-roles.md) - Understanding roles
-- [Security Settings](../settings/security-settings.md) - Security configuration
-- [Audit Logs](../audit-logs/viewing-logs.md) - Viewing audit logs
+- [System Settings](../settings/system-settings.md) - System configuration
+- [Audit Logs](../audit-logs/audit-log-management.md) - Viewing audit logs
 
 ## Getting Help
 

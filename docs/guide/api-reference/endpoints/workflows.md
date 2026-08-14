@@ -8,9 +8,9 @@ The Workflows API allows you to:
 
 - **List workflows**: Get all available workflows
 - **Get workflow details**: Retrieve workflow information
-- **Create workflows**: Create new workflows (admin only)
-- **Update workflows**: Modify workflow configuration (admin only)
-- **Delete workflows**: Remove workflows (admin only)
+- **Create workflows**: Create new workflows
+- **Update workflows**: Modify workflow configuration
+- **Delete workflows**: Remove workflows
 - **Execute workflows**: Run workflows with inputs
 - **Get execution status**: Check workflow run status
 - **List executions**: View workflow execution history
@@ -46,7 +46,10 @@ GET /api/v1/workflows
 | `page_size` | integer | No | 20 | Items per page (max: 100) |
 | `team_id` | string | No | - | Filter by team ID |
 | `status` | string | No | - | Filter by status: `draft`, `published` |
-| `search` | string | No | - | Search by name or description |
+| `trigger_type` | string | No | - | Filter by trigger type: `manual`, `webhook` |
+| `visibility` | string | No | - | Filter by visibility: `private`, `team`, `public` |
+| `keyword` | string | No | - | Search by name or description |
+| `own_only` | boolean | No | false | Only show workflows created by the current user |
 
 ### Request Example
 
@@ -68,26 +71,22 @@ curl -X GET "https://your-domain.com/api/v1/workflows?page=1&page_size=20" \
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "Document Summarizer",
         "description": "Summarizes documents automatically",
+        "icon": "📄",
         "status": "published",
-        "team_id": "team-123",
-        "team_name": "Content Team",
-        "version": 2,
-        "nodes": 6,
-        "triggers": ["manual", "webhook"],
+        "visibility": "team",
+        "trigger_type": "manual",
+        "run_count": 156,
+        "success_count": 147,
+        "fail_count": 9,
+        "created_by_id": "user-001",
+        "created_by_name": "alice",
         "created_at": "2026-02-11T10:00:00Z",
-        "updated_at": "2026-02-11T15:30:00Z",
-        "created_by": "user-001",
-        "stats": {
-          "total_runs": 156,
-          "success_rate": 0.942,
-          "avg_duration": 83
-        }
+        "updated_at": "2026-02-11T15:30:00Z"
       }
     ],
     "total": 42,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 3
+    "page_size": 20
   },
   "msg": "success"
 }
@@ -125,12 +124,10 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
   "code": 0,
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
+    "team_id": "team-123",
     "name": "Document Summarizer",
     "description": "Summarizes documents automatically",
-    "status": "published",
-    "team_id": "team-123",
-    "team_name": "Content Team",
-    "version": 2,
+    "icon": "📄",
     "definition": {
       "nodes": [
         {
@@ -156,32 +153,23 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
         }
       ]
     },
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "document_url": {
-          "type": "string",
-          "description": "URL of document to summarize"
-        },
-        "summary_length": {
-          "type": "string",
-          "enum": ["short", "medium", "long"],
-          "default": "medium"
-        }
-      },
-      "required": ["document_url"]
+    "variables": [],
+    "status": "published",
+    "visibility": "team",
+    "version": 2,
+    "trigger_type": "manual",
+    "trigger_config": {},
+    "webhook_token": "wh_abc123...",
+    "embed_config": {},
+    "run_page_config": {
+      "presentation_mode": "simple"
     },
-    "triggers": ["manual", "webhook"],
-    "webhook_url": "https://your-domain.com/api/v1/workflows/550e8400.../webhook",
+    "run_count": 156,
+    "success_count": 147,
+    "fail_count": 9,
+    "created_by_id": "user-001",
     "created_at": "2026-02-11T10:00:00Z",
-    "updated_at": "2026-02-11T15:30:00Z",
-    "created_by": "user-001",
-    "stats": {
-      "total_runs": 156,
-      "success_rate": 0.942,
-      "avg_duration": 83,
-      "last_run": "2026-02-11T14:30:00Z"
-    }
+    "updated_at": "2026-02-11T15:30:00Z"
   },
   "msg": "success"
 }
@@ -201,59 +189,25 @@ POST /api/v1/workflows
 
 ```json
 {
+  "team_id": "team-123",
   "name": "Document Summarizer",
   "description": "Summarizes documents automatically",
-  "team_id": "team-123",
-  "definition": {
-    "nodes": [
-      {
-        "id": "node-1",
-        "type": "start",
-        "position": {"x": 100, "y": 100}
-      },
-      {
-        "id": "node-2",
-        "type": "http_request",
-        "config": {
-          "url": "{{input.document_url}}",
-          "method": "GET"
-        },
-        "position": {"x": 300, "y": 100}
-      },
-      {
-        "id": "node-3",
-        "type": "llm",
-        "config": {
-          "model_id": "model-456",
-          "prompt": "Summarize this document: {{node-2.output.text}}"
-        },
-        "position": {"x": 500, "y": 100}
-      },
-      {
-        "id": "node-4",
-        "type": "end",
-        "position": {"x": 700, "y": 100}
-      }
-    ],
-    "edges": [
-      {"source": "node-1", "target": "node-2"},
-      {"source": "node-2", "target": "node-3"},
-      {"source": "node-3", "target": "node-4"}
-    ]
-  },
-  "input_schema": {
-    "type": "object",
-    "properties": {
-      "document_url": {
-        "type": "string",
-        "description": "URL of document to summarize"
-      }
-    },
-    "required": ["document_url"]
-  },
-  "triggers": ["manual", "webhook"]
+  "icon": "📄",
+  "visibility": "private"
 }
 ```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `team_id` | string | Yes | Team UUID |
+| `name` | string | Yes | Workflow name (max 100 chars) |
+| `description` | string | No | Workflow description |
+| `icon` | string | No | Icon |
+| `visibility` | string | No | `private`, `team`, or `public` (default: `private`) |
+
+**Note:** The workflow definition and variables are added later via `PUT /api/v1/workflows/{workflow_id}` and the versions endpoints.
 
 ### Request Example
 
@@ -262,11 +216,10 @@ curl -X POST "https://your-domain.com/api/v1/workflows" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "team_id": "team-123",
     "name": "Document Summarizer",
     "description": "Summarizes documents automatically",
-    "team_id": "team-123",
-    "definition": {...},
-    "input_schema": {...}
+    "visibility": "private"
   }'
 ```
 
@@ -279,10 +232,28 @@ curl -X POST "https://your-domain.com/api/v1/workflows" \
   "code": 0,
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
+    "team_id": "team-123",
     "name": "Document Summarizer",
+    "description": "Summarizes documents automatically",
+    "icon": null,
+    "definition": {},
+    "variables": [],
     "status": "draft",
+    "visibility": "private",
     "version": 1,
-    "created_at": "2026-02-11T10:00:00Z"
+    "trigger_type": "manual",
+    "trigger_config": {},
+    "webhook_token": null,
+    "embed_config": {},
+    "run_page_config": {
+      "presentation_mode": "simple"
+    },
+    "run_count": 0,
+    "success_count": 0,
+    "fail_count": 0,
+    "created_by_id": "user-001",
+    "created_at": "2026-02-11T10:00:00Z",
+    "updated_at": "2026-02-11T10:00:00Z"
   },
   "msg": "Workflow created successfully"
 }
@@ -295,7 +266,7 @@ Update an existing workflow.
 ### Endpoint
 
 ```
-PATCH /api/v1/workflows/{workflow_id}
+PUT /api/v1/workflows/{workflow_id}
 ```
 
 ### Path Parameters
@@ -312,15 +283,23 @@ All fields are optional. Only include fields you want to update.
 {
   "name": "Updated Workflow Name",
   "description": "Updated description",
-  "definition": {...},
-  "input_schema": {...}
+  "icon": "📄",
+  "definition": {},
+  "variables": [],
+  "trigger_type": "manual",
+  "trigger_config": {},
+  "visibility": "team",
+  "embed_config": {},
+  "run_page_config": {
+    "presentation_mode": "simple"
+  }
 }
 ```
 
 ### Request Example
 
 ```bash
-curl -X PATCH "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000" \
+curl -X PUT "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -339,7 +318,11 @@ curl -X PATCH "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "Updated Workflow Name",
-    "version": 3,
+    "description": "Updated description",
+    "status": "draft",
+    "visibility": "private",
+    "version": 2,
+    "trigger_type": "manual",
     "updated_at": "2026-02-11T16:00:00Z"
   },
   "msg": "Workflow updated successfully"
@@ -404,9 +387,7 @@ POST /api/v1/workflows/{workflow_id}/run
   "inputs": {
     "document_url": "https://example.com/document.pdf",
     "summary_length": "short"
-  },
-  "async": false,
-  "webhook_url": "https://your-app.com/webhook"
+  }
 }
 ```
 
@@ -414,9 +395,7 @@ POST /api/v1/workflows/{workflow_id}/run
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `inputs` | object | Yes | Input variables for workflow |
-| `async` | boolean | No | Run asynchronously (default: false) |
-| `webhook_url` | string | No | Callback URL for async execution |
+| `inputs` | object | No | Input variables for the workflow (default: `{}`) |
 
 ### Request Example
 
@@ -432,33 +411,9 @@ curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-4
   }'
 ```
 
-### Response (Synchronous)
+### Response
 
-**Success (200 OK):**
-
-```json
-{
-  "code": 0,
-  "data": {
-    "run_id": "run-789",
-    "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "completed",
-    "started_at": "2026-02-11T14:30:00Z",
-    "completed_at": "2026-02-11T14:31:23Z",
-    "duration": 83,
-    "output": {
-      "summary": "The document discusses...",
-      "word_count": 1234,
-      "key_points": ["Point 1", "Point 2", "Point 3"]
-    },
-    "nodes_executed": 6,
-    "nodes_total": 6
-  },
-  "msg": "Workflow executed successfully"
-}
-```
-
-### Response (Asynchronous)
+Execution is always asynchronous: the run is submitted to Celery and the endpoint returns immediately with the run ID and stream URL. The workflow must be published (`status: published`) before it can be run.
 
 **Success (202 Accepted):**
 
@@ -467,36 +422,35 @@ curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-4
   "code": 0,
   "data": {
     "run_id": "run-789",
-    "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "running",
-    "started_at": "2026-02-11T14:30:00Z",
-    "status_url": "/api/v1/workflows/550e8400.../runs/run-789"
+    "stream_url": "/api/v1/workflows/runs/run-789/stream"
   },
   "msg": "Workflow execution started"
 }
 ```
 
+Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter) and `GET /api/v1/workflows/runs/{run_id}`.
+```
+
 ## Get Execution Status
 
-Check the status of a workflow execution.
+Check the status of a workflow run.
 
 ### Endpoint
 
 ```
-GET /api/v1/workflows/{workflow_id}/runs/{run_id}
+GET /api/v1/workflows/runs/{run_id}
 ```
 
 ### Path Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `workflow_id` | string | Yes | Workflow UUID |
 | `run_id` | string | Yes | Run UUID |
 
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/runs/run-789" \
+curl -X GET "https://your-domain.com/api/v1/workflows/runs/run-789" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -508,49 +462,43 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
 {
   "code": 0,
   "data": {
-    "run_id": "run-789",
+    "id": "run-789",
     "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "completed",
-    "started_at": "2026-02-11T14:30:00Z",
-    "completed_at": "2026-02-11T14:31:23Z",
-    "duration": 83,
-    "triggered_by": "user-001",
     "trigger_type": "manual",
+    "triggered_by_id": "user-001",
+    "is_debug": false,
+    "status": "success",
     "inputs": {
       "document_url": "https://example.com/document.pdf",
       "summary_length": "short"
     },
-    "output": {
+    "outputs": {
       "summary": "The document discusses...",
       "word_count": 1234,
       "key_points": ["Point 1", "Point 2", "Point 3"]
     },
-    "nodes_executed": 6,
-    "nodes_total": 6,
-    "execution_log": [
-      {
-        "node_id": "node-1",
-        "node_type": "start",
-        "status": "completed",
-        "started_at": "2026-02-11T14:30:00Z",
-        "completed_at": "2026-02-11T14:30:01Z",
-        "duration": 1
-      },
-      {
-        "node_id": "node-2",
-        "node_type": "http_request",
-        "status": "completed",
-        "started_at": "2026-02-11T14:30:01Z",
-        "completed_at": "2026-02-11T14:30:46Z",
-        "duration": 45,
-        "output": {
-          "text": "Document content..."
-        }
-      }
-    ]
+    "parent_run_id": null,
+    "root_run_id": "run-789",
+    "depth": 0,
+    "created_at": "2026-02-11T14:30:00Z",
+    "started_at": "2026-02-11T14:30:00Z",
+    "finished_at": "2026-02-11T14:31:23Z",
+    "total_nodes": 6,
+    "executed_nodes": 6,
+    "failed_nodes": 0,
+    "skipped_nodes": 0,
+    "total_duration_ms": 83000,
+    "total_token_usage": {},
+    "error_message": null,
+    "error_node_id": null
   },
   "msg": "success"
 }
+```
+
+**Note:** A user's own published-workflow runs can also be retrieved via `GET /api/v1/workflows/{workflow_id}/runs/mine/{run_id}` (requires `workflow:run`). Node-level execution detail is available at `GET /api/v1/workflows/runs/{run_id}/nodes`.
+
+**Run status values:** `pending`, `running`, `success`, `failed`, `cancelled`, `timeout`.
 ```
 
 ## List Executions
@@ -575,14 +523,14 @@ GET /api/v1/workflows/{workflow_id}/runs
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
 | `page_size` | integer | No | 20 | Items per page (max: 100) |
-| `status` | string | No | - | Filter by status: `running`, `completed`, `failed` |
-| `start_date` | string | No | - | Filter by start date (ISO 8601) |
-| `end_date` | string | No | - | Filter by end date (ISO 8601) |
+| `status` | string | No | - | Filter by status: `pending`, `running`, `success`, `failed`, `cancelled`, `timeout` |
+| `is_debug` | boolean | No | - | Filter by debug runs |
+| `search` | string | No | - | Search runs |
 
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/runs?page=1&page_size=20&status=completed" \
+curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/runs?page=1&page_size=20&status=success" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -596,57 +544,61 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
   "data": {
     "items": [
       {
-        "run_id": "run-789",
-        "status": "completed",
-        "started_at": "2026-02-11T14:30:00Z",
-        "completed_at": "2026-02-11T14:31:23Z",
-        "duration": 83,
-        "triggered_by": "user-001",
+        "id": "run-789",
+        "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
         "trigger_type": "manual",
-        "success": true
-      },
-      {
-        "run_id": "run-788",
-        "status": "failed",
-        "started_at": "2026-02-11T10:15:00Z",
-        "completed_at": "2026-02-11T10:15:45Z",
-        "duration": 45,
-        "triggered_by": "webhook",
-        "trigger_type": "webhook",
-        "success": false,
-        "error": "API call timeout"
+        "triggered_by_id": "user-001",
+        "is_debug": false,
+        "status": "success",
+        "inputs": {},
+        "outputs": {},
+        "parent_run_id": null,
+        "root_run_id": "run-789",
+        "depth": 0,
+        "created_at": "2026-02-11T14:30:00Z",
+        "started_at": "2026-02-11T14:30:00Z",
+        "finished_at": "2026-02-11T14:31:23Z",
+        "total_nodes": 6,
+        "executed_nodes": 6,
+        "failed_nodes": 0,
+        "skipped_nodes": 0,
+        "total_duration_ms": 83000,
+        "total_token_usage": {},
+        "error_message": null,
+        "error_node_id": null,
+        "execution_duration_ms": 83000,
+        "config_snapshot": null,
+        "model_used": null
       }
     ],
     "total": 156,
     "page": 1,
-    "page_size": 20,
-    "total_pages": 8
+    "page_size": 20
   },
   "msg": "success"
 }
 ```
 
-## Stop Execution
+## Cancel Execution
 
-Stop a running workflow execution.
+Cancel a running workflow execution.
 
 ### Endpoint
 
 ```
-POST /api/v1/workflows/{workflow_id}/runs/{run_id}/stop
+POST /api/v1/workflows/runs/{run_id}/cancel
 ```
 
 ### Path Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `workflow_id` | string | Yes | Workflow UUID |
 | `run_id` | string | Yes | Run UUID |
 
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/runs/run-789/stop" \
+curl -X POST "https://your-domain.com/api/v1/workflows/runs/run-789/cancel" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -659,40 +611,39 @@ curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-4
   "code": 0,
   "data": {
     "run_id": "run-789",
-    "status": "stopped",
-    "stopped_at": "2026-02-11T14:30:45Z"
+    "status": "cancelled"
   },
-  "msg": "Workflow execution stopped"
+  "msg": "Workflow execution cancelled"
 }
 ```
 
 ## Webhook Trigger
 
-Trigger a workflow via webhook.
+Trigger a workflow via webhook. The webhook token is in the URL path, and the request must additionally authenticate with an API key via the `Authorization` header (`Bearer clou_...`). The workflow must be published and its trigger type must be `webhook`. The API key must be allowed to access the workflow.
 
 ### Endpoint
 
 ```
-POST /api/v1/workflows/{workflow_id}/webhook
+POST /api/v1/workflows/webhook/{webhook_token}
 ```
 
 ### Path Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `workflow_id` | string | Yes | Workflow UUID |
+| `webhook_token` | string | Yes | The workflow's webhook token |
 
 ### Authentication
 
-Use webhook token in header:
-
 ```
-Authorization: Bearer {webhook_token}
+Authorization: Bearer {api_key}
 ```
 
-Or use API key with `workflow:run` scope.
+where `{api_key}` is an API key starting with `clou_`. The workflow's webhook token itself is not an authentication credential; the API key authenticates the caller, and the token selects the workflow.
 
 ### Request Body
+
+Raw JSON object of workflow inputs:
 
 ```json
 {
@@ -704,8 +655,8 @@ Or use API key with `workflow:run` scope.
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/webhook" \
-  -H "Authorization: Bearer WEBHOOK_TOKEN" \
+curl -X POST "https://your-domain.com/api/v1/workflows/webhook/wh_abc123" \
+  -H "Authorization: Bearer clou_xxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
     "document_url": "https://example.com/document.pdf",
@@ -722,10 +673,14 @@ curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-4
   "code": 0,
   "data": {
     "run_id": "run-789",
-    "status": "running"
+    "status": "pending",
+    "stream_url": "/api/v1/workflows/runs/run-789/stream"
   },
   "msg": "Workflow execution started"
 }
+```
+
+**Note:** A new webhook token can be generated with `POST /api/v1/workflows/{workflow_id}/regenerate-webhook-token`.
 ```
 
 ## Get Workflow Statistics
@@ -744,17 +699,10 @@ GET /api/v1/workflows/{workflow_id}/stats
 |-----------|------|----------|-------------|
 | `workflow_id` | string | Yes | Workflow UUID |
 
-### Query Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `start_date` | string | No | 30 days ago | Start date (ISO 8601) |
-| `end_date` | string | No | Now | End date (ISO 8601) |
-
 ### Request Example
 
 ```bash
-curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/stats?start_date=2026-01-01T00:00:00Z" \
+curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-446655440000/stats" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -767,46 +715,30 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
   "code": 0,
   "data": {
     "total_runs": 156,
-    "successful_runs": 147,
-    "failed_runs": 9,
-    "success_rate": 0.942,
-    "avg_duration": 83,
-    "total_duration": 12948,
-    "daily_stats": [
-      {
-        "date": "2026-02-11",
-        "runs": 12,
-        "successful": 11,
-        "failed": 1,
-        "avg_duration": 85
-      }
-    ]
+    "success_count": 147,
+    "failed_count": 9,
+    "timeout_count": 0,
+    "avg_duration_ms": 83000,
+    "last_run_at": "2026-02-11T14:30:00Z"
   },
   "msg": "success"
 }
+```
+
+A trends endpoint is also available: `GET /api/v1/workflows/{workflow_id}/stats/trends?period=7d` (period: `7d`, `30d`).
 ```
 
 ## Error Codes
 
 | Code | Message | Description |
 |------|---------|-------------|
-| `4000` | Workflow not found | Workflow does not exist |
-| `4000` | Run not found | Execution does not exist |
+| `4000` | Not found | Workflow or run does not exist |
+| `1004` | Forbidden | Workflow not published / webhook trigger disabled / invalid webhook token |
 | `3000` | Permission denied | Insufficient permissions |
 | `1001` | Validation failed | Invalid request data |
-| `5100` | Name already exists | Workflow name is taken |
+| `5104` | Duplicate name | Workflow name is taken |
 
-## Rate Limits
-
-| Endpoint | Limit |
-|----------|-------|
-| `GET /api/v1/workflows` | 100/minute |
-| `GET /api/v1/workflows/{id}` | 100/minute |
-| `POST /api/v1/workflows` | 10/minute |
-| `PATCH /api/v1/workflows/{id}` | 30/minute |
-| `DELETE /api/v1/workflows/{id}` | 10/minute |
-| `POST /api/v1/workflows/{id}/run` | 30/minute |
-| `POST /api/v1/workflows/{id}/webhook` | 60/minute |
+> **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints.
 
 ## Related Documentation
 

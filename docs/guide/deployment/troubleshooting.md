@@ -21,17 +21,13 @@ This troubleshooting guide covers:
 
 ```bash
 # Backend health
-curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/health
 
 # Expected response
-{
-  "status": "healthy",
-  "database": "connected",
-  "redis": "connected",
-  "qdrant": "connected",
-  "version": "1.0.0"
-}
+{"code": 0, "data": {"status": "healthy"}, "msg": "success"}
 ```
+
+Qdrant exposes its own health endpoint at `http://localhost:6333/healthz`.
 
 ### Service Status
 
@@ -41,14 +37,16 @@ curl http://localhost:8000/health
 # Docker Compose
 docker compose ps
 
-# Expected output
-NAME                STATUS
-clouisle-backend    Up
-clouisle-frontend   Up
-clouisle-postgres   Up
-clouisle-redis      Up
-clouisle-qdrant     Up
-clouisle-celery     Up
+# Expected services (8 total)
+NAME                     SERVICE          STATUS
+clouisle-db-1            db               Up (healthy)
+clouisle-redis-1         redis            Up (healthy)
+clouisle-qdrant-1        qdrant           Up (healthy)
+clouisle-api-1           api              Up (healthy)
+clouisle-worker-1        worker           Up
+clouisle-sandbox-worker-1 sandbox-worker  Up
+clouisle-beat-1          beat             Up
+clouisle-frontend-1      frontend         Up
 ```
 
 ### View Logs
@@ -109,43 +107,34 @@ df -h
 docker system df
 ```
 
-### Database Migration Fails
+### Database Schema Updates Not Applied
 
-**Problem**: Cannot run migrations
-
-**Symptoms**:
-```
-Error: could not connect to server: Connection refused
-```
+**Problem**: Schema changes seem missing after an upgrade
 
 **Solutions**:
 
-1. **Check database is running:**
+1. **Check the database is reachable:**
 ```bash
-docker compose ps postgres
-docker compose logs postgres
+docker compose ps db
+docker compose logs db
 ```
 
-2. **Wait for database to be ready:**
-```bash
-# Wait 10 seconds
-sleep 10
-
-# Then run migrations
-docker compose exec api alembic upgrade head
-```
-
-3. **Check database credentials:**
+2. **Verify credentials:**
 ```bash
 docker compose exec api env | grep POSTGRES
 ```
 
+3. **Restart the API to trigger automatic schema sync:**
+```bash
+docker compose restart api
+```
+
+> **Note**: Clouisle has no Alembic — the backend creates/updates tables automatically at startup via Tortoise ORM. If tables are missing, the API process failed to start against the database; check `docker compose logs api`.
+
 4. **Reset database (development only):**
 ```bash
 docker compose down -v
-docker compose up -d postgres
-sleep 10
-docker compose exec api alembic upgrade head
+docker compose up -d
 ```
 
 ### Frontend Build Fails
@@ -193,19 +182,19 @@ bun run build
 
 1. **Check backend is running:**
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/health
 ```
 
 2. **Check CORS configuration:**
 ```bash
 # In .env
-CORS_ORIGINS=http://localhost:3000,https://your-domain.com
+BACKEND_CORS_ORIGINS=["http://localhost:3000","https://your-domain.com"]
 ```
 
 3. **Check network:**
 ```bash
 # From frontend container
-docker compose exec frontend curl http://api:8000/health
+docker compose exec frontend wget -qO- http://api:8000/api/v1/health
 ```
 
 4. **Check firewall:**
@@ -227,13 +216,13 @@ Error: could not connect to server: Connection refused
 
 1. **Check PostgreSQL is running:**
 ```bash
-docker compose ps postgres
-docker compose logs postgres
+docker compose ps db
+docker compose logs db
 ```
 
 2. **Test connection:**
 ```bash
-docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
+docker compose exec db psql -U postgres -d clouisle -c "SELECT 1"
 ```
 
 3. **Check credentials:**
@@ -242,12 +231,12 @@ docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
 docker compose exec api env | grep POSTGRES
 
 # Test with psql
-docker compose exec postgres psql -U clouisle -d clouisle
+docker compose exec db psql -U postgres -d clouisle
 ```
 
 4. **Check PostgreSQL logs:**
 ```bash
-docker compose logs postgres | grep ERROR
+docker compose logs db | grep ERROR
 ```
 
 ### Redis Connection Failed
@@ -300,7 +289,7 @@ docker compose logs qdrant
 
 2. **Test connection:**
 ```bash
-curl http://localhost:6333/health
+curl http://localhost:6333/healthz
 ```
 
 3. **Check Qdrant URL:**
@@ -321,27 +310,14 @@ docker compose exec api env | grep QDRANT
 
 **Solutions**:
 
-1. **Check user exists:**
-```bash
-docker compose exec api python -m app.scripts.list_users
-```
-
-2. **Reset password:**
-```bash
-docker compose exec api python -m app.scripts.reset_password \
-  --email user@example.com \
-  --password new-password
-```
-
+1. **Check user exists and is active** — via the admin UI (Admin → Users). There is no `app.scripts.*` CLI (those modules do not exist).
+2. **Reset password** — use the admin UI user management or the password reset flow; there is no `app.scripts.reset_password`.
 3. **Check account status:**
-```bash
-docker compose exec api python -m app.scripts.user_info \
-  --email user@example.com
-```
-
+   - Account is `is_active`, `approval_status` approved, and email verified (if verification is enabled)
+   - SSO-bound accounts may block password login when `sso_allow_password_login` is off (site setting)
 4. **Check backend logs:**
 ```bash
-docker compose logs api | grep login
+docker compose logs api | grep -i login
 ```
 
 ### Token Expired
@@ -354,12 +330,7 @@ docker compose logs api | grep login
 
 **Solutions**:
 
-1. **Increase token lifetime:**
-```bash
-# In .env
-JWT_EXPIRATION=3600  # 1 hour instead of 30 minutes
-```
-
+1. **Increase session lifetime** — the effective session duration is the `session_timeout_days` site setting (default 30 days), managed in the admin UI site settings. The config fallback is `ACCESS_TOKEN_EXPIRE_MINUTES` (default 11520 minutes / 8 days) in `.env`. There is no `JWT_EXPIRATION` variable.
 2. **Check system time:**
 ```bash
 # Ensure system time is correct
@@ -382,15 +353,11 @@ timedatectl
 
 **Solutions**:
 
-1. **Check SSO configuration:**
-```bash
-docker compose exec api python -m app.scripts.check_sso
-```
-
+1. **Check SSO configuration** — SSO providers are configured through the admin UI (site settings / SSO providers). There is no `app.scripts.check_sso`.
 2. **Verify callback URL:**
 ```bash
-# Should match SSO provider configuration
-echo $SITE_URL/api/v1/auth/sso/callback
+# Should match the SSO provider configuration; FRONTEND_URL is used for redirects
+echo $FRONTEND_URL
 ```
 
 3. **Check SSO provider logs:**
@@ -423,7 +390,7 @@ docker stats
 2. **Check database performance:**
 ```bash
 # Check slow queries
-docker compose exec postgres psql -U clouisle -d clouisle -c "
+docker compose exec db psql -U postgres -d clouisle -c "
   SELECT query, calls, total_time, mean_time
   FROM pg_stat_statements
   ORDER BY mean_time DESC
@@ -446,13 +413,6 @@ services:
         limits:
           cpus: '2'
           memory: 4G
-```
-
-5. **Enable caching:**
-```bash
-# In .env
-ENABLE_CACHE=true
-CACHE_TTL=300
 ```
 
 ### High Memory Usage
@@ -519,11 +479,7 @@ docker system prune -a --volumes
 ```
 
 3. **Archive old data:**
-```bash
-# Backup and delete old audit logs
-docker compose exec api python -m app.scripts.archive_logs \
-  --days 90
-```
+   Audit log retention is managed through the admin UI (audit logs) and the backend's periodic cleanup tasks; there is no `app.scripts.archive_logs`. For Qdrant/DB growth, use the [Backup & Recovery](./backup-recovery.md) procedures.
 
 4. **Increase disk space:**
 - Add more storage
@@ -547,24 +503,16 @@ docker compose exec api python -m app.scripts.archive_logs \
 docker compose logs api | grep agent
 ```
 
-2. **Check LLM API key:**
-```bash
-docker compose exec api env | grep OPENAI_API_KEY
-```
-
-3. **Test LLM connection:**
-```bash
-docker compose exec api python -m app.scripts.test_llm
-```
-
+2. **Check LLM provider configuration** — LLM API keys/base URLs are stored per provider in the database and managed through the admin UI (Admin → Models); they are **not** environment variables, so `env | grep OPENAI_API_KEY` will find nothing.
+3. **Test LLM connection** — use the model test feature in the admin UI (Admin → Models → test connection); there is no `app.scripts.test_llm`.
 4. **Check rate limits:**
 - Review LLM provider dashboard
 - Check for quota exceeded
 
 5. **Check Celery worker:**
 ```bash
-docker compose logs celery
-docker compose restart celery
+docker compose logs worker
+docker compose restart worker
 ```
 
 ### Workflow Execution Fails
@@ -585,13 +533,13 @@ docker compose logs api | grep workflow
 
 2. **Check Celery:**
 ```bash
-docker compose ps celery
-docker compose logs celery
+docker compose ps worker
+docker compose logs worker
 ```
 
 3. **Restart Celery:**
 ```bash
-docker compose restart celery celery-beat
+docker compose restart worker beat
 ```
 
 4. **Check workflow definition:**
@@ -610,13 +558,8 @@ docker compose restart celery celery-beat
 
 **Solutions**:
 
-1. **Check file size:**
-```bash
-# In .env
-MAX_UPLOAD_SIZE=104857600  # 100 MB
-```
-
-2. **Check upload directory:**
+1. **Check file size** — the per-knowledge-base upload limit is the `kb_document_max_upload_size_mb` site setting (default 50 MB), managed in the admin UI. There is no `MAX_UPLOAD_SIZE` env variable.
+2. **Check upload directory (api only — workers use the internal upload gateway):**
 ```bash
 docker compose exec api ls -la /app/uploads
 docker compose exec api df -h /app/uploads
@@ -629,14 +572,10 @@ docker compose exec api chmod 755 /app/uploads
 
 4. **Check Celery worker:**
 ```bash
-docker compose logs celery | grep document
+docker compose logs worker | grep document
 ```
 
-5. **Retry processing:**
-```bash
-docker compose exec api python -m app.scripts.reprocess_document \
-  --document-id doc-123
-```
+5. **Retry processing** — re-trigger the document processing task from the knowledge-base document UI; there is no `app.scripts.reprocess_document` CLI.
 
 ### Search Not Working
 
@@ -655,19 +594,8 @@ docker compose ps qdrant
 curl http://localhost:6333/collections
 ```
 
-2. **Check embeddings:**
-```bash
-docker compose exec api python -m app.scripts.check_embeddings \
-  --kb-id kb-123
-```
-
-3. **Reindex documents:**
-```bash
-docker compose exec api python -m app.scripts.reindex_kb \
-  --kb-id kb-123
-```
-
-4. **Check search logs:**
+2. **Check embeddings / reindex** — use the knowledge-base UI actions (document re-processing and reindex are exposed in the admin/knowledge-base interfaces); there is no `app.scripts.check_embeddings` / `app.scripts.reindex_kb` CLI.
+3. **Check search logs:**
 ```bash
 docker compose logs api | grep search
 ```
@@ -703,8 +631,8 @@ docker compose restart api
 
 1. **Check PostgreSQL:**
 ```bash
-docker compose ps postgres
-docker compose logs postgres
+docker compose ps db
+docker compose logs db
 ```
 
 2. **Verify credentials:**
@@ -714,7 +642,7 @@ docker compose exec api env | grep POSTGRES
 
 3. **Test connection:**
 ```bash
-docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
+docker compose exec db psql -U postgres -d clouisle -c "SELECT 1"
 ```
 
 ### "Rate Limit Exceeded"
@@ -723,16 +651,11 @@ docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
 
 **Solutions**:
 
-1. **Wait for rate limit reset:**
+1. **Wait for the rate limit window to reset:**
 - Check `Retry-After` header
 - Wait specified time
 
-2. **Increase rate limits:**
-```bash
-# In .env
-RATE_LIMIT_PER_MINUTE=100
-```
-
+2. **Raise team search quota** — for search quota limits, adjust the team's search quota in the admin UI (Search Quota); there is no `RATE_LIMIT_PER_MINUTE` env variable.
 3. **Use API key with higher limits:**
 - Create new API key
 - Request limit increase
@@ -743,12 +666,7 @@ RATE_LIMIT_PER_MINUTE=100
 
 **Solutions**:
 
-1. **Check user permissions:**
-```bash
-docker compose exec api python -m app.scripts.user_info \
-  --email user@example.com
-```
-
+1. **Check user permissions** — via the admin UI (Admin → Users / Roles). There is no `app.scripts.user_info` CLI.
 2. **Check team membership:**
 - Verify user is in correct team
 - Check team role

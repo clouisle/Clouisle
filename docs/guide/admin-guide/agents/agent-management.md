@@ -10,16 +10,15 @@ As an administrator, you can:
 - **Create agents**: Set up new agents for teams
 - **Configure agents**: Modify agent settings and capabilities
 - **Monitor usage**: Track agent performance and usage
-- **Manage lifecycle**: Publish, unpublish, archive agents
-- **Set limits**: Configure resource limits per team
+- **Manage lifecycle**: Publish and unpublish agents
 
 ## Accessing Agent Management
 
 ### Admin Dashboard
 
 1. Log in as administrator
-2. Navigate to **Admin** → **Agents**
-3. View agent management interface
+2. Navigate to **Apps** in the sidebar (**Resources** section)
+3. View the agent management interface
 
 ### Agent List View
 
@@ -27,17 +26,17 @@ The agent list shows:
 
 - **Agent name and description**
 - **Team ownership**
-- **Status** (Active, Inactive, Published)
+- **Status** (Draft, Published)
 - **Model** (LLM model used)
 - **Usage statistics** (conversations, messages)
 - **Created date**
 - **Last activity**
 
 **Filters:**
+- Status (Draft, Published)
+- Visibility (Team, Public)
 - Team
-- Status (Active, Inactive, Published)
-- Model
-- Date range
+- Creator
 
 **Search:**
 - Search by agent name or description
@@ -51,20 +50,18 @@ The agent list shows:
    - **Name**: Agent display name
    - **Description**: Agent purpose and capabilities
    - **Team**: Select team owner
-   - **Model**: Choose LLM model
+   - **Model**: Choose an LLM model (team-granted `TeamModel`)
    - **System Prompt**: Define agent behavior
-   - **Temperature**: Control randomness (0.0-1.0)
-   - **Max Tokens**: Maximum response length
+   - **Max Iterations**: Limit tool-call iterations (1-200)
 
 3. Configure capabilities:
-   - **Knowledge Bases**: Attach knowledge bases
+   - **Knowledge Bases**: Attach knowledge bases with per-KB search settings
    - **Tools**: Enable tools (web search, calculator, etc.)
-   - **RAG Mode**: Citation or Rewrite
-   - **Streaming**: Enable real-time responses
+   - **RAG Mode**: Off, Auto, or Agentic
+   - **Variables**: Define user-facing input variables
 
 4. Set permissions:
-   - **Visibility**: Private (team only) or Public
-   - **Allow sharing**: Enable conversation sharing
+   - **Visibility**: Team (team only) or Public
 
 5. Click **Create Agent**
 
@@ -75,8 +72,8 @@ The agent list shows:
 Name: Customer Support Agent
 Description: Handles customer inquiries and support tickets
 Team: Support Team
-Model: GPT-4 Turbo
-Status: Active
+Model: GPT-4 Turbo (TeamModel grant)
+Status: draft
 ```
 
 **LLM Settings:**
@@ -86,25 +83,27 @@ System Prompt: |
   Always be polite and professional.
   Use the knowledge base to answer questions.
 
-Temperature: 0.7
-Max Tokens: 2048
-Top P: 0.9
-Frequency Penalty: 0.0
-Presence Penalty: 0.0
+Max Iterations: 5
+Tools:
+  - web_search
+  - calculate
+  - get_current_time
 ```
+
+> **Note:** Agents do not expose per-agent sampling parameters (Temperature, Max Tokens, Top P, Frequency/Presence Penalty). LLM sampling defaults are configured on the model and stored in its `default_params`; agents configure `model_id`, `system_prompt`, `max_iterations`, tool sets, and knowledge base attachments instead.
 
 **RAG Configuration:**
 ```yaml
-RAG Mode: Citation
+RAG Mode: agentic        # off, auto, or agentic
 Knowledge Bases:
   - Product Documentation
   - FAQ Database
-  - Support Tickets Archive
 
-Search Settings:
+Per-KB Search Settings:
+  Search Mode: hybrid     # vector, fulltext, or hybrid
   Top K: 5
-  Score Threshold: 0.7
-  Rerank: true
+  Score Threshold: 0.0
+  Rerank: enabled
 ```
 
 **Tools:**
@@ -113,10 +112,10 @@ Enabled Tools:
   - Web Search
   - Calculator
   - Date/Time
-  - Weather
+  - Unit Converter
 
 Tool Settings:
-  Max Tool Calls: 5
+  Max Tool Call Iterations: 5
   Tool Timeout: 30s
 ```
 
@@ -137,133 +136,66 @@ Tool Settings:
 
 ### Bulk Edit
 
-1. Select multiple agents (checkbox)
-2. Click **Bulk Actions** → **Edit**
-3. Choose fields to update:
-   - Status
-   - Model
-   - Team
-   - Visibility
-
-4. Apply changes
+> **Note:** Not implemented / Roadmap. There is no bulk edit for agents. Agents are updated individually via `PUT /api/v1/admin/agents/{agent_id}`; bulk lifecycle actions (publish, unpublish, duplicate, delete) are available per agent from the list.
 
 ## Agent Status Management
 
 ### Agent Statuses
 
-**Active:**
-- Agent is operational
-- Can receive messages
-- Appears in user interface
-
-**Inactive:**
-- Agent is disabled
-- Cannot receive messages
-- Hidden from users
-- Preserves configuration
+**Draft:**
+- Agent is being configured
+- Cannot be used by users
+- Only visible to editors
 
 **Published:**
-- Agent is in marketplace
-- Available to all teams
-- Read-only for non-owners
+- Agent is operational
+- Can receive messages
+- Appears in the user interface
 
-**Archived:**
-- Agent is archived
-- Cannot be used
-- Preserves history
-- Can be restored
+> **Note:** Not implemented / Roadmap: there is no `active`/`inactive` or `archived` agent status, and no archive/restore workflow. Agents have exactly two statuses: `draft` and `published`.
 
 ### Change Agent Status
-
-**Activate Agent:**
-```bash
-1. Select agent
-2. Click "Activate"
-3. Confirm activation
-```
-
-**Deactivate Agent:**
-```bash
-1. Select agent
-2. Click "Deactivate"
-3. Confirm deactivation
-4. Optionally notify team
-```
 
 **Publish Agent:**
 ```bash
 1. Select agent
 2. Click "Publish"
-3. Review agent details
-4. Set marketplace visibility
-5. Confirm publication
+3. Confirm publication
+4. Agent status becomes "published"
+```
+
+**Unpublish Agent:**
+```bash
+1. Select agent
+2. Click "Unpublish"
+3. Confirm unpublish
+4. Agent status returns to "draft"
 ```
 
 **Archive Agent:**
-```bash
-1. Select agent
-2. Click "Archive"
-3. Confirm archival
-4. Agent moved to archive
-```
+> **Note:** Not implemented / Roadmap. There is no archive function for agents. To remove an agent from use, unpublish it or delete it (`DELETE /api/v1/admin/agents/{agent_id}`).
 
 ## Monitoring Agent Usage
 
 ### Usage Statistics
 
-**Overview Metrics:**
+The agent statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agent metrics for a time period (`period`: `24h`, `7d`, `30d`, `all`):
+
 - Total conversations
 - Total messages
-- Active users
-- Average response time
 - Token usage
-- Cost
-
-**Time-based Metrics:**
-- Daily/weekly/monthly trends
-- Peak usage times
-- Growth rate
-
-**Performance Metrics:**
-- Response time (avg, p50, p95, p99)
-- Success rate
-- Error rate
-- Tool usage
+- Average response time
+- Tool usage (via `GET /api/v1/agents/{agent_id}/stats/tool-usage`)
+- Usage trends (via `GET /api/v1/agents/{agent_id}/stats/trends`)
+- Recent conversations (via `GET /api/v1/agents/{agent_id}/stats/recent-conversations`)
 
 ### View Agent Statistics
 
 1. Select agent
 2. Click **Statistics** tab
-3. View metrics:
-   - **Usage**: Conversations, messages, users
-   - **Performance**: Response time, success rate
-   - **Costs**: Token usage, estimated cost
-   - **Tools**: Tool call frequency
-   - **Knowledge**: KB query stats
+3. View metrics for the selected period
 
-4. Filter by date range
-5. Export statistics (CSV, PDF)
-
-### Usage Reports
-
-**Generate Report:**
-```bash
-1. Navigate to Reports
-2. Select "Agent Usage Report"
-3. Choose date range
-4. Select agents (or all)
-5. Choose metrics
-6. Generate report
-7. Download or email
-```
-
-**Report Contents:**
-- Executive summary
-- Usage trends
-- Top agents by usage
-- Cost analysis
-- Performance metrics
-- Recommendations
+> **Note:** Not implemented / Roadmap: per-agent cost breakdowns, response-time percentiles (p50/p95/p99), export of statistics (CSV/PDF), and scheduled usage reports are not available. The statistics API returns the metrics listed above only.
 
 ## Knowledge Base Management
 
@@ -272,13 +204,13 @@ Tool Settings:
 1. Edit agent
 2. Go to **Knowledge Bases** section
 3. Click **Add Knowledge Base**
-4. Select knowledge bases
-5. Configure search settings:
+4. Configure per-KB search settings:
+   - Search mode (`vector`, `fulltext`, or `hybrid`)
    - Top K results
    - Score threshold
    - Rerank enabled
 
-6. Save changes
+5. Save changes
 
 ### Remove Knowledge Bases
 
@@ -290,12 +222,7 @@ Tool Settings:
 
 ### Knowledge Base Priority
 
-Set priority for multiple knowledge bases:
-
-1. Edit agent
-2. Go to **Knowledge Bases** section
-3. Drag to reorder (higher = higher priority)
-4. Save changes
+Knowledge base order can be adjusted by editing the agent; the ordering is defined by the `knowledge_base_configs` list and is applied when the agent retrieves context.
 
 ## Tool Management
 
@@ -308,7 +235,7 @@ Set priority for multiple knowledge bases:
    - Web Search
    - Calculator
    - Date/Time
-   - Weather
+   - Unit Converter
    - Custom tools
 
 5. Configure tool settings
@@ -319,17 +246,10 @@ Set priority for multiple knowledge bases:
 **Web Search:**
 ```yaml
 Enabled: true
-Max Results: 5
-Search Engine: Google
-Safe Search: Moderate
+Requires: TAVILY_API_KEY
 ```
 
-**Calculator:**
-```yaml
-Enabled: true
-Precision: 10 decimals
-Allow Complex: true
-```
+Web Search is powered by Tavily. The API key is stored in the tool configuration (`TAVILY_API_KEY`); per-query parameters such as `max_results` are controlled by the agent at call time.
 
 **Custom Tools:**
 ```yaml
@@ -339,75 +259,15 @@ Auth: API Key
 Timeout: 30s
 ```
 
+Custom tools are created and tested in **Capabilities** (tool management), then enabled per agent.
+
 ## Agent Limits
 
-### Set Team Limits
-
-1. Navigate to **Teams** → Select team
-2. Go to **Limits** tab
-3. Configure agent limits:
-   - Max agents per team
-   - Max conversations per agent
-   - Max messages per conversation
-   - Max tokens per day
-   - Max cost per month
-
-4. Save limits
-
-### Limit Types
-
-**Resource Limits:**
-```yaml
-Max Agents: 10
-Max Knowledge Bases per Agent: 5
-Max Tools per Agent: 10
-Max Conversations: 1000
-```
-
-**Usage Limits:**
-```yaml
-Max Messages per Day: 10000
-Max Tokens per Day: 1000000
-Max Cost per Month: $500
-```
-
-**Rate Limits:**
-```yaml
-Messages per Minute: 60
-Conversations per Hour: 100
-```
+> **Note:** Not implemented / Roadmap. There are no per-team or per-agent resource limits (max agents, max conversations, max tokens per day, cost caps, rate limits). Agents and their usage are not quota-gated.
 
 ## Agent Templates
 
-### Create Template
-
-1. Select well-configured agent
-2. Click **Save as Template**
-3. Enter template details:
-   - Name
-   - Description
-   - Category
-   - Visibility
-
-4. Save template
-
-### Use Template
-
-1. Click **Create Agent**
-2. Select **From Template**
-3. Choose template
-4. Customize settings
-5. Create agent
-
-### Template Categories
-
-- **Customer Support**
-- **Sales Assistant**
-- **Technical Support**
-- **Content Creation**
-- **Data Analysis**
-- **Code Assistant**
-- **General Purpose**
+> **Note:** Not implemented / Roadmap. There is no agent template library or "Save as Template" flow. To reuse an agent, duplicate it (`POST /api/v1/admin/agents/{agent_id}/duplicate`) and adjust the copy.
 
 ## Troubleshooting
 
@@ -420,7 +280,7 @@ Conversations per Hour: 100
 **Solutions:**
 
 1. **Check agent status:**
-   - Verify agent is active
+   - Verify agent is published
    - Check model availability
 
 2. **Check model configuration:**
@@ -432,10 +292,9 @@ Conversations per Hour: 100
    - Verify KBs are indexed
    - Check search is working
 
-4. **Check logs:**
+4. **Check audit logs:**
    ```bash
-   Admin → Logs → Agent Logs
-   Filter by agent ID
+   Audit Logs → filter by resource type "agent" and resource ID
    Look for errors
    ```
 
@@ -462,22 +321,19 @@ Conversations per Hour: 100
    - Update outdated content
    - Improve chunking strategy
 
-4. **Enable RAG citation mode:**
-   - Forces agent to cite sources
-   - Reduces hallucinations
+4. **Enable RAG agentic mode:**
+   - Agentic RAG lets the agent decide when to retrieve, improving factual grounding
 
 ### High Costs
 
 **Symptoms:**
 - Unexpected high token usage
-- Cost alerts triggered
 
 **Solutions:**
 
-1. **Set token limits:**
-   - Reduce max_tokens
-   - Set daily limits
-   - Enable cost alerts
+1. **Review usage:**
+   - Check per-agent statistics (`GET /api/v1/agents/{agent_id}/stats`) for token usage and conversation counts
+   - Identify high-usage agents
 
 2. **Optimize prompts:**
    - Shorter system prompts
@@ -489,9 +345,7 @@ Conversations per Hour: 100
    - Check for abuse
    - Optimize workflows
 
-4. **Use caching:**
-   - Enable prompt caching
-   - Cache knowledge base results
+> **Note:** Not implemented / Roadmap: per-agent token limits, daily limits, and cost alerts are not available. Usage monitoring is read-only via the statistics endpoints.
 
 ## Best Practices
 
@@ -502,8 +356,7 @@ Conversations per Hour: 100
 - Test agents thoroughly before deployment
 - Use appropriate models for tasks
 - Enable RAG for factual accuracy
-- Set reasonable token limits
-- Monitor usage and costs
+- Monitor usage via the statistics endpoints
 - Collect user feedback
 - Iterate based on performance
 
@@ -554,68 +407,44 @@ Conversations per Hour: 100
 
 ### Bulk Actions
 
-**Available Actions:**
-- Activate/Deactivate
-- Change model
-- Update team
-- Archive
-- Delete
-- Export configuration
-
-**Perform Bulk Action:**
-```bash
-1. Select agents (checkbox)
-2. Click "Bulk Actions"
-3. Choose action
-4. Configure options
-5. Review changes
-6. Confirm execution
-```
+> **Note:** Not implemented / Roadmap. There are no bulk actions (activate/deactivate, change model, update team, archive, export configuration) for agents. Lifecycle operations are performed per agent: publish, unpublish, duplicate, and delete.
 
 ### Import/Export
 
-**Export Agents:**
-```bash
-1. Select agents
-2. Click "Export"
-3. Choose format (JSON, CSV)
-4. Download file
-```
-
-**Import Agents:**
-```bash
-1. Click "Import"
-2. Upload file (JSON)
-3. Review agents
-4. Map teams
-5. Confirm import
-```
+> **Note:** Not implemented / Roadmap. There is no agent import/export (JSON/CSV).
 
 ## API Access
 
 ### Manage Agents via API
 
-See [Agents API](../../api-reference/endpoints/agents.md) for details.
+Admin agent endpoints live under `/api/v1/admin/agents` and require the `admin:app:*` permissions. See [Agents API](../../api-reference/endpoints/agents.md) for details.
 
 **Common Operations:**
 ```python
-# List all agents (admin)
-agents = api.get("/api/v1/agents", params={"all_teams": True})
+# List all agents (admin) — filters: status, visibility, team_id, creator, search
+agents = api.get("/api/v1/admin/agents", params={"status": ["published"]})
 
 # Create agent for team
-agent = api.post("/api/v1/agents", json={
+agent = api.post("/api/v1/admin/agents", json={
     "name": "Support Agent",
     "team_id": "team-123",
-    "model_id": "model-456"
+    "model_id": "model-456",  # TeamModel ID (a team-granted model)
+    "system_prompt": "You are a helpful assistant.",
+    "rag_mode": "agentic"
 })
 
-# Update agent
-api.patch(f"/api/v1/agents/{agent_id}", json={
-    "is_active": True
+# Update agent (PUT, not PATCH)
+agent = api.put(f"/api/v1/admin/agents/{agent_id}", json={
+    "name": "Support Agent v2"
 })
 
-# Get agent statistics
-stats = api.get(f"/api/v1/agents/{agent_id}/stats")
+# Publish / unpublish / duplicate
+api.post(f"/api/v1/admin/agents/{agent_id}/publish")
+api.post(f"/api/v1/admin/agents/{agent_id}/unpublish")
+api.post(f"/api/v1/admin/agents/{agent_id}/duplicate")
+
+# Get agent statistics (period: 24h, 7d, 30d, all)
+stats = api.get(f"/api/v1/agents/{agent_id}/stats", params={"period": "30d"})
 ```
 
 ## Related Documentation

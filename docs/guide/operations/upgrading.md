@@ -12,14 +12,16 @@ Version upgrade procedures.
 
 ## Docker Compose Upgrade
 
+The compose files (`deploy/docker-compose.yml`) reference prebuilt images (e.g. `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest`) and have no `build:` sections, so upgrades are done by pulling the new images.
+
 ```bash
 cd deploy
 
 # 1. Pull latest code
 git pull
 
-# 2. Rebuild images
-docker compose build
+# 2. Pull new images
+docker compose pull
 
 # 3. Stop services
 docker compose down
@@ -32,12 +34,20 @@ docker compose ps
 docker compose logs --tail=50 api
 ```
 
+If you maintain your own images, build them from the per-service Dockerfiles and push to your registry:
+
+```bash
+docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest .
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest .
+docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest .
+```
+
 ## Kubernetes Upgrade
 
 ```bash
 # 1. Build and push new images
-docker build -t registry.example.com/clouisle/api:v2.0.0 .
-docker push registry.example.com/clouisle/api:v2.0.0
+docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest .
+docker push registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
 
 # 2. Update manifests
 kubectl apply -f deploy/k8s/clouisle.yaml
@@ -69,7 +79,5 @@ kubectl rollout undo deployment/api
 - [ ] Review error logs
 
 ---
-
-**Note**: This is a placeholder document. Please update with detailed content.
 
 For more information, see the [main documentation](../README.md).

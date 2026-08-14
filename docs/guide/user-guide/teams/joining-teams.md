@@ -1,6 +1,6 @@
 # Joining Teams
 
-This guide explains how to join teams and collaborate with others in Clouisle.
+This guide explains how team membership works in Clouisle.
 
 ## Overview
 
@@ -10,7 +10,6 @@ Teams in Clouisle allow you to:
 - **Share resources**: Access shared agents, workflows, and knowledge bases
 - **Organize work**: Group related projects and users
 - **Control access**: Manage permissions and roles
-- **Track activity**: Monitor team usage and activity
 
 ## Understanding Teams
 
@@ -19,215 +18,42 @@ Teams in Clouisle allow you to:
 Teams are organizational units that group users and resources together.
 
 **Key concepts:**
-- **Multi-tenancy**: Each team has isolated resources
-- **Role-based access**: Different permission levels
+- **Team isolation**: Each team's resources are scoped to that team
+- **Role-based access**: Different permission levels (Owner, Admin, Member, Viewer)
 - **Resource sharing**: Shared agents, workflows, KBs
-- **Team ownership**: Each team has an owner
 
 ### Team Roles
 
 | Role | Permissions |
 |------|-------------|
-| **Owner** | Full control, can delete team |
+| **Owner** | Full control, can delete team, transfer ownership |
 | **Admin** | Manage members, resources, settings |
 | **Member** | Create and use resources |
-| **Viewer** | Read-only access |
+| **Viewer** | Read-only access + chat/run |
 
 See [Team Roles](./team-roles.md) for detailed permissions.
 
-## Joining Teams
+## How Users Join Teams
 
-### Via Invitation
+> **Note:** There is no email-invitation flow, no "Accept/Decline invitation" action, and no join-request/approval flow. Members are added directly by user ID.
 
-**When invited to a team:**
+### Ways to become a member
 
-1. You receive an email invitation
-2. Click **"Accept Invitation"** link in email
-3. Or log in to Clouisle
-4. Go to **Notifications**
-5. Find team invitation
-6. Click **"Accept"** or **"Decline"**
+1. **Added by an Owner/Admin**: A team Owner or Admin adds you by your user ID and assigns a role (Admin, Member, or Viewer)
+2. **Default team**: If the administrator configured a default team, newly registered users are automatically added to it with the configured role (default `member`)
+3. **Created as owner**: The user who creates a team becomes its Owner
 
-**Email invitation:**
-```
-Subject: You've been invited to join "Marketing Team"
+### Member Notifications
 
-Hello John,
+When you are added to a team, you receive a team notification (`team.member_added`), and the team is notified as well. There is no accept/decline action — membership is active immediately.
 
-Alice has invited you to join the "Marketing Team" on Clouisle.
+## Viewing Your Teams
 
-Team: Marketing Team
-Role: Member
-Invited by: Alice (alice@example.com)
+### Access Your Teams
 
-[Accept Invitation] [Decline]
-
-This invitation expires in 7 days.
-```
-
-**In-app notification:**
-```
-┌─────────────────────────────────────────┐
-│ 👥 Team Invitation                      │
-├─────────────────────────────────────────┤
-│                                         │
-│ Alice invited you to join:             │
-│                                         │
-│ Marketing Team                          │
-│ Role: Member                            │
-│                                         │
-│ Team Description:                       │
-│ Marketing and content creation team    │
-│                                         │
-│ Members: 12                             │
-│ Resources: 23 agents, 15 workflows     │
-│                                         │
-│ [Accept] [Decline]                      │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-### Accepting Invitation
-
-**Steps:**
-
-1. Click **"Accept"** button
-2. Review team information
-3. Confirm acceptance
-4. You're added to the team
-5. Access team resources immediately
-
-**Confirmation:**
-```
-┌─────────────────────────────────────────┐
-│ ✅ Welcome to Marketing Team!           │
-├─────────────────────────────────────────┤
-│                                         │
-│ You've successfully joined the team.   │
-│                                         │
-│ What you can do now:                   │
-│ • Access shared agents                 │
-│ • Use team workflows                   │
-│ • Browse team knowledge bases          │
-│ • Collaborate with 12 team members     │
-│                                         │
-│ [Go to Team Dashboard]                 │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-### Declining Invitation
-
-**Steps:**
-
-1. Click **"Decline"** button
-2. Optionally provide reason
-3. Confirm decline
-4. Invitation is removed
-
-**Note**: You can be re-invited later if needed.
-
-### Invitation Expiration
-
-**Invitations expire after:**
-- Default: 7 days
-- Configurable by administrator
-
-**Expired invitation:**
-```
-⚠️ This invitation has expired.
-
-Please contact the team owner to request a new invitation.
-```
-
-## Requesting to Join
-
-### Public Teams
-
-**If team allows join requests:**
-
-1. Go to **Teams** section
-2. Browse public teams
-3. Find team you want to join
-4. Click **"Request to Join"**
-5. Provide reason (optional)
-6. Submit request
-7. Wait for approval
-
-**Join request form:**
-```
-┌─────────────────────────────────────────┐
-│ Request to Join Team                    │
-├─────────────────────────────────────────┤
-│                                         │
-│ Team: Marketing Team                    │
-│                                         │
-│ Why do you want to join? (optional)    │
-│ [I work in the marketing department_]   │
-│ [and would like to collaborate with_]   │
-│ [the team on content creation.______]   │
-│                                         │
-│ [Cancel]  [Send Request]                │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-**Request submitted:**
-```
-✅ Join request sent!
-
-Your request to join "Marketing Team" has been sent to the team admins.
-
-You'll be notified when your request is reviewed.
-```
-
-### Request Approval
-
-**When your request is approved:**
-
-1. You receive notification
-2. You're automatically added to team
-3. Access team resources
-
-**Approval notification:**
-```
-✅ Join request approved!
-
-Your request to join "Marketing Team" has been approved by Alice.
-
-You can now access team resources.
-
-[Go to Team Dashboard]
-```
-
-### Request Rejection
-
-**If request is declined:**
-
-1. You receive notification
-2. Optionally includes reason
-3. Can request again later
-
-**Rejection notification:**
-```
-❌ Join request declined
-
-Your request to join "Marketing Team" was declined.
-
-Reason: Team is currently at capacity.
-
-You can contact the team owner for more information.
-```
-
-## Switching Teams
-
-### Viewing Your Teams
-
-**Access your teams:**
-
-1. Click **team selector** in navigation
-2. View list of all your teams
-3. Current team is highlighted
+1. Use the **team selector** in the navigation
+2. View the list of all your teams
+3. The current team is highlighted
 
 **Team selector:**
 ```
@@ -236,13 +62,10 @@ You can contact the team owner for more information.
 ├─────────────────────────────────────────┤
 │                                         │
 │ ● Marketing Team (current)              │
-│   Role: Member • 12 members             │
+│   Role: Member                          │
 │                                         │
 │ ○ Engineering Team                      │
-│   Role: Admin • 25 members              │
-│                                         │
-│ ○ Personal Workspace                    │
-│   Role: Owner • 1 member                │
+│   Role: Admin                           │
 │                                         │
 │ [+ Create Team]                         │
 │                                         │
@@ -251,63 +74,33 @@ You can contact the team owner for more information.
 
 ### Switching Between Teams
 
-**Steps:**
-
-1. Click **team selector**
-2. Select different team
-3. Interface updates to show team resources
-4. All actions now apply to selected team
-
-**What changes:**
-- Available agents
-- Workflows
-- Knowledge bases
-- Team members
-- Settings access
+1. Click the **team selector**
+2. Select a different team
+3. The interface updates to show that team's resources
 
 ## Team Dashboard
 
-### Accessing Dashboard
+### Accessing the Team
 
-**Steps:**
+1. Select the team from the team selector
+2. Open the team section to view members and resources
 
-1. Select team from team selector
-2. Go to **Team** section
-3. View team dashboard
-
-**Or:**
-
-- Navigate directly to `/teams/{team_id}`
-
-### Dashboard Overview
-
-**Dashboard sections:**
+### Team Overview
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │ Marketing Team                          [Settings]  │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
-│ Overview                                            │
-│ ─────────────────────────────────────────────────  │
 │ Members: 12 • Agents: 23 • Workflows: 15           │
-│ Knowledge Bases: 8 • Storage: 2.3 GB / 10 GB      │
-│                                                     │
-│ Recent Activity                                     │
-│ ─────────────────────────────────────────────────  │
-│ • Alice created "Content Writer" agent             │
-│ • Bob ran "SEO Analysis" workflow                  │
-│ • Carol uploaded document to "Marketing KB"        │
+│ Knowledge Bases: 8                                  │
 │                                                     │
 │ Team Members                                        │
 │ ─────────────────────────────────────────────────  │
 │ 👤 Alice (Owner)                                    │
 │ 👤 Bob (Admin)                                      │
 │ 👤 Carol (Member)                                   │
-│ 👤 You (Member)                                     │
-│ ... and 8 more                                      │
-│                                                     │
-│ [View All Members] [View Resources]                │
+│ ...                                                 │
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -318,64 +111,13 @@ You can contact the team owner for more information.
 
 **Shared resources:**
 
-1. **Agents**: Team agents available to all members
+1. **Agents**: Team agents available to members
 2. **Workflows**: Shared workflows
 3. **Knowledge Bases**: Team knowledge bases
-4. **API Keys**: Team API keys (if permitted)
 
 **Resource access:**
 - Based on your role
-- Some resources may be restricted
-- Owners/Admins have full access
-
-### Using Team Resources
-
-**Example - Using team agent:**
-
-1. Go to **Agents** section
-2. Filter by current team
-3. Select agent
-4. Start chatting
-5. Agent has access to team knowledge bases
-
-**Team resource indicator:**
-```
-┌─────────────────────────────────────────┐
-│ 🤖 Content Writer                       │
-│ Team: Marketing Team                    │
-│ Created by: Alice                       │
-│ Status: Published                       │
-│                                         │
-│ [Start Chat] [View Details]             │
-└─────────────────────────────────────────┘
-```
-
-## Team Collaboration
-
-### Working with Team Members
-
-**Collaboration features:**
-
-1. **Shared conversations**: Chat with team agents
-2. **Workflow execution**: Run team workflows
-3. **Document sharing**: Access team knowledge bases
-4. **Activity feed**: See what team members are doing
-5. **Mentions**: Tag team members in conversations
-
-### Team Activity
-
-**View team activity:**
-
-1. Go to team dashboard
-2. View **Recent Activity** section
-3. See what team members are doing
-
-**Activity types:**
-- Agent created/updated
-- Workflow executed
-- Document uploaded
-- Member joined/left
-- Settings changed
+- Owners/Admins have full access; Members can create/use; Viewers have read/use-only access
 
 ## Leaving Teams
 
@@ -383,132 +125,41 @@ You can contact the team owner for more information.
 
 **Steps:**
 
-1. Go to team dashboard
-2. Click **"..."** menu
-3. Select **"Leave Team"**
-4. Confirm leaving
-5. You're removed from team
+1. Open the team (team selector or team view)
+2. Select **"Leave Team"**
+3. Confirm leaving
+4. You're removed from the team
 
-**Leave confirmation:**
-```
-┌─────────────────────────────────────────┐
-│ ⚠️ Leave Team?                          │
-├─────────────────────────────────────────┤
-│                                         │
-│ Are you sure you want to leave:        │
-│                                         │
-│ Marketing Team                          │
-│                                         │
-│ What happens:                           │
-│ • You'll lose access to team resources │
-│ • Your conversations will be preserved │
-│ • You can be re-invited later          │
-│                                         │
-│ [Cancel]  [Leave Team]                  │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-**Note**: Team owners cannot leave until they transfer ownership.
+**Note**: The team Owner cannot leave until ownership is transferred (see [Team Settings](../settings/team-settings.md)).
 
 ### After Leaving
 
 **What happens:**
-- Lose access to team resources
-- Your created resources remain (if any)
+- You lose access to team resources
 - Your conversations are preserved
-- Can be re-invited later
-
-## Personal Workspace
-
-### Default Team
-
-**Every user has a personal workspace:**
-
-- Created automatically on signup
-- You are the owner
-- Private resources
-- Cannot be deleted
-- Cannot invite others (unless upgraded)
-
-**Personal workspace:**
-```
-┌─────────────────────────────────────────┐
-│ Personal Workspace                      │
-├─────────────────────────────────────────┤
-│                                         │
-│ Your private workspace for personal    │
-│ projects and experiments.              │
-│                                         │
-│ Members: 1 (you)                        │
-│ Agents: 5                               │
-│ Workflows: 3                            │
-│ Knowledge Bases: 2                      │
-│                                         │
-└─────────────────────────────────────────┘
-```
 
 ## Best Practices
 
-### Joining Teams
+### Team Membership
 
 **✅ Do:**
-- Read team description before joining
 - Understand your role and permissions
 - Review team resources
-- Introduce yourself to team
-- Follow team guidelines
-- Ask questions if unsure
+- Keep your team memberships current
 
 **❌ Don't:**
-- Join teams you don't need access to
-- Accept invitations without reviewing
-- Ignore team guidelines
-- Request access without reason
-- Leave teams without notice
-
-### Team Collaboration
-
-**✅ Do:**
-- Communicate with team members
-- Share useful resources
-- Follow naming conventions
-- Document your work
-- Respect team resources
-- Report issues promptly
-
-**❌ Don't:**
-- Modify others' resources without permission
-- Delete shared resources
-- Ignore team activity
-- Work in isolation
-- Forget to update team
+- Keep memberships in teams you no longer need
 
 ## Troubleshooting
 
-### Cannot Accept Invitation
+### Cannot Access Team
 
-**Problem**: Accept button is disabled or fails
-
-**Solutions:**
-1. Check if invitation expired
-2. Verify you're logged in
-3. Check if you're already a member
-4. Refresh the page
-5. Try different browser
-6. Contact team owner
-
-### Not Receiving Invitations
-
-**Problem**: Invitation email not received
+**Problem**: Team not visible or accessible
 
 **Solutions:**
-1. Check spam/junk folder
-2. Verify email address is correct
-3. Check email settings
-4. Ask team owner to resend
-5. Check in-app notifications
-6. Contact administrator
+1. Check if you're a member of the team (ask the Owner/Admin to add you)
+2. Refresh the page
+3. Contact the team Owner/Admin
 
 ### Cannot Switch Teams
 
@@ -517,38 +168,21 @@ You can contact the team owner for more information.
 **Solutions:**
 1. Refresh the page
 2. Check if you're still a member
-3. Verify team still exists
-4. Clear browser cache
-5. Try different browser
-6. Contact administrator
-
-### Lost Access to Team
-
-**Problem**: Suddenly cannot access team resources
-
-**Solutions:**
-1. Check if you're still a member
-2. Verify team wasn't deleted
-3. Check if your role changed
-4. Contact team owner/admin
-5. Check notifications for removal notice
-6. Contact administrator
+3. Clear browser cache
 
 ## Related Documentation
 
 - [Team Roles](./team-roles.md) - Understanding roles and permissions
 - [Team Collaboration](./team-collaboration.md) - Working with teams
-- [Creating Teams](../../admin-guide/teams/creating-teams.md) - Admin guide
-- [Team Management](../../admin-guide/teams/team-management.md) - Admin guide
+- [Team Settings](../settings/team-settings.md) - Team configuration
 
 ## Getting Help
 
-If you need assistance with joining teams:
+If you need assistance with team membership:
 
 1. **Documentation**: Review this guide
-2. **Team Owner**: Contact the team owner
+2. **Team Owner/Admin**: Contact your team leadership
 3. **Support**: Contact your organization's support team
-4. **Administrator**: Reach out to your Clouisle administrator
 
 ---
 
