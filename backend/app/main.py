@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
+        init_agent_powered_by_text,
         init_agent_attachment_fields,
         init_user_locale_field,
         fix_cascade_delete_policies,
@@ -127,6 +128,11 @@ async def lifespan(app: FastAPI):
         await init_agent_tools_credentials()
     except Exception as e:
         logger.warning(f"Agent tools_credentials migration failed: {e}")
+
+    try:
+        await init_agent_powered_by_text()
+    except Exception as e:
+        logger.warning(f"Agent powered_by_text migration failed: {e}")
 
     try:
         await fix_cascade_delete_policies()
