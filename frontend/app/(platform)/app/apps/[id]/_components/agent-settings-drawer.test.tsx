@@ -83,6 +83,7 @@ const callbacks = {
   onOpenChange: mock(() => undefined), onNameChange: mock(() => undefined),
   onDescriptionChange: mock(() => undefined), onIconChange: mock(() => undefined),
   onOpeningMessageChange: mock(() => undefined), onSuggestedQuestionsChange: mock(() => undefined),
+  onPoweredByTextChange: mock(() => undefined),
   onVisibilityChange: mock(() => undefined), onModelChange: mock(() => undefined),
   onMaxIterationsChange: mock(() => undefined), onHideToolCallsChange: mock(() => undefined),
 }
@@ -91,7 +92,7 @@ function render(overrides: Record<string, unknown> = {}) {
   stateIndex = 0
   return AgentSettingsDrawer({
     agent, open: true, name: 'Agent', description: 'Description', icon: '/icon.png',
-    openingMessage: 'Hello', suggestedQuestions: ['One', 'Two'], visibility: 'private',
+    openingMessage: 'Hello', suggestedQuestions: ['One', 'Two'], poweredByText: 'Acme Inc', visibility: 'private',
     modelId: null, maxIterations: 10, hideToolCalls: false, hasToolsEnabled: false,
     ...callbacks, ...overrides,
   } as never) as Node
@@ -150,6 +151,9 @@ describe('AgentSettingsDrawer', () => {
     ;(find(tree, ImageUpload)[0].props.onChange as (value: string) => void)('/new.png')
     const inputs = find(tree, Input)
     ;(inputs.find((node) => node.props.id === 'name')!.props.onChange as (event: unknown) => void)({ target: { value: 'New name' } })
+    const poweredBy = inputs.find((node) => node.props.id === 'poweredByText')!
+    expect(poweredBy.props.value).toBe('Acme Inc')
+    ;(poweredBy.props.onChange as (event: unknown) => void)({ target: { value: 'New footer' } })
     const textareas = find(tree, Textarea)
     ;(textareas.find((node) => node.props.id === 'description')!.props.onChange as (event: unknown) => void)({ target: { value: 'New description' } })
     ;(find(tree, Select)[0].props.onValueChange as (value: string) => void)('team')
@@ -159,6 +163,7 @@ describe('AgentSettingsDrawer', () => {
 
     expect(callbacks.onIconChange).toHaveBeenCalledWith('/new.png')
     expect(callbacks.onNameChange).toHaveBeenCalledWith('New name')
+    expect(callbacks.onPoweredByTextChange).toHaveBeenCalledWith('New footer')
     expect(callbacks.onDescriptionChange).toHaveBeenCalledWith('New description')
     expect(callbacks.onVisibilityChange.mock.calls).toEqual([['team']])
     expect(callbacks.onMaxIterationsChange).toHaveBeenCalledWith(200)

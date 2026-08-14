@@ -370,6 +370,8 @@ export function AgentEditor({
         onOpeningMessageChange={setOpeningMessage}
         suggestedQuestions={suggestedQuestions}
         onSuggestedQuestionsChange={setSuggestedQuestions}
+        poweredByText={poweredByText}
+        onPoweredByTextChange={setPoweredByText}
         visibility={visibility}
         onVisibilityChange={setVisibility}
         modelId={modelId}

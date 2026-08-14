@@ -58,6 +58,8 @@ interface AgentSettingsDrawerProps {
   onOpeningMessageChange: (message: string) => void
   suggestedQuestions: string[]
   onSuggestedQuestionsChange: (questions: string[]) => void
+  poweredByText: string
+  onPoweredByTextChange: (text: string) => void
   visibility: AgentVisibility
   onVisibilityChange: (visibility: AgentVisibility) => void
   // Model settings
@@ -117,6 +119,8 @@ export function AgentSettingsDrawer({
   onOpeningMessageChange,
   suggestedQuestions,
   onSuggestedQuestionsChange,
+  poweredByText,
+  onPoweredByTextChange,
   visibility,
   onVisibilityChange,
   modelId,
@@ -383,6 +387,21 @@ export function AgentSettingsDrawer({
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('suggestedQuestionsHint')}
+                </p>
+              </div>
+
+              {/* Powered-by Text */}
+              <div data-testid="settings-powered-by-text" className="space-y-1.5">
+                <Label htmlFor="poweredByText" className="text-xs">{t('poweredByText')}</Label>
+                <Input
+                  id="poweredByText"
+                  value={poweredByText}
+                  onChange={(e) => onPoweredByTextChange(e.target.value)}
+                  placeholder={t('poweredByTextPlaceholder')}
+                  maxLength={200}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('poweredByTextHint')}
                 </p>
               </div>
             </SettingsSection>

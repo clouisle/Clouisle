@@ -36,7 +36,6 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [systemPrompt, setSystemPrompt] = React.useState(agent.system_prompt || '')
   const [openingMessage, setOpeningMessage] = React.useState(agent.opening_message || '')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>(agent.suggested_questions || [])
-  const [poweredByText, setPoweredByText] = React.useState(agent.powered_by_text || '')
   const [visibility, setVisibility] = React.useState(agent.visibility)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
   const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
@@ -98,7 +97,6 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
       system_prompt: systemPrompt || null,
       opening_message: openingMessage || null,
       suggested_questions: suggestedQuestions.filter(q => q.trim()),
-      powered_by_text: poweredByText.trim() || null,
       visibility,
       enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
@@ -200,18 +198,6 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                   rows={3}
                 />
                 <p className="text-xs text-muted-foreground">{t('suggestedQuestionsHint')}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="poweredByText">{t('poweredByText')}</Label>
-                <Input
-                  id="poweredByText"
-                  value={poweredByText}
-                  onChange={(e) => setPoweredByText(e.target.value)}
-                  placeholder={t('poweredByTextPlaceholder')}
-                  maxLength={200}
-                />
-                <p className="text-xs text-muted-foreground">{t('poweredByTextHint')}</p>
               </div>
             </CardContent>
           </Card>
