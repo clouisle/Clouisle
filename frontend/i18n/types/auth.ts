@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-11T08:41:00.421Z
+// GENERATED — 2026-08-14T22:11:30.519Z
 // Source: i18n/en/auth.json
 export type AuthMessages = {
   auth: {

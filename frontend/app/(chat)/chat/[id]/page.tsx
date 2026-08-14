@@ -1078,10 +1078,11 @@ export default function PublicChatPage({
             <div className="relative shrink-0">{inputArea}</div>
           )}
 
-          {/* Footer - anchored to the bottom in every state */}
-          {!embedMode && (
+          {/* Footer - anchored to the bottom in every state; rendered only
+              when the agent configures a powered-by text */}
+          {!embedMode && agent.powered_by_text && (
             <p className="text-[11px] text-center text-muted-foreground mt-2 pb-4 shrink-0">
-              {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
+              {agent.powered_by_text}
             </p>
           )}
         </div>

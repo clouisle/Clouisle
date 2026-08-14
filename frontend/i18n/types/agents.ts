@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-11T08:41:00.418Z
+// GENERATED — 2026-08-14T22:11:30.516Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -91,6 +91,9 @@ export type AgentsMessages = {
     openingMessagePlaceholder: string
     suggestedQuestions: string
     suggestedQuestionsHint: string
+    poweredByText: string
+    poweredByTextPlaceholder: string
+    poweredByTextHint: string
     knowledgeBases: string
     knowledgeBasesHint: string
     addKnowledgeBase: string

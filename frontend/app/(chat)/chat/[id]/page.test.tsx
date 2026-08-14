@@ -257,6 +257,19 @@ describe('PublicChatPage', () => {
     expect(chatInputProps.onStop).toBe(stop)
   })
 
+  test('renders the agent-powered footer text and hides it when unset', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, powered_by_text: 'Acme Inc' })
+    render()
+    await flush()
+    expect(nodeText(renderer!.root)).toContain('Acme Inc')
+
+    act(() => renderer!.unmount())
+    getPublicAgent.mockResolvedValueOnce({ ...agent, powered_by_text: null })
+    render()
+    await flush()
+    expect(nodeText(renderer!.root)).not.toContain('Acme Inc')
+  })
+
   test('pins the composer below the messages once the conversation has content', async () => {
     chatState.messages = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }], createdAt: new Date() }]
     render()

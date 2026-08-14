@@ -17,7 +17,6 @@
     "starting": "Starting...",
     "typePlaceholder": "Type your message...",
     "workflowInputPlaceholder": "Enter your query to run the workflow...",
-    "poweredBy": "Powered by {name}",
     "inputs": "Inputs",
     "noInputs": "This workflow does not require input.",
     "result": "Result",

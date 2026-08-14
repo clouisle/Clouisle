@@ -45,7 +45,6 @@
       "requiresPublish": "Agent 需要先发布才能嵌入"
     },
     "page": {
-      "poweredBy": "由",
       "close": "关闭",
       "newChat": "新对话",
       "loadingAgent": "正在加载 Agent...",

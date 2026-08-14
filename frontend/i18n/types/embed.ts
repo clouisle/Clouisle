@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-11T08:41:00.423Z
+// GENERATED — 2026-08-14T22:11:30.511Z
 // Source: i18n/en/embed.json
 export type EmbedMessages = {
   embed: {
@@ -47,7 +47,6 @@ export type EmbedMessages = {
       requiresPublish: string
     }
     page: {
-      poweredBy: string
       close: string
       newChat: string
       loadingAgent: string

@@ -17,7 +17,6 @@
     "starting": "启动中...",
     "typePlaceholder": "输入您的消息...",
     "workflowInputPlaceholder": "输入您的查询以运行工作流...",
-    "poweredBy": "由 {name} 提供支持",
     "inputs": "输入",
     "noInputs": "此工作流无需输入参数。",
     "result": "结果",

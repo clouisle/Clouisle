@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-11T08:41:00.428Z
+// GENERATED — 2026-08-14T22:11:30.520Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
@@ -19,7 +19,6 @@ export type RunMessages = {
     starting: string
     typePlaceholder: string
     workflowInputPlaceholder: string
-    poweredBy: string
     inputs: string
     noInputs: string
     result: string

@@ -45,7 +45,6 @@
       "requiresPublish": "Agent must be published before embedding"
     },
     "page": {
-      "poweredBy": "Powered by",
       "close": "Close",
       "newChat": "New Chat",
       "loadingAgent": "Loading agent...",

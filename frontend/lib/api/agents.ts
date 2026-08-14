@@ -204,6 +204,7 @@ export interface Agent {
   variables: VariableDefinition[]
   opening_message?: string | null
   suggested_questions: string[]
+  powered_by_text?: string | null
   knowledge_bases: AgentKnowledgeBaseOut[]
   enable_attachments: boolean
   attachment_config?: AttachmentConfig | null
@@ -260,6 +261,7 @@ export interface AgentCreateInput {
   variables?: VariableDefinition[]
   opening_message?: string | null
   suggested_questions?: string[]
+  powered_by_text?: string | null
   enable_attachments?: boolean
   attachment_config?: AttachmentConfig | null
   enable_user_input_request?: boolean
@@ -290,6 +292,7 @@ export interface AgentUpdateInput {
   variables?: VariableDefinition[]
   opening_message?: string | null
   suggested_questions?: string[]
+  powered_by_text?: string | null
   enable_attachments?: boolean
   attachment_config?: AttachmentConfig | null
   enable_user_input_request?: boolean
@@ -1236,6 +1239,7 @@ export interface PublicAgent {
   avatar_url?: string | null
   opening_message?: string | null
   suggested_questions: string[]
+  powered_by_text?: string | null
   variables: VariableDefinition[]
   enable_attachments: boolean
   attachment_config?: AttachmentConfig | null
