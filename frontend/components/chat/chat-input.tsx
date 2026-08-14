@@ -488,7 +488,7 @@ export function ChatInput({
             disabled={disabled}
             data-testid="chat-input"
             className={cn(
-              'min-h-9 max-h-32 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-1 px-2 md:text-[13px]',
+              'min-h-9 max-h-32 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-1 px-2 text-base md:text-base',
               'placeholder:text-xs placeholder:text-muted-foreground/60'
             )}
           />
