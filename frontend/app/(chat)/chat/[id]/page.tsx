@@ -1006,12 +1006,11 @@ export default function PublicChatPage({
               onOpenCodePreview={setActivePreview}
               emptyState={
               <div className="flex-1 min-h-full flex flex-col items-center px-4 py-8">
-                {/* Logo, welcome, description, and suggestions stack directly
-                    above the composer, which is anchored at the vertical
-                    center of the page. The section scrolls on short viewports
-                    so its content can never push the composer off the center
-                    line. */}
-                <div className="flex w-full flex-1 min-h-0 flex-col items-center justify-end overflow-y-auto pb-6">
+                {/* Logo, welcome, description, and suggestions start near the
+                    top of the page; the composer follows directly below them
+                    and the remaining space is absorbed beneath it, so the
+                    composition reads as one upper block instead of a
+                    symmetric centered one. */}
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
@@ -1064,13 +1063,11 @@ export default function PublicChatPage({
                 )}
 
                 {variablePanel}
-                </div>
 
-                {/* Composer - anchored at the vertical center */}
-                <div className="w-full shrink-0">{composer}</div>
+                {/* Composer - follows the welcome content */}
+                <div className="w-full mt-6 shrink-0">{composer}</div>
 
-                {/* Bottom spacer mirrors the top section so the composer sits
-                    exactly at the vertical center */}
+                {/* Bottom spacer absorbs the remaining space */}
                 <div className="min-h-0 flex-1" />
               </div>
             }
