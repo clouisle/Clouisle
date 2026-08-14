@@ -1190,6 +1190,7 @@ async def get_public_agent_info(
             avatar_url=agent.avatar_url,
             opening_message=agent.opening_message,
             suggested_questions=agent.suggested_questions or [],
+            powered_by_text=agent.powered_by_text,
             variables=agent.variables or [],
             enable_attachments=agent.enable_attachments,
             attachment_config=agent.attachment_config,

@@ -548,6 +548,7 @@ class AgentPackageAdapter(ResourcePackageAdapter):
             "variables": _copy_json(agent.variables) or [],
             "opening_message": agent.opening_message,
             "suggested_questions": _copy_json(agent.suggested_questions) or [],
+            "powered_by_text": agent.powered_by_text,
             "embed_config": _copy_json(agent.embed_config) or {},
             "knowledge_base_configs": [
                 {
@@ -1010,6 +1011,7 @@ def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str
         "variables": payload.get("variables") or [],
         "opening_message": payload.get("opening_message"),
         "suggested_questions": payload.get("suggested_questions") or [],
+        "powered_by_text": payload.get("powered_by_text"),
         "embed_config": payload.get("embed_config") or {},
     }
 

@@ -182,6 +182,13 @@ class Agent(models.Model):
         default=list, description="Suggested questions to show users"
     )  # type: ignore[assignment]
 
+    # Footer attribution (shows on the chat page when set; empty hides it)
+    powered_by_text = fields.TextField(
+        null=True,
+        max_length=200,
+        description="Custom footer attribution for the chat page; empty hides the footer",
+    )
+
     # Status
     status = fields.CharEnumField(
         AgentStatus, default=AgentStatus.DRAFT, description="Agent status"

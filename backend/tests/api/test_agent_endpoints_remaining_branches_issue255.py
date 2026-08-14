@@ -88,6 +88,7 @@ def agent(**overrides):
         "variables": [],
         "opening_message": None,
         "suggested_questions": [],
+        "powered_by_text": None,
         "embed_config": {},
         "created_at": now,
         "updated_at": now,

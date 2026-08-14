@@ -71,6 +71,7 @@ class AuditLogService:
             "variables",
             "opening_message",
             "suggested_questions",
+            "powered_by_text",
             "status",
             "visibility",
         ),

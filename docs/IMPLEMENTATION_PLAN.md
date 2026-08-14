@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **yun-138-agent-powered-by-text** — In progress. Make the chat page footer text ("Powered by …") an Agent-level config: a new `powered_by_text` column, wired through schemas/admin/public APIs, audit, package export/import, the agent config form, and the chat/run page footers (empty hides the footer). See `docs/plan/yun-138-agent-powered-by-text.md`
+  - [ ] 1. Backend model + schemas
+  - [ ] 2. Backend endpoints, audit, package resources
+  - [ ] 3. Backend tests
+  - [ ] 4. Frontend types, config form, pages, i18n
+  - [ ] 5. Frontend tests
 - **audit-log-detail** — Complete. Audit logs now record field-level before/after diffs for every direct CRUD mutation of snapshot-capable resources, via `AuditLogService.snapshot`/`build_changes` + a `SNAPSHOT_FIELDS` registry (zero extra queries, bounded 500-char values). See `docs/plan/audit-log-detail.md`
   - [x] 1. Service helpers and SNAPSHOT_FIELDS registry
   - [x] 2. Admin endpoint wiring

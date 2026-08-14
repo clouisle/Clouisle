@@ -90,6 +90,7 @@ def _agent(**overrides):
         "variables": [],
         "opening_message": None,
         "suggested_questions": [],
+        "powered_by_text": None,
         "embed_config": {},
         "visibility": AgentVisibility.TEAM,
         "status": AgentStatus.DRAFT,

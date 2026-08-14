@@ -90,6 +90,7 @@ def agent(**overrides):
         "variables": [],
         "opening_message": None,
         "suggested_questions": [],
+        "powered_by_text": None,
         "embed_config": {},
     }
     values.update(overrides)

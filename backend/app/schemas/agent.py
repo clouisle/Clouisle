@@ -544,6 +544,9 @@ class AgentCreate(AgentBase):
     variables: list[VariableDefinition] = Field(default_factory=list)
     opening_message: str | None = None
     suggested_questions: list[str] = Field(default_factory=list)
+    powered_by_text: str | None = Field(
+        default=None, max_length=200, description="Chat page footer attribution"
+    )
     visibility: str = Field(default=AgentVisibility.TEAM)
 
 
@@ -579,6 +582,9 @@ class AgentUpdate(BaseModel):
     variables: list[VariableDefinition] | None = None
     opening_message: str | None = None
     suggested_questions: list[str] | None = None
+    powered_by_text: str | None = Field(
+        default=None, max_length=200, description="Chat page footer attribution"
+    )
     visibility: str | None = None
     embed_config: dict[str, Any] | None = None
 
@@ -624,6 +630,7 @@ class AgentOut(AgentBase):
     variables: list[VariableDefinition] = []
     opening_message: str | None = None
     suggested_questions: list[str] = []
+    powered_by_text: str | None = None
     knowledge_bases: list[AgentKnowledgeBaseOut] = []
     embed_config: dict[str, Any] = {}
     status: str
@@ -647,6 +654,7 @@ class AgentPublicOut(BaseModel):
     avatar_url: str | None = None
     opening_message: str | None = None
     suggested_questions: list[str] = []
+    powered_by_text: str | None = None
     variables: list[dict[str, Any]] = []
     enable_attachments: bool = False
     attachment_config: dict[str, Any] | None = None
