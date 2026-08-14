@@ -635,9 +635,9 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
-  // Input chrome (variable panel, composer, footer). Rendered inside the
-  // centered welcome column while the conversation is new, and pinned to the
-  // bottom of the chat area once it has content.
+  // Input chrome (variable panel, composer). Rendered inside the centered
+  // welcome column while the conversation is new, and pinned to the bottom of
+  // the chat area once it has content.
   const inputArea = (
     <>
       {/* Variable Panel - Collapsible above input */}
@@ -713,13 +713,6 @@ export default function PublicChatPage({
         onFilesChange={setFiles}
         isUploading={isUploading}
       />
-
-      {/* Footer */}
-      {!embedMode && (
-        <p className="text-[11px] text-center text-muted-foreground mt-2">
-          {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
-        </p>
-      )}
     </>
   )
 
@@ -1063,7 +1056,14 @@ export default function PublicChatPage({
 
           {/* Input Area - pinned to the bottom once the conversation has content */}
           {messages.length > 0 && (
-            <div className="relative pb-4 shrink-0">{inputArea}</div>
+            <div className="relative shrink-0">{inputArea}</div>
+          )}
+
+          {/* Footer - anchored to the bottom in every state */}
+          {!embedMode && (
+            <p className="text-[11px] text-center text-muted-foreground mt-2 pb-4 shrink-0">
+              {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
+            </p>
           )}
         </div>
         </div>
