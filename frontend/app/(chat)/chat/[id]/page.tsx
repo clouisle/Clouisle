@@ -1078,11 +1078,11 @@ export default function PublicChatPage({
             <div className="relative shrink-0">{inputArea}</div>
           )}
 
-          {/* Footer - anchored to the bottom in every state; rendered only
-              when the agent configures a powered-by text */}
-          {!embedMode && agent.powered_by_text && (
+          {/* Footer - anchored to the bottom in every state; shows the
+              agent's configured text or the default AI disclaimer */}
+          {!embedMode && (
             <p className="text-[11px] text-center text-muted-foreground mt-2 pb-4 shrink-0">
-              {agent.powered_by_text}
+              {agent.powered_by_text || t('aiGeneratedDisclaimer')}
             </p>
           )}
         </div>

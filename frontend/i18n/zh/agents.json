@@ -91,7 +91,7 @@
     "suggestedQuestionsHint": "帮助用户快速开始的示例问题",
     "poweredByText": "页脚文字",
     "poweredByTextPlaceholder": "自定义聊天页页脚文字",
-    "poweredByTextHint": "留空则隐藏聊天页页脚",
+    "poweredByTextHint": "留空则显示默认提示「内容由AI生成，请仔细甄别」",
     "knowledgeBases": "知识库",
     "knowledgeBasesHint": "关联知识库用于 RAG 检索",
     "addKnowledgeBase": "添加知识库",
