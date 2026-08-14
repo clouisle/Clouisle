@@ -635,6 +635,94 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
+  // Input chrome (variable panel, composer, footer). Rendered inside the
+  // centered welcome column while the conversation is new, and pinned to the
+  // bottom of the chat area once it has content.
+  const inputArea = (
+    <>
+      {/* Variable Panel - Collapsible above input */}
+      {variables.length > 0 && variables.some(v => !v.hidden) && (
+        <div className="mx-auto max-w-3xl px-4">
+          <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
+            <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
+              <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  {t('configureAgent')}
+                  {(() => {
+                    const requiredCount = variables.filter(v => !v.hidden && v.required).length
+                    const filledRequiredCount = variables.filter((v) => {
+                      if (v.hidden || !v.required) return false
+                      const value = variableValues[v.name]
+                      if (v.type === 'checkbox') return true
+                      if (v.type === 'array') {
+                        return Array.isArray(value) && value.length > 0
+                      }
+                      return value !== undefined && value !== null && value !== ''
+                    }).length
+
+                    if (requiredCount > 0) {
+                      return (
+                        <span className={cn(
+                          "text-[10px] px-1 py-0.5 rounded",
+                          filledRequiredCount === requiredCount
+                            ? "bg-green-100 text-green-700"
+                            : "bg-orange-100 text-orange-700"
+                        )}>
+                          {filledRequiredCount}/{requiredCount}
+                        </span>
+                      )
+                    }
+                    return null
+                  })()}
+                </span>
+                {variablesOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="px-2.5 pb-2.5 pt-0.5">
+                  <VariableForm
+                    variables={variables}
+                    values={variableValues}
+                    onChange={setVariableValues}
+                    fieldErrors={variableFieldErrors}
+                    className="space-y-2"
+                  />
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+        </div>
+      )}
+
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={handleSubmit}
+        onStop={stop}
+        placeholder={t('typePlaceholder')}
+        disabled={chatLoading && !isStreaming}
+        isLoading={chatLoading}
+        isStreaming={isStreaming}
+        allowAttachments={agent.enable_attachments}
+        enableFileUpload={agent.enable_attachments}
+        fileUploadConfig={agent.attachment_config}
+        files={files}
+        onFilesChange={setFiles}
+        isUploading={isUploading}
+      />
+
+      {/* Footer */}
+      {!embedMode && (
+        <p className="text-[11px] text-center text-muted-foreground mt-2">
+          {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
+        </p>
+      )}
+    </>
+  )
+
   return (
     <div className="h-full flex overflow-hidden bg-background">
       {/* Sidebar */}
@@ -914,7 +1002,7 @@ export default function PublicChatPage({
               } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
-              <div className="flex-1 flex flex-col items-center justify-center px-4">
+              <div className="flex-1 min-h-full flex flex-col items-center justify-center px-4 py-8">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
@@ -965,94 +1053,18 @@ export default function PublicChatPage({
                     ))}
                   </div>
                 )}
+
+                {/* Input - centered with the welcome content while the conversation is new */}
+                <div className="w-full mt-6">{inputArea}</div>
               </div>
             }
           />
           )}
 
-          {/* Input Area */}
-          <div className="relative pb-4 shrink-0">
-            {/* Variable Panel - Collapsible above input */}
-            {variables.length > 0 && variables.some(v => !v.hidden) && (
-              <div className="mx-auto max-w-3xl px-4">
-                <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-                  <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
-                    <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                      <span className="text-xs font-medium flex items-center gap-1.5">
-                        {t('configureAgent')}
-                        {(() => {
-                          const requiredCount = variables.filter(v => !v.hidden && v.required).length
-                          const filledRequiredCount = variables.filter((v) => {
-                            if (v.hidden || !v.required) return false
-                            const value = variableValues[v.name]
-                            if (v.type === 'checkbox') return true
-                            if (v.type === 'array') {
-                              return Array.isArray(value) && value.length > 0
-                            }
-                            return value !== undefined && value !== null && value !== ''
-                          }).length
-
-                          if (requiredCount > 0) {
-                            return (
-                              <span className={cn(
-                                "text-[10px] px-1 py-0.5 rounded",
-                                filledRequiredCount === requiredCount
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-orange-100 text-orange-700"
-                              )}>
-                                {filledRequiredCount}/{requiredCount}
-                              </span>
-                            )
-                          }
-                          return null
-                        })()}
-                      </span>
-                      {variablesOpen ? (
-                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="px-2.5 pb-2.5 pt-0.5">
-                        <VariableForm
-                          variables={variables}
-                          values={variableValues}
-                          onChange={setVariableValues}
-                          fieldErrors={variableFieldErrors}
-                          className="space-y-2"
-                        />
-                      </div>
-                    </CollapsibleContent>
-                  </div>
-                </Collapsible>
-              </div>
-            )}
-
-            <ChatInput
-              value={input}
-              onChange={setInput}
-              onSubmit={handleSubmit}
-              onStop={stop}
-              placeholder={t('typePlaceholder')}
-              disabled={chatLoading && !isStreaming}
-              isLoading={chatLoading}
-              isStreaming={isStreaming}
-              allowAttachments={agent.enable_attachments}
-              enableFileUpload={agent.enable_attachments}
-              fileUploadConfig={agent.attachment_config}
-              files={files}
-              onFilesChange={setFiles}
-              isUploading={isUploading}
-            />
-
-            {/* Footer */}
-            {!embedMode && (
-              <p className="text-[11px] text-center text-muted-foreground mt-2">
-                {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
-              </p>
-            )}
-          </div>
+          {/* Input Area - pinned to the bottom once the conversation has content */}
+          {messages.length > 0 && (
+            <div className="relative pb-4 shrink-0">{inputArea}</div>
+          )}
         </div>
         </div>
         </ResizablePanel>

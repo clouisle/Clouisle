@@ -257,6 +257,19 @@ describe('PublicChatPage', () => {
     expect(chatInputProps.onStop).toBe(stop)
   })
 
+  test('pins the composer below the messages once the conversation has content', async () => {
+    chatState.messages = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }], createdAt: new Date() }]
+    render()
+    await flush()
+
+    // Message rows render instead of the centered welcome column...
+    expect(nodeText(renderer!.root)).toContain('messages')
+    // ...the welcome empty state is gone...
+    expect(nodeText(renderer!.root)).not.toContain('welcomeMessage')
+    // ...and exactly one composer is rendered (pinned below the messages).
+    expect(renderer!.root.findAllByProps({ 'data-chat-input': true })).toHaveLength(1)
+  })
+
   test('sets the tab favicon to the agent logo only when it is an image URL', async () => {
     getPublicAgent.mockResolvedValueOnce({ ...agent, avatar_url: '/api/v1/upload/files/logo.png' })
     render()
