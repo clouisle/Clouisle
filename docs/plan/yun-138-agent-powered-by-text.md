@@ -50,4 +50,4 @@
 - Rollback: revert the field addition; the footer falls back to nothing (hidden) — no crash.
 
 ## Status
-In progress.
+Complete. Verified: backend full suite 6813 passed / 0 failed (3 skipped); ruff check + format clean; frontend 2114 tests passed, coverage functions 95.03% / lines 97.68% (gate ≥95%).
