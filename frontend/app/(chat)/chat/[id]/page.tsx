@@ -635,12 +635,13 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
-  // Input chrome (variable panel, composer). Rendered inside the centered
-  // welcome column while the conversation is new, and pinned to the bottom of
-  // the chat area once it has content.
-  const inputArea = (
+  // Variable panel (collapsible form shown when the agent declares input
+  // variables) and the composer itself. They are kept separate so the
+  // composer can act as the vertical-center anchor of the welcome column;
+  // the variable panel rides above it. Both are stacked together in the
+  // bottom-pinned input area once the conversation has content.
+  const variablePanel = (
     <>
-      {/* Variable Panel - Collapsible above input */}
       {variables.length > 0 && variables.some(v => !v.hidden) && (
         <div className="mx-auto max-w-3xl px-4">
           <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
@@ -696,23 +697,32 @@ export default function PublicChatPage({
           </Collapsible>
         </div>
       )}
+    </>
+  )
 
-      <ChatInput
-        value={input}
-        onChange={setInput}
-        onSubmit={handleSubmit}
-        onStop={stop}
-        placeholder={t('typePlaceholder')}
-        disabled={chatLoading && !isStreaming}
-        isLoading={chatLoading}
-        isStreaming={isStreaming}
-        allowAttachments={agent.enable_attachments}
-        enableFileUpload={agent.enable_attachments}
-        fileUploadConfig={agent.attachment_config}
-        files={files}
-        onFilesChange={setFiles}
-        isUploading={isUploading}
-      />
+  const composer = (
+    <ChatInput
+      value={input}
+      onChange={setInput}
+      onSubmit={handleSubmit}
+      onStop={stop}
+      placeholder={t('typePlaceholder')}
+      disabled={chatLoading && !isStreaming}
+      isLoading={chatLoading}
+      isStreaming={isStreaming}
+      allowAttachments={agent.enable_attachments}
+      enableFileUpload={agent.enable_attachments}
+      fileUploadConfig={agent.attachment_config}
+      files={files}
+      onFilesChange={setFiles}
+      isUploading={isUploading}
+    />
+  )
+
+  const inputArea = (
+    <>
+      {variablePanel}
+      {composer}
     </>
   )
 
@@ -995,7 +1005,13 @@ export default function PublicChatPage({
               } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
-              <div className="flex-1 min-h-full flex flex-col items-center justify-center px-4 py-8">
+              <div className="flex-1 min-h-full flex flex-col items-center px-4 py-8">
+                {/* Logo, welcome, description, and suggestions stack directly
+                    above the composer, which is anchored at the vertical
+                    center of the page. The section scrolls on short viewports
+                    so its content can never push the composer off the center
+                    line. */}
+                <div className="flex w-full flex-1 min-h-0 flex-col items-center justify-end overflow-y-auto pb-6">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
@@ -1047,8 +1063,15 @@ export default function PublicChatPage({
                   </div>
                 )}
 
-                {/* Input - centered with the welcome content while the conversation is new */}
-                <div className="w-full mt-6">{inputArea}</div>
+                {variablePanel}
+                </div>
+
+                {/* Composer - anchored at the vertical center */}
+                <div className="w-full shrink-0">{composer}</div>
+
+                {/* Bottom spacer mirrors the top section so the composer sits
+                    exactly at the vertical center */}
+                <div className="min-h-0 flex-1" />
               </div>
             }
           />
