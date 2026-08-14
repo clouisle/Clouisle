@@ -433,7 +433,7 @@ export function ChatInput({
 
       {/* Input Area - OpenAI Style */}
       <div className={cn(
-        'flex items-end gap-1 border bg-background shadow-sm pl-1 pr-1.5 py-1',
+        'flex items-end gap-1 border bg-background shadow-sm pl-1 pr-1.5 py-1.5',
         isMultiline ? 'rounded-2xl' : 'rounded-full',
         isDragging && 'opacity-50'
       )}>
@@ -488,8 +488,8 @@ export function ChatInput({
             disabled={disabled}
             data-testid="chat-input"
             className={cn(
-              'min-h-9 max-h-32 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-2 px-2',
-              'placeholder:text-muted-foreground/60'
+              'min-h-9 max-h-32 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-1 px-2 md:text-[13px]',
+              'placeholder:text-xs placeholder:text-muted-foreground/60'
             )}
           />
         </div>
