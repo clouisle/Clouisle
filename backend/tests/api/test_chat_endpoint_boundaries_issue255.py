@@ -91,6 +91,7 @@ def agent(**overrides):
         "avatar_url": None,
         "opening_message": None,
         "suggested_questions": None,
+        "powered_by_text": None,
         "variables": None,
         "enable_attachments": False,
         "attachment_config": None,
