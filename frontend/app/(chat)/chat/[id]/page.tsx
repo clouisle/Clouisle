@@ -1005,7 +1005,7 @@ export default function PublicChatPage({
               } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
-              <div className="flex-1 self-stretch flex flex-col items-center px-4 pt-6 pb-8">
+              <div className="flex-1 self-stretch min-w-0 flex flex-col items-center px-4 pt-6 pb-8">
                 {/* The composer is anchored at the vertical center of the
                     page: the top section absorbs the space above it and the
                     spacer mirrors it below, so the composer lands exactly on
@@ -1013,7 +1013,7 @@ export default function PublicChatPage({
                     header/footer height asymmetry). Welcome content hugs the
                     composer; the section scrolls on short viewports so it can
                     never push the composer off the center line. */}
-                <div className="flex w-full flex-1 min-h-0 flex-col items-center justify-end overflow-y-auto pb-4">
+                <div className="flex w-full flex-1 min-h-0 min-w-0 flex-col items-center justify-end overflow-y-auto pb-4">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
@@ -1046,12 +1046,12 @@ export default function PublicChatPage({
 
                 {/* Suggested Questions */}
                 {agent.suggested_questions && agent.suggested_questions.length > 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-3xl mt-8">
+                  <div className="grid w-[80%] max-w-[614px] min-w-0 grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2 mt-4">
                     {agent.suggested_questions.slice(0, 4).map((q, i) => (
                       <button
                         key={i}
                         onClick={() => handleSubmit(q)}
-                        className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent hover:border-border transition-colors cursor-pointer w-full text-center"
+                        className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent hover:border-border transition-colors cursor-pointer w-full min-w-0 text-center break-words"
                       >
                         {q}
                       </button>
@@ -1063,7 +1063,7 @@ export default function PublicChatPage({
                 </div>
 
                 {/* Composer - anchored at the vertical center */}
-                <div className="w-full shrink-0">{composer}</div>
+                <div className="w-full min-w-0 shrink-0">{composer}</div>
 
                 {/* Bottom spacer mirrors the top section so the composer sits
                     exactly on the center line */}
