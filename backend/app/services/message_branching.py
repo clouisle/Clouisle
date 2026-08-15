@@ -308,6 +308,10 @@ async def activate_conversation_branch(
     *,
     using_db: BaseDBAsyncClient | None = None,
 ) -> None:
+    # The deduplication loop and the filtering comprehension below both
+    # traverse the path, so materialize it up front: one-shot iterables
+    # (generators / QuerySets) would be exhausted by the first pass.
+    canonical_path = list(canonical_path)
     if using_db is None:
         # Serialize concurrent branch-state transitions: the read of
         # current_active and the deactivate/activate updates below must not
