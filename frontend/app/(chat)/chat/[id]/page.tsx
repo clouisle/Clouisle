@@ -907,7 +907,7 @@ export default function PublicChatPage({
               {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
             </Button>
           )}
-          {allowNew && !sidebarOpen && (
+          {allowNew && (!showHistory || !sidebarOpen) && (
             <Tooltip>
               <TooltipTrigger
                 onClick={handleNewChat}
@@ -940,7 +940,7 @@ export default function PublicChatPage({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Loading Skeleton */}
           {loadingConversation ? (
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+            <div className={cn('flex-1 min-h-0 overflow-y-auto space-y-4', showHeader ? 'px-4 pb-4 pt-[76px]' : 'p-4')}>
               {/* Skeleton for user message */}
               <div className="flex justify-end">
                 <div className="max-w-[80%] space-y-2">
@@ -998,6 +998,7 @@ export default function PublicChatPage({
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
               conversationId={conversationId}
+              headerInset={showHeader}
               className="flex-1 min-h-0 overflow-y-auto"
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}

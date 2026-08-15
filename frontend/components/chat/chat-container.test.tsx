@@ -49,6 +49,23 @@ describe('ChatContainer', () => {
     expect(messageProps).toHaveLength(0)
   })
 
+  test('headerInset offsets the message scroller and empty state', () => {
+    const messages = [textMessage('u1', 'user', 'hello')]
+    const scrolled = renderContainer(<ChatContainer messages={messages} headerInset />)
+    expect(scrolled).toContain('top-[60px]')
+
+    const empty = renderContainer(<ChatContainer messages={[]} headerInset emptyState={<span>No messages</span>} />)
+    expect(empty).toContain('pt-[60px]')
+    expect(empty).toContain('No messages')
+  })
+
+  test('without headerInset the scroller spans the full viewport', () => {
+    const messages = [textMessage('u1', 'user', 'hello')]
+    const html = renderContainer(<ChatContainer messages={messages} />)
+    expect(html).toContain('absolute inset-x-0 bottom-0 overflow-y-auto')
+    expect(html).not.toContain('top-[60px]')
+  })
+
   test('renders messages, custom parts, and marks only the latest message as streaming', () => {
     const messages = [
       textMessage('u1', 'user', 'hello'),

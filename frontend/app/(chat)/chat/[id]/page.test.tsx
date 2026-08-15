@@ -365,6 +365,30 @@ describe('PublicChatPage', () => {
     expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined)
   })
 
+  test('shows the new-chat control when embed history is disabled', async () => {
+    // show_history: false keeps sidebarOpen true on desktop (no sidebar, no
+    // toggle to close it), so the control must not depend on !sidebarOpen.
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      embed_config: { show_history: false, allow_new: true },
+    })
+    act(() => {
+      renderer = create(
+        <PublicChatPage params={Promise.resolve({ id: 'agent-1' })} embedMode agentId="agent-1" />,
+        { createNodeMock: () => ({}) },
+      )
+    })
+    await flush()
+
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })
+    expect(newChat.length).toBeGreaterThan(0)
+    act(() => newChat[0].props.onClick())
+    expect(resetChat).toHaveBeenCalled()
+
+    act(() => renderer!.unmount())
+    renderer = undefined
+  })
+
   test('waits for every upload to settle before aborting submission', async () => {
     const consoleError = console.error
     console.error = mock()

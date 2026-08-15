@@ -647,6 +647,38 @@ describe('useChat', () => {
     expect(result.status).toBe('idle')
   })
 
+  it('preserves the edit-stream error code across the history reload', async () => {
+    const userId = '11111111-1111-1111-1111-111111111111'
+    const onError = mock()
+    // The backend persisted the failed edit round (empty assistant message),
+    // but BackendMessage conversion does not carry the SSE error code.
+    const reloaded = [
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'edited' }] },
+      { id: 'assistant-failed', role: 'assistant', parts: [], metadata: { isError: true } },
+    ] as ChatMessage[]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1', onError }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+    ] as ChatMessage[])
+    await flush()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: 'assistant-failed', edited_message_id: userId } },
+      { event: 'error', data: { code: 429, msg: 'try later', quota_type: 'usage' } },
+    ]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockResolvedValue({ messages: reloaded })
+
+    await result.editMessage(userId, 'edited')
+
+    expect(onError).toHaveBeenCalledWith({ code: 429, message: 'try later', quotaType: 'usage' })
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    const failed = result.messages.find((message) => message.id === 'assistant-failed')
+    expect(failed?.metadata).toMatchObject({ isError: true, errorCode: 429 })
+    expect(result.status).toBe('idle')
+  })
+
   it('resends text and images when regenerating an unsaved assistant', async () => {
     result.setMessages([
       {

@@ -255,7 +255,8 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     message.reasoning_content ||
     (message.tool_calls && message.tool_calls.length > 0) ||
     (message.steps && message.steps.length > 0) ||
-    message.is_manually_stopped
+    message.is_manually_stopped ||
+    message.round_status === 'error'
   )
 
   if (message.role === 'assistant' && !hasRenderableAssistantContent) {
@@ -423,15 +424,20 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     if (usage) {
       const durationMs = message.duration_ms
       metadata.usage = usage
-      metadata.timing = {
+      // The renderer types timing.duration_ms as a number; omit the key when
+      // the backend did not persist a duration instead of emitting null.
+      const timing: Record<string, unknown> = {
         first_token_ms: message.first_token_ms ?? null,
-        duration_ms: durationMs ?? null,
         // tokens_per_second is not persisted; recompute it the same way the
         // streaming message_end event does (round(completion / duration)).
         tokens_per_second: usage.completion_tokens > 0 && durationMs && durationMs > 0
           ? Math.round((usage.completion_tokens / (durationMs / 1000)) * 10) / 10
           : null,
       }
+      if (durationMs != null) {
+        timing.duration_ms = durationMs
+      }
+      metadata.timing = timing
     }
   }
 

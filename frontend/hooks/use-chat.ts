@@ -1268,8 +1268,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               ...streamState,
               errorText,
             })
+            const failedMessageId = assistantMessageId
             setMessages((prev) => prev.map((message) => (
-              message.id === assistantMessageId
+              message.id === failedMessageId
                 ? {
                     ...message,
                     parts,
@@ -1283,7 +1284,24 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   }
                 : message
             )))
+            // BackendMessage conversion does not persist the SSE error code, so
+            // re-apply the local diagnostic to the reloaded message with the
+            // same id after the history reload.
             await reloadConversationMessages().catch(() => undefined)
+            setMessages((prev) => prev.map((message) => (
+              message.id === failedMessageId && message.role === 'assistant'
+                ? {
+                    ...message,
+                    metadata: {
+                      ...message.metadata,
+                      isError: true,
+                      errorMessage: errorText,
+                      errorCode: chatError.code,
+                      preservedPartialProgress: preservedProgress,
+                    },
+                  }
+                : message
+            )))
             setStatus('idle')
             return
           }

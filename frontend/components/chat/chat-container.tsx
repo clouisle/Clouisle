@@ -38,6 +38,10 @@ interface ChatContainerProps {
   hideReasoning?: boolean;
   /** Current conversation ID (shown on errors for debugging) */
   conversationId?: string | null;
+  /** Reserve space for an absolutely-positioned floating header (e.g. embed
+   *  chat pages). Offsets the scroll viewport / empty state by the header
+   *  height so initial content never renders underneath it. */
+  headerInset?: boolean;
 }
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -192,6 +196,7 @@ export function ChatContainer({
   hideMessageActions = false,
   hideReasoning = false,
   conversationId,
+  headerInset = false,
 }: ChatContainerProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -418,7 +423,7 @@ export function ChatContainer({
 
   if (messages.length === 0 && emptyState) {
     return (
-      <div className={cn('h-full flex items-center justify-center', className)}>{emptyState}</div>
+      <div className={cn('h-full flex items-center justify-center', headerInset && 'pt-[60px]', className)}>{emptyState}</div>
     );
   }
 
@@ -426,7 +431,7 @@ export function ChatContainer({
     <div className={cn('relative h-full', className)}>
       <div
         ref={scrollerRef}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]"
+        className={cn('absolute inset-x-0 bottom-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]', headerInset && 'top-[60px]')}
         onScroll={updateAtBottomState}
       >
         <div ref={contentRef}>

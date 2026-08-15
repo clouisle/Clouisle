@@ -553,13 +553,37 @@ async def test_activate_empty_branch_only_deactivates_messages():
     ]
     active_query = query(all=active)
     deactivate_query = query(update=2)
-    with patch.object(
-        branching.Message,
-        "filter",
-        side_effect=[active_query, deactivate_query],
-    ) as message_filter:
+
+    # Bare call (no using_db): the function must serialize itself by locking
+    # the conversation row inside a transaction before touching message state.
+    lock_query = MagicMock()
+    lock_query.using_db.return_value = lock_query
+    lock_query.select_for_update.return_value = lock_query
+    lock_query.first = AsyncMock(return_value=None)
+
+    class _Transaction:
+        async def __aenter__(self) -> SimpleNamespace:
+            return SimpleNamespace()
+
+        async def __aexit__(self, *args) -> bool:
+            return False
+
+    with (
+        patch.object(
+            branching.Message,
+            "filter",
+            side_effect=[active_query, deactivate_query],
+        ) as message_filter,
+        patch.object(
+            branching.Conversation, "filter", return_value=lock_query
+        ) as conversation_filter,
+        patch.object(branching, "in_transaction", return_value=_Transaction()),
+    ):
         await branching.activate_conversation_branch(conversation_id, [])
 
+    conversation_filter.assert_called_once_with(id=conversation_id)
+    lock_query.select_for_update.assert_called_once_with()
+    lock_query.first.assert_awaited_once_with()
     assert message_filter.call_args_list[0] == call(
         conversation_id=conversation_id, is_active=True
     )
@@ -678,11 +702,27 @@ async def test_activate_branch_excludes_user_message_round_steps():
     deactivate_query = query(update=1)
     activate_ids = query(update=1)
 
-    with patch.object(
-        branching.Message,
-        "filter",
-        side_effect=[steps_query, active_query, deactivate_query, activate_ids],
-    ) as message_filter:
+    lock_query = MagicMock()
+    lock_query.using_db.return_value = lock_query
+    lock_query.select_for_update.return_value = lock_query
+    lock_query.first = AsyncMock(return_value=None)
+
+    class _Transaction:
+        async def __aenter__(self) -> SimpleNamespace:
+            return SimpleNamespace()
+
+        async def __aexit__(self, *args) -> bool:
+            return False
+
+    with (
+        patch.object(
+            branching.Message,
+            "filter",
+            side_effect=[steps_query, active_query, deactivate_query, activate_ids],
+        ) as message_filter,
+        patch.object(branching.Conversation, "filter", return_value=lock_query),
+        patch.object(branching, "in_transaction", return_value=_Transaction()),
+    ):
         await branching.activate_conversation_branch(
             conversation_id, [user_msg, new_assistant]
         )

@@ -32,7 +32,7 @@
 - **Validation**: create/update round-trip persists the field; public agent output carries it; empty → null.
 
 ### Stage 4: Frontend types + config form + pages
-- **Files**: `frontend/lib/api/agents.ts`, `frontend/app/(platform)/app/apps/[id]/page.tsx`, `.../_components/agent-config-form.tsx`, `frontend/app/(chat)/chat/[id]/page.tsx`, `frontend/app/(chat)/run/[id]/_components/agent-run-page.tsx`, `frontend/i18n/{zh,en}/agents.json`, `frontend/i18n/types/agents.ts`
+- **Files**: `frontend/lib/api/agents.ts`, `frontend/app/(platform)/app/apps/[id]/page.tsx`, `.../_components/agent-settings-drawer.tsx`, `frontend/app/(chat)/chat/[id]/page.tsx`, `frontend/app/(chat)/run/[id]/_components/agent-run-page.tsx`, `frontend/i18n/{zh,en}/agents.json`, `frontend/i18n/types/agents.ts`
 - **Logic**: add the field to `Agent`/`AgentCreateInput`/`AgentUpdateInput`/`PublicAgent`; add form state + submit + an input with placeholder/hint; chat page + run page footer render `powered_by_text` when set and hide otherwise (drop the `poweredBy` fallback); regenerate i18n types via `bun run scripts/gen-i18n-types.ts`.
 
 ### Stage 5: Frontend tests

@@ -644,14 +644,24 @@ async def init_agent_powered_by_text():
     logger.info("Checking agent powered_by_text field...")
 
     conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
 
     # Check if agents table exists first
-    _, tables = await conn.execute_query(
-        """
-        SELECT table_name FROM information_schema.tables
-        WHERE table_name = 'agents' AND table_schema = 'public'
-        """
-    )
+    if is_sqlite:
+        _, tables = await conn.execute_query(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = 'agents'
+            """
+        )
+    else:
+        _, tables = await conn.execute_query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = 'agents' AND table_schema = 'public'
+            """
+        )
     if not tables:
         logger.info(
             "Agents table does not exist yet, skipping powered_by_text migration"
@@ -659,15 +669,26 @@ async def init_agent_powered_by_text():
         return
 
     # Check if powered_by_text column exists
-    _, rows = await conn.execute_query(
-        """
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'agents' AND column_name = 'powered_by_text'
-        """
-    )
-    if rows:
-        logger.info("powered_by_text column already exists")
-        return
+    if is_sqlite:
+        _, columns = await conn.execute_query("PRAGMA table_info(agents)")
+        column_exists = any(
+            (column.get("name") if isinstance(column, dict) else column[1])
+            == "powered_by_text"
+            for column in columns
+        )
+        if column_exists:
+            logger.info("powered_by_text column already exists")
+            return
+    else:
+        _, rows = await conn.execute_query(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'agents' AND column_name = 'powered_by_text'
+            """
+        )
+        if rows:
+            logger.info("powered_by_text column already exists")
+            return
 
     logger.info("Adding powered_by_text column to agents table...")
     await execute_startup_migration_query(
@@ -1109,27 +1130,47 @@ async def init_message_history_index():
     logger.info("Checking messages history index...")
 
     conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
 
-    _, tables = await conn.execute_query(
-        """
-        SELECT table_name FROM information_schema.tables
-        WHERE table_name = 'messages' AND table_schema = 'public'
-        """
-    )
+    if is_sqlite:
+        _, tables = await conn.execute_query(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = 'messages'
+            """
+        )
+    else:
+        _, tables = await conn.execute_query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = 'messages' AND table_schema = 'public'
+            """
+        )
     if not tables:
         logger.info(
             "Messages table does not exist yet, skipping history index migration"
         )
         return
 
-    _, indexes = await conn.execute_query(
-        """
-        SELECT indexname FROM pg_indexes
-        WHERE schemaname = 'public'
-          AND tablename = 'messages'
-          AND indexname = 'idx_messages_conversation_active_created_at'
-        """
-    )
+    if is_sqlite:
+        _, indexes = await conn.execute_query(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND tbl_name = 'messages'
+              AND name = 'idx_messages_conversation_active_created_at'
+            """
+        )
+    else:
+        _, indexes = await conn.execute_query(
+            """
+            SELECT indexname FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = 'messages'
+              AND indexname = 'idx_messages_conversation_active_created_at'
+            """
+        )
     if indexes:
         logger.info("Messages history index already exists")
         return

@@ -29,7 +29,10 @@ mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {})
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('next/image', () => ({ default: () => null }))
 mock.module('lucide-react', () => ({ AlertCircle: () => null, ChevronDown: () => null, ChevronUp: () => null, Loader2: () => null, Sparkles: () => null }))
-mock.module('@/lib/api', () => ({ ApiError: class ApiError extends Error { code = 0 }, publicAgentsApi: { getPublicAgent: mock(async () => ({ id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: [], powered_by_text: 'Acme Inc', variables: [], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } })) } }))
+const MockApiError = class extends Error {
+  code = 0
+}
+mock.module('@/lib/api', () => ({ ApiError: MockApiError, publicAgentsApi: { getPublicAgent: mock(async () => ({ id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: [], powered_by_text: 'Acme Inc', variables: [], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } })) } }))
 mock.module('@/components/ui/button', () => ({ Button: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
 mock.module('@/components/ui/alert', () => ({ Alert: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertDescription: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertTitle: (p: Record<string, unknown>) => ({ type: 'h5', props: p }) }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleContent: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleTrigger: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))

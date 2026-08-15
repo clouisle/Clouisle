@@ -136,6 +136,57 @@ async def test_message_history_index_skipped_before_first_schema(
 
 
 @pytest.mark.asyncio
+async def test_message_history_index_sqlite_created_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="sqlite"),
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, ["messages"]),  # sqlite_master table probe
+                (1, []),  # index missing
+            ]
+        ),
+    )
+    migration = AsyncMock(return_value=(1, []))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_message_history_index()
+
+    migration.assert_awaited_once_with(conn, ANY)
+    sql = migration.await_args.args[1]
+    assert "idx_messages_conversation_active_created_at" in sql
+    assert "ON messages (conversation_id, is_active, created_at)" in sql
+    statements = [a.args[0] for a in conn.execute_query.await_args_list]
+    assert any("sqlite_master" in s for s in statements)
+    assert not any("information_schema" in s for s in statements)
+    assert not any("pg_indexes" in s for s in statements)
+
+
+@pytest.mark.asyncio
+async def test_message_history_index_sqlite_skipped_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="sqlite"),
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, ["messages"]),
+                (1, [{"name": "idx_messages_conversation_active_created_at"}]),
+            ]
+        ),
+    )
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_message_history_index()
+
+    migration.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_notification_tables_create_only_missing_groups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -234,6 +285,55 @@ async def test_agent_powered_by_text_skips_without_agents_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     conn = SimpleNamespace(execute_query=AsyncMock(return_value=(1, [])))
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_agent_powered_by_text()
+
+    migration.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_agent_powered_by_text_sqlite_column_added_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="sqlite"),
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, ["agents"]),  # sqlite_master table probe
+                (1, [(0, "id"), (1, "name")]),  # PRAGMA table_info, column absent
+            ]
+        ),
+    )
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_agent_powered_by_text()
+
+    migration.assert_awaited_once()
+    assert "ADD COLUMN powered_by_text TEXT" in migration.await_args.args[1]
+    statements = [a.args[0] for a in conn.execute_query.await_args_list]
+    assert any("sqlite_master" in s for s in statements)
+    assert any("PRAGMA table_info" in s for s in statements)
+    assert not any("information_schema" in s for s in statements)
+
+
+@pytest.mark.asyncio
+async def test_agent_powered_by_text_sqlite_skips_when_column_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="sqlite"),
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, ["agents"]),
+                (1, [(0, "id"), (1, "powered_by_text")]),
+            ]
+        ),
+    )
     migration = AsyncMock()
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
     monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)

@@ -98,6 +98,26 @@ describe('message converter', () => {
     })
   })
 
+  it('omits timing.duration_ms when usage was persisted without a duration', () => {
+    const converted = convertBackendMessage(message({
+      token_usage: { prompt: 120, completion: 45 },
+      first_token_ms: 300,
+    }))
+
+    expect(converted?.metadata).toEqual({
+      isManuallyStopped: false,
+      isError: false,
+      preservedPartialProgress: false,
+      usage: { prompt_tokens: 120, completion_tokens: 45, total_tokens: 165 },
+      timing: {
+        first_token_ms: 300,
+        tokens_per_second: null,
+      },
+    })
+    // The renderer types timing.duration_ms as a number; null must never be emitted.
+    expect(converted?.metadata?.timing).not.toHaveProperty('duration_ms')
+  })
+
   it('keeps malformed user input request XML as text', () => {
     const content = '<user_input_request><question>Choose one</question><options><option>Only</option></options></user_input_request>'
 
@@ -334,6 +354,25 @@ describe('message converter', () => {
       isError: true,
       preservedPartialProgress: true,
       errorMessage: 'Provider unavailable',
+    })
+  })
+
+  it('keeps empty failed assistant turns so the historical error diagnostic renders', () => {
+    // A failure before content/reasoning/steps were persisted must not be
+    // dropped: the UI renders the error banner from metadata alone.
+    const converted = convertBackendMessage(message({
+      content: null,
+      reasoning_content: null,
+      tool_calls: null,
+      steps: null,
+      round_status: 'error',
+    }))
+
+    expect(converted).not.toBeNull()
+    expect(converted).toMatchObject({
+      role: 'assistant',
+      parts: [],
+      metadata: { isError: true, errorMessage: undefined, preservedPartialProgress: false },
     })
   })
 

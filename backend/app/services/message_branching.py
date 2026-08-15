@@ -5,8 +5,10 @@ from uuid import UUID
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 
 from app.models.agent import (
+    Conversation,
     ConversationSessionMemory,
     ConversationSessionMemoryStatus,
     Message,
@@ -62,11 +64,11 @@ _CHAIN_WALK_FIELDS = (
 
 def _descendant_sort_key(message: Message):
     """Match the old SQL ordering (-is_active, -created_at, -id): active first,
-    then NEWEST, then id tiebreak."""
+    then NEWEST, then descending id tiebreak."""
     return (
         -int(message.is_active),
         -message.created_at.timestamp(),
-        str(message.id),
+        -message.id.int,
     )
 
 
@@ -247,7 +249,7 @@ async def get_prefix_path_before(
         if prefix:
             prefix.reverse()
             if len(prefix) < limit:
-                full_prefix = await get_prefix_path_before(message)
+                full_prefix = await get_prefix_path_before(message, trimmed=trimmed)
                 return full_prefix[-limit:]
             return prefix
 
@@ -306,6 +308,22 @@ async def activate_conversation_branch(
     *,
     using_db: BaseDBAsyncClient | None = None,
 ) -> None:
+    if using_db is None:
+        # Serialize concurrent branch-state transitions: the read of
+        # current_active and the deactivate/activate updates below must not
+        # interleave with another activation that read the same set, or two
+        # competing version switches could leave both alternatives active.
+        async with in_transaction() as conn:
+            await (
+                Conversation.filter(id=conversation_id)
+                .using_db(conn)
+                .select_for_update()
+                .first()
+            )
+            await activate_conversation_branch(
+                conversation_id, canonical_path, using_db=conn
+            )
+        return
     # Version-group invariant: members of one version group are alternatives,
     # so a path may never activate more than one of them. If a polluted branch
     # chain contributed both an old version and its replacement, keep the
