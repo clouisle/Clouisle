@@ -8,7 +8,7 @@ import pytest
 
 from app.api.v1.endpoints import chat
 from app.llm.errors import LLMError, QuotaExceededError
-from app.models.agent import MessageRole, RAGMode
+from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import ChatRequest, RegenerateRequest
 from app.schemas.response import ResponseCode
 
@@ -220,6 +220,7 @@ async def setup_regenerate(monkeypatch, generator_error, *, preserved):
         created_at=datetime.now(UTC),
         parent_id=None,
         branch_parent_id=user_message.id,
+        round_status=MessageRoundStatus.COMPLETED,
     )
     new_message = StoredMessage(
         conversation,

@@ -478,7 +478,9 @@ async def test_switch_version_rejects_other_group_and_activates_valid_branch(
     assert_business_error(wrong_group, ResponseCode.BAD_REQUEST, 400)
 
     target = message(parent_id=current.id, version_number=2)
-    results = iter([current, target])
+    # switch_message_version resolves the version-group ROOT message when the
+    # target is not the root, so the Message.filter mock needs a third result.
+    results = iter([current, target, current])
     monkeypatch.setattr(
         chat_module.Message, "filter", lambda **kwargs: Query(next(results))
     )
