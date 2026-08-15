@@ -92,6 +92,7 @@
       "copy": "Copy",
       "copied": "Copied",
       "loadOlderMessages": "Load {count} older messages",
+      "userMessageScaleTick": "User message {ordinal}",
       "retry": "Retry",
       "user": "User",
       "assistant": "Assistant",

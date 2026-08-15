@@ -254,6 +254,7 @@ describe('PublicChatPage', () => {
     expect(chatContainerProps.onRegenerate).toBe(regenerate)
     expect(chatContainerProps.onEditMessage).toBe(editMessage)
     expect(chatContainerProps.onSwitchVersion).toBe(switchVersion)
+    expect(chatContainerProps.showUserMessageScale).toBe(true)
     expect(chatInputProps.onStop).toBe(stop)
   })
 

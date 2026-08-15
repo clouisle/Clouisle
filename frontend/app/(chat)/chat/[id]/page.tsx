@@ -999,6 +999,7 @@ export default function PublicChatPage({
               hideReasoning={agent.hide_reasoning}
               conversationId={conversationId}
               headerInset={showHeader}
+              showUserMessageScale
               className="flex-1 min-h-0 overflow-y-auto"
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}

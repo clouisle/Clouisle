@@ -29,7 +29,7 @@ mock.module('./message', () => ({
   },
 }))
 
-const { ChatContainer } = await import('./chat-container')
+const { ChatContainer, computeUserMessageTicks, userMessagePreview } = await import('./chat-container')
 
 function textMessage(id: string, role: ChatMessage['role'], text: string): ChatMessage {
   return { id, role, parts: [{ type: 'text', text }] }
@@ -131,5 +131,108 @@ describe('ChatContainer', () => {
     expect(onSelectOption).toHaveBeenCalledWith('yes')
     expect(messageProps.every((props) => props.hideToolCalls === true)).toBe(true)
     expect(messageProps.every((props) => props.onOpenCodePreview === onOpenCodePreview)).toBe(true)
+  })
+
+  test('renders the user message scale only when enabled', () => {
+    const messages = [textMessage('u1', 'user', 'hello')]
+    expect(renderContainer(<ChatContainer messages={messages} />)).not.toContain('data-user-message-scale')
+
+    const html = renderContainer(<ChatContainer messages={messages} showUserMessageScale />)
+    expect(html).toContain('data-user-message-scale')
+    expect(html).toContain('pointer-events-none')
+  })
+
+  test('user message scale track aligns with the scroller top', () => {
+    const messages = [textMessage('u1', 'user', 'hello')]
+    const html = renderContainer(<ChatContainer messages={messages} showUserMessageScale headerInset />)
+    const track = html.match(/<div data-user-message-scale[^>]*>/)?.[0] ?? ''
+    expect(track).toContain('top-[60px]')
+  })
+
+  test('renders no scale ticks under SSR because positions come from measured layout', () => {
+    const messages = [
+      textMessage('u1', 'user', 'hello'),
+      textMessage('a1', 'assistant', 'answer'),
+      textMessage('u2', 'user', 'again'),
+    ]
+    const html = renderContainer(<ChatContainer messages={messages} showUserMessageScale />)
+    expect(html).toContain('data-user-message-scale')
+    expect(html).not.toContain('data-user-message-tick')
+  })
+})
+
+describe('computeUserMessageTicks', () => {
+  const ordinals: Record<string, number> = { u1: 1, u2: 2, u3: 3 }
+
+  test('lays ticks out at a fixed 12px pitch, centered in the track', () => {
+    const entries = [
+      { id: 'u1', preview: 'hello' },
+      { id: 'u2', preview: 'again' },
+    ]
+
+    // 400px track, 2 ticks → cluster 24px tall, centered at 188..212.
+    expect(computeUserMessageTicks(entries, 400, ordinals, 'u2')).toEqual([
+      { id: 'u1', y: 194, ordinal: 1, preview: 'hello', current: false },
+      { id: 'u2', y: 206, ordinal: 2, preview: 'again', current: true },
+    ])
+  })
+
+  test('marks only the currently in-view message as current', () => {
+    const entries = [{ id: 'u1', preview: '' }, { id: 'u3', preview: '' }]
+    expect(computeUserMessageTicks(entries, 600, ordinals, 'u3')).toEqual([
+      { id: 'u1', y: 294, ordinal: 1, preview: '', current: false },
+      { id: 'u3', y: 306, ordinal: 3, preview: '', current: true },
+    ])
+  })
+
+  test('centers a single tick in the track when no current id is known', () => {
+    const entries = [{ id: 'u1', preview: '' }]
+    expect(computeUserMessageTicks(entries, 400, ordinals, null)).toEqual([
+      { id: 'u1', y: 200, ordinal: 1, preview: '', current: false },
+    ])
+  })
+
+  test('skips entries without a known user ordinal', () => {
+    const entries = [{ id: 'unknown', preview: '' }, { id: 'u2', preview: '' }]
+
+    expect(computeUserMessageTicks(entries, 400, ordinals, null)).toEqual([
+      { id: 'u2', y: 206, ordinal: 2, preview: '', current: false },
+    ])
+  })
+
+  test('compresses the pitch evenly when the list overflows the track', () => {
+    const entries = Array.from({ length: 100 }, (_, index) => ({ id: `u${index + 1}`, preview: '' }))
+    const ordinalsAll: Record<string, number> = {}
+    for (let i = 0; i < 100; i += 1) ordinalsAll[`u${i + 1}`] = i + 1
+
+    // 100 ticks at 12px = 1200px > 400px track → pitch compressed to 4px.
+    const ticks = computeUserMessageTicks(entries, 400, ordinalsAll, null)
+    expect(ticks).toHaveLength(100)
+    expect(ticks[0].y).toBe(2)
+    expect(ticks[1].y).toBe(6)
+    expect(ticks[99].y).toBe(398)
+    expect(new Set(ticks.map((tick) => tick.y)).size).toBe(100)
+  })
+})
+
+describe('userMessagePreview', () => {
+  test('joins text parts and trims whitespace', () => {
+    expect(userMessagePreview({
+      id: 'u1',
+      role: 'user',
+      parts: [
+        { type: 'text', text: 'first' },
+        { type: 'tool-call', toolCallId: 't1', toolName: 'search', input: {} },
+        { type: 'text', text: 'second' },
+      ],
+    })).toBe('first second')
+  })
+
+  test('returns an empty string when a user message has no text parts', () => {
+    expect(userMessagePreview({
+      id: 'u1',
+      role: 'user',
+      parts: [{ type: 'image', url: 'https://example.test/a.png' }],
+    })).toBe('')
   })
 })
