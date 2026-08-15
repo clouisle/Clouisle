@@ -196,7 +196,11 @@ async def test_switch_message_version_activates_target_branch_and_stales_memory(
     target = _message(parent_id=root.id, version_number=2)
     later = _message()
     message_model = MagicMock()
-    message_model.filter.side_effect = [_Query(first=root), _Query(first=target)]
+    message_model.filter.side_effect = [
+        _Query(first=root),
+        _Query(first=target),
+        _Query(first=root),
+    ]
     conversation_model = MagicMock()
     conversation_model.filter.return_value = _Query(first=SimpleNamespace())
     output = SimpleNamespace(id=target.id, versions=[target])
@@ -229,7 +233,7 @@ async def test_switch_message_version_activates_target_branch_and_stales_memory(
             user,
         )
 
-    prefix.assert_awaited_once_with(target)
+    prefix.assert_awaited_once_with(root)
     descendants.assert_awaited_once_with(target)
     activate.assert_awaited_once_with(root.conversation_id, [root, later])
     stale_memory.assert_awaited_once_with(root.conversation_id)

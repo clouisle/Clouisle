@@ -183,7 +183,7 @@ async def test_switch_message_version_activates_target_branch(monkeypatch):
     monkeypatch.setattr(
         chat.Message,
         "filter",
-        MagicMock(side_effect=[Query(current), Query(target)]),
+        MagicMock(side_effect=[Query(current), Query(target), Query(current)]),
     )
     monkeypatch.setattr(
         chat.Conversation, "filter", MagicMock(return_value=Query(object()))
