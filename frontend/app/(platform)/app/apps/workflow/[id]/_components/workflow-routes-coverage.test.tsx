@@ -177,6 +177,9 @@ mock.module('lucide-react', () => ({
   Workflow: createIcon('Workflow'),
   Wrench: createIcon('Wrench'),
   X: createIcon('X'),
+  Upload: createIcon('Upload'),
+  FileIcon: createIcon('FileIcon'),
+  ImageIcon: createIcon('ImageIcon'),
   XCircle: createIcon('XCircle'),
   Zap: createIcon('Zap'),
   ZoomIn: createIcon('ZoomIn'),
@@ -231,6 +234,7 @@ mock.module('@/components/ui/select', () => ({
   SelectTrigger: ({ children, ...props }: { children?: ReactNode }) => jsx('select-trigger', { ...props, children }),
   SelectValue: (props: Record<string, unknown>) => jsx('select-value', props),
 }))
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: (props: Record<string, unknown>) => jsx('checkbox', props) }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children, ...props }: { children?: ReactNode }) => jsx('dialog', { ...props, children }),
   DialogContent: ({ children, ...props }: { children?: ReactNode }) => jsx('dialog-content', { ...props, children }),

@@ -10,6 +10,7 @@ const element = function Element() {}
 const runWorkflow = mock(async () => ({ run_id: 'run-1' }))
 const debugWorkflow = mock(async () => ({ run_id: 'debug-1' }))
 const cancelWorkflowRun = mock(async () => ({ cancelled: true }))
+const uploadFileMock = mock(async () => ({ url: '/uploads/up.txt' }))
 const streamWorkflowRun = mock(() => mock(() => {}))
 const writeText = mock(async () => {})
 const toast = { success: mock(() => {}), error: mock(() => {}), info: mock(() => {}) }
@@ -72,12 +73,15 @@ mock.module('lucide-react', () => ({
   Zap: element, Bot: element, Home: element, GitBranch: element, Wrench: element, Code: element,
   FileText: element, MessageSquareText: element, RefreshCw: element, Infinity: element, Tags: element,
   Variable: element, Combine: element, Braces: element, Link: element, Workflow: element, Sparkles: element,
+  Upload: element, FileIcon: element, ImageIcon: element,
 }))
 mock.module('@/lib/utils', () => ({ formatDateTime: (value: unknown) => String(value), formatTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/api/client', () => ({
   ApiError: class ApiError extends Error {},
   getErrorMessage: (key: string) => key,
+  api: {},
 }))
+mock.module('@/lib/api', () => ({ ApiError: class ApiError extends Error {} }))
 mock.module('@/lib/api/workflows', () => ({ workflowsApi: { runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun } }))
 mock.module('./node-output-renderer', () => ({
   nodeStatusConfig: {
@@ -94,6 +98,11 @@ for (const path of ['button', 'input', 'label', 'textarea', 'scroll-area', 'fiel
     Button: element, Input: element, Label: element, Textarea: element, ScrollArea: element, FieldError: element,
   }))
 }
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: element }))
+mock.module('@/components/ui/select', () => ({
+  Select: element, SelectContent: element, SelectItem: element, SelectTrigger: element, SelectValue: element,
+}))
+mock.module('@/lib/api/upload', () => ({ uploadApi: { uploadFile: uploadFileMock } }))
 mock.module('@/components/ui/tabs', () => ({ Tabs: element, TabsList: element, TabsTrigger: element, TabsContent: element }))
 mock.module('@/components/ui/tooltip', () => ({
   Tooltip: element,
@@ -102,6 +111,7 @@ mock.module('@/components/ui/tooltip', () => ({
 }))
 
 const { WorkflowRunDrawer } = await import('./workflow-run-drawer')
+const { FileUploadInput, MultiFileUploadInput } = await import('@/components/chat/variable-form')
 
 function descendants(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(descendants)
@@ -154,6 +164,7 @@ beforeEach(() => {
   runWorkflow.mockClear()
   debugWorkflow.mockClear()
   cancelWorkflowRun.mockClear()
+  uploadFileMock.mockClear()
   streamWorkflowRun.mockClear()
   writeText.mockClear()
   toast.success.mockClear()
@@ -189,6 +200,102 @@ test('validates and converts workflow inputs before opening the run stream', asy
     requiredText: 'hello', count: 3.5, enabled: false, items: [1, 'two'], config: { mode: 'safe' },
   } })
   expect(streamWorkflowRun).toHaveBeenCalledWith('run-1', expect.objectContaining({ onEvent: expect.any(Function) }))
+})
+
+test('renders file, image, files, images, select and checkbox inputs and submits upload URLs', async () => {
+  const variables = [
+    { name: 'attachment', type: 'file', required: true, description: 'Upload a document' },
+    { name: 'photo', type: 'image', required: false },
+    { name: 'docs', type: 'files', required: true },
+    { name: 'shots', type: 'images', required: false },
+    { name: 'choice', type: 'select', required: true, options: ['a', 'b'] },
+    { name: 'agree', type: 'checkbox', required: false, description: 'Agree to terms' },
+    { name: 'flag', type: 'boolean', required: false, default: true },
+    { name: 'tags', type: 'array', required: false, default: ['x'] },
+    { name: 'meta', type: 'object', required: false, default: { ok: true } },
+    { name: 'emptyArr', type: 'array', required: false, default: [] },
+  ] as never
+  const workflow = { id: 'workflow-1', status: 'published', definition: { nodes: [] } } as never
+
+  // 展开 FileUploadInput/MultiFileUploadInput 内部节点（其余组件保持不可穿透）
+  const deep = (value: unknown): Node[] => {
+    if (Array.isArray(value)) return value.flatMap(deep)
+    if (!value || typeof value !== 'object' || !('props' in value)) return []
+    const node = value as Node
+    if (node.type === FileUploadInput || node.type === MultiFileUploadInput) {
+      return deep((node.type as (props: Record<string, unknown>) => unknown)(node.props))
+    }
+    return [node, ...deep(node.props.children)]
+  }
+
+  let tree = settle({ variables, workflow })
+  const nodes = deep(tree)
+
+  // 文件/图片/多文件/多图/下拉/复选框 不再渲染为文本输入框
+  expect(nodes.filter((node) => node.type === 'Input')).toHaveLength(0)
+  const singleUploadButtons = nodes.filter((node) =>
+    typeof node.props.onClick === 'function' && text(node.props.children).trim() === 'selectFile')
+  expect(singleUploadButtons).toHaveLength(1) // file
+  const imageUploadButtons = nodes.filter((node) =>
+    typeof node.props.onClick === 'function' && text(node.props.children).trim() === 'selectImage')
+  expect(imageUploadButtons).toHaveLength(1) // image
+  const multiUploadButtons = nodes.filter((node) =>
+    typeof node.props.onClick === 'function' && text(node.props.children).trim() === 'selectFiles')
+  expect(multiUploadButtons).toHaveLength(1) // files
+  const multiImageButtons = nodes.filter((node) =>
+    typeof node.props.onClick === 'function' && text(node.props.children).trim() === 'selectImages')
+  expect(multiImageButtons).toHaveLength(1) // images
+  // 单/多、普通/图片 四种隐藏文件输入各一个，且图片字段限制为 image/*
+  const oneFile = nodes.filter((node) => node.type === 'input' && node.props.type === 'file' && node.props.accept === '*' && !node.props.multiple)
+  const oneImage = nodes.filter((node) => node.type === 'input' && node.props.type === 'file' && node.props.accept === 'image/*' && !node.props.multiple)
+  const multiFiles = nodes.filter((node) => node.type === 'input' && node.props.type === 'file' && node.props.multiple && node.props.accept === '*')
+  const multiImages = nodes.filter((node) => node.type === 'input' && node.props.type === 'file' && node.props.multiple && node.props.accept === 'image/*')
+  expect(oneFile).toHaveLength(1)
+  expect(oneImage).toHaveLength(1)
+  expect(multiFiles).toHaveLength(1)
+  expect(multiImages).toHaveLength(1)
+
+  // 拖拽进入显示拖放层，离开后消失（覆盖层有背景，不会与按钮文字重叠）
+  const dropZone = nodes.find((node) => typeof node.props.onDrop === 'function')!
+  dropZone.props.onDragEnter({ preventDefault() {}, stopPropagation() {} })
+  tree = render({ variables, workflow })
+  expect(deep(tree).some((node) => text(node.props.children).trim() === 'dropFiles')).toBe(true)
+  dropZone.props.onDragLeave({ preventDefault() {}, stopPropagation() {} })
+  tree = render({ variables, workflow })
+  expect(deep(tree).some((node) => text(node.props.children).trim() === 'dropFiles')).toBe(false)
+
+  // 下拉渲染选项与占位符
+  const select = nodes.find((node) => node.type === 'select')!
+  expect(text(select.props.children)).toContain('selectPlaceholder')
+  expect(text(select.props.children)).toContain('a')
+  expect(text(select.props.children)).toContain('b')
+  select.props.onChange({ target: { value: 'b' } })
+
+  // 复选框
+  const checkbox = nodes.find((node) => node.type === 'input' && node.props.type === 'checkbox')!
+  checkbox.props.onChange({ target: { checked: true } })
+
+  // 单文件上传 → URL 透传
+  uploadFileMock.mockResolvedValueOnce({ url: '/uploads/att.txt' })
+  await (oneFile[0].props.onChange as (event: unknown) => Promise<void>)({ target: { files: [new File(['x'], 'doc.txt')] } })
+
+  // 多文件上传 → URL 数组
+  uploadFileMock.mockResolvedValueOnce({ url: '/uploads/d1.txt' }).mockResolvedValueOnce({ url: '/uploads/d2.txt' })
+  await (multiFiles[0].props.onChange as (event: unknown) => Promise<void>)({ target: { files: [new File(['x'], 'a.txt'), new File(['y'], 'b.txt')] } })
+
+  tree = render({ variables, workflow })
+  await (button(tree, 'runDrawer.startRun').props.onClick as () => Promise<void>)()
+
+  expect(uploadFileMock).toHaveBeenCalledWith(expect.any(File), 'workflow-input')
+  expect(runWorkflow).toHaveBeenCalledWith('workflow-1', { inputs: {
+    attachment: '/uploads/att.txt',
+    docs: ['/uploads/d1.txt', '/uploads/d2.txt'],
+    choice: 'b',
+    agree: true,
+    flag: true,
+    tags: ['x'],
+    meta: { ok: true },
+  } })
 })
 
 test('renders streamed answer output, completion metadata, traces, and clipboard feedback', async () => {

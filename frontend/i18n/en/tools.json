@@ -114,8 +114,8 @@
       "urlRequired": "URL is required",
       "invalidJson": "Invalid JSON format",
       "nameHint": "Unique identifier, cannot be changed after creation",
-      "urlHint": "Supports {{variable}} placeholders",
-      "headersHint": "JSON format, supports {{variable}} placeholders",
+      "urlHint": "Supports '{{variable}}' placeholders",
+      "headersHint": "JSON format, supports '{{variable}}' placeholders",
       "bodyTemplateHint": "JSON format, for POST/PUT/PATCH requests",
       "responsePathHint": "Extract specific field from JSON response, e.g. data.result",
       "credentialsHint": "JSON format, stored securely"

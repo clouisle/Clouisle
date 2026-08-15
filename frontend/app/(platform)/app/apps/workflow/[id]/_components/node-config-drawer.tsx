@@ -406,15 +406,34 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             const itemVar = iterConfig.itemVariable || 'item'
             const indexVar = iterConfig.indexVariable || 'index'
 
+            // 若迭代源是文件类变量（file/image/files/images），每个 item 都是单个文件。
+            // 标记 isFile，使 file_to_url 等按文件变量过滤的节点选择器能看到迭代 item。
+            const iteratedId = (iterConfig.iteratorVariable || '').replace(/^\{\{|\}\}$/g, '').trim()
+            const isIteratedItemFile = (() => {
+              if (!iteratedId) return false
+              // 嵌套迭代：外层迭代 item 已在当前变量列表中被标记为文件
+              const known = variables.find(v => v.id === iteratedId)
+              if (known) return known.isFile === true
+              // 开始节点参数中的文件类型
+              const iterNodeId = iteratedId.split('.')[0]
+              const iterParamName = iteratedId.split('.').slice(1).join('.')
+              const iterSourceNode = allNodes.find(n => n.id === iterNodeId)
+              const sourceParams = (iterSourceNode?.data as { parameters?: Array<{ name?: string; type?: string }> })?.parameters || []
+              const sourceParam = sourceParams.find(p => p.name === iterParamName)
+              return !!sourceParam && (sourceParam.type === 'file' || sourceParam.type === 'image'
+                || sourceParam.type === 'files' || sourceParam.type === 'images')
+            })()
+
             variables.push({
               id: `${parentNode.id}.${itemVar}`,
               name: itemVar,
-              type: 'Any',
+              type: isIteratedItemFile ? 'File' : 'Any',
               group: parentNode.id,
               groupLabel: `${parentLabel} (${t('nodeConfig.iterationVars')})`,
               isSystem: false,
               isArray: false,
               isIterable: true,
+              isFile: isIteratedItemFile,
             })
 
             if (filterType !== 'iterable') {
@@ -462,9 +481,11 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           }
           
           loopVars.forEach(loopVar => {
-            const isLoopVarArray = loopVar.type === 'array'
+            const isLoopVarArray = loopVar.type === 'array' || loopVar.type === 'files' || loopVar.type === 'images'
             const isLoopVarObject = loopVar.type === 'object'
             const isLoopVarIterable = isLoopVarArray || isLoopVarObject
+            const isFile = loopVar.type === 'file' || loopVar.type === 'image'
+              || loopVar.type === 'files' || loopVar.type === 'images'
             
             if (filterType === 'iterable' && !isLoopVarIterable) return
             
@@ -477,6 +498,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               isSystem: false,
               isArray: isLoopVarArray,
               isIterable: isLoopVarIterable,
+              isFile,
             })
           })
         }
@@ -607,12 +629,14 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         }
         
         loopVars.forEach(loopVar => {
-          const isLoopVarArray = loopVar.type === 'array'
+          const isLoopVarArray = loopVar.type === 'array' || loopVar.type === 'files' || loopVar.type === 'images'
           const isLoopVarObject = loopVar.type === 'object'
           const isLoopVarIterable = isLoopVarArray || isLoopVarObject
-          
+          const isFile = loopVar.type === 'file' || loopVar.type === 'image'
+            || loopVar.type === 'files' || loopVar.type === 'images'
+            
           if (filterType === 'iterable' && !isLoopVarIterable) return
-          
+            
           variables.push({
             id: `${n.id}.${loopVar.name}`,
             name: loopVar.name,
@@ -622,6 +646,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             isSystem: false,
             isArray: isLoopVarArray,
             isIterable: isLoopVarIterable,
+            isFile,
           })
         })
       }

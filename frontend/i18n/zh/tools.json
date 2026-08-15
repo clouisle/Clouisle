@@ -114,8 +114,8 @@
       "urlRequired": "请输入 URL",
       "invalidJson": "无效的 JSON 格式",
       "nameHint": "唯一标识符，创建后不可修改",
-      "urlHint": "支持 {{variable}} 占位符",
-      "headersHint": "JSON 格式，支持 {{variable}} 占位符",
+      "urlHint": "支持 '{{variable}}' 占位符",
+      "headersHint": "JSON 格式，支持 '{{variable}}' 占位符",
       "bodyTemplateHint": "JSON 格式，用于 POST/PUT/PATCH 请求",
       "responsePathHint": "从 JSON 响应中提取特定字段，如 data.result",
       "credentialsHint": "JSON 格式，安全存储"

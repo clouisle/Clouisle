@@ -227,11 +227,11 @@
         "httpMethod": "方法",
         "url": "URL",
         "urlRequired": "请输入 URL",
-        "urlHint": "支持 {{variable}} 占位符",
+        "urlHint": "支持 '{{variable}}' 占位符",
         "timeout": "超时 (秒)",
         "advancedSettings": "高级设置",
         "headers": "请求头",
-        "headersHint": "JSON 格式，支持 {{variable}} 占位符",
+        "headersHint": "JSON 格式，支持 '{{variable}}' 占位符",
         "bodyTemplate": "请求体模板",
         "bodyTemplateHint": "JSON 格式，用于 POST/PUT/PATCH 请求",
         "responsePath": "响应路径",
@@ -332,7 +332,7 @@
       },
       "testPanel": {
         "arrayPlaceholder": "[\"item1\", \"item2\"]",
-        "objectPlaceholder": "{\"key\": \"value\"}"
+        "objectPlaceholder": "'{\"key\": \"value\"}'"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",

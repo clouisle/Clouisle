@@ -39,7 +39,7 @@
       "conversationConfig": "对话配置",
       "suggestedQuestionsPlaceholder": "每行一个问题",
       "promptDesc": "定义 Agent 的角色和行为",
-      "variableHint": "支持使用 {{变量名}} 格式插入变量",
+      "variableHint": "支持使用 '{{变量名}}' 格式插入变量",
       "enableUserInputRequest": "启用用户输入请求",
       "enableUserInputRequestDesc": "允许 Agent 在对话中向用户请求输入并提供预定义选项",
       "documents": "{count} 文档",

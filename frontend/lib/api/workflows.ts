@@ -220,6 +220,8 @@ export interface VariableDefinition {
   required: boolean
   default?: unknown
   description?: string | null
+  options?: string[] | null
+  fileConfig?: { maxSize?: number; accept?: string[]; maxFiles?: number } | null
 }
 
 // ============ Input Types ============

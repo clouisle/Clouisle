@@ -88,7 +88,7 @@ mock.module('./node-config', () => ({
   systemParameters: [{ name: 'sys.query', valueType: 'String' }],
   defaultStartParameters: [{ id: 'default', name: 'query', type: 'text', required: true }],
   getTypeName: (type: string) => ({ array: 'Array', object: 'Object', files: 'Array' }[type] || 'String'),
-  getLoopVarTypeName: (type: string) => ({ array: 'Array', object: 'Object', number: 'Number' }[type] || 'String'),
+  getLoopVarTypeName: (type: string) => ({ array: 'Array', object: 'Object', number: 'Number', file: 'File', image: 'Image', files: 'Files', images: 'Images' }[type] || 'String'),
   defaultLLMNodeConfig: { outputVariables: { response: 'response', reasoning: 'reasoning', usage: 'usage' } },
   defaultSubWorkflowNodeConfig: { outputVariable: 'result' },
   defaultAgentNodeConfig: { outputVariable: 'response' },
@@ -249,6 +249,8 @@ describe('NodeConfigDrawer', () => {
           { name: 'records', type: 'array' },
           { name: 'metadata', type: 'object' },
           { name: 'label', type: 'string' },
+          { name: 'attachment', type: 'file' },
+          { name: 'photos', type: 'images' },
         ],
       },
     }, { id: 'loop-parent' })
@@ -270,10 +272,55 @@ describe('NodeConfigDrawer', () => {
     const variableIds = (editor.props.variables as Array<{ id: string }>).map(variable => variable.id)
     expect(variableIds).toEqual(expect.arrayContaining([
       'loop-parent.position', 'loop-parent.records', 'loop-parent.metadata',
-      'loop-parent.label', 'start.topic', 'sibling.rows',
+      'loop-parent.label', 'loop-parent.attachment', 'loop-parent.photos',
+      'start.topic', 'sibling.rows',
     ]))
+    // 文件类型的循环变量必须对 file_to_url 等文件变量选择器可见
+    const fileVars = (editor.props.variables as Array<{ id: string; isFile?: boolean; type: string }>)
+      .filter(v => v.isFile)
+    expect(fileVars.map(v => v.id)).toEqual(expect.arrayContaining([
+      'loop-parent.attachment', 'loop-parent.photos',
+    ]))
+    expect(fileVars.find(v => v.id === 'loop-parent.attachment')!.type).toBe('File')
+    expect(fileVars.find(v => v.id === 'loop-parent.photos')!.type).toBe('Images')
+    expect(fileVars.some(v => v.id === 'loop-parent.records')).toBe(false)
     const writableIds = (editor.props.conversationVariables as Array<{ id: string }>).map(variable => variable.id)
     expect(writableIds).toEqual(['conversation.topic', 'loop-parent.results'])
+  })
+
+  test('marks iteration items as file variables when iterating a file-typed source', () => {
+    const current = baseNode('file_to_url', {
+      parentIterationId: 'iteration',
+      fileToUrlConfig: { inputs: [], ensureAbsolute: true },
+    }, { id: 'current' })
+    const iteration = baseNode('iteration', {
+      iterationConfig: {
+        iteratorVariable: '{{start.files}}',
+        iteratorType: 'array',
+        itemVariable: 'item',
+        indexVariable: 'index',
+        outputVariable: 'results',
+        parallel: false,
+      },
+    }, { id: 'iteration' })
+    const start = baseNode('start', {
+      parameters: [{ id: 'files', name: 'files', type: 'files', required: true }],
+    }, { id: 'start' })
+    const editor = descendants(render(current, {
+      allNodes: [current, iteration, start],
+      allEdges: [
+        { id: 'a', source: 'start', target: 'iteration' },
+        { id: 'b', source: 'iteration', target: 'current' },
+      ],
+    })).find(node => node.type === 'FileToUrlNodeConfig')!
+
+    const fileVariables = (editor.props.variables as Array<{ id: string; isFile?: boolean; type: string }>).filter(v => v.isFile)
+    // 迭代源是 files（文件数组），item 是单个文件，必须对 file_to_url 的文件选择器可见
+    const item = fileVariables.find(v => v.id === 'iteration.item')
+    expect(item).toBeDefined()
+    expect(item!.type).toBe('File')
+    expect(fileVariables.some(v => v.id === 'iteration.index')).toBe(false)
+    expect(fileVariables.some(v => v.id === 'start.files')).toBe(true)
   })
 
   test('adds, edits, and removes start parameters through the shared dialog', () => {

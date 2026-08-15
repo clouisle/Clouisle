@@ -34,6 +34,10 @@ describe('node config utilities', () => {
 
     expect(getLoopVarTypeName('boolean')).toBe('Boolean')
     expect(getLoopVarTypeName('array')).toBe('Array')
+    expect(getLoopVarTypeName('file')).toBe('File')
+    expect(getLoopVarTypeName('image')).toBe('Image')
+    expect(getLoopVarTypeName('files')).toBe('Files')
+    expect(getLoopVarTypeName('images')).toBe('Images')
     expect(getLoopVarTypeName('unknown')).toBe('String')
   })
 
@@ -50,5 +54,7 @@ describe('node config utilities', () => {
     expect(parameterTypeConfig.images.valueType).toBe('array')
     expect(parameterTypeConfig.image.valueType).toBe('file')
     expect(loopVariableTypeConfig.boolean.valueType).toBe('Boolean')
+    expect(loopVariableTypeConfig.files.valueType).toBe('Array')
+    expect(loopVariableTypeConfig.image.valueType).toBe('File')
   })
 })

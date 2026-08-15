@@ -974,6 +974,8 @@ export function WorkflowEditorContent({
       required: boolean
       defaultValue?: string
       description?: string
+      options?: string[]
+      fileConfig?: { maxSize?: number; accept?: string[]; maxFiles?: number }
     }> }
     
     const parameters = nodeData.parameters || []
@@ -986,6 +988,8 @@ export function WorkflowEditorContent({
       required: p.required,
       default: p.defaultValue || undefined,
       description: p.description || null,
+      ...(p.options ? { options: p.options } : {}),
+      ...(p.fileConfig ? { fileConfig: p.fileConfig } : {}),
     }))
   }, [nodes])
 
