@@ -172,6 +172,44 @@ class TestExecutionContextResolution:
             "usage": {"total_tokens": 2},
         }
 
+    @pytest.mark.asyncio
+    async def test_bare_iteration_item_names_resolve_from_round_scope(self, context):
+        # 迭代 body 内：{{doc}} 应解析为当前轮的 item，节点作用域形式仍可用
+        await context.set_node_outputs(
+            "iteration-1", {"doc": "/uploads/a.pdf", "index": 0, "total": 2}
+        )
+        context.push_iteration_scope({"doc": "/uploads/a.pdf", "index": 0, "total": 2})
+
+        assert await context.resolve_variable_ref("{{doc}}") == "/uploads/a.pdf"
+        assert await context.resolve_variable_ref("{{index}}") == 0
+        assert (
+            await context.resolve_variable_ref("{{iteration-1.doc}}")
+            == "/uploads/a.pdf"
+        )
+        assert await context.resolve_variable_ref("{{missing}}") is None
+
+        context.pop_iteration_scope()
+        # body 结束后裸名不再解析
+        assert await context.resolve_variable_ref("{{doc}}") is None
+
+    @pytest.mark.asyncio
+    async def test_iteration_scope_shadows_global_and_nests_innermost_first(
+        self, context
+    ):
+        # 局部 item 优先于同名全局变量；嵌套迭代取最内层
+        await context.set_variable("doc", "global.pdf")
+        context.push_iteration_scope({"doc": "outer.pdf"})
+        context.push_iteration_scope({"doc": "inner.pdf"})
+
+        assert await context.resolve_variable_ref("{{doc}}") == "inner.pdf"
+
+        context.pop_iteration_scope()
+        assert await context.resolve_variable_ref("{{doc}}") == "outer.pdf"
+
+        context.pop_iteration_scope()
+        # 离开 body 后回退到全局变量
+        assert await context.resolve_variable_ref("{{doc}}") == "global.pdf"
+
 
 class TestExecutionContextStatus:
     @pytest.mark.asyncio

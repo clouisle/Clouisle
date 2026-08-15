@@ -109,7 +109,13 @@ class UserInputNodeExecutor(NodeExecutor):
                 if isinstance(value, dict):
                     return value
                 return {"value": value}
-            else:  # string
+            elif var_type in ("files", "images"):
+                # files/images 是多文件参数：保持列表（每个元素是一个上传 URL），
+                # 否则会被 str() 成 "['url1', 'url2']" 之类的 repr 字符串
+                if isinstance(value, list):
+                    return value
+                return [value]
+            else:  # string / file / image
                 return str(value)
         except (ValueError, TypeError):
             return value

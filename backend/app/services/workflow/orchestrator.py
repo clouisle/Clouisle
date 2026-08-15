@@ -134,6 +134,7 @@ class WorkflowOrchestrator:
         user_id: UUID,
         team_id: UUID | None = None,
         stream: bool = True,
+        public_base_url: str | None = None,
     ) -> str:
         """
         Run a workflow.
@@ -144,6 +145,8 @@ class WorkflowOrchestrator:
             user_id: User UUID triggering the run
             team_id: Optional team UUID
             stream: Whether to enable streaming
+            public_base_url: Public base URL of the triggering request, used as a
+                fallback for absolutizing upload URLs when PUBLIC_API_URL is unset
 
         Returns:
             Run ID (UUID string)
@@ -189,6 +192,7 @@ class WorkflowOrchestrator:
             redis_client=redis_client,
             workflow_id=str(workflow_id),
             user_id=user_id,
+            public_base_url=public_base_url,
         )
         await context.set_inputs(inputs)
 
@@ -296,6 +300,7 @@ class WorkflowOrchestrator:
         team_id: UUID | None = None,
         stream: bool = True,
         is_debug: bool = False,
+        public_base_url: str | None = None,
     ) -> str:
         """
         Run a workflow with an existing run record.
@@ -999,28 +1004,40 @@ class WorkflowOrchestrator:
         # Use the child nodes directly (already sorted by execution order)
         ordered_body_nodes = downstream_nodes
 
+        # Expose the current round's iteration/loop outputs (item, index, ...)
+        # as bare-name variables so body nodes can reference e.g. {{doc}} without
+        # the node prefix; the node-scoped {{iteration-xxx.doc}} form keeps working
+        # through normal node-output resolution.
+        round_outputs = await context.get_node_outputs(iteration_node_id) or {}
+        context.push_iteration_scope(
+            {k: v for k, v in round_outputs.items() if not str(k).startswith("_")}
+        )
+
         logger.info(f"Executing iteration body: {ordered_body_nodes}")
 
-        for node_id in ordered_body_nodes:
-            # Check timeout
-            if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(self.timeout)
+        try:
+            for node_id in ordered_body_nodes:
+                # Check timeout
+                if time.time() - start_time > self.timeout:
+                    raise ExecutionTimeoutError(self.timeout)
 
-            # Check if cancelled
-            status = await context.get_status()
-            if status == "cancelled":
-                raise ExecutionCancelledError()
+                # Check if cancelled
+                status = await context.get_status()
+                if status == "cancelled":
+                    raise ExecutionCancelledError()
 
-            # Execute node
-            result = await self._execute_node(
-                node_id=node_id,
-                plan=plan,
-                context=context,
-                run=run,
-                stream_manager=stream_manager,
-            )
+                # Execute node
+                result = await self._execute_node(
+                    node_id=node_id,
+                    plan=plan,
+                    context=context,
+                    run=run,
+                    stream_manager=stream_manager,
+                )
 
-            logger.info(f"Iteration body node {node_id} result: {result.outputs}")
+                logger.info(f"Iteration body node {node_id} result: {result.outputs}")
+        finally:
+            context.pop_iteration_scope()
 
     async def _execute_node(
         self,

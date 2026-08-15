@@ -153,7 +153,10 @@ async def test_execute_covers_timeout_cancel_limit_and_missing_downstream_node()
     service = WorkflowOrchestrator(
         timeout=1, max_nodes=0, enable_cache=False, enable_metrics=False
     )
-    context = MagicMock(get_status=AsyncMock(return_value="running"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="running"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
     plan = SimpleNamespace(stages=[SimpleNamespace(node_ids=[])])
 
     with pytest.raises(ExecutionTimeoutError):
@@ -200,7 +203,10 @@ async def test_execute_covers_timeout_cancel_limit_and_missing_downstream_node()
 @pytest.mark.anyio
 async def test_iteration_body_checks_timeout_and_cancellation():
     service = WorkflowOrchestrator(timeout=1, enable_cache=False, enable_metrics=False)
-    context = MagicMock(get_status=AsyncMock(return_value="running"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="running"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
 
     with pytest.raises(ExecutionTimeoutError):
         await service._execute_iteration_body(
