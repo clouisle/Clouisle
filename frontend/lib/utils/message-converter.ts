@@ -38,6 +38,7 @@ export interface BackendMessageStep {
   tool_call_id?: string | null
   tool_name?: string | null
   reasoning_content?: string | null
+  duration_ms?: number | null
   created_at: string
   round_index?: number
   round_role?: 'user_input' | 'assistant_final' | 'assistant_step' | 'tool_result' | null
@@ -87,6 +88,7 @@ export interface BackendMessage {
     completion: number
   } | null
   duration_ms?: number | null
+  first_token_ms?: number | null
   is_manually_stopped?: boolean | null
   round_status?: 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error' | null
   steps?: BackendMessageStep[] | null
@@ -163,7 +165,46 @@ function appendIterationCapReachedPart(parts: MessagePart[]): MessagePart[] {
     : [...parts, { type: 'iteration-cap-reached' }]
 }
 
-function buildAssistantStepParts(step: BackendMessageStep): MessagePart[] {
+/**
+ * Per-step reasoning duration. The backend never persisted duration_ms on
+ * round step messages (it is always NULL), so fall back to wall-clock deltas:
+ * - non-last assistant steps: delta to the NEXT assistant step's created_at
+ *   (the immediate next entry is wrong — an assistant step is followed
+ *   milliseconds later by its own tool_result);
+ * - last assistant step: delta to the round end. The final message is either
+ *   created at round end (non-streaming flow) or pre-created at round start
+ *   with duration_ms covering the whole round (streaming flow).
+ */
+function stepReasoningDurationMs(
+  step: BackendMessageStep,
+  sortedSteps: BackendMessageStep[],
+  stepIndex: number,
+  message: BackendMessage
+): number | undefined {
+  if (step.duration_ms != null) return step.duration_ms
+  const start = new Date(step.created_at).getTime()
+  if (!Number.isFinite(start)) return undefined
+
+  for (let j = stepIndex + 1; j < sortedSteps.length; j++) {
+    if (sortedSteps[j].role !== 'assistant') continue
+    const end = new Date(sortedSteps[j].created_at).getTime()
+    if (!Number.isFinite(end) || end <= start) return undefined
+    return end - start
+  }
+
+  // Last assistant step: anchor at the round end.
+  const finalCreated = new Date(message.created_at).getTime()
+  if (!Number.isFinite(finalCreated)) return undefined
+  const roundEnd = finalCreated > start
+    ? finalCreated
+    : message.duration_ms != null
+      ? finalCreated + message.duration_ms
+      : finalCreated
+  if (roundEnd <= start) return undefined
+  return roundEnd - start
+}
+
+function buildAssistantStepParts(step: BackendMessageStep, durationMs?: number): MessagePart[] {
   const parts: MessagePart[] = []
 
   if (step.reasoning_content) {
@@ -171,6 +212,7 @@ function buildAssistantStepParts(step: BackendMessageStep): MessagePart[] {
       type: 'reasoning',
       text: step.reasoning_content,
       state: 'done',
+      duration: durationMs,
     } as ReasoningPart)
   }
 
@@ -269,9 +311,13 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
         }
       }
 
-      for (const step of sortedSteps) {
+      for (let i = 0; i < sortedSteps.length; i++) {
+        const step = sortedSteps[i]
         if (step.role !== 'assistant') continue
-        const stepParts = buildAssistantStepParts(step)
+        const stepParts = buildAssistantStepParts(
+          step,
+          stepReasoningDurationMs(step, sortedSteps, i, message)
+        )
         for (const part of stepParts) {
           parts.push(part)
           if (part.type === 'tool-call') {
@@ -354,22 +400,47 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     finalParts = appendStoppedPart(finalParts)
   }
 
+  // Reconstruct the streaming metadata (usage/timing) from persisted fields so
+  // historical messages show the same token-stats popover as fresh ones.
+  let metadata: Record<string, unknown> | undefined
+  if (message.role === 'assistant') {
+    metadata = {
+      isManuallyStopped: Boolean(message.is_manually_stopped),
+      isError: message.round_status === 'error',
+      preservedPartialProgress: message.round_status === 'error' && Boolean(
+        message.reasoning_content ||
+        (message.steps && message.steps.length > 0)
+      ),
+      errorMessage: message.round_status === 'error' ? (message.content || undefined) : undefined,
+    }
+    const usage = message.token_usage
+      ? {
+          prompt_tokens: message.token_usage.prompt ?? 0,
+          completion_tokens: message.token_usage.completion ?? 0,
+          total_tokens: (message.token_usage.prompt ?? 0) + (message.token_usage.completion ?? 0),
+        }
+      : undefined
+    if (usage) {
+      const durationMs = message.duration_ms
+      metadata.usage = usage
+      metadata.timing = {
+        first_token_ms: message.first_token_ms ?? null,
+        duration_ms: durationMs ?? null,
+        // tokens_per_second is not persisted; recompute it the same way the
+        // streaming message_end event does (round(completion / duration)).
+        tokens_per_second: usage.completion_tokens > 0 && durationMs && durationMs > 0
+          ? Math.round((usage.completion_tokens / (durationMs / 1000)) * 10) / 10
+          : null,
+      }
+    }
+  }
+
   return {
     id: message.id,
     role: message.role as 'user' | 'assistant',
     parts: finalParts,
     createdAt: new Date(message.created_at),
-    metadata: message.role === 'assistant'
-      ? {
-          isManuallyStopped: Boolean(message.is_manually_stopped),
-          isError: message.round_status === 'error',
-          preservedPartialProgress: message.round_status === 'error' && Boolean(
-            message.reasoning_content ||
-            (message.steps && message.steps.length > 0)
-          ),
-          errorMessage: message.round_status === 'error' ? (message.content || undefined) : undefined,
-        }
-      : undefined,
+    metadata,
     versionNumber: message.version_number,
     versionCount: message.version_count,
   }

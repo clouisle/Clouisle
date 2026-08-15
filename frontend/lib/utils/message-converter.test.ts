@@ -68,6 +68,36 @@ describe('message converter', () => {
     })
   })
 
+  it('reconstructs usage and timing metadata from persisted token fields', () => {
+    const converted = convertBackendMessage(message({
+      token_usage: { prompt: 120, completion: 45 },
+      duration_ms: 2000,
+      first_token_ms: 300,
+    }))
+
+    expect(converted?.metadata).toEqual({
+      isManuallyStopped: false,
+      isError: false,
+      preservedPartialProgress: false,
+      usage: { prompt_tokens: 120, completion_tokens: 45, total_tokens: 165 },
+      timing: {
+        first_token_ms: 300,
+        duration_ms: 2000,
+        tokens_per_second: 22.5,
+      },
+    })
+  })
+
+  it('omits usage/timing metadata when no token usage was recorded', () => {
+    const converted = convertBackendMessage(message({ duration_ms: 2000 }))
+
+    expect(converted?.metadata).toEqual({
+      isManuallyStopped: false,
+      isError: false,
+      preservedPartialProgress: false,
+    })
+  })
+
   it('keeps malformed user input request XML as text', () => {
     const content = '<user_input_request><question>Choose one</question><options><option>Only</option></options></user_input_request>'
 
@@ -106,6 +136,69 @@ describe('message converter', () => {
       { type: 'text', text: 'Using calculator', state: 'done' },
       { type: 'tool-call', toolCallId: 'call-1', toolName: 'calculate', toolDisplayName: 'Calculator', input: { expression: '6 * 7' }, state: 'done' },
       { type: 'tool-result', toolCallId: 'call-1', toolName: 'calculator', output: { answer: 42 }, isError: false },
+      { type: 'text', text: 'Final answer', state: 'done' },
+    ])
+  })
+
+  it('maps per-step duration_ms onto step reasoning parts', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Final answer',
+      duration_ms: 5000,
+      steps: [
+        {
+          id: 'step-1',
+          role: 'assistant',
+          content: '',
+          reasoning_content: 'First reasoning round',
+          duration_ms: 1200,
+          created_at: '2026-07-19T00:00:00.000Z',
+        },
+        {
+          id: 'step-2',
+          role: 'assistant',
+          content: 'Interim text',
+          reasoning_content: 'Second reasoning round',
+          created_at: '2026-07-19T00:00:01.000Z',
+        },
+      ],
+    }))
+
+    expect(converted?.parts).toEqual([
+      { type: 'reasoning', text: 'First reasoning round', state: 'done', duration: 1200 },
+      // Last step with no explicit duration: anchored at final created_at +
+      // duration_ms (streaming flow), 00:00:00 + 5000ms − 00:00:01 = 4000ms.
+      { type: 'reasoning', text: 'Second reasoning round', state: 'done', duration: 4000 },
+      { type: 'text', text: 'Interim text', state: 'done' },
+      { type: 'text', text: 'Final answer', state: 'done' },
+    ])
+  })
+
+  it('falls back to created_at deltas when steps lack duration_ms', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Final answer',
+      created_at: '2026-07-19T00:00:06.000Z',
+      steps: [
+        {
+          id: 'step-1',
+          role: 'assistant',
+          content: '',
+          reasoning_content: 'First reasoning round',
+          created_at: '2026-07-19T00:00:01.000Z',
+        },
+        {
+          id: 'step-2',
+          role: 'assistant',
+          content: 'Interim text',
+          reasoning_content: 'Second reasoning round',
+          created_at: '2026-07-19T00:00:04.000Z',
+        },
+      ],
+    }))
+
+    expect(converted?.parts).toEqual([
+      { type: 'reasoning', text: 'First reasoning round', state: 'done', duration: 3000 },
+      { type: 'reasoning', text: 'Second reasoning round', state: 'done', duration: 2000 },
+      { type: 'text', text: 'Interim text', state: 'done' },
       { type: 'text', text: 'Final answer', state: 'done' },
     ])
   })
