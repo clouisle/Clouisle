@@ -1423,6 +1423,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               <div className="flex items-start gap-1.5 text-destructive">
                 <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
                 <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+                {typeof message.metadata?.errorCode === 'number' && (
+                  <code className="rounded bg-destructive/10 px-1 font-mono text-[10px]">
+                    {t('errorCode')} {message.metadata.errorCode}
+                  </code>
+                )}
               </div>
               {conversationId && (
                 <div className="flex items-center gap-1.5 pl-5 text-muted-foreground">
@@ -1458,6 +1463,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isEditing,
       isErroredMessage,
       isLoadingMessage,
+      message.metadata?.errorCode,
       isManuallyStoppedMessage,
       isSavingEdit,
       isStandaloneErrorMessage,

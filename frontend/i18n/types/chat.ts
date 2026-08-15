@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-14T22:36:10.522Z
+// GENERATED — 2026-08-15T08:00:16.761Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -111,6 +111,7 @@ export type ChatMessages = {
       thinking: string
       conversationId: string
       error: string
+      errorCode: string
       generatedImageAlt: string
       useAsReference: string
       toolExecutionFailed: string

@@ -921,6 +921,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 quotaType: data.quota_type,
               }
               onError?.(chatError)
+        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
+              console.error("[chat] stream error", { code: chatError.code, message: chatError.message, conversationId })
 
               const errorText = getErrorMessage(chatError, tError, tAuth)
               const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
@@ -941,7 +943,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                           ...msg.metadata,
                           isLoading: false,
                           isError: true,
-                          errorMessage: errorText,
+                          errorMessage: errorText, errorCode: chatError.code,
                           preservedPartialProgress: preservedProgress,
                         },
                       }
@@ -987,6 +989,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
+        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
 
         const errorText = getErrorMessage(chatError, tError, tAuth)
         const state = streamingStateRef.current
@@ -1008,7 +1011,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                     ...msg.metadata,
                     isLoading: false,
                     isError: true,
-                    errorMessage: errorText,
+                    errorMessage: errorText, errorCode: chatError.code,
                     preservedPartialProgress: preservedProgress,
                   },
                 }
@@ -1257,6 +1260,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               quotaType: data.quota_type,
             }
             onError?.(chatError)
+        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
+            console.error("[chat] stream error", { code: chatError.code, message: chatError.message, conversationId })
 
             const errorText = getErrorMessage(chatError, tError, tAuth)
             const { parts, preservedProgress } = buildErroredMessageParts({
@@ -1272,7 +1277,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                       ...message.metadata,
                       isLoading: false,
                       isError: true,
-                      errorMessage: errorText,
+                      errorMessage: errorText, errorCode: chatError.code,
                       preservedPartialProgress: preservedProgress,
                     },
                   }
@@ -1335,13 +1340,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
+        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
         await reloadConversationMessages().catch(() => undefined)
         setStatus('idle')
       } finally {
         abortRef.current = null
       }
     },
-    [api, agentId, isLoading, messages, onError, onStreamEnd, onStreamStart, reloadConversationMessages, tAuth, tError]
+    [api, agentId, isLoading, messages, onError, onStreamEnd, onStreamStart, reloadConversationMessages, tAuth, tError, conversationId]
   )
 
   /**
@@ -2011,6 +2017,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 quotaType: data.quota_type,
               }
               onError?.(chatError)
+        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
+              console.error("[chat] stream error", { code: chatError.code, message: chatError.message, conversationId })
 
               const errorText = getErrorMessage(chatError, tError, tAuth)
               const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
@@ -2031,7 +2039,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                       ...msg.metadata,
                       isLoading: false,
                       isError: true,
-                      errorMessage: errorText,
+                      errorMessage: errorText, errorCode: chatError.code,
                       preservedPartialProgress: preservedProgress,
                     },
                   }
@@ -2054,6 +2062,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
+        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
 
         const errorText = getErrorMessage(chatError, tError, tAuth)
         const state = streamingStateRef.current
@@ -2075,7 +2084,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 ...msg.metadata,
                 isLoading: false,
                 isError: true,
-                errorMessage: errorText,
+                errorMessage: errorText, errorCode: chatError.code,
                 preservedPartialProgress: preservedProgress,
               },
             }
@@ -2109,6 +2118,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       sendMessage,
       tAuth,
       tError,
+      conversationId,
     ]
   )
 

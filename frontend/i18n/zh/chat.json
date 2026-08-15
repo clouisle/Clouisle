@@ -109,6 +109,7 @@
       "thinking": "思考中...",
       "conversationId": "对话 ID",
       "error": "发生错误",
+      "errorCode": "错误码:",
       "generatedImageAlt": "生成的图片",
       "useAsReference": "用作参考图",
       "toolExecutionFailed": "工具执行失败",

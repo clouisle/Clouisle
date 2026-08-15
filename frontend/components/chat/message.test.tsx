@@ -433,6 +433,19 @@ describe('message behavior', () => {
     expect(streaming).not.toContain('chat.message.copy')
   })
 
+  test('renders the error code badge with the conversation id for diagnosability', () => {
+    const markup = renderToStaticMarkup(<Message
+      message={{ id: 'error', role: 'assistant', metadata: { isError: true, errorMessage: 'Unknown error', errorCode: 1000 }, parts: [] }}
+      conversationId="conv-123"
+    />)
+
+    expect(markup).toContain('Unknown error')
+    expect(markup).toContain('chat.message.errorCode')
+    expect(markup).toContain('1000')
+    expect(markup).toContain('chat.message.conversationId')
+    expect(markup).toContain('conv-123')
+  })
+
   test('groups reasoning tools and maps task and tool states', () => {
     const onOpenChange = mock(() => {})
     const container = render(<Message

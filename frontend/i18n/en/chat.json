@@ -109,6 +109,7 @@
       "thinking": "Thinking...",
       "conversationId": "Conversation ID",
       "error": "An error occurred",
+      "errorCode": "Error code:",
       "generatedImageAlt": "Generated image",
       "useAsReference": "Use as reference",
       "toolExecutionFailed": "Tool execution failed",
