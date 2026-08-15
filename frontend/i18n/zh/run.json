@@ -12,7 +12,7 @@
     "configureWorkflow": "配置工作流",
     "configureAgent": "配置智能体",
     "fillParameters": "填写必需参数以开始",
-    "startRun": "开始",
+    "startRun": "运行",
     "running": "运行中...",
     "starting": "启动中...",
     "typePlaceholder": "输入您的消息...",
@@ -29,7 +29,7 @@
     "runAgain": "再次运行",
     "openHistory": "打开运行历史",
     "historyDetailError": "加载该运行记录失败，请重试。",
-    "history": "你的运行历史",
+    "history": "运行历史",
     "noHistory": "暂无运行记录。",
     "showTrace": "查看执行轨迹",
     "historyResult": "历史运行结果",
@@ -48,8 +48,8 @@
     "nodeStatus": {
       "pending": "等待中",
       "running": "运行中",
-      "completed": "已完成",
-      "error": "错误",
+      "success": "已完成",
+      "failed": "失败",
       "skipped": "已跳过"
     }
   }

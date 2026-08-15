@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useLocale, useTranslations } from 'next-intl'
-import { AlertCircle, GitBranch, Loader2, PanelLeft, PanelLeftClose, Play, RotateCcw, Square, SquarePlay } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Circle, GitBranch, Loader2, PanelLeft, PanelLeftClose, Play, RotateCcw, SkipForward, Square, SquarePlay, XCircle } from 'lucide-react'
 import { ApiError, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
 import { ExecutionTimeline, VariableForm, useVariableForm } from '@/components/chat'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -16,8 +16,22 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, formatDateTime } from '@/lib/utils'
 import { WorkflowResultRenderer, type WorkflowResultNode } from './workflow-result-renderer'
+import { renderNodeOutput } from '@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer'
 
 type WorkflowWorkspaceView = 'form' | 'live' | 'history'
+
+const TRACE_STATUS_CONFIG: Record<string, {
+  icon: React.ComponentType<{ className?: string }>
+  dotClass: string
+  iconClass: string
+  animate?: boolean
+}> = {
+  pending: { icon: Circle, dotClass: 'border-border', iconClass: 'text-muted-foreground' },
+  running: { icon: Loader2, dotClass: 'border-blue-200 dark:border-blue-900', iconClass: 'text-blue-500', animate: true },
+  success: { icon: CheckCircle2, dotClass: 'border-green-200 dark:border-green-900', iconClass: 'text-green-500' },
+  failed: { icon: XCircle, dotClass: 'border-red-200 dark:border-red-900', iconClass: 'text-red-500' },
+  skipped: { icon: SkipForward, dotClass: 'border-border', iconClass: 'text-muted-foreground' },
+}
 
 interface WorkflowRunPageProps {
   id: string
@@ -29,6 +43,9 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const router = useRouter()
   const locale = useLocale()
   const t = useTranslations('run')
+  const tCommon = useTranslations('common')
+  const tTool = useTranslations('chat.tool')
+  const tWorkflow = useTranslations('workflow')
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<Error | null>(null)
@@ -188,80 +205,93 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
 
   const historyPanel = (
-    <div className="flex h-full min-h-0 flex-col bg-muted/50">
-      <div className="flex items-center gap-2 border-b p-3">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={handleNewRun}
-          disabled={isRunning}
-        >
-          <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-sm">
-            {displayIcon ? (
-              isIconUrl ? (
-                <Image src={displayIcon} alt={workflow?.name ?? ''} fill unoptimized className="object-cover" />
-              ) : (
-                displayIcon
-              )
-            ) : (
-              <GitBranch className="h-4 w-4 text-muted-foreground" />
-            )}
-          </span>
-          <span className="truncate text-sm font-medium">{workflow?.name}</span>
-        </button>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      {/* Sidebar header */}
+      <div className="flex h-14 shrink-0 items-center justify-between p-3">
         <Tooltip>
           <TooltipTrigger
+            type="button"
+            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={handleNewRun}
             disabled={isRunning}
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(!allowNew && 'hidden')}
-                aria-label={t('newRun')}
-              >
-                <SquarePlay className="h-4 w-4" />
-              </Button>
-            }
-          />
+            render={<button />}
+          >
+            {displayIcon ? (
+              isIconUrl ? (
+                <div className="relative h-6 w-6 shrink-0 overflow-hidden">
+                  <Image src={displayIcon} alt={workflow?.name ?? ''} fill unoptimized className="object-cover" />
+                </div>
+              ) : (
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center leading-none text-lg">{displayIcon}</span>
+              )
+            ) : (
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <GitBranch className="h-3.5 w-3.5" />
+              </div>
+            )}
+            <span className="max-w-[120px] truncate text-sm font-medium text-foreground">{workflow?.name}</span>
+          </TooltipTrigger>
           <TooltipContent>{t('newRun')}</TooltipContent>
         </Tooltip>
+        {allowNew && (
+          <Tooltip>
+            <TooltipTrigger
+              onClick={handleNewRun}
+              disabled={isRunning}
+              render={
+                <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={t('newRun')}>
+                  <SquarePlay className="h-5 w-5" />
+                </Button>
+              }
+            />
+            <TooltipContent>{t('newRun')}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+
+      {/* Section label */}
+      <div id="workflow-history-heading" className="shrink-0 px-4 pb-1 pt-3">
+        <span className="text-xs text-muted-foreground">{t('history')}</span>
+      </div>
+
+      {/* History list */}
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
         {historyLoading ? (
-          <Loader2 className="mx-auto mt-6 h-5 w-5 animate-spin text-muted-foreground" />
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
         ) : history.length === 0 ? (
-          <p className="px-2 py-6 text-sm text-muted-foreground">{t('noHistory')}</p>
+          <div className="px-3 py-4 text-center text-sm text-muted-foreground">{t('noHistory')}</div>
         ) : (
-          <ol className="space-y-1">
+          <div className="space-y-1 px-2">
             {history.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => void handleSelectHistory(item.id)}
-                  disabled={isRunning}
-                  aria-current={selectedHistoryId === item.id ? 'true' : undefined}
-                  className={cn(
-                    'min-h-11 w-full rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                    selectedHistoryId === item.id && 'bg-accent'
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium">{t(`status.${item.status}`)}</span>
-                    <time className="shrink-0 text-xs text-muted-foreground">
-                      {formatDateTime(item.created_at, locale)}
-                    </time>
-                  </div>
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => void handleSelectHistory(item.id)}
+                disabled={isRunning}
+                aria-current={selectedHistoryId === item.id ? 'true' : undefined}
+                className={cn(
+                  'group flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+                  selectedHistoryId === item.id ? 'bg-accent' : 'hover:bg-accent/50'
+                )}
+              >
+                <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium">{t(`status.${item.status}`)}</span>
                   <Tooltip>
-                    <TooltipTrigger render={<code />} className="mt-1 block truncate text-xs text-muted-foreground cursor-default">
+                    <TooltipTrigger render={<code />} className="block cursor-default truncate text-xs text-muted-foreground">
                       {item.id}
                     </TooltipTrigger>
                     <TooltipContent>{item.id}</TooltipContent>
                   </Tooltip>
-                </button>
-              </li>
+                </span>
+                <time className="shrink-0 text-xs text-muted-foreground">
+                  {formatDateTime(item.created_at, locale)}
+                </time>
+              </button>
             ))}
-          </ol>
+          </div>
         )}
       </div>
     </div>
@@ -319,70 +349,70 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
         id="workflow-history-sidebar"
         aria-labelledby="workflow-history-heading"
         className={cn(
-          'h-full shrink-0 overflow-hidden border-r bg-muted/50 transition-all duration-300 ease-in-out',
+          'flex h-full shrink-0 flex-col overflow-hidden border-r bg-background transition-all duration-300 ease-in-out',
           sidebarOpen ? 'w-64' : 'w-0 border-r-0',
           !showHistory && 'hidden',
         )}
       >
-        <div className="h-full w-64">{historyPanel}</div>
+        <div className="flex h-full w-64 min-h-0 flex-col">{historyPanel}</div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className={cn('flex min-h-14 shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-6', !showHeader && 'hidden')}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(!showHistory && 'hidden')}
-            onClick={() => setSidebarOpen((open) => !open)}
-            aria-label={t('openHistory')}
-          >
-            {sidebarOpen ? (
-              <PanelLeftClose className="h-4 w-4" />
-            ) : (
-              <PanelLeft className="h-4 w-4" />
-            )}
-          </Button>
-          {allowNew && !sidebarOpen && (
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        {/* Header - floating over the workspace area, no bar background */}
+        <header className={cn('absolute inset-x-0 top-0 z-10 flex items-center gap-2 px-3 py-3', !showHeader && 'hidden')}>
+          {!(showHistory && sidebarOpen) && (
+            <>
+              {displayIcon ? (
+                isIconUrl ? (
+                  <div className="relative h-6 w-6 shrink-0 overflow-hidden">
+                    <Image src={displayIcon} alt={workflow.name} fill unoptimized className="object-cover" />
+                  </div>
+                ) : (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center leading-none text-lg">{displayIcon}</span>
+                )
+              ) : (
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <GitBranch className="h-3.5 w-3.5" />
+                </div>
+              )}
+              <div className="mr-2 min-w-0">
+                <span className="block truncate text-sm font-medium text-foreground">{workflow.name}</span>
+              </div>
+            </>
+          )}
+          {showHistory && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-label={t('openHistory')}
+            >
+              {sidebarOpen ? (
+                <PanelLeftClose className="h-5 w-5" />
+              ) : (
+                <PanelLeft className="h-5 w-5" />
+              )}
+            </Button>
+          )}
+          {allowNew && (!showHistory || !sidebarOpen) && (
             <Tooltip>
               <TooltipTrigger
                 onClick={handleNewRun}
                 disabled={isRunning}
                 render={
-                  <Button variant="ghost" size="icon" aria-label={t('newRun')}>
-                    <SquarePlay className="h-4 w-4" />
+                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm" aria-label={t('newRun')}>
+                    <SquarePlay className="h-5 w-5" />
                   </Button>
                 }
               />
               <TooltipContent>{t('newRun')}</TooltipContent>
             </Tooltip>
           )}
-          {!sidebarOpen && (
-            <>
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-lg">
-                {displayIcon ? (
-                  isIconUrl ? (
-                    <Image src={displayIcon} alt={workflow.name} fill unoptimized className="object-cover" />
-                  ) : (
-                    displayIcon
-                  )
-                ) : (
-                  <GitBranch className="h-4 w-4 text-muted-foreground" />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate text-sm font-medium">{workflow.name}</h1>
-                {workflow.description && (
-                  <p className="line-clamp-1 text-xs text-muted-foreground">
-                    {workflow.description}
-                  </p>
-                )}
-              </div>
-            </>
-          )}
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-8 lg:py-12">
+          <div className={cn('mx-auto w-full max-w-4xl px-4 sm:px-8', showHeader ? 'pb-8 pt-24 lg:pb-12 lg:pt-28' : 'py-8 lg:py-12')}>
             {workspaceView === 'form' && (
               <section aria-labelledby="workflow-inputs-heading">
                 <div className="mb-8">
@@ -536,20 +566,81 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                     ) : !selectedRun.error_message ? (
                       <p className="mt-6 text-sm text-muted-foreground">{t('noResult')}</p>
                     ) : null}
-                    {presentationMode === 'result_first' && selectedNodes.length > 0 && (
-                      <details className="mt-8 border-t pt-5">
-                        <summary className="min-h-11 cursor-pointer text-sm font-medium">
+                    {selectedNodes.length > 0 && (
+                      <Collapsible className="mt-8 border-t pt-5">
+                        <CollapsibleTrigger className="min-h-11 text-sm font-medium underline-offset-4 hover:underline">
                           {t('showTrace')}
-                        </summary>
-                        <ol className="mt-3 divide-y">
-                          {selectedNodes.map((node) => (
-                            <li key={node.id} className="py-3 text-sm">
-                              <span className="font-medium">{node.node_name}</span>
-                              <span className="ml-2 text-muted-foreground">{node.status}</span>
-                            </li>
-                          ))}
-                        </ol>
-                      </details>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pt-4">
+                          <ol className="relative">
+                            {selectedNodes
+                              .slice()
+                              .sort((a, b) => a.execution_order - b.execution_order)
+                              .map((node, index) => {
+                                const config = TRACE_STATUS_CONFIG[node.status] ?? TRACE_STATUS_CONFIG.pending
+                                const StatusIcon = config.icon
+                                return (
+                                  <li key={node.id} className="relative pb-5 pl-9 last:pb-0">
+                                    {index < selectedNodes.length - 1 && (
+                                      <span
+                                        aria-hidden
+                                        className="absolute bottom-0 left-[11px] top-6 w-px bg-border"
+                                      />
+                                    )}
+                                    <span
+                                      className={cn(
+                                        'absolute left-0 top-0 flex h-6 w-6 items-center justify-center rounded-full border bg-background',
+                                        config.dotClass
+                                      )}
+                                    >
+                                      <StatusIcon className={cn('h-3.5 w-3.5', config.iconClass, config.animate && 'animate-spin')} />
+                                    </span>
+                                    <div className="min-w-0 pt-0.5">
+                                      <div className="flex items-baseline justify-between gap-3">
+                                        <span className="truncate text-sm font-medium">{node.node_name}</span>
+                                        <span className="shrink-0 text-xs text-muted-foreground">
+                                          {t(`nodeStatus.${node.status}`)}
+                                        </span>
+                                      </div>
+                                      {node.error_message && (
+                                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">{node.error_message}</p>
+                                      )}
+                                      {((node.inputs && Object.keys(node.inputs).length > 0) ||
+                                        (node.outputs && Object.keys(node.outputs).length > 0 && !node.error_message)) && (
+                                        <details className="group mt-1">
+                                          <summary className="flex list-none cursor-pointer items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+                                            <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                                            {tCommon('showDetails')}
+                                          </summary>
+                                          <div className="mt-2 space-y-2">
+                                            {node.inputs && Object.keys(node.inputs).length > 0 && (
+                                              <div>
+                                                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                                                  {tTool('input')}
+                                                </div>
+                                                <pre className="overflow-x-auto rounded bg-background/50 p-2 text-xs">
+                                                  {JSON.stringify(node.inputs, null, 2)}
+                                                </pre>
+                                              </div>
+                                            )}
+                                            {node.outputs && Object.keys(node.outputs).length > 0 && !node.error_message && (
+                                              <div>
+                                                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                                                  {tTool('output')}
+                                                </div>
+                                                {renderNodeOutput(node.node_type, node.outputs, tWorkflow)}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </details>
+                                      )}
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                          </ol>
+                        </CollapsibleContent>
+                      </Collapsible>
                     )}
                   </>
                 ) : null}

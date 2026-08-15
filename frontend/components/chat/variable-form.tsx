@@ -21,7 +21,7 @@ import type { RunVariableDefinition } from '@/lib/utils/extract-variables'
 import { clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
-import { Upload, X, FileIcon, ImageIcon } from 'lucide-react'
+import { Upload, X, FileIcon } from 'lucide-react'
 import { uploadApi } from '@/lib/api/upload'
 import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB, BYTES_PER_MB } from '@/lib/constants'
 
@@ -398,9 +398,51 @@ export function useVariableForm(variables: VariableDefinition[]) {
 }
 
 /**
+ * 文件拖拽状态管理：提供 drag 事件处理器与拖拽中标记。
+ * depth 计数避免子元素间移动时拖拽层闪烁。
+ */
+function useDragDrop(
+  onFiles: (files: File[]) => void | Promise<void>,
+  enabled: boolean
+) {
+  const [isDragging, setIsDragging] = React.useState(false)
+  const depthRef = React.useRef(0)
+
+  const handleDragEnter = React.useCallback((e: React.DragEvent) => {
+    if (!enabled) return
+    e.preventDefault()
+    depthRef.current += 1
+    setIsDragging(true)
+  }, [enabled])
+
+  const handleDragOver = React.useCallback((e: React.DragEvent) => {
+    if (!enabled) return
+    e.preventDefault()
+  }, [enabled])
+
+  const handleDragLeave = React.useCallback((e: React.DragEvent) => {
+    if (!enabled) return
+    e.preventDefault()
+    depthRef.current = Math.max(0, depthRef.current - 1)
+    if (depthRef.current === 0) setIsDragging(false)
+  }, [enabled])
+
+  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
+    if (!enabled) return
+    e.preventDefault()
+    depthRef.current = 0
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer?.files || [])
+    if (files.length > 0) await onFiles(files)
+  }, [enabled, onFiles])
+
+  return { isDragging, handleDragEnter, handleDragOver, handleDragLeave, handleDrop }
+}
+
+/**
  * Single file upload input component
  */
-interface FileUploadInputProps {
+export interface FileUploadInputProps {
   variable: VariableDefinition
   value: unknown
   error?: string
@@ -410,7 +452,7 @@ interface FileUploadInputProps {
   onUploadingChange?: (uploading: boolean) => void
 }
 
-function FileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: FileUploadInputProps) {
+export function FileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: FileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
@@ -430,8 +472,8 @@ function FileUploadInput({ variable, value, error, onChange, compact, disabled, 
   // Get max file size in bytes (fileConfig is in MB)
   const maxSizeBytes = (variable.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB) * BYTES_PER_MB
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const handleFiles = async (files: File[]) => {
+    const file = files[0]
     if (!file) return
 
     // Validate file size
@@ -463,6 +505,12 @@ function FileUploadInput({ variable, value, error, onChange, compact, disabled, 
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    return handleFiles(Array.from(e.target.files || []))
+  }
+
+  const dragDrop = useDragDrop(handleFiles, !disabled && !uploading)
+
   const handleRemove = () => {
     setUploadError(null)
     onChange(null)
@@ -484,42 +532,60 @@ function FileUploadInput({ variable, value, error, onChange, compact, disabled, 
         disabled={disabled || uploading}
       />
 
-      {!fileUrl ? (
-        <Button
-          type="button"
-          variant="outline"
-          size={compact ? "sm" : "default"}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || uploading}
-          className="w-full"
-          aria-invalid={!!(error || uploadError)}
-        >
-          <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
-          {uploading ? t('uploading') : t('selectFile')}
-        </Button>
-      ) : (
-        <div className={cn(
-          "flex items-center gap-2 p-2 border rounded-md bg-muted/30",
-          compact && "p-1.5 text-xs"
-        )}>
-          {isImage ? (
-            <ImageIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
-          ) : (
-            <FileIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
-          )}
-          <span className="flex-1 truncate text-sm">{fileUrl.split('/').pop()}</span>
+      <div
+        className={cn("relative rounded-md", compact && "rounded-sm")}
+        onDragEnter={dragDrop.handleDragEnter}
+        onDragOver={dragDrop.handleDragOver}
+        onDragLeave={dragDrop.handleDragLeave}
+        onDrop={dragDrop.handleDrop}
+      >
+        {dragDrop.isDragging && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/90 backdrop-blur-sm text-xs font-medium text-primary">
+            {isImage ? t('dropImages') : t('dropFiles')}
+          </div>
+        )}
+
+        {!fileUrl ? (
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
-            onClick={handleRemove}
-            disabled={disabled}
-            className={compact ? "h-5 w-5" : "h-6 w-6"}
+            variant="outline"
+            size={compact ? "sm" : "default"}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || uploading}
+            className="w-full"
+            aria-invalid={!!(error || uploadError)}
           >
-            <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
+            <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
+            {uploading ? t('uploading') : (isImage ? t('selectImage') : t('selectFile'))}
           </Button>
-        </div>
-      )}
+        ) : (
+          <div className={cn(
+            "flex items-center gap-2 p-2 border rounded-md bg-muted/30",
+            compact && "p-1.5 text-xs"
+          )}>
+            {isImage ? (
+              <img
+                src={fileUrl}
+                alt=""
+                className={cn("rounded-md border object-cover", compact ? "h-8 w-8" : "h-12 w-12")}
+              />
+            ) : (
+              <FileIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
+            )}
+            <span className="flex-1 truncate text-sm">{fileUrl.split('/').pop()}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleRemove}
+              disabled={disabled}
+              className={compact ? "h-5 w-5" : "h-6 w-6"}
+            >
+              <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
+            </Button>
+          </div>
+        )}
+      </div>
       <FieldError>{uploadError || error}</FieldError>
     </div>
   )
@@ -528,7 +594,7 @@ function FileUploadInput({ variable, value, error, onChange, compact, disabled, 
 /**
  * Multiple files upload input component
  */
-interface MultiFileUploadInputProps {
+export interface MultiFileUploadInputProps {
   variable: VariableDefinition
   value: unknown
   error?: string
@@ -538,7 +604,7 @@ interface MultiFileUploadInputProps {
   onUploadingChange?: (uploading: boolean) => void
 }
 
-function MultiFileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: MultiFileUploadInputProps) {
+export function MultiFileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: MultiFileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
@@ -561,8 +627,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact, disab
 
   const fileUrls = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
+  const handleFiles = async (files: File[]) => {
     if (files.length === 0) return
 
     // Check max files limit
@@ -606,6 +671,12 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact, disab
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    return handleFiles(Array.from(e.target.files || []))
+  }
+
+  const dragDrop = useDragDrop(handleFiles, !disabled && !uploading && fileUrls.length < maxFiles)
+
   const handleRemove = (index: number) => {
     setUploadError(null)
     const newUrls = fileUrls.filter((_, i) => i !== index)
@@ -624,21 +695,62 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact, disab
         disabled={disabled || uploading}
       />
 
-      <Button
-        type="button"
-        variant="outline"
-        size={compact ? "sm" : "default"}
-        onClick={() => fileInputRef.current?.click()}
-        disabled={disabled || uploading || fileUrls.length >= maxFiles}
-        className="w-full"
-        aria-invalid={!!(error || uploadError)}
+      <div
+        className={cn("relative rounded-md", compact && "rounded-sm")}
+        onDragEnter={dragDrop.handleDragEnter}
+        onDragOver={dragDrop.handleDragOver}
+        onDragLeave={dragDrop.handleDragLeave}
+        onDrop={dragDrop.handleDrop}
       >
-        <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
-        {uploading ? t('uploading') : t('selectFiles')}
-        {fileUrls.length > 0 && ` (${fileUrls.length}/${maxFiles})`}
-      </Button>
+        {dragDrop.isDragging && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/90 backdrop-blur-sm text-xs font-medium text-primary">
+            {isImages ? t('dropImages') : t('dropFiles')}
+          </div>
+        )}
 
-      {fileUrls.length > 0 && (
+        <Button
+          type="button"
+          variant="outline"
+          size={compact ? "sm" : "default"}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || uploading || fileUrls.length >= maxFiles}
+          className="w-full"
+          aria-invalid={!!(error || uploadError)}
+        >
+          <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
+          {uploading ? t('uploading') : (isImages ? t('selectImages') : t('selectFiles'))}
+          {fileUrls.length > 0 && ` (${fileUrls.length}/${maxFiles})`}
+        </Button>
+
+        {isImages && fileUrls.length > 0 && (
+          <div className={cn("flex flex-wrap gap-2 pt-2", compact && "gap-1.5 pt-1.5")}>
+            {fileUrls.map((url, index) => (
+              <div key={index} className="relative">
+                <img
+                  src={url}
+                  alt=""
+                  className={cn(
+                    "rounded-md border object-cover",
+                    compact ? "h-12 w-12" : "h-16 w-16"
+                  )}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemove(index)}
+                  disabled={disabled}
+                  className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full border bg-background shadow-sm"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!isImages && fileUrls.length > 0 && (
         <div className={cn("space-y-1", compact && "space-y-0.5")}>
           {fileUrls.map((url, index) => (
             <div
@@ -648,11 +760,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact, disab
                 compact && "p-1.5 text-xs"
               )}
             >
-              {isImages ? (
-                <ImageIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
-              ) : (
-                <FileIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
-              )}
+              <FileIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
               <span className="flex-1 truncate text-sm">{url.split('/').pop()}</span>
               <Button
                 type="button"
