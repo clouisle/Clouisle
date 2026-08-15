@@ -14,6 +14,7 @@
     "chatError": "发生错误，请重试。",
     "ragContext": "参考来源",
     "newChat": "新对话",
+    "conversationHistory": "对话历史",
     "welcomeMessage": "我们先从哪里开始呢？",
     "you": "你",
     "noConversations": "暂无对话记录",

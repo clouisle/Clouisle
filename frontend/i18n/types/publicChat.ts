@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-14T22:36:10.535Z
+// GENERATED — 2026-08-15T08:00:16.770Z
 // Source: i18n/en/publicChat.json
 export type PublicChatMessages = {
   publicChat: {
@@ -16,6 +16,7 @@ export type PublicChatMessages = {
     chatError: string
     ragContext: string
     newChat: string
+    conversationHistory: string
     welcomeMessage: string
     you: string
     noConversations: string

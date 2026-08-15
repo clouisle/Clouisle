@@ -732,14 +732,14 @@ export default function PublicChatPage({
       {showHistory && (
       <div
         className={cn(
-          "flex flex-col bg-muted/50 transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
+          "flex flex-col bg-background transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
           sidebarOpen ? "w-64" : "w-0"
         )}
       >
         {sidebarOpen && (
           <>
             {/* Sidebar Header */}
-            <div className="flex items-center justify-between p-3 h-14 border-b">
+            <div className="flex items-center justify-between p-3 h-14">
               {/* Agent Info */}
               <Tooltip>
                 <TooltipTrigger
@@ -786,6 +786,11 @@ export default function PublicChatPage({
                   <TooltipContent>{t('newChat')}</TooltipContent>
                 </Tooltip>
               )}
+            </div>
+
+            {/* Section Label — sits where the old divider line was */}
+            <div className="px-4 pt-3 pb-1">
+              <span className="text-xs text-muted-foreground">{t('conversationHistory')}</span>
             </div>
 
             {/* Conversation List */}
@@ -859,34 +864,12 @@ export default function PublicChatPage({
       <div className="flex-1 min-w-0 min-h-0">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
         <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize={400}>
-        <div className="flex h-full min-w-0 flex-1 flex-col">
-        {/* Header */}
+        <div className="relative flex h-full min-w-0 flex-1 flex-col">
+        {/* Header - floating over the message area, no bar background */}
         {showHeader && (
-        <header className="flex items-center gap-2 px-3 h-14 shrink-0 border-b">
-          {/* Sidebar toggle */}
-          {showHistory && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
-            </Button>
-          )}
-          {allowNew && !sidebarOpen && (
-            <Tooltip>
-              <TooltipTrigger
-                onClick={handleNewChat}
-                render={
-                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={t('newChat')}>
-                    <SquarePen className="h-5 w-5" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{t('newChat')}</TooltipContent>
-            </Tooltip>
-          )}
+        <header className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 px-3 py-3">
+          {/* Logo + Agent name — shown when the sidebar is collapsed or absent,
+              placed before the sidebar toggle */}
           {!(showHistory && sidebarOpen) && (
             <>
               {displayIcon ? (
@@ -908,17 +891,41 @@ export default function PublicChatPage({
                   <Sparkles className="h-3.5 w-3.5" />
                 </div>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 mr-2">
                 <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
               </div>
             </>
+          )}
+          {/* Sidebar toggle */}
+          {showHistory && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+            </Button>
+          )}
+          {allowNew && !sidebarOpen && (
+            <Tooltip>
+              <TooltipTrigger
+                onClick={handleNewChat}
+                render={
+                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm" aria-label={t('newChat')}>
+                    <SquarePen className="h-5 w-5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('newChat')}</TooltipContent>
+            </Tooltip>
           )}
           {embedMode && mode === 'bubble' && (
             <Tooltip>
               <TooltipTrigger
                 onClick={onClose}
                 render={
-                  <Button variant="ghost" size="icon" className="ml-auto h-9 w-9" aria-label={t('backToHome')}>
+                  <Button variant="outline" size="icon" className="ml-auto h-9 w-9 bg-background/80 shadow-sm backdrop-blur-sm" aria-label={t('backToHome')}>
                     <span className="text-lg leading-none">&times;</span>
                   </Button>
                 }
@@ -1075,7 +1082,7 @@ export default function PublicChatPage({
 
           {/* Input Area - pinned to the bottom once the conversation has content */}
           {messages.length > 0 && (
-            <div className="relative shrink-0">{inputArea}</div>
+            <div className="relative shrink-0 pb-3">{inputArea}</div>
           )}
 
           {/* Footer - anchored to the bottom in every state; rendered only
