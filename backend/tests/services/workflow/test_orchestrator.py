@@ -651,6 +651,86 @@ class TestWorkflowOrchestratorIteration:
         assert iteration_node.node_type == "iteration"
 
 
+class TestWorkflowOrchestratorIterationScope:
+    """Iteration body exposes the round's item/index as bare-name variables."""
+
+    class _FakeRedis:
+        def __init__(self):
+            self.hashes: dict[str, dict[str, str]] = {}
+            self.values: dict[str, str] = {}
+
+        async def get(self, key):
+            return self.values.get(key)
+
+        async def set(self, key, value):
+            self.values[key] = value
+
+        async def expire(self, key, seconds):
+            pass
+
+        async def hset(self, key, field=None, value=None, *, mapping=None):
+            target = self.hashes.setdefault(key, {})
+            if mapping is not None:
+                target.update({name: str(item) for name, item in mapping.items()})
+            elif field is not None:
+                target[field] = value
+
+        async def hget(self, key, field):
+            return self.hashes.get(key, {}).get(field)
+
+        async def hgetall(self, key):
+            return dict(self.hashes.get(key, {}))
+
+        async def delete(self, key):
+            self.hashes.pop(key, None)
+            self.values.pop(key, None)
+
+    @pytest.mark.asyncio
+    async def test_body_nodes_resolve_bare_item_name_and_scope_is_popped(self):
+        from app.services.workflow.context import ExecutionContext
+
+        context = ExecutionContext(run_id=str(uuid4()), redis_client=self._FakeRedis())
+        await context.set_node_outputs(
+            "iteration-1",
+            {"doc": "/uploads/a.pdf", "index": 0, "total": 1, "results": []},
+        )
+
+        orchestrator = WorkflowOrchestrator(
+            timeout=10,
+            max_nodes=10,
+            enable_retry=False,
+            enable_cache=False,
+            enable_metrics=False,
+        )
+        resolved: list = []
+
+        async def fake_execute_node(node_id, plan, context, run, stream_manager):
+            resolved.append(await context.resolve_variable_ref("{{doc}}"))
+            return ExecutionResult(outputs={"url": "http://x/a.pdf"})
+
+        orchestrator._execute_node = fake_execute_node  # type: ignore[method-assign]
+
+        await orchestrator._execute_iteration_body(
+            iteration_node_id="iteration-1",
+            downstream_nodes=["file_to_url-1"],
+            plan=MagicMock(),
+            context=context,
+            run=MagicMock(),
+            stream_manager=None,
+            start_time=datetime.now(UTC).timestamp(),
+            executed_nodes=set(),
+            skipped_nodes=set(),
+        )
+
+        # 迭代 body 内 {{doc}} 解析为当前轮的 item（等价于 {{iteration-1.doc}}）
+        assert resolved == ["/uploads/a.pdf"]
+        assert await context.resolve_variable_ref("{{iteration-1.doc}}") == (
+            "/uploads/a.pdf"
+        )
+        # body 结束后作用域已弹出，裸名不再解析
+        assert await context.resolve_variable_ref("{{doc}}") is None
+
+
 class TestWorkflowOrchestratorBehavior:
     @pytest.fixture
     def orchestrator(self):

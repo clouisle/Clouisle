@@ -12,7 +12,10 @@ def node(**config):
 
 @pytest.mark.asyncio
 async def test_empty_input_value_is_rejected():
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=""))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=""),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         node(inputVariable="file"), context, SimpleNamespace()
@@ -23,7 +26,10 @@ async def test_empty_input_value_is_rejected():
 
 @pytest.mark.asyncio
 async def test_invalid_base64_uses_encoded_length():
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value="not-base64"))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value="not-base64"),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         node(inputType="base64", outputType="base64"), context, SimpleNamespace()
@@ -35,7 +41,8 @@ async def test_invalid_base64_uses_encoded_length():
 @pytest.mark.asyncio
 async def test_resolve_error_is_translated():
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(side_effect=OSError("private detail"))
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(side_effect=OSError("private detail")),
     )
 
     with (
@@ -55,9 +62,10 @@ async def test_resolve_error_is_translated():
 @pytest.mark.asyncio
 async def test_absolute_urls_are_passed_through_unchanged():
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value="https://cdn.example.com/files/a.pdf"
-        )
+        ),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -72,7 +80,8 @@ async def test_absolute_urls_are_passed_through_unchanged():
 @pytest.mark.asyncio
 async def test_http_absolute_url_is_not_rebaselined():
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value="http://cdn.example.com/a.pdf")
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value="http://cdn.example.com/a.pdf"),
     )
 
     result = await FileToURLNodeExecutor().execute(

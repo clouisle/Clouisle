@@ -6,6 +6,17 @@ export type RunVariableDefinition = Omit<VariableDefinition, 'type' | 'default'>
   default?: unknown
 }
 
+type WorkflowStartParameter = {
+  name: string
+  type?: string
+  required?: boolean
+  default?: unknown
+  description?: string
+  label?: string
+  options?: string[]
+  fileConfig?: { maxSize?: number; accept?: string[]; maxFiles?: number }
+}
+
 function normalizeVariableType(type?: string): RunVariableDefinition['type'] {
   if (type === 'string') return 'text'
   if (type === 'boolean') return 'boolean'
@@ -32,15 +43,9 @@ export function extractVariables(
         nodes?: Array<{
           data?: {
             type?: string
+            parameters?: Array<WorkflowStartParameter>
             config?: {
-              parameters?: Array<{
-                name: string
-                type?: string
-                required?: boolean
-                default?: unknown
-                description?: string
-                label?: string
-              }>
+              parameters?: Array<WorkflowStartParameter>
             }
           }
         }>
@@ -50,24 +55,21 @@ export function extractVariables(
     // First try to get from workflow.variables
     if (workflow.variables && workflow.variables.length > 0) {
       return workflow.variables.map((v) => ({
-        name: v.name,
+        ...v,
         type: normalizeVariableType(v.type),
         required: v.required ?? true,
         default: v.default ?? null,
-        description: v.description,
         label: v.label || v.name,
       }))
     }
 
-    // Otherwise extract from start node
+    // Otherwise extract from start node (user_input stores parameters on data)
     const nodes = workflow.definition?.nodes || []
     const startNode = nodes.find(
       (n) => n.data?.type === 'user_input' || n.data?.type === 'trigger'
     )
 
-    if (!startNode?.data?.config?.parameters) return []
-
-    const params = startNode.data.config.parameters
+    const params = startNode?.data?.config?.parameters || startNode?.data?.parameters || []
 
     return params.map((p) => ({
       name: p.name,
@@ -76,6 +78,8 @@ export function extractVariables(
       default: p.default ?? null,
       description: p.description || null,
       label: p.label || p.name,
+      options: p.options,
+      fileConfig: p.fileConfig,
     }))
   }
 }

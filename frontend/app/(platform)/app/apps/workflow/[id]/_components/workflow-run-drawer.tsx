@@ -57,6 +57,11 @@ import {
   WorkflowEvent,
   RunStatus,
 } from '@/lib/api/workflows'
+import {
+  FileUploadInput,
+  MultiFileUploadInput,
+} from '@/components/chat/variable-form'
+import type { RunVariableDefinition } from '@/lib/utils/extract-variables'
 
 interface WorkflowRunDrawerProps {
   workflow: Workflow | null
@@ -88,20 +93,26 @@ function extractInputVariables(workflow: Workflow | null): VariableDefinition[] 
   // 从节点数据中提取 parameters
   const nodeData = startNode.data as { parameters?: Array<{
     name: string
+    label?: string
     type: string
     required?: boolean
     defaultValue?: string
     description?: string
+    options?: string[]
+    fileConfig?: { maxSize?: number; accept?: string[]; maxFiles?: number }
   }> }
   
   const params = nodeData?.parameters || []
   
   return params.map(p => ({
     name: p.name,
+    label: p.label || null,
     type: p.type || 'string',
     required: p.required ?? true,
     default: p.defaultValue,
     description: p.description,
+    options: p.options,
+    fileConfig: p.fileConfig,
   }))
 }
 
@@ -251,10 +262,11 @@ export function WorkflowRunDrawer({
 }: WorkflowRunDrawerProps) {
   const t = useTranslations('workflow')
   const commonT = useTranslations('common')
+  const chatT = useTranslations('chat.variables')
   const locale = useLocale()
 
   // 从工作流节点中提取输入变量，优先级：节点 parameters > prop variables
-  const variables = React.useMemo(() => {
+  const variables = React.useMemo<VariableDefinition[]>(() => {
     const extracted = extractInputVariables(workflow)
     return extracted.length > 0 ? extracted : propVariables
   }, [workflow, propVariables])
@@ -262,8 +274,8 @@ export function WorkflowRunDrawer({
   // 标签页状态
   const [activeTab, setActiveTab] = React.useState<string>('input')
 
-  // 输入值状态
-  const [inputValues, setInputValues] = React.useState<Record<string, string>>({})
+  // 输入值状态（文件类变量保存上传 URL / URL 数组）
+  const [inputValues, setInputValues] = React.useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
 
   // 运行状态
@@ -281,6 +293,12 @@ export function WorkflowRunDrawer({
   // 节点追踪状态
   const [nodeTraces, setNodeTraces] = React.useState<Map<string, NodeTrace>>(new Map())
   const [expandedNodes, setExpandedNodes] = React.useState<Set<string>>(new Set())
+
+  // 挂起中的文件上传数（>0 时禁止启动运行，避免请求带缺失/半成品 URL）
+  const [uploadingCount, setUploadingCount] = React.useState(0)
+  const trackUploading = React.useCallback((uploading: boolean) => {
+    setUploadingCount((count) => Math.max(0, count + (uploading ? 1 : -1)))
+  }, [])
 
   // 通知父组件 nodeTraces 变化
   React.useEffect(() => {
@@ -312,7 +330,7 @@ export function WorkflowRunDrawer({
     [variables]
   )
 
-  const updateInputValue = React.useCallback((name: string, value: string) => {
+  const updateInputValue = React.useCallback((name: string, value: unknown) => {
     setInputValues((prev) => ({
       ...prev,
       [name]: value,
@@ -325,10 +343,12 @@ export function WorkflowRunDrawer({
     const nextErrors: Record<string, string> = {}
 
     for (const variable of variables) {
-      const rawValue = inputValues[variable.name] ?? ''
-      const value = rawValue.trim()
+      const rawValue = inputValues[variable.name]
+      const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue
+      const isEmpty = value === '' || value === undefined || value === null
+        || (Array.isArray(value) && value.length === 0)
 
-      if (!value) {
+      if (isEmpty) {
         if (variable.required) {
           nextErrors[variable.name] = t('required')
         }
@@ -337,39 +357,49 @@ export function WorkflowRunDrawer({
 
       switch (variable.type) {
         case 'number':
-          inputs[variable.name] = Number(rawValue)
+          inputs[variable.name] = typeof value === 'string' ? Number(value) : value
           break
         case 'boolean':
-          inputs[variable.name] = rawValue === 'true'
+        case 'checkbox':
+          inputs[variable.name] = typeof value === 'boolean' ? value : value === 'true'
           break
         case 'array': {
-          try {
-            const parsed = JSON.parse(rawValue)
-            if (!Array.isArray(parsed)) {
-              nextErrors[variable.name] = t('runDrawer.inputJsonPlaceholder', { type: t('varTypes.array') })
-              break
+          if (typeof value === 'string') {
+            try {
+              const parsed = JSON.parse(value)
+              if (!Array.isArray(parsed)) {
+                nextErrors[variable.name] = t('runDrawer.inputJsonPlaceholder', { type: t('varTypes.array') })
+                break
+              }
+              inputs[variable.name] = parsed
+            } catch {
+              nextErrors[variable.name] = t('invalidJSON')
             }
-            inputs[variable.name] = parsed
-          } catch {
-            nextErrors[variable.name] = t('invalidJSON')
+          } else {
+            inputs[variable.name] = value
           }
           break
         }
         case 'object': {
-          try {
-            const parsed = JSON.parse(rawValue)
-            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-              nextErrors[variable.name] = t('runDrawer.inputJsonPlaceholder', { type: t('varTypes.object') })
-              break
+          if (typeof value === 'string') {
+            try {
+              const parsed = JSON.parse(value)
+              if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                nextErrors[variable.name] = t('runDrawer.inputJsonPlaceholder', { type: t('varTypes.object') })
+                break
+              }
+              inputs[variable.name] = parsed
+            } catch {
+              nextErrors[variable.name] = t('invalidJSON')
             }
-            inputs[variable.name] = parsed
-          } catch {
-            nextErrors[variable.name] = t('invalidJSON')
+          } else {
+            inputs[variable.name] = value
           }
           break
         }
         default:
-          inputs[variable.name] = rawValue
+          // text / paragraph / select / file / image / files / images 直接透传
+          inputs[variable.name] = value
       }
     }
 
@@ -379,9 +409,9 @@ export function WorkflowRunDrawer({
   // 初始化输入值
   React.useEffect(() => {
     if (variables.length > 0) {
-      const initialValues: Record<string, string> = {}
+      const initialValues: Record<string, unknown> = {}
       for (const variable of variables) {
-        initialValues[variable.name] = variable.default?.toString() || ''
+        initialValues[variable.name] = variable.default ?? ''
       }
       setInputValues(initialValues)
       setFieldErrors({})
@@ -749,23 +779,73 @@ export function WorkflowRunDrawer({
               )}
 
               {variables.length > 0 ? (
-                variables.map((variable) => (
+                variables.map((variable) => {
+                  const isCheckbox = variable.type === 'checkbox'
+                  const isUploadField = variable.type === 'file' || variable.type === 'image'
+                    || variable.type === 'files' || variable.type === 'images'
+                  return (
                   <div key={variable.name} className="space-y-2">
                     <Label className="flex items-center gap-1">
-                      {variable.name}
+                      {variable.label || variable.name}
                       {variable.required && (
                         <span className="text-red-500">*</span>
                       )}
                     </Label>
-                    {variable.description && (
+                    {variable.description && !isCheckbox && (
                       <p className="text-xs text-muted-foreground">
                         {variable.description}
                       </p>
                     )}
-                    {variable.type === 'boolean' ? (
+                    {variable.type === 'select' ? (
                       <select
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={inputValues[variable.name] || 'false'}
+                        value={typeof inputValues[variable.name] === 'string' ? (inputValues[variable.name] as string) : ''}
+                        onChange={(e) => updateInputValue(variable.name, e.target.value)}
+                        disabled={isRunning}
+                        aria-invalid={!!fieldErrors[variable.name]}
+                      >
+                        {!inputValues[variable.name] && (
+                          <option value="" disabled>{chatT('selectPlaceholder')}</option>
+                        )}
+                        {(variable.options || []).map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    ) : variable.type === 'checkbox' ? (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={inputValues[variable.name] === true || inputValues[variable.name] === 'true'}
+                          onChange={(e) => updateInputValue(variable.name, e.target.checked)}
+                          disabled={isRunning}
+                          aria-invalid={!!fieldErrors[variable.name]}
+                        />
+                        {variable.description && (
+                          <span className="text-xs text-muted-foreground">{variable.description}</span>
+                        )}
+                      </label>
+                    ) : variable.type === 'file' || variable.type === 'image' ? (
+                      <FileUploadInput
+                        variable={variable as unknown as RunVariableDefinition}
+                        value={inputValues[variable.name]}
+                        error={fieldErrors[variable.name]}
+                        onChange={(value) => updateInputValue(variable.name, value)}
+                        disabled={isRunning}
+                        onUploadingChange={trackUploading}
+                      />
+                    ) : variable.type === 'files' || variable.type === 'images' ? (
+                      <MultiFileUploadInput
+                        variable={variable as unknown as RunVariableDefinition}
+                        value={inputValues[variable.name]}
+                        error={fieldErrors[variable.name]}
+                        onChange={(value) => updateInputValue(variable.name, value)}
+                        disabled={isRunning}
+                        onUploadingChange={trackUploading}
+                      />
+                    ) : variable.type === 'boolean' ? (
+                      <select
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={(inputValues[variable.name] as string) || 'false'}
                         onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
                         aria-invalid={!!fieldErrors[variable.name]}
@@ -776,7 +856,7 @@ export function WorkflowRunDrawer({
                     ) : variable.type === 'array' || variable.type === 'object' ? (
                       <Textarea
                         placeholder={t('runDrawer.inputJsonPlaceholder', { type: variable.type === 'array' ? t('varTypes.array') : t('varTypes.object') })}
-                        value={inputValues[variable.name] || ''}
+                        value={inputValues[variable.name] as string || ''}
                         onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
                         rows={3}
@@ -785,7 +865,7 @@ export function WorkflowRunDrawer({
                     ) : variable.type === 'paragraph' ? (
                       <Textarea
                         placeholder={t('runDrawer.inputPlaceholder', { name: variable.name })}
-                        value={inputValues[variable.name] || ''}
+                        value={inputValues[variable.name] as string || ''}
                         onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
                         rows={3}
@@ -795,15 +875,16 @@ export function WorkflowRunDrawer({
                       <Input
                         type={variable.type === 'number' ? 'number' : 'text'}
                         placeholder={t('runDrawer.inputPlaceholder', { name: variable.name })}
-                        value={inputValues[variable.name] || ''}
+                        value={inputValues[variable.name] as string || ''}
                         onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
                         aria-invalid={!!fieldErrors[variable.name]}
                       />
                     )}
-                    <FieldError>{fieldErrors[variable.name]}</FieldError>
+                    {!isUploadField && <FieldError>{fieldErrors[variable.name]}</FieldError>}
                   </div>
-                ))
+                  )
+                })
               ) : (
                 <div className="text-sm text-muted-foreground text-center py-8">
                   {t('runDrawer.noInputParams')}
@@ -1233,7 +1314,7 @@ export function WorkflowRunDrawer({
             <Button
               className="w-full"
               onClick={() => handleRun(false)}
-              disabled={!isPublished}
+              disabled={!isPublished || uploadingCount > 0}
             >
               <Play className="h-4 w-4 mr-2" />
               {isPublished ? t('runDrawer.startRun') : t('runDrawer.publishFirst')}
@@ -1242,6 +1323,7 @@ export function WorkflowRunDrawer({
               variant="outline"
               className="w-full"
               onClick={() => handleRun(true)}
+              disabled={uploadingCount > 0}
             >
               <Bug className="h-4 w-4 mr-2" />
               {t('runDrawer.debugDraft')}

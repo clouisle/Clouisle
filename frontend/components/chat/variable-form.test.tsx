@@ -144,4 +144,53 @@ describe('VariableForm', () => {
     ;(findAll(multiple, (node) => node.type === 'button').at(-1)?.props.onClick as () => void)()
     expect(onChange).toHaveBeenCalledWith({ files: null })
   })
+
+  test('supports drag-and-drop uploads and renders image previews', async () => {
+    const onChange = mock()
+    uploadFile.mockClear()
+
+    // 拖拽单文件：onDragEnter/Over/Leave 触发拖拽态，onDrop 上传
+    const single = render([variable('doc', 'file')], {}, onChange)
+    const singleZone = findAll(single, (node) => typeof node.props.onDrop === 'function')[0]
+    singleZone.props.onDragEnter({ preventDefault: mock(), stopPropagation: mock() })
+    singleZone.props.onDragOver({ preventDefault: mock(), stopPropagation: mock() })
+    singleZone.props.onDragLeave({ preventDefault: mock(), stopPropagation: mock() })
+    await (singleZone.props.onDrop as (event: { preventDefault(): void; dataTransfer: { files: File[] } }) => Promise<void>)({
+      preventDefault() {},
+      dataTransfer: { files: [new File(['x'], 'dropped.txt')] },
+    })
+    expect(uploadFile).toHaveBeenCalledWith(expect.any(File), 'workflow-input')
+    expect(onChange).toHaveBeenCalledWith({ doc: '/uploads/new.txt' })
+
+    // 图片单文件：渲染 <img> 缩略图预览
+    const image = render([variable('photo', 'image')], { photo: '/uploads/p.png' }, onChange)
+    const preview = findAll(image, (node) => node.type === 'img')[0]
+    expect(preview.props.src).toBe('/uploads/p.png')
+
+    // 多图：缩略图网格预览 + 移除按钮
+    const onChangeMulti = mock()
+    const images = render([variable('shots', 'images')], { shots: ['/uploads/a.png', '/uploads/b.png'] }, onChangeMulti)
+    const thumbs = findAll(images, (node) => node.type === 'img')
+    expect(thumbs.map((node) => node.props.src)).toEqual(['/uploads/a.png', '/uploads/b.png'])
+    ;(findAll(images, (node) => node.type === 'button' && typeof node.props.onClick === 'function').at(-1)?.props.onClick as () => void)()
+    expect(onChangeMulti).toHaveBeenCalledWith({ shots: ['/uploads/a.png'] })
+
+    // 多图拖拽追加：已有 1 张 + 拖入 2 张 → 合并
+    uploadFile.mockClear()
+    uploadFile.mockResolvedValueOnce({ url: '/uploads/c.png' }).mockResolvedValueOnce({ url: '/uploads/d.png' })
+    const onChangeAppend = mock()
+    const append = render([variable('shots', 'images')], { shots: ['/uploads/old.png'] }, onChangeAppend)
+    const appendZone = findAll(append, (node) => typeof node.props.onDrop === 'function')[0]
+    await (appendZone.props.onDrop as (event: { preventDefault(): void; dataTransfer: { files: File[] } }) => Promise<void>)({
+      preventDefault() {},
+      dataTransfer: { files: [new File(['x'], 'c.png'), new File(['y'], 'd.png')] },
+    })
+    expect(onChangeAppend).toHaveBeenCalledWith({
+      shots: ['/uploads/old.png', '/uploads/c.png', '/uploads/d.png'],
+    })
+
+    // 非图片多文件保持文件芯片列表（无 img 预览）
+    const docs = render([variable('docs', 'files')], { docs: ['/uploads/a.pdf'] }, onChangeMulti)
+    expect(findAll(docs, (node) => node.type === 'img')).toHaveLength(0)
+  })
 })

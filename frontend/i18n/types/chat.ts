@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T08:00:16.761Z
+// GENERATED — 2026-08-15T18:33:11.644Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -76,6 +76,11 @@ export type ChatMessages = {
       objectPlaceholder: string
       selectFile: string
       selectFiles: string
+      selectImage: string
+      selectImages: string
+      dropFiles: string
+      dropImages: string
+      removeImage: string
       uploading: string
       fileUploadFailed: string
       fileTooLarge: string
@@ -94,6 +99,7 @@ export type ChatMessages = {
       copy: string
       copied: string
       loadOlderMessages: string
+      userMessageScaleTick: string
       retry: string
       user: string
       assistant: string

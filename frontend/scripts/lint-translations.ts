@@ -115,14 +115,6 @@ async function main() {
       const flat = flattenKeys(JSON.parse(content))
       for (const [key, value] of Object.entries(flat)) {
         if (typeof value !== 'string' || value.trim() === '') continue
-        // Skip ICU validation for strings containing {{ (Jinja2-style placeholder hints)
-        // and strings with JSON snippet patterns like {"key": "value"} (examples in hints)
-        // and known edge-case keys like clearHint that legitimately contain {} as text
-        if (
-          value.includes('{{') ||
-          /\{\s*"/.test(value) ||
-          key === 'workflow.configVariableAssignment.clearHint'
-        ) continue
         try {
           new IntlMessageFormat(value, lang)
         } catch (e: unknown) {

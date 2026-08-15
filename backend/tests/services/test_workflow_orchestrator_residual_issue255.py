@@ -105,7 +105,10 @@ async def test_execute_marks_untaken_branch_and_descendants_skipped(orchestrator
 
 @pytest.mark.asyncio
 async def test_iteration_body_stops_on_cancellation(orchestrator):
-    context = MagicMock(get_status=AsyncMock(return_value="cancelled"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="cancelled"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
     orchestrator._execute_node = AsyncMock()
 
     with (

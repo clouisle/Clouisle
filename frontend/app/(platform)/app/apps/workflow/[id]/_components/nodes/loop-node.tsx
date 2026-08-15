@@ -9,6 +9,7 @@ import { ConditionRule } from './condition-node'
 
 // 循环变量类型
 export type LoopVariableType = 'string' | 'number' | 'boolean' | 'array' | 'object'
+  | 'file' | 'image' | 'files' | 'images'
 
 // 循环内部变量定义
 export interface LoopVariable {

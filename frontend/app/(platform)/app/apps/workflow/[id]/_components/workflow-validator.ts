@@ -104,6 +104,7 @@ interface WorkflowNodeData {
   }
   // 迭代节点
   iterationConfig?: {
+    iteratorVariable?: string
     iterateVariable?: string
     itemVariable?: string
     indexVariable?: string
@@ -398,15 +399,23 @@ function getAvailableVariables(nodeId: string, nodes: WorkflowNode[], edges: Edg
         availableVars.add(`${parentNode.id}.${itemVar}`)
         availableVars.add(`${parentNode.id}.${indexVar}`)
         availableVars.add(`${parentNode.id}.${outputVar}`)
+        // 运行时迭代 body 也支持裸名引用（{{doc}} 等价于 {{iteration-xxx.doc}}）
+        availableVars.add(itemVar)
+        availableVars.add(indexVar)
+        availableVars.add(outputVar)
       } else if (parentType === 'loop') {
         // 循环节点提供 index 和循环变量
         const config = parentNode.data.loopConfig
         const indexVar = config?.indexVariable || 'index'
         availableVars.add(`${parentNode.id}.${indexVar}`)
+        availableVars.add(indexVar)
         // 循环变量
         const loopVars = config?.loopVariables || []
         loopVars.forEach(v => {
-          if (v.name) availableVars.add(`${parentNode.id}.${v.name}`)
+          if (v.name) {
+            availableVars.add(`${parentNode.id}.${v.name}`)
+            availableVars.add(v.name)
+          }
         })
       }
       
@@ -812,8 +821,8 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
     case 'iteration': {
       const config = node.data.iterationConfig
 
-      // 检查迭代源变量
-      const iteratorVar = config?.iterateVariable
+      // 检查迭代源变量（UI 存 iteratorVariable；兼容旧版 iterateVariable）
+      const iteratorVar = config?.iteratorVariable || config?.iterateVariable
       if (!iteratorVar) {
         issues.push(createIssue(node, 'error', 'iterateVariableEmpty', 'iteratorVariable'))
       } else if (!isVariableAvailable(iteratorVar, availableVars)) {

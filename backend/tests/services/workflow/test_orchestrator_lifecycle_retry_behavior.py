@@ -240,7 +240,10 @@ async def test_execute_iteration_body_enforces_timeout_and_cancellation():
     orchestrator = WorkflowOrchestrator(
         timeout=1, enable_cache=False, enable_metrics=False
     )
-    context = MagicMock(get_status=AsyncMock(return_value="cancelled"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="cancelled"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
 
     with pytest.raises(ExecutionTimeoutError):
         await orchestrator._execute_iteration_body(

@@ -12,7 +12,7 @@
     "configureWorkflow": "Configure Workflow",
     "configureAgent": "Configure Agent",
     "fillParameters": "Fill in the required parameters to start",
-    "startRun": "Start",
+    "startRun": "Run",
     "running": "Running...",
     "starting": "Starting...",
     "typePlaceholder": "Type your message...",
@@ -28,8 +28,9 @@
     "newRun": "New run",
     "runAgain": "Run again",
     "openHistory": "Open run history",
+    "closeHistory": "Close run history",
     "historyDetailError": "Failed to load this run. Please try again.",
-    "history": "Your run history",
+    "history": "Run history",
     "noHistory": "No runs yet.",
     "showTrace": "Show execution trace",
     "historyResult": "Historical result",
@@ -48,8 +49,8 @@
     "nodeStatus": {
       "pending": "Pending",
       "running": "Running",
-      "completed": "Completed",
-      "error": "Error",
+      "success": "Completed",
+      "failed": "Failed",
       "skipped": "Skipped"
     }
   }

@@ -12,6 +12,10 @@ export const loopVariableTypeConfig = {
   boolean: { labelKey: 'boolean', icon: CheckSquare, placeholder: 'e.g. false', valueType: 'Boolean' },
   array: { labelKey: 'array', icon: Brackets, placeholder: 'e.g. []', valueType: 'Array' },
   object: { labelKey: 'object', icon: Braces, placeholder: 'e.g. {}', valueType: 'Object' },
+  file: { labelKey: 'file', icon: File, placeholder: 'e.g. /uploads/a.pdf', valueType: 'File' },
+  image: { labelKey: 'image', icon: Image, placeholder: 'e.g. /uploads/a.png', valueType: 'File' },
+  files: { labelKey: 'files', icon: Files, placeholder: 'e.g. []', valueType: 'Array' },
+  images: { labelKey: 'images', icon: Images, placeholder: 'e.g. []', valueType: 'Array' },
 } as const
 
 // 参数类型配置 - labelKey references workflow.varTypes.*

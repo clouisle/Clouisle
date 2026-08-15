@@ -14,7 +14,10 @@ def node(**config):
 
 @pytest.mark.asyncio
 async def test_rejects_missing_invalid_and_unsupported_inputs():
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=None))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=None),
+    )
     executor = FileToURLNodeExecutor()
 
     missing = await executor.execute(
@@ -40,7 +43,10 @@ async def test_rejects_missing_invalid_and_unsupported_inputs():
 @pytest.mark.asyncio
 async def test_returns_existing_base64_content_and_decoded_size():
     content = base64.b64encode(b"hello").decode()
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=content))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=content),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         node(inputVariable="file", inputType="base64", outputType="base64"),
@@ -56,9 +62,10 @@ async def test_returns_existing_base64_content_and_decoded_size():
 async def test_legacy_input_variable_returns_upload_url_without_reading_file():
     """Workflow file parameter values are upload URLs; no filesystem access."""
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value="/api/v1/upload/files/documents/2026/08/a.pdf"
-        )
+        ),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -75,7 +82,8 @@ async def test_legacy_input_variable_returns_upload_url_without_reading_file():
 @pytest.mark.asyncio
 async def test_ensure_absolute_uses_public_api_url_when_configured():
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value="/files/report.txt")
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value="/files/report.txt"),
     )
     from app.core.config import settings
 
@@ -96,7 +104,8 @@ async def test_ensure_absolute_preserves_relative_url_without_public_origin():
     from app.core.config import settings
 
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value="/files/report.txt")
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value="/files/report.txt"),
     )
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(settings, "PUBLIC_API_URL", "")
@@ -108,6 +117,50 @@ async def test_ensure_absolute_preserves_relative_url_without_public_origin():
         )
 
     assert result.outputs["url"] == "/files/report.txt"
+
+
+@pytest.mark.asyncio
+async def test_context_base_url_fallback_absolutizes_when_public_api_url_unset():
+    # 请求来源 URL 作为 PUBLIC_API_URL 未配置时的兜底（run/debug 端点传入）
+    from app.core.config import settings
+
+    context = SimpleNamespace(
+        get_public_base_url=lambda: "http://dev.example:8000",
+        resolve_variable_ref=AsyncMock(return_value="/files/report.txt"),
+    )
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(settings, "PUBLIC_API_URL", "")
+        result = await FileToURLNodeExecutor().execute(
+            node(inputVariable="file", ensureAbsolute=True),
+            context,
+            SimpleNamespace(),
+        )
+
+    assert result.outputs["url"] == "http://dev.example:8000/files/report.txt"
+
+
+@pytest.mark.asyncio
+async def test_multi_file_value_produces_absolutized_url_list_from_context_base():
+    # 多文件：files 参数值是 URL 数组 → 输出绝对 URL 数组
+    context = SimpleNamespace(
+        get_public_base_url=lambda: "http://dev.example:8000",
+        resolve_variable_ref=AsyncMock(return_value=["/files/a.pdf", "/files/b.png"]),
+    )
+    result = await FileToURLNodeExecutor().execute(
+        node(
+            inputVariable="docs",
+            inputType="path",
+            outputType="url",
+            ensureAbsolute=True,
+        ),
+        context,
+        SimpleNamespace(),
+    )
+
+    assert result.outputs["urls"] == [
+        "http://dev.example:8000/files/a.pdf",
+        "http://dev.example:8000/files/b.png",
+    ]
 
 
 @pytest.mark.asyncio
@@ -148,9 +201,10 @@ async def test_legacy_path_to_base64_streams_internal_upload(monkeypatch):
     monkeypatch.setattr(settings, "INTERNAL_API_TOKEN", "internal-token")
     monkeypatch.setattr(settings, "INTERNAL_API_TOKEN_FILE", "")
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value="/api/v1/upload/files/sandbox-artifacts/2026/08/report.txt"
-        )
+        ),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -175,9 +229,10 @@ async def test_legacy_document_path_rejects_non_uuid_knowledge_base(monkeypatch)
     read = AsyncMock(return_value=b"should not be read")
     monkeypatch.setattr(upload_gateway, "read", read)
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value="documents/not-a-uuid/2026/08/report.txt"
-        )
+        ),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -209,9 +264,10 @@ async def test_legacy_document_path_requires_workflow_team_access(monkeypatch):
     monkeypatch.setattr(upload_gateway, "read", read)
 
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value=f"/api/v1/upload/files/documents/{kb_id}/2026/08/report.txt"
-        )
+        ),
     )
     result = await FileToURLNodeExecutor().execute(
         node(inputVariable="file", inputType="path", outputType="base64"),
@@ -240,9 +296,10 @@ async def test_legacy_document_path_rejects_missing_workflow(monkeypatch):
     monkeypatch.setattr(upload_gateway, "read", read)
 
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value=f"documents/{uuid4()}/2026/08/report.txt"
-        )
+        ),
     )
     result = await FileToURLNodeExecutor().execute(
         node(inputVariable="file", inputType="path", outputType="base64"),
@@ -274,9 +331,10 @@ async def test_legacy_document_path_rejects_knowledge_base_from_other_team(monke
     monkeypatch.setattr(upload_gateway, "read", read)
 
     context = SimpleNamespace(
+        get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(
             return_value=f"documents/{kb_id}/2026/08/report.txt"
-        )
+        ),
     )
     result = await FileToURLNodeExecutor().execute(
         node(inputVariable="file", inputType="path", outputType="base64"),
@@ -292,7 +350,8 @@ async def test_legacy_document_path_rejects_knowledge_base_from_other_team(monke
 @pytest.mark.asyncio
 async def test_legacy_path_to_base64_rejects_absolute_storage_key():
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value="/uploads//etc/passwd")
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value="/uploads//etc/passwd"),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -314,7 +373,8 @@ async def test_file_to_url_config_inputs_map_multiple_urls():
         ],
     }
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(side_effect=["/files/a.pdf", "/files/b.png"])
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(side_effect=["/files/a.pdf", "/files/b.png"]),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -330,7 +390,8 @@ async def test_file_to_url_config_inputs_map_multiple_urls():
 @pytest.mark.asyncio
 async def test_multi_file_value_produces_url_list():
     context = SimpleNamespace(
-        resolve_variable_ref=AsyncMock(return_value=["/files/a.png", "/files/b.png"])
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=["/files/a.png", "/files/b.png"]),
     )
 
     result = await FileToURLNodeExecutor().execute(
@@ -352,7 +413,10 @@ async def test_file_to_url_config_skips_empty_input_entries():
             {"name": "url", "sourceVariable": ""},
         ],
     }
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=None))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=None),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         {"data": {"fileToUrlConfig": config}}, context, SimpleNamespace()
@@ -367,7 +431,10 @@ async def test_file_to_url_config_rejects_resolved_none_value():
         "ensureAbsolute": False,
         "inputs": [{"name": "url", "sourceVariable": "{{start.missing}}"}],
     }
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=None))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=None),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         {"data": {"fileToUrlConfig": config}}, context, SimpleNamespace()
@@ -379,7 +446,10 @@ async def test_file_to_url_config_rejects_resolved_none_value():
 
 @pytest.mark.asyncio
 async def test_legacy_node_without_input_variable_is_rejected():
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value="x"))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value="x"),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         node(inputType="path"), context, SimpleNamespace()
@@ -390,7 +460,10 @@ async def test_legacy_node_without_input_variable_is_rejected():
 
 @pytest.mark.asyncio
 async def test_non_string_file_value_is_rejected():
-    context = SimpleNamespace(resolve_variable_ref=AsyncMock(return_value=123))
+    context = SimpleNamespace(
+        get_public_base_url=lambda: None,
+        resolve_variable_ref=AsyncMock(return_value=123),
+    )
 
     result = await FileToURLNodeExecutor().execute(
         node(inputVariable="file", ensureAbsolute=False),

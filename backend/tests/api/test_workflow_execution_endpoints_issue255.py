@@ -272,7 +272,7 @@ async def test_run_endpoints_create_dispatch_and_audit(
     response = await getattr(workflows, endpoint_name)(
         workflow_id,
         WorkflowRunRequest(inputs={"query": "hello"}),
-        SimpleNamespace(),
+        SimpleNamespace(base_url="http://testserver/"),
         SimpleNamespace(id=user_id),
     )
 

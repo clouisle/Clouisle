@@ -4,7 +4,7 @@ Sub-workflow node executor.
 Handles nested workflow execution with depth tracking.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 import logging
 import mimetypes
@@ -289,6 +289,11 @@ class FileToURLNodeExecutor(NodeExecutor):
         )
 
         try:
+            # 绝对化兜底：优先请求来源（run/debug 端点传入），其次 PUBLIC_API_URL
+            public_base = context.get_public_base_url() or str(
+                getattr(settings, "PUBLIC_API_URL", "") or ""
+            ).rstrip("/")
+
             if inputs:
                 outputs: dict[str, WorkflowValue] = {}
                 for item in inputs:
@@ -299,8 +304,9 @@ class FileToURLNodeExecutor(NodeExecutor):
                     value = await context.resolve_variable_ref(ref)
                     if not self._has_file_value(value):
                         return ExecutionResult(error="validation_error")
-                    outputs[name] = self._normalize_urls(
-                        value, ensure_absolute, settings
+                    outputs[name] = cast(
+                        WorkflowValue,
+                        self._normalize_urls(value, ensure_absolute, public_base),
                     )
                 if not outputs:
                     return ExecutionResult(error="validation_error")
@@ -335,9 +341,11 @@ class FileToURLNodeExecutor(NodeExecutor):
             if input_type == "path" and output_type == "base64":
                 return await self._legacy_path_to_base64(value, run)
 
-            converted = self._normalize_urls(value, ensure_absolute, settings)
+            converted = cast(
+                WorkflowValue, self._normalize_urls(value, ensure_absolute, public_base)
+            )
             if isinstance(converted, list):
-                first = converted[0] if converted else ""
+                first = str(converted[0]) if converted else ""
                 filename = os.path.basename(urlparse(first).path) or "file"
                 mime_type, _ = mimetypes.guess_type(filename)
                 return ExecutionResult(
@@ -428,7 +436,7 @@ class FileToURLNodeExecutor(NodeExecutor):
 
     @staticmethod
     def _normalize_urls(
-        value: WorkflowValue, ensure_absolute: bool, settings: Any
+        value: WorkflowValue, ensure_absolute: bool, base_url: str
     ) -> str | list[str]:
         """Normalize a file variable value (URL or URL list) without reading files."""
 
@@ -436,10 +444,9 @@ class FileToURLNodeExecutor(NodeExecutor):
             url = url.strip()
             if not ensure_absolute or url.startswith(("http://", "https://")):
                 return url
-            base = str(getattr(settings, "PUBLIC_API_URL", "") or "").rstrip("/")
-            if not base:
+            if not base_url:
                 return url
-            return f"{base}{url if url.startswith('/') else '/' + url}"
+            return f"{base_url}{url if url.startswith('/') else '/' + url}"
 
         if isinstance(value, list):
             return [_absolutize(v) for v in value if isinstance(v, str) and v.strip()]

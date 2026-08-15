@@ -18,7 +18,7 @@ const icons = Object.fromEntries([
   'Play', 'Bug', 'X', 'Loader2', 'CheckCircle2', 'XCircle', 'Clock', 'StopCircle',
   'ChevronDown', 'ChevronRight', 'Copy', 'Zap', 'Bot', 'Home', 'GitBranch', 'Wrench',
   'Code', 'FileText', 'MessageSquareText', 'RefreshCw', 'Infinity', 'Tags', 'Variable',
-  'Combine', 'Braces', 'Link', 'Workflow', 'Sparkles',
+  'Combine', 'Braces', 'Link', 'Workflow', 'Sparkles', 'Upload', 'FileIcon', 'ImageIcon',
 ].map((name) => [name, component(name)]))
 
 let states: unknown[] = []
@@ -81,7 +81,9 @@ mock.module('@/lib/utils', () => ({ formatDateTime: (value: unknown) => String(v
 mock.module('@/lib/api/client', () => ({
   ApiError: class ApiError extends Error {},
   getErrorMessage: () => 'request failed',
+  api: {},
 }))
+mock.module('@/lib/api', () => ({ ApiError: class ApiError extends Error {} }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Props, name: string) => Object.fromEntries(Object.entries(errors).filter(([key]) => key !== name)),
   getValidationSummaryEntries: (errors: Props, inline: string[]) => Object.entries(errors).filter(([key]) => !inline.includes(key)),
@@ -103,6 +105,12 @@ for (const [path, exports] of [
   }],
   ['@/components/ui/field', { FieldError: component('FieldError') }],
   ['@/components/ui/tooltip', { Tooltip: component('Tooltip'), TooltipContent: component('TooltipContent'), TooltipTrigger: component('TooltipTrigger') }],
+  ['@/components/ui/checkbox', { Checkbox: component('Checkbox') }],
+  ['@/components/ui/select', {
+    Select: component('Select'), SelectContent: component('SelectContent'),
+    SelectItem: component('SelectItem'), SelectTrigger: component('SelectTrigger'), SelectValue: component('SelectValue'),
+  }],
+  ['@/lib/api/upload', { uploadApi: { uploadFile: mock(async () => ({ url: '/uploads/up.txt' })) } }],
 ] as const) mock.module(path, () => exports)
 mock.module('./node-output-renderer', () => ({
   nodeStatusConfig: Object.fromEntries(['running', 'success', 'failed', 'skipped'].map((status) => [status, { icon: icons.Clock, className: status }])),

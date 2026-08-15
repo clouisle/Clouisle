@@ -89,7 +89,10 @@ async def test_execute_rejects_timed_out_run_before_reading_context():
 async def test_execute_rejects_cancelled_run_before_executing_nodes():
     orchestrator = make_orchestrator()
     orchestrator._execute_node = AsyncMock()
-    context = MagicMock(get_status=AsyncMock(return_value="cancelled"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="cancelled"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
     plan = MagicMock(stages=[SimpleNamespace(node_ids=["node"])])
 
     with pytest.raises(ExecutionCancelledError):
@@ -119,7 +122,10 @@ async def test_execute_enforces_maximum_node_count():
 async def test_iteration_body_stops_when_run_is_cancelled():
     orchestrator = make_orchestrator()
     orchestrator._execute_node = AsyncMock()
-    context = MagicMock(get_status=AsyncMock(return_value="cancelled"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="cancelled"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
 
     with pytest.raises(ExecutionCancelledError):
         await orchestrator._execute_iteration_body(

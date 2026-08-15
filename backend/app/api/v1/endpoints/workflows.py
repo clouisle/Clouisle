@@ -1151,6 +1151,7 @@ async def run_workflow(
             inputs=run_request.inputs,
             user_id=str(current_user.id),
             team_id=str(workflow.team_id) if workflow.team_id else None,
+            base_url=str(request.base_url).rstrip("/"),
         )
 
         await AuditLogService.log(
@@ -1218,6 +1219,7 @@ async def debug_workflow(
             user_id=str(current_user.id),
             team_id=str(workflow.team_id) if workflow.team_id else None,
             is_debug=True,
+            base_url=str(request.base_url).rstrip("/"),
         )
 
         await AuditLogService.log(

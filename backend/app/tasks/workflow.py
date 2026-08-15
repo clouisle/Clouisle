@@ -23,6 +23,7 @@ def run_workflow_task(
     user_id: str | None,
     team_id: str | None = None,
     is_debug: bool = False,
+    base_url: str | None = None,
 ) -> dict:
     """
     Celery task to run a workflow.
@@ -58,6 +59,7 @@ def run_workflow_task(
                 team_id=team_uuid,
                 stream=True,
                 is_debug=is_debug,
+                public_base_url=base_url,
             )
 
             # Get final run status

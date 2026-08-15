@@ -155,7 +155,7 @@ describe('validateWorkflow', () => {
   test('validates container structure and exposes parent iteration and loop variables to children', () => {
     const validIteration = node('iteration', {
       label: 'Iteration',
-      iterationConfig: { iterateVariable: 'input.items', itemVariable: 'entry' },
+      iterationConfig: { iteratorVariable: '{{input.items}}', itemVariable: 'entry' },
     })
     const validLoop = node('loop', {
       label: 'Loop',
@@ -186,7 +186,7 @@ describe('validateWorkflow', () => {
 
     const invalid = [
       node('user_input', { label: 'Input', parameters: [{ name: 'items', type: 'array' }] }),
-      node('iteration', { label: 'Bad Iteration', iterationConfig: { iterateVariable: 'missing.items' } }),
+      node('iteration', { label: 'Bad Iteration', iterationConfig: { iteratorVariable: '{{missing.items}}' } }),
       node('loop', { label: 'Bad Loop', loopConfig: { conditionVariable: 'missing.done' } }),
     ]
     expect(messages(invalid).map(issue => issue.message)).toEqual([
@@ -194,6 +194,53 @@ describe('validateWorkflow', () => {
       'conditionVariableNotAvailable', 'loopMissingStart', 'loopNoProcessNodes',
       'nodeNoInput', 'nodeNoInput', 'noOutputNode',
     ])
+  })
+
+  test('accepts bare iteration item references inside the iteration body', () => {
+    const iteration = node('iteration', {
+      label: 'Iteration',
+      iterationConfig: {
+        iteratorVariable: '{{input.files}}',
+        iteratorType: 'array',
+        itemVariable: 'doc',
+        indexVariable: 'index',
+        outputVariable: 'results',
+      },
+    })
+    const nodes = [
+      node('user_input', { label: 'Input', parameters: [{ name: 'files', type: 'files' }] }),
+      iteration,
+      node('iteration_start', { label: 'Iteration Start' }, iteration.id),
+      node('file_to_url', {
+        label: 'File URL',
+        fileToUrlConfig: {
+          inputs: [{ name: 'doc_url', sourceVariable: '{{doc}}', sourceType: 'file' }],
+          ensureAbsolute: true,
+        },
+      }, iteration.id),
+      node('answer', { label: 'Answer', answerConfig: { outputs: [{ id: 'result', sourceVariable: '{{iteration.results}}' }] } }),
+    ]
+    const edges = [
+      edge('input', 'iteration'),
+      edge('iteration-start', 'file-url'),
+      edge('iteration', 'answer'),
+    ]
+
+    // 裸名 {{doc}}（等价于 {{iteration.doc}}）与节点作用域形式都应通过
+    expect(validateWorkflow(nodes, edges)).toEqual([])
+
+    const bad = [
+      ...nodes.filter(n => n.id !== 'file-url'),
+      node('file_to_url', {
+        label: 'File URL',
+        fileToUrlConfig: {
+          inputs: [{ name: 'doc_url', sourceVariable: '{{missing}}', sourceType: 'file' }],
+          ensureAbsolute: true,
+        },
+      }, iteration.id),
+    ]
+    const badIssues = messages(bad, edges).filter(issue => issue.nodeId === 'file-url')
+    expect(badIssues.map(issue => issue.message)).toEqual(['inputVariableRefNotExist'])
   })
 
   test('validates integration nodes, connection warnings, and ignores comments', () => {

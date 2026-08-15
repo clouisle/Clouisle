@@ -60,6 +60,52 @@ class TestStartExecutors:
         assert result.error == "Required input 'query' not provided"
 
     @pytest.mark.asyncio
+    async def test_user_input_keeps_files_and_images_values_as_lists(self):
+        # files/images 参数值是 URL 数组，必须保持列表，不能 str() 成 repr 字符串，
+        # 否则迭代 / file_to_url 会拿到 "['url1', 'url2']" 而不是单个元素
+        node = {
+            "id": "start_1",
+            "data": {
+                "config": {
+                    "variables": [
+                        {"name": "docs", "type": "files"},
+                        {"name": "photos", "type": "images"},
+                        {"name": "attachment", "type": "file"},
+                    ]
+                }
+            },
+        }
+        context = MagicMock()
+        context.get_variable = AsyncMock(
+            side_effect=[
+                ["/uploads/a.pdf", "/uploads/b.pdf"],
+                ["/uploads/p1.png"],
+                "/uploads/single.txt",
+            ]
+        )
+
+        result = await UserInputNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.outputs == {
+            "docs": ["/uploads/a.pdf", "/uploads/b.pdf"],
+            "photos": ["/uploads/p1.png"],
+            "attachment": "/uploads/single.txt",
+        }
+
+    @pytest.mark.asyncio
+    async def test_user_input_wraps_scalar_files_value_into_list(self):
+        node = {
+            "id": "start_1",
+            "data": {"config": {"variables": [{"name": "docs", "type": "files"}]}},
+        }
+        context = MagicMock()
+        context.get_variable = AsyncMock(return_value="/uploads/only.txt")
+
+        result = await UserInputNodeExecutor().execute(node, context, MagicMock())
+
+        assert result.outputs == {"docs": ["/uploads/only.txt"]}
+
+    @pytest.mark.asyncio
     async def test_trigger_includes_configured_values_and_metadata(self):
         node = {
             "id": "trigger_1",
@@ -78,6 +124,135 @@ class TestStartExecutors:
         assert result.outputs["_trigger_type"] == "webhook"
         assert result.outputs["_trigger_time"]
         assert result.outputs["event"] == "created"
+
+
+class TestFilesIterationEndToEnd:
+    """用户场景：files 参数 → 迭代逐元素 → file_to_url 输出单条 URL（不是整个数组）。"""
+
+    class _FakeRedis:
+        def __init__(self):
+            self.hashes: dict[str, dict[str, str]] = {}
+            self.values: dict[str, str] = {}
+
+        async def get(self, key):
+            return self.values.get(key)
+
+        async def set(self, key, value):
+            self.values[key] = value
+
+        async def expire(self, key, seconds):
+            pass
+
+        async def hset(self, key, field=None, value=None, *, mapping=None):
+            target = self.hashes.setdefault(key, {})
+            if mapping is not None:
+                target.update({name: str(item) for name, item in mapping.items()})
+            elif field is not None:
+                target[field] = value
+
+        async def hget(self, key, field):
+            return self.hashes.get(key, {}).get(field)
+
+        async def hgetall(self, key):
+            return dict(self.hashes.get(key, {}))
+
+        async def delete(self, key):
+            self.hashes.pop(key, None)
+            self.values.pop(key, None)
+
+    @pytest.mark.asyncio
+    async def test_files_array_iterates_per_item_and_file_to_url_emits_single_urls(
+        self,
+    ):
+        from uuid import uuid4
+
+        from app.services.workflow.context import ExecutionContext
+        from app.services.workflow.executors.iteration import IterationNodeExecutor
+        from app.services.workflow.executors.subworkflow import FileToURLNodeExecutor
+
+        ctx = ExecutionContext(run_id=str(uuid4()), redis_client=self._FakeRedis())
+        ctx._public_base_url = "http://dev.example:8000"
+        await ctx.set_inputs({"docs": ["/uploads/a.pdf", "/uploads/b.pdf"]})
+
+        # 迭代执行器会创建 StreamManager 连真实 Redis；这里打桩避免依赖真实事件循环
+        with patch(
+            "app.services.workflow.executors.iteration.StreamManager",
+            return_value=MagicMock(publish_iteration=AsyncMock()),
+        ):
+            # 1. user_input 节点输出保持列表（files 类型不再被 str() 成 repr 字符串）
+            start_result = await UserInputNodeExecutor().execute(
+                {
+                    "id": "user_input-1",
+                    "data": {
+                        "config": {"variables": [{"name": "docs", "type": "files"}]}
+                    },
+                },
+                ctx,
+                MagicMock(),
+            )
+            assert start_result.outputs == {
+                "docs": ["/uploads/a.pdf", "/uploads/b.pdf"]
+            }
+            await ctx.set_node_outputs("user_input-1", start_result.outputs)
+
+            # 2. 迭代两轮：每轮 item 是单个 URL（跟着 index 走）
+            iteration = IterationNodeExecutor()
+            iteration_node = {
+                "id": "iteration-1",
+                "data": {
+                    "iterationConfig": {
+                        "iteratorVariable": "{{user_input-1.docs}}",
+                        "itemVariable": "doc",
+                        "indexVariable": "index",
+                        "maxIterations": 10,
+                    }
+                },
+            }
+
+            per_round_urls = []
+            for expected_index in range(2):
+                round_result = await iteration.execute(iteration_node, ctx, MagicMock())
+                outputs = round_result.outputs
+                if outputs.get("_iteration_complete"):
+                    break
+                assert (
+                    outputs["doc"]
+                    == f"/uploads/{'a.pdf' if expected_index == 0 else 'b.pdf'}"
+                )
+                assert outputs["index"] == expected_index
+                per_round_urls.append(outputs["doc"])
+
+                # 3. file_to_url 每轮读取 {{doc}} → 输出单条绝对 URL
+                ctx.push_iteration_scope(
+                    {k: v for k, v in outputs.items() if not str(k).startswith("_")}
+                )
+                ftu_result = await FileToURLNodeExecutor().execute(
+                    {
+                        "id": "file_to_url-1",
+                        "data": {
+                            "fileToUrlConfig": {
+                                "inputs": [
+                                    {
+                                        "name": "doc_url",
+                                        "sourceVariable": "{{doc}}",
+                                        "sourceType": "file",
+                                    }
+                                ],
+                                "ensureAbsolute": True,
+                            }
+                        },
+                    },
+                    ctx,
+                    MagicMock(),
+                )
+                ctx.pop_iteration_scope()
+                assert ftu_result.success
+                assert ftu_result.outputs == {
+                    "doc_url": f"http://dev.example:8000/uploads/{'a.pdf' if expected_index == 0 else 'b.pdf'}"
+                }
+
+            # 恰好两轮，每轮一个元素——而不是整个数组套一层
+            assert per_round_urls == ["/uploads/a.pdf", "/uploads/b.pdf"]
 
 
 class TestAnswerExecutor:

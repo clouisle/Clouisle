@@ -25,6 +25,10 @@ export const getLoopVarTypeName = (type: string): string => {
     case 'boolean': return 'Boolean'
     case 'array': return 'Array'
     case 'object': return 'Object'
+    case 'file': return 'File'
+    case 'image': return 'Image'
+    case 'files': return 'Files'
+    case 'images': return 'Images'
     default: return 'String'
   }
 }

@@ -11,7 +11,10 @@ from app.services.workflow.orchestrator import WorkflowOrchestrator
 
 @pytest.mark.asyncio
 async def test_execute_covers_branch_iteration_and_limit_behaviors():
-    context = MagicMock(get_status=AsyncMock(return_value="running"))
+    context = MagicMock(
+        get_status=AsyncMock(return_value="running"),
+        get_node_outputs=AsyncMock(return_value={}),
+    )
     run = MagicMock()
     stream = MagicMock(publish_node_skip=AsyncMock())
 

@@ -227,11 +227,11 @@
         "httpMethod": "Method",
         "url": "URL",
         "urlRequired": "URL is required",
-        "urlHint": "Supports {{variable}} placeholders",
+        "urlHint": "Supports '{{variable}}' placeholders",
         "timeout": "Timeout (s)",
         "advancedSettings": "Advanced Settings",
         "headers": "Headers",
-        "headersHint": "JSON format, supports {{variable}} placeholders",
+        "headersHint": "JSON format, supports '{{variable}}' placeholders",
         "bodyTemplate": "Body Template",
         "bodyTemplateHint": "JSON format, for POST/PUT/PATCH requests",
         "responsePath": "Response Path",
@@ -332,7 +332,7 @@
       },
       "testPanel": {
         "arrayPlaceholder": "[\"item1\", \"item2\"]",
-        "objectPlaceholder": "{\"key\": \"value\"}"
+        "objectPlaceholder": "'{\"key\": \"value\"}'"
       },
       "codeEditor": {
         "newTitle": "New Code Tool",

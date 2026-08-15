@@ -29,8 +29,9 @@ mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {})
 mock.module('next/image', () => ({ default: () => null }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('lucide-react', () => ({
-  AlertCircle: () => null, GitBranch: () => null, Loader2: () => null, PanelLeft: () => null,
-  PanelLeftClose: () => null, Play: () => null, RotateCcw: () => null, Square: () => null, SquarePlay: () => null,
+  AlertCircle: () => null, CheckCircle2: () => null, ChevronDown: () => null, Circle: () => null, GitBranch: () => null, Loader2: () => null,
+  PanelLeft: () => null, PanelLeftClose: () => null, Play: () => null, RotateCcw: () => null, SkipForward: () => null,
+  Square: () => null, SquarePlay: () => null, XCircle: () => null,
 }))
 mock.module('@/hooks/use-workflow-run', () => ({ useWorkflowRun: () => ({ messages: [], executionState: { nodes: new Map(), outputs: null }, isStreaming: false, runId: null, status: 'idle', outputs: null, submittedInputs: null, error: null, isCancelling: false, start: mock(async () => {}), stop: mock(async () => {}), reset: mock(() => {}) }) }))
 mock.module('@/lib/api', () => ({
@@ -53,7 +54,38 @@ mock.module('@/lib/utils', () => ({ cn: (...v: unknown[]) => v.filter(Boolean).j
 
 mock.module('./workflow-result-renderer', () => ({ WorkflowResultRenderer: () => null }))
 mock.module('@/components/chat/message', () => ({ TextWithCitations: () => null }))
-mock.module('@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer', () => ({ renderNodeOutput: () => null }))
+const renderNodeOutputMock = mock(() => ({ type: 'div', props: { children: 'trace-output-rendered' } }))
+mock.module('@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer', () => ({
+  renderNodeOutput: renderNodeOutputMock,
+}))
+
+type FakeNode = { type: unknown; props: Record<string, unknown> }
+
+const collectText = (node: unknown): string => {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(collectText).join('')
+  if (typeof node === 'object' && 'props' in (node as Record<string, unknown>)) {
+    return collectText((node as FakeNode).props.children)
+  }
+  return ''
+}
+
+const descendants = (node: unknown): FakeNode[] => {
+  if (node == null || typeof node !== 'object') return []
+  if (!('props' in (node as Record<string, unknown>))) return []
+  const children = (node as FakeNode).props.children
+  const list: FakeNode[] = []
+  if (children != null) {
+    const arr = Array.isArray(children) ? children : [children]
+    for (const child of arr) {
+      if (child != null && typeof child === 'object' && 'props' in (child as Record<string, unknown>)) {
+        list.push(child as FakeNode, ...descendants(child))
+      }
+    }
+  }
+  return list
+}
 
 describe('WorkflowRunPage', () => {
   test('renders loading state initially', () => {
@@ -140,5 +172,97 @@ describe('WorkflowRunPage', () => {
     effects.forEach((e) => e())
     await Promise.resolve()
     expect(tree).toBeDefined()
+  })
+
+  test('renders history trace as a vertical timeline', async () => {
+    mock.module('@/hooks/use-workflow-run', () => ({
+      useWorkflowRun: () => ({ messages: [], executionState: { nodes: new Map(), outputs: null }, isStreaming: false, runId: null, status: 'idle', outputs: null, submittedInputs: null, error: null, isCancelling: false, start: mock(async () => {}), stop: mock(async () => {}), reset: mock(() => {}) }),
+    }))
+    const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
+    stateIndex = 0
+    effectIndex = 0
+    states.splice(0)
+    states[0] = { id: 'wf-1', name: 'Flow' }
+    states[1] = false
+    states[2] = null
+    states[3] = [{ id: 'run-9', workflow_id: 'wf-1', trigger_type: 'manual', is_debug: false, status: 'success', created_at: '2026-01-01T00:00:00Z', started_at: null, finished_at: null, total_duration_ms: 10, executed_nodes: 1, total_nodes: 1, error_message: null }]
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = { id: 'run-9', status: 'success' }
+    // 故意乱序输入，验证按 execution_order 从上到下排序
+    states[11] = [
+      { id: 'n2', run_id: 'run-9', node_id: 'fu', node_type: 'file_to_url', node_name: '转URL', execution_order: 2, status: 'failed', error_message: 'boom', inputs: { url: 'http://x' }, outputs: null, retry_count: 0 },
+      { id: 'n1', run_id: 'run-9', node_id: 'start', node_type: 'start', node_name: '开始节点', execution_order: 1, status: 'success', error_message: null, inputs: { query: 'hi' }, outputs: { answer: 'ok' }, retry_count: 0 },
+    ]
+    const tree = Reloaded({ id: 'wf-1' })
+    effects.forEach((e) => e())
+    await Promise.resolve()
+
+    const text = collectText(tree)
+    expect(text).toContain('showTrace')
+    expect(text).toContain('开始节点')
+    expect(text).toContain('转URL')
+    expect(text).toContain('nodeStatus.success')
+    expect(text).toContain('nodeStatus.failed')
+    expect(text).toContain('boom')
+    // 乱序输入 → 按 execution_order 升序渲染
+    expect(text.indexOf('开始节点')).toBeLessThan(text.indexOf('转URL'))
+    // 节点详情：输入 JSON + 类型化输出渲染
+    expect(text).toContain('showDetails')
+    expect(text).toContain('"query"')
+    expect(text).toContain('trace-output-rendered')
+
+    // sidebar 打开时，切换按钮的 aria-label 应为关闭运行历史
+    const toggle = descendants(tree).find((n) => typeof n.props.className === 'string'
+      && n.props.className.includes('rounded-full bg-background/80') && typeof n.props.onClick === 'function')!
+    expect(toggle.props['aria-label']).toBe('closeHistory')
+
+    expect(renderNodeOutputMock).toHaveBeenCalledWith('start', { answer: 'ok' }, expect.any(Function))
+    expect(renderNodeOutputMock).not.toHaveBeenCalledWith('file_to_url', null, expect.any(Function))
+
+    const nodes = descendants(tree)
+    const classNameOf = (n: FakeNode) => typeof n.props.className === 'string' ? n.props.className : ''
+    // 2 个节点之间 1 条竖向线段；2 个状态圆点（h-6 w-6 特征，避开圆角按钮）
+    expect(nodes.filter((n) => classNameOf(n).includes('w-px')).length).toBe(1)
+    expect(nodes.filter((n) => classNameOf(n).includes('rounded-full border bg-background')).length).toBe(2)
+  })
+
+  test('hides trace details in embed mode', async () => {
+    mock.module('@/hooks/use-workflow-run', () => ({
+      useWorkflowRun: () => ({ messages: [], executionState: { nodes: new Map(), outputs: null }, isStreaming: false, runId: null, status: 'idle', outputs: null, submittedInputs: null, error: null, isCancelling: false, start: mock(async () => {}), stop: mock(async () => {}), reset: mock(() => {}) }),
+    }))
+    const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
+    stateIndex = 0
+    effectIndex = 0
+    states.splice(0)
+    states[0] = { id: 'wf-1', name: 'Flow' }
+    states[1] = false
+    states[2] = null
+    states[3] = [{ id: 'run-9', workflow_id: 'wf-1', trigger_type: 'manual', is_debug: false, status: 'success', created_at: '2026-01-01T00:00:00Z', started_at: null, finished_at: null, total_duration_ms: 10, executed_nodes: 1, total_nodes: 1, error_message: null }]
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = { id: 'run-9', status: 'success' }
+    states[11] = [
+      { id: 'n1', run_id: 'run-9', node_id: 'start', node_type: 'start', node_name: '开始节点', execution_order: 1, status: 'failed', error_message: 'boom', inputs: { query: 'hi' }, outputs: { answer: 'ok' }, retry_count: 0 },
+    ]
+    const tree = Reloaded({ id: 'wf-1', embedMode: true })
+    effects.forEach((e) => e())
+    await Promise.resolve()
+
+    const text = collectText(tree)
+    // 时间线骨架仍在，但节点 inputs/outputs/error 详情不渲染（embed 快照不暴露原始数据）
+    expect(text).toContain('showTrace')
+    expect(text).toContain('开始节点')
+    expect(text).not.toContain('showDetails')
+    expect(text).not.toContain('boom')
+    expect(text).not.toContain('"query"')
   })
 })

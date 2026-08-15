@@ -39,4 +39,21 @@ describe('extractVariables', () => {
     expect(extractVariables('not metadata', 'agent')).toEqual([])
     expect(extractVariables({ definition: { nodes: [{ data: { type: 'user_input' } }] } }, 'workflow')).toEqual([])
   })
+
+  test('falls back to user_input node parameters with options and fileConfig', () => {
+    expect(extractVariables({
+      variables: [],
+      definition: {
+        nodes: [
+          { data: { type: 'user_input', parameters: [
+            { name: 'doc', type: 'file', required: true, label: 'Document', fileConfig: { maxSize: 5, accept: ['.pdf'] } },
+            { name: 'mode', type: 'select', required: false, options: ['a', 'b'] },
+          ] } },
+        ],
+      },
+    }, 'workflow')).toEqual([
+      { name: 'doc', type: 'file', required: true, default: null, description: null, label: 'Document', fileConfig: { maxSize: 5, accept: ['.pdf'] } },
+      { name: 'mode', type: 'select', required: false, default: null, description: null, label: 'mode', options: ['a', 'b'] },
+    ])
+  })
 })
