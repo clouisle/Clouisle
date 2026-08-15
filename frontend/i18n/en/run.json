@@ -28,6 +28,7 @@
     "newRun": "New run",
     "runAgain": "Run again",
     "openHistory": "Open run history",
+    "closeHistory": "Close run history",
     "historyDetailError": "Failed to load this run. Please try again.",
     "history": "Run history",
     "noHistory": "No runs yet.",

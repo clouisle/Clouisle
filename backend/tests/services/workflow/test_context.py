@@ -210,6 +210,23 @@ class TestExecutionContextResolution:
         # 离开 body 后回退到全局变量
         assert await context.resolve_variable_ref("{{doc}}") == "global.pdf"
 
+    @pytest.mark.asyncio
+    async def test_iteration_scope_falls_back_to_outer_scopes(self, context):
+        # 嵌套循环：内层作用域不含该裸名时，继续向外层作用域查找，
+        # 而不是直接落到全局变量或 None
+        await context.set_variable("doc", "global.pdf")
+        context.push_iteration_scope({"doc": "outer.pdf"})
+        context.push_iteration_scope({"index": 0})
+
+        assert await context.resolve_variable_ref("{{doc}}") == "outer.pdf"
+        assert await context.resolve_variable_ref("{{index}}") == 0
+
+        context.pop_iteration_scope()
+        assert await context.resolve_variable_ref("{{doc}}") == "outer.pdf"
+
+        context.pop_iteration_scope()
+        assert await context.resolve_variable_ref("{{doc}}") == "global.pdf"
+
 
 class TestExecutionContextStatus:
     @pytest.mark.asyncio

@@ -323,6 +323,51 @@ describe('NodeConfigDrawer', () => {
     expect(fileVariables.some(v => v.id === 'start.files')).toBe(true)
   })
 
+  test('marks nested iteration items as file variables through ancestor scopes', () => {
+    const current = baseNode('file_to_url', {
+      parentIterationId: 'inner',
+      fileToUrlConfig: { inputs: [], ensureAbsolute: true },
+    }, { id: 'current' })
+    // 内层迭代的源是外层迭代的 item（{{outer.item}}），不是开始节点参数
+    const inner = baseNode('iteration', {
+      iterationConfig: {
+        iteratorVariable: '{{outer.item}}',
+        iteratorType: 'array',
+        itemVariable: 'innerItem',
+        indexVariable: 'index',
+        outputVariable: 'results',
+        parallel: false,
+      },
+    }, { id: 'inner' })
+    const outer = baseNode('iteration', {
+      iterationConfig: {
+        iteratorVariable: '{{start.files}}',
+        iteratorType: 'array',
+        itemVariable: 'item',
+        indexVariable: 'index',
+        outputVariable: 'results',
+        parallel: false,
+      },
+    }, { id: 'outer' })
+    const start = baseNode('start', {
+      parameters: [{ id: 'files', name: 'files', type: 'files', required: true }],
+    }, { id: 'start' })
+    const editor = descendants(render(current, {
+      allNodes: [current, inner, outer, start],
+      allEdges: [
+        { id: 'a', source: 'start', target: 'outer' },
+        { id: 'b', source: 'outer', target: 'inner' },
+        { id: 'c', source: 'inner', target: 'current' },
+      ],
+    })).find(node => node.type === 'FileToUrlNodeConfig')!
+
+    const fileVariables = (editor.props.variables as Array<{ id: string; isFile?: boolean; type: string }>).filter(v => v.isFile)
+    // 内层 item 沿 outer.item -> start.files 递归解析为文件，必须对文件选择器可见
+    const innerItem = fileVariables.find(v => v.id === 'inner.innerItem')
+    expect(innerItem).toBeDefined()
+    expect(innerItem!.type).toBe('File')
+  })
+
   test('adds, edits, and removes start parameters through the shared dialog', () => {
     const parameter = { id: 'topic', name: 'topic', type: 'text', required: false }
     const node = baseNode('start', { parameters: [parameter] })

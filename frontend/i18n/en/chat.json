@@ -78,6 +78,7 @@
       "selectImages": "Select Images",
       "dropFiles": "Drop files here",
       "dropImages": "Drop images here",
+      "removeImage": "Remove image",
       "uploading": "Uploading...",
       "fileUploadFailed": "File upload failed, please try again",
       "fileTooLarge": "File size exceeds the limit of {maxSize}MB",

@@ -216,6 +216,11 @@ describe('WorkflowRunPage', () => {
     expect(text).toContain('"query"')
     expect(text).toContain('trace-output-rendered')
 
+    // sidebar 打开时，切换按钮的 aria-label 应为关闭运行历史
+    const toggle = descendants(tree).find((n) => typeof n.props.className === 'string'
+      && n.props.className.includes('rounded-full bg-background/80') && typeof n.props.onClick === 'function')!
+    expect(toggle.props['aria-label']).toBe('closeHistory')
+
     expect(renderNodeOutputMock).toHaveBeenCalledWith('start', { answer: 'ok' }, expect.any(Function))
     expect(renderNodeOutputMock).not.toHaveBeenCalledWith('file_to_url', null, expect.any(Function))
 
@@ -224,5 +229,40 @@ describe('WorkflowRunPage', () => {
     // 2 个节点之间 1 条竖向线段；2 个状态圆点（h-6 w-6 特征，避开圆角按钮）
     expect(nodes.filter((n) => classNameOf(n).includes('w-px')).length).toBe(1)
     expect(nodes.filter((n) => classNameOf(n).includes('rounded-full border bg-background')).length).toBe(2)
+  })
+
+  test('hides trace details in embed mode', async () => {
+    mock.module('@/hooks/use-workflow-run', () => ({
+      useWorkflowRun: () => ({ messages: [], executionState: { nodes: new Map(), outputs: null }, isStreaming: false, runId: null, status: 'idle', outputs: null, submittedInputs: null, error: null, isCancelling: false, start: mock(async () => {}), stop: mock(async () => {}), reset: mock(() => {}) }),
+    }))
+    const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
+    stateIndex = 0
+    effectIndex = 0
+    states.splice(0)
+    states[0] = { id: 'wf-1', name: 'Flow' }
+    states[1] = false
+    states[2] = null
+    states[3] = [{ id: 'run-9', workflow_id: 'wf-1', trigger_type: 'manual', is_debug: false, status: 'success', created_at: '2026-01-01T00:00:00Z', started_at: null, finished_at: null, total_duration_ms: 10, executed_nodes: 1, total_nodes: 1, error_message: null }]
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = { id: 'run-9', status: 'success' }
+    states[11] = [
+      { id: 'n1', run_id: 'run-9', node_id: 'start', node_type: 'start', node_name: '开始节点', execution_order: 1, status: 'failed', error_message: 'boom', inputs: { query: 'hi' }, outputs: { answer: 'ok' }, retry_count: 0 },
+    ]
+    const tree = Reloaded({ id: 'wf-1', embedMode: true })
+    effects.forEach((e) => e())
+    await Promise.resolve()
+
+    const text = collectText(tree)
+    // 时间线骨架仍在，但节点 inputs/outputs/error 详情不渲染（embed 快照不暴露原始数据）
+    expect(text).toContain('showTrace')
+    expect(text).toContain('开始节点')
+    expect(text).not.toContain('showDetails')
+    expect(text).not.toContain('boom')
+    expect(text).not.toContain('"query"')
   })
 })

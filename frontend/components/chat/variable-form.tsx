@@ -579,6 +579,7 @@ export function FileUploadInput({ variable, value, error, onChange, compact, dis
               size="icon"
               onClick={handleRemove}
               disabled={disabled}
+              aria-label={t('removeImage')}
               className={compact ? "h-5 w-5" : "h-6 w-6"}
             >
               <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
@@ -740,6 +741,7 @@ export function MultiFileUploadInput({ variable, value, error, onChange, compact
                   size="icon"
                   onClick={() => handleRemove(index)}
                   disabled={disabled}
+                  aria-label={t('removeImage')}
                   className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full border bg-background shadow-sm"
                 >
                   <X className="h-3 w-3" />

@@ -386,7 +386,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
               size="icon"
               className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
               onClick={() => setSidebarOpen((open) => !open)}
-              aria-label={t('openHistory')}
+              aria-label={sidebarOpen ? t('closeHistory') : t('openHistory')}
             >
               {sidebarOpen ? (
                 <PanelLeftClose className="h-5 w-5" />
@@ -504,7 +504,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                       {t('showTrace')}
                     </CollapsibleTrigger>
                     <CollapsibleContent className="pt-4">
-                      <ExecutionTimeline executionState={run.executionState} />
+                      <ExecutionTimeline executionState={run.executionState} showDetails={!embedMode} />
                     </CollapsibleContent>
                   </Collapsible>
                 )}
@@ -602,10 +602,10 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                                           {t(`nodeStatus.${node.status}`)}
                                         </span>
                                       </div>
-                                      {node.error_message && (
+                                      {!embedMode && node.error_message && (
                                         <p className="mt-1 text-xs text-red-600 dark:text-red-400">{node.error_message}</p>
                                       )}
-                                      {((node.inputs && Object.keys(node.inputs).length > 0) ||
+                                      {!embedMode && ((node.inputs && Object.keys(node.inputs).length > 0) ||
                                         (node.outputs && Object.keys(node.outputs).length > 0 && !node.error_message)) && (
                                         <details className="group mt-1">
                                           <summary className="flex list-none cursor-pointer items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">

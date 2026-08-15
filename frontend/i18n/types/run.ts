@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T17:24:52.267Z
+// GENERATED — 2026-08-15T18:33:11.651Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
@@ -30,6 +30,7 @@ export type RunMessages = {
     newRun: string
     runAgain: string
     openHistory: string
+    closeHistory: string
     historyDetailError: string
     history: string
     noHistory: string
@@ -50,8 +51,8 @@ export type RunMessages = {
     nodeStatus: {
       pending: string
       running: string
-      completed: string
-      error: string
+      success: string
+      failed: string
       skipped: string
     }
   }

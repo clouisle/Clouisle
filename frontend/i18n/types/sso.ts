@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T17:24:52.268Z
+// GENERATED — 2026-08-15T18:33:11.652Z
 // Source: i18n/en/sso.json
 export type SsoMessages = {
   sso: {

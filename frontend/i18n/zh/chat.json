@@ -78,6 +78,7 @@
       "selectImages": "选择多张图片",
       "dropFiles": "拖放文件到此处",
       "dropImages": "拖放图片到此处",
+      "removeImage": "移除图片",
       "uploading": "上传中...",
       "fileUploadFailed": "文件上传失败，请重试",
       "fileTooLarge": "文件大小超过限制 {maxSize}MB",

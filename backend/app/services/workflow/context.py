@@ -385,9 +385,11 @@ class ExecutionContext:
             # Then the current iteration/loop round scope (bare item name, e.g.
             # {{doc}} inside an iteration whose itemVariable is "doc"). The local
             # round binding wins over a same-named global; outside the body the
-            # scope is empty and resolution continues as before.
-            if self._iteration_scopes and var_name in self._iteration_scopes[-1]:
-                return self._iteration_scopes[-1][var_name]
+            # scope is empty and resolution continues as before. Nested loops
+            # search scopes from inner to outer and take the first match.
+            for scope in reversed(self._iteration_scopes):
+                if var_name in scope:
+                    return scope[var_name]
 
             # Try as a global variable
             global_value = await self.get_variable(var_name)

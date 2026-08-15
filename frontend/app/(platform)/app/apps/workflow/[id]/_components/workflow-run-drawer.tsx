@@ -294,6 +294,12 @@ export function WorkflowRunDrawer({
   const [nodeTraces, setNodeTraces] = React.useState<Map<string, NodeTrace>>(new Map())
   const [expandedNodes, setExpandedNodes] = React.useState<Set<string>>(new Set())
 
+  // 挂起中的文件上传数（>0 时禁止启动运行，避免请求带缺失/半成品 URL）
+  const [uploadingCount, setUploadingCount] = React.useState(0)
+  const trackUploading = React.useCallback((uploading: boolean) => {
+    setUploadingCount((count) => Math.max(0, count + (uploading ? 1 : -1)))
+  }, [])
+
   // 通知父组件 nodeTraces 变化
   React.useEffect(() => {
     onNodeTracesChange?.(nodeTraces)
@@ -825,6 +831,7 @@ export function WorkflowRunDrawer({
                         error={fieldErrors[variable.name]}
                         onChange={(value) => updateInputValue(variable.name, value)}
                         disabled={isRunning}
+                        onUploadingChange={trackUploading}
                       />
                     ) : variable.type === 'files' || variable.type === 'images' ? (
                       <MultiFileUploadInput
@@ -833,6 +840,7 @@ export function WorkflowRunDrawer({
                         error={fieldErrors[variable.name]}
                         onChange={(value) => updateInputValue(variable.name, value)}
                         disabled={isRunning}
+                        onUploadingChange={trackUploading}
                       />
                     ) : variable.type === 'boolean' ? (
                       <select
@@ -1306,7 +1314,7 @@ export function WorkflowRunDrawer({
             <Button
               className="w-full"
               onClick={() => handleRun(false)}
-              disabled={!isPublished}
+              disabled={!isPublished || uploadingCount > 0}
             >
               <Play className="h-4 w-4 mr-2" />
               {isPublished ? t('runDrawer.startRun') : t('runDrawer.publishFirst')}
@@ -1315,6 +1323,7 @@ export function WorkflowRunDrawer({
               variant="outline"
               className="w-full"
               onClick={() => handleRun(true)}
+              disabled={uploadingCount > 0}
             >
               <Bug className="h-4 w-4 mr-2" />
               {t('runDrawer.debugDraft')}

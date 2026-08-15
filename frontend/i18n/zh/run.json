@@ -28,6 +28,7 @@
     "newRun": "新建运行",
     "runAgain": "再次运行",
     "openHistory": "打开运行历史",
+    "closeHistory": "关闭运行历史",
     "historyDetailError": "加载该运行记录失败，请重试。",
     "history": "运行历史",
     "noHistory": "暂无运行记录。",

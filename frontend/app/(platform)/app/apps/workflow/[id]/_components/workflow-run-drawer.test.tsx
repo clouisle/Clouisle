@@ -355,3 +355,24 @@ test('sanitizes stream errors, supports debug completion, and cancels an active 
   expect(toast.success).toHaveBeenCalledWith('runDrawer.cancelledRun')
   expect(streamWorkflowRun.mock.results.at(-1)?.value).toHaveBeenCalledTimes(1)
 })
+
+test('disables run actions while a file upload is pending', () => {
+  let tree = settle({ variables: [
+    { name: 'attachment', type: 'file', required: false },
+    { name: 'photos', type: 'images', required: false },
+  ] })
+  const uploadInputs = descendants(tree).filter((node) => typeof node.props.onUploadingChange === 'function')
+  expect(uploadInputs.length).toBe(2) // file + images
+
+  // 上传开始：计数 +1 → 运行/调试按钮禁用
+  uploadInputs.forEach((node) => node.props.onUploadingChange(true))
+  tree = render()
+  expect(button(tree, 'runDrawer.startRun').props.disabled).toBe(true)
+  expect(button(tree, 'runDrawer.debugDraft').props.disabled).toBe(true)
+
+  // 上传完成：计数归零 → 恢复可用
+  uploadInputs.forEach((node) => node.props.onUploadingChange(false))
+  tree = render()
+  expect(button(tree, 'runDrawer.startRun').props.disabled).toBe(false)
+  expect(button(tree, 'runDrawer.debugDraft').props.disabled).toBe(false)
+})
