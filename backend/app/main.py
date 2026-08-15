@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI):
         init_message_first_token_field,
         init_message_round_fields,
         init_message_branch_parent_field,
+        init_message_history_index,
         init_conversation_session_memory_table,
         init_conversation_context_checkpoint_table,
         init_assets_tables,
@@ -178,6 +179,11 @@ async def lifespan(app: FastAPI):
         await init_message_branch_parent_field()
     except Exception as e:
         logger.warning(f"Message branch parent migration failed: {e}")
+
+    try:
+        await init_message_history_index()
+    except Exception as e:
+        logger.warning(f"Message history index migration failed: {e}")
 
     try:
         await init_conversation_session_memory_table()

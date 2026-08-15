@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
@@ -72,6 +72,67 @@ async def test_agent_visibility_normalization_propagates_provider_failure(
 
     assert exc_info.value is error
     migration.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_message_history_index_created_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, ["messages"]),  # table exists
+                (1, []),  # index missing
+            ]
+        )
+    )
+    migration = AsyncMock(return_value=(1, []))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_message_history_index()
+
+    migration.assert_awaited_once_with(conn, ANY)
+    sql = migration.await_args.args[1]
+    assert "idx_messages_conversation_active_created_at" in sql
+    assert "ON messages (conversation_id, is_active, created_at)" in sql
+
+
+@pytest.mark.asyncio
+async def test_message_history_index_skipped_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, ["messages"]),  # table exists
+                (1, [{"indexname": "idx_messages_conversation_active_created_at"}]),
+            ]
+        )
+    )
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_message_history_index()
+
+    migration.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_history_index_skipped_before_first_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(return_value=(1, []))  # messages table missing
+    )
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_message_history_index()
+
+    migration.assert_not_awaited()
 
 
 @pytest.mark.asyncio

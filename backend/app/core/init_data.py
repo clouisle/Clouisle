@@ -1099,6 +1099,51 @@ async def init_message_branch_parent_field():
     logger.info("Message branch parent migration complete")
 
 
+async def init_message_history_index():
+    """
+    Create the composite index backing the conversation-history query
+    (WHERE conversation_id = ? AND is_active = ? ORDER BY created_at).
+    Without it, large conversations sort in memory on every history load.
+    Idempotent; safe on every startup.
+    """
+    logger.info("Checking messages history index...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping history index migration"
+        )
+        return
+
+    _, indexes = await conn.execute_query(
+        """
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'messages'
+          AND indexname = 'idx_messages_conversation_active_created_at'
+        """
+    )
+    if indexes:
+        logger.info("Messages history index already exists")
+        return
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        CREATE INDEX idx_messages_conversation_active_created_at
+        ON messages (conversation_id, is_active, created_at)
+        """,
+    )
+    logger.info("Created messages history index")
+
+
 async def init_conversation_session_memory_table():
     """Create the conversation_session_memories table if it does not exist."""
     logger.info("Initializing conversation session memory table...")
@@ -2797,6 +2842,13 @@ async def init_db():
     except Exception as e:
         logger.warning(
             f"Agent powered_by_text migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_message_history_index()
+    except Exception as e:
+        logger.warning(
+            f"Message history index migration failed (may be first run): {e}"
         )
 
     try:

@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **chat-storage-optimization** — Complete. Optimize chat history storage performance without changing the relational row model: composite `(conversation_id, is_active, created_at)` index via startup migration, difference-set activation in `activate_conversation_branch`, single-query column-trimmed chain walks, plus a version-group dedup invariant that makes superseded versions unre-activatable. Cursor pagination deferred. See `docs/plan/chat-storage-optimization.md`
+  - [x] 1. P0: messages history index migration + test
+  - [x] 2. P1a: difference-set activation + test
+  - [x] 3. P1b: single-query column-trimmed chain walks + tests
+  - [x] 4. Regression + real-DB EXPLAIN verification
 - **yun-138-agent-powered-by-text** — Complete. Make the chat page footer text ("Powered by …") an Agent-level config: a new `powered_by_text` column, wired through schemas/admin/public APIs, audit, package export/import, the agent config form, and the chat/run page footers (empty hides the footer). See `docs/plan/yun-138-agent-powered-by-text.md`
   - [x] 1. Backend model + schemas
   - [x] 2. Backend endpoints, audit, package resources
