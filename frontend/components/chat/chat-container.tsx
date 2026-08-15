@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Message } from './message';
 import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types';
 
@@ -38,11 +39,69 @@ interface ChatContainerProps {
   hideReasoning?: boolean;
   /** Current conversation ID (shown on errors for debugging) */
   conversationId?: string | null;
+  /** Reserve space for an absolutely-positioned floating header (e.g. embed
+   *  chat pages). Offsets the scroll viewport / empty state by the header
+   *  height so initial content never renders underneath it. */
+  headerInset?: boolean;
+  /** Show a floating scale at the right edge with one evenly spaced tick per
+   *  user message (a uniform list, like a table of contents). The message
+   *  currently in view is highlighted (longer, solid mark); the rest are light
+   *  gray. Clicking a tick scrolls to that message. */
+  showUserMessageScale?: boolean;
 }
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 const INITIAL_RENDERED_MESSAGE_COUNT = 20;
 const MESSAGE_RENDER_BATCH_SIZE = 20;
+/** Vertical pitch (px) between scale ticks; the cluster is centered in the track. */
+const USER_MESSAGE_SCALE_PITCH = 12;
+
+/** One user-message mark on the right-edge scale, positioned in track coordinates. */
+export interface UserMessageTick {
+  id: string;
+  /** Vertical offset (px) within the scale track. Ticks are spaced evenly. */
+  y: number;
+  /** 1-based ordinal of the user message across the whole conversation. */
+  ordinal: number;
+  /** Plain-text preview of the message, shown in the tick tooltip. */
+  preview: string;
+  /** True for the user message currently in view (highlighted, longer mark). */
+  current: boolean;
+}
+
+/** Plain-text preview of a message's text parts ('' for image-only messages). */
+export function userMessagePreview(message: ChatMessage): string {
+  let text = '';
+  for (const part of message.parts) {
+    if (part.type === 'text') text += `${part.text} `;
+  }
+  return text.trim();
+}
+
+/** Pure: lay every user message out as a compact tick list on the right.
+ *  Ticks use a fixed pitch (compressed evenly when the list would overflow
+ *  the track) and the whole cluster is centered vertically in the track. */
+export function computeUserMessageTicks(
+  entries: Array<{ id: string; preview: string }>,
+  trackHeight: number,
+  ordinals: Readonly<Record<string, number>>,
+  currentUserMessageId: string | null
+): UserMessageTick[] {
+  const ticks: UserMessageTick[] = [];
+  const count = entries.length;
+  if (count === 0 || trackHeight <= 0) return ticks;
+  const pitch = Math.min(USER_MESSAGE_SCALE_PITCH, trackHeight / count);
+  const clusterHeight = count * pitch;
+  const startY = (trackHeight - clusterHeight) / 2;
+  for (let i = 0; i < count; i += 1) {
+    const { id, preview } = entries[i];
+    const ordinal = ordinals[id];
+    if (ordinal === undefined) continue;
+    const y = startY + (i + 0.5) * pitch;
+    ticks.push({ id, y, ordinal, preview, current: id === currentUserMessageId });
+  }
+  return ticks;
+}
 
 function hasOpenCodeFence(content: string) {
   let openFence: '`' | '~' | null = null;
@@ -192,6 +251,8 @@ export function ChatContainer({
   hideMessageActions = false,
   hideReasoning = false,
   conversationId,
+  headerInset = false,
+  showUserMessageScale = false,
 }: ChatContainerProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -209,6 +270,7 @@ export function ChatContainer({
   const previousConversationIdRef = useRef(conversationId);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
+  const [userMessageTicks, setUserMessageTicks] = useState<UserMessageTick[]>([]);
   const t = useTranslations('chat');
 
   const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
@@ -227,6 +289,21 @@ export function ChatContainer({
   );
 
   const hiddenMessageCount = messages.length - visibleMessages.length;
+
+  // 1-based user-message ordinal for every message, used to label scale ticks.
+  const userMessageOrdinals = useMemo(() => {
+    const ordinals: Record<string, number> = {};
+    let ordinal = 0;
+    for (const message of messages) {
+      if (message.role !== 'user') continue;
+      ordinal += 1;
+      ordinals[message.id] = ordinal;
+    }
+    return ordinals;
+  }, [messages]);
+
+  // Id of the user message currently in view; its scale tick is highlighted.
+  const [currentUserMessageId, setCurrentUserMessageId] = useState<string | null>(null);
 
   useEffect(() => {
     setRenderedMessageCount((count) => Math.max(Math.min(count, messages.length), INITIAL_RENDERED_MESSAGE_COUNT));
@@ -416,9 +493,89 @@ export function ChatContainer({
     scroller.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   }, []);
 
+  // Recompute the scale list: every user message gets one evenly spaced tick.
+  // Positions do not track message locations, so no DOM layout reads are
+  // needed — only the track height (scroller clientHeight) and the message
+  // list. Runs on message changes and viewport/container resizes.
+  const updateUserMessageTicks = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const trackHeight = scroller.clientHeight;
+    if (trackHeight <= 0) return;
+
+    const entries: Array<{ id: string; preview: string }> = [];
+    for (const message of messages) {
+      if (message.role !== 'user') continue;
+      entries.push({ id: message.id, preview: userMessagePreview(message) });
+    }
+    setUserMessageTicks(computeUserMessageTicks(entries, trackHeight, userMessageOrdinals, currentUserMessageId));
+  }, [messages, userMessageOrdinals, currentUserMessageId]);
+
+  // Track which user message is currently in view (scrollspy): the last
+  // rendered user message whose top is above the viewport bottom. Its tick is
+  // highlighted; at the bottom of the conversation this is the latest message.
+  const updateCurrentUserMessage = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const viewportBottom = scroller.scrollTop + scroller.clientHeight;
+    let currentId: string | null = null;
+    for (const message of visibleMessages) {
+      if (message.role !== 'user') continue;
+      const element = messageRefs.current[message.id];
+      if (!element) continue;
+      if (element.offsetTop > viewportBottom) break;
+      currentId = message.id;
+    }
+    setCurrentUserMessageId((previous) => (previous === currentId ? previous : currentId));
+  }, [visibleMessages]);
+
+  // Jump to the message behind a tick. Hidden messages are loaded first (older
+  // batches) so the real element exists before the scroll is performed.
+  const handleScaleTickClick = useCallback((messageId: string) => {
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index === -1) return;
+    const neededCount = messages.length - index;
+    if (neededCount > renderedMessageCount) {
+      setRenderedMessageCount(neededCount);
+      requestAnimationFrame(() => requestMessageScrollIntoView(messageId));
+      return;
+    }
+    requestMessageScrollIntoView(messageId);
+  }, [messages, renderedMessageCount, requestMessageScrollIntoView]);
+
+  const handleScroll = useCallback(() => {
+    updateAtBottomState();
+    if (showUserMessageScale) {
+      updateCurrentUserMessage();
+    }
+  }, [showUserMessageScale, updateAtBottomState, updateCurrentUserMessage]);
+
+  // Combined refresh for the layout effect and its listeners.
+  const refreshUserMessageScale = useCallback(() => {
+    updateUserMessageTicks();
+    updateCurrentUserMessage();
+  }, [updateUserMessageTicks, updateCurrentUserMessage]);
+
+  // Keep the scale in sync: initial layout, message changes (via the callback
+  // identity), scroll (via onScroll), and track height changes (resize).
+  useIsomorphicLayoutEffect(() => {
+    if (!showUserMessageScale) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    refreshUserMessageScale();
+    const resizeObserver = new ResizeObserver(refreshUserMessageScale);
+    resizeObserver.observe(scroller);
+    window.addEventListener('resize', refreshUserMessageScale);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', refreshUserMessageScale);
+    };
+  }, [showUserMessageScale, refreshUserMessageScale]);
+
   if (messages.length === 0 && emptyState) {
     return (
-      <div className={cn('h-full flex items-center justify-center', className)}>{emptyState}</div>
+      <div className={cn('h-full flex items-center justify-center', headerInset && 'pt-[60px]', className)}>{emptyState}</div>
     );
   }
 
@@ -426,8 +583,8 @@ export function ChatContainer({
     <div className={cn('relative h-full', className)}>
       <div
         ref={scrollerRef}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]"
-        onScroll={updateAtBottomState}
+        className={cn('absolute inset-x-0 bottom-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]', headerInset && 'top-[60px]')}
+        onScroll={handleScroll}
       >
         <div ref={contentRef}>
           {hiddenMessageCount > 0 && (
@@ -471,6 +628,40 @@ export function ChatContainer({
           <div className="h-4" />
         </div>
       </div>
+
+      {showUserMessageScale && (
+        <div
+          data-user-message-scale
+          className={cn('pointer-events-none absolute bottom-0 right-2 z-10 w-8', headerInset ? 'top-[60px]' : 'top-0')}
+        >
+          {userMessageTicks.map((tick) => (
+            <Tooltip key={tick.id}>
+              <TooltipTrigger
+                render={<button type="button" />}
+                data-user-message-tick
+                data-ordinal={tick.ordinal}
+                data-current={tick.current || undefined}
+                aria-label={t('message.userMessageScaleTick', { ordinal: tick.ordinal })}
+                className="group/tick pointer-events-auto absolute right-0 flex h-4 w-8 -translate-y-1/2 items-center justify-end pr-0.5 rounded-full hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={{ top: tick.y }}
+                onClick={() => handleScaleTickClick(tick.id)}
+              >
+                <span
+                  className={cn(
+                    'h-1 w-5 rounded-full bg-muted-foreground/30 shadow-sm transition-colors group-hover/tick:bg-muted-foreground/70',
+                    tick.current && 'w-7 bg-primary group-hover/tick:bg-primary'
+                  )}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="left" align="center" className="max-w-[16rem]">
+                <p className="line-clamp-3 whitespace-pre-line break-words text-xs leading-relaxed">
+                  {tick.preview || t('message.user')}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+      )}
 
       {showScrollToBottom && showScrollButton && (
         <Button

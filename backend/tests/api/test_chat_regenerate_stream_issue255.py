@@ -52,6 +52,7 @@ async def setup_regeneration(monkeypatch):
         created_at=datetime.now(timezone.utc),
         parent_id=None,
         branch_parent_id=user_message.id,
+        round_status=MessageRoundStatus.COMPLETED,
     )
     created = SimpleNamespace(id=uuid4(), save=AsyncMock(), tool_calls=None)
     deleted = Query()

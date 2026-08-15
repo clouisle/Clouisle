@@ -82,6 +82,7 @@ export function AgentEditor({
   const [hideReasoning, setHideReasoning] = React.useState(false)
   const [openingMessage, setOpeningMessage] = React.useState('')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>([])
+  const [poweredByText, setPoweredByText] = React.useState('')
   const [visibility, setVisibility] = React.useState<AgentVisibility>('private')
   const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>([])
   const [variables, setVariables] = React.useState<VariableDefinition[]>([])
@@ -115,6 +116,7 @@ export function AgentEditor({
       setHideReasoning(data.hide_reasoning || false)
       setOpeningMessage(data.opening_message || '')
       setSuggestedQuestions(data.suggested_questions || [])
+      setPoweredByText(data.powered_by_text || '')
       setVisibility(data.visibility)
       setToolsConfig(data.tools_config || [])
       setVariables(data.variables || [])
@@ -163,6 +165,7 @@ export function AgentEditor({
         hide_reasoning: hideReasoning,
         opening_message: openingMessage || null,
         suggested_questions: suggestedQuestions.filter((q) => q.trim()),
+        powered_by_text: poweredByText.trim() || null,
         visibility,
         tools_config: toolsConfig,
         variables: variables,
@@ -206,6 +209,7 @@ export function AgentEditor({
     hideReasoning,
     openingMessage,
     suggestedQuestions,
+    poweredByText,
     visibility,
     toolsConfig,
     variables,
@@ -366,6 +370,8 @@ export function AgentEditor({
         onOpeningMessageChange={setOpeningMessage}
         suggestedQuestions={suggestedQuestions}
         onSuggestedQuestionsChange={setSuggestedQuestions}
+        poweredByText={poweredByText}
+        onPoweredByTextChange={setPoweredByText}
         visibility={visibility}
         onVisibilityChange={setVisibility}
         modelId={modelId}

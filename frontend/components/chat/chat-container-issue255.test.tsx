@@ -47,6 +47,11 @@ mock.module('next-intl', () => ({
 mock.module('lucide-react', () => ({ ArrowDown: (props: Record<string, unknown>) => jsx('arrow-down', props) }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({ Button: (props: Record<string, unknown>) => jsx('button', props) }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: (props: Record<string, unknown>) => jsx('tooltip', props),
+  TooltipTrigger: (props: Record<string, unknown>) => jsx('tooltip-trigger', props),
+  TooltipContent: (props: Record<string, unknown>) => jsx('tooltip-content', props),
+}))
 mock.module('./message', () => ({
   Message: (props: Record<string, unknown>) => jsx('message', props),
 }))

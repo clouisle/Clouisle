@@ -29,7 +29,10 @@ mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {})
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('next/image', () => ({ default: () => null }))
 mock.module('lucide-react', () => ({ AlertCircle: () => null, ChevronDown: () => null, ChevronUp: () => null, Loader2: () => null, Sparkles: () => null }))
-mock.module('@/lib/api', () => ({ ApiError: class ApiError extends Error { code = 0 }, publicAgentsApi: { getPublicAgent: mock(async () => ({ id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: [], variables: [], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } })) } }))
+const MockApiError = class extends Error {
+  code = 0
+}
+mock.module('@/lib/api', () => ({ ApiError: MockApiError, publicAgentsApi: { getPublicAgent: mock(async () => ({ id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: [], powered_by_text: 'Acme Inc', variables: [], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } })) } }))
 mock.module('@/components/ui/button', () => ({ Button: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
 mock.module('@/components/ui/alert', () => ({ Alert: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertDescription: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertTitle: (p: Record<string, unknown>) => ({ type: 'h5', props: p }) }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleContent: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleTrigger: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
@@ -39,7 +42,7 @@ mock.module('@/hooks/use-run', () => ({ useRun: () => ({ messages: [], isLoading
 mock.module('@/lib/utils/extract-variables', () => ({ extractVariables: () => [] }))
 mock.module('@/lib/utils', () => ({ cn: (...v: unknown[]) => v.filter(Boolean).join(' ') }))
 
-const metadata = { id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: ['What can you do?'], variables: [], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } }
+const metadata = { id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: ['What can you do?'], powered_by_text: 'Acme Inc', variables: [], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } }
 
 describe('AgentRunPage', () => {
   test('renders loading state initially', () => {
@@ -81,7 +84,7 @@ describe('AgentRunPage', () => {
     stateIndex = 0
     effectIndex = 0
     states.length = 0
-    states[0] = { id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: [], variables: [{ name: 'query', type: 'string', required: true, hidden: false }], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } }
+    states[0] = { id: 'agent-1', name: 'Agent', description: '', icon: '', avatar_url: '', opening_message: '', suggested_questions: [], powered_by_text: 'Acme Inc', variables: [{ name: 'query', type: 'string', required: true, hidden: false }], enable_attachments: false, attachment_config: null, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false, created_by: { username: 'owner' } }
     states[1] = false
     states[2] = null
     states[3] = ''
@@ -89,6 +92,7 @@ describe('AgentRunPage', () => {
     const tree = AgentRunPage({ id: 'agent-1' })
     effects.forEach((e) => e())
     expect(tree).toBeDefined()
+    expect(JSON.stringify(tree)).toContain('Acme Inc')
   })
 
   test('opens variables panel when required variables are missing on send', async () => {

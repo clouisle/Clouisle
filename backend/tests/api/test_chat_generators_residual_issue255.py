@@ -238,6 +238,7 @@ async def setup_regenerate(monkeypatch, *, rag_mode=RAGMode.OFF, branch_parent_i
         created_at=datetime.now(UTC),
         parent_id=None,
         branch_parent_id=branch_parent_id,
+        round_status=MessageRoundStatus.COMPLETED,
     )
     created = StoredMessage(conversation=conversation, role=MessageRole.ASSISTANT)
     prefix = AsyncMock(return_value=[user_message])

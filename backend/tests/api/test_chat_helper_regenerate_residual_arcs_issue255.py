@@ -10,7 +10,7 @@ from app.api.v1.endpoints import chat
 from app.api.v1.endpoints.chat_helpers import StreamIdleTimeoutError
 from app.llm.errors import LLMError, QuotaExceededError
 from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message
-from app.models.agent import AgentVisibility, MessageRole, RAGMode
+from app.models.agent import AgentVisibility, MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import ChatRequest, RegenerateRequest
 from app.schemas.response import BusinessError, ResponseCode
 
@@ -183,6 +183,7 @@ async def setup_regeneration(monkeypatch):
         created_at=datetime.now(UTC),
         parent_id=None,
         branch_parent_id=user_message.id,
+        round_status=MessageRoundStatus.COMPLETED,
     )
     created = SimpleNamespace(id=uuid4(), save=AsyncMock(), tool_calls=None)
     cleanup = Query()

@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
+        init_agent_powered_by_text,
         init_agent_attachment_fields,
         init_user_locale_field,
         fix_cascade_delete_policies,
@@ -87,6 +88,7 @@ async def lifespan(app: FastAPI):
         init_message_first_token_field,
         init_message_round_fields,
         init_message_branch_parent_field,
+        init_message_history_index,
         init_conversation_session_memory_table,
         init_conversation_context_checkpoint_table,
         init_assets_tables,
@@ -127,6 +129,11 @@ async def lifespan(app: FastAPI):
         await init_agent_tools_credentials()
     except Exception as e:
         logger.warning(f"Agent tools_credentials migration failed: {e}")
+
+    try:
+        await init_agent_powered_by_text()
+    except Exception as e:
+        logger.warning(f"Agent powered_by_text migration failed: {e}")
 
     try:
         await fix_cascade_delete_policies()
@@ -172,6 +179,11 @@ async def lifespan(app: FastAPI):
         await init_message_branch_parent_field()
     except Exception as e:
         logger.warning(f"Message branch parent migration failed: {e}")
+
+    try:
+        await init_message_history_index()
+    except Exception as e:
+        logger.warning(f"Message history index migration failed: {e}")
 
     try:
         await init_conversation_session_memory_table()

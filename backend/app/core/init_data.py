@@ -635,6 +635,73 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
+async def init_agent_powered_by_text():
+    """
+    Add powered_by_text column to existing agents tables.
+    Handles the migration for the agent-level chat footer config feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent powered_by_text field...")
+
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
+
+    # Check if agents table exists first
+    if is_sqlite:
+        _, tables = await conn.execute_query(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = 'agents'
+            """
+        )
+    else:
+        _, tables = await conn.execute_query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = 'agents' AND table_schema = 'public'
+            """
+        )
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping powered_by_text migration"
+        )
+        return
+
+    # Check if powered_by_text column exists
+    if is_sqlite:
+        _, columns = await conn.execute_query("PRAGMA table_info(agents)")
+        column_exists = any(
+            (column.get("name") if isinstance(column, dict) else column[1])
+            == "powered_by_text"
+            for column in columns
+        )
+        if column_exists:
+            logger.info("powered_by_text column already exists")
+            return
+    else:
+        _, rows = await conn.execute_query(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'agents' AND column_name = 'powered_by_text'
+            """
+        )
+        if rows:
+            logger.info("powered_by_text column already exists")
+            return
+
+    logger.info("Adding powered_by_text column to agents table...")
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agents
+        ADD COLUMN powered_by_text TEXT
+        """,
+    )
+    logger.info("Added powered_by_text column to agents table")
+    logger.info("Agent powered_by_text migration complete")
+
+
 async def init_agent_visibility_values():
     """
     Normalize legacy agent visibility values.
@@ -1051,6 +1118,71 @@ async def init_message_branch_parent_field():
     """)
 
     logger.info("Message branch parent migration complete")
+
+
+async def init_message_history_index():
+    """
+    Create the composite index backing the conversation-history query
+    (WHERE conversation_id = ? AND is_active = ? ORDER BY created_at).
+    Without it, large conversations sort in memory on every history load.
+    Idempotent; safe on every startup.
+    """
+    logger.info("Checking messages history index...")
+
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
+
+    if is_sqlite:
+        _, tables = await conn.execute_query(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = 'messages'
+            """
+        )
+    else:
+        _, tables = await conn.execute_query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = 'messages' AND table_schema = 'public'
+            """
+        )
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping history index migration"
+        )
+        return
+
+    if is_sqlite:
+        _, indexes = await conn.execute_query(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'index'
+              AND tbl_name = 'messages'
+              AND name = 'idx_messages_conversation_active_created_at'
+            """
+        )
+    else:
+        _, indexes = await conn.execute_query(
+            """
+            SELECT indexname FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = 'messages'
+              AND indexname = 'idx_messages_conversation_active_created_at'
+            """
+        )
+    if indexes:
+        logger.info("Messages history index already exists")
+        return
+
+    await execute_startup_migration_query(
+        conn,
+        """
+        CREATE INDEX idx_messages_conversation_active_created_at
+        ON messages (conversation_id, is_active, created_at)
+        """,
+    )
+    logger.info("Created messages history index")
 
 
 async def init_conversation_session_memory_table():
@@ -2744,6 +2876,20 @@ async def init_db():
     except Exception as e:
         logger.warning(
             f"Agent tools_credentials migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_agent_powered_by_text()
+    except Exception as e:
+        logger.warning(
+            f"Agent powered_by_text migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_message_history_index()
+    except Exception as e:
+        logger.warning(
+            f"Message history index migration failed (may be first run): {e}"
         )
 
     try:

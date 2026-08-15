@@ -5,11 +5,14 @@ from uuid import UUID
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 
 from app.models.agent import (
+    Conversation,
     ConversationSessionMemory,
     ConversationSessionMemoryStatus,
     Message,
+    MessageRole,
     MessageRoundRole,
 )
 
@@ -42,6 +45,46 @@ def _version_group_query(root_id: UUID):
 
 def _is_canonical_visible(message: Message) -> bool:
     return message.round_id is None or message.is_round_canonical
+
+
+# Chain walks only inspect these fields; trimming the queries avoids reading
+# large `content`/`jsonb` columns for every message in a conversation.
+_CHAIN_WALK_FIELDS = (
+    "id",
+    "parent_id",
+    "branch_parent_id",
+    "round_id",
+    "round_role",
+    "is_round_canonical",
+    "is_active",
+    "version_number",
+    "created_at",
+)
+
+
+def _descendant_sort_key(message: Message):
+    """Match the old SQL ordering (-is_active, -created_at, -id): active first,
+    then NEWEST, then descending id tiebreak."""
+    return (
+        -int(message.is_active),
+        -message.created_at.timestamp(),
+        -message.id.int,
+    )
+
+
+def _pick_descendant_child(
+    children: list[Message], *, skip_group_root: UUID | None
+) -> Message | None:
+    for child in children:
+        if not _is_canonical_visible(child):
+            continue
+        if skip_group_root is not None and child.parent_id == skip_group_root:
+            # A version sibling of the branch root (e.g. the edited copy of a
+            # user message). Its subtree belongs to a different version, so the
+            # branch ends before it.
+            continue
+        return child
+    return None
 
 
 async def get_active_canonical_path(conversation_id: UUID) -> list[Message]:
@@ -115,11 +158,12 @@ async def get_last_active_canonical_message(conversation_id: UUID) -> Message | 
 
 
 async def get_prefix_path_before(
-    message: Message, *, limit: int | None = None
+    message: Message, *, limit: int | None = None, trimmed: bool = True
 ) -> list[Message]:
     if message.branch_parent_id and limit is None:
-        all_messages = await Message.filter(
-            conversation_id=message.conversation_id
+        query = Message.filter(conversation_id=message.conversation_id)
+        all_messages = await (
+            query.only(*_CHAIN_WALK_FIELDS) if trimmed else query
         ).all()
         message_by_id = {item.id: item for item in all_messages}
         prefix: list[Message] = []
@@ -131,7 +175,9 @@ async def get_prefix_path_before(
             if not current:
                 break
             seen.add(current_id)
-            if _is_canonical_visible(current):
+            # Skip deactivated links (superseded versions / abandoned replies)
+            # but keep walking their parent so older history survives.
+            if _is_canonical_visible(current) and current.is_active:
                 prefix.append(current)
             current_id = current.branch_parent_id
 
@@ -184,14 +230,17 @@ async def get_prefix_path_before(
         scan_limit = limit * 8
 
         while current_id and current_id not in seen and len(seen) < scan_limit:
-            current = await Message.filter(
+            query = Message.filter(
                 conversation_id=message.conversation_id,
                 id=current_id,
+            )
+            current = await (
+                query.only(*_CHAIN_WALK_FIELDS) if trimmed else query
             ).first()
             if not current:
                 break
             seen.add(current_id)
-            if _is_canonical_visible(current):
+            if _is_canonical_visible(current) and current.is_active:
                 prefix.append(current)
                 if len(prefix) == limit:
                     break
@@ -200,7 +249,7 @@ async def get_prefix_path_before(
         if prefix:
             prefix.reverse()
             if len(prefix) < limit:
-                full_prefix = await get_prefix_path_before(message)
+                full_prefix = await get_prefix_path_before(message, trimmed=trimmed)
                 return full_prefix[-limit:]
             return prefix
 
@@ -211,23 +260,40 @@ async def get_prefix_path_before(
     )
 
 
-async def _select_descendant_child(parent: Message) -> Message | None:
-    children = await Message.filter(
-        conversation_id=parent.conversation_id,
-        branch_parent_id=parent.id,
-    ).order_by("-is_active", "-created_at", "-id")
-    for child in children:
-        if _is_canonical_visible(child):
-            return child
-    return None
+async def _select_descendant_child(
+    parent: Message, *, skip_group_root: UUID | None = None
+) -> Message | None:
+    children = (
+        await Message.filter(
+            conversation_id=parent.conversation_id,
+            branch_parent_id=parent.id,
+        )
+        .only(*_CHAIN_WALK_FIELDS)
+        .order_by("-is_active", "-created_at", "-id")
+    )
+    return _pick_descendant_child(children, skip_group_root=skip_group_root)
 
 
 async def find_descendant_branch_from(message: Message) -> list[Message]:
+    root_id = get_version_root_id(message)
+    # One query instead of one per branch hop (N+1).
+    messages = (
+        await Message.filter(conversation_id=message.conversation_id)
+        .only(*_CHAIN_WALK_FIELDS)
+        .all()
+    )
+    children_by_parent: dict[UUID, list[Message]] = {}
+    for item in messages:
+        children_by_parent.setdefault(item.branch_parent_id, []).append(item)
+
     branch = [message]
     current = message
     seen = {message.id}
     while True:
-        child = await _select_descendant_child(current)
+        children = sorted(
+            children_by_parent.get(current.id, []), key=_descendant_sort_key
+        )
+        child = _pick_descendant_child(children, skip_group_root=root_id)
         if not child or child.id in seen:
             break
         branch.append(child)
@@ -242,6 +308,58 @@ async def activate_conversation_branch(
     *,
     using_db: BaseDBAsyncClient | None = None,
 ) -> None:
+    # The deduplication loop and the filtering comprehension below both
+    # traverse the path, so materialize it up front: one-shot iterables
+    # (generators / QuerySets) would be exhausted by the first pass.
+    canonical_path = list(canonical_path)
+    if using_db is None:
+        # Serialize concurrent branch-state transitions: the read of
+        # current_active and the deactivate/activate updates below must not
+        # interleave with another activation that read the same set, or two
+        # competing version switches could leave both alternatives active.
+        async with in_transaction() as conn:
+            await (
+                Conversation.filter(id=conversation_id)
+                .using_db(conn)
+                .select_for_update()
+                .first()
+            )
+            await activate_conversation_branch(
+                conversation_id, canonical_path, using_db=conn
+            )
+        return
+    # Version-group invariant: members of one version group are alternatives,
+    # so a path may never activate more than one of them. If a polluted branch
+    # chain contributed both an old version and its replacement, keep the
+    # newest version and drop the old one together with its round's canonical
+    # messages (the old reply), so superseded turns cannot resurface.
+    newest_by_root: dict[UUID, Message] = {}
+    dropped_round_ids: set[UUID] = set()
+    for message in canonical_path:
+        root = get_version_root_id(message)
+        current = newest_by_root.get(root)
+        if current is None or message.version_number > current.version_number:
+            if current is not None and current.round_id:
+                dropped_round_ids.add(current.round_id)
+            newest_by_root[root] = message
+        elif message.round_id:
+            dropped_round_ids.add(message.round_id)
+
+    kept_ids = {message.id for message in newest_by_root.values()}
+    canonical_path = [
+        message
+        for message in canonical_path
+        if message.id in kept_ids
+        and (
+            message.round_id is None
+            or message.round_id not in dropped_round_ids
+            # The kept user version shares its round with the dropped old
+            # assistant reply - never take the user message down with it.
+            or message.round_role == MessageRoundRole.USER_INPUT
+            or getattr(message, "role", None) in (MessageRole.USER, "user")
+        )
+    ]
+
     canonical_ids = [message.id for message in canonical_path]
     # Only activate round steps that belong to an assistant-final message in the
     # path. The user message shares its round with the (now-deactivated) old
@@ -267,14 +385,29 @@ async def activate_conversation_branch(
         )
         active_ids.update(message.id for message in round_steps)
 
-    await (
-        Message.filter(conversation_id=conversation_id)
+    # Difference-set activation: only touch messages whose state actually
+    # changes instead of rewriting the whole conversation on every call.
+    current_active = {
+        message.id
+        for message in await Message.filter(
+            conversation_id=conversation_id, is_active=True
+        )
+        .only("id")
         .using_db(using_db)
-        .update(is_active=False)
-    )
-    if active_ids:
+        .all()
+    }
+
+    deactivate_ids = current_active - active_ids
+    if deactivate_ids:
         await (
-            Message.filter(id__in=list(active_ids))
+            Message.filter(id__in=list(deactivate_ids))
+            .using_db(using_db)
+            .update(is_active=False)
+        )
+    activate_ids = active_ids - current_active
+    if activate_ids:
+        await (
+            Message.filter(id__in=list(activate_ids))
             .using_db(using_db)
             .update(is_active=True)
         )

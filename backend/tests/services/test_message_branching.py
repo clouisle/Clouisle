@@ -34,6 +34,7 @@ def query(**methods):
     value.exclude.return_value = value
     value.order_by.return_value = methods.get("order_by", value)
     value.using_db.return_value = value
+    value.only.return_value = value
     return value
 
 
@@ -183,6 +184,57 @@ async def test_prefix_path_follows_branch_parents_and_ignores_hidden_steps():
 
 
 @pytest.mark.anyio
+async def test_prefix_path_skips_deactivated_links_keeps_active_ancestors():
+    """A polluted chain link (a deactivated superseded version, e.g. the old
+    reply a user-message edit replaced) must not leak into the prefix, while
+    older ACTIVE history behind it is still preserved."""
+    conversation_id = uuid4()
+    first = message(conversation_id=conversation_id)
+    superseded_reply = message(
+        conversation_id=conversation_id,
+        branch_parent_id=first.id,
+        is_active=False,
+        created_at=first.created_at + timedelta(seconds=1),
+    )
+    edited_user = message(
+        conversation_id=conversation_id,
+        branch_parent_id=superseded_reply.id,
+        created_at=first.created_at + timedelta(seconds=2),
+    )
+    target = message(
+        conversation_id=conversation_id,
+        branch_parent_id=edited_user.id,
+        created_at=first.created_at + timedelta(seconds=3),
+    )
+    orm = query(all=[first, superseded_reply, edited_user, target])
+
+    with patch.object(branching.Message, "filter", return_value=orm):
+        assert await branching.get_prefix_path_before(target) == [first, edited_user]
+
+
+@pytest.mark.anyio
+async def test_limited_prefix_skips_deactivated_links():
+    conversation_id = uuid4()
+    first = message(conversation_id=conversation_id)
+    superseded_reply = message(
+        conversation_id=conversation_id,
+        branch_parent_id=first.id,
+        is_active=False,
+        created_at=first.created_at + timedelta(seconds=1),
+    )
+    target = message(
+        conversation_id=conversation_id,
+        branch_parent_id=superseded_reply.id,
+        created_at=first.created_at + timedelta(seconds=2),
+    )
+    first_orm = query(first=superseded_reply)
+    second_orm = query(first=first)
+
+    with patch.object(branching.Message, "filter", side_effect=[first_orm, second_orm]):
+        assert await branching.get_prefix_path_before(target, limit=1) == [first]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("history_is_active", [True, False])
 async def test_prefix_path_preserves_history_before_legacy_chain_gap(
     history_is_active,
@@ -288,15 +340,44 @@ async def test_prefix_path_stops_at_cycle_and_falls_back_when_unresolved():
 
 
 @pytest.mark.anyio
+async def test_descendant_branch_picks_newest_child_when_all_inactive():
+    """After switching to an old version, both replies of a message are
+    inactive; switching back must pick the NEWEST reply (old SQL ordering
+    -created_at), not the oldest."""
+    v2 = message()
+    old_reply = message(
+        conversation_id=v2.conversation_id,
+        branch_parent_id=v2.id,
+        is_active=False,
+        created_at=v2.created_at + timedelta(seconds=1),
+    )
+    new_reply = message(
+        conversation_id=v2.conversation_id,
+        branch_parent_id=v2.id,
+        is_active=False,
+        created_at=v2.created_at + timedelta(seconds=60),
+    )
+    orm = query(all=[v2, old_reply, new_reply])
+
+    with patch.object(branching.Message, "filter", return_value=orm):
+        assert await branching.find_descendant_branch_from(v2) == [v2, new_reply]
+
+
+@pytest.mark.anyio
 async def test_find_descendant_branch_selects_visible_children_and_stops_on_cycle():
     root = message()
     child = message(conversation_id=root.conversation_id, branch_parent_id=root.id)
-    with patch.object(
-        branching,
-        "_select_descendant_child",
-        new=AsyncMock(side_effect=[child, root]),
-    ):
+    orm = query(all=[root, child])
+
+    with patch.object(branching.Message, "filter", return_value=orm):
         assert await branching.find_descendant_branch_from(root) == [root, child]
+
+    orm.only.assert_called_once()
+    # A self-loop must terminate via the visited set.
+    root.branch_parent_id = root.id
+    loop_orm = query(all=[root])
+    with patch.object(branching.Message, "filter", return_value=loop_orm):
+        assert await branching.find_descendant_branch_from(root) == [root]
 
 
 @pytest.mark.anyio
@@ -308,6 +389,110 @@ async def test_select_descendant_child_skips_hidden_children():
 
     with patch.object(branching.Message, "filter", return_value=orm):
         assert await branching._select_descendant_child(parent) is visible
+
+
+@pytest.mark.anyio
+async def test_select_descendant_child_skips_version_sibling_of_branch_root():
+    parent = message()
+    sibling = message(parent_id=parent.id)
+    continuation = message()
+    orm = query(order_by=[sibling, continuation])
+
+    with patch.object(branching.Message, "filter", return_value=orm):
+        assert (
+            await branching._select_descendant_child(parent, skip_group_root=parent.id)
+            is continuation
+        )
+
+
+@pytest.mark.anyio
+async def test_descendant_branch_stops_at_version_sibling():
+    """Switching to an old version must not pull in the edited version's
+    subtree even when the branch chain is polluted (old reply -> edited
+    version)."""
+    root = message()
+    old_reply = message(
+        conversation_id=root.conversation_id,
+        branch_parent_id=root.id,
+        created_at=root.created_at + timedelta(seconds=1),
+    )
+    edited_version = message(
+        conversation_id=root.conversation_id,
+        parent_id=root.id,
+        branch_parent_id=old_reply.id,
+        created_at=root.created_at + timedelta(seconds=2),
+    )
+    filter_mock = MagicMock()
+    orm = query(all=[root, old_reply, edited_version])
+    filter_mock.return_value = orm
+
+    with patch.object(branching.Message, "filter", filter_mock):
+        assert await branching.find_descendant_branch_from(root) == [root, old_reply]
+
+
+@pytest.mark.anyio
+async def test_activate_branch_dedups_version_groups_keeping_newest():
+    """A polluted path containing both an old version and its replacement must
+    activate only the newest version, dropping the old one and its round's
+    reply (the superseded turn cannot resurface)."""
+    conversation_id = uuid4()
+    db = MagicMock()
+    old_round = uuid4()
+    new_round = uuid4()
+    v1 = message(
+        conversation_id=conversation_id,
+        version_number=1,
+        round_id=old_round,
+        round_role=branching.MessageRoundRole.USER_INPUT,
+    )
+    old_reply = message(
+        conversation_id=conversation_id,
+        round_id=old_round,
+        round_role=branching.MessageRoundRole.ASSISTANT_FINAL,
+    )
+    v2 = message(
+        conversation_id=conversation_id,
+        parent_id=v1.id,
+        version_number=2,
+        round_id=new_round,
+        round_role=branching.MessageRoundRole.USER_INPUT,
+    )
+    new_reply = message(
+        conversation_id=conversation_id,
+        branch_parent_id=v2.id,
+        round_id=new_round,
+        round_role=branching.MessageRoundRole.ASSISTANT_FINAL,
+    )
+    round_query = query(all=[])
+    active_query = query(all=[v1, old_reply])
+    deactivate_query = query(update=1)
+    activate_query = query(update=1)
+
+    with patch.object(
+        branching.Message,
+        "filter",
+        side_effect=[round_query, active_query, deactivate_query, activate_query],
+    ) as message_filter:
+        await branching.activate_conversation_branch(
+            conversation_id,
+            [v1, old_reply, v2, new_reply],
+            using_db=db,
+        )
+
+    # v1 + old_reply (active before) are deactivated.
+    assert set(message_filter.call_args_list[2].kwargs["id__in"]) == {
+        v1.id,
+        old_reply.id,
+    }
+    deactivate_query.update.assert_awaited_once_with(is_active=False)
+    # Only the newest version (v2) and its reply are activated.
+    assert set(message_filter.call_args_list[3].kwargs["id__in"]) == {
+        v2.id,
+        new_reply.id,
+    }
+    activate_query.update.assert_awaited_once_with(is_active=True)
+    # The round-steps query only covers the kept assistant-final round.
+    assert message_filter.call_args_list[0].kwargs["round_id__in"] == [new_round]
 
 
 @pytest.mark.anyio
@@ -326,14 +511,16 @@ async def test_activate_branch_persists_canonical_round_steps_and_deactivates_ot
         round_id=round_id,
         is_round_canonical=False,
     )
+    stray = message(conversation_id=conversation_id)
     round_query = query(all=[round_step])
-    deactivate_query = query(update=5)
-    activate_query = query(update=3)
+    active_query = query(all=[plain, round_step, stray])
+    deactivate_query = query(update=1)
+    activate_query = query(update=1)
 
     with patch.object(
         branching.Message,
         "filter",
-        side_effect=[round_query, deactivate_query, activate_query],
+        side_effect=[round_query, active_query, deactivate_query, activate_query],
     ) as message_filter:
         await branching.activate_conversation_branch(
             conversation_id, [plain, canonical], using_db=db
@@ -345,28 +532,93 @@ async def test_activate_branch_persists_canonical_round_steps_and_deactivates_ot
             round_id__in=[round_id],
             is_round_canonical=False,
         ),
-        call(conversation_id=conversation_id),
+        call(conversation_id=conversation_id, is_active=True),
     ]
-    assert set(message_filter.call_args_list[2].kwargs["id__in"]) == {
-        plain.id,
-        canonical.id,
-        round_step.id,
-    }
-    round_query.using_db.assert_called_once_with(db)
+    active_query.only.assert_called_once_with("id")
+    # Only the stray message is deactivated (it was active but is not in the
+    # new path); only the canonical message is activated.
+    assert set(message_filter.call_args_list[2].kwargs["id__in"]) == {stray.id}
     deactivate_query.update.assert_awaited_once_with(is_active=False)
+    assert set(message_filter.call_args_list[3].kwargs["id__in"]) == {canonical.id}
     activate_query.update.assert_awaited_once_with(is_active=True)
+    round_query.using_db.assert_called_once_with(db)
 
 
 @pytest.mark.anyio
 async def test_activate_empty_branch_only_deactivates_messages():
+    conversation_id = uuid4()
+    active = [
+        message(conversation_id=conversation_id),
+        message(conversation_id=conversation_id),
+    ]
+    active_query = query(all=active)
     deactivate_query = query(update=2)
+
+    # Bare call (no using_db): the function must serialize itself by locking
+    # the conversation row inside a transaction before touching message state.
+    lock_query = MagicMock()
+    lock_query.using_db.return_value = lock_query
+    lock_query.select_for_update.return_value = lock_query
+    lock_query.first = AsyncMock(return_value=None)
+
+    class _Transaction:
+        async def __aenter__(self) -> SimpleNamespace:
+            return SimpleNamespace()
+
+        async def __aexit__(self, *args) -> bool:
+            return False
+
+    with (
+        patch.object(
+            branching.Message,
+            "filter",
+            side_effect=[active_query, deactivate_query],
+        ) as message_filter,
+        patch.object(
+            branching.Conversation, "filter", return_value=lock_query
+        ) as conversation_filter,
+        patch.object(branching, "in_transaction", return_value=_Transaction()),
+    ):
+        await branching.activate_conversation_branch(conversation_id, [])
+
+    conversation_filter.assert_called_once_with(id=conversation_id)
+    lock_query.select_for_update.assert_called_once_with()
+    lock_query.first.assert_awaited_once_with()
+    assert message_filter.call_args_list[0] == call(
+        conversation_id=conversation_id, is_active=True
+    )
+    assert set(message_filter.call_args_list[1].kwargs["id__in"]) == {
+        active[0].id,
+        active[1].id,
+    }
+    deactivate_query.update.assert_awaited_once_with(is_active=False)
+
+
+@pytest.mark.anyio
+async def test_activate_branch_noop_when_state_unchanged():
+    """Idempotency: when the path already equals the active set, no UPDATEs
+    should be issued at all."""
+    conversation_id = uuid4()
+    db = MagicMock()
+    canonical = message(
+        conversation_id=conversation_id,
+        round_role=branching.MessageRoundRole.ASSISTANT_FINAL,
+    )
+    active_query = query(all=[canonical])
+
     with patch.object(
-        branching.Message, "filter", return_value=deactivate_query
+        branching.Message,
+        "filter",
+        side_effect=[active_query],
     ) as message_filter:
-        await branching.activate_conversation_branch(uuid4(), [])
+        await branching.activate_conversation_branch(
+            conversation_id, [canonical], using_db=db
+        )
 
     message_filter.assert_called_once()
-    deactivate_query.update.assert_awaited_once_with(is_active=False)
+    assert message_filter.call_args_list[0] == call(
+        conversation_id=conversation_id, is_active=True
+    )
 
 
 @pytest.mark.anyio
@@ -444,15 +696,33 @@ async def test_activate_branch_excludes_user_message_round_steps():
         round_id=new_round,
         round_role=MessageRoundRole.ASSISTANT_FINAL,
     )
+    old_reply = message(conversation_id=conversation_id)
     steps_query = query(all=[])
-    deactivate_all = query(update=1)
+    active_query = query(all=[user_msg, old_reply])
+    deactivate_query = query(update=1)
     activate_ids = query(update=1)
 
-    with patch.object(
-        branching.Message,
-        "filter",
-        side_effect=[steps_query, deactivate_all, activate_ids],
-    ) as message_filter:
+    lock_query = MagicMock()
+    lock_query.using_db.return_value = lock_query
+    lock_query.select_for_update.return_value = lock_query
+    lock_query.first = AsyncMock(return_value=None)
+
+    class _Transaction:
+        async def __aenter__(self) -> SimpleNamespace:
+            return SimpleNamespace()
+
+        async def __aexit__(self, *args) -> bool:
+            return False
+
+    with (
+        patch.object(
+            branching.Message,
+            "filter",
+            side_effect=[steps_query, active_query, deactivate_query, activate_ids],
+        ) as message_filter,
+        patch.object(branching.Conversation, "filter", return_value=lock_query),
+        patch.object(branching, "in_transaction", return_value=_Transaction()),
+    ):
         await branching.activate_conversation_branch(
             conversation_id, [user_msg, new_assistant]
         )

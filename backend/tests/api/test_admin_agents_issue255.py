@@ -85,6 +85,7 @@ def agent(**overrides):
         "variables": [],
         "opening_message": None,
         "suggested_questions": [],
+        "powered_by_text": None,
         "visibility": AgentVisibility.TEAM,
         "status": AgentStatus.DRAFT,
         "save": AsyncMock(),

@@ -129,6 +129,7 @@ async def test_agent_export_without_model_tools_or_permission(monkeypatch):
         variables=[],
         opening_message=None,
         suggested_questions=[],
+        powered_by_text=None,
         embed_config={},
     )
     endpoint(

@@ -153,6 +153,7 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     current_agent.avatar_url = None
     current_agent.opening_message = "Hello"
     current_agent.suggested_questions = None
+    current_agent.powered_by_text = "Acme Inc"
     current_agent.variables = None
     current_agent.enable_attachments = True
     current_agent.attachment_config = {"max_files": 2}
@@ -166,6 +167,7 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     assert result["data"].name == "Assistant"
     assert result["data"].suggested_questions == []
     assert result["data"].variables == []
+    assert result["data"].powered_by_text == "Acme Inc"
     assert result["data"].created_by.username == "owner"
     assert not hasattr(result["data"], "system_prompt")
 

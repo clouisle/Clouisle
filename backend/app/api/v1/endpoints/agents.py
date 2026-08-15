@@ -216,6 +216,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "variables": agent.variables or [],
         "opening_message": agent.opening_message,
         "suggested_questions": agent.suggested_questions or [],
+        "powered_by_text": agent.powered_by_text,
         "knowledge_bases": [kb.model_dump() for kb in knowledge_bases],
         "embed_config": agent.embed_config or {},
         "status": agent.status.value
@@ -488,6 +489,7 @@ async def create_agent(
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
         suggested_questions=agent_in.suggested_questions,
+        powered_by_text=agent_in.powered_by_text,
         visibility=normalize_agent_visibility(agent_in.visibility),
         created_by=current_user,
     )
@@ -607,6 +609,9 @@ async def update_agent(
     if agent_in.suggested_questions is not None:
         agent.suggested_questions = agent_in.suggested_questions
         updated_fields.append("suggested_questions")
+    if agent_in.powered_by_text is not None:
+        agent.powered_by_text = agent_in.powered_by_text
+        updated_fields.append("powered_by_text")
     if agent_in.visibility is not None:
         agent.visibility = AgentVisibility(
             normalize_agent_visibility(agent_in.visibility)
@@ -914,6 +919,7 @@ async def duplicate_agent(
         variables=agent.variables,
         opening_message=agent.opening_message,
         suggested_questions=agent.suggested_questions,
+        powered_by_text=agent.powered_by_text,
         visibility=AgentVisibility.PRIVATE,  # Copy is always private
         status=AgentStatus.DRAFT,  # Copy is always draft
         created_by=current_user,

@@ -1190,6 +1190,7 @@ async def get_public_agent_info(
             avatar_url=agent.avatar_url,
             opening_message=agent.opening_message,
             suggested_questions=agent.suggested_questions or [],
+            powered_by_text=agent.powered_by_text,
             variables=agent.variables or [],
             enable_attachments=agent.enable_attachments,
             attachment_config=agent.attachment_config,
@@ -1708,7 +1709,12 @@ async def chat(
             data={"quota_type": e.quota_type},
         )
     except LLMError as e:
-        logger.exception("LLM error during chat: %s", e)
+        logger.exception(
+            "LLM error during chat: conversation=%s agent=%s error=%s",
+            conversation.id,
+            agent.id,
+            e,
+        )
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="llm_processing_failed",
@@ -2709,7 +2715,12 @@ async def chat_stream(
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
-                    logger.warning("Quota exceeded during stream: %s", e)
+                    logger.warning(
+                        "Quota exceeded during stream: conversation=%s agent=%s error=%s",
+                        conversation.id,
+                        agent.id,
+                        e,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
                 except ModelNotFoundError as e:
                     await persist_partial_round_error(
@@ -2721,7 +2732,12 @@ async def chat_stream(
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
-                    logger.error("Model not found error during stream: %s", e)
+                    logger.error(
+                        "Model not found error during stream: conversation=%s agent=%s error=%s",
+                        conversation.id,
+                        agent.id,
+                        e,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('model_not_found')})}\n\n"
                 except AuthenticationError as e:
                     await persist_partial_round_error(
@@ -2733,7 +2749,12 @@ async def chat_stream(
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
-                    logger.error("Authentication error during stream: %s", e)
+                    logger.error(
+                        "Authentication error during stream: conversation=%s agent=%s error=%s",
+                        conversation.id,
+                        agent.id,
+                        e,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': t('unauthorized')})}\n\n"
                 except RateLimitError as e:
                     await persist_partial_round_error(
@@ -2745,10 +2766,19 @@ async def chat_stream(
                         first_token_time=first_token_time,
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
-                    logger.warning("Rate limit error during stream: %s", e)
+                    logger.warning(
+                        "Rate limit error during stream: conversation=%s agent=%s error=%s",
+                        conversation.id,
+                        agent.id,
+                        e,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
                 except LLMError as e:
-                    logger.exception("LLM error during stream")
+                    logger.exception(
+                        "LLM error during stream: conversation=%s agent=%s",
+                        conversation.id,
+                        agent.id,
+                    )
                     error_message = _format_llm_error_message(e)
                     await persist_partial_round_error(
                         assistant_msg,
@@ -2779,6 +2809,13 @@ async def chat_stream(
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
                 except BusinessError as e:
                     error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+                    logger.warning(
+                        "Business error during stream: conversation=%s agent=%s code=%s msg=%s",
+                        conversation.id,
+                        agent.id,
+                        e.code,
+                        error_message,
+                    )
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
@@ -2791,7 +2828,11 @@ async def chat_stream(
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
 
                 except Exception:
-                    logger.exception("Unexpected error during stream")
+                    logger.exception(
+                        "Unexpected error during stream: conversation=%s agent=%s",
+                        conversation.id,
+                        agent.id,
+                    )
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
@@ -2848,7 +2889,13 @@ async def chat_stream(
                     await assistant_msg.delete()
             return
         except Exception as exc:
-            logger.error("Unhandled stream error: %s", type(exc).__name__)
+            logger.error(
+                "Unhandled stream error: conversation=%s agent=%s exc=%s",
+                conversation.id,
+                agent.id,
+                type(exc).__name__,
+                exc_info=True,
+            )
             if assistant_msg:
                 await persist_partial_round_error(
                     assistant_msg,
@@ -3055,7 +3102,17 @@ async def switch_message_version(
             status_code=400,
         )
 
-    prefix = await get_prefix_path_before(target_version)
+    # The prefix must come from the version-group ROOT (the message this
+    # version replaces), not from the target version itself: a target's branch
+    # chain can be polluted with the sibling version's subtree (the old reply
+    # and the replaced user message), which would otherwise be reactivated
+    # alongside the switched version.
+    root_message = (
+        target_version
+        if target_version.id == root_id
+        else await Message.filter(id=root_id).first()
+    )
+    prefix = await get_prefix_path_before(root_message)
     descendant_branch = await find_descendant_branch_from(target_version)
     await activate_conversation_branch(
         message.conversation_id,
@@ -3128,7 +3185,7 @@ async def edit_user_message_stream(
             status_code=404,
         )
 
-    original_prefix = await get_prefix_path_before(message)
+    original_prefix = await get_prefix_path_before(message, trimmed=False)
     original_descendant_branch = await find_descendant_branch_from(message)
 
     async def event_generator():
@@ -3233,7 +3290,9 @@ async def edit_user_message_stream(
                                 agent,
                                 edited_content,
                                 await get_prefix_path_before(
-                                    message, limit=AUTO_RAG_HISTORY_LIMIT
+                                    message,
+                                    limit=AUTO_RAG_HISTORY_LIMIT,
+                                    trimmed=False,
                                 ),
                             )
                             if rag_contexts:
@@ -3904,6 +3963,12 @@ async def edit_user_message_stream(
                         logger.exception("Failed to write message edit audit log")
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': total_tokens}, 'timing': {'first_token_ms': assistant_msg.first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number})}\n\n"
                 except (QuotaExceededError, InsufficientQuotaError) as e:
+                    logger.warning(
+                        "Quota exceeded during message edit: conversation=%s agent=%s error=%s",
+                        conversation.id,
+                        agent.id,
+                        e,
+                    )
                     preserved_partial = await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
@@ -3945,9 +4010,20 @@ async def edit_user_message_stream(
                                 is_active=False
                             )
                         await restore_original_path()
-                    logger.exception("LLM error during message edit")
+                    logger.exception(
+                        "LLM error during message edit: conversation=%s agent=%s",
+                        conversation.id,
+                        agent.id,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
+                    logger.warning(
+                        "Message edit stream idle timeout (%ss) for conversation %s agent=%s",
+                        idle_timeout,
+                        conversation.id,
+                        agent.id,
+                        extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
+                    )
                     preserved_partial = await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
@@ -4012,6 +4088,13 @@ async def edit_user_message_stream(
             return
         except BusinessError as e:
             error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+            logger.warning(
+                "Business error during message edit: conversation=%s agent=%s code=%s msg=%s",
+                conversation.id,
+                agent.id,
+                e.code,
+                error_message,
+            )
             preserved_partial = await persist_partial_round_error(
                 assistant_msg,
                 content=full_content,
@@ -4032,7 +4115,11 @@ async def edit_user_message_stream(
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
 
         except Exception:
-            logger.exception("Unexpected error during message edit")
+            logger.exception(
+                "Unexpected error during message edit: conversation=%s agent=%s",
+                conversation.id,
+                agent.id,
+            )
             preserved_partial = await persist_partial_round_error(
                 assistant_msg,
                 content=full_content,
@@ -4123,7 +4210,7 @@ async def regenerate_message(
             status_code=404,
         )
 
-    prefix_for_message = await get_prefix_path_before(message)
+    prefix_for_message = await get_prefix_path_before(message, trimmed=False)
     user_message = next(
         (
             item
@@ -4148,6 +4235,7 @@ async def regenerate_message(
         full_reasoning = ""
         new_message_id = None
         new_message: Message | None = None
+        in_place_retry = False
         model_id: str | None = None
         model_used: str | None = None
         global_timeout: float = 1800.0  # Default 30 minutes
@@ -4213,6 +4301,11 @@ async def regenerate_message(
                     # Determine the root message ID for versioning
                     root_id = get_version_root_id(message)
 
+                    # An errored message is retried IN PLACE: no new version or
+                    # branch is created, so failed attempts never pollute the
+                    # version history.
+                    in_place_retry = message.round_status == MessageRoundStatus.ERROR
+
                     # Get current version count
                     current_version_count = await get_branch_version_count(message)
                     new_version_number = current_version_count + 1
@@ -4224,24 +4317,49 @@ async def regenerate_message(
                     round_id = uuid4()
                     next_round_index = 1
 
-                    # Create new version message
-                    new_message = await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.ASSISTANT,
-                        content="",
-                        parent_id=root_id,
-                        is_active=True,
-                        version_number=new_version_number,
-                        branch_parent_id=branch_parent_id,
-                        round_id=round_id,
-                        round_index=0,
-                        round_role=MessageRoundRole.ASSISTANT_FINAL,
-                        is_round_canonical=True,
-                    )
-                    new_message_id = str(new_message.id)
+                    if in_place_retry:
+                        # Reuse the existing row: clear the failed attempt,
+                        # rotate to a fresh round (so stale tool steps of the
+                        # errored round cannot resurface), and keep the version
+                        # numbers unchanged.
+                        message.content = ""
+                        message.reasoning_content = None
+                        message.tool_calls = None
+                        message.token_usage = None
+                        message.duration_ms = None
+                        message.first_token_ms = None
+                        message.round_status = None
+                        message.round_id = round_id
+                        message.created_at = now_utc()
+                        await message.save()
+                        new_message = message
+                        new_message_id = str(message.id)
+                        effective_version_number = message.version_number
+                        effective_version_count = await get_branch_version_count(
+                            message
+                        )
+                        yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': effective_version_number, 'version_count': effective_version_count})}\n\n"
+                    else:
+                        # Create new version message
+                        new_message = await Message.create(
+                            conversation=conversation,
+                            role=MessageRole.ASSISTANT,
+                            content="",
+                            parent_id=root_id,
+                            is_active=True,
+                            version_number=new_version_number,
+                            branch_parent_id=branch_parent_id,
+                            round_id=round_id,
+                            round_index=0,
+                            round_role=MessageRoundRole.ASSISTANT_FINAL,
+                            is_round_canonical=True,
+                        )
+                        new_message_id = str(new_message.id)
+                        effective_version_number = new_version_number
+                        effective_version_count = new_version_number
 
-                    # Send message_start event with version info
-                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': new_version_number, 'version_count': new_version_number, 'parent_id': str(root_id)})}\n\n"
+                        # Send message_start event with version info
+                        yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': effective_version_number, 'version_count': effective_version_count, 'parent_id': str(root_id)})}\n\n"
                     last_event_time = time.time()
 
                     # Handle RAG
@@ -4259,7 +4377,9 @@ async def regenerate_message(
                                 agent,
                                 user_message.content,
                                 await get_prefix_path_before(
-                                    user_message, limit=AUTO_RAG_HISTORY_LIMIT
+                                    user_message,
+                                    limit=AUTO_RAG_HISTORY_LIMIT,
+                                    trimmed=False,
                                 ),
                             )
                             if rag_contexts:
@@ -4897,9 +5017,15 @@ async def regenerate_message(
                         if duration_ms > 0 and output_tokens > 0
                         else None
                     )
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': effective_version_number, 'version_count': effective_version_count})}\n\n"
 
                 except (QuotaExceededError, InsufficientQuotaError) as e:
+                    logger.warning(
+                        "Quota exceeded during regenerate: conversation=%s agent=%s error=%s",
+                        conversation.id,
+                        agent.id,
+                        e,
+                    )
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
@@ -4912,7 +5038,7 @@ async def regenerate_message(
                     if preserved_partial:
                         await activate_regenerated_path()
                     else:
-                        if new_message_id:
+                        if new_message_id and not in_place_retry:
                             await Message.filter(id=new_message_id).delete()
                         await restore_original_path()
                     logger.warning("Quota exceeded during regenerate: %s", e)
@@ -4931,10 +5057,14 @@ async def regenerate_message(
                     if preserved_partial:
                         await activate_regenerated_path()
                     else:
-                        if new_message_id:
+                        if new_message_id and not in_place_retry:
                             await Message.filter(id=new_message_id).delete()
                         await restore_original_path()
-                    logger.exception("LLM error during regenerate")
+                    logger.exception(
+                        "LLM error during regenerate: conversation=%s agent=%s",
+                        conversation.id,
+                        agent.id,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
                     preserved_partial = await persist_partial_round_error(
@@ -4949,18 +5079,26 @@ async def regenerate_message(
                     if preserved_partial:
                         await activate_regenerated_path()
                     else:
-                        if new_message_id:
+                        if new_message_id and not in_place_retry:
                             await Message.filter(id=new_message_id).delete()
                         await restore_original_path()
                     logger.warning(
-                        "Regenerate stream idle timeout (%ss) for message %s",
+                        "Regenerate stream idle timeout (%ss) for conversation %s agent=%s",
                         idle_timeout,
-                        message_id,
+                        conversation.id,
+                        agent.id,
                         extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
                 except BusinessError as e:
                     error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
+                    logger.warning(
+                        "Business error during regenerate: conversation=%s agent=%s code=%s msg=%s",
+                        conversation.id,
+                        agent.id,
+                        e.code,
+                        error_message,
+                    )
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
@@ -4973,7 +5111,7 @@ async def regenerate_message(
                     if preserved_partial:
                         await activate_regenerated_path()
                     else:
-                        if new_message_id:
+                        if new_message_id and not in_place_retry:
                             await Message.filter(id=new_message_id).delete()
                         await restore_original_path()
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
@@ -4991,10 +5129,14 @@ async def regenerate_message(
                     if preserved_partial:
                         await activate_regenerated_path()
                     else:
-                        if new_message_id:
+                        if new_message_id and not in_place_retry:
                             await Message.filter(id=new_message_id).delete()
                         await restore_original_path()
-                    logger.exception("Unexpected error during regenerate")
+                    logger.exception(
+                        "Unexpected error during regenerate: conversation=%s agent=%s",
+                        conversation.id,
+                        agent.id,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
         except TimeoutError:
@@ -5016,7 +5158,7 @@ async def regenerate_message(
             )
             if preserved_partial:
                 await activate_regenerated_path()
-            elif new_message_id:
+            elif new_message_id and not in_place_retry:
                 await Message.filter(id=new_message_id).delete()
                 await restore_original_path()
             # Send timeout error event
@@ -5050,7 +5192,13 @@ async def regenerate_message(
             return
 
         except Exception as exc:
-            logger.error("Unhandled regenerate stream error: %s", type(exc).__name__)
+            logger.error(
+                "Unhandled regenerate stream error: conversation=%s agent=%s exc=%s",
+                conversation.id,
+                agent.id,
+                type(exc).__name__,
+                exc_info=True,
+            )
             preserved_partial = await persist_partial_round_error(
                 new_message,
                 content=full_content,
@@ -5062,7 +5210,7 @@ async def regenerate_message(
             )
             if preserved_partial:
                 await activate_regenerated_path()
-            elif new_message_id:
+            elif new_message_id and not in_place_retry:
                 await Message.filter(id=new_message_id).delete()
                 await restore_original_path()
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"

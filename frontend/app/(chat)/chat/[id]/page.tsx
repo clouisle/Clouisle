@@ -635,20 +635,111 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
+  // Variable panel (collapsible form shown when the agent declares input
+  // variables) and the composer itself. They are kept separate so the
+  // composer can act as the vertical-center anchor of the welcome column;
+  // the variable panel rides above it. Both are stacked together in the
+  // bottom-pinned input area once the conversation has content.
+  const variablePanel = (
+    <>
+      {variables.length > 0 && variables.some(v => !v.hidden) && (
+        <div className="mx-auto max-w-3xl px-4">
+          <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
+            <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
+              <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  {t('configureAgent')}
+                  {(() => {
+                    const requiredCount = variables.filter(v => !v.hidden && v.required).length
+                    const filledRequiredCount = variables.filter((v) => {
+                      if (v.hidden || !v.required) return false
+                      const value = variableValues[v.name]
+                      if (v.type === 'checkbox') return true
+                      if (v.type === 'array') {
+                        return Array.isArray(value) && value.length > 0
+                      }
+                      return value !== undefined && value !== null && value !== ''
+                    }).length
+
+                    if (requiredCount > 0) {
+                      return (
+                        <span className={cn(
+                          "text-[10px] px-1 py-0.5 rounded",
+                          filledRequiredCount === requiredCount
+                            ? "bg-green-100 text-green-700"
+                            : "bg-orange-100 text-orange-700"
+                        )}>
+                          {filledRequiredCount}/{requiredCount}
+                        </span>
+                      )
+                    }
+                    return null
+                  })()}
+                </span>
+                {variablesOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="px-2.5 pb-2.5 pt-0.5">
+                  <VariableForm
+                    variables={variables}
+                    values={variableValues}
+                    onChange={setVariableValues}
+                    fieldErrors={variableFieldErrors}
+                    className="space-y-2"
+                  />
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+        </div>
+      )}
+    </>
+  )
+
+  const composer = (
+    <ChatInput
+      value={input}
+      onChange={setInput}
+      onSubmit={handleSubmit}
+      onStop={stop}
+      placeholder={t('typePlaceholder')}
+      disabled={chatLoading && !isStreaming}
+      isLoading={chatLoading}
+      isStreaming={isStreaming}
+      allowAttachments={agent.enable_attachments}
+      enableFileUpload={agent.enable_attachments}
+      fileUploadConfig={agent.attachment_config}
+      files={files}
+      onFilesChange={setFiles}
+      isUploading={isUploading}
+    />
+  )
+
+  const inputArea = (
+    <>
+      {variablePanel}
+      {composer}
+    </>
+  )
+
   return (
     <div className="h-full flex overflow-hidden bg-background">
       {/* Sidebar */}
       {showHistory && (
       <div
         className={cn(
-          "flex flex-col bg-muted/50 transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
+          "flex flex-col bg-background transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
           sidebarOpen ? "w-64" : "w-0"
         )}
       >
         {sidebarOpen && (
           <>
             {/* Sidebar Header */}
-            <div className="flex items-center justify-between p-3 h-14 border-b">
+            <div className="flex items-center justify-between p-3 h-14">
               {/* Agent Info */}
               <Tooltip>
                 <TooltipTrigger
@@ -695,6 +786,11 @@ export default function PublicChatPage({
                   <TooltipContent>{t('newChat')}</TooltipContent>
                 </Tooltip>
               )}
+            </div>
+
+            {/* Section Label — sits where the old divider line was */}
+            <div className="px-4 pt-3 pb-1">
+              <span className="text-xs text-muted-foreground">{t('conversationHistory')}</span>
             </div>
 
             {/* Conversation List */}
@@ -768,34 +864,12 @@ export default function PublicChatPage({
       <div className="flex-1 min-w-0 min-h-0">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
         <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize={400}>
-        <div className="flex h-full min-w-0 flex-1 flex-col">
-        {/* Header */}
+        <div className="relative flex h-full min-w-0 flex-1 flex-col">
+        {/* Header - floating over the message area, no bar background */}
         {showHeader && (
-        <header className="flex items-center gap-2 px-3 h-14 shrink-0 border-b">
-          {/* Sidebar toggle */}
-          {showHistory && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
-            </Button>
-          )}
-          {allowNew && !sidebarOpen && (
-            <Tooltip>
-              <TooltipTrigger
-                onClick={handleNewChat}
-                render={
-                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={t('newChat')}>
-                    <SquarePen className="h-5 w-5" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{t('newChat')}</TooltipContent>
-            </Tooltip>
-          )}
+        <header className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 px-3 py-3">
+          {/* Logo + Agent name — shown when the sidebar is collapsed or absent,
+              placed before the sidebar toggle */}
           {!(showHistory && sidebarOpen) && (
             <>
               {displayIcon ? (
@@ -817,17 +891,41 @@ export default function PublicChatPage({
                   <Sparkles className="h-3.5 w-3.5" />
                 </div>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 mr-2">
                 <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
               </div>
             </>
+          )}
+          {/* Sidebar toggle */}
+          {showHistory && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+            </Button>
+          )}
+          {allowNew && (!showHistory || !sidebarOpen) && (
+            <Tooltip>
+              <TooltipTrigger
+                onClick={handleNewChat}
+                render={
+                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm" aria-label={t('newChat')}>
+                    <SquarePen className="h-5 w-5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('newChat')}</TooltipContent>
+            </Tooltip>
           )}
           {embedMode && mode === 'bubble' && (
             <Tooltip>
               <TooltipTrigger
                 onClick={onClose}
                 render={
-                  <Button variant="ghost" size="icon" className="ml-auto h-9 w-9" aria-label={t('backToHome')}>
+                  <Button variant="outline" size="icon" className="ml-auto h-9 w-9 bg-background/80 shadow-sm backdrop-blur-sm" aria-label={t('backToHome')}>
                     <span className="text-lg leading-none">&times;</span>
                   </Button>
                 }
@@ -842,7 +940,7 @@ export default function PublicChatPage({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Loading Skeleton */}
           {loadingConversation ? (
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+            <div className={cn('flex-1 min-h-0 overflow-y-auto space-y-4', showHeader ? 'px-4 pb-4 pt-[76px]' : 'p-4')}>
               {/* Skeleton for user message */}
               <div className="flex justify-end">
                 <div className="max-w-[80%] space-y-2">
@@ -900,6 +998,8 @@ export default function PublicChatPage({
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
               conversationId={conversationId}
+              headerInset={showHeader}
+              showUserMessageScale
               className="flex-1 min-h-0 overflow-y-auto"
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}
@@ -914,7 +1014,15 @@ export default function PublicChatPage({
               } : undefined}
               onOpenCodePreview={setActivePreview}
               emptyState={
-              <div className="flex-1 flex flex-col items-center justify-center px-4">
+              <div className="flex-1 self-stretch min-w-0 flex flex-col items-center px-4 pt-6 pb-8">
+                {/* The composer is anchored at the vertical center of the
+                    page: the top section absorbs the space above it and the
+                    spacer mirrors it below, so the composer lands exactly on
+                    the center line (pt-6/pb-8 offset compensates the
+                    header/footer height asymmetry). Welcome content hugs the
+                    composer; the section scrolls on short viewports so it can
+                    never push the composer off the center line. */}
+                <div className="flex w-full flex-1 min-h-0 min-w-0 flex-col items-center justify-end overflow-y-auto pb-4">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
@@ -945,114 +1053,47 @@ export default function PublicChatPage({
                   {agent.opening_message || t('welcomeMessage')}
                 </h1>
 
-                {agent.description && !agent.opening_message && (
-                  <p className="text-muted-foreground text-center max-w-lg text-base">
-                    {agent.description}
-                  </p>
-                )}
-
                 {/* Suggested Questions */}
                 {agent.suggested_questions && agent.suggested_questions.length > 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-3xl mt-8">
+                  <div className="grid w-[80%] max-w-[614px] min-w-0 grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2 mt-4">
                     {agent.suggested_questions.slice(0, 4).map((q, i) => (
                       <button
                         key={i}
                         onClick={() => handleSubmit(q)}
-                        className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent hover:border-border transition-colors cursor-pointer w-full text-center"
+                        className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent hover:border-border transition-colors cursor-pointer w-full min-w-0 text-center break-words"
                       >
                         {q}
                       </button>
                     ))}
                   </div>
                 )}
+
+                {variablePanel}
+                </div>
+
+                {/* Composer - anchored at the vertical center */}
+                <div className="w-full min-w-0 shrink-0">{composer}</div>
+
+                {/* Bottom spacer mirrors the top section so the composer sits
+                    exactly on the center line */}
+                <div className="min-h-0 flex-1" />
               </div>
             }
           />
           )}
 
-          {/* Input Area */}
-          <div className="relative pb-4 shrink-0">
-            {/* Variable Panel - Collapsible above input */}
-            {variables.length > 0 && variables.some(v => !v.hidden) && (
-              <div className="mx-auto max-w-3xl px-4">
-                <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-                  <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
-                    <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                      <span className="text-xs font-medium flex items-center gap-1.5">
-                        {t('configureAgent')}
-                        {(() => {
-                          const requiredCount = variables.filter(v => !v.hidden && v.required).length
-                          const filledRequiredCount = variables.filter((v) => {
-                            if (v.hidden || !v.required) return false
-                            const value = variableValues[v.name]
-                            if (v.type === 'checkbox') return true
-                            if (v.type === 'array') {
-                              return Array.isArray(value) && value.length > 0
-                            }
-                            return value !== undefined && value !== null && value !== ''
-                          }).length
+          {/* Input Area - pinned to the bottom once the conversation has content */}
+          {messages.length > 0 && (
+            <div className="relative shrink-0 pb-3">{inputArea}</div>
+          )}
 
-                          if (requiredCount > 0) {
-                            return (
-                              <span className={cn(
-                                "text-[10px] px-1 py-0.5 rounded",
-                                filledRequiredCount === requiredCount
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-orange-100 text-orange-700"
-                              )}>
-                                {filledRequiredCount}/{requiredCount}
-                              </span>
-                            )
-                          }
-                          return null
-                        })()}
-                      </span>
-                      {variablesOpen ? (
-                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="px-2.5 pb-2.5 pt-0.5">
-                        <VariableForm
-                          variables={variables}
-                          values={variableValues}
-                          onChange={setVariableValues}
-                          fieldErrors={variableFieldErrors}
-                          className="space-y-2"
-                        />
-                      </div>
-                    </CollapsibleContent>
-                  </div>
-                </Collapsible>
-              </div>
-            )}
-
-            <ChatInput
-              value={input}
-              onChange={setInput}
-              onSubmit={handleSubmit}
-              onStop={stop}
-              placeholder={t('typePlaceholder')}
-              disabled={chatLoading && !isStreaming}
-              isLoading={chatLoading}
-              isStreaming={isStreaming}
-              allowAttachments={agent.enable_attachments}
-              enableFileUpload={agent.enable_attachments}
-              fileUploadConfig={agent.attachment_config}
-              files={files}
-              onFilesChange={setFiles}
-              isUploading={isUploading}
-            />
-
-            {/* Footer */}
-            {!embedMode && (
-              <p className="text-[11px] text-center text-muted-foreground mt-2">
-                {t('poweredBy', { name: agent.created_by?.username || 'Clouisle' })}
-              </p>
-            )}
-          </div>
+          {/* Footer - anchored to the bottom in every state; rendered only
+              when the agent configures a powered-by text */}
+          {!embedMode && agent.powered_by_text && (
+            <p className="text-[11px] text-center text-muted-foreground mt-2 pb-4 shrink-0">
+              {agent.powered_by_text}
+            </p>
+          )}
         </div>
         </div>
         </ResizablePanel>

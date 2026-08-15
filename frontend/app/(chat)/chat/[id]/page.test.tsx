@@ -254,7 +254,34 @@ describe('PublicChatPage', () => {
     expect(chatContainerProps.onRegenerate).toBe(regenerate)
     expect(chatContainerProps.onEditMessage).toBe(editMessage)
     expect(chatContainerProps.onSwitchVersion).toBe(switchVersion)
+    expect(chatContainerProps.showUserMessageScale).toBe(true)
     expect(chatInputProps.onStop).toBe(stop)
+  })
+
+  test('renders the agent-powered footer text and hides it when unset', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, powered_by_text: 'Acme Inc' })
+    render()
+    await flush()
+    expect(nodeText(renderer!.root)).toContain('Acme Inc')
+
+    act(() => renderer!.unmount())
+    getPublicAgent.mockResolvedValueOnce({ ...agent, powered_by_text: null })
+    render()
+    await flush()
+    expect(nodeText(renderer!.root)).not.toContain('Acme Inc')
+  })
+
+  test('pins the composer below the messages once the conversation has content', async () => {
+    chatState.messages = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }], createdAt: new Date() }]
+    render()
+    await flush()
+
+    // Message rows render instead of the centered welcome column...
+    expect(nodeText(renderer!.root)).toContain('messages')
+    // ...the welcome empty state is gone...
+    expect(nodeText(renderer!.root)).not.toContain('welcomeMessage')
+    // ...and exactly one composer is rendered (pinned below the messages).
+    expect(renderer!.root.findAllByProps({ 'data-chat-input': true })).toHaveLength(1)
   })
 
   test('sets the tab favicon to the agent logo only when it is an image URL', async () => {
@@ -337,6 +364,30 @@ describe('PublicChatPage', () => {
     await act(async () => (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('after switch', []))
 
     expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined)
+  })
+
+  test('shows the new-chat control when embed history is disabled', async () => {
+    // show_history: false keeps sidebarOpen true on desktop (no sidebar, no
+    // toggle to close it), so the control must not depend on !sidebarOpen.
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      embed_config: { show_history: false, allow_new: true },
+    })
+    act(() => {
+      renderer = create(
+        <PublicChatPage params={Promise.resolve({ id: 'agent-1' })} embedMode agentId="agent-1" />,
+        { createNodeMock: () => ({}) },
+      )
+    })
+    await flush()
+
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })
+    expect(newChat.length).toBeGreaterThan(0)
+    act(() => newChat[0].props.onClick())
+    expect(resetChat).toHaveBeenCalled()
+
+    act(() => renderer!.unmount())
+    renderer = undefined
   })
 
   test('waits for every upload to settle before aborting submission', async () => {

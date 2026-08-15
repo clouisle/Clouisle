@@ -33,6 +33,10 @@ class Query:
         self.ordering = fields
         return self
 
+    def only(self, *fields):
+        self.only_fields = fields
+        return self
+
     def limit(self, value):
         self.limit_value = value
         return self
@@ -198,7 +202,26 @@ async def test_descendant_branch_skips_hidden_and_stops_on_cycle(monkeypatch):
     monkeypatch.setattr(branching.Message, "filter", MagicMock(side_effect=queries))
 
     assert await branching.find_descendant_branch_from(root) == [root, child]
-    assert queries[0].ordering == ("-is_active", "-created_at", "-id")
+    # The old SQL ordering (-is_active, -created_at, -id) is preserved by the
+    # in-memory descendant sort key: active beats inactive, newest beats older.
+    active_newer = message(branch_parent_id=root.id, created_at=datetime(2026, 1, 3))
+    inactive_older = message(
+        branch_parent_id=root.id,
+        is_active=False,
+        created_at=datetime(2026, 1, 2),
+    )
+    assert branching._descendant_sort_key(
+        active_newer
+    ) < branching._descendant_sort_key(inactive_older)
+    assert branching._descendant_sort_key(
+        inactive_older
+    ) < branching._descendant_sort_key(
+        message(
+            branch_parent_id=root.id,
+            is_active=False,
+            created_at=datetime(2026, 1, 1),
+        )
+    )
 
 
 @pytest.mark.anyio
@@ -216,12 +239,16 @@ async def test_activate_branch_includes_noncanonical_round_steps(monkeypatch):
         is_round_canonical=False,
     )
     round_query = Query([round_step])
+    stray = message(conversation_id=conversation_id)
+    active_query = Query([stray])
     deactivate_query = Query()
     activate_query = Query()
     monkeypatch.setattr(
         branching.Message,
         "filter",
-        MagicMock(side_effect=[round_query, deactivate_query, activate_query]),
+        MagicMock(
+            side_effect=[round_query, active_query, deactivate_query, activate_query]
+        ),
     )
     db = object()
 

@@ -183,7 +183,7 @@ async def test_edit_accepts_valid_request_and_captures_existing_branch():
         )
 
     assert response.media_type == "text/event-stream"
-    get_prefix.assert_awaited_once_with(message)
+    get_prefix.assert_awaited_once_with(message, trimmed=False)
     find_descendants.assert_awaited_once_with(message)
 
 

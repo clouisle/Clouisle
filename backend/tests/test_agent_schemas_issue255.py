@@ -60,6 +60,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
             "video_generation_config": {"default_duration": 8},
             "knowledge_base_configs": [{"knowledge_base_id": str(knowledge_base_id)}],
             "variables": [{"name": "topic", "required": True}],
+            "powered_by_text": "Acme Inc",
         }
     )
 
@@ -78,6 +79,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.video_generation_config.default_duration == 8
     assert agent.knowledge_base_configs[0].knowledge_base_id == knowledge_base_id
     assert agent.variables[0].type == "text"
+    assert agent.powered_by_text == "Acme Inc"
 
 
 def test_mutable_defaults_are_not_shared():
@@ -129,7 +131,16 @@ def test_context_compression_clamps_legacy_checkpoint_ratio():
         ),
         (AgentCreate, {"name": "", "team_id": uuid4()}),
         (AgentCreate, {"name": "Agent", "team_id": uuid4(), "max_iterations": 201}),
+        (
+            AgentCreate,
+            {
+                "name": "Agent",
+                "team_id": uuid4(),
+                "powered_by_text": "x" * 201,
+            },
+        ),
         (AgentUpdate, {"name": ""}),
+        (AgentUpdate, {"powered_by_text": "x" * 201}),
         (ConversationUpdate, {"title": ""}),
         (ChatRequest, {"message": ""}),
         (

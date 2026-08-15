@@ -122,6 +122,7 @@ def agent(**overrides):
         "variables": [],
         "opening_message": None,
         "suggested_questions": [],
+        "powered_by_text": None,
         "embed_config": {},
         "status": AgentStatus.DRAFT,
         "visibility": AgentVisibility.TEAM,
@@ -774,6 +775,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         hide_reasoning=False,
         opening_message="Hello",
         suggested_questions=["Help?"],
+        powered_by_text="Acme Inc",
         visibility="public",
         model_id=model_id,
         enable_attachments=True,
@@ -805,8 +807,15 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     assert item.enable_attachments is True
     assert item.enable_user_input_request is True
     assert item.video_generation_config["default_model_ref"] == "dummy/model"
+    assert item.powered_by_text == "Acme Inc"
     fields = agents.AuditLogService.log.await_args.kwargs["metadata"]["fields_updated"]
-    assert {"icon", "avatar_url", "system_prompt", "model_id"} <= set(fields)
+    assert {
+        "icon",
+        "avatar_url",
+        "system_prompt",
+        "model_id",
+        "powered_by_text",
+    } <= set(fields)
 
 
 @pytest.mark.anyio
