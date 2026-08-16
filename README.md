@@ -198,6 +198,12 @@ Choose Docker Compose for a single server, Helm for Kubernetes, or a generated s
 
 > For local development setup (backend + frontend from source), see the [Development Guide](docs/guide/getting-started/development.md).
 
+### Deploy on Sealos
+
+[![Deploy on Sealos](https://sealos.io/Deploy-on-Sealos.svg)](https://sealos.io/products/app-store/clouisle)
+
+The community-maintained template provisions PostgreSQL, Redis, Qdrant, and persistent uploads using either local storage or an optional private Sealos object-storage bucket. Register the first account to create the initial Super Admin. The sandbox worker stays disabled by default because it requires an `Unconfined` seccomp policy or an equivalent `Localhost` profile; enable it only in a compatible workspace.
+
 ---
 
 ## Architecture
@@ -361,4 +367,3 @@ See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for the full list.
 <b>Star us on GitHub</b> to support the project<br>
 PRs are welcome · Build the future of enterprise AI together
 </p>
-
