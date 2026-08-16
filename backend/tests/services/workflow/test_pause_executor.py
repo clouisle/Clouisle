@@ -273,7 +273,7 @@ async def test_pause_executor_stores_empty_resolution_as_is(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pause_executor_falls_back_to_raw_description_on_resolve_failure(
+async def test_pause_executor_clears_description_on_resolve_failure(
     monkeypatch,
 ):
     run = SimpleNamespace(id=uuid4(), workflow_id=uuid4())
@@ -306,5 +306,5 @@ async def test_pause_executor_falls_back_to_raw_description_on_resolve_failure(
     result = await PauseNodeExecutor().execute(node, context, run)
 
     assert result.waiting is True
-    assert create.await_args.kwargs["description"] == "请审核 {{start.price}}"
-    assert notify.await_args.kwargs["description"] == "请审核 {{start.price}}"
+    assert create.await_args.kwargs["description"] == ""
+    assert notify.await_args.kwargs["description"] == ""

@@ -113,6 +113,16 @@
 - **Files modified**: `frontend/i18n/*/*.json`、后端 `messages.po`/`i18n_legacy.py`
 - **Validation**: 前后端全量测试、tsc、ruff/mypy、i18n lint、覆盖率门槛
 
+### Stage 6: Code-review remediation
+- **Files modified**: `backend/app/api/v1/endpoints/workflows.py`, `backend/app/api/workflow_access.py`, `backend/app/services/workflow/{orchestrator.py,stream.py,pause_approvers.py}`, `backend/app/services/workflow/executors/pause.py`, `backend/app/tasks/workflow.py`, `backend/app/core/init_data.py`, `frontend/components/chat/pause-request-actions.tsx`, `frontend/app/(chat)/run/[id]/_components/workflow-run-page.tsx`, `frontend/app/(platform)/app/apps/workflow/[id]/_components/workflow-run-drawer.tsx`, and focused regression tests.
+- **Specific logic**:
+  - Make configured approvers an authorization alternative to private-workflow visibility without weakening generic workflow access; resolve configured IDs only when they are still active team members.
+  - Serialize `requireAllApprovals` updates and claim a waiting run atomically before resuming. Any resume setup failure must persist a terminal failure.
+  - Treat `NodeWaitingError` as a normal state in both orchestrator entry points; replay historical stream events without treating an old pause as the current terminal event.
+  - Validate non-empty required pause values; never persist raw unresolved templates or non-basename upload paths; repair startup DDL ordering and table names.
+  - Link pause notifications to the workflow runner, remove deep links with an explicit path, and render `waiting` from all streaming run surfaces.
+- **Validation**: focused backend API/orchestrator/task/stream/pause tests; focused frontend run-page/drawer/action tests; formatter/type checks for changed code.
+
 ## Testing Strategy
 
 - Happy path: 发布版 run → pause 挂起（waiting）→ 提交变量 → 自动恢复 → success；下游引用提交的变量；approval 模式 approve → 继续
@@ -130,6 +140,6 @@
 
 ## 已确认决策（用户选定）
 
-- 通用暂停 + 变量传递机制（方案 B：持久化挂起 + 重新调度恢复），审批是 pause 节点的 approval 模式，走同一路径
-- reject 语义：run 标记失败（条件分支二期）
-- 提交/审批权限：任意有 workflow 写权限的用户（MVP）；指定审批人列表为二期
+- 通用暂停 + 变量传递机制（方案 B：持久化挂起 + 重新调度恢复），审批是 pause 节点的 approval 模式，走同一路径。
+- reject 语义：run 标记失败（条件分支二期）。
+- 提交/审批权限：配置 `approverIds` 时仅现存、激活的团队成员与 superuser；未配置时回退工作流所有者与团队 owner/admin。

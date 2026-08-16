@@ -95,10 +95,21 @@
 - create_workflow 用默认定义(无 pause 节点),无需校验;发布快照来自已校验的保存定义。
 
 ## Approval Content + Inline Approval (2026-08-16)
-- **审批内容配置**:approval 模式新增 `description` 文本域(节点配置),随运行快照持久化;`get_pending_workflow_pause_request` 返回 `description`,处理人面板展示(原文,不支持运行变量插值)。
-- **通知携带审批内容**:`notify_pause_pending` 把 `description` 追加到通知 content(markdown 原文),data 增加 `pause_request_id` 与 `node_id`(executor 创建请求后传入)。
+- **审批内容配置**:approval 模式新增 `description` 文本域(节点配置),随运行快照持久化;executor 在暂停时解析运行变量并持久化结果;不可用或解析失败的引用渲染为空且绝不泄漏 `{{var}}`;上传文件值只显示文件名。`get_pending_workflow_pause_request` 返回该已解析内容。
+- **通知携带审批内容**:`notify_pause_pending` 把已解析 `description` 追加到通知 content,并在 data 中增加 `pause_request_id` 与 `node_id`(executor 创建请求后传入)。
 - **通知内完成审批**:站内通知中心(`notifications-client.tsx`)对 `workflow.pause_pending` 类型通知渲染"通过/拒绝"按钮,点击直接调 `submitPauseRequest`(已登录用户 + 后端 approver 校验兜底),成功 toast + 标记已读 + 刷新列表;失败 toast 提示可能已被处理。外部渠道(email/IM)保持 deep link 到运行页。
 - 注意:`workflow.pause_pending` 需在站点通知设置 `enabled_types` 中启用(默认列表未含,已部署站点需手动启用或迁移)。
+
+## Code Review Remediation (2026-08-17)
+- Resolve configured IDs against current active `TeamMember` rows on every notify/read/submit path. A departed or deactivated member must receive neither pause content nor approval authority.
+- The submit endpoint must authorize configured approvers before the private-workflow owner-only gate, while all unrelated workflow endpoints retain their existing access policy.
+- Require-all approvals need a locked/conditional state transition so concurrent approvers cannot overwrite each other's audit records.
+- Notification deep links must include `type=workflow`; variable-input notifications otherwise load the agent runner.
+- Persist a pause request before emitting a waiting event; a duplicate `(run_id, node_id)` write resolves to the existing request so retries do not create duplicate approvals.
+- Register workflow waiting as a first-class stream event. Resume events continue the prior event sequence and the client updates existing node traces rather than appending duplicate node cards.
+- Workflow-run history removes only the `run` parameter while preserving `type=workflow`; stale detail loads are generation-guarded after switching to a different run or starting a fresh run.
+- Startup DDL creates the physical `workflow_node_executions` foreign key target, applies new columns independently, and rebuilds the approval unique constraint around `node_id`.
+- Activity filters and every runner surface expose the `waiting` lifecycle state.
 
 ## Risks & Mitigation
 - 老版本运行快照无 `approverIds` → 回退逻辑保证行为不变。

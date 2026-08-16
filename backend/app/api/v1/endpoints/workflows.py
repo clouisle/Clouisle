@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Header, Request
 from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.api.team_access import check_team_access
@@ -141,13 +142,16 @@ def pause_submission_is_valid(
         if not isinstance(name, str) or not name:
             return False
         value = values.get(name)
-        if variable.get("required") and value is None:
+        if variable.get("required") and (
+            value is None
+            or (isinstance(value, str) and not value.strip())
+            or (isinstance(value, (list, dict)) and not value)
+        ):
             return False
         if value is None:
             continue
         value_type = str(variable.get("type") or "string")
-        # Cleared optional number inputs submit ""; treat it as not provided
-        # (the frontend already blocks required blanks).
+        # Cleared optional number inputs submit ""; treat them as not provided.
         if value_type == "number" and value == "":
             continue
         expected = expected_type.get(value_type)
@@ -1482,7 +1486,17 @@ async def submit_workflow_pause_request(
     """
     from app.tasks.workflow import resume_workflow_task
 
-    workflow = await check_workflow_access(workflow_id, current_user)
+    try:
+        workflow = await check_workflow_access(workflow_id, current_user)
+    except BusinessError as error:
+        # Configured approvers can be team members without private-workflow
+        # owner access. Defer that rejection until pause authority is known.
+        workflow = await Workflow.filter(id=workflow_id).first()
+        if not workflow:
+            raise error
+        workflow_access_error: BusinessError | None = error
+    else:
+        workflow_access_error = None
     run = await WorkflowRun.filter(id=run_id, workflow_id=workflow_id).first()
     if not run:
         raise BusinessError(
@@ -1522,6 +1536,8 @@ async def submit_workflow_pause_request(
         config = get_pause_request_config(run, pause_request) or {}
         approver_ids = await resolve_pause_approver_ids(workflow, config)
         if not current_user.is_superuser and current_user.id not in approver_ids:
+            if workflow_access_error is not None:
+                raise workflow_access_error
             raise BusinessError(
                 code=ResponseCode.FORBIDDEN,
                 msg_key="workflow_pause_not_approver",
@@ -1558,6 +1574,8 @@ async def submit_workflow_pause_request(
     # submitters; superusers keep the administrative override.
     approver_ids = await resolve_pause_approver_ids(workflow, config)
     if not current_user.is_superuser and current_user.id not in approver_ids:
+        if workflow_access_error is not None:
+            raise workflow_access_error
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,
             msg_key="workflow_pause_not_approver",
@@ -1571,35 +1589,73 @@ async def submit_workflow_pause_request(
         config.get("requireAllApprovals")
     )
     if require_all:
-        approvals = list(getattr(pause_request, "approvals", None) or [])
-        if any(
-            str(item.get("approver_id")) == str(current_user.id) for item in approvals
-        ):
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="workflow_pause_already_submitted",
-                status_code=409,
+        async with in_transaction() as connection:
+            locked_run = (
+                await WorkflowRun.filter(
+                    id=run.id,
+                    status=RunStatus.WAITING,
+                )
+                .using_db(connection)
+                .select_for_update()
+                .first()
             )
-        decision = submission.values.get("decision")
-        approvals.append(
-            {
-                "approver_id": str(current_user.id),
-                "decision": decision,
-                "comment": submission.comment,
-                "submitted_at": now().isoformat(),
-            }
-        )
-        await WorkflowPauseRequest.filter(id=pause_request.id).update(
-            approvals=approvals
-        )
-        # This approver's one-shot notification is handled; the others keep
-        # theirs until the request resolves.
+            locked_request = (
+                await WorkflowPauseRequest.filter(
+                    id=pause_request.id,
+                    status=PauseRequestStatus.PENDING,
+                )
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if not locked_run or not locked_request:
+                raise BusinessError(
+                    code=ResponseCode.BAD_REQUEST,
+                    msg_key="workflow_pause_request_not_pending",
+                    status_code=409,
+                )
+
+            approvals = list(locked_request.approvals or [])
+            if any(
+                str(item.get("approver_id")) == str(current_user.id)
+                for item in approvals
+            ):
+                raise BusinessError(
+                    code=ResponseCode.BAD_REQUEST,
+                    msg_key="workflow_pause_already_submitted",
+                    status_code=409,
+                )
+            decision = submission.values.get("decision")
+            approvals.append(
+                {
+                    "approver_id": str(current_user.id),
+                    "decision": decision,
+                    "comment": submission.comment,
+                    "submitted_at": now().isoformat(),
+                }
+            )
+            rejected = decision == "rejected"
+            all_approved = not rejected and all(
+                str(uid) in {str(item.get("approver_id")) for item in approvals}
+                for uid in approver_ids
+            )
+            resolved = rejected or all_approved
+            update_values: dict[str, Any] = {"approvals": approvals}
+            if resolved:
+                update_values.update(
+                    status=PauseRequestStatus.SUBMITTED,
+                    values=submission.values,
+                    comment=submission.comment,
+                    submitted_by_id=current_user.id,
+                    submitted_at=now(),
+                )
+            await (
+                WorkflowPauseRequest.filter(id=locked_request.id)
+                .using_db(connection)
+                .update(**update_values)
+            )
+
         await remove_pause_pending_notification_for(pause_request.id, current_user.id)
-        rejected = decision == "rejected"
-        all_approved = not rejected and all(
-            str(uid) in {str(item.get("approver_id")) for item in approvals}
-            for uid in approver_ids
-        )
         await AuditLogService.log(
             user=current_user,
             action="submit_workflow_pause_request",
@@ -1618,8 +1674,7 @@ async def submit_workflow_pause_request(
                 "require_all": True,
             },
         )
-        if not (rejected or all_approved):
-            # Still waiting on the remaining approvers.
+        if not resolved:
             return success(
                 data={
                     "pause_request_id": str(pause_request.id),
@@ -1628,23 +1683,6 @@ async def submit_workflow_pause_request(
                 msg_key="workflow_pause_submitted_partial",
             )
 
-        updated = await WorkflowPauseRequest.filter(
-            id=pause_request.id,
-            status=PauseRequestStatus.PENDING,
-        ).update(
-            status=PauseRequestStatus.SUBMITTED,
-            values=submission.values,
-            comment=submission.comment,
-            submitted_by_id=current_user.id,
-            submitted_at=now(),
-            approvals=approvals,
-        )
-        if updated != 1:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="workflow_pause_request_not_pending",
-                status_code=409,
-            )
         resume_workflow_task.delay(str(run.id))
         await remove_pause_pending_notifications(pause_request.id)
         return success(
@@ -1713,7 +1751,15 @@ async def get_pending_workflow_pause_request(
     current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """Return the pending external-input request for a waiting run, if any."""
-    workflow = await check_workflow_access(workflow_id, current_user)
+    try:
+        workflow = await check_workflow_access(workflow_id, current_user)
+    except BusinessError as error:
+        workflow = await Workflow.filter(id=workflow_id).first()
+        if not workflow:
+            raise error
+        workflow_access_error: BusinessError | None = error
+    else:
+        workflow_access_error = None
     run = await WorkflowRun.filter(id=run_id, workflow_id=workflow_id).first()
     if not run:
         raise BusinessError(
@@ -1746,6 +1792,8 @@ async def get_pending_workflow_pause_request(
     # Returning null (the same shape as "no request") avoids leaking that a
     # pending approval exists.
     if not current_user.is_superuser and current_user.id not in approver_ids:
+        if workflow_access_error is not None:
+            raise workflow_access_error
         return success(data={"pause_request": None})
 
     approver_users = {

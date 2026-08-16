@@ -16,12 +16,34 @@ def _team_members(*user_ids):
     return SimpleNamespace(values_list=AsyncMock(return_value=list(user_ids)))
 
 
+class _UserQuery:
+    def __init__(self, active_ids=(), users=()):
+        self.active_ids = list(active_ids)
+        self.users = list(users)
+
+    async def values_list(self, *_args, **_kwargs):
+        return self.active_ids
+
+    def __await__(self):
+        async def collect():
+            return self.users
+
+        return collect().__await__()
+
+
 @pytest.mark.asyncio
-async def test_resolve_uses_configured_approver_ids(monkeypatch):
+async def test_resolve_uses_current_active_configured_members(monkeypatch):
     owner_id, member_id, bad = uuid4(), uuid4(), "not-a-uuid"
     workflow = SimpleNamespace(created_by_id=owner_id, team_id=uuid4())
     monkeypatch.setattr(
-        pause_approvers.TeamMember, "filter", Mock(return_value=_team_members())
+        pause_approvers.TeamMember,
+        "filter",
+        Mock(return_value=_team_members(member_id)),
+    )
+    monkeypatch.setattr(
+        pause_approvers.User,
+        "filter",
+        Mock(return_value=_UserQuery(active_ids=[member_id])),
     )
 
     ids = await resolve_pause_approver_ids(
@@ -29,7 +51,9 @@ async def test_resolve_uses_configured_approver_ids(monkeypatch):
     )
 
     assert ids == [member_id]
-    pause_approvers.TeamMember.filter.assert_not_called()
+    pause_approvers.TeamMember.filter.assert_called_once_with(
+        team_id=workflow.team_id, user_id__in=[member_id]
+    )
 
 
 @pytest.mark.asyncio
@@ -41,6 +65,11 @@ async def test_resolve_falls_back_to_owner_and_team_admins(monkeypatch):
         pause_approvers.TeamMember,
         "filter",
         Mock(return_value=_team_members(admin_id)),
+    )
+    monkeypatch.setattr(
+        pause_approvers.User,
+        "filter",
+        Mock(return_value=_UserQuery(active_ids=[owner_id, admin_id])),
     )
 
     ids = await resolve_pause_approver_ids(workflow, {"mode": "variables"})
@@ -65,12 +94,17 @@ async def test_resolve_handles_missing_owner(monkeypatch):
         "filter",
         Mock(return_value=_team_members(admin_id)),
     )
+    monkeypatch.setattr(
+        pause_approvers.User,
+        "filter",
+        Mock(return_value=_UserQuery(active_ids=[admin_id])),
+    )
 
     assert await resolve_pause_approver_ids(workflow, {}) == [admin_id]
 
 
 @pytest.mark.asyncio
-async def test_resolve_invalid_only_approvers_falls_back(monkeypatch):
+async def test_resolve_invalid_configured_approvers_fails_closed(monkeypatch):
     owner_id = uuid4()
     workflow = SimpleNamespace(created_by_id=owner_id, team_id=uuid4())
     monkeypatch.setattr(
@@ -83,7 +117,29 @@ async def test_resolve_invalid_only_approvers_falls_back(monkeypatch):
         workflow, {"approverIds": ["junk", "also-junk"]}
     )
 
-    assert ids == [owner_id]
+    assert ids == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_excludes_departed_or_deactivated_configured_members(monkeypatch):
+    active_id, departed_id = uuid4(), uuid4()
+    workflow = SimpleNamespace(created_by_id=uuid4(), team_id=uuid4())
+    monkeypatch.setattr(
+        pause_approvers.TeamMember,
+        "filter",
+        Mock(return_value=_team_members(active_id)),
+    )
+    monkeypatch.setattr(
+        pause_approvers.User,
+        "filter",
+        Mock(return_value=_UserQuery(active_ids=[active_id])),
+    )
+
+    ids = await resolve_pause_approver_ids(
+        workflow, {"approverIds": [str(active_id), str(departed_id)]}
+    )
+
+    assert ids == [active_id]
 
 
 @pytest.mark.asyncio
@@ -98,7 +154,14 @@ async def test_notify_sends_user_notifications_with_link(monkeypatch):
     send = AsyncMock()
 
     monkeypatch.setattr(
-        pause_approvers.User, "filter", AsyncMock(return_value=[approver])
+        pause_approvers.TeamMember,
+        "filter",
+        Mock(return_value=_team_members(approver_id)),
+    )
+    monkeypatch.setattr(
+        pause_approvers.User,
+        "filter",
+        Mock(return_value=_UserQuery(active_ids=[approver_id], users=[approver])),
     )
     monkeypatch.setattr(pause_approvers.AutoNotificationService, "send_to_user", send)
 
@@ -114,7 +177,7 @@ async def test_notify_sends_user_notifications_with_link(monkeypatch):
     send.assert_awaited_once()
     kwargs = send.await_args.kwargs
     assert kwargs["user_id"] == approver_id
-    assert kwargs["link_url"] == f"/run/{workflow_id}?run={run_id}"
+    assert kwargs["link_url"] == f"/run/{workflow_id}?type=workflow&run={run_id}"
     assert kwargs["level"] == pause_approvers.NotificationLevel.HIGH
     assert kwargs["data"]["pause_request_id"] is not None
     assert kwargs["data"]["node_id"] == "pause-1"
@@ -225,6 +288,23 @@ async def test_validate_approvers_flags_unknown_inactive_and_bad_ids(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_validate_approvers_rejects_non_list_values(monkeypatch):
+    definition = {
+        "nodes": [
+            {
+                "type": "pause",
+                "data": {"pauseConfig": {"approverIds": "not-a-list"}},
+            }
+        ]
+    }
+    filter_mock = Mock()
+    monkeypatch.setattr(pause_approvers.TeamMember, "filter", filter_mock)
+
+    assert await validate_pause_approvers(uuid4(), definition) == ["not-a-list"]
+    filter_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_validate_approvers_ignores_non_pause_nodes(monkeypatch):
     team_id = uuid4()
     definition = {
@@ -296,7 +376,14 @@ async def test_notify_uses_mode_specific_copy(monkeypatch):
     approver = SimpleNamespace(id=approver_id, username="alice", locale="en")
     send = AsyncMock()
     monkeypatch.setattr(
-        pause_approvers.User, "filter", AsyncMock(return_value=[approver])
+        pause_approvers.TeamMember,
+        "filter",
+        Mock(return_value=_team_members(approver_id)),
+    )
+    monkeypatch.setattr(
+        pause_approvers.User,
+        "filter",
+        Mock(return_value=_UserQuery(active_ids=[approver_id], users=[approver])),
     )
     monkeypatch.setattr(pause_approvers.AutoNotificationService, "send_to_user", send)
 

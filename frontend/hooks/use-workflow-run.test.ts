@@ -149,8 +149,15 @@ describe('useWorkflowRun', () => {
     expect(hook.isStreaming).toBe(true)
     expect(streamWorkflowRun.mock.calls[1]?.[1]).toMatchObject({ fromSequence: 2 })
 
-    emit('node_complete', { node_id: 'pause-1', node_type: 'pause', outputs: { approved: true } }, 3)
-    emit('workflow_complete', { outputs: { approved: true } }, 4)
+    emit('node_start', { node_id: 'pause-1', node_type: 'pause', node_label: 'Approval' }, 3)
+    emit('node_complete', { node_id: 'pause-1', node_type: 'pause', outputs: { approved: true } }, 4)
+    emit('workflow_complete', { outputs: { approved: true } }, 5)
+    hook = render(options)
+
+    const pauseCalls = hook.messages[0]?.parts.filter(
+      (part) => part.type === 'tool-call' && part.toolCallId === 'pause-1',
+    ) ?? []
+    expect(pauseCalls).toHaveLength(1)
     hook = render(options)
 
     expect(hook.executionState.nodes.get('pause-1')).toMatchObject({

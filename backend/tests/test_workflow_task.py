@@ -78,6 +78,7 @@ def test_resume_workflow_task_replays_waiting_run():
         workflow_run.filter.return_value.first = AsyncMock(
             side_effect=[run, completed_run]
         )
+        workflow_run.filter.return_value.update = AsyncMock(return_value=1)
         result = resume_workflow_task.run(RUN_ID)
 
     assert result == {
@@ -125,6 +126,7 @@ def test_resume_workflow_task_reports_waiting_when_run_parks_again():
         workflow_run.filter.return_value.first = AsyncMock(
             side_effect=[run, parked_again]
         )
+        workflow_run.filter.return_value.update = AsyncMock(return_value=1)
         result = resume_workflow_task.run(RUN_ID)
 
     assert result == {"status": "waiting", "run_id": UUID(RUN_ID)}
@@ -283,6 +285,7 @@ def test_resume_workflow_task_reports_run_not_waiting():
         patch("app.tasks.workflow.t", return_value="not waiting") as translate,
     ):
         workflow_run.filter.return_value.first = AsyncMock(return_value=run)
+        workflow_run.filter.return_value.update = AsyncMock(return_value=0)
         result = resume_workflow_task.run(RUN_ID)
 
     assert result == {"status": "error", "message": "not waiting"}
@@ -313,6 +316,7 @@ def test_resume_workflow_task_marks_run_failed_on_execution_error():
         ),
     ):
         workflow_run.filter.return_value.first = AsyncMock(return_value=run)
+        workflow_run.filter.return_value.update = AsyncMock(return_value=1)
         result = resume_workflow_task.run(RUN_ID)
 
     assert result == {"status": "error", "message": "safe error"}

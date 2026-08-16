@@ -102,6 +102,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
   // Track node types to determine token routing (answer vs LLM)
   const nodeTypesRef = useRef<Map<string, string>>(new Map())
   const lastSequenceRef = useRef(0)
+  const startedNodeIdsRef = useRef<Set<string>>(new Set())
 
   const stop = useCallback(async () => {
     const activeRunId = runId
@@ -191,6 +192,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         })
         currentMessageRef.current = null
         nodeTypesRef.current.clear()
+        startedNodeIdsRef.current.clear()
 
         lastSequenceRef.current = 0
         // Start workflow run
@@ -237,6 +239,8 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         const nodeType = data.node_type as string
         const nodeLabel = (data.node_label as string) || nodeType
         const isAnswerNode = nodeType === 'answer'
+        const isResumedNode = startedNodeIdsRef.current.has(nodeId)
+        startedNodeIdsRef.current.add(nodeId)
 
         // Track node type for token routing
         nodeTypesRef.current.set(nodeId, nodeType)
@@ -260,8 +264,9 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
           }
         })
 
-        // Skip adding tool-call for answer nodes - they will output text directly
-        if (isAnswerNode) {
+        // A resumed pause repeats node_start for the same persisted execution.
+        // Update its trace state, but do not append a duplicate tool-call part.
+        if (isAnswerNode || isResumedNode) {
           break
         }
 

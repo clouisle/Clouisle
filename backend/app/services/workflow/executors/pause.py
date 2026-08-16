@@ -14,6 +14,7 @@ decision/comment payload; decision=rejected fails the run.
 from typing import TYPE_CHECKING
 
 import logging
+from tortoise.exceptions import IntegrityError
 
 from app.models.workflow import (
     NodeExecution,
@@ -97,27 +98,35 @@ class PauseNodeExecutor(NodeExecutor):
                         raw_description
                     )
                 except Exception:
-                    # Never let a description failure block the pause.
-                    resolved_description = raw_description
-            pause_request = await WorkflowPauseRequest.create(
-                run_id=run.id,
-                node_execution_id=node_execution.id if node_execution else None,
-                workflow_id=run.workflow_id,
-                node_id=node_id,
-                node_name=node_name,
-                mode=mode,
-                status=PauseRequestStatus.PENDING,
-                description=resolved_description,
-            )
-            await notify_pause_pending(
-                run,
-                config,
-                node_name,
-                pause_request_id=pause_request.id,
-                node_id=node_id,
-                description=resolved_description,
-            )
-            logger.info("Pause node %s paused run %s", node_id, run.id)
+                    # Template failures must never expose the raw {{...}} source.
+                    resolved_description = ""
+            try:
+                pause_request = await WorkflowPauseRequest.create(
+                    run_id=run.id,
+                    node_execution_id=node_execution.id if node_execution else None,
+                    workflow_id=run.workflow_id,
+                    node_id=node_id,
+                    node_name=node_name,
+                    mode=mode,
+                    status=PauseRequestStatus.PENDING,
+                    description=resolved_description,
+                )
+            except IntegrityError:
+                # The database uniqueness constraint elects the first delivery.
+                request = await WorkflowPauseRequest.filter(
+                    run_id=run.id, node_id=node_id
+                ).first()
+                if request is None:
+                    raise
+            else:
+                await notify_pause_pending(
+                    run,
+                    config,
+                    node_name,
+                    pause_request_id=pause_request.id,
+                    node_id=node_id,
+                    description=resolved_description,
+                )
             return ExecutionResult(waiting=True)
 
         if request.status == PauseRequestStatus.PENDING:

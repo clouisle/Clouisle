@@ -135,14 +135,14 @@ export function PauseRequestActions({
     if (isLoading) {
       return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
     }
-    if (!request || currentError) {
+    if (!request) {
       return null
     }
     if (request.mode !== 'approval') {
-      // Variable input needs the full form: send the user to the run page.
+      // Variable input needs the workflow runner rather than the agent default.
       return (
         <a
-          href={`/run/${workflowId}?run=${runId}`}
+          href={`/run/${workflowId}?type=workflow&run=${runId}`}
           className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           {t('pause.fillInline')}

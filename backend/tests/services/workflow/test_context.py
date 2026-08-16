@@ -176,10 +176,10 @@ class TestExecutionContextResolution:
         await context.set_node_outputs(
             "start",
             {
-                "photo": "/api/v1/upload/files/workflow-input/2026/08/abc123_photo.png",
+                "photo": "https://api.example.test/api/v1/upload/files/workflow-input/2026/08/abc123_photo.png",
                 "docs": [
-                    "/api/v1/upload/files/workflow-input/2026/08/abc123_a.pdf",
-                    "/api/v1/upload/files/workflow-input/2026/08/def456_b.pdf",
+                    "https://api.example.test/api/v1/upload/files/workflow-input/2026/08/abc123_a.pdf",
+                    "https://api.example.test/api/v1/upload/files/workflow-input/2026/08/def456_b.pdf",
                 ],
             },
         )

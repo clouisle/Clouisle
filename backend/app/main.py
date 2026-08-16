@@ -264,14 +264,6 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Embed config migration failed: {e}")
 
     try:
-        # Must run before generate_schemas: an existing deployment's
-        # workflow_pause_requests table lacks the description column, and
-        # Tortoise fails on the model/table mismatch otherwise.
-        await init_workflow_pause_requests_table()
-    except Exception as e:
-        logger.warning(f"Workflow pause requests table migration failed: {e}")
-
-    try:
         await init_workflow_run_page_config()
     except Exception as e:
         logger.warning(f"Workflow run-page config migration failed: {e}")
@@ -310,6 +302,10 @@ async def lifespan(app: FastAPI):
 
     # Generate schemas
     await Tortoise.generate_schemas()
+    try:
+        await init_workflow_pause_requests_table()
+    except Exception as e:
+        logger.warning(f"Workflow pause requests table migration failed: {e}")
 
     # pg_search depends on the authoritative knowledge tables above. Detect and
     # initialize it on the first startup; validate it on every later startup.

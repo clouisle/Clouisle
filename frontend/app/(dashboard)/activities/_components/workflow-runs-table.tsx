@@ -308,6 +308,7 @@ export function WorkflowRunsTable() {
     { label: t('status.failed'), value: 'failed' },
     { label: t('status.running'), value: 'running' },
     { label: t('status.pending'), value: 'pending' },
+    { label: t('status.waiting'), value: 'waiting' },
     { label: t('status.cancelled'), value: 'cancelled' },
     { label: t('status.timeout'), value: 'timeout' },
   ]

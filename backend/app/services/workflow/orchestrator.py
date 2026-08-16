@@ -175,6 +175,11 @@ class WorkflowOrchestrator:
             user_id=user_id,
             team_id=team_id,
         )
+        run.context_snapshot = {
+            "workflow_definition": workflow_def,
+            **({"public_base_url": public_base_url} if public_base_url else {}),
+        }
+        await run.save(update_fields=["context_snapshot"])
 
         # Record metrics - workflow start
         if self._metrics:
@@ -263,6 +268,21 @@ class WorkflowOrchestrator:
                     duration_ms=duration_ms,
                 )
 
+            return str(run.id)
+
+        except NodeWaitingError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            run.status = RunStatus.WAITING
+            run.total_duration_ms = duration_ms
+            await run.save()
+            if stream_manager:
+                await stream_manager.publish_workflow_waiting(e.node_id)
+            await context.set_ttl()
+            logger.info(
+                "Workflow run %s paused awaiting input at node %s",
+                run.id,
+                e.node_id,
+            )
             return str(run.id)
 
         except Exception as e:
@@ -476,6 +496,8 @@ class WorkflowOrchestrator:
             # resume task can continue without rebuilding state, then exit
             # cleanly instead of failing the run.
             duration_ms = int((time.time() - start_time) * 1000)
+            if resume:
+                duration_ms += run.total_duration_ms or 0
             run.status = RunStatus.WAITING
             run.total_duration_ms = duration_ms
             await run.save()
@@ -915,6 +937,12 @@ class WorkflowOrchestrator:
                 n.node_id for n in prior if n.status == NodeStatus.SUCCESS
             }
             skipped_nodes = {n.node_id for n in prior if n.status == NodeStatus.SKIPPED}
+            for execution in prior:
+                if (
+                    execution.status == NodeStatus.SUCCESS
+                    and execution.node_type == "answer"
+                ):
+                    final_outputs.update(execution.outputs or {})
             logger.info(
                 "Resuming run %s with %d executed, %d skipped nodes",
                 run.id,

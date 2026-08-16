@@ -29,25 +29,55 @@ logger = logging.getLogger(__name__)
 APPROVER_IDS_KEY = "approverIds"
 
 
-async def resolve_pause_approver_ids(workflow: "Workflow", config: dict) -> list[UUID]:
-    """Return the user ids allowed to submit this pause request.
+async def _active_user_ids(user_ids: list[UUID]) -> set[UUID]:
+    """Return active user ids without trusting stale membership snapshots."""
+    if not user_ids:
+        return set()
+    rows = cast(
+        list[UUID | tuple[UUID]],
+        await User.filter(id__in=user_ids, is_active=True).values_list("id", flat=True),
+    )
+    return {row[0] if isinstance(row, tuple) else row for row in rows}
 
-    Configured `approverIds` win; otherwise fall back to the workflow creator
-    plus team owners/admins (the current write-permission set).
+
+async def resolve_pause_approver_ids(workflow: "Workflow", config: dict) -> list[UUID]:
+    """Return currently active users authorized for this pause request.
+
+    A non-empty configured list never falls back: stale, malformed, or removed
+    configured users must not broaden access to the workflow owner/admin set.
+    An absent or empty list intentionally uses that owner/admin fallback.
     """
     raw = config.get(APPROVER_IDS_KEY) if isinstance(config, dict) else None
     if raw:
-        ids: list[UUID] = []
+        if not isinstance(raw, list):
+            logger.warning("Invalid pause approver list %r", raw)
+            return []
+        configured: list[UUID] = []
         for item in raw:
             try:
-                ids.append(UUID(str(item)))
+                user_id = UUID(str(item))
             except (ValueError, TypeError):
                 logger.warning("Skipping invalid approver id %r in pause config", item)
-        if ids:
-            return ids
+                continue
+            if user_id not in configured:
+                configured.append(user_id)
+        if not configured:
+            return []
+        member_rows = cast(
+            list[UUID | tuple[UUID]],
+            await TeamMember.filter(
+                team_id=workflow.team_id,
+                user_id__in=configured,
+            ).values_list("user_id", flat=True),
+        )
+        member_ids = {row[0] if isinstance(row, tuple) else row for row in member_rows}
+        active_ids = await _active_user_ids(
+            [user_id for user_id in configured if user_id in member_ids]
+        )
+        return [user_id for user_id in configured if user_id in active_ids]
 
     owner_id = getattr(workflow, "created_by_id", None)
-    ids = [owner_id] if owner_id else []
+    candidates = [owner_id] if owner_id else []
     rows = cast(
         list[UUID | tuple[UUID]],
         await TeamMember.filter(
@@ -57,9 +87,10 @@ async def resolve_pause_approver_ids(workflow: "Workflow", config: dict) -> list
     )
     for row in rows:
         user_id = row[0] if isinstance(row, tuple) else row
-        if user_id not in ids:
-            ids.append(user_id)
-    return ids
+        if user_id not in candidates:
+            candidates.append(user_id)
+    active_ids = await _active_user_ids(candidates)
+    return [user_id for user_id in candidates if user_id in active_ids]
 
 
 async def notify_pause_pending(
@@ -82,7 +113,7 @@ async def notify_pause_pending(
         approver_ids = await resolve_pause_approver_ids(workflow, config)
         if not approver_ids:
             return
-        users = await User.filter(id__in=approver_ids)
+        users = await User.filter(id__in=approver_ids, is_active=True)
         if not users:
             return
         resolved = (description or "").strip()
@@ -112,9 +143,8 @@ async def notify_pause_pending(
                 user_id=user.id,
                 title=t(title_key, lang=lang),
                 content=user_content,
-                # The run page /run/[id] resolves the workflow id, not the run
-                # id; deep-link to the workflow and pin the waiting run.
-                link_url=f"/run/{workflow.id}?run={run.id}",
+                # The run page requires type=workflow; /run defaults to agent mode.
+                link_url=f"/run/{workflow.id}?type=workflow&run={run.id}",
                 # High priority so the notification center surfaces it as a
                 # prominent dialog for the approver.
                 level=NotificationLevel.HIGH,
@@ -212,7 +242,10 @@ async def validate_pause_approvers(team_id: UUID, definition: object) -> list[st
         if not isinstance(config, dict):
             continue
         raw = config.get(APPROVER_IDS_KEY)
-        if not isinstance(raw, list):
+        if raw is not None and not isinstance(raw, list):
+            invalid_ids.append(str(raw))
+            continue
+        if raw is None:
             continue
         for item in raw:
             try:
@@ -220,9 +253,8 @@ async def validate_pause_approvers(team_id: UUID, definition: object) -> list[st
             except (ValueError, TypeError):
                 # Unparseable ids are invalid by definition.
                 invalid_ids.append(str(item))
-
-    if not raw_ids and not invalid_ids:
-        return []
+    if not raw_ids:
+        return invalid_ids
 
     members = await TeamMember.filter(
         team_id=team_id, user_id__in=raw_ids

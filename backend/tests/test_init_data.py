@@ -133,6 +133,21 @@ async def test_startup_migration_resets_lock_timeout_after_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pause_request_migration_uses_mapped_node_execution_table(monkeypatch):
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="postgres"),
+        execute_query=AsyncMock(),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_workflow_pause_requests_table()
+
+    queries = [call.args[0] for call in conn.execute_query.await_args_list]
+    assert any("workflow_node_executions" in query for query in queries)
+    assert any("uq_workflow_pause_requests_run_node" in query for query in queries)
+
+
+@pytest.mark.asyncio
 async def test_postgres_lexical_search_initializes_and_validates(monkeypatch) -> None:
     conn = SimpleNamespace(
         execute_query_dict=AsyncMock(

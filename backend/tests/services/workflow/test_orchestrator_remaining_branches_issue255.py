@@ -299,6 +299,49 @@ async def test_existing_run_parks_on_pause_and_pins_definition() -> None:
 
 
 @pytest.mark.asyncio
+async def test_direct_run_parks_on_pause_and_pins_definition() -> None:
+    from app.services.workflow.errors import NodeWaitingError
+
+    workflow_id = uuid4()
+    run = SimpleNamespace(
+        id=uuid4(),
+        status=RunStatus.PENDING,
+        total_duration_ms=None,
+        save=AsyncMock(),
+    )
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        name="Await review",
+        definition={"nodes": [{"id": "pause-1", "type": "pause"}]},
+    )
+    plan = MagicMock(validate=MagicMock(return_value=[]))
+    context = MagicMock(set_inputs=AsyncMock(), set_ttl=AsyncMock())
+    orchestrator = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    orchestrator._load_workflow = AsyncMock(return_value=workflow)
+    orchestrator._get_workflow_definition = AsyncMock(return_value=workflow.definition)
+    orchestrator._create_run = AsyncMock(return_value=run)
+    orchestrator._get_execution_plan = AsyncMock(return_value=plan)
+    orchestrator._execute = AsyncMock(side_effect=NodeWaitingError("pause-1"))
+
+    with (
+        patch(
+            "app.services.workflow.orchestrator.get_redis",
+            new=AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.services.workflow.orchestrator.ExecutionContext.create",
+            new=AsyncMock(return_value=context),
+        ),
+    ):
+        result = await orchestrator.run(workflow_id, {}, uuid4(), stream=False)
+
+    assert result == str(run.id)
+    assert run.status == RunStatus.WAITING
+    assert run.context_snapshot == {"workflow_definition": workflow.definition}
+    context.set_ttl.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
 async def test_resume_existing_run_uses_pinned_pause_definition() -> None:
     workflow_id = uuid4()
     old_definition = {"nodes": [{"id": "pause-1", "type": "pause"}]}

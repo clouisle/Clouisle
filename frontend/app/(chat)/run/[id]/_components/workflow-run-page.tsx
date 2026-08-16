@@ -121,16 +121,17 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   // to that run's detail (the resuming effect loads and pins it). Internal
   // selection (history click) sets the same URL, so suppress the effect there.
   const suppressDeepLinkRef = React.useRef(false)
+  const historyLoadGenerationRef = React.useRef(0)
   const selectRunInUrl = React.useCallback((runId: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
+    params.set('type', 'workflow')
     if (runId) {
       params.set('run', runId)
     } else {
       params.delete('run')
     }
-    const query = params.toString()
-    router.replace(query ? `?${query}` : '', { scroll: false })
-  }, [router, searchParams])
+    router.replace(`/run/${id}?${params.toString()}`, { scroll: false })
+  }, [id, router, searchParams])
 
   React.useEffect(() => {
     if (suppressDeepLinkRef.current) {
@@ -178,12 +179,13 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   React.useEffect(() => {
     if (!resumingHistoryRunId || workspaceView !== 'history') return
 
+    const generation = ++historyLoadGenerationRef.current
     let active = true
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     const refresh = async () => {
       try {
         const { run: detail, nodes } = await adapter.loadRunDetail(id, resumingHistoryRunId)
-        if (!active) return
+        if (!active || generation !== historyLoadGenerationRef.current) return
 
         // Accept the first load (current is null) as well as updates for the
         // run being resumed; never clobber a different run the user selected.
@@ -192,7 +194,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
 
         if (detail.status === 'waiting' && adapter.getPendingPauseRequest) {
           const request = await adapter.getPendingPauseRequest(id, resumingHistoryRunId)
-          if (!active) return
+          if (!active || generation !== historyLoadGenerationRef.current) return
           if (request) {
             setPendingPause(request)
             setResumingHistoryRunId(null)
@@ -209,7 +211,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
 
         retryTimer = setTimeout(() => void refresh(), 750)
       } catch {
-        if (!active) return
+        if (!active || generation !== historyLoadGenerationRef.current) return
         setHistoryDetailError(t('historyDetailError'))
         // Keep resumingHistoryRunId set: clearing it would let the deep-link
         // effect re-arm and retry a run whose detail keeps failing, looping
@@ -240,17 +242,20 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
     setPauseError(null)
     try {
       const result = await adapter.submitPauseRequest(id, pauseRunId, pendingPause.id, values, comment)
-      // require-all approvals return status "pending" until every approver
-      // has decided; the run stays waiting, so re-arm the resume polling to
-      // refresh the request (progress + already-submitted state) instead of
-      // resuming the run.
       const resolved = result?.status === 'submitted'
+      if (!resolved) {
+        const refreshed = adapter.getPendingPauseRequest
+          ? await adapter.getPendingPauseRequest(id, pauseRunId)
+          : null
+        setPendingPause(refreshed)
+        return
+      }
       setPendingPause(null)
-      if (resolved && isWaiting && pauseRunId === run.runId) {
+      if (isWaiting && pauseRunId === run.runId) {
         run.resume()
       } else {
         setSelectedRun((current) => current?.id === pauseRunId
-          ? { ...current, status: resolved ? 'pending' : 'waiting' }
+          ? { ...current, status: 'pending' }
           : current)
         setResumingHistoryRunId(pauseRunId)
       }
@@ -263,6 +268,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
 
   const handleNewRun = React.useCallback(() => {
     suppressDeepLinkRef.current = true
+    historyLoadGenerationRef.current += 1
     run.reset()
     variableForm.reset()
     setSelectedRun(null)
@@ -277,6 +283,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
 
   const handleRunAgain = React.useCallback(() => {
     suppressDeepLinkRef.current = true
+    historyLoadGenerationRef.current += 1
     run.reset()
     setSelectedRun(null)
     setSelectedNodes([])
@@ -288,6 +295,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
 
   const handleRerunFromHistory = React.useCallback(() => {
     suppressDeepLinkRef.current = true
+    historyLoadGenerationRef.current += 1
     if (selectedRun?.inputs) {
       variableForm.setValues(selectedRun.inputs)
     }
@@ -303,6 +311,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const handleSelectHistory = React.useCallback(async (runId: string) => {
     if (isActive) return
     suppressDeepLinkRef.current = true
+    historyLoadGenerationRef.current += 1
     setResumingHistoryRunId(null)
     setWorkspaceView('history')
     setHistoryDetailLoading(true)

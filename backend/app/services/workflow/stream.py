@@ -118,18 +118,21 @@ class StreamManager:
         pass for reconnecting clients.
         """
         redis = await get_redis()
-        last_result = redis.lindex(self._buffer_key, -1)
-        last_json = cast(
-            "bytes | str | None",
-            await last_result if asyncio.iscoroutine(last_result) else last_result,
+        buffered_result = redis.lrange(self._buffer_key, 0, -1)
+        buffered = cast(
+            list[bytes | str],
+            await buffered_result
+            if asyncio.iscoroutine(buffered_result)
+            else buffered_result,
         )
-        if not last_json:
-            return
-        try:
-            last = json.loads(last_json)
-            self._sequence = int(last.get("sequence", 0))
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+        for event_json in buffered:
+            try:
+                self._sequence = max(
+                    self._sequence,
+                    int(json.loads(event_json).get("sequence", 0)),
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
 
     async def publish(self, event: StreamEvent) -> None:
         """
@@ -143,24 +146,18 @@ class StreamManager:
         async with self._lock:
             self._sequence += 1
             event.sequence = self._sequence
+            event_json = json.dumps(event.to_dict(), ensure_ascii=False)
 
-        event_data = event.to_dict()
-        event_json = json.dumps(event_data, ensure_ascii=False)
-        event_json = json.dumps(event_data, ensure_ascii=False)
+            publish_result = redis.publish(self._channel, event_json)
+            if asyncio.iscoroutine(publish_result):
+                await publish_result
 
-        # Publish to channel
-        publish_result = redis.publish(self._channel, event_json)
-        if asyncio.iscoroutine(publish_result):
-            await publish_result
-
-        # Also store in buffer list for late subscribers
-        rpush_result = redis.rpush(self._buffer_key, event_json)
-        if asyncio.iscoroutine(rpush_result):
-            await rpush_result
-        # Keep buffer for 1 hour
-        expire_result = redis.expire(self._buffer_key, 3600)
-        if asyncio.iscoroutine(expire_result):
-            await expire_result
+            rpush_result = redis.rpush(self._buffer_key, event_json)
+            if asyncio.iscoroutine(rpush_result):
+                await rpush_result
+            expire_result = redis.expire(self._buffer_key, 3600)
+            if asyncio.iscoroutine(expire_result):
+                await expire_result
 
         logger.debug(
             f"Published event {event.event_type.value} "
@@ -415,21 +412,21 @@ class StreamManager:
             if asyncio.iscoroutine(buffered_result)
             else buffered_result,
         )
+        buffered_events: list[StreamEvent] = []
         for event_json in buffered:
             try:
-                event_data = json.loads(event_json)
-                event = self._parse_event(event_data)
-                if event.sequence <= from_sequence:
-                    continue
-                yield event
-                if event.event_type in {
-                    StreamEventType.WORKFLOW_COMPLETE,
-                    StreamEventType.WORKFLOW_ERROR,
-                    StreamEventType.WORKFLOW_WAITING,
-                }:
-                    return
+                buffered_events.append(self._parse_event(json.loads(event_json)))
             except json.JSONDecodeError:
                 continue
+        for event in buffered_events:
+            if event.sequence > from_sequence:
+                yield event
+        if buffered_events and buffered_events[-1].event_type in {
+            StreamEventType.WORKFLOW_COMPLETE,
+            StreamEventType.WORKFLOW_ERROR,
+            StreamEventType.WORKFLOW_WAITING,
+        }:
+            return
 
         # Subscribe to live events
         pubsub = redis.pubsub()

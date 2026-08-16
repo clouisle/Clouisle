@@ -217,6 +217,45 @@ async def test_subscribe_replays_waiting_event_from_buffer_at_sequence_zero():
 
 
 @pytest.mark.asyncio
+async def test_subscribe_replays_events_after_a_historical_wait():
+    redis = Mock()
+    redis.lrange = AsyncMock(
+        return_value=[
+            json.dumps({"event": "workflow_waiting", "sequence": 2}),
+            json.dumps({"event": "workflow_start", "sequence": 3}),
+            json.dumps({"event": "workflow_complete", "sequence": 4}),
+        ]
+    )
+
+    with patch("app.services.workflow.stream.get_redis", AsyncMock(return_value=redis)):
+        events = [event async for event in StreamManager("run-1").subscribe()]
+
+    assert [(event.event_type, event.sequence) for event in events] == [
+        (StreamEventType.WORKFLOW_WAITING, 2),
+        (StreamEventType.WORKFLOW_START, 3),
+        (StreamEventType.WORKFLOW_COMPLETE, 4),
+    ]
+    redis.pubsub.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_seed_sequence_uses_the_buffer_maximum_not_its_tail():
+    redis = Mock()
+    redis.lrange = AsyncMock(
+        return_value=[
+            json.dumps({"event": "token", "sequence": 8}),
+            json.dumps({"event": "token", "sequence": 7}),
+        ]
+    )
+    manager = StreamManager("run-1")
+
+    with patch("app.services.workflow.stream.get_redis", AsyncMock(return_value=redis)):
+        await manager.seed_sequence()
+
+    assert manager._sequence == 8
+
+
+@pytest.mark.asyncio
 async def test_get_all_events_skips_malformed_entries_and_clear_deletes_buffer():
     redis = Mock()
     redis.lrange.return_value = [

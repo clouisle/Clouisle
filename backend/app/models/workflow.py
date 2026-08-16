@@ -525,3 +525,4 @@ class WorkflowPauseRequest(models.Model):
 
     class Meta:
         table = "workflow_pause_requests"
+        unique_together = (("run", "node_id"),)

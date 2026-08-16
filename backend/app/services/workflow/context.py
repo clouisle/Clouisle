@@ -13,6 +13,7 @@ import json
 import re
 import logging
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from typing import TYPE_CHECKING, cast, TypeVar
 from uuid import UUID
 
@@ -34,15 +35,15 @@ def _render_file_value(value: WorkflowValue) -> str | None:
     """
 
     def _basename(item: object) -> str:
-        return str(item).rsplit("/", 1)[-1]
+        return urlparse(str(item)).path.rsplit("/", 1)[-1]
 
-    if isinstance(value, str) and value.startswith(_UPLOAD_URL_PREFIX):
+    if isinstance(value, str) and urlparse(value).path.startswith(_UPLOAD_URL_PREFIX):
         return _basename(value)
     if (
         isinstance(value, list)
         and value
         and all(
-            isinstance(item, str) and item.startswith(_UPLOAD_URL_PREFIX)
+            isinstance(item, str) and urlparse(item).path.startswith(_UPLOAD_URL_PREFIX)
             for item in value
         )
     ):

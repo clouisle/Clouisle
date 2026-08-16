@@ -1,6 +1,7 @@
 from types import SimpleNamespace
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -26,6 +27,12 @@ class Query:
 
     async def all(self):
         return self.items
+
+    def using_db(self, *_args):
+        return self
+
+    def select_for_update(self):
+        return self
 
 
 @pytest.mark.parametrize(
@@ -305,6 +312,143 @@ class PauseQuery:
 
     async def update(self, **_kwargs):
         return self.updated
+
+    def using_db(self, *_args):
+        return self
+
+    def select_for_update(self):
+        return self
+
+
+@asynccontextmanager
+async def _pause_transaction():
+    yield object()
+
+
+@pytest.fixture(autouse=True)
+def mock_pause_dependencies(monkeypatch):
+    async def resolve(workflow, config):
+        raw = config.get("approverIds") if isinstance(config, dict) else None
+        if isinstance(raw, list):
+            ids = []
+            for item in raw:
+                try:
+                    user_id = UUID(str(item))
+                except (TypeError, ValueError):
+                    continue
+                if user_id not in ids:
+                    ids.append(user_id)
+            return ids
+        owner_id = getattr(workflow, "created_by_id", None)
+        return [owner_id] if owner_id else []
+
+    monkeypatch.setattr(workflows, "in_transaction", _pause_transaction)
+    monkeypatch.setattr(workflows, "resolve_pause_approver_ids", resolve)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "   ", [], {}],
+)
+def test_pause_submission_rejects_empty_required_values(value):
+    config = {
+        "inputVariables": [
+            {
+                "name": "value",
+                "type": "text" if isinstance(value, str) else "object",
+                "required": True,
+            }
+        ]
+    }
+
+    assert not workflows.pause_submission_is_valid(
+        config, "variables", {"value": value}
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_allows_configured_private_workflow_approver(monkeypatch):
+    workflow_id, run_id, approver_id, pause_id = (uuid4() for _ in range(4))
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        name="Private flow",
+        created_by_id=uuid4(),
+        team_id=uuid4(),
+    )
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.WAITING,
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {
+                            "pauseConfig": {
+                                "mode": "variables",
+                                "approverIds": [str(approver_id)],
+                                "inputVariables": [],
+                            }
+                        },
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status="pending",
+    )
+    denied = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    monkeypatch.setattr(
+        workflows,
+        "check_workflow_access",
+        AsyncMock(side_effect=denied),
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun,
+        "filter",
+        lambda **_kwargs: Query(first=run),
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **kwargs: PauseQuery(
+            first=pause_request,
+            updated=1 if "status" in kwargs else 0,
+        ),
+    )
+    monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
+    monkeypatch.setattr(workflows, "remove_pause_pending_notifications", AsyncMock())
+    from app.tasks.workflow import resume_workflow_task
+
+    delay = Mock()
+    monkeypatch.setattr(resume_workflow_task, "delay", delay)
+
+    response = await workflows.submit_workflow_pause_request(
+        workflow_id,
+        run_id,
+        pause_id,
+        workflows.PauseRequestSubmitRequest(values={}),
+        SimpleNamespace(),
+        SimpleNamespace(id=approver_id, is_superuser=False),
+    )
+
+    assert response["data"]["status"] == "submitted"
+    delay.assert_called_once_with(str(run_id))
 
 
 @pytest.mark.asyncio

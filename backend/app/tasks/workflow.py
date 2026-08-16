@@ -134,19 +134,23 @@ def resume_workflow_task(self, run_id: str) -> dict:
                         "workflow_run_not_found_after_execution", lang=default_lang
                     ),
                 }
-            if run.status != RunStatus.WAITING:
-                default_lang = await get_default_language()
-                return {
-                    "status": "error",
-                    "message": t("workflow_run_not_waiting", lang=default_lang),
-                }
             if not run.workflow_id:
                 default_lang = await get_default_language()
                 return {
                     "status": "error",
                     "message": t("workflow_not_found", lang=default_lang),
                 }
-
+            claimed = await WorkflowRun.filter(
+                id=run_uuid,
+                status=RunStatus.WAITING,
+            ).update(status=RunStatus.RUNNING)
+            if claimed != 1:
+                default_lang = await get_default_language()
+                return {
+                    "status": "error",
+                    "message": t("workflow_run_not_waiting", lang=default_lang),
+                }
+            run.status = RunStatus.RUNNING
             orchestrator = WorkflowOrchestrator()
             result_run_id = await orchestrator.run_with_run_id(
                 run_id=run_uuid,
@@ -182,7 +186,7 @@ def resume_workflow_task(self, run_id: str) -> dict:
             public_error = translate_public_workflow_error(e)
 
             run = await WorkflowRun.filter(id=run_uuid).first()
-            if run and run.status == RunStatus.WAITING:
+            if run and run.status == RunStatus.RUNNING:
                 run.status = RunStatus.FAILED
                 run.error_message = public_error
                 await run.save()

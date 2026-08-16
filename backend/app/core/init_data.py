@@ -380,7 +380,7 @@ async def init_workflow_pause_requests_table():
         CREATE TABLE IF NOT EXISTS workflow_pause_requests (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             run_id UUID NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
-            node_execution_id UUID REFERENCES node_executions(id) ON DELETE CASCADE,
+            node_execution_id UUID REFERENCES workflow_node_executions(id) ON DELETE CASCADE,
             workflow_id UUID REFERENCES workflows(id) ON DELETE SET NULL,
             node_id VARCHAR(100) NOT NULL,
             node_name VARCHAR(200) NOT NULL DEFAULT '',
@@ -424,6 +424,12 @@ async def init_workflow_pause_requests_table():
         """
         CREATE INDEX IF NOT EXISTS idx_workflow_pause_requests_run_id
         ON workflow_pause_requests(run_id)
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_pause_requests_run_node
+        ON workflow_pause_requests(run_id, node_id)
         """
     )
     logger.info("Workflow pause requests table ready")

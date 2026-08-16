@@ -245,6 +245,23 @@ test('self-managed compact approval shows buttons and submits', async () => {
   expect(submitPauseRequest).toHaveBeenCalledWith('wf-1', 'run-1', 'pr-1', { decision: 'approved' }, '')
 })
 
+
+test('self-managed compact approval keeps retry controls after a submission error', async () => {
+  getPendingPauseRequest.mockImplementationOnce(async () => approvalRequest)
+  submitPauseRequest.mockImplementationOnce(async () => { throw new Error('network') })
+  const renderer = await render({ variant: 'compact' })
+
+  await act(async () => { await Promise.resolve() })
+  await act(async () => { await Promise.resolve() })
+  await act(async () => {
+    renderer.root.findAllByType('button').find((b) => String(b.children.join('')).includes('pause.approve'))!.props.onClick({ stopPropagation: mock() })
+  })
+  await act(async () => { await Promise.resolve() })
+
+  expect(buttons(renderer).some((button) => button.includes('pause.approve'))).toBe(true)
+  expect(toastError).toHaveBeenCalledWith('pause.submitError')
+})
+
 test('self-managed compact variables routes to the run page', async () => {
   getPendingPauseRequest.mockImplementationOnce(async () => ({
     ...approvalRequest, mode: 'variables', input_variables: [{ name: 'price', type: 'number', required: true }],
@@ -256,5 +273,5 @@ test('self-managed compact variables routes to the run page', async () => {
 
   const link = renderer.root.findAll((node) => node.type === 'a')[0]
   expect(link).toBeDefined()
-  expect(link.props.href).toBe('/run/wf-1?run=run-1')
+  expect(link.props.href).toBe('/run/wf-1?type=workflow&run=run-1')
 })

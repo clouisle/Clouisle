@@ -244,7 +244,7 @@ describe('WorkflowRunPage', () => {
       can_submit: true,
     }
     const getPendingPauseRequest = mock(async () => pauseRequest)
-    const submitPauseRequest = mock(async () => {})
+    const submitPauseRequest = mock(async () => ({ pause_request_id: 'pause-request-1', status: 'submitted' }))
     const loadRunDetail = mock(async () => ({
       run: { ...waitingRun, status: 'success' },
       nodes: [],
@@ -1027,7 +1027,7 @@ test('syncs the URL with ?run= when a history item is selected', async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(loadRunDetail).toHaveBeenCalledWith('wf-1', 'run-h1')
-  expect(replaceMock).toHaveBeenCalledWith('?type=workflow&run=run-h1', { scroll: false })
+  expect(replaceMock).toHaveBeenCalledWith('/run/wf-1?type=workflow&run=run-h1', { scroll: false })
   searchParams = new URLSearchParams()
 })
 
@@ -1216,7 +1216,9 @@ test('starting a new run from history does not re-trigger the ?run= deep link', 
     return render && render.type === buttonMock && render.props['aria-label'] === 'newRun'
   })
   expect(newRunTrigger).toBeDefined()
+  replaceMock.mockClear()
   ;(newRunTrigger!.props.onClick as () => void)()
+  expect(replaceMock).toHaveBeenCalledWith('/run/wf-1?type=workflow', { scroll: false })
 
   stateIndex = 0
   refIndex = 0
