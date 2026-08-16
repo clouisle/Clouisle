@@ -190,7 +190,13 @@ async def test_execute_covers_timeout_cancel_limit_and_missing_downstream_node()
         return_value=SimpleNamespace(outputs={}, next_handles=["yes"])
     )
     stream = MagicMock(publish_node_skip=AsyncMock())
-    with patch("app.services.workflow.orchestrator.time.time", return_value=0):
+    with (
+        patch("app.services.workflow.orchestrator.time.time", return_value=0),
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_cls,
+    ):
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
         assert await service._execute(plan, context, MagicMock(), stream, 0) == ({}, 1)
     stream.publish_node_skip.assert_awaited_once_with(
         node_id="missing",

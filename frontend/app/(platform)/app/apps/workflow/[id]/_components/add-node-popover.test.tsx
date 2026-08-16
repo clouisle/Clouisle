@@ -24,7 +24,7 @@ mock.module('react', () => ({
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
-mock.module('lucide-react', () => ({ Bot: element, GitBranch: element, Workflow: element, Wrench: element, Code: element, X: element, RefreshCw: element, Infinity: element, LogOut: element, FileText: element, Combine: element, Variable: element, Braces: element, Link: element, Tags: element, MessageSquareText: element, Sparkles: element, Database: element, Images: element }))
+mock.module('lucide-react', () => ({ Bot: element, CirclePause: element, GitBranch: element, Workflow: element, Wrench: element, Code: element, X: element, RefreshCw: element, Infinity: element, LogOut: element, FileText: element, Combine: element, Variable: element, Braces: element, Link: element, Tags: element, MessageSquareText: element, Sparkles: element, Database: element, Images: element }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 
 const { AddNodePopover } = await import('./add-node-popover')
@@ -56,7 +56,7 @@ test('renders normal categories and forwards node selection context', () => {
   for (const category of ['model', 'logic', 'transform', 'extension']) {
     expect(findAll(tree, (node) => node.props.children === `nodeCategories.${category}`)).toHaveLength(1)
   }
-  for (const type of ['llm', 'media_generation', 'condition', 'question_classifier', 'iteration', 'loop', 'code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor', 'sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer']) {
+  for (const type of ['llm', 'media_generation', 'condition', 'question_classifier', 'iteration', 'loop', 'pause', 'code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor', 'sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer']) {
     expect(findAll(tree, (node) => node.props.children === `nodeLabels.${type}`)).toHaveLength(1)
   }
 
@@ -78,4 +78,6 @@ test('uses container-specific exit nodes', () => {
   expect(findAll(iteration, (node) => node.props.children === 'nodeLabels.iteration')).toHaveLength(0)
   expect(findAll(loop, (node) => node.props.children === 'nodeLabels.loop_exit')).toHaveLength(1)
   expect(findAll(loop, (node) => node.props.children === 'nodeLabels.loop')).toHaveLength(0)
+  expect(findAll(iteration, (node) => node.props.children === 'nodeLabels.pause')).toHaveLength(0)
+  expect(findAll(loop, (node) => node.props.children === 'nodeLabels.pause')).toHaveLength(0)
 })

@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T18:33:11.653Z
+// GENERATED — 2026-08-16T16:08:55.209Z
 // Source: i18n/en/users.json
 export type UsersMessages = {
   users: {

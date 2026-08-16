@@ -202,7 +202,11 @@ async def test_orchestrator_branches_cover_timeout_cancel_missing_node_and_label
             "app.services.workflow.orchestrator.get_node_type_label",
             AsyncMock(return_value=None),
         ),
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_cls,
     ):
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
         await orchestrator._execute(
             unknown_plan,
             SimpleNamespace(get_status=AsyncMock(return_value="running")),

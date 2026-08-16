@@ -1,4 +1,4 @@
-import { workflowsApi, type Workflow, type WorkflowRunListItem, type WorkflowRun, type NodeExecution, type VariableDefinition } from '@/lib/api/workflows'
+import { workflowsApi, type Workflow, type WorkflowRunListItem, type WorkflowRun, type WorkflowPauseRequest, type NodeExecution, type VariableDefinition } from '@/lib/api/workflows'
 import type { EmbedWorkflowInfo } from '@/lib/api/embed'
 import type { WorkflowRunApi } from '@/hooks/use-workflow-run'
 
@@ -34,6 +34,14 @@ export interface WorkflowRunAdapter {
   createRunApi: () => WorkflowRunApi
   loadHistory: (id: string) => Promise<WorkflowRunListItem[]>
   loadRunDetail: (id: string, runId: string) => Promise<RunDetail>
+  getPendingPauseRequest?: (workflowId: string, runId: string) => Promise<WorkflowPauseRequest | null>
+  submitPauseRequest?: (
+    workflowId: string,
+    runId: string,
+    pauseRequestId: string,
+    values: Record<string, unknown>,
+    comment?: string,
+  ) => Promise<{ pause_request_id: string; status: string }>
   saveRun: (id: string, snapshot: RunSnapshot) => void
 }
 
@@ -78,6 +86,9 @@ export const jwtWorkflowRunAdapter: WorkflowRunAdapter = {
     ])
     return { run, nodes }
   },
+  getPendingPauseRequest: (workflowId, runId) => workflowsApi.getPendingPauseRequest(workflowId, runId),
+  submitPauseRequest: async (workflowId, runId, pauseRequestId, values, comment) =>
+    workflowsApi.submitPauseRequest(workflowId, runId, pauseRequestId, values, comment),
   saveRun: () => {
     // The authenticated run page relies on server-side history; nothing to persist locally.
   },

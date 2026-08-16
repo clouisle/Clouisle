@@ -1545,6 +1545,9 @@ msgstr "Question Classifier"
 msgid "node_type_sub_workflow"
 msgstr "Sub Workflow"
 
+msgid "node_type_pause"
+msgstr "Pause"
+
 msgid "node_type_tool"
 msgstr "Tool"
 
@@ -1757,6 +1760,24 @@ msgstr "Workflow **{workflow_name}** has completed successfully. Duration: {dura
 
 msgid "notify_workflow_run_success_title"
 msgstr "Workflow run completed"
+
+msgid "notify_workflow_pause_pending_title"
+msgstr "Workflow waiting for review"
+
+msgid "notify_workflow_pause_pending_content"
+msgstr "Workflow **{workflow_name}** is waiting for input at node **{node_name}**."
+
+msgid "notify_workflow_approval_pending_title"
+msgstr "Workflow approval requested"
+
+msgid "notify_workflow_approval_pending_content"
+msgstr "Workflow **{workflow_name}** is waiting for approval at node **{node_name}**."
+
+msgid "notify_workflow_input_pending_title"
+msgstr "Workflow input requested"
+
+msgid "notify_workflow_input_pending_content"
+msgstr "Workflow **{workflow_name}** is waiting for input at node **{node_name}**."
 
 msgid "operation_not_permitted"
 msgstr "Operation not permitted. Required: {permission}"
@@ -2741,6 +2762,45 @@ msgstr "Restored from v{version}"
 
 msgid "workflow_run_cancelled"
 msgstr "Workflow run cancelled"
+
+msgid "workflow_approval_pending"
+msgstr "Awaiting approval"
+
+msgid "workflow_approval_rejected"
+msgstr "Approval was rejected"
+
+msgid "workflow_pause_inside_container"
+msgstr "Pause nodes are not allowed inside iteration/loop bodies"
+
+msgid "workflow_pause_pending"
+msgstr "Awaiting external input"
+
+msgid "workflow_pause_request_not_found"
+msgstr "Workflow pause request not found"
+
+msgid "workflow_pause_request_not_pending"
+msgstr "Workflow pause request is no longer pending"
+
+msgid "workflow_run_not_waiting"
+msgstr "Workflow run is not waiting for input"
+
+msgid "workflow_pause_invalid_values"
+msgstr "Submitted pause variables do not match the requested schema"
+
+msgid "workflow_pause_submitted"
+msgstr "Pause variables submitted"
+
+msgid "workflow_pause_submitted_partial"
+msgstr "Your decision was recorded; the workflow resumes once all approvers approve"
+
+msgid "workflow_pause_already_submitted"
+msgstr "You have already submitted a decision for this request"
+
+msgid "workflow_pause_not_approver"
+msgstr "Only the configured approvers can handle this pause"
+
+msgid "workflow_pause_invalid_approvers"
+msgstr "Invalid approvers (must be active members of this team): {users}"
 
 msgid "workflow_run_deleted"
 msgstr "Workflow run deleted successfully"

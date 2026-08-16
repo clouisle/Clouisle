@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText, Sparkles, Database, Images } from 'lucide-react'
+import { Bot, CirclePause, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText, Sparkles, Database, Images } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AddNodePopoverProps {
@@ -20,6 +20,7 @@ const nodeDefinitions: Record<string, { icon: React.ElementType; color: string }
   llm: { icon: Bot, color: 'bg-blue-500' },
   media_generation: { icon: Images, color: 'bg-fuchsia-500' },
   condition: { icon: GitBranch, color: 'bg-cyan-500' },
+  pause: { icon: CirclePause, color: 'bg-amber-500' },
   question_classifier: { icon: Tags, color: 'bg-violet-500' },
   iteration: { icon: RefreshCw, color: 'bg-cyan-500' },
   loop: { icon: Infinity, color: 'bg-cyan-500' },
@@ -43,7 +44,7 @@ type CategoryDef = { labelKey: string; nodeTypes: string[] }
 
 const normalCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm', 'media_generation'] },
-  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration', 'loop'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration', 'loop', 'pause'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
   { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]

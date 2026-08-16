@@ -153,6 +153,54 @@ class TestExecutionContextResolution:
         assert await context.resolve_template("") == ""
 
     @pytest.mark.asyncio
+    async def test_resolve_template_renders_unavailable_refs_as_empty(self, context):
+        await context.set_node_outputs("node", {"result": "ok"})
+
+        # 单引用解析不到值 → 空串（不泄漏 {{var}} 占位符）
+        assert await context.resolve_template("{{missing.var}}") == ""
+        # 内嵌引用解析不到 → 周围文本保留，引用处为空
+        assert (
+            await context.resolve_template("预算：{{missing.var}} 请确认")
+            == "预算： 请确认"
+        )
+        # 混合：已解析的渲染，未解析的为空
+        assert (
+            await context.resolve_template("{{node.result}} + {{missing.var}}")
+            == "ok + "
+        )
+        # 已解析引用行为不变
+        assert await context.resolve_template("结果：{{node.result}}") == "结果：ok"
+
+    @pytest.mark.asyncio
+    async def test_resolve_template_renders_file_values_as_basenames(self, context):
+        await context.set_node_outputs(
+            "start",
+            {
+                "photo": "/api/v1/upload/files/workflow-input/2026/08/abc123_photo.png",
+                "docs": [
+                    "/api/v1/upload/files/workflow-input/2026/08/abc123_a.pdf",
+                    "/api/v1/upload/files/workflow-input/2026/08/def456_b.pdf",
+                ],
+            },
+        )
+
+        # 单个文件引用 → 文件名
+        assert (
+            await context.resolve_template("附件：{{start.photo}}")
+            == "附件：abc123_photo.png"
+        )
+        # 多文件引用 → 文件名列表（逗号分隔）
+        assert (
+            await context.resolve_template("文档：{{start.docs}}")
+            == "文档：abc123_a.pdf, def456_b.pdf"
+        )
+        # 整段就是文件引用 → 文件名
+        assert (
+            await context.resolve_template("{{start.docs}}")
+            == "abc123_a.pdf, def456_b.pdf"
+        )
+
+    @pytest.mark.asyncio
     async def test_lazy_node_output_executes_once_and_persists_metadata(self, context):
         from app.services.workflow.lazy_stream import LazyStreamResult
 

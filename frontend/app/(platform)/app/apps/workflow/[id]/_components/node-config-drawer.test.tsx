@@ -80,7 +80,7 @@ const configNames = [
   'FileToUrlNodeConfig', 'VariableAggregatorNodeConfig', 'VariableAssignmentNodeConfig',
   'ParameterExtractorNodeConfig', 'QuestionClassifierNodeConfig', 'AnswerNodeConfig',
   'ToolNodeConfig', 'ParameterEditDialog', 'CodeInputDialog', 'SubWorkflowNodeConfig',
-  'AgentNodeConfig', 'KnowledgeRetrievalNodeConfig',
+  'AgentNodeConfig', 'KnowledgeRetrievalNodeConfig', 'PauseNodeConfig',
 ]
 mock.module('./node-config', () => ({
   ...Object.fromEntries(configNames.map(name => [name, component(name)])),
@@ -93,6 +93,7 @@ mock.module('./node-config', () => ({
   defaultSubWorkflowNodeConfig: { outputVariable: 'result' },
   defaultAgentNodeConfig: { outputVariable: 'response' },
   defaultKnowledgeRetrievalNodeConfig: { outputVariable: 'results' },
+  defaultPauseNodeConfig: { mode: 'variables', inputVariables: [] },
 }))
 
 const renderNodeOutput = mock((nodeType: string, outputs: unknown) => jsx('RenderedOutput', { nodeType, outputs }))
@@ -182,6 +183,12 @@ describe('NodeConfigDrawer', () => {
     expect(variableIds.some(id => id.startsWith('downstream.'))).toBe(false)
   })
 
+
+
+
+
+
+
   test('routes every supported node type to its focused editor', () => {
     const routes = {
       user_input: 'StartNodeConfig', llm: 'LLMNodeConfig', media_generation: 'MediaGenerationNodeConfig',
@@ -189,7 +196,7 @@ describe('NodeConfigDrawer', () => {
       template: 'TemplateNodeConfig', file_to_url: 'FileToUrlNodeConfig', variable_aggregator: 'VariableAggregatorNodeConfig',
       variable_assignment: 'VariableAssignmentNodeConfig', parameter_extractor: 'ParameterExtractorNodeConfig',
       question_classifier: 'QuestionClassifierNodeConfig', sub_workflow: 'SubWorkflowNodeConfig', agent: 'AgentNodeConfig',
-      tool: 'ToolNodeConfig', knowledge_retrieval: 'KnowledgeRetrievalNodeConfig', answer: 'AnswerNodeConfig',
+      tool: 'ToolNodeConfig', knowledge_retrieval: 'KnowledgeRetrievalNodeConfig', pause: 'PauseNodeConfig', answer: 'AnswerNodeConfig',
     }
 
     for (const [type, editor] of Object.entries(routes)) {

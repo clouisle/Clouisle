@@ -1,13 +1,14 @@
 import { api, getErrorMessage } from './client'
 import { PageData } from './agents'
+import type { RunVariableDefinition } from '../utils/extract-variables'
 
 // ============ Workflow Types ============
 
 export type WorkflowStatus = 'draft' | 'published'
 export type TriggerType = 'manual' | 'webhook' | 'cron'
 export type WorkflowVisibility = 'private' | 'team' | 'public'
-export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout'
-export type NodeStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
+export type RunStatus = 'pending' | 'running' | 'waiting' | 'success' | 'failed' | 'cancelled' | 'timeout'
+export type NodeStatus = 'pending' | 'queued' | 'running' | 'waiting' | 'success' | 'failed' | 'skipped' | 'cancelled'
 
 export type WorkflowRunPagePresentation = 'simple' | 'result_first'
 
@@ -79,6 +80,35 @@ export interface WorkflowRun {
   total_token_usage: Record<string, number>
   error_message?: string | null
   error_node_id?: string | null
+}
+
+export interface WorkflowPauseRequest {
+  id: string
+  node_id: string
+  node_name: string
+  mode: 'variables' | 'approval'
+  title: string
+  description?: string
+  workflow_name?: string | null
+  triggered_by_name?: string | null
+  triggered_at?: string | null
+  input_variables: RunVariableDefinition[]
+  approver_ids: string[]
+  approver_names: string[]
+  // Approval strategy: false = any one approver resolves the request,
+  // true = every approver must submit before the run resumes.
+  require_all?: boolean
+  // Per-approver decisions (require-all approvals only).
+  approvals?: Array<{
+    approver_id: string
+    username?: string | null
+    decision: 'approved' | 'rejected'
+    comment?: string | null
+    submitted_at?: string | null
+  }>
+  // Whether the current user already submitted a decision (require-all only).
+  already_submitted?: boolean
+  can_submit: boolean
 }
 
 export interface WorkflowRunListItem {
@@ -281,6 +311,7 @@ export interface WorkflowRunStartResponse {
 export type WorkflowEventType =
   | 'workflow_start'
   | 'workflow_complete'
+  | 'workflow_waiting'
   | 'workflow_error'
   | 'node_start'
   | 'node_complete'
@@ -498,6 +529,31 @@ export const workflowsApi = {
    */
   getMyRunNodeExecutions: async (workflowId: string, runId: string): Promise<NodeExecution[]> => {
     return api.get<NodeExecution[]>(`/workflows/${workflowId}/runs/mine/${runId}/nodes`)
+  },
+
+  /** Get the pending external-input request for a workflow run. */
+  getPendingPauseRequest: async (
+    workflowId: string,
+    runId: string,
+  ): Promise<WorkflowPauseRequest | null> => {
+    const data = await api.get<{ pause_request: WorkflowPauseRequest | null }>(
+      `/workflows/${workflowId}/runs/${runId}/pause-request`
+    )
+    return data.pause_request
+  },
+
+  /** Submit values for a paused node and dispatch the workflow resume. */
+  submitPauseRequest: async (
+    workflowId: string,
+    runId: string,
+    pauseRequestId: string,
+    values: Record<string, unknown>,
+    comment?: string,
+  ): Promise<{ pause_request_id: string; status: string }> => {
+    return api.post(`/workflows/${workflowId}/runs/${runId}/pause-requests/${pauseRequestId}/submit`, {
+      values,
+      comment,
+    })
   },
 
   /**

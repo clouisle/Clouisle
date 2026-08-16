@@ -33,6 +33,7 @@ interface VariableFormProps {
   values: Record<string, unknown>
   onChange: (values: Record<string, unknown>) => void
   onSubmit?: () => void
+  submitLabel?: string
   className?: string
   fieldErrors?: VariableFieldErrors
   /** Keep the existing compact layout by default; workflow forms opt into full size. */
@@ -164,6 +165,7 @@ export function VariableForm({
   values,
   onChange,
   onSubmit,
+  submitLabel,
   className,
   fieldErrors,
   compact = true,
@@ -226,7 +228,7 @@ export function VariableForm({
 
       {onSubmit && (
         <Button type="submit" className="w-full" disabled={disabled || !isValid}>
-          {t('startChat')}
+          {submitLabel ?? t('startChat')}
         </Button>
       )}
     </form>

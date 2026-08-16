@@ -21,6 +21,35 @@ import redis.asyncio as redis
 from .serialization import dumps_value, loads_value
 from .types import to_text, WorkflowValue
 
+_UPLOAD_URL_PREFIX = "/api/v1/upload/files/"
+
+
+def _render_file_value(value: WorkflowValue) -> str | None:
+    """Render uploaded-file values as URL basenames for description templates.
+
+    Upload URLs look like /api/v1/upload/files/<category>/<date>/<name>; the
+    rest of the UI already displays uploads by basename (file inputs), so
+    match that instead of dumping raw JSON URLs. Non-file values return None
+    and fall through to to_text().
+    """
+
+    def _basename(item: object) -> str:
+        return str(item).rsplit("/", 1)[-1]
+
+    if isinstance(value, str) and value.startswith(_UPLOAD_URL_PREFIX):
+        return _basename(value)
+    if (
+        isinstance(value, list)
+        and value
+        and all(
+            isinstance(item, str) and item.startswith(_UPLOAD_URL_PREFIX)
+            for item in value
+        )
+    ):
+        return ", ".join(_basename(item) for item in value)
+    return None
+
+
 if TYPE_CHECKING:
     pass  # LazyStreamResult is imported inside set_node_outputs for runtime isinstance check
 
@@ -340,7 +369,11 @@ class ExecutionContext:
         for match in re.finditer(pattern, ref):
             var_path = match.group(1).strip()
             value = await self._resolve_single_variable(var_path, stream_to_node_id)
-            result = result.replace(match.group(0), to_text(value))
+            # to_text(None) == "" so an unavailable reference leaves the
+            # surrounding text intact without leaking raw {{var}} placeholders.
+            file_text = _render_file_value(value)
+            rendered = file_text if file_text is not None else to_text(value)
+            result = result.replace(match.group(0), rendered)
 
         return result
 
@@ -450,6 +483,12 @@ class ExecutionContext:
             return template
 
         result = await self.resolve_variable_ref(template)
+        # A template that is exactly one {{ref}} whose value is unavailable
+        # resolves to None; to_text renders it as "" so the resolved text never
+        # leaks raw {{var}} placeholders into the description.
+        file_text = _render_file_value(result)
+        if file_text is not None:
+            return file_text
         return to_text(result)
 
     # ==================== Branch Management ====================

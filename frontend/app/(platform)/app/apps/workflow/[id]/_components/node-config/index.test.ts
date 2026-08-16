@@ -17,6 +17,8 @@ mock.module('./configs', () => ({
   defaultAgentNodeConfig: { agent: 'agent' },
   KnowledgeRetrievalNodeConfig: 'KnowledgeRetrievalNodeConfig',
   defaultKnowledgeRetrievalNodeConfig: { knowledge: 'kb' },
+  PauseNodeConfig: 'PauseNodeConfig',
+  defaultPauseNodeConfig: { mode: 'variables' },
 }))
 mock.module('./dialogs', () => ({ ParameterEditDialog: 'ParameterEditDialog', CodeInputDialog: 'CodeInputDialog' }))
 
@@ -29,6 +31,7 @@ test('exposes the node configuration public API', () => {
   expect(nodeConfig.defaultLLMNodeConfig).toEqual({ model: 'llm' })
   expect(nodeConfig.defaultToolNodeConfig).toEqual({ tool: 'tool' })
   expect(nodeConfig.defaultSubWorkflowNodeConfig).toEqual({ workflow: 'sub' })
+  expect(nodeConfig.defaultPauseNodeConfig).toEqual({ mode: 'variables' })
   expect(nodeConfig.ParameterEditDialog).toBe('ParameterEditDialog')
   expect(nodeConfig.CodeInputDialog).toBe('CodeInputDialog')
 })

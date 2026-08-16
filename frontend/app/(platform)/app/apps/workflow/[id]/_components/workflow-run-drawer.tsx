@@ -200,6 +200,11 @@ const statusConfig: Record<
     icon: <Clock className="h-4 w-4" />,
     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
   },
+  waiting: {
+    label: 'statusWaiting',
+    icon: <Clock className="h-4 w-4" />,
+    className: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+  },
   running: {
     label: 'statusRunning',
     icon: <Loader2 className="h-4 w-4 animate-spin" />,

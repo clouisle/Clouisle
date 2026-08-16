@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T18:33:11.652Z
+// GENERATED — 2026-08-16T16:08:55.203Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -70,6 +70,8 @@ export type SiteSettingsMessages = {
         workflow_run_successDesc: string
         workflow_run_failed: string
         workflow_run_failedDesc: string
+        workflow_pause_pending: string
+        workflow_pause_pendingDesc: string
         agent_published: string
         agent_publishedDesc: string
         agent_unpublished: string

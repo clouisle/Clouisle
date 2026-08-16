@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T18:33:11.651Z
+// GENERATED — 2026-08-16T16:08:55.201Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
@@ -16,6 +16,7 @@ export type RunMessages = {
     fillParameters: string
     startRun: string
     running: string
+    waiting: string
     starting: string
     typePlaceholder: string
     workflowInputPlaceholder: string
@@ -47,13 +48,45 @@ export type RunMessages = {
       failed: string
       cancelled: string
       timeout: string
+      waiting: string
     }
     nodeStatus: {
       pending: string
+      queued: string
       running: string
+      waiting: string
       success: string
       failed: string
       skipped: string
+      cancelled: string
+    }
+    pause: {
+      waiting: string
+      variablesHint: string
+      approvalHint: string
+      commentPlaceholder: string
+      approve: string
+      reject: string
+      submit: string
+      submitting: string
+      loadError: string
+      submitError: string
+      submitted: string
+      loading: string
+      fillInline: string
+      triggeredBy: string
+      typeApproval: string
+      typeInput: string
+      approversOnly: string
+      ownerAdminOnly: string
+      embedNotice: string
+      waitingForReview: string
+      approvalProgress: string
+      alreadySubmitted: string
+      submittedWaiting: string
+      approverStatusApproved: string
+      approverStatusRejected: string
+      approverStatusPending: string
     }
   }
 }

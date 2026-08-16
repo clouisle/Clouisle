@@ -48,7 +48,7 @@ describe('createEmbedWorkflowRunAdapter', () => {
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
     const api = adapter.createRunApi()
     await api.runWorkflow('embed-1', { inputs: { query: 'hi' } })
-    const stop = api.streamWorkflowRun('run-1', { onEvent: () => {}, onError: () => {}, onComplete: () => {} })
+    const stop = api.streamWorkflowRun('run-1', { fromSequence: 7, onEvent: () => {}, onError: () => {}, onComplete: () => {} })
     expect(typeof stop).toBe('function')
     await expect(api.cancelWorkflowRun('run-1')).resolves.toBeUndefined()
   })

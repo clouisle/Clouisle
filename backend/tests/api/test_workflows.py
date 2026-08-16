@@ -428,3 +428,88 @@ async def test_version_detail_not_found_and_restore_persists_snapshots():
     workflow.save.assert_awaited_once()
     assert create_version.await_args.kwargs["description"] == "Rollback"
     assert response["data"]["version"] == 4
+
+
+@pytest.mark.anyio
+async def test_update_workflow_rejects_invalid_pause_approvers():
+    user = SimpleNamespace(id=uuid4())
+    workflow = _workflow()
+    access = AsyncMock(return_value=workflow)
+    definition = {
+        "nodes": [
+            {
+                "id": "pause-1",
+                "type": "pause",
+                "data": {
+                    "pauseConfig": {
+                        "mode": "approval",
+                        "approverIds": ["not-a-member"],
+                    }
+                },
+            }
+        ]
+    }
+
+    with (
+        patch.object(workflows, "check_workflow_access", access),
+        patch.object(workflows.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(
+            workflows,
+            "validate_pause_approvers",
+            new=AsyncMock(return_value=["not-a-member"]),
+        ),
+    ):
+        with pytest.raises(BusinessError) as exc_info:
+            await workflows.update_workflow(
+                workflow_id=workflow.id,
+                workflow_in=WorkflowUpdate(definition=definition),
+                request=MagicMock(),
+                current_user=user,
+            )
+
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.msg_key == "workflow_pause_invalid_approvers"
+    assert exc_info.value.kwargs["users"] == "not-a-member"
+    workflow.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_update_workflow_accepts_valid_pause_approvers():
+    user = SimpleNamespace(id=uuid4())
+    workflow = _workflow()
+    access = AsyncMock(return_value=workflow)
+    definition = {
+        "nodes": [
+            {
+                "id": "pause-1",
+                "type": "pause",
+                "data": {
+                    "pauseConfig": {
+                        "mode": "approval",
+                        "approverIds": ["valid-member"],
+                    }
+                },
+            }
+        ]
+    }
+
+    with (
+        patch.object(workflows, "check_workflow_access", access),
+        patch.object(workflows.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(workflows.Workflow, "filter", return_value=_Query(None)),
+        patch.object(workflows.Workflow, "get", return_value=_Query(workflow)),
+        patch.object(workflows.AuditLogService, "log", new=AsyncMock()),
+        patch.object(
+            workflows, "validate_pause_approvers", new=AsyncMock(return_value=[])
+        ),
+    ):
+        response = await workflows.update_workflow(
+            workflow_id=workflow.id,
+            workflow_in=WorkflowUpdate(definition=definition),
+            request=MagicMock(),
+            current_user=user,
+        )
+
+    assert response["data"]["version"] == workflow.version
+    assert workflow.definition == definition

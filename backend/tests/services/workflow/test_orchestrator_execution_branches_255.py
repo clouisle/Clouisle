@@ -88,9 +88,13 @@ async def test_execute_prunes_untaken_branch_and_collects_answer() -> None:
     stream = MagicMock(publish_node_skip=AsyncMock())
     plan = _plan(["condition"], ["skipped", "taken"])
 
-    outputs, node_count = await orchestrator._execute(
-        plan, context, MagicMock(), stream, start_time=time.time()
-    )
+    with patch("app.services.workflow.orchestrator.NodeExecution") as node_cls:
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
+        outputs, node_count = await orchestrator._execute(
+            plan, context, MagicMock(), stream, start_time=time.time()
+        )
 
     assert outputs == {"answer": "yes"}
     assert node_count == 2

@@ -9,7 +9,12 @@ export interface WorkflowRunApi {
   runWorkflow: (workflowId: string, body: { inputs: Record<string, unknown> }) => Promise<{ run_id: string }>
   streamWorkflowRun: (
     runId: string,
-    handlers: { onEvent: (event: WorkflowEvent) => void; onError: (error: Error) => void; onComplete: () => void }
+    handlers: {
+      fromSequence?: number
+      onEvent: (event: WorkflowEvent) => void
+      onError: (error: Error) => void
+      onComplete: () => void
+    }
   ) => () => void
   cancelWorkflowRun: (runId: string) => Promise<void>
 }
@@ -22,7 +27,7 @@ export interface UseWorkflowRunOptions {
   onComplete?: () => void
 }
 
-export type WorkflowRunState = 'idle' | 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+export type WorkflowRunState = 'idle' | 'pending' | 'running' | 'waiting' | 'success' | 'failed' | 'cancelled'
 
 export interface UseWorkflowRunReturn {
   messages: ChatMessage[]
@@ -35,6 +40,7 @@ export interface UseWorkflowRunReturn {
   error: string | null
   isCancelling: boolean
   start: (inputs: Record<string, unknown>) => Promise<void>
+  resume: () => void
   stop: () => Promise<void>
   reset: () => void
 }
@@ -95,6 +101,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
   const handleWorkflowEventRef = useRef<((event: WorkflowEvent) => void) | null>(null)
   // Track node types to determine token routing (answer vs LLM)
   const nodeTypesRef = useRef<Map<string, string>>(new Map())
+  const lastSequenceRef = useRef(0)
 
   const stop = useCallback(async () => {
     const activeRunId = runId
@@ -134,7 +141,29 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
     setIsCancelling(false)
     currentMessageRef.current = null
     nodeTypesRef.current.clear()
+    lastSequenceRef.current = 0
   }, [])
+
+  const connectToStream = useCallback((activeRunId: string) => {
+    closeConnectionRef.current?.()
+    closeConnectionRef.current = effectiveApi.streamWorkflowRun(activeRunId, {
+      fromSequence: lastSequenceRef.current,
+      onEvent: (event: WorkflowEvent) => {
+        lastSequenceRef.current = Math.max(lastSequenceRef.current, event.sequence)
+        handleWorkflowEventRef.current?.(event)
+      },
+      onError: (streamError: Error) => {
+        console.error('Workflow SSE error:', streamError)
+        setIsStreaming(false)
+        setError(getApiErrorMessage('requestFailed'))
+        onError?.(streamError)
+      },
+      onComplete: () => {
+        setIsStreaming(false)
+        onComplete?.()
+      },
+    })
+  }, [effectiveApi, onComplete, onError])
 
   const start = useCallback(
     async (inputs: Record<string, unknown>) => {
@@ -163,28 +192,12 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         currentMessageRef.current = null
         nodeTypesRef.current.clear()
 
+        lastSequenceRef.current = 0
         // Start workflow run
         const { run_id } = await effectiveApi.runWorkflow(workflowId, { inputs })
         setRunId(run_id)
 
-        // Connect to SSE stream
-        const closeConnection = effectiveApi.streamWorkflowRun(run_id, {
-          onEvent: (event: WorkflowEvent) => {
-            handleWorkflowEventRef.current?.(event)
-          },
-          onError: (error: Error) => {
-            console.error('Workflow SSE error:', error)
-            setIsStreaming(false)
-            setError(getApiErrorMessage('requestFailed'))
-            onError?.(error)
-          },
-          onComplete: () => {
-            setIsStreaming(false)
-            onComplete?.()
-          },
-        })
-
-        closeConnectionRef.current = closeConnection
+        connectToStream(run_id)
       } catch (startError) {
         console.error('Failed to start workflow:', startError)
         const safeError = getApiErrorMessage('requestFailed')
@@ -194,8 +207,15 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         onError?.(startError as Error)
       }
     },
-    [workflowId, onError, onComplete, effectiveApi]
+    [workflowId, onError, effectiveApi, connectToStream]
   )
+
+  const resume = useCallback(() => {
+    if (!runId || status !== 'waiting') return
+    setStatus('pending')
+    setIsStreaming(true)
+    connectToStream(runId)
+  }, [connectToStream, runId, status])
 
   const handleWorkflowEvent = useCallback((event: WorkflowEvent) => {
     const { type, data } = event
@@ -511,6 +531,12 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         break
       }
 
+      case 'workflow_waiting': {
+        setStatus('waiting')
+        setIsStreaming(false)
+        break
+      }
+
       case 'workflow_complete': {
         const finalOutputs = data.outputs
         if (finalOutputs && typeof finalOutputs === 'object' && !Array.isArray(finalOutputs)) {
@@ -552,6 +578,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
     isCancelling,
     start,
     stop,
+    resume,
     reset,
   }
 }

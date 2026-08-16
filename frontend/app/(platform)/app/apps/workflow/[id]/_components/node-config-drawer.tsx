@@ -62,6 +62,9 @@ import {
   KnowledgeRetrievalNodeConfig,
   type KnowledgeRetrievalNodeConfigType,
   defaultKnowledgeRetrievalNodeConfig,
+  PauseNodeConfig,
+  type PauseNodeConfigType,
+  defaultPauseNodeConfig,
 } from './node-config'
 
 interface NodeConfigDrawerProps {
@@ -136,6 +139,9 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
 
   // 知识库检索节点配置状态
   const [knowledgeRetrievalConfig, setKnowledgeRetrievalConfig] = React.useState<KnowledgeRetrievalNodeConfigType>(defaultKnowledgeRetrievalNodeConfig)
+
+  // 暂停节点配置状态
+  const [pauseConfig, setPauseConfig] = React.useState<PauseNodeConfigType>(defaultPauseNodeConfig)
 
   // 注释节点配置状态
   const [commentColor, setCommentColor] = React.useState<CommentColor>('amber')
@@ -260,6 +266,11 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         setKnowledgeRetrievalConfig(existingConfig || defaultKnowledgeRetrievalNodeConfig)
       }
 
+      if (nodeType === 'pause') {
+        const existingConfig = (node.data as { pauseConfig?: PauseNodeConfigType })?.pauseConfig
+        setPauseConfig(existingConfig || defaultPauseNodeConfig)
+      }
+
       if (nodeType === 'comment') {
         const existingColor = (node.data as { color?: CommentColor })?.color
         const existingContent = (node.data as { content?: string })?.content
@@ -301,6 +312,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         if (nodeType === 'sub_workflow') updateData.subWorkflowConfig = subWorkflowConfig
         if (nodeType === 'agent') updateData.agentConfig = agentConfig
         if (nodeType === 'knowledge_retrieval') updateData.knowledgeRetrievalConfig = knowledgeRetrievalConfig
+        if (nodeType === 'pause') updateData.pauseConfig = pauseConfig
         if (nodeType === 'comment') {
           updateData.color = commentColor
           updateData.content = commentContent
@@ -310,7 +322,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, mediaGenerationConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, commentColor, commentContent, node, onUpdate, readOnly])
+  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, mediaGenerationConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, pauseConfig, commentColor, commentContent, node, onUpdate, readOnly])
 
   // 获取上游节点 ID 集合（当前节点可以引用的节点）
   const getUpstreamNodeIds = React.useCallback((): Set<string> => {
@@ -968,6 +980,39 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           })
         }
       }
+
+      if (nodeType === 'pause') {
+        const pauseConfig = (n.data as { pauseConfig?: PauseNodeConfigType })?.pauseConfig || defaultPauseNodeConfig
+        const outputVariables = pauseConfig.mode === 'approval'
+          ? [
+              { name: 'decision', type: 'String' },
+              { name: 'approved', type: 'Boolean' },
+              { name: 'comment', type: 'String' },
+              { name: 'submitted_by', type: 'String' },
+            ]
+          : (pauseConfig.inputVariables || [])
+
+        outputVariables.forEach((variable) => {
+          if (!variable.name) return
+          const isArray = variable.type === 'array' || variable.type === 'files' || variable.type === 'images'
+          const isObject = variable.type === 'object'
+          const isFile = variable.type === 'file' || variable.type === 'image' || variable.type === 'files' || variable.type === 'images'
+          const isIterable = isArray || isObject
+          if (filterType === 'iterable' && !isIterable) return
+          const rawType = variable.type || 'text'
+          variables.push({
+            id: `${n.id}.${variable.name}`,
+            name: variable.name,
+            type: rawType[0] === rawType[0]?.toUpperCase() ? rawType : getTypeName(rawType),
+            group: n.id,
+            groupLabel: nodeLabel,
+            isSystem: false,
+            isArray,
+            isIterable,
+            isFile,
+          })
+        })
+      }
     })
     
     if (filterType !== 'iterable') {
@@ -1295,6 +1340,10 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             onOpenVariablePopoverChange={setOpenVariablePopover}
           />
         )
+
+      case 'pause':
+        return <PauseNodeConfig config={pauseConfig} onConfigChange={setPauseConfig} getAvailableVariables={getAvailableVariables} />
+
 
       case 'answer':
         return (

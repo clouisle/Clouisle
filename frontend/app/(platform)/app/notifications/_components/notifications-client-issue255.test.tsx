@@ -36,6 +36,7 @@ mock.module('@/lib/api', () => ({ notificationsApi: { list, markRead } }))
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
 mock.module('@/lib/notifications/display', () => ({
   getNotificationDisplayMeta: () => ({ kind: 'delivery', isAnnouncement: false, priorityScore: 5 }),
+  getPauseActionMeta: () => null,
 }))
 mock.module('@/lib/utils', () => ({ formatDateTime: (value: unknown) => String(value), cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
@@ -64,6 +65,9 @@ mock.module('@/components/ui/dialog', () => ({
   DialogContent: element,
   DialogHeader: element,
   DialogTitle: element,
+}))
+mock.module('@/components/chat/pause-request-actions', () => ({
+  PauseRequestActions: () => null,
 }))
 
 const { NotificationsClient } = await import('./notifications-client')

@@ -14,9 +14,10 @@
     "fillParameters": "填写必需参数以开始",
     "startRun": "运行",
     "running": "运行中...",
+    "waiting": "等待输入",
     "starting": "启动中...",
     "typePlaceholder": "输入您的消息...",
-    "workflowInputPlaceholder": "输入您的查询以运行工作流...",
+    "workflowInputPlaceholder": "输入查询以运行工作流...",
     "inputs": "输入",
     "noInputs": "此工作流无需输入参数。",
     "result": "结果",
@@ -44,14 +45,46 @@
       "success": "已完成",
       "failed": "失败",
       "cancelled": "已取消",
-      "timeout": "已超时"
+      "timeout": "已超时",
+      "waiting": "等待输入"
     },
     "nodeStatus": {
       "pending": "等待中",
+      "queued": "排队中",
       "running": "运行中",
+      "waiting": "等待输入",
       "success": "已完成",
       "failed": "失败",
-      "skipped": "已跳过"
+      "skipped": "已跳过",
+      "cancelled": "已取消"
+    },
+    "pause": {
+      "waiting": "工作流已暂停",
+      "variablesHint": "填写请求的值后，工作流将继续执行。",
+      "approvalHint": "请审核请求，然后选择通过或拒绝以继续。",
+      "commentPlaceholder": "给工作流所有者的可选备注",
+      "approve": "通过",
+      "reject": "拒绝",
+      "submit": "继续工作流",
+      "submitting": "正在提交...",
+      "loadError": "无法加载外部输入请求。",
+      "submitError": "无法提交请求的值，请重试。",
+      "submitted": "审批已提交",
+      "loading": "加载中...",
+      "fillInline": "前往运行页填写",
+      "triggeredBy": "由 {name} 发起",
+      "typeApproval": "审批",
+      "typeInput": "输入",
+      "approversOnly": "仅配置的处理人可以处理此请求：{names}",
+      "ownerAdminOnly": "仅工作流所有者和团队管理员可以处理此请求。",
+      "embedNotice": "此工作流的审批或输入步骤需要登录 Clouisle 后处理。",
+      "waitingForReview": "此运行正在等待指定的处理人完成审批或输入步骤。",
+      "approvalProgress": "审批进度 {approved}/{total}",
+      "alreadySubmitted": "你已提交决定，正在等待其他处理人。",
+      "submittedWaiting": "已记录你的决定，等待其他处理人。",
+      "approverStatusApproved": "已通过",
+      "approverStatusRejected": "已拒绝",
+      "approverStatusPending": "待处理"
     }
   }
 }

@@ -1056,6 +1056,7 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
                 "kb.doc_indexed",
                 "kb.doc_failed",
                 "workflow.run_failed",
+                "workflow.pause_pending",
                 "apikey.expiring",
                 "apikey.expired",
                 "security.login_anomaly",

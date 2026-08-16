@@ -5,7 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Megaphone, ShieldAlert, Sparkles } from 'lucide-react'
 import { notificationsApi, type NotificationItem } from '@/lib/api'
-import { getNotificationDisplayMeta, type NotificationDisplayKind } from '@/lib/notifications/display'
+import { PauseRequestActions } from '@/components/chat/pause-request-actions'
+import { getNotificationDisplayMeta, getPauseActionMeta, type NotificationDisplayKind } from '@/lib/notifications/display'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +33,8 @@ export function ProminentNotificationDialog() {
   const dismissedIds = React.useRef(new Set<string>())
   const [items, setItems] = React.useState<NotificationItem[]>([])
   const [selectedItem, setSelectedItem] = React.useState<NotificationItem | null>(null)
+
+  const selectedPauseMeta = selectedItem ? getPauseActionMeta(selectedItem) : null
 
   const selectNext = React.useCallback((nextItems: NotificationItem[]) => {
     setSelectedItem(nextItems.find((item) => !dismissedIds.current.has(item.id)) ?? null)
@@ -85,6 +88,11 @@ export function ProminentNotificationDialog() {
     }
   }
 
+  const handlePauseResolved = async () => {
+    closeDialog()
+    await fetchProminentNotifications()
+  }
+
   if (!selectedItem) {
     return null
   }
@@ -113,15 +121,30 @@ export function ProminentNotificationDialog() {
 
         <div className="space-y-2">
           <p className="font-medium">{selectedItem.title}</p>
-          <p className="whitespace-pre-wrap text-sm leading-6 text-foreground/90">{selectedItem.content}</p>
+          {/* Approval notifications carry a snapshot summary; the live pause
+              request replaces it to avoid showing the content twice. */}
+          {!selectedPauseMeta && (
+            <p className="whitespace-pre-wrap text-sm leading-6 text-foreground/90">{selectedItem.content}</p>
+          )}
+
+          {selectedPauseMeta && (
+            <PauseRequestActions
+              workflowId={selectedPauseMeta.workflowId}
+              runId={selectedPauseMeta.runId}
+              pauseRequestId={selectedPauseMeta.requestId}
+              onResolved={() => void handlePauseResolved()}
+            />
+          )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleMarkRead}>
-            {t('markRead')}
-          </Button>
-          <Button onClick={handleViewNotification}>{t('viewNotification')}</Button>
-        </DialogFooter>
+        {!selectedPauseMeta && (
+          <DialogFooter>
+            <Button variant="outline" onClick={handleMarkRead}>
+              {t('markRead')}
+            </Button>
+            <Button onClick={handleViewNotification}>{t('viewNotification')}</Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )

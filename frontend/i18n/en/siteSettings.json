@@ -68,6 +68,8 @@
         "workflow_run_successDesc": "Notify when a workflow run completes successfully",
         "workflow_run_failed": "Workflow Failed",
         "workflow_run_failedDesc": "Notify when a workflow run fails",
+        "workflow_pause_pending": "Workflow Approval",
+        "workflow_pause_pendingDesc": "Notify approvers when a workflow waits for approval or input",
         "agent_published": "Agent Published",
         "agent_publishedDesc": "Notify when an agent is published",
         "agent_unpublished": "Agent Unpublished",

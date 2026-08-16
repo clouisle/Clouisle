@@ -70,6 +70,24 @@ class WorkflowNotFoundError(WorkflowError):
     pass
 
 
+class NodeWaitingError(WorkflowError):
+    """
+    Raised when a node paused execution waiting for external input.
+
+    Not an error: it is the normal pause signal for a pause node. The
+    orchestrator persists the waiting state and returns cleanly so the
+    Celery task exits; a later variable submission dispatches a resume task.
+    """
+
+    def __init__(self, node_id: str):
+        super().__init__(
+            t("workflow_pause_pending"),
+            msg_key="workflow_pause_pending",
+            node_id=node_id,
+        )
+        self.node_id = node_id
+
+
 class WorkflowNotPublishedError(WorkflowError):
     """Workflow is not published and cannot be executed."""
 

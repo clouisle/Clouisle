@@ -105,6 +105,7 @@ async def lifespan(app: FastAPI):
         init_chunk_status,
         init_embed_config,
         init_workflow_run_page_config,
+        init_workflow_pause_requests_table,
         drop_model_provider_uniqueness,
         init_model_provider_display_name,
         revert_channel_id_to_model_id,
@@ -261,6 +262,14 @@ async def lifespan(app: FastAPI):
         await init_embed_config()
     except Exception as e:
         logger.warning(f"Embed config migration failed: {e}")
+
+    try:
+        # Must run before generate_schemas: an existing deployment's
+        # workflow_pause_requests table lacks the description column, and
+        # Tortoise fails on the model/table mismatch otherwise.
+        await init_workflow_pause_requests_table()
+    except Exception as e:
+        logger.warning(f"Workflow pause requests table migration failed: {e}")
 
     try:
         await init_workflow_run_page_config()

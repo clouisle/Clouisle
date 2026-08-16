@@ -222,6 +222,7 @@ export {
   type WorkflowListItem,
   type WorkflowRun,
   type WorkflowRunListItem,
+  type WorkflowPauseRequest,
   type WorkflowRunListItemWithWorkflow,
   type NodeExecution,
   type WorkflowVersion,

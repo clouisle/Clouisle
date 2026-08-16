@@ -1,7 +1,7 @@
 import {
   Home, Zap, Bot, GitBranch, Workflow, Wrench, Code,
   Type, AlignLeft, ListChecks, Hash, CheckSquare, RefreshCw, Infinity,
-  Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText, StickyNote, Sparkles, Database
+  Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText, StickyNote, Sparkles, Database, CirclePause
 } from 'lucide-react'
 import type { ParameterType, SystemParameter, Parameter } from './types'
 
@@ -42,6 +42,7 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
   condition: { icon: GitBranch, color: 'bg-cyan-500', titleKey: 'condition' },
   iteration: { icon: RefreshCw, color: 'bg-cyan-500', titleKey: 'iteration' },
   loop: { icon: Infinity, color: 'bg-cyan-500', titleKey: 'loop' },
+  pause: { icon: CirclePause, color: 'bg-amber-500', titleKey: 'pause' },
   question_classifier: { icon: Tags, color: 'bg-violet-500', titleKey: 'question_classifier' },
   answer: { icon: MessageSquareText, color: 'bg-emerald-500', titleKey: 'answer' },
   sub_workflow: { icon: Workflow, color: 'bg-purple-500', titleKey: 'sub_workflow' },

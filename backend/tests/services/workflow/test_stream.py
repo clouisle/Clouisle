@@ -77,6 +77,7 @@ async def test_event_helpers_publish_expected_boundaries():
     manager.publish = AsyncMock()
 
     await manager.publish_workflow_start("workflow-1", "Workflow", {"input": 1})
+    await manager.publish_workflow_waiting("pause-1")
     await manager.publish_workflow_complete({"output": 2}, 10)
     await manager.publish_workflow_error("failed", "node-1")
     await manager.publish_node_start("node-1", "llm", "LLM", True)
@@ -92,6 +93,7 @@ async def test_event_helpers_publish_expected_boundaries():
     events = [call.args[0] for call in manager.publish.await_args_list]
     assert [event.event_type for event in events] == [
         StreamEventType.WORKFLOW_START,
+        StreamEventType.WORKFLOW_WAITING,
         StreamEventType.WORKFLOW_COMPLETE,
         StreamEventType.WORKFLOW_ERROR,
         StreamEventType.NODE_START,
@@ -104,9 +106,9 @@ async def test_event_helpers_publish_expected_boundaries():
         StreamEventType.ITERATION_START,
         StreamEventType.ITERATION_COMPLETE,
     ]
-    assert events[6].data["node_label"] == "node-2"
-    assert events[10].data["item"] == "first"
-    assert "item" not in events[11].data
+    assert events[7].data["node_label"] == "node-2"
+    assert events[11].data["item"] == "first"
+    assert "item" not in events[12].data
 
 
 @pytest.mark.asyncio
@@ -186,6 +188,32 @@ async def test_subscribe_filters_invalid_and_old_events_then_closes_on_terminal(
     pubsub.subscribe.assert_awaited_once_with("workflow:run:run-1:stream")
     pubsub.unsubscribe.assert_awaited_once_with("workflow:run:run-1:stream")
     pubsub.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_replays_waiting_event_from_buffer_at_sequence_zero():
+    redis = Mock()
+    redis.lrange = AsyncMock(
+        return_value=[
+            json.dumps({"event": "token", "data": {"token": "before"}, "sequence": 1}),
+            json.dumps(
+                {
+                    "event": "workflow_waiting",
+                    "data": {"node_id": "pause-1"},
+                    "sequence": 2,
+                }
+            ),
+        ]
+    )
+
+    with patch("app.services.workflow.stream.get_redis", AsyncMock(return_value=redis)):
+        events = [event async for event in StreamManager("run-1").subscribe()]
+
+    assert [(event.event_type, event.sequence) for event in events] == [
+        (StreamEventType.TOKEN, 1),
+        (StreamEventType.WORKFLOW_WAITING, 2),
+    ]
+    redis.pubsub.assert_not_called()
 
 
 @pytest.mark.asyncio

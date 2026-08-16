@@ -63,6 +63,7 @@ async def test_cancel_pending_run_still_publishes_when_context_load_fails():
 
     with (
         patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
+        patch("app.services.workflow.orchestrator.WorkflowPauseRequest") as pause_model,
         patch(
             "app.services.workflow.orchestrator.get_redis",
             new=AsyncMock(return_value=object()),
@@ -73,6 +74,8 @@ async def test_cancel_pending_run_still_publishes_when_context_load_fails():
         ),
         patch("app.services.workflow.orchestrator.StreamManager", return_value=stream),
     ):
+        pause_model.filter.return_value.update = AsyncMock(return_value=1)
+        pause_model.filter.return_value.all = AsyncMock(return_value=[])
         run_model.filter.return_value.first = AsyncMock(return_value=run)
 
         assert await orchestrator.cancel(str(uuid4())) is True

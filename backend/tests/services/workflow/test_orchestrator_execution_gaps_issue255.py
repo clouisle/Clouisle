@@ -45,10 +45,16 @@ async def test_execute_covers_branch_iteration_and_limit_behaviors():
         return_value=ExecutionResult(next_handles=["taken"])
     )
 
-    with patch(
-        "app.services.workflow.orchestrator.get_node_type_label",
-        new=AsyncMock(return_value="Answer"),
+    with (
+        patch(
+            "app.services.workflow.orchestrator.get_node_type_label",
+            new=AsyncMock(return_value="Answer"),
+        ),
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_cls,
     ):
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
         outputs, count = await orchestrator._execute(plan, context, run, stream, time())
 
     assert (outputs, count) == ({}, 1)

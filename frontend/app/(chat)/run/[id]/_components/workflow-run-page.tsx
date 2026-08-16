@@ -1,12 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { useLocale, useTranslations } from 'next-intl'
 import { AlertCircle, CheckCircle2, ChevronDown, Circle, GitBranch, Loader2, PanelLeft, PanelLeftClose, Play, RotateCcw, SkipForward, Square, SquarePlay, XCircle } from 'lucide-react'
-import { ApiError, type NodeExecution, type Workflow, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
-import { ExecutionTimeline, VariableForm, useVariableForm } from '@/components/chat'
+import { ApiError, type NodeExecution, type Workflow, type WorkflowPauseRequest, type WorkflowRun, type WorkflowRunListItem } from '@/lib/api'
+import { ExecutionTimeline, PauseRequestActions, VariableForm, useVariableForm } from '@/components/chat'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useWorkflowRun } from '@/hooks/use-workflow-run'
 import { jwtWorkflowRunAdapter, type WorkflowRunAdapter } from '@/lib/workflow/run-adapter'
@@ -41,6 +41,7 @@ interface WorkflowRunPageProps {
 
 export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode }: WorkflowRunPageProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = useLocale()
   const t = useTranslations('run')
   const tCommon = useTranslations('common')
@@ -58,6 +59,10 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const [historyDetailError, setHistoryDetailError] = React.useState<string | null>(null)
   const [selectedRun, setSelectedRun] = React.useState<WorkflowRun | null>(null)
   const [selectedNodes, setSelectedNodes] = React.useState<NodeExecution[]>([])
+  const [pendingPause, setPendingPause] = React.useState<WorkflowPauseRequest | null>(null)
+  const [pauseError, setPauseError] = React.useState<string | null>(null)
+  const [isPauseSubmitting, setIsPauseSubmitting] = React.useState(false)
+  const [resumingHistoryRunId, setResumingHistoryRunId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     const fetchWorkflow = async () => {
@@ -98,6 +103,10 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const runApi = React.useMemo(() => adapter.createRunApi(), [adapter])
   const run = useWorkflowRun({ workflowId: id, api: runApi, onComplete: loadHistory })
   const isRunning = run.status === 'pending' || run.status === 'running'
+  const isWaiting = run.status === 'waiting'
+  const isActive = isRunning || isWaiting
+  const selectedRunIsWaiting = workspaceView === 'history' && selectedRun?.status === 'waiting'
+  const pauseRunId = isWaiting ? run.runId : selectedRunIsWaiting ? selectedRun.id : null
   const embedCfg = (embedMode ? workflow?.embed_config : undefined) as Record<string, unknown> | undefined
   const showHeader = !embedMode || embedCfg?.show_header !== false
   const showHistory = !embedMode || embedCfg?.show_history !== false
@@ -108,11 +117,112 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
     setSidebarOpen(window.innerWidth >= 768)
   }, [])
 
+  // Deep links from approval notifications carry ?run=<runId>; jump straight
+  // to that run's detail (the resuming effect loads and pins it). Internal
+  // selection (history click) sets the same URL, so suppress the effect there.
+  const suppressDeepLinkRef = React.useRef(false)
+  const selectRunInUrl = React.useCallback((runId: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (runId) {
+      params.set('run', runId)
+    } else {
+      params.delete('run')
+    }
+    const query = params.toString()
+    router.replace(query ? `?${query}` : '', { scroll: false })
+  }, [router, searchParams])
+
   React.useEffect(() => {
-    if (isRunning) {
+    if (suppressDeepLinkRef.current) {
+      suppressDeepLinkRef.current = false
+      return
+    }
+    const runId = searchParams.get('run')
+    if (!runId || resumingHistoryRunId) return
+    // The resuming effect pins the run it loads (selectedRun) before clearing
+    // resumingHistoryRunId. Guarding on the displayed run keeps the deep link
+    // one-shot: otherwise the effect re-arms the moment the resume settles,
+    // so refreshing a ?run= URL loops forever (loadRunDetail + loadHistory on
+    // every pass) and the history sidebar never leaves its loading state.
+    if (selectedRun?.id === runId) return
+    setWorkspaceView('history')
+    setResumingHistoryRunId(runId)
+  }, [searchParams, resumingHistoryRunId, selectedRun])
+
+  React.useEffect(() => {
+    if (isActive) {
       setWorkspaceView('live')
     }
-  }, [isRunning])
+  }, [isActive])
+
+  React.useEffect(() => {
+    if (!pauseRunId || !adapter.getPendingPauseRequest) {
+      setPendingPause(null)
+      return
+    }
+
+    let active = true
+    setPauseError(null)
+    void adapter.getPendingPauseRequest(id, pauseRunId)
+      .then((request) => {
+        if (active) setPendingPause(request)
+      })
+      .catch(() => {
+        if (active) setPauseError(t('pause.loadError'))
+      })
+    return () => {
+      active = false
+    }
+  }, [adapter, id, pauseRunId, t])
+
+  React.useEffect(() => {
+    if (!resumingHistoryRunId || workspaceView !== 'history') return
+
+    let active = true
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    const refresh = async () => {
+      try {
+        const { run: detail, nodes } = await adapter.loadRunDetail(id, resumingHistoryRunId)
+        if (!active) return
+
+        // Accept the first load (current is null) as well as updates for the
+        // run being resumed; never clobber a different run the user selected.
+        setSelectedRun((current) => (!current || current.id === resumingHistoryRunId) ? detail : current)
+        setSelectedNodes(nodes)
+
+        if (detail.status === 'waiting' && adapter.getPendingPauseRequest) {
+          const request = await adapter.getPendingPauseRequest(id, resumingHistoryRunId)
+          if (!active) return
+          if (request) {
+            setPendingPause(request)
+            setResumingHistoryRunId(null)
+            void loadHistory()
+            return
+          }
+        }
+
+        if (['success', 'failed', 'cancelled', 'timeout'].includes(detail.status)) {
+          setResumingHistoryRunId(null)
+          void loadHistory()
+          return
+        }
+
+        retryTimer = setTimeout(() => void refresh(), 750)
+      } catch {
+        if (!active) return
+        setHistoryDetailError(t('historyDetailError'))
+        // Keep resumingHistoryRunId set: clearing it would let the deep-link
+        // effect re-arm and retry a run whose detail keeps failing, looping
+        // loadRunDetail forever. Recovery: click a history item or reload.
+      }
+    }
+
+    void refresh()
+    return () => {
+      active = false
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [adapter, id, loadHistory, resumingHistoryRunId, t, workspaceView])
 
   const handleRun = async () => {
     if (isUploading || !variableForm.validate()) return
@@ -120,24 +230,64 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
     await run.start(variableForm.values)
   }
 
+  const handlePauseSubmission = React.useCallback(async (
+    values: Record<string, unknown>,
+    comment?: string,
+  ) => {
+    if (!pauseRunId || !pendingPause || !adapter.submitPauseRequest) return
+
+    setIsPauseSubmitting(true)
+    setPauseError(null)
+    try {
+      const result = await adapter.submitPauseRequest(id, pauseRunId, pendingPause.id, values, comment)
+      // require-all approvals return status "pending" until every approver
+      // has decided; the run stays waiting, so re-arm the resume polling to
+      // refresh the request (progress + already-submitted state) instead of
+      // resuming the run.
+      const resolved = result?.status === 'submitted'
+      setPendingPause(null)
+      if (resolved && isWaiting && pauseRunId === run.runId) {
+        run.resume()
+      } else {
+        setSelectedRun((current) => current?.id === pauseRunId
+          ? { ...current, status: resolved ? 'pending' : 'waiting' }
+          : current)
+        setResumingHistoryRunId(pauseRunId)
+      }
+    } catch {
+      setPauseError(t('pause.submitError'))
+    } finally {
+      setIsPauseSubmitting(false)
+    }
+  }, [adapter, id, isWaiting, pauseRunId, pendingPause, run, t])
+
   const handleNewRun = React.useCallback(() => {
+    suppressDeepLinkRef.current = true
     run.reset()
     variableForm.reset()
     setSelectedRun(null)
     setSelectedNodes([])
     setHistoryDetailError(null)
     setWorkspaceView('form')
-  }, [run, variableForm])
+    setPendingPause(null)
+    setResumingHistoryRunId(null)
+    setPauseError(null)
+    selectRunInUrl(null)
+  }, [run, variableForm, selectRunInUrl])
 
   const handleRunAgain = React.useCallback(() => {
+    suppressDeepLinkRef.current = true
     run.reset()
     setSelectedRun(null)
     setSelectedNodes([])
     setHistoryDetailError(null)
     setWorkspaceView('form')
-  }, [run])
+    setResumingHistoryRunId(null)
+    selectRunInUrl(null)
+  }, [run, selectRunInUrl])
 
   const handleRerunFromHistory = React.useCallback(() => {
+    suppressDeepLinkRef.current = true
     if (selectedRun?.inputs) {
       variableForm.setValues(selectedRun.inputs)
     }
@@ -146,10 +296,14 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
     setSelectedNodes([])
     setHistoryDetailError(null)
     setWorkspaceView('form')
-  }, [run, selectedRun, variableForm])
+    setResumingHistoryRunId(null)
+    selectRunInUrl(null)
+  }, [run, selectedRun, variableForm, selectRunInUrl])
 
   const handleSelectHistory = React.useCallback(async (runId: string) => {
-    if (isRunning) return
+    if (isActive) return
+    suppressDeepLinkRef.current = true
+    setResumingHistoryRunId(null)
     setWorkspaceView('history')
     setHistoryDetailLoading(true)
     setHistoryDetailError(null)
@@ -157,12 +311,13 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
       const { run: detail, nodes } = await adapter.loadRunDetail(id, runId)
       setSelectedRun(detail)
       setSelectedNodes(nodes)
+      selectRunInUrl(runId)
     } catch {
       setHistoryDetailError(t('historyDetailError'))
     } finally {
       setHistoryDetailLoading(false)
     }
-  }, [id, isRunning, t, adapter])
+  }, [id, isActive, t, adapter, selectRunInUrl])
 
   const resultNodes = React.useMemo<WorkflowResultNode[]>(() => (
     Array.from(run.executionState.nodes.values()).map((node, index) => ({
@@ -213,7 +368,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
             type="button"
             className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={handleNewRun}
-            disabled={isRunning}
+            disabled={isActive}
             render={<button />}
           >
             {displayIcon ? (
@@ -237,7 +392,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
           <Tooltip>
             <TooltipTrigger
               onClick={handleNewRun}
-              disabled={isRunning}
+              disabled={isActive}
               render={
                 <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={t('newRun')}>
                   <SquarePlay className="h-5 w-5" />
@@ -269,7 +424,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                 key={item.id}
                 type="button"
                 onClick={() => void handleSelectHistory(item.id)}
-                disabled={isRunning}
+                disabled={isActive}
                 aria-current={selectedHistoryId === item.id ? 'true' : undefined}
                 className={cn(
                   'group flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
@@ -399,7 +554,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
             <Tooltip>
               <TooltipTrigger
                 onClick={handleNewRun}
-                disabled={isRunning}
+                disabled={isActive}
                 render={
                   <Button variant="outline" size="icon" className="h-9 w-9 rounded-full bg-background/80 shadow-sm backdrop-blur-sm" aria-label={t('newRun')}>
                     <SquarePlay className="h-5 w-5" />
@@ -431,7 +586,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                   onChange={variableForm.setValues}
                   fieldErrors={variableForm.fieldErrors}
                   compact={false}
-                  disabled={isRunning}
+                  disabled={isActive}
                   onUploadingChange={setIsUploading}
                 />
                 <Button className="mt-8" onClick={() => void handleRun()} disabled={isUploading}>
@@ -461,7 +616,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {isRunning ? (
+                    {isActive ? (
                       <Button variant="outline" onClick={() => void run.stop()} disabled={run.isCancelling}>
                         <Square className="mr-2 h-4 w-4" />
                         {run.isCancelling ? t('cancelling') : t('cancel')}
@@ -480,6 +635,40 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                     )}
                   </div>
                 </div>
+
+                {isWaiting && pendingPause && adapter.submitPauseRequest && (
+                  <PauseRequestActions
+                    workflowId={id}
+                    runId={pauseRunId ?? ''}
+                    pauseRequestId={pendingPause.id}
+                    request={pendingPause}
+                    values={variableForm.values}
+                    onValuesChange={variableForm.setValues}
+                    onSubmit={(values, comment) => void handlePauseSubmission(values, comment)}
+                    submitting={isPauseSubmitting}
+                    error={pauseError}
+                    canSubmit={pendingPause.can_submit}
+                    approverNames={pendingPause.approver_names}
+                  />
+                )}
+
+                {isWaiting && !pendingPause && pauseError && (
+                  <Alert variant="destructive" className="mt-6">
+                    <AlertDescription>{pauseError}</AlertDescription>
+                  </Alert>
+                )}
+
+                {isWaiting && adapter.submitPauseRequest && !pendingPause && !pauseError && (
+                  <Alert className="mt-6">
+                    <AlertDescription>{t('pause.waitingForReview')}</AlertDescription>
+                  </Alert>
+                )}
+
+                {isWaiting && !adapter.submitPauseRequest && (
+                  <Alert className="mt-6 border-amber-500/30 bg-amber-500/[0.08]">
+                    <AlertDescription>{t('pause.embedNotice')}</AlertDescription>
+                  </Alert>
+                )}
 
                 {run.error ? (
                   <Alert variant="destructive" className="mt-6">
@@ -554,6 +743,36 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                         </Button>
                       </div>
                     </div>
+                    {selectedRun.status === 'waiting' && pendingPause && adapter.submitPauseRequest && (
+                      <PauseRequestActions
+                        workflowId={id}
+                        runId={pauseRunId ?? ''}
+                        pauseRequestId={pendingPause.id}
+                        request={pendingPause}
+                        values={variableForm.values}
+                        onValuesChange={variableForm.setValues}
+                        onSubmit={(values, comment) => void handlePauseSubmission(values, comment)}
+                        submitting={isPauseSubmitting}
+                        error={pauseError}
+                        canSubmit={pendingPause.can_submit}
+                        approverNames={pendingPause.approver_names}
+                      />
+                    )}
+                    {selectedRun.status === 'waiting' && !pendingPause && pauseError && (
+                      <Alert variant="destructive" className="mt-6">
+                        <AlertDescription>{pauseError}</AlertDescription>
+                      </Alert>
+                    )}
+                    {selectedRun.status === 'waiting' && adapter.submitPauseRequest && !pendingPause && !pauseError && (
+                      <Alert className="mt-6">
+                        <AlertDescription>{t('pause.waitingForReview')}</AlertDescription>
+                      </Alert>
+                    )}
+                    {selectedRun.status === 'waiting' && !adapter.submitPauseRequest && (
+                      <Alert className="mt-6 border-amber-500/30 bg-amber-500/[0.08]">
+                        <AlertDescription>{t('pause.embedNotice')}</AlertDescription>
+                      </Alert>
+                    )}
                     {selectedRun.error_message && (
                       <Alert variant="destructive" className="mt-6">
                         <AlertCircle className="h-4 w-4" />

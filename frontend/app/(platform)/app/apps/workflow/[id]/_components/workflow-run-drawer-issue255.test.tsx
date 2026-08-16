@@ -68,6 +68,24 @@ let streamHandlers: StreamHandlers | undefined
 const streamWorkflowRun = mock((_id: string, handlers: StreamHandlers) => {
   streamHandlers = handlers
   return closeStream
+  test('renders file/image/files/images variables as upload controls, not text inputs', async () => {
+    const fileWorkflow = {
+      id: 'workflow-file', status: 'published',
+      definition: { nodes: [{ type: 'start', data: { parameters: [
+        { name: 'doc', type: 'file', required: true },
+        { name: 'docs', type: 'files', required: true },
+        { name: 'photo', type: 'image', required: true },
+        { name: 'shots', type: 'images', required: true },
+      ] } }] },
+    }
+    const tree = render({ workflow: fileWorkflow as never })
+    const rendered = descendants(tree)
+    const { FileUploadInput, MultiFileUploadInput } = await import('@/components/chat/variable-form')
+    const uploads = rendered.filter((n) => n.type === FileUploadInput || n.type === MultiFileUploadInput)
+    const textInputs = rendered.filter((n) => n.type === 'Input')
+    expect(uploads.length).toBe(4)
+    expect(textInputs.length).toBe(0)
+  })
 })
 const toast = { success: mock(() => {}), error: mock(() => {}), info: mock(() => {}) }
 

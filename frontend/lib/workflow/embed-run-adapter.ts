@@ -108,6 +108,7 @@ export function createEmbedWorkflowRunAdapter(apiKey: string): WorkflowRunAdapte
       runWorkflow: (id, body) => embedApi.runWorkflow(id, body.inputs, apiKey),
       streamWorkflowRun: (runId, handlers) =>
         embedApi.streamWorkflowRun(runId, apiKey, {
+          fromSequence: handlers.fromSequence,
           onEvent: handlers.onEvent as ((event: { type: string; data: Record<string, unknown>; sequence: number; timestamp: string }) => void) | undefined,
           onError: handlers.onError,
           onComplete: handlers.onComplete,

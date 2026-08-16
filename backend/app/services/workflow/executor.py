@@ -37,6 +37,9 @@ class ExecutionResult:
     next_handles: list[str] | None = None
     stream_events: list["StreamEvent"] = field(default_factory=list)
     error: str | None = None
+    # True when the node paused for a human decision (e.g. approval node).
+    # The run transitions to WAITING and resumes later via a fresh task.
+    waiting: bool = False
 
     @property
     def success(self) -> bool:
