@@ -70,35 +70,43 @@ describe('onboarding tour configurations', () => {
       '[data-testid="kb-import-url-button"]',
       '[data-testid="kb-import-url-dialog"]',
       '[data-testid="kb-import-url-dialog-cancel"]',
-      '[data-testid^="kb-document-status-pending-"]',
-      '[data-testid^="kb-document-status-processing-"]',
-      '[data-testid^="kb-document-status-completed-"]',
-      '[data-testid^="kb-document-status-error-"]',
+      '[data-testid="kb-documents-table"]',
       '[data-testid="kb-search-test-button"]',
       '[data-testid="kb-search-lab"]',
       '[data-testid="kb-search-query"]',
       '[data-testid="kb-search-submit"]',
       '[data-testid="kb-search-results"]',
     ])
-    expect(kbConfig?.steps).toHaveLength(29)
+    expect(kbConfig?.steps).toHaveLength(26)
     const appendedKbSteps = kbConfig?.steps.slice(13) ?? []
     expect(appendedKbSteps.every(step => step.route === '/app/kb')).toBe(true)
     expect(appendedKbSteps.some(step => step.skipIfMissing)).toBe(false)
-    expect(appendedKbSteps.map(step => [step.title, step.content])).toEqual(
-      Array.from({ length: 16 }, (_, index) => [`onboarding.step31${String.fromCharCode(97 + index)}.title`, `onboarding.step31${String.fromCharCode(97 + index)}.description`])
-    )
+    expect(appendedKbSteps.map(step => [step.title, step.content])).toEqual([
+      ['onboarding.step31a.title', 'onboarding.step31a.description'],
+      ['onboarding.step31b.title', 'onboarding.step31b.description'],
+      ['onboarding.step31c.title', 'onboarding.step31c.description'],
+      ['onboarding.step31d.title', 'onboarding.step31d.description'],
+      ['onboarding.step31e.title', 'onboarding.step31e.description'],
+      ['onboarding.step31f.title', 'onboarding.step31f.description'],
+      ['onboarding.step31g.title', 'onboarding.step31g.description'],
+      ['onboarding.step31h.title', 'onboarding.step31h.description'],
+      ['onboarding.step31l.title', 'onboarding.step31l.description'],
+      ['onboarding.step31m.title', 'onboarding.step31m.description'],
+      ['onboarding.step31n.title', 'onboarding.step31n.description'],
+      ['onboarding.step31o.title', 'onboarding.step31o.description'],
+      ['onboarding.step31p.title', 'onboarding.step31p.description'],
+    ])
     expect(appendedKbSteps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     expect(appendedKbSteps[3]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     expect(appendedKbSteps[4]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     expect(appendedKbSteps[6]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
-    expect(appendedKbSteps[11]).toMatchObject({ advanceOnClick: true, waitForRouteChange: true, overlayClickAction: false })
+    expect(appendedKbSteps[8]).toMatchObject({ advanceOnClick: true, waitForRouteChange: true, overlayClickAction: false })
     expect(kbConfig?.steps[10]?.skipScroll).toBe(true)
     expect(kbConfig?.steps[11]?.skipScroll).toBe(true)
     expect(appendedKbSteps[0]?.placement).toBe('center')
-    expect(appendedKbSteps[12]?.placement).toBe('center')
-    expect(appendedKbSteps.slice(7, 11).every(step => step.targetWaitTimeout === 0)).toBe(true)
-    expect(appendedKbSteps[13]).toMatchObject({ advanceOnInput: true })
-    expect(appendedKbSteps[14]).toMatchObject({ advanceOnClick: true })
+    expect(appendedKbSteps[9]?.placement).toBe('center')
+    expect(appendedKbSteps[10]).toMatchObject({ advanceOnInput: true })
+    expect(appendedKbSteps[11]).toMatchObject({ advanceOnClick: true })
     expect(workflowTargets).toEqual([
       '[data-testid="workflow-canvas"]',
       '[data-testid="workflow-edit-mode-controls"]',

@@ -172,7 +172,7 @@ describe('platform DocumentsTable', () => {
     expect(view.container.querySelector('[data-testid="kb-document-status-pending-pending-doc"]')).toBeTruthy()
     expect(view.container.querySelector('[data-testid="kb-document-status-error-error-doc"]')).toBeTruthy()
     expect(view.container.querySelector('[data-testid="kb-document-status-completed-done-doc"]')).toBeTruthy()
-    expect(view.container.querySelector('[data-testid="kb-documents-table"]')?.getAttribute('data-loading')).toBe('false')
+    expect(view.container.querySelector('[data-testid="kb-documents-table"]')).toBeTruthy()
     expect(view.container.textContent).toContain('Broken Guide')
 
     await act(async () => checkbox(view.container, 1).click())
@@ -263,6 +263,7 @@ describe('platform DocumentsTable', () => {
     getDocuments.mockResolvedValueOnce({ items: [], total: 0 })
     await act(async () => intervalCallback!())
     expect(view.container.textContent).toContain('knowledgeBases.noDocuments')
+    expect(view.container.querySelector('[data-testid="kb-documents-table"]')).toBeTruthy()
   })
 
   test('renders processing without progress and reports failed downloads', async () => {

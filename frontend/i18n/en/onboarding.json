@@ -501,20 +501,8 @@
       "description": "Close the URL dialog after reviewing the import fields."
     },
     "step31h": {
-      "title": "Pending Documents",
-      "description": "Pending means the source is waiting for processing to start."
-    },
-    "step31i": {
-      "title": "Processing Documents",
-      "description": "Processing means the source is being chunked and embedded. Progress may appear here."
-    },
-    "step31j": {
-      "title": "Completed Documents",
-      "description": "Completed means the document is ready to contribute to retrieval results."
-    },
-    "step31k": {
-      "title": "Failed Documents",
-      "description": "Failed documents expose an error and can be retried or reprocessed."
+      "title": "Document Processing",
+      "description": "After you add a source, its status appears here: Pending waits to start, Processing chunks and embeds it, Completed is ready for retrieval, and Failed can be retried or reprocessed."
     },
     "step31l": {
       "title": "Search Test",
