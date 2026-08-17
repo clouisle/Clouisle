@@ -277,8 +277,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     // not for automatic navigation.
     if (currentStep.advanceOnClick && currentStep.waitForRouteChange) return
 
-    // Use strict equality so /app does not match /app/models etc.
-    if (pathname !== currentStep.route) {
+    // Match route families while keeping /app as an exact boundary.
+    if (!routeMatches(pathname, currentStep.route)) {
       router.push(currentStep.route)
     }
   }, [state.isRunning, state.currentTour, tourId, currentStep, pathname, router])
@@ -462,7 +462,9 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     targetSelector.includes('app-create-type-selector') ||
     targetSelector.includes('app-create-name-input') ||
     targetSelector.includes('app-create-description-input') ||
-    targetSelector.includes('app-create-submit')
+    targetSelector.includes('app-create-submit') ||
+    targetSelector.includes('kb-upload-dialog') ||
+    targetSelector.includes('kb-import-url-dialog')
   )
 
   React.useEffect(() => {

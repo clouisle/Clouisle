@@ -5,6 +5,7 @@ const updateKnowledgeBase = mock(() => Promise.resolve({}))
 const getTeamModels = mock(() => Promise.resolve([]))
 const success = mock(() => undefined)
 const error = mock(() => undefined)
+const push = mock(() => undefined)
 
 let currentTeam: { id: string } | null = { id: 'team-1' }
 let states: unknown[] = []
@@ -41,6 +42,7 @@ const react = {
 mock.module('react', () => react)
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('sonner', () => ({ toast: { success, error } }))
+mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/lib/api', () => ({
   knowledgeBasesApi: { createKnowledgeBase, updateKnowledgeBase },
@@ -114,6 +116,8 @@ beforeEach(() => {
   getTeamModels.mockResolvedValue([])
   success.mockReset()
   error.mockReset()
+  push.mockReset()
+  createKnowledgeBase.mockResolvedValue({ id: 'kb-1' })
 })
 
 afterEach(() => mock.restore())
@@ -131,6 +135,7 @@ describe('KnowledgeBaseDialog', () => {
 
     expect(createKnowledgeBase).not.toHaveBeenCalled()
     expect(input(updated, 'name').props?.['aria-invalid']).toBe(true)
+    expect(push).not.toHaveBeenCalled()
   })
 
   test('creates a trimmed knowledge base, reports success, and closes', async () => {
@@ -149,6 +154,7 @@ describe('KnowledgeBaseDialog', () => {
     expect(success).toHaveBeenCalledWith('kbCreated')
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(onSuccess).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
   })
 
   test('edits existing data without requiring a current team', async () => {
@@ -169,6 +175,7 @@ describe('KnowledgeBaseDialog', () => {
       name: 'Existing', status: 'archived',
     }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(push).not.toHaveBeenCalled()
   })
 
   test('keeps the dialog open and clears loading after a failed save', async () => {
@@ -184,6 +191,7 @@ describe('KnowledgeBaseDialog', () => {
 
     expect(onOpenChange).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
     expect(submit(tree).props?.disabled).toBe(false)
   })
 })

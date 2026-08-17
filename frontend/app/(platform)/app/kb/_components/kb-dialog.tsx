@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useTeam } from '@/contexts/team-context'
 import {
@@ -64,6 +65,7 @@ export function KnowledgeBaseDialog({
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const { currentTeam } = useTeam()
+  const router = useRouter()
   
   const isEditing = !!knowledgeBase
   
@@ -208,13 +210,18 @@ export function KnowledgeBaseDialog({
           status: isActive ? 'active' : 'archived',
         })
         toast.success(t('kbUpdated'))
+        onOpenChange(false)
+        onSuccess()
       } else {
-        await knowledgeBasesApi.createKnowledgeBase({ ...data, team_id: currentTeam!.id })
+        const createdKnowledgeBase = await knowledgeBasesApi.createKnowledgeBase({
+          ...data,
+          team_id: currentTeam!.id,
+        })
+        onOpenChange(false)
         toast.success(t('kbCreated'))
+        onSuccess()
+        router.push(`/app/kb/${createdKnowledgeBase.id}`)
       }
-      
-      onOpenChange(false)
-      onSuccess()
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), KB_ERROR_PATH_MAP)
       if (Object.keys(errors).length > 0) {

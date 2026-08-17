@@ -198,6 +198,23 @@ describe('OnboardingTour', () => {
     await waitFor(() => expect(nextStep).toHaveBeenCalled(), { timeout: 800 })
     restore()
   })
+  it('keeps KB detail and search descendants on the current route family', () => {
+    for (const nestedPath of ['/app/kb/kb-1', '/app/kb/kb-1/search']) {
+      config = {
+        id: 'kb', title: 'Knowledge Base', description: '',
+        steps: [{ target: 'body', content: 'detail', route: '/app/kb' }],
+      }
+      pathname = nestedPath
+      state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+      const restore = installSpies()
+      const view = render(<OnboardingTour tourId="kb" />)
+
+      expect(push).not.toHaveBeenCalledWith('/app/kb')
+      view.unmount()
+      restore()
+      push.mockClear()
+    }
+  })
 
   it('completes on Joyride close statuses and on the final custom action', () => {
     config = {
@@ -428,5 +445,22 @@ describe('OnboardingTour', () => {
     adminModelSetupView.unmount()
     expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
     restore()
+
+    for (const target of [
+      '[data-testid="kb-upload-dialog"]',
+      '[data-testid="kb-upload-dialog-cancel"]',
+      '[data-testid="kb-import-url-dialog"]',
+      '[data-testid="kb-import-url-dialog-cancel"]',
+    ]) {
+      config = { id: 'kb', title: 'Knowledge Base', description: '', steps: [{ target, content: 'dialog' }] }
+      state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+      const kbRestore = installSpies()
+      const kbView = render(<OnboardingTour tourId="kb" />)
+
+      expect(document.body.classList.contains('joyride-dialog-active')).toBe(true)
+      kbView.unmount()
+      expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
+      kbRestore()
+    }
   })
 })
