@@ -107,8 +107,8 @@ export function ProminentNotificationDialog() {
 
   return (
     <Dialog open={Boolean(selectedItem)} onOpenChange={(open) => !open && closeDialog()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <div className="mb-2 flex items-center gap-2">
             <Badge variant={meta.priorityScore >= 5 ? 'default' : 'secondary'} className="gap-1">
               <Icon className="size-3" />
@@ -119,7 +119,7 @@ export function ProminentNotificationDialog() {
           <DialogDescription>{t('prominentDescription')}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
+        <div className="flex-1 overflow-y-auto -mx-6 px-6 space-y-2">
           <p className="font-medium">{selectedItem.title}</p>
           {/* Approval notifications carry a snapshot summary; the live pause
               request replaces it to avoid showing the content twice. */}
@@ -138,7 +138,7 @@ export function ProminentNotificationDialog() {
         </div>
 
         {!selectedPauseMeta && (
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={handleMarkRead}>
               {t('markRead')}
             </Button>
