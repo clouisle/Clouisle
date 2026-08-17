@@ -60,6 +60,7 @@ const messages: Record<string, string> = {
   'agents.apiAccess.events.toolCall': 'Tool call',
   'agents.apiAccess.events.toolResult': 'Tool result',
   'agents.apiAccess.events.mediaResult': 'Media result',
+  'agents.apiAccess.events.userInputRequest': 'User input request',
   'agents.apiAccess.events.compressionStart': 'Compression started',
   'agents.apiAccess.events.compressionEnd': 'Compression ended',
   'agents.apiAccess.events.outputTruncated': 'Output truncated',
@@ -163,6 +164,9 @@ describe('ApiAccessContent', () => {
     expect(container.textContent).toContain('message_end')
     expect(container.textContent).toContain('customer_id')
     expect(container.textContent).toContain('Customer ID')
+    expect(container.textContent).toContain('user_input_request')
+    expect(container.textContent).toContain('User input request')
+    expect(container.textContent).toContain('user_message_id')
     expect(container.textContent).not.toContain('Draft agent')
   })
 
