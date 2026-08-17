@@ -16,6 +16,8 @@
     "tourWorkflowConfigDescription": "通过添加和连接节点构建工作流，然后测试并发布",
     "tourCapabilitiesTitle": "能力",
     "tourCapabilitiesDescription": "了解如何管理工具和技能",
+    "tourAdminModelSetupTitle": "管理端模型配置",
+    "tourAdminModelSetupDescription": "在团队创建 Agent 和知识库前，连接、测试、启用模型并授权给团队。",
     "startTour": "开始引导",
     "restartTour": "重新引导",
     "back": "上一步",
@@ -441,6 +443,34 @@
     "step29": {
       "title": "刷新技能",
       "description": "点击此按钮刷新技能列表，从服务器获取最新数据。"
+    },
+    "step30a": {
+      "title": "模型配置",
+      "description": "这里是管理员模型列表。模型完成配置、启用并授权给团队后，Agent 和知识库才能使用它。"
+    },
+    "step30b": {
+      "title": "添加模型",
+      "description": "点击“添加模型”登记提供商配置。填写模型名称，先选择模型类型，再选择提供商。"
+    },
+    "step30c": {
+      "title": "选择提供商",
+      "description": "选择与模型类型兼容的提供商。提供商可能会自动填写 API 基础 URL。"
+    },
+    "step30d": {
+      "title": "填写连接信息",
+      "description": "填写 API 基础 URL；如果提供商要求，还要填写 API 密钥。必需的连接信息填写完成后才会开始发现模型。"
+    },
+    "step30e": {
+      "title": "发现模型 ID",
+      "description": "连接信息有效后，选择发现的模型 ID，或填写提供商提供的准确 ID。发现过程还可能自动填写模型名称和能力。"
+    },
+    "step30f": {
+      "title": "测试连接",
+      "description": "创建模型前使用表单中的“测试连接”按钮。保存前先解决连接失败问题。"
+    },
+    "step30g": {
+      "title": "启用并授权",
+      "description": "保持模型启用并创建模型。然后打开团队管理，选择目标团队，进入“模型授权”并授权此模型，Agent 和知识库才能选择它。"
     }
   }
 }

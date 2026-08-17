@@ -5,6 +5,9 @@ import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { useSettings } from '@/hooks/use-settings'
 import { AuthGuard } from '@/components/auth-guard'
+import { TeamProvider } from '@/contexts/team-context'
+import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
+import { OnboardingTour } from '@/components/onboarding/onboarding-tour'
 
 export default function DashboardLayout({
   children,
@@ -38,16 +41,21 @@ export default function DashboardLayout({
 
   return (
     <AuthGuard>
-      <SidebarProvider open={open} onOpenChange={setOpen}>
-        <AppSidebar
-          variant={effectiveSidebarVariant}
-          collapsible={collapsible}
-          side={sidebarSide}
-        />
-        <SidebarInset>
-          {children}
-        </SidebarInset>
-      </SidebarProvider>
+      <TeamProvider>
+        <OnboardingProvider>
+          <SidebarProvider open={open} onOpenChange={setOpen}>
+            <AppSidebar
+              variant={effectiveSidebarVariant}
+              collapsible={collapsible}
+              side={sidebarSide}
+            />
+            <SidebarInset>
+              {children}
+            </SidebarInset>
+          </SidebarProvider>
+          <OnboardingTour tourId="adminModelSetup" />
+        </OnboardingProvider>
+      </TeamProvider>
     </AuthGuard>
   )
 }

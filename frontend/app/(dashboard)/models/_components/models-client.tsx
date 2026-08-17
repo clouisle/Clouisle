@@ -17,6 +17,7 @@ import {
   Power,
   PowerOff,
   TestTube,
+  GraduationCap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { modelsApi, type Model } from '@/lib/api/admin/models'
@@ -67,11 +68,14 @@ import {
 import { ModelDialog } from './model-dialog'
 import { DeleteModelDialog } from './delete-model-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function ModelsClient() {
   const t = useTranslations('models')
   const commonT = useTranslations('common')
+  const tOnboarding = useTranslations('onboarding')
+  const onboarding = useOptionalOnboarding()
   const { canPerform } = useCanPerform()
   
   // 数据状态
@@ -350,10 +354,28 @@ export function ModelsClient() {
         </div>
         <div className="flex items-center gap-2">
           <PermissionGuard permission="admin:model:create">
-            <Button onClick={handleCreate}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t('createModel')}
-            </Button>
+            <>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      data-testid="admin-models-onboarding-button"
+                      aria-label={tOnboarding('tourAdminModelSetupTitle')}
+                      onClick={() => setTimeout(() => onboarding?.startTour('adminModelSetup'), 300)}
+                    >
+                      <GraduationCap className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{tOnboarding('tourAdminModelSetupTitle')}</TooltipContent>
+              </Tooltip>
+              <Button data-testid="admin-models-create-button" onClick={handleCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t('createModel')}
+              </Button>
+            </>
           </PermissionGuard>
         </div>
       </div>
@@ -406,7 +428,7 @@ export function ModelsClient() {
       </div>
       
       {/* 表格 */}
-      <div className="rounded-lg border">
+      <div className="rounded-lg border" data-testid="admin-models-list">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -480,7 +502,10 @@ export function ModelsClient() {
                   <TableCell>
                     {(canPerform('admin:model:update') || canPerform('admin:model:delete')) && (
                       <DropdownMenu>
-                        <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
+                        <DropdownMenuTrigger
+                          data-testid={`admin-model-actions-${model.id}`}
+                          className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
@@ -492,7 +517,10 @@ export function ModelsClient() {
                                 {commonT('edit')}
                               </DropdownMenuItem>
 
-                              <DropdownMenuItem onClick={() => handleToggleStatus(model)}>
+                              <DropdownMenuItem
+                                data-testid={`admin-model-toggle-enabled-${model.id}`}
+                                onClick={() => handleToggleStatus(model)}
+                              >
                                 {model.is_enabled ? (
                                   <>
                                     <PowerOff className="mr-2 h-4 w-4" />
@@ -514,7 +542,10 @@ export function ModelsClient() {
                               )}
 
                               {model.has_api_key && (
-                                <DropdownMenuItem onClick={() => handleTestConnection(model)}>
+                                <DropdownMenuItem
+                                  data-testid={`admin-model-test-connection-${model.id}`}
+                                  onClick={() => handleTestConnection(model)}
+                                >
                                   <TestTube className="mr-2 h-4 w-4" />
                                   {t('testConnection')}
                                 </DropdownMenuItem>

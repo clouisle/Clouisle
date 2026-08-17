@@ -1,6 +1,14 @@
 import type { Step, Placement } from 'react-joyride'
 
-export type OnboardingTourId = 'overview' | 'models' | 'kb' | 'appCreate' | 'appConfig' | 'workflowConfig' | 'capabilities'
+export type OnboardingTourId =
+  | 'overview'
+  | 'models'
+  | 'kb'
+  | 'appCreate'
+  | 'appConfig'
+  | 'workflowConfig'
+  | 'capabilities'
+  | 'adminModelSetup'
 
 export interface OnboardingStep extends Step {
   /** Route path for cross-page navigation */
@@ -30,6 +38,8 @@ export interface OnboardingTourConfig {
   steps: OnboardingStep[]
   /** Whether this tour should auto-start for new users */
   autoStart?: boolean
+  /** Whether this tour appears in the platform header menu */
+  showInPlatformMenu?: boolean
   /** Prerequisite tour IDs that must be completed first */
   prerequisites?: OnboardingTourId[]
 }

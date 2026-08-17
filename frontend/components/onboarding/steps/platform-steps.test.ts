@@ -16,6 +16,7 @@ describe('onboarding tour configurations', () => {
       'appConfig',
       'workflowConfig',
       'capabilities',
+      'adminModelSetup',
     ])
     for (const config of allTourConfigs) {
       expect(config.title).toStartWith('onboarding.')
@@ -34,6 +35,7 @@ describe('onboarding tour configurations', () => {
     const appConfigTargets = getTourConfigById('appConfig')?.steps.map(step => step.target) ?? []
     const knowledgeBaseTargets = getTourConfigById('kb')?.steps.map(step => step.target) ?? []
     const workflowTargets = getTourConfigById('workflowConfig')?.steps.map(step => step.target) ?? []
+    const adminModelSetup = getTourConfigById('adminModelSetup')
 
     expect(appConfigTargets).toContain('[data-testid="agent-attachments-section"]')
     expect(appConfigTargets).not.toContain('[data-testid="agent-vision-section"]')
@@ -54,10 +56,74 @@ describe('onboarding tour configurations', () => {
     ])
     expect(getTourConfigById('workflowConfig')?.steps.every(step => step.skipIfMissing)).toBe(true)
     expect(getTourConfigById('workflowConfig')?.steps[0]?.placement).toBe('center')
+    expect(adminModelSetup).toMatchObject({
+      id: 'adminModelSetup',
+      showInPlatformMenu: false,
+      steps: [
+        {
+          target: '[data-testid="admin-models-list"]',
+          content: 'onboarding.step30a.description',
+          title: 'onboarding.step30a.title',
+          placement: 'auto',
+          route: '/models',
+        },
+        {
+          target: '[data-testid="admin-models-create-button"]',
+          content: 'onboarding.step30b.description',
+          title: 'onboarding.step30b.title',
+          placement: 'left',
+          route: '/models',
+          advanceOnClick: true,
+          overlayClickAction: false,
+        },
+        {
+          target: '[data-testid="admin-model-dialog-provider-selection"]',
+          content: 'onboarding.step30c.description',
+          title: 'onboarding.step30c.title',
+          placement: 'bottom',
+          route: '/models',
+          overlayClickAction: false,
+        },
+        {
+          target: '[data-testid="admin-model-dialog-api-config"]',
+          content: 'onboarding.step30d.description',
+          title: 'onboarding.step30d.title',
+          placement: 'bottom',
+          route: '/models',
+          overlayClickAction: false,
+        },
+        {
+          target: '[data-testid="admin-model-dialog-model-id"]',
+          content: 'onboarding.step30e.description',
+          title: 'onboarding.step30e.title',
+          placement: 'bottom',
+          route: '/models',
+          overlayClickAction: false,
+        },
+        {
+          target: '[data-testid="admin-model-dialog-test-connection"]',
+          content: 'onboarding.step30f.description',
+          title: 'onboarding.step30f.title',
+          placement: 'top',
+          route: '/models',
+          overlayClickAction: false,
+        },
+        {
+          target: '[data-testid="admin-model-dialog-enabled"]',
+          content: 'onboarding.step30g.description',
+          title: 'onboarding.step30g.title',
+          placement: 'left',
+          route: '/models',
+          overlayClickAction: false,
+        },
+      ],
+    })
+    expect(adminModelSetup?.steps).toHaveLength(7)
   })
 
   test('looks up known tours and returns undefined for unknown IDs', () => {
     expect(getTourConfigById('kb')).toBe(allTourConfigs[2])
+    expect(getTourConfigById('adminModelSetup')).toBe(allTourConfigs[7])
     expect(getTourConfigById('unknown')).toBeUndefined()
   })
 

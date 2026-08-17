@@ -13,11 +13,14 @@ const unreadCount = mock(async () => ({ total: 105 }))
 const removeItem = mock(() => {})
 const toastSuccess = mock(() => {})
 const requestPermission = mock(async () => 'granted')
+const startTour = mock(() => {})
 
 let canAccessDashboard = false
 let canAccessCapabilities = false
 let currentTeam: { id: string } | null = { id: 'team-1' }
 let headerVariant: 'default' | 'centered' | 'minimal' = 'centered'
+let onboarding: { isTourCompleted: (tourId: string) => boolean; startTour: (tourId: string) => void } | null = null
+const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boolean }> = []
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
@@ -66,9 +69,9 @@ mock.module('@/hooks/use-settings', () => ({
   useSettings: () => ({ platformHeaderVariant: headerVariant, mounted: true }),
 }))
 mock.module('@/components/onboarding/onboarding-provider', () => ({
-  useOptionalOnboarding: () => null,
+  useOptionalOnboarding: () => onboarding,
 }))
-mock.module('@/components/onboarding/steps/platform-steps', () => ({ allTourConfigs: [] }))
+mock.module('@/components/onboarding/steps/platform-steps', () => ({ allTourConfigs: tourConfigs }))
 mock.module('@/lib/theme-config', () => ({
   getBrandingVisibility: () => ({ showIcon: true, showName: true }),
 }))
@@ -153,6 +156,9 @@ beforeEach(() => {
   removeItem.mockClear()
   toastSuccess.mockClear()
   requestPermission.mockClear()
+  onboarding = null
+  tourConfigs.splice(0)
+  startTour.mockClear()
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: { removeItem },
@@ -270,5 +276,19 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findAllByProps({ 'data-testid': 'platform-header-nav' })).toHaveLength(0)
     expect(renderer.root.findAllByProps({ 'data-testid': 'platform-team-switcher' })).toHaveLength(0)
     expect(renderer.root.findByProps({ 'data-testid': 'platform-user-menu' })).toBeTruthy()
+  })
+
+  test('excludes dashboard-scoped tours from the platform menu', async () => {
+    onboarding = { isTourCompleted: () => false, startTour }
+    tourConfigs.push(
+      { id: 'models', title: 'onboarding.tourModelsTitle' },
+      { id: 'adminModelSetup', title: 'onboarding.tourAdminModelSetupTitle', showInPlatformMenu: false },
+    )
+    const renderer = await renderHeader()
+
+    expect(renderer.root.findByProps({ 'data-testid': 'user-menu-tours' })).toBeTruthy()
+    const tourLabels = renderer.root.findAllByType('button').flatMap(button => button.children)
+    expect(tourLabels).toContain('tourModelsTitle')
+    expect(tourLabels).not.toContain('tourAdminModelSetupTitle')
   })
 })

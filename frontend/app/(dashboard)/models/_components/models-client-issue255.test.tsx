@@ -27,7 +27,7 @@ mock.module('lucide-react', () => ({
   Plus: () => null, Search: () => null, MoreHorizontal: () => null, Pencil: () => null,
   Trash2: () => null, ChevronLeft: () => null, ChevronRight: () => null, ChevronsLeft: () => null,
   ChevronsRight: () => null, X: () => null, Star: () => null, Power: () => null,
-  PowerOff: () => null, TestTube: () => null,
+  PowerOff: () => null, TestTube: () => null, GraduationCap: () => null,
 }))
 mock.module('@/lib/api/admin/models', () => ({ modelsApi: { getModels, updateModel, setDefault, testConnection, deleteModel } }))
 mock.module('@/lib/api/models', () => ({ modelsApi: { getProviders, getModelTypes } }))
@@ -36,6 +36,9 @@ mock.module('@/components/permission-guard', () => ({
   useCanPerform: () => ({ canPerform: (permission: string) => permissions.has(permission) }),
 }))
 mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => React.useState('') }))
+mock.module('@/components/onboarding/onboarding-provider', () => ({
+  useOptionalOnboarding: () => ({ startTour: mock() }),
+}))
 
 const passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>
 const Button = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <button {...props}>{children}</button>

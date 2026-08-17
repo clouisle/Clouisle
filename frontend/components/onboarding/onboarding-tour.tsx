@@ -82,7 +82,9 @@ function routeMatches(pathname: string, route: string) {
 }
 
 // Export all tour IDs for rendering
-export const allTourIds: OnboardingTourId[] = allTourConfigs.map(c => c.id)
+export const allTourIds: OnboardingTourId[] = allTourConfigs
+  .filter(config => config.showInPlatformMenu !== false)
+  .map(config => config.id)
 
 export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const t = useTranslations()
@@ -456,6 +458,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   // This effect must be before early returns to maintain hook order
   const targetSelector = typeof currentStep?.target === 'string' ? currentStep.target : ''
   const isDialogStep = state.isRunning && state.currentTour === tourId && targetSelector && (
+    targetSelector.includes('admin-model-dialog-') ||
     targetSelector.includes('app-create-type-selector') ||
     targetSelector.includes('app-create-name-input') ||
     targetSelector.includes('app-create-description-input') ||

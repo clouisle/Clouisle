@@ -9,7 +9,7 @@ import * as teamContext from '@/contexts/team-context'
 import * as onboardingProvider from './onboarding-provider'
 import * as platformSteps from './steps/platform-steps'
 import type { OnboardingTourConfig } from './steps/types'
-import { OnboardingTour } from './onboarding-tour'
+import { OnboardingTour, allTourIds } from './onboarding-tour'
 
 const push = mock(() => {})
 const startTour = mock(() => {})
@@ -73,6 +73,11 @@ afterEach(() => {
 afterAll(() => GlobalRegistrator.unregister())
 
 describe('OnboardingTour', () => {
+  it('does not render dashboard-only tour configs in platform layouts', () => {
+    expect(allTourIds).toContain('overview')
+    expect(allTourIds).not.toContain('adminModelSetup')
+  })
+
   it('auto-starts overview once only when the home/team/completion boundaries allow it', async () => {
     config = {
       id: 'overview', title: 'Overview', description: '', autoStart: true,
@@ -399,17 +404,28 @@ describe('OnboardingTour', () => {
     restore()
   })
 
-  it('adds the dialog overlay class only while the dialog step is mounted', () => {
+  it('adds the dialog overlay class only while dialog steps are mounted', () => {
     config = {
       id: 'appCreate', title: 'Create app', description: '',
       steps: [{ target: '.app-create-name-input', content: 'name' }],
     }
     state = { completedTours: [], currentTour: 'appCreate', currentStep: 0, isRunning: true }
     const restore = installSpies()
-    const view = render(<OnboardingTour tourId="appCreate" />)
+    const appCreateView = render(<OnboardingTour tourId="appCreate" />)
 
     expect(document.body.classList.contains('joyride-dialog-active')).toBe(true)
-    view.unmount()
+    appCreateView.unmount()
+    expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
+
+    config = {
+      id: 'adminModelSetup', title: 'Admin model setup', description: '',
+      steps: [{ target: '.admin-model-dialog-provider-selection', content: 'provider' }],
+    }
+    state = { completedTours: [], currentTour: 'adminModelSetup', currentStep: 0, isRunning: true }
+    const adminModelSetupView = render(<OnboardingTour tourId="adminModelSetup" />)
+
+    expect(document.body.classList.contains('joyride-dialog-active')).toBe(true)
+    adminModelSetupView.unmount()
     expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
     restore()
   })
