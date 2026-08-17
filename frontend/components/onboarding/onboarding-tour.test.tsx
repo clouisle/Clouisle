@@ -112,6 +112,28 @@ describe('OnboardingTour', () => {
     restore()
   })
 
+  it('clamps URL step indexes after filtering missing optional targets', () => {
+    const available = document.createElement('div')
+    available.className = 'available'
+    document.body.appendChild(available)
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: 'body', content: 'one' },
+        { target: '.missing', content: 'two', skipIfMissing: true },
+        { target: '.available', content: 'three', skipIfMissing: true },
+      ],
+    }
+    query = new URLSearchParams('tour=models&step=2')
+    const restore = installSpies()
+    render(<OnboardingTour tourId="models" />)
+
+    expect(startTour).toHaveBeenCalledWith('models', 1)
+
+    available.remove()
+    restore()
+  })
+
   it('navigates before advancing and treats /app as an exact route boundary', async () => {
     config = {
       id: 'models', title: 'Models', description: '',
@@ -206,6 +228,28 @@ describe('OnboardingTour', () => {
       '.available',
       '.required-missing',
     ])
+
+    available.remove()
+    restore()
+  })
+
+  it('refreshes optional targets when they mount after the initial render', () => {
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: 'body', content: 'one' },
+        { target: '.available', content: 'two', skipIfMissing: true },
+      ],
+    }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="models" />)
+    const available = document.createElement('div')
+    available.className = 'available'
+    document.body.appendChild(available)
+    state = { completedTours: [], currentTour: 'models', currentStep: 0, isRunning: true }
+    view.rerender(<OnboardingTour tourId="models" />)
+
+    expect(joyrideProps?.steps.map(step => step.target)).toEqual(['body', '.available'])
 
     available.remove()
     restore()
