@@ -65,6 +65,8 @@ test("renders webhook documentation and copies the URL", async () => {
     expect(output).toContain("required")
     expect(output).toContain("optional")
     expect(output).toContain("workflow_error")
+    expect(output).toContain("workflow_waiting")
+    expect(output).toContain("webhookNote4")
 
     await act(async () => renderer!.root.findAllByType("button")[0].props.onClick())
     expect(writeText).toHaveBeenCalledWith("https://example.test/hook")

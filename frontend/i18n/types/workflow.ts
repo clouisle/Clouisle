@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-17T03:51:39.998Z
+// GENERATED — 2026-08-17T04:46:55.230Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -125,6 +125,21 @@ export type WorkflowMessages = {
       eventFormat: string
       pythonStreamExample: string
       javascriptStreamExample: string
+      eventWorkflowWaiting: string
+      pauseNode: string
+      pauseNodeDescription: string
+      pauseFlowTitle: string
+      pauseFlowStep1: string
+      pauseFlowStep2: string
+      pauseFlowStep3: string
+      pauseGetEndpoint: string
+      pauseGetDescription: string
+      pauseGetFieldHint: string
+      pauseSubmitEndpoint: string
+      pauseSubmitDescription: string
+      pauseSubmitRequest: string
+      pauseSubmitResponse: string
+      pausePythonExample: string
     }
     apiDocumentation: string
     webhookUrl: string
@@ -1269,5 +1284,6 @@ export type WorkflowMessages = {
       label: string
       clickToConfigure: string
     }
+    webhookNote4: string
   }
 }

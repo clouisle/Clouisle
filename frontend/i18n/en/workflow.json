@@ -122,7 +122,22 @@
       "eventOutput": "Node final output",
       "eventFormat": "Event Format",
       "pythonStreamExample": "Python Stream Example",
-      "javascriptStreamExample": "JavaScript Stream Example"
+      "javascriptStreamExample": "JavaScript Stream Example",
+      "eventWorkflowWaiting": "Run paused waiting for external input (pause node)",
+      "pauseNode": "Pause Node (Human Input & Approval)",
+      "pauseNodeDescription": "Workflows containing a pause node stop at the pause point and wait for external input (variables mode) or an approval decision (approval mode). The run stays in waiting status until the values or decision are submitted.",
+      "pauseFlowTitle": "Flow",
+      "pauseFlowStep1": "Run the workflow as usual. When a pause node is reached, the SSE stream emits workflow_waiting and the run transitions to waiting.",
+      "pauseFlowStep2": "Poll GET /runs/{run_id}/pause-request to load the pending request — it describes the requested variables (type/required/default/options/fileConfig) or the approval context (approvers, require_all).",
+      "pauseFlowStep3": "Submit the values or the approval decision via POST /runs/{run_id}/pause-requests/{pause_request_id}/submit. The run resumes and SSE continues — reconnect the stream to keep receiving events.",
+      "pauseGetEndpoint": "Get the pending pause request",
+      "pauseGetDescription": "Returns the pending external-input request for a waiting run, or pause_request: null when there is none. The description is the resolved pause-node description ({{var}} references already substituted; file values render as upload basenames).",
+      "pauseGetFieldHint": "input_variables covers all parameter types: text/paragraph/select/number/checkbox/array/object/file/image/files/images. Approval mode additionally exposes approver_ids, approver_names, require_all, approvals and can_submit.",
+      "pauseSubmitEndpoint": "Submit values / approval decision",
+      "pauseSubmitDescription": "Submits the requested values (variables mode) or the decision (approval mode: values.decision = approved | rejected, optional comment). Only authorized approvers may submit. Returns status submitted when the run resumes, or pending when a require-all approval still waits for other approvers.",
+      "pauseSubmitRequest": "Request Body",
+      "pauseSubmitResponse": "Response",
+      "pausePythonExample": "Python Example (poll & submit)"
     },
     "apiDocumentation": "API Documentation",
     "webhookUrl": "Webhook URL",
@@ -1266,6 +1281,7 @@
     "nodesKnowledgeRetrieval": {
       "label": "Knowledge Retrieval",
       "clickToConfigure": "Click to configure knowledge retrieval"
-    }
+    },
+    "webhookNote4": "Workflows with a pause node stop and wait for external input; poll the pause-request endpoint and submit the requested values (or the approval decision) to resume."
   }
 }

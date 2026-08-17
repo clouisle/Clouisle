@@ -229,6 +229,20 @@ data: {
               </div>
 
               <div>
+                <Badge variant="outline" className="mb-2">workflow_waiting</Badge>
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto">
+{`event: workflow_waiting
+data: {
+  "event": "workflow_waiting",
+  "run_id": "uuid",
+  "data": {
+    "node_id": "pause-node-id"
+  }
+}`}
+                </pre>
+              </div>
+
+              <div>
                 <Badge variant="outline" className="mb-2">workflow_complete</Badge>
                 <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto">
 {`event: workflow_complete
@@ -272,6 +286,7 @@ data: {
               <li>{t('webhookNote1')}</li>
               <li>{t('webhookNote2')}</li>
               <li>{t('webhookNote3')}</li>
+              <li>{t('webhookNote4')}</li>
             </ul>
           </div>
         </AlertDescription>
