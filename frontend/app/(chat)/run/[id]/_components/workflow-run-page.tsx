@@ -63,6 +63,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const [pauseError, setPauseError] = React.useState<string | null>(null)
   const [isPauseSubmitting, setIsPauseSubmitting] = React.useState(false)
   const [resumingHistoryRunId, setResumingHistoryRunId] = React.useState<string | null>(null)
+  const [isHistoryCancelling, setIsHistoryCancelling] = React.useState(false)
 
   React.useEffect(() => {
     const fetchWorkflow = async () => {
@@ -327,6 +328,25 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
       setHistoryDetailLoading(false)
     }
   }, [id, isActive, t, adapter, selectRunInUrl])
+
+  // 等待输入的历史运行可以取消（后端会关闭其暂停请求）；取消后刷新详情，
+  // 状态变为 cancelled 后按钮自动切回“再次运行”。
+  const handleCancelHistoryRun = React.useCallback(async () => {
+    if (!selectedRun) return
+    setIsHistoryCancelling(true)
+    try {
+      await runApi.cancelWorkflowRun(selectedRun.id)
+      setPendingPause(null)
+      setPauseError(null)
+      const { run: detail, nodes } = await adapter.loadRunDetail(id, selectedRun.id)
+      setSelectedRun(detail)
+      setSelectedNodes(nodes)
+    } catch {
+      setHistoryDetailError(t('cancelFailed'))
+    } finally {
+      setIsHistoryCancelling(false)
+    }
+  }, [selectedRun, runApi, adapter, id, t])
 
   const resultNodes = React.useMemo<WorkflowResultNode[]>(() => (
     Array.from(run.executionState.nodes.values()).map((node, index) => ({
@@ -742,10 +762,21 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
                         </Tooltip>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={handleRerunFromHistory}>
-                          <RotateCcw className="mr-2 h-4 w-4" />
-                          {t('runAgain')}
-                        </Button>
+                        {selectedRun.status === 'waiting' ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => void handleCancelHistoryRun()}
+                            disabled={isHistoryCancelling}
+                          >
+                            {isHistoryCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
+                            {isHistoryCancelling ? t('cancelling') : t('cancel')}
+                          </Button>
+                        ) : (
+                          <Button variant="outline" onClick={handleRerunFromHistory}>
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            {t('runAgain')}
+                          </Button>
+                        )}
                         <Button variant="ghost" onClick={handleNewRun} className={cn(!allowNew && 'hidden')}>
                           <SquarePlay className="mr-2 h-4 w-4" />
                           {t('newRun')}

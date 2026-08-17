@@ -25,6 +25,7 @@
     "runFailed": "运行失败",
     "cancel": "取消运行",
     "cancelling": "正在取消...",
+    "cancelFailed": "取消失败，请重试",
     "reset": "重置",
     "newRun": "新建运行",
     "runAgain": "再次运行",

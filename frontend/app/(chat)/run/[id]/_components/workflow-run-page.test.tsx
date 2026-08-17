@@ -344,6 +344,116 @@ describe('WorkflowRunPage', () => {
     expect(descendants(tree).some(isPausePanel)).toBe(false)
   })
 
+  test('waiting history run offers cancel instead of run-again and refreshes after cancel', async () => {
+    const workflow = {
+      id: 'wf-1',
+      name: 'Flow',
+      description: '',
+      icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [],
+      status: 'published',
+      visibility: 'private',
+      version: 1,
+      trigger_type: 'manual',
+      trigger_config: {},
+      run_count: 1,
+      success_count: 0,
+      fail_count: 0,
+      team_id: '',
+      created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const waitingRun = {
+      id: 'run-waiting',
+      workflow_id: 'wf-1',
+      trigger_type: 'manual',
+      is_debug: false,
+      status: 'waiting',
+      inputs: {},
+      outputs: null,
+      depth: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      total_nodes: 2,
+      executed_nodes: 1,
+      failed_nodes: 0,
+      skipped_nodes: 0,
+      total_token_usage: {},
+    }
+    const cancelWorkflowRun = mock(async () => {})
+    const loadRunDetail = mock(async () => ({
+      run: { ...waitingRun, status: 'cancelled' },
+      nodes: [],
+    }))
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun,
+      }),
+      loadHistory: mock(async () => []),
+      loadRunDetail,
+      getPendingPauseRequest: mock(async () => null),
+      submitPauseRequest: mock(async () => ({ pause_request_id: 'pause-1', status: 'submitted' })),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = waitingRun
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const buttons = descendants(tree).filter((node) => node.type === buttonMock)
+    const labels = buttons.map((node) => collectText(node))
+    expect(labels).toContain('cancel')
+    expect(labels).not.toContain('runAgain')
+    expect(labels).toContain('newRun')
+
+    const cancelButton = buttons.find((node) => collectText(node) === 'cancel')
+    await (cancelButton?.props.onClick as () => Promise<void>)()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(cancelWorkflowRun).toHaveBeenCalledWith('run-waiting')
+    expect(loadRunDetail).toHaveBeenCalledWith('wf-1', 'run-waiting')
+
+    // 详情刷新后状态变为 cancelled：按钮切回“再次运行”，取消按钮消失
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const refreshed = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const refreshedLabels = descendants(refreshed)
+      .filter((node) => node.type === buttonMock)
+      .map((node) => collectText(node))
+    expect(refreshedLabels).toContain('runAgain')
+    expect(refreshedLabels).not.toContain('cancel')
+  })
+
   test('disables the pause panel for non-approvers', async () => {
     const workflow = {
       id: 'wf-1',

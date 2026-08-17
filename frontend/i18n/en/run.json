@@ -25,6 +25,7 @@
     "runFailed": "Run failed",
     "cancel": "Cancel run",
     "cancelling": "Cancelling...",
+    "cancelFailed": "Failed to cancel the run. Please try again.",
     "reset": "Reset",
     "newRun": "New run",
     "runAgain": "Run again",
