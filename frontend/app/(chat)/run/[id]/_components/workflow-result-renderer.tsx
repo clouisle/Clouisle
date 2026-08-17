@@ -101,21 +101,23 @@ export function WorkflowResultRenderer({
 
   const selections = selectWorkflowResults(outputs, nodes, answerText)
 
-  const renderedBlocks = selections.map((selection, index) => {
-    if (selection.kind === 'markdown') {
-      return <div key={index}>{markdown(selection.text)}</div>
-    }
+  const renderedBlocks = selections
+    .map((selection, index) => {
+      if (selection.kind === 'markdown') {
+        return <div key={index}>{markdown(selection.text)}</div>
+      }
 
-    if (selection.kind === 'json') {
-      return (
-        <pre key={index} className="max-h-[calc(100dvh-18rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-5 text-sm leading-6">
-          {JSON.stringify(selection.outputs, null, 2)}
-        </pre>
-      )
-    }
+      if (selection.kind === 'json') {
+        return (
+          <pre key={index} className="max-h-[calc(100dvh-18rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-5 text-sm leading-6">
+            {JSON.stringify(selection.outputs, null, 2)}
+          </pre>
+        )
+      }
 
-    return null
-  })
+      return null
+    })
+    .filter((block) => block !== null)
 
   if (renderedBlocks.length === 0) {
     return null

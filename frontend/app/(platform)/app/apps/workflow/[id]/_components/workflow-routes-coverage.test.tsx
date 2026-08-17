@@ -111,6 +111,8 @@ mock.module('lucide-react', () => ({
   CheckCircle: createIcon('CheckCircle'),
   CheckCircle2: createIcon('CheckCircle2'),
   CheckSquare: createIcon('CheckSquare'),
+  Circle: createIcon('Circle'),
+  CirclePause: createIcon('CirclePause'),
   ChevronDown: createIcon('ChevronDown'),
   ChevronLeft: createIcon('ChevronLeft'),
   ChevronRight: createIcon('ChevronRight'),

@@ -2938,6 +2938,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "workflow_not_found": {"en": "Workflow not found", "zh": "工作流未找到"},
     "workflow_not_published": {"en": "Workflow is not published", "zh": "工作流未发布"},
+    "workflow_pause_already_submitted": {
+        "en": "You have already submitted a decision for this request",
+        "zh": "你已为此请求提交过处理决定",
+    },
     "workflow_pause_inside_container": {
         "en": "Pause nodes are not allowed inside iteration/loop bodies",
         "zh": "暂停节点不允许放在迭代/循环节点内部",
@@ -2966,6 +2970,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "workflow_pause_submitted": {
         "en": "Pause variables submitted",
         "zh": "暂停变量已提交",
+    },
+    "workflow_pause_submitted_partial": {
+        "en": "Your decision was recorded; the workflow resumes once all approvers approve",
+        "zh": "已记录你的处理决定，所有处理人都通过后工作流才会继续执行",
     },
     "workflow_published": {
         "en": "Workflow published successfully",

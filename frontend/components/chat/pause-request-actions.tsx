@@ -188,7 +188,15 @@ export function PauseRequestActions({
   }
 
   if (!request) {
-    return null
+    // Load failure or no pending request: surface the error instead of
+    // silently rendering nothing, so callers know the request could not load.
+    return currentError ? (
+      <div className="mt-6">
+        <Alert variant="destructive">
+          <AlertDescription>{currentError}</AlertDescription>
+        </Alert>
+      </div>
+    ) : null
   }
 
   const title = request.title || request.node_name

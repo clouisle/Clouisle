@@ -275,3 +275,133 @@ test('self-managed compact variables routes to the run page', async () => {
   expect(link).toBeDefined()
   expect(link.props.href).toBe('/run/wf-1?type=workflow&run=run-1')
 })
+
+test('self-managed load failure surfaces the error instead of the form', async () => {
+  getPendingPauseRequest.mockImplementationOnce(async () => { throw new Error('offline') })
+  const onResolved = mock(() => {})
+  const renderer = await render({ onResolved })
+
+  await act(async () => { await Promise.resolve() })
+  await act(async () => { await Promise.resolve() })
+
+  expect(JSON.stringify(renderer.toJSON())).toContain('pause.loadError')
+  expect(buttons(renderer).some((b) => b.includes('pause.approve'))).toBe(false)
+})
+
+test('self-managed full-mode submission failure keeps the form and reports the error', async () => {
+  getPendingPauseRequest.mockImplementationOnce(async () => approvalRequest)
+  submitPauseRequest.mockImplementationOnce(async () => { throw new Error('network') })
+  const onResolved = mock(() => {})
+  const renderer = await render({ onResolved })
+
+  await act(async () => { await Promise.resolve() })
+  await act(async () => { await Promise.resolve() })
+  await act(async () => {
+    renderer.root.findAllByType('button').find((b) => String(b.children.join('')).includes('pause.approve'))!.props.onClick()
+  })
+  await act(async () => { await Promise.resolve() })
+
+  expect(JSON.stringify(renderer.toJSON())).toContain('pause.submitError')
+  expect(toastError).toHaveBeenCalledWith('pause.submitError')
+  expect(onResolved).not.toHaveBeenCalled()
+})
+
+test('self-managed require-all partial submission reports pending and keeps waiting', async () => {
+  getPendingPauseRequest.mockImplementationOnce(async () => ({
+    ...approvalRequest,
+    require_all: true,
+    approver_ids: ['u-a', 'u-b'],
+    approver_names: ['alice', 'bob'],
+    approvals: [],
+    already_submitted: false,
+  }))
+  submitPauseRequest.mockImplementationOnce(async () => ({ pause_request_id: 'pr-1', status: 'pending' }))
+  const onResolved = mock(() => {})
+  const renderer = await render({ onResolved })
+
+  await act(async () => { await Promise.resolve() })
+  await act(async () => { await Promise.resolve() })
+  await act(async () => {
+    renderer.root.findAllByType('button').find((b) => String(b.children.join('')).includes('pause.approve'))!.props.onClick()
+  })
+  await act(async () => { await Promise.resolve() })
+
+  expect(submitPauseRequest).toHaveBeenCalled()
+  expect(toastSuccess).toHaveBeenCalledWith('pause.submittedWaiting')
+  expect(onResolved).toHaveBeenCalled()
+})
+
+test('require-all submission sends the comment with the decision', async () => {
+  const onSubmit = mock(() => {})
+  const renderer = await render({
+    request: {
+      ...approvalRequest,
+      require_all: true,
+      approver_ids: ['u-a', 'u-b'],
+      approver_names: ['alice', 'bob'],
+      approvals: [],
+      already_submitted: false,
+    },
+    values: {},
+    onValuesChange: mock(),
+    onSubmit,
+    submitting: false,
+    error: null,
+    canSubmit: true,
+  })
+
+  // 填写审批意见后提交
+  await act(async () => {
+    renderer.root.findAllByType('textarea')[0].props.onChange({ target: { value: '同意，请继续' } })
+  })
+  await act(async () => {
+    renderer.root.findAllByType('button').find((b) => String(b.children.join('')).includes('pause.reject'))!.props.onClick()
+  })
+
+  expect(onSubmit).toHaveBeenCalledWith({ decision: 'rejected' }, '同意，请继续')
+})
+
+test('shows the owner-admin-only notice when no approver names exist', async () => {
+  const renderer = await render({
+    request: approvalRequest,
+    values: {},
+    onValuesChange: mock(),
+    onSubmit: mock(),
+    submitting: false,
+    error: null,
+    canSubmit: false,
+    approverNames: [],
+  })
+
+  expect(JSON.stringify(renderer.toJSON())).toContain('pause.ownerAdminOnly')
+  for (const button of renderer.root.findAllByType('button')) {
+    expect(button.props.disabled).toBe(true)
+  }
+})
+
+test('submitting state disables actions and renders the full-mode error alert', async () => {
+  const renderer = await render({
+    request: approvalRequest,
+    values: {},
+    onValuesChange: mock(),
+    onSubmit: mock(),
+    submitting: true,
+    error: 'pause.submitError',
+  })
+
+  expect(JSON.stringify(renderer.toJSON())).toContain('pause.submitError')
+  for (const button of renderer.root.findAllByType('button')) {
+    expect(button.props.disabled).toBe(true)
+  }
+})
+
+test('self-managed with no pending request renders nothing', async () => {
+  // afterEach 的 mockReset 会清掉默认实现，这里显式声明返回 null
+  getPendingPauseRequest.mockImplementation(async () => null)
+  const renderer = await render({ onResolved: mock(() => {}) })
+
+  await act(async () => { await Promise.resolve() })
+  await act(async () => { await Promise.resolve() })
+
+  expect(JSON.stringify(renderer.toJSON())).toBe('null')
+})

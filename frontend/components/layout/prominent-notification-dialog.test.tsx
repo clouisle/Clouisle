@@ -202,4 +202,25 @@ describe('ProminentNotificationDialog pause actions', () => {
     expect(JSON.stringify(renderer.toJSON())).not.toContain('viewNotification')
     expect(JSON.stringify(renderer.toJSON())).not.toContain('markRead')
   })
+
+  test('resolving a pause request closes the dialog and refetches the queue', async () => {
+    const list = spyOn(notificationsApi, 'list')
+      .mockResolvedValueOnce({
+        items: [pauseNotification()], total: 1, page: 1, page_size: 50,
+      })
+      .mockResolvedValueOnce({
+        items: [], total: 0, page: 1, page_size: 50,
+      })
+
+    const renderer = await render()
+    await act(async () => { await Promise.resolve() })
+
+    const actions = renderer.root.findAll((node) => typeof node.props['data-pause-actions'] === 'string')[0]
+    await act(async () => { await actions.props.onResolved() })
+    await act(async () => { await Promise.resolve() })
+
+    // 解析后：重新拉取队列，无待办则关闭弹窗
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(renderer.toJSON())).toBe('null')
+  })
 })
