@@ -423,7 +423,11 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   }
   
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      className="flex flex-col gap-4"
+      data-testid="kb-documents-table"
+      data-loading={isLoading ? 'true' : 'false'}
+    >
       {/* 筛选栏 */}
       <div className="flex items-center gap-2">
         <div className="relative">

@@ -175,6 +175,57 @@ describe('OnboardingTour', () => {
     canvas.remove()
     restore()
   })
+  it('does not skip KB status steps while the document table is loading', async () => {
+    const table = document.createElement('div')
+    table.dataset.testid = 'kb-documents-table'
+    table.dataset.loading = 'true'
+    document.body.appendChild(table)
+    config = platformSteps.getTourConfigById('kb')!
+    const statusStepIndex = config.steps.findIndex(step => String(step.target).includes('pending-'))
+    state = { completedTours: [], currentTour: 'kb', currentStep: statusStepIndex, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+    const open = mock(() => {})
+
+    act(() => joyrideProps?.onEvent?.(
+      { action: joyride.ACTIONS.NEXT, type: joyride.EVENTS.TARGET_NOT_FOUND },
+      { open } as unknown as joyride.Controls,
+    ))
+    const delay = Promise.withResolvers<void>()
+    window.setTimeout(delay.resolve, 600)
+    await act(() => delay.promise)
+    expect(nextStep).not.toHaveBeenCalled()
+
+    table.dataset.loading = 'false'
+    const status = document.createElement('div')
+    status.dataset.testid = 'kb-document-status-pending-doc-1'
+    table.appendChild(status)
+    await waitFor(() => expect(open).toHaveBeenCalled(), { timeout: 1000 })
+    expect(nextStep).not.toHaveBeenCalled()
+
+    table.remove()
+    restore()
+  })
+  it('skips a KB status step only after the document table has settled without it', () => {
+    const table = document.createElement('div')
+    table.dataset.testid = 'kb-documents-table'
+    table.dataset.loading = 'false'
+    document.body.appendChild(table)
+    config = platformSteps.getTourConfigById('kb')!
+    const statusStepIndex = config.steps.findIndex(step => String(step.target).includes('pending-'))
+    state = { completedTours: [], currentTour: 'kb', currentStep: statusStepIndex, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    act(() => joyrideProps?.onEvent?.(
+      { action: joyride.ACTIONS.UPDATE, type: joyride.EVENTS.TARGET_NOT_FOUND },
+      {} as joyride.Controls,
+    ))
+    expect(nextStep).toHaveBeenCalledTimes(1)
+
+    table.remove()
+    restore()
+  })
 
   it('navigates before advancing and treats /app as an exact route boundary', async () => {
     config = {

@@ -166,6 +166,7 @@ const kbSteps: OnboardingStep[] = [
     content: 'onboarding.step31h.description',
     title: 'onboarding.step31h.title',
     placement: 'auto',
+    targetWaitTimeout: 0,
     route: '/app/kb',
   },
   {
@@ -173,6 +174,7 @@ const kbSteps: OnboardingStep[] = [
     content: 'onboarding.step31i.description',
     title: 'onboarding.step31i.title',
     placement: 'auto',
+    targetWaitTimeout: 0,
     route: '/app/kb',
   },
   {
@@ -180,6 +182,7 @@ const kbSteps: OnboardingStep[] = [
     content: 'onboarding.step31j.description',
     title: 'onboarding.step31j.title',
     placement: 'auto',
+    targetWaitTimeout: 0,
     route: '/app/kb',
   },
   {
@@ -187,6 +190,7 @@ const kbSteps: OnboardingStep[] = [
     content: 'onboarding.step31k.description',
     title: 'onboarding.step31k.title',
     placement: 'auto',
+    targetWaitTimeout: 0,
     route: '/app/kb',
   },
   {

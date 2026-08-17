@@ -69,3 +69,4 @@ Revert the YUN-135 feature branch changes as one unit. No backend schema, API, o
 - Full frontend coverage gate: 2,226 tests passed, 0 failed; LCOV covered all 485 eligible source files.
 - Post-implementation correction: overall step 14 (`step31a`) now uses `center` placement because `kb-detail-page` spans the full viewport. The regression reproduced with `auto` and passes with `center`.
 - Post-implementation correction: deep create-dialog targets (`kb-dialog-rerank-enabled` and `kb-dialog-rerank-params`) opt out of Joyride's outer scroll and are centered with `scrollIntoView` in the nested dialog viewport.
+- Post-implementation correction: KB status targets wait for the document table's in-flight request instead of treating loading rows as absent; once the table settles, present statuses reopen their current step and genuinely absent statuses skip without delaying Retrieval Lab guidance.

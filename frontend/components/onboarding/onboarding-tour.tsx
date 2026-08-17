@@ -81,6 +81,17 @@ function routeMatches(pathname: string, route: string) {
   return pathname.startsWith(`${route}/`)
 }
 
+const KB_DOCUMENTS_TABLE_SELECTOR = '[data-testid="kb-documents-table"]'
+const KB_DOCUMENT_STATUS_TARGET_PREFIX = '[data-testid^="kb-document-status-'
+const KB_DOCUMENT_STATUS_LOAD_TIMEOUT = 5000
+const KB_DOCUMENT_STATUS_POLL_INTERVAL = 100
+
+function isKnowledgeBaseDocumentStatusStep(
+  step: OnboardingStep | undefined,
+): step is OnboardingStep & { target: string } {
+  return typeof step?.target === 'string' && step.target.startsWith(KB_DOCUMENT_STATUS_TARGET_PREFIX)
+}
+
 // Export all tour IDs for rendering
 export const allTourIds: OnboardingTourId[] = allTourConfigs
   .filter(config => config.showInPlatformMenu !== false)
@@ -98,6 +109,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const hasAutoStarted = React.useRef(false)
   const urlTriggeredRef = React.useRef(false)
   const advanceTriggeredRef = React.useRef(false)
+  const statusTargetRetryRef = React.useRef<number | null>(null)
 
   // Keep pathnameRef in sync with latest pathname
   React.useEffect(() => {
@@ -186,6 +198,14 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
   // Get current step data
   const currentStep = steps[currentStepIndex]
+  React.useEffect(() => {
+    return () => {
+      if (statusTargetRetryRef.current !== null) {
+        window.clearTimeout(statusTargetRetryRef.current)
+        statusTargetRetryRef.current = null
+      }
+    }
+  }, [currentStepIndex, state.currentTour, state.isRunning, tourId])
 
   const handleJoyrideEvent = React.useCallback(
     (data: EventData, controls: Controls) => {
@@ -220,52 +240,76 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         }
       }
 
-      // Handle TARGET_NOT_FOUND: wait for drawer/menu elements to render
-      if (type === EVENTS.TARGET_NOT_FOUND) {
-        if (action === ACTIONS.NEXT) {
-          // Wait 500ms for drawer/menu elements to render
-          setTimeout(() => {
-            const nextStepIndex = currentStepIndex + 1
-            const nextStepData = steps[nextStepIndex]
+      // KB status badges are rendered from an asynchronous document request.
+      // Do not treat a still-loading table as a missing status and skip ahead.
+      if (type === EVENTS.TARGET_NOT_FOUND && isKnowledgeBaseDocumentStatusStep(currentStep)) {
+        if (statusTargetRetryRef.current !== null) return
 
-            if (nextStepData) {
-              // Check if the target element exists in DOM
-              const target = nextStepData.target
-              const targetExists = typeof target === 'string'
-                ? !!document.querySelector(target)
-                : !!target
-              if (targetExists) {
-                if (nextStepData.route) {
-                  const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
-                  if (!isOnCorrectRoute) {
-                    router.push(nextStepData.route)
-                    setTimeout(() => {
-                      nextStep()
-                    }, 500)
-                  } else {
+        const deadline = Date.now() + KB_DOCUMENT_STATUS_LOAD_TIMEOUT
+        const retryStatusTarget = () => {
+          if (document.querySelector(currentStep.target)) {
+            statusTargetRetryRef.current = null
+            controls.open()
+            return
+          }
+
+          const documentTable = document.querySelector<HTMLElement>(KB_DOCUMENTS_TABLE_SELECTOR)
+          if (documentTable?.dataset.loading === 'true' && Date.now() < deadline) {
+            statusTargetRetryRef.current = window.setTimeout(retryStatusTarget, KB_DOCUMENT_STATUS_POLL_INTERVAL)
+            return
+          }
+
+          statusTargetRetryRef.current = null
+          if (currentStepIndex < steps.length - 1) {
+            nextStep()
+          } else {
+            completeTour(tourId)
+          }
+        }
+
+        retryStatusTarget()
+        return
+      }
+
+      if (type === EVENTS.TARGET_NOT_FOUND && action === ACTIONS.NEXT) {
+        // Wait briefly for drawer/menu elements to render.
+        setTimeout(() => {
+          const nextStepIndex = currentStepIndex + 1
+          const nextStepData = steps[nextStepIndex]
+
+          if (nextStepData) {
+            const target = nextStepData.target
+            const targetExists = typeof target === 'string'
+              ? !!document.querySelector(target)
+              : !!target
+            if (targetExists) {
+              if (nextStepData.route) {
+                const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
+                if (!isOnCorrectRoute) {
+                  router.push(nextStepData.route)
+                  setTimeout(() => {
                     nextStep()
-                  }
+                  }, 500)
                 } else {
                   nextStep()
                 }
               } else {
-                // Target still not found, skip this step
-                if (nextStepIndex < steps.length - 1) {
-                  nextStep()
-                } else {
-                  completeTour(tourId)
-                }
+                nextStep()
               }
+            } else if (nextStepIndex < steps.length - 1) {
+              nextStep()
+            } else {
+              completeTour(tourId)
             }
-          }, 500)
-        }
+          }
+        }, 500)
       }
 
       if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
         completeTour(tourId)
       }
     },
-    [steps, currentStepIndex, pathname, router, nextStep, completeTour, tourId]
+    [steps, currentStep, currentStepIndex, pathname, router, nextStep, completeTour, tourId]
   )
 
   // Handle navigation when step changes and requires a different route

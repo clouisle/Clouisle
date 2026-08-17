@@ -96,6 +96,7 @@ describe('onboarding tour configurations', () => {
     expect(kbConfig?.steps[11]?.skipScroll).toBe(true)
     expect(appendedKbSteps[0]?.placement).toBe('center')
     expect(appendedKbSteps[12]?.placement).toBe('center')
+    expect(appendedKbSteps.slice(7, 11).every(step => step.targetWaitTimeout === 0)).toBe(true)
     expect(appendedKbSteps[13]).toMatchObject({ advanceOnInput: true })
     expect(appendedKbSteps[14]).toMatchObject({ advanceOnClick: true })
     expect(workflowTargets).toEqual([
