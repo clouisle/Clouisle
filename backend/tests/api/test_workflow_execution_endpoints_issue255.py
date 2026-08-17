@@ -366,6 +366,85 @@ def test_pause_submission_rejects_empty_required_values(value):
     )
 
 
+@pytest.mark.parametrize(
+    ("var_type", "valid_value"),
+    [
+        ("text", "hello"),
+        ("paragraph", "multi\nline"),
+        ("select", "chosen"),
+        ("number", 42),
+        ("number", 3.5),
+        ("checkbox", True),
+        ("checkbox", False),
+        ("array", [1, "two", {"three": 3}]),
+        ("object", {"a": 1, "b": [2]}),
+        ("file", "/api/v1/upload/files/a.pdf"),
+        ("image", "/api/v1/upload/files/a.png"),
+        ("files", ["/api/v1/upload/files/a.pdf", "/api/v1/upload/files/b.pdf"]),
+        ("images", ["/api/v1/upload/files/a.png", "/api/v1/upload/files/b.png"]),
+    ],
+)
+def test_pause_submission_accepts_every_variable_type(var_type, valid_value):
+    config = {"inputVariables": [{"name": "value", "type": var_type, "required": True}]}
+    assert workflows.pause_submission_is_valid(
+        config, "variables", {"value": valid_value}
+    )
+
+
+@pytest.mark.parametrize(
+    ("var_type", "invalid_value"),
+    [
+        ("text", 42),
+        ("paragraph", ["list"]),
+        ("select", 1),
+        ("number", "42"),
+        ("number", True),  # bool is an int subclass, but not a valid number
+        ("checkbox", "true"),
+        ("array", '["a", "b"]'),
+        ("array", {"a": 1}),
+        ("object", '{"a": 1}'),
+        ("object", [1, 2]),
+        ("file", ["/api/v1/upload/files/a.pdf"]),
+        ("image", {"url": "/api/v1/upload/files/a.png"}),
+        ("files", "/api/v1/upload/files/a.pdf"),
+        ("images", {"url": "/api/v1/upload/files/a.png"}),
+    ],
+)
+def test_pause_submission_rejects_type_mismatches(var_type, invalid_value):
+    config = {
+        "inputVariables": [{"name": "value", "type": var_type, "required": False}]
+    }
+    assert not workflows.pause_submission_is_valid(
+        config, "variables", {"value": invalid_value}
+    )
+
+
+def test_pause_submission_accepts_optional_missing_values_for_every_type():
+    config = {
+        "inputVariables": [
+            {"name": "value", "type": var_type, "required": False}
+            for var_type in [
+                "text",
+                "paragraph",
+                "select",
+                "number",
+                "checkbox",
+                "array",
+                "object",
+                "file",
+                "image",
+                "files",
+                "images",
+            ]
+        ]
+    }
+    assert workflows.pause_submission_is_valid(
+        config,
+        "variables",
+        {"number": ""},  # cleared optional number
+    )
+
+
 @pytest.mark.asyncio
 async def test_submit_pause_allows_configured_private_workflow_approver(monkeypatch):
     workflow_id, run_id, approver_id, pause_id = (uuid4() for _ in range(4))
@@ -1522,6 +1601,132 @@ async def test_get_pending_pause_passes_options_and_blank_default(monkeypatch):
     assert variable["default"] is None
     assert variable["options"] == ["basic", "pro"]
     assert variable["fileConfig"] == {"maxSize": 10}
+
+
+@pytest.mark.asyncio
+async def test_get_pending_pause_serializes_every_variable_type(monkeypatch):
+    workflow_id, run_id, user_id, pause_id = (uuid4() for _ in range(4))
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        fetch_related=AsyncMock(),
+        workflow=SimpleNamespace(name="Flow"),
+        triggered_by=SimpleNamespace(username="alice"),
+        started_at=None,
+        created_at="2026-01-01T00:00:00Z",
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {
+                            "config": {
+                                "mode": "variables",
+                                "inputVariables": [
+                                    {"name": name, "type": var_type, "required": True}
+                                    for name, var_type in [
+                                        ("t", "text"),
+                                        ("p", "paragraph"),
+                                        ("s", "select"),
+                                        ("n", "number"),
+                                        ("c", "checkbox"),
+                                        ("arr", "array"),
+                                        ("obj", "object"),
+                                        ("f", "file"),
+                                        ("img", "image"),
+                                        ("fs", "files"),
+                                        ("imgs", "images"),
+                                    ]
+                                ]
+                                + [
+                                    {
+                                        "name": "upload",
+                                        "type": "files",
+                                        "required": False,
+                                        "defaultValue": "",
+                                        "description": "docs",
+                                        "options": ["x"],
+                                        "fileConfig": {"maxFiles": 3},
+                                    }
+                                ],
+                            }
+                        },
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        description=None,
+    )
+    monkeypatch.setattr(
+        workflows,
+        "check_workflow_access",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=workflow_id, created_by_id=user_id, team_id=uuid4()
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        pause_approvers.TeamMember,
+        "filter",
+        Mock(return_value=SimpleNamespace(values_list=AsyncMock(return_value=[]))),
+    )
+    monkeypatch.setattr(pause_approvers.User, "filter", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **_kwargs: PauseQuery(first=pause_request),
+    )
+
+    response = await workflows.get_pending_workflow_pause_request(
+        workflow_id, run_id, SimpleNamespace(id=user_id, is_superuser=False)
+    )
+
+    variables = response["data"]["pause_request"]["input_variables"]
+    assert [v["name"] for v in variables] == [
+        "t",
+        "p",
+        "s",
+        "n",
+        "c",
+        "arr",
+        "obj",
+        "f",
+        "img",
+        "fs",
+        "imgs",
+        "upload",
+    ]
+    assert [v["type"] for v in variables] == [
+        "text",
+        "paragraph",
+        "select",
+        "number",
+        "checkbox",
+        "array",
+        "object",
+        "file",
+        "image",
+        "files",
+        "images",
+        "files",
+    ]
+    # Every variable keeps its required flag; type metadata round-trips.
+    assert all(v["required"] is True for v in variables[:11])
+    upload = variables[11]
+    assert upload["default"] is None  # blank default -> None
+    assert upload["description"] == "docs"
+    assert upload["options"] == ["x"]
+    assert upload["fileConfig"] == {"maxFiles": 3}
 
 
 @pytest.mark.asyncio

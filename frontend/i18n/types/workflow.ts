@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-16T16:08:55.211Z
+// GENERATED — 2026-08-17T03:23:43.073Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -551,6 +551,10 @@ export type WorkflowMessages = {
       nodeType: string
       nodeStatus: string
       nodeTime: string
+      pauseLoading: string
+      pauseLoadError: string
+      pauseSubmitError: string
+      pauseWaiting: string
     }
     varTypes: {
       text: string

@@ -548,7 +548,11 @@
       "errorLabel": "错误",
       "nodeType": "类型：",
       "nodeStatus": "状态：",
-      "nodeTime": "耗时："
+      "nodeTime": "耗时：",
+      "pauseLoading": "正在加载暂停请求...",
+      "pauseLoadError": "加载暂停请求失败",
+      "pauseSubmitError": "提交失败，请重试",
+      "pauseWaiting": "此运行正在等待请求参数或审批"
     },
     "varTypes": {
       "text": "文本",

@@ -110,7 +110,14 @@ mock.module('@/lib/validation', () => ({
   formatValidationSummaryMessage: (field: string, message: unknown) => `${field}: ${message}`,
 }))
 mock.module('@/lib/api/workflows', () => ({
-  workflowsApi: { runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun },
+  workflowsApi: {
+    runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun,
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => ({ pause_request_id: 'pause-1', status: 'submitted' })),
+  },
+}))
+mock.module('@/components/chat/pause-request-actions', () => ({
+  PauseRequestActions: (props: Props) => jsx('pause-request-actions', props),
 }))
 for (const [path, exports] of [
   ['@/components/ui/button', { Button }],
@@ -122,6 +129,7 @@ for (const [path, exports] of [
     Tabs, TabsList: component('TabsList'), TabsTrigger: component('TabsTrigger'), TabsContent: component('TabsContent'),
   }],
   ['@/components/ui/field', { FieldError: component('FieldError') }],
+  ['@/components/ui/alert', { Alert: component('Alert'), AlertDescription: component('AlertDescription') }],
   ['@/components/ui/tooltip', { Tooltip: component('Tooltip'), TooltipContent: component('TooltipContent'), TooltipTrigger: component('TooltipTrigger') }],
   ['@/components/ui/checkbox', { Checkbox: component('Checkbox') }],
   ['@/components/ui/select', {

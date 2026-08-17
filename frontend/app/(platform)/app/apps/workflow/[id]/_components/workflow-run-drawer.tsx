@@ -55,12 +55,15 @@ import {
   Workflow,
   VariableDefinition,
   WorkflowEvent,
+  WorkflowPauseRequest,
   RunStatus,
 } from '@/lib/api/workflows'
 import {
   FileUploadInput,
   MultiFileUploadInput,
 } from '@/components/chat/variable-form'
+import { PauseRequestActions } from '@/components/chat/pause-request-actions'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { RunVariableDefinition } from '@/lib/utils/extract-variables'
 
 interface WorkflowRunDrawerProps {
@@ -319,6 +322,18 @@ export function WorkflowRunDrawer({
   // 使用 ref 存储节点类型映射，避免闭包问题
   const nodeTypesRef = React.useRef<Map<string, string>>(new Map())
 
+  // 暂停请求（运行等待外部输入时的请求表单与提交状态）
+  const [pauseRequest, setPauseRequest] = React.useState<WorkflowPauseRequest | null>(null)
+  const [pauseValues, setPauseValues] = React.useState<Record<string, unknown>>({})
+  const [pauseSubmitting, setPauseSubmitting] = React.useState(false)
+  const [pauseError, setPauseError] = React.useState<string | null>(null)
+  const [pauseLoading, setPauseLoading] = React.useState(false)
+  // 当前运行 ID / 已消费的 SSE 序列号 / 调试标记：
+  // 暂停提交后重连流时从 lastSequence 之后开始，避免重放旧事件。
+  const runIdRef = React.useRef<string | null>(null)
+  const lastSequenceRef = React.useRef(0)
+  const debugModeRef = React.useRef(false)
+
   const inlineFieldKeys = React.useMemo(
     () => variables.map((variable) => variable.name),
     [variables]
@@ -442,12 +457,39 @@ export function WorkflowRunDrawer({
     setNodeTraces(new Map())
     setExpandedNodes(new Set())
     setStreamingOutput('')
+    setPauseRequest(null)
+    setPauseValues({})
+    setPauseSubmitting(false)
+    setPauseError(null)
+    setPauseLoading(false)
     runStartTimeRef.current = null
     nodeTypesRef.current.clear()
+    runIdRef.current = null
+    lastSequenceRef.current = 0
+    debugModeRef.current = false
   }
+
+  // 加载等待运行的最新暂停请求（workflow_waiting 事件触发；可跨多个暂停节点重复）
+  const loadPauseRequest = React.useCallback(async () => {
+    const currentWorkflowId = workflow?.id
+    const currentRunId = runIdRef.current
+    if (!currentWorkflowId || !currentRunId) return
+    setPauseLoading(true)
+    setPauseError(null)
+    try {
+      const request = await workflowsApi.getPendingPauseRequest(currentWorkflowId, currentRunId)
+      setPauseRequest(request)
+    } catch {
+      setPauseError(t('runDrawer.pauseLoadError'))
+    } finally {
+      setPauseLoading(false)
+    }
+  }, [workflow?.id, t])
 
   // 处理 SSE 事件
   const handleStreamEvent = React.useCallback((event: WorkflowEvent) => {
+    // 记录已消费序列号：暂停提交后重连流时从 lastSequence 之后继续
+    lastSequenceRef.current = Math.max(lastSequenceRef.current, event.sequence)
     const data = event.data as Record<string, unknown>
     const nodeId = data.node_id as string | undefined
 
@@ -459,6 +501,9 @@ export function WorkflowRunDrawer({
       case 'workflow_waiting':
         setRunStatus('waiting')
         setIsRunning(false)
+        // 切换到结果标签页展示请求表单
+        setActiveTab('result')
+        void loadPauseRequest()
         break
 
       case 'workflow_complete':
@@ -627,7 +672,29 @@ export function WorkflowRunDrawer({
         setOutputs((data.outputs as Record<string, unknown>) || null)
         break
     }
-  }, [t])
+  }, [t, loadPauseRequest])
+
+  // 连接/重连运行流（暂停提交后恢复运行需要重新订阅，从 lastSequence 之后开始）
+  const connectToStream = React.useCallback((activeRunId: string) => {
+    closeStreamRef.current?.()
+    closeStreamRef.current = workflowsApi.streamWorkflowRun(activeRunId, {
+      fromSequence: lastSequenceRef.current,
+      onEvent: handleStreamEvent,
+      onError: (error) => {
+        console.error('Stream error:', error)
+        toast.error(t('runDrawer.streamConnectionFailed'))
+        setRunStatus('failed')
+        setErrorMessage(t('runDrawer.streamConnectionFailed'))
+        setIsRunning(false)
+      },
+      onComplete: () => {
+        setIsRunning(false)
+        if (debugModeRef.current) {
+          onDebugRunComplete?.()
+        }
+      },
+    })
+  }, [handleStreamEvent, t, onDebugRunComplete])
 
   // 运行工作流
   const handleRun = async (isDebug: boolean = false) => {
@@ -651,23 +718,10 @@ export function WorkflowRunDrawer({
         : await workflowsApi.runWorkflow(workflow.id, { inputs })
 
       setRunId(response.run_id)
+      runIdRef.current = response.run_id
+      debugModeRef.current = isDebug
 
-      closeStreamRef.current = workflowsApi.streamWorkflowRun(response.run_id, {
-        onEvent: handleStreamEvent,
-        onError: (error) => {
-          console.error('Stream error:', error)
-          toast.error(t('runDrawer.streamConnectionFailed'))
-          setRunStatus('failed')
-          setErrorMessage(t('runDrawer.streamConnectionFailed'))
-          setIsRunning(false)
-        },
-        onComplete: () => {
-          setIsRunning(false)
-          if (isDebug) {
-            onDebugRunComplete?.()
-          }
-        },
-      })
+      connectToStream(response.run_id)
     } catch (error) {
       console.error('Run error:', error)
       const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
@@ -708,6 +762,41 @@ export function WorkflowRunDrawer({
       closeStreamRef.current = null
     }
     setIsRunning(false)
+  }
+
+  // 提交暂停请求的值/审批决定；提交成功后重连流以接收恢复后的执行事件。
+  // require-all 审批返回 pending 时只刷新请求（展示最新审批进度），运行保持等待。
+  const handlePauseSubmit = async (values: Record<string, unknown>, comment?: string) => {
+    const currentWorkflowId = workflow?.id
+    const currentRunId = runIdRef.current
+    if (!currentWorkflowId || !currentRunId || !pauseRequest) return
+
+    setPauseSubmitting(true)
+    setPauseError(null)
+    try {
+      const result = await workflowsApi.submitPauseRequest(
+        currentWorkflowId,
+        currentRunId,
+        pauseRequest.id,
+        values,
+        comment,
+      )
+      if (result?.status === 'submitted') {
+        // 运行恢复：清空请求表单并重连流（跳过已消费的序列号）
+        setPauseRequest(null)
+        setPauseValues({})
+        setRunStatus('pending')
+        setIsRunning(true)
+        connectToStream(currentRunId)
+      } else {
+        const refreshed = await workflowsApi.getPendingPauseRequest(currentWorkflowId, currentRunId)
+        setPauseRequest(refreshed)
+      }
+    } catch {
+      setPauseError(t('runDrawer.pauseSubmitError'))
+    } finally {
+      setPauseSubmitting(false)
+    }
   }
 
   // 切换节点展开
@@ -906,8 +995,40 @@ export function WorkflowRunDrawer({
         {/* 结果标签 */}
         <TabsContent value="result" className="flex-1 m-0 mt-3 overflow-hidden">
           <ScrollArea className="h-full p-4">
-            {/* 统一的流式输出 */}
-            {runStatus === 'running' && streamingOutput ? (
+            {/* 暂停等待外部输入：展示请求表单（与开始节点输入同款控件） */}
+            {runStatus === 'waiting' ? (
+              <div className="space-y-3">
+                {pauseLoading && (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('runDrawer.pauseLoading')}
+                  </div>
+                )}
+                {pauseError && !pauseRequest && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{pauseError}</AlertDescription>
+                  </Alert>
+                )}
+                {!pauseLoading && !pauseRequest && !pauseError && (
+                  <p className="py-4 text-sm text-muted-foreground">{t('runDrawer.pauseWaiting')}</p>
+                )}
+                {pauseRequest && workflow && runId && (
+                  <PauseRequestActions
+                    workflowId={workflow.id}
+                    runId={runId}
+                    pauseRequestId={pauseRequest.id}
+                    request={pauseRequest}
+                    values={pauseValues}
+                    onValuesChange={setPauseValues}
+                    onSubmit={(values, comment) => void handlePauseSubmit(values, comment)}
+                    submitting={pauseSubmitting}
+                    error={pauseError}
+                    canSubmit={pauseRequest.can_submit}
+                    approverNames={pauseRequest.approver_names}
+                  />
+                )}
+              </div>
+            ) : runStatus === 'running' && streamingOutput ? (
               <div className="space-y-2">
                 <div className="p-3 bg-muted rounded-md text-sm whitespace-pre-wrap">
                   {streamingOutput}
@@ -1305,7 +1426,7 @@ export function WorkflowRunDrawer({
 
       {/* Footer Actions */}
       <div className="p-4 border-t rounded-b-xl space-y-2">
-        {isRunning ? (
+        {isRunning || runStatus === 'waiting' ? (
           <Button
             variant="destructive"
             className="w-full"

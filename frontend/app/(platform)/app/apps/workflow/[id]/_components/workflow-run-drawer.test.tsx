@@ -12,6 +12,9 @@ const debugWorkflow = mock(async () => ({ run_id: 'debug-1' }))
 const cancelWorkflowRun = mock(async () => ({ cancelled: true }))
 const uploadFileMock = mock(async () => ({ url: '/uploads/up.txt' }))
 const streamWorkflowRun = mock(() => mock(() => {}))
+const getPendingPauseRequest = mock(async () => null)
+const submitPauseRequest = mock(async () => ({ pause_request_id: 'pause-1', status: 'submitted' }))
+const pauseRequestActions = (props: Record<string, unknown>) => ({ type: 'pause-request-actions', props })
 const writeText = mock(async () => {})
 const toast = { success: mock(() => {}), error: mock(() => {}), info: mock(() => {}) }
 globalThis.navigator = { clipboard: { writeText } } as never
@@ -82,7 +85,8 @@ mock.module('@/lib/api/client', () => ({
   api: {},
 }))
 mock.module('@/lib/api', () => ({ ApiError: class ApiError extends Error {} }))
-mock.module('@/lib/api/workflows', () => ({ workflowsApi: { runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun } }))
+mock.module('@/lib/api/workflows', () => ({ workflowsApi: { runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun, getPendingPauseRequest, submitPauseRequest } }))
+mock.module('@/components/chat/pause-request-actions', () => ({ PauseRequestActions: pauseRequestActions }))
 mock.module('./node-output-renderer', () => ({
   nodeStatusConfig: {
     running: { icon: element, className: 'running' },
@@ -93,9 +97,9 @@ mock.module('./node-output-renderer', () => ({
   renderNodeOutput: (_type: string, outputs: unknown) => jsx('output', { children: JSON.stringify(outputs) }),
 }))
 
-for (const path of ['button', 'input', 'label', 'textarea', 'scroll-area', 'field']) {
+for (const path of ['button', 'input', 'label', 'textarea', 'scroll-area', 'field', 'alert']) {
   mock.module(`@/components/ui/${path}`, () => ({
-    Button: element, Input: element, Label: element, Textarea: element, ScrollArea: element, FieldError: element,
+    Button: element, Input: element, Label: element, Textarea: element, ScrollArea: element, FieldError: element, Alert: element, AlertDescription: element,
   }))
 }
 mock.module('@/components/ui/checkbox', () => ({ Checkbox: element }))
@@ -166,6 +170,8 @@ beforeEach(() => {
   cancelWorkflowRun.mockClear()
   uploadFileMock.mockClear()
   streamWorkflowRun.mockClear()
+  getPendingPauseRequest.mockClear()
+  submitPauseRequest.mockClear()
   writeText.mockClear()
   toast.success.mockClear()
   toast.error.mockClear()
@@ -375,4 +381,99 @@ test('disables run actions while a file upload is pending', () => {
   tree = render()
   expect(button(tree, 'runDrawer.startRun').props.disabled).toBe(false)
   expect(button(tree, 'runDrawer.debugDraft').props.disabled).toBe(false)
+})
+
+test('renders the pause request form while waiting, submits, and reconnects the stream', async () => {
+  const pauseRequest = {
+    id: 'pause-1',
+    node_id: 'pause-1',
+    node_name: 'Pause',
+    mode: 'variables',
+    title: 'Fill docs',
+    input_variables: [
+      { name: 'docs', label: 'Docs', type: 'files', required: true },
+      { name: 'items', label: 'Items', type: 'array', required: false },
+    ],
+    approver_ids: ['u-1'],
+    approver_names: ['alice'],
+    can_submit: true,
+  }
+  getPendingPauseRequest.mockResolvedValueOnce(pauseRequest)
+
+  let tree = settle({ variables: [] })
+  await (button(tree, 'runDrawer.startRun').props.onClick as () => Promise<void>)()
+  const handlers = streamWorkflowRun.mock.calls[0][1] as { onEvent: (event: unknown) => void }
+
+  handlers.onEvent({ type: 'workflow_start', sequence: 1, timestamp: '2026-01-02T03:04:05Z', data: {} })
+  handlers.onEvent({ type: 'workflow_waiting', sequence: 3, timestamp: '2026-01-02T03:04:06Z', data: {} })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  tree = render({ variables: [] })
+
+  // 等待状态：请求表单已加载，取消按钮可用
+  expect(getPendingPauseRequest).toHaveBeenCalledWith('workflow-1', 'run-1')
+  const panel = find(tree, (node) => node.type === pauseRequestActions)
+  expect(panel.props.request).toEqual(pauseRequest)
+  expect(button(tree, 'runDrawer.cancelRun')).toBeDefined()
+
+  // 提交请求 → 重连流（从已消费序列号之后继续），旧流被关闭
+  submitPauseRequest.mockResolvedValueOnce({ pause_request_id: 'pause-1', status: 'submitted' })
+  const previousClose = streamWorkflowRun.mock.results[0]?.value
+  await (panel.props.onSubmit as (values: Record<string, unknown>, comment?: string) => Promise<void>)(
+    { docs: ['/uploads/a.pdf'], items: [1, 2] },
+    'done',
+  )
+
+  expect(submitPauseRequest).toHaveBeenCalledWith(
+    'workflow-1', 'run-1', 'pause-1',
+    { docs: ['/uploads/a.pdf'], items: [1, 2] },
+    'done',
+  )
+  expect(streamWorkflowRun).toHaveBeenCalledTimes(2)
+  expect(streamWorkflowRun.mock.calls[1][0]).toBe('run-1')
+  expect((streamWorkflowRun.mock.calls[1][1] as { fromSequence: number }).fromSequence).toBe(3)
+  expect(previousClose).toHaveBeenCalledTimes(1)
+
+  tree = render({ variables: [] })
+  // 恢复运行：不再渲染请求面板，取消按钮仍在（运行中）
+  expect(descendants(tree).some((node) => node.type === pauseRequestActions)).toBe(false)
+  expect(button(tree, 'runDrawer.cancelRun')).toBeDefined()
+})
+
+test('keeps the pause form waiting when a require-all submission is not yet resolved', async () => {
+  const pauseRequest = {
+    id: 'pause-1',
+    node_id: 'pause-1',
+    node_name: 'Pause',
+    mode: 'variables',
+    title: 'Fill',
+    input_variables: [{ name: 't', label: 'T', type: 'text', required: true }],
+    approver_ids: ['u-1'],
+    approver_names: ['alice'],
+    can_submit: true,
+  }
+  getPendingPauseRequest
+    .mockResolvedValueOnce(pauseRequest)
+    .mockResolvedValueOnce({ ...pauseRequest, can_submit: false })
+  submitPauseRequest.mockResolvedValueOnce({ pause_request_id: 'pause-1', status: 'pending' })
+
+  let tree = settle({ variables: [] })
+  await (button(tree, 'runDrawer.startRun').props.onClick as () => Promise<void>)()
+  const handlers = streamWorkflowRun.mock.calls[0][1] as { onEvent: (event: unknown) => void }
+  handlers.onEvent({ type: 'workflow_waiting', sequence: 2, timestamp: '2026-01-02T03:04:06Z', data: {} })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  tree = render({ variables: [] })
+  const panel = find(tree, (node) => node.type === pauseRequestActions)
+
+  await (panel.props.onSubmit as (values: Record<string, unknown>) => Promise<void>)({ t: 'x' })
+  // 让 submit -> refresh 的异步链完成
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(submitPauseRequest).toHaveBeenCalledTimes(1)
+  // 未解析：不重连流，仅刷新请求（can_submit 变为 false 说明请求已更新）
+  expect(streamWorkflowRun).toHaveBeenCalledTimes(1)
+  tree = render({ variables: [] })
+  const refreshedPanel = find(tree, (node) => node.type === pauseRequestActions)
+  expect(refreshedPanel.props.request.can_submit).toBe(false)
 })

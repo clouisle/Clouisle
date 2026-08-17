@@ -263,7 +263,7 @@ function VariableField({
   React.useEffect(() => {
     if (value === undefined && variable.default !== undefined && variable.default !== null) {
       if (variable.type === 'checkbox' || variable.type === 'boolean') {
-        onChange(variable.default === 'true' ? true : variable.default)
+        onChange(variable.default === 'true' ? true : variable.default === 'false' ? false : variable.default)
       } else if (variable.type === 'number') {
         onChange(Number(variable.default))
       } else {

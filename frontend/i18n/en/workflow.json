@@ -548,7 +548,11 @@
       "errorLabel": "Error",
       "nodeType": "Type:",
       "nodeStatus": "Status:",
-      "nodeTime": "Time:"
+      "nodeTime": "Time:",
+      "pauseLoading": "Loading the pause request...",
+      "pauseLoadError": "Failed to load the pause request.",
+      "pauseSubmitError": "Failed to submit. Please try again.",
+      "pauseWaiting": "This run is waiting for the requested values or an approval."
     },
     "varTypes": {
       "text": "Text",
