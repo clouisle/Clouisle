@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
+from tortoise.exceptions import IntegrityError
 
 from app.models.workflow import PauseRequestStatus
 from app.services.workflow.executors.pause import PauseNodeExecutor
@@ -308,3 +309,90 @@ async def test_pause_executor_clears_description_on_resolve_failure(
     assert result.waiting is True
     assert create.await_args.kwargs["description"] == ""
     assert notify.await_args.kwargs["description"] == ""
+
+
+@pytest.mark.asyncio
+async def test_pause_executor_fails_on_cancelled_request(monkeypatch):
+    """请求被取消（运行取消）后暂停节点按失败处理，而不是继续执行。"""
+    request = SimpleNamespace(
+        status=PauseRequestStatus.CANCELLED,
+        values={},
+        submitted_by_id=None,
+    )
+    monkeypatch.setattr(
+        pause_module.WorkflowPauseRequest, "filter", Mock(return_value=_query(request))
+    )
+
+    result = await PauseNodeExecutor().execute(
+        _node(), SimpleNamespace(), SimpleNamespace(id=uuid4(), workflow_id=uuid4())
+    )
+
+    assert result.waiting is False
+    assert result.error == "workflow_execution_error"
+
+
+@pytest.mark.asyncio
+async def test_pause_executor_reuses_request_after_unique_race(monkeypatch):
+    run = SimpleNamespace(id=uuid4(), workflow_id=uuid4())
+    raced_request = SimpleNamespace(status=PauseRequestStatus.PENDING)
+    request_queries = [_query(None), _query(raced_request)]
+    create = AsyncMock(side_effect=IntegrityError("duplicate pause request"))
+
+    monkeypatch.setattr(
+        pause_module.WorkflowPauseRequest,
+        "filter",
+        Mock(side_effect=request_queries),
+    )
+    monkeypatch.setattr(pause_module.WorkflowPauseRequest, "create", create)
+    monkeypatch.setattr(
+        pause_module.NodeExecution,
+        "filter",
+        Mock(return_value=_query(SimpleNamespace(id=uuid4()))),
+    )
+    notify = AsyncMock()
+    monkeypatch.setattr(pause_module, "notify_pause_pending", notify)
+
+    result = await PauseNodeExecutor().execute(_node(), SimpleNamespace(), run)
+
+    assert result.waiting is True
+    notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pause_executor_reraises_unique_race_without_existing_request(
+    monkeypatch,
+):
+    run = SimpleNamespace(id=uuid4(), workflow_id=uuid4())
+    create = AsyncMock(side_effect=IntegrityError("duplicate pause request"))
+
+    monkeypatch.setattr(
+        pause_module.WorkflowPauseRequest,
+        "filter",
+        Mock(side_effect=[_query(None), _query(None)]),
+    )
+    monkeypatch.setattr(pause_module.WorkflowPauseRequest, "create", create)
+    monkeypatch.setattr(
+        pause_module.NodeExecution,
+        "filter",
+        Mock(return_value=_query(SimpleNamespace(id=uuid4()))),
+    )
+
+    with pytest.raises(IntegrityError):
+        await PauseNodeExecutor().execute(_node(), SimpleNamespace(), run)
+
+
+@pytest.mark.asyncio
+async def test_pause_executor_keeps_existing_pending_request_waiting(monkeypatch):
+    request = SimpleNamespace(status=PauseRequestStatus.PENDING)
+    monkeypatch.setattr(
+        pause_module.WorkflowPauseRequest,
+        "filter",
+        Mock(return_value=_query(request)),
+    )
+
+    result = await PauseNodeExecutor().execute(
+        _node(), SimpleNamespace(), SimpleNamespace(id=uuid4(), workflow_id=uuid4())
+    )
+
+    assert result.waiting is True
+    assert result.error is None

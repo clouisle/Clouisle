@@ -7,7 +7,12 @@ import pytest
 
 from app.api import deps
 from app.api.v1.endpoints import workflows
-from app.models.workflow import RunStatus, TriggerType, WorkflowStatus
+from app.models.workflow import (
+    RunStatus,
+    PauseRequestStatus,
+    TriggerType,
+    WorkflowStatus,
+)
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.workflow import WorkflowRunRequest
 from app.tasks.workflow import run_workflow_task
@@ -346,6 +351,112 @@ def mock_pause_dependencies(monkeypatch):
     monkeypatch.setattr(workflows, "resolve_pause_approver_ids", resolve)
 
 
+def test_get_pause_request_config_returns_none_on_malformed_snapshots():
+    """损坏/缺失的快照逐级返回 None，绝不抛错。"""
+    pause_request = SimpleNamespace(node_id="pause-1")
+
+    # 无快照
+    assert (
+        workflows.get_pause_request_config(
+            SimpleNamespace(context_snapshot=None), pause_request
+        )
+        is None
+    )
+    # workflow_definition 不是 dict
+    assert (
+        workflows.get_pause_request_config(
+            SimpleNamespace(context_snapshot={"workflow_definition": []}),
+            pause_request,
+        )
+        is None
+    )
+    # nodes 不是 list
+    assert (
+        workflows.get_pause_request_config(
+            SimpleNamespace(
+                context_snapshot={"workflow_definition": {"nodes": "broken"}}
+            ),
+            pause_request,
+        )
+        is None
+    )
+    # 找不到目标节点
+    assert (
+        workflows.get_pause_request_config(
+            SimpleNamespace(
+                context_snapshot={"workflow_definition": {"nodes": [{"id": "other"}]}}
+            ),
+            pause_request,
+        )
+        is None
+    )
+    # node data 不是 dict
+    assert (
+        workflows.get_pause_request_config(
+            SimpleNamespace(
+                context_snapshot={
+                    "workflow_definition": {
+                        "nodes": [{"id": "pause-1", "data": "broken"}]
+                    }
+                }
+            ),
+            pause_request,
+        )
+        is None
+    )
+    # 没有 pauseConfig/config
+    assert (
+        workflows.get_pause_request_config(
+            SimpleNamespace(
+                context_snapshot={
+                    "workflow_definition": {"nodes": [{"id": "pause-1", "data": {}}]}
+                }
+            ),
+            pause_request,
+        )
+        is None
+    )
+
+
+def test_get_pause_request_config_reads_pause_config():
+    """优先 pauseConfig，其次 config。"""
+    pause_request = SimpleNamespace(node_id="pause-1")
+
+    config = workflows.get_pause_request_config(
+        SimpleNamespace(
+            context_snapshot={
+                "workflow_definition": {
+                    "nodes": [
+                        {
+                            "id": "pause-1",
+                            "data": {
+                                "pauseConfig": {"mode": "approval"},
+                                "config": {"mode": "variables"},
+                            },
+                        }
+                    ]
+                }
+            }
+        ),
+        pause_request,
+    )
+    assert config == {"mode": "approval"}
+
+    fallback = workflows.get_pause_request_config(
+        SimpleNamespace(
+            context_snapshot={
+                "workflow_definition": {
+                    "nodes": [
+                        {"id": "pause-1", "data": {"config": {"mode": "variables"}}}
+                    ]
+                }
+            }
+        ),
+        pause_request,
+    )
+    assert fallback == {"mode": "variables"}
+
+
 @pytest.mark.parametrize(
     "value",
     ["", "   ", [], {}],
@@ -621,6 +732,84 @@ async def test_submit_pause_variables_dispatches_resume(monkeypatch):
     checks.assert_awaited_once_with(workflow_id, user)
     delay.assert_called_once_with(str(run_id))
     audit.assert_awaited_once()
+    remove_notifications.assert_awaited_once_with(pause_request.id)
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_redispatch_resume_for_already_submitted(monkeypatch):
+    """请求已 SUBMITTED 但运行仍等待（resume 任务丢失）：重新派发，不重复校验值。"""
+    workflow_id, run_id, user_id, pause_id = (uuid4() for _ in range(4))
+    user = SimpleNamespace(id=user_id, is_superuser=False)
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        name="Flow",
+        created_by_id=user_id,
+        team_id=uuid4(),
+    )
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.WAITING,
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {
+                            "pauseConfig": {
+                                "mode": "variables",
+                                "approverIds": [str(user_id)],
+                            }
+                        },
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.SUBMITTED,
+    )
+    delay = Mock()
+    remove_notifications = AsyncMock()
+
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **kwargs: PauseQuery(
+            first=pause_request, updated=1 if "status" in kwargs else 0
+        ),
+    )
+    monkeypatch.setattr(
+        workflows, "remove_pause_pending_notifications", remove_notifications
+    )
+    monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
+    from app.tasks.workflow import resume_workflow_task
+
+    monkeypatch.setattr(resume_workflow_task, "delay", delay)
+
+    response = await workflows.submit_workflow_pause_request(
+        workflow_id,
+        run_id,
+        pause_id,
+        workflows.PauseRequestSubmitRequest(values={}),
+        SimpleNamespace(),
+        user,
+    )
+
+    assert response["data"]["status"] == "submitted"
+    delay.assert_called_once_with(str(run_id))
     remove_notifications.assert_awaited_once_with(pause_request.id)
 
 
@@ -2054,3 +2243,632 @@ async def test_get_pending_pause_prefers_resolved_request_description(monkeypatc
     )
 
     assert response["data"]["pause_request"]["description"] == "Resolved: price is 42"
+
+
+@pytest.mark.parametrize(
+    ("var_type", "value"),
+    [
+        ("unknown-type", "anything"),  # 未知类型按不合法处理
+        ("text", None),  # 可选字段缺失
+    ],
+)
+def test_pause_submission_unknown_or_missing_types(var_type, value):
+    config = {
+        "inputVariables": [{"name": "value", "type": var_type, "required": False}]
+    }
+    if value is None:
+        assert workflows.pause_submission_is_valid(config, "variables", {})
+    else:
+        assert not workflows.pause_submission_is_valid(
+            config, "variables", {"value": value}
+        )
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_submitted_request_requires_waiting_run(monkeypatch):
+    """请求已 SUBMITTED 但运行已不在等待 → 409（不能盲目重派发）。"""
+    workflow_id, run_id, user_id, pause_id = (uuid4() for _ in range(4))
+    user = SimpleNamespace(id=user_id, is_superuser=False)
+    workflow = SimpleNamespace(
+        id=workflow_id, name="Flow", created_by_id=user_id, team_id=uuid4()
+    )
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.SUCCESS,
+        context_snapshot={},
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.SUBMITTED,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **kwargs: PauseQuery(first=pause_request),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            user,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.msg_key == "workflow_run_not_waiting"
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_submitted_request_rejects_non_approver(monkeypatch):
+    """已 SUBMITTED 的重派发同样只允许审批人（或超管）。"""
+    workflow_id, run_id, user_id, pause_id = (uuid4() for _ in range(4))
+    intruder = SimpleNamespace(id=uuid4(), is_superuser=False)
+    workflow = SimpleNamespace(
+        id=workflow_id, name="Flow", created_by_id=user_id, team_id=uuid4()
+    )
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.WAITING,
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {
+                            "pauseConfig": {
+                                "mode": "variables",
+                                "approverIds": [str(user_id)],
+                            }
+                        },
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.SUBMITTED,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **kwargs: PauseQuery(first=pause_request),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            intruder,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.msg_key == "workflow_pause_not_approver"
+
+
+@pytest.mark.parametrize(
+    "variables",
+    ["not-a-list", [None], [{"name": ""}]],
+)
+def test_pause_submission_rejects_malformed_variable_schema(variables):
+    assert not workflows.pause_submission_is_valid(
+        {"inputVariables": variables}, "variables", {}
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_access_fallback_reraises_when_workflow_missing(monkeypatch):
+    workflow_id, run_id, pause_id = (uuid4() for _ in range(3))
+    access_error = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(side_effect=access_error)
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=None)
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            SimpleNamespace(id=uuid4(), is_superuser=False),
+        )
+
+    assert exc_info.value is access_error
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_rejects_missing_run(monkeypatch):
+    workflow_id, run_id, pause_id = (uuid4() for _ in range(3))
+    workflow = SimpleNamespace(id=workflow_id)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=None)
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            user,
+        )
+
+    assert exc_info.value.msg_key == "workflow_run_not_found"
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_rejects_missing_pause_request(monkeypatch):
+    workflow_id, run_id, pause_id = (uuid4() for _ in range(3))
+    workflow = SimpleNamespace(id=workflow_id)
+    run = SimpleNamespace(id=run_id, workflow_id=workflow_id, status=RunStatus.WAITING)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **_kwargs: PauseQuery(first=None),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            user,
+        )
+
+    assert exc_info.value.msg_key == "workflow_pause_request_not_found"
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_rechecks_run_status_for_lost_resume(monkeypatch):
+    workflow_id, run_id, pause_id = (uuid4() for _ in range(3))
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        created_by_id=user.id,
+        team_id=uuid4(),
+    )
+
+    class FlappingRun:
+        def __init__(self):
+            self.id = run_id
+            self.workflow_id = workflow_id
+            self.context_snapshot = {}
+            self.reads = 0
+
+        @property
+        def status(self):
+            self.reads += 1
+            return RunStatus.WAITING if self.reads == 1 else RunStatus.SUCCESS
+
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.SUBMITTED,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=FlappingRun())
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **_kwargs: PauseQuery(first=pause_request),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            user,
+        )
+
+    assert exc_info.value.msg_key == "workflow_pause_request_not_pending"
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_lost_resume_reraises_access_error_for_non_approver(
+    monkeypatch,
+):
+    workflow_id, run_id, pause_id, approver_id = (uuid4() for _ in range(4))
+    access_error = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    workflow = SimpleNamespace(id=workflow_id, created_by_id=uuid4(), team_id=uuid4())
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.WAITING,
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {"config": {"approverIds": [str(approver_id)]}},
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.SUBMITTED,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(side_effect=access_error)
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **_kwargs: PauseQuery(first=pause_request),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            SimpleNamespace(id=uuid4(), is_superuser=False),
+        )
+
+    assert exc_info.value is access_error
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_pending_reraises_access_error_for_non_approver(monkeypatch):
+    workflow_id, run_id, pause_id, approver_id = (uuid4() for _ in range(4))
+    access_error = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    workflow = SimpleNamespace(id=workflow_id, created_by_id=uuid4(), team_id=uuid4())
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.WAITING,
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {
+                            "config": {
+                                "inputVariables": [],
+                                "approverIds": [str(approver_id)],
+                            }
+                        },
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.PENDING,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(side_effect=access_error)
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **_kwargs: PauseQuery(first=pause_request),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            SimpleNamespace(id=uuid4(), is_superuser=False),
+        )
+
+    assert exc_info.value is access_error
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_require_all_conflicts_when_locked_run_is_missing(
+    monkeypatch,
+):
+    workflow_id, run_id, user_id, pause_id, approver_id = (uuid4() for _ in range(5))
+    workflow = SimpleNamespace(id=workflow_id, created_by_id=uuid4(), team_id=uuid4())
+    run = _require_all_run(workflow_id, run_id, user_id, approver_id)
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Approval",
+        mode="approval",
+        status=PauseRequestStatus.PENDING,
+        approvals=[],
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun,
+        "filter",
+        Mock(side_effect=[Query(first=run), Query(first=None)]),
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        Mock(
+            side_effect=[
+                PauseQuery(first=pause_request),
+                PauseQuery(first=pause_request),
+            ]
+        ),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={"decision": "approved"}),
+            SimpleNamespace(),
+            SimpleNamespace(id=user_id, is_superuser=False),
+        )
+
+    assert exc_info.value.msg_key == "workflow_pause_request_not_pending"
+
+
+@pytest.mark.asyncio
+async def test_submit_pause_conflicts_when_conditional_update_loses_race(monkeypatch):
+    workflow_id, run_id, user_id, pause_id = (uuid4() for _ in range(4))
+    workflow = SimpleNamespace(id=workflow_id, created_by_id=user_id, team_id=uuid4())
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        status=RunStatus.WAITING,
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {"config": {"inputVariables": []}},
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        run_id=run_id,
+        workflow_id=workflow_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        status=PauseRequestStatus.PENDING,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(return_value=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        Mock(side_effect=[PauseQuery(first=pause_request), PauseQuery(updated=0)]),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.submit_workflow_pause_request(
+            workflow_id,
+            run_id,
+            pause_id,
+            workflows.PauseRequestSubmitRequest(values={}),
+            SimpleNamespace(),
+            SimpleNamespace(id=user_id, is_superuser=False),
+        )
+
+    assert exc_info.value.msg_key == "workflow_pause_request_not_pending"
+
+
+@pytest.mark.asyncio
+async def test_get_pause_access_fallback_reraises_when_workflow_missing(monkeypatch):
+    workflow_id, run_id = uuid4(), uuid4()
+    access_error = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(side_effect=access_error)
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=None)
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.get_pending_workflow_pause_request(
+            workflow_id,
+            run_id,
+            SimpleNamespace(id=uuid4(), is_superuser=False),
+        )
+
+    assert exc_info.value is access_error
+
+
+@pytest.mark.asyncio
+async def test_get_pause_rejects_missing_run_after_access_fallback(monkeypatch):
+    workflow_id, run_id = uuid4(), uuid4()
+    access_error = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    workflow = SimpleNamespace(id=workflow_id)
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(side_effect=access_error)
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=None)
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.get_pending_workflow_pause_request(
+            workflow_id,
+            run_id,
+            SimpleNamespace(id=uuid4(), is_superuser=False),
+        )
+
+    assert exc_info.value.msg_key == "workflow_run_not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_pause_reraises_access_error_for_non_approver(monkeypatch):
+    workflow_id, run_id, pause_id, approver_id = (uuid4() for _ in range(4))
+    access_error = BusinessError(
+        code=ResponseCode.FORBIDDEN,
+        msg_key="workflow_access_denied",
+        status_code=403,
+    )
+    workflow = SimpleNamespace(
+        id=workflow_id, name="Flow", created_by_id=uuid4(), team_id=uuid4()
+    )
+    run = SimpleNamespace(
+        id=run_id,
+        workflow_id=workflow_id,
+        fetch_related=AsyncMock(),
+        workflow=workflow,
+        triggered_by=None,
+        started_at=None,
+        created_at="2026-01-01T00:00:00Z",
+        context_snapshot={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": "pause-1",
+                        "data": {"config": {"approverIds": [str(approver_id)]}},
+                    }
+                ]
+            }
+        },
+    )
+    pause_request = SimpleNamespace(
+        id=pause_id,
+        node_id="pause-1",
+        node_name="Pause",
+        mode="variables",
+        description=None,
+        approvals=[],
+    )
+    monkeypatch.setattr(
+        workflows, "check_workflow_access", AsyncMock(side_effect=access_error)
+    )
+    monkeypatch.setattr(
+        workflows.Workflow, "filter", lambda **_kwargs: Query(first=workflow)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", lambda **_kwargs: Query(first=run)
+    )
+    monkeypatch.setattr(
+        workflows.WorkflowPauseRequest,
+        "filter",
+        lambda **_kwargs: PauseQuery(first=pause_request),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await workflows.get_pending_workflow_pause_request(
+            workflow_id,
+            run_id,
+            SimpleNamespace(id=uuid4(), is_superuser=False),
+        )
+
+    assert exc_info.value is access_error

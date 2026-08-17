@@ -4,7 +4,11 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.workflow import RunStatus
+from app.models.workflow import RunStatus, NodeStatus
+from app.services.workflow.errors import (
+    WorkflowNotPublishedError,
+    WorkflowValidationError,
+)
 from app.services.workflow.orchestrator import WorkflowOrchestrator
 
 
@@ -486,3 +490,191 @@ async def test_execute_resume_rebuilds_sets_and_runs_only_paused_node() -> None:
 
     assert count == 1
     assert [call.kwargs["node_id"] for call in executed.await_args_list] == ["paused"]
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_run_rejects_missing_pinned_definition():
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    workflow_id = uuid4()
+    run = SimpleNamespace(id=uuid4(), context_snapshot={}, status=RunStatus.WAITING)
+    service._load_workflow = AsyncMock(
+        return_value=SimpleNamespace(name="Workflow", definition={"nodes": []})
+    )
+
+    with patch("app.services.workflow.orchestrator.WorkflowRun") as run_model:
+        run_model.filter.return_value.first = AsyncMock(return_value=run)
+        with pytest.raises(WorkflowValidationError):
+            await service.run_with_run_id(
+                run.id,
+                workflow_id,
+                {},
+                uuid4(),
+                stream=False,
+                resume=True,
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cached", [{"nodes": ["cached"]}, None])
+async def test_published_definition_cache_hit_and_miss(cached):
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    cache = MagicMock(
+        get_workflow=AsyncMock(return_value=cached),
+        set_workflow=AsyncMock(),
+    )
+    service._cache = cache
+    workflow = SimpleNamespace(
+        id=uuid4(),
+        name="Workflow",
+        definition={"nodes": ["draft"]},
+    )
+    published = SimpleNamespace(version=3, definition={"nodes": ["published"]})
+
+    with patch("app.services.workflow.orchestrator.WorkflowVersion") as versions:
+        query = versions.filter.return_value
+        query.order_by.return_value = query
+        query.first = AsyncMock(return_value=published)
+        result = await service._get_workflow_definition(workflow, is_debug=False)
+
+    assert result == (cached or published.definition)
+    if cached is None:
+        cache.set_workflow.assert_awaited_once_with(
+            str(workflow.id), published.definition, version="published:3"
+        )
+    else:
+        cache.set_workflow.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_debug_definition_requires_a_nonempty_workflow_definition():
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+
+    with pytest.raises(WorkflowNotPublishedError):
+        await service._get_workflow_definition(
+            SimpleNamespace(id=uuid4(), name="Workflow", definition={}),
+            is_debug=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_resume_restores_previous_answer_outputs():
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    answer = SimpleNamespace(
+        node_id="answer-1",
+        node_type="answer",
+        status=NodeStatus.SUCCESS,
+        outputs={"answer": "previous"},
+    )
+    run = SimpleNamespace(id=uuid4())
+    context = MagicMock()
+    plan = MagicMock(stages=[])
+
+    with patch("app.services.workflow.orchestrator.NodeExecution") as executions:
+        executions.filter.return_value.all = AsyncMock(return_value=[answer])
+        outputs, count = await service._execute(
+            plan,
+            context,
+            run,
+            None,
+            start_time=__import__("time").time(),
+            resume=True,
+        )
+
+    assert outputs == {"answer": "previous"}
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_run_seeds_stream_sequence():
+    workflow_id = uuid4()
+    run = SimpleNamespace(
+        id=uuid4(),
+        context_snapshot={"workflow_definition": {"nodes": []}},
+        status=RunStatus.WAITING,
+        total_duration_ms=4,
+        save=AsyncMock(),
+    )
+    workflow = SimpleNamespace(name="Workflow", definition={"nodes": []})
+    plan = MagicMock(validate=MagicMock(return_value=[]))
+    context = MagicMock(set_inputs=AsyncMock())
+    stream = MagicMock(
+        seed_sequence=AsyncMock(),
+        publish_workflow_start=AsyncMock(),
+        publish_workflow_complete=AsyncMock(),
+    )
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    service._load_workflow = AsyncMock(return_value=workflow)
+    service._get_execution_plan = AsyncMock(return_value=plan)
+    service._execute = AsyncMock(return_value=({}, 0))
+    service._complete_run = AsyncMock()
+
+    with (
+        patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
+        patch(
+            "app.services.workflow.orchestrator.get_redis",
+            new=AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.services.workflow.orchestrator.ExecutionContext.create",
+            new=AsyncMock(return_value=context),
+        ),
+        patch("app.services.workflow.orchestrator.StreamManager", return_value=stream),
+    ):
+        run_model.filter.return_value.first = AsyncMock(return_value=run)
+        result = await service.run_with_run_id(
+            run.id,
+            workflow_id,
+            {},
+            uuid4(),
+            stream=True,
+            resume=True,
+        )
+
+    assert result == str(run.id)
+    stream.seed_sequence.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_run_keeps_supplied_public_base_url():
+    workflow_id = uuid4()
+    run = SimpleNamespace(
+        id=uuid4(),
+        context_snapshot={"workflow_definition": {"nodes": []}},
+        status=RunStatus.WAITING,
+        total_duration_ms=None,
+        save=AsyncMock(),
+    )
+    workflow = SimpleNamespace(name="Workflow", definition={"nodes": []})
+    plan = MagicMock(validate=MagicMock(return_value=[]))
+    context = MagicMock(set_inputs=AsyncMock())
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    service._load_workflow = AsyncMock(return_value=workflow)
+    service._get_execution_plan = AsyncMock(return_value=plan)
+    service._execute = AsyncMock(return_value=({}, 0))
+    service._complete_run = AsyncMock()
+
+    with (
+        patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
+        patch(
+            "app.services.workflow.orchestrator.get_redis",
+            new=AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.services.workflow.orchestrator.ExecutionContext.create",
+            new=AsyncMock(return_value=context),
+        ) as create_context,
+    ):
+        run_model.filter.return_value.first = AsyncMock(return_value=run)
+        await service.run_with_run_id(
+            run.id,
+            workflow_id,
+            {},
+            uuid4(),
+            stream=False,
+            public_base_url="https://caller.example",
+            resume=True,
+        )
+
+    assert (
+        create_context.await_args.kwargs["public_base_url"] == "https://caller.example"
+    )
