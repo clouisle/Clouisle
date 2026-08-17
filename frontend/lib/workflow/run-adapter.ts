@@ -33,6 +33,14 @@ export interface WorkflowRunAdapter {
   getWorkflow: (id: string) => Promise<Workflow>
   createRunApi: () => WorkflowRunApi
   loadHistory: (id: string) => Promise<WorkflowRunListItem[]>
+  /**
+   * Paginated history for scroll-loading. When absent the run page falls back
+   * to the single `loadHistory` call and shows no load-more.
+   */
+  loadHistoryPage?: (
+    id: string,
+    params: { page: number; pageSize: number }
+  ) => Promise<{ items: WorkflowRunListItem[]; total: number }>
   loadRunDetail: (id: string, runId: string) => Promise<RunDetail>
   getPendingPauseRequest?: (workflowId: string, runId: string) => Promise<WorkflowPauseRequest | null>
   submitPauseRequest?: (
@@ -78,7 +86,10 @@ export const jwtWorkflowRunAdapter: WorkflowRunAdapter = {
     streamWorkflowRun: (runId, handlers) => workflowsApi.streamWorkflowRun(runId, handlers),
     cancelWorkflowRun: async (runId) => { await workflowsApi.cancelWorkflowRun(runId) },
   }),
-  loadHistory: (id) => workflowsApi.getMyWorkflowRuns(id, { pageSize: 10 }).then((d) => d.items),
+  loadHistory: (id) => workflowsApi.getMyWorkflowRuns(id, { pageSize: 20 }).then((d) => d.items),
+  loadHistoryPage: (id, params) => workflowsApi
+    .getMyWorkflowRuns(id, { page: params.page, pageSize: params.pageSize })
+    .then((d) => ({ items: d.items, total: d.total })),
   loadRunDetail: async (id, runId) => {
     const [run, nodes] = await Promise.all([
       workflowsApi.getMyWorkflowRun(id, runId),

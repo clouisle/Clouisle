@@ -454,6 +454,123 @@ describe('WorkflowRunPage', () => {
     expect(refreshedLabels).not.toContain('cancel')
   })
 
+  test('history sidebar loads more runs when scrolled near the bottom', async () => {
+    const workflow = {
+      id: 'wf-1',
+      name: 'Flow',
+      description: '',
+      icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [],
+      status: 'published',
+      visibility: 'private',
+      version: 1,
+      trigger_type: 'manual',
+      trigger_config: {},
+      run_count: 1,
+      success_count: 0,
+      fail_count: 0,
+      team_id: '',
+      created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const runItem = (id: string) => ({
+      id,
+      workflow_id: 'wf-1',
+      trigger_type: 'manual',
+      is_debug: false,
+      status: 'success',
+      inputs: {},
+      outputs: null,
+      depth: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      total_nodes: 1,
+      executed_nodes: 1,
+      failed_nodes: 0,
+      skipped_nodes: 0,
+      total_token_usage: {},
+    })
+    const page1 = Array.from({ length: 20 }, (_, index) => runItem(`r-${index + 1}`))
+    const page2 = [runItem('r-21'), runItem('r-22'), runItem('r-23')]
+    const loadHistoryPage = mock(async (_id: string, params: { page: number }) => ({
+      items: params.page === 1 ? page1 : page2,
+      total: 23,
+    }))
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun: mock(async () => {}),
+      }),
+      loadHistory: mock(async () => page1),
+      loadHistoryPage,
+      loadRunDetail: mock(async () => ({ run: null, nodes: [] })),
+      getPendingPauseRequest: mock(async () => null),
+      submitPauseRequest: mock(async () => ({})),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = page1
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = null
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+    states[17] = 23 // historyTotal
+    states[18] = 1 // historyPage
+    states[19] = false // historyLoadingMore
+
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const scroller = descendants(tree).find((node) => typeof node.props.onScroll === 'function')
+    expect(scroller).toBeDefined()
+
+    // 滚动接近底部 → 加载下一页
+    ;(scroller!.props.onScroll as (event: unknown) => void)({
+      currentTarget: { scrollTop: 1000, clientHeight: 500, scrollHeight: 1500 },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(loadHistoryPage).toHaveBeenCalledWith('wf-1', { page: 2, pageSize: 20 })
+
+    // 追加后重新渲染：两页都在，且不重复
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const next = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const itemIds = descendants(next)
+      .filter((node) => node.type === 'button' && String(collectText(node)).includes('r-'))
+      .map((node) => String(collectText(node)).match(/r-\d+/)?.[0])
+    expect(itemIds).toContain('r-1')
+    expect(itemIds).toContain('r-21')
+    expect(itemIds).toContain('r-23')
+  })
+
   test('disables the pause panel for non-approvers', async () => {
     const workflow = {
       id: 'wf-1',

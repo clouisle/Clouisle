@@ -20,6 +20,8 @@ import { renderNodeOutput } from '@/app/(platform)/app/apps/workflow/[id]/_compo
 
 type WorkflowWorkspaceView = 'form' | 'live' | 'history'
 
+const HISTORY_PAGE_SIZE = 20
+
 const TRACE_STATUS_CONFIG: Record<string, {
   icon: React.ComponentType<{ className?: string }>
   dotClass: string
@@ -64,6 +66,10 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const [isPauseSubmitting, setIsPauseSubmitting] = React.useState(false)
   const [resumingHistoryRunId, setResumingHistoryRunId] = React.useState<string | null>(null)
   const [isHistoryCancelling, setIsHistoryCancelling] = React.useState(false)
+  // 历史列表分页（滚动加载）
+  const [historyTotal, setHistoryTotal] = React.useState(0)
+  const [historyPage, setHistoryPage] = React.useState(1)
+  const [historyLoadingMore, setHistoryLoadingMore] = React.useState(false)
 
   React.useEffect(() => {
     const fetchWorkflow = async () => {
@@ -87,13 +93,49 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
   const loadHistory = React.useCallback(async () => {
     try {
       setHistoryLoading(true)
-      setHistory(await adapter.loadHistory(id))
+      if (adapter.loadHistoryPage) {
+        const { items, total } = await adapter.loadHistoryPage(id, { page: 1, pageSize: HISTORY_PAGE_SIZE })
+        setHistory(items)
+        setHistoryTotal(total)
+      } else {
+        setHistory(await adapter.loadHistory(id))
+        setHistoryTotal(0)
+      }
+      setHistoryPage(1)
     } catch {
       setHistory([])
+      setHistoryTotal(0)
     } finally {
       setHistoryLoading(false)
     }
   }, [id, adapter])
+
+  const loadMoreHistory = React.useCallback(async () => {
+    if (!adapter.loadHistoryPage || historyLoadingMore) return
+    if (history.length >= historyTotal) return
+    const nextPage = historyPage + 1
+    setHistoryLoadingMore(true)
+    try {
+      const { items, total } = await adapter.loadHistoryPage(id, { page: nextPage, pageSize: HISTORY_PAGE_SIZE })
+      setHistoryPage(nextPage)
+      setHistoryTotal(total)
+      setHistory((prev) => {
+        const seen = new Set(prev.map((run) => run.id))
+        return [...prev, ...items.filter((run) => !seen.has(run.id))]
+      })
+    } catch {
+      // keep the already loaded history; the next scroll attempt retries
+    } finally {
+      setHistoryLoadingMore(false)
+    }
+  }, [id, adapter, historyLoadingMore, history.length, historyTotal, historyPage])
+
+  const handleHistoryScroll = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 160) {
+      void loadMoreHistory()
+    }
+  }, [loadMoreHistory])
 
   React.useEffect(() => {
     void loadHistory()
@@ -439,7 +481,7 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
       </div>
 
       {/* History list */}
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto py-2" onScroll={handleHistoryScroll}>
         {historyLoading ? (
           <div className="flex justify-center py-4">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -447,35 +489,42 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
         ) : history.length === 0 ? (
           <div className="px-3 py-4 text-center text-sm text-muted-foreground">{t('noHistory')}</div>
         ) : (
-          <div className="space-y-1 px-2">
-            {history.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => void handleSelectHistory(item.id)}
-                disabled={isActive}
-                aria-current={selectedHistoryId === item.id ? 'true' : undefined}
-                className={cn(
-                  'group flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                  selectedHistoryId === item.id ? 'bg-accent' : 'hover:bg-accent/50'
-                )}
-              >
-                <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium">{t(`status.${item.status}`)}</span>
-                  <Tooltip>
-                    <TooltipTrigger render={<code />} className="block cursor-default truncate text-xs text-muted-foreground">
-                      {item.id}
-                    </TooltipTrigger>
-                    <TooltipContent>{item.id}</TooltipContent>
-                  </Tooltip>
-                </span>
-                <time className="shrink-0 text-xs text-muted-foreground">
-                  {formatDateTime(item.created_at, locale)}
-                </time>
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="space-y-1 px-2">
+              {history.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => void handleSelectHistory(item.id)}
+                  disabled={isActive}
+                  aria-current={selectedHistoryId === item.id ? 'true' : undefined}
+                  className={cn(
+                    'group flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+                    selectedHistoryId === item.id ? 'bg-accent' : 'hover:bg-accent/50'
+                  )}
+                >
+                  <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm font-medium">{t(`status.${item.status}`)}</span>
+                    <Tooltip>
+                      <TooltipTrigger render={<code />} className="block cursor-default truncate text-xs text-muted-foreground">
+                        {item.id}
+                      </TooltipTrigger>
+                      <TooltipContent>{item.id}</TooltipContent>
+                    </Tooltip>
+                  </span>
+                  <time className="shrink-0 text-xs text-muted-foreground">
+                    {formatDateTime(item.created_at, locale)}
+                  </time>
+                </button>
+              ))}
+            </div>
+            {historyLoadingMore && (
+              <div className="flex justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
