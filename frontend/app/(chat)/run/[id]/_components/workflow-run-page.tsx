@@ -487,7 +487,6 @@ export function WorkflowRunPage({ id, adapter = jwtWorkflowRunAdapter, embedMode
       nodes={nodes}
       answerText={answerText}
       isStreaming={streaming}
-      t={t}
     />
   )
 

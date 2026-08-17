@@ -3,7 +3,6 @@
 import * as React from 'react'
 import type { SourceDocumentPart } from '@/components/chat/types'
 import { TextWithCitations } from '@/components/chat/message'
-import { renderNodeOutput } from '@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer'
 
 export interface WorkflowResultNode {
   nodeType: string
@@ -17,7 +16,6 @@ interface WorkflowResultRendererProps {
   nodes?: WorkflowResultNode[]
   answerText?: string
   isStreaming?: boolean
-  t: (key: string) => string
 }
 
 const EMPTY_SOURCES: SourceDocumentPart[] = []
@@ -32,60 +30,54 @@ function answerFrom(outputs: Record<string, unknown> | null | undefined): string
 
 export type WorkflowResultSelection =
   | { kind: 'markdown'; text: string }
-  | { kind: 'node'; node: WorkflowResultNode }
   | { kind: 'json'; outputs: Record<string, unknown> }
   | { kind: 'empty' }
 
-// Node types that only echo inputs / start data; never rendered as output.
-const NON_OUTPUT_NODE_TYPES = new Set(['start', 'user_input', 'trigger'])
-
 /**
- * Select the result blocks to render. Unlike the previous single-selection
- * behavior, every completed output node is included: the primary answer text
- * (accumulated live stream or canonical persisted answer) plus each remaining
- * non-answer output node stacked in execution order. Answer nodes are not
- * stacked separately because their text is already rendered by the markdown
- * block (the live accumulation covers all of them; the persisted one covers
- * the canonical final answer).
+ * Select the result blocks to render. Only the special output node type
+ * (answer) is displayed — intermediate node outputs (llm/code/tool/...) are
+ * deliberately excluded.
+ *
+ * - Live: the accumulated answer stream (all answer nodes' tokens already
+ *   concatenated by the run hook) renders as one markdown block.
+ * - History: every completed answer node renders as its own markdown block,
+ *   stacked in execution order, so multiple output nodes accumulate.
+ * - No answer node at all: falls back to the canonical persisted answer,
+ *   then JSON outputs, then empty.
  */
 export function selectWorkflowResults(
   outputs: Record<string, unknown> | null | undefined,
   nodes: WorkflowResultNode[],
   answerText?: string
 ): WorkflowResultSelection[] {
+  if (answerText) {
+    return [{ kind: 'markdown', text: answerText }]
+  }
+
   const selections: WorkflowResultSelection[] = []
 
-  const completedNodes = [...nodes]
+  const answerNodes = [...nodes]
     .filter((node) => node.status === 'success' || node.status === 'completed')
+    .filter((node) => node.nodeType === 'answer')
     .filter((node) => hasOutputs(node.outputs))
+    .sort((a, b) => a.order - b.order)
 
-  const primaryAnswer = answerText || answerFrom(outputs)
-  if (primaryAnswer) {
-    selections.push({ kind: 'markdown', text: primaryAnswer })
-  } else {
-    // Persisted runs without outputs.answer: fall back to the last-executed
-    // answer node's text so history keeps showing the final answer.
-    const lastAnswer = [...completedNodes]
-      .sort((a, b) => b.order - a.order)
-      .find((node) => node.nodeType === 'answer')
-    const nodeAnswer = answerFrom(lastAnswer?.outputs)
+  for (const node of answerNodes) {
+    const nodeAnswer = answerFrom(node.outputs)
     if (nodeAnswer) {
       selections.push({ kind: 'markdown', text: nodeAnswer })
     }
   }
 
-  const outputNodes = completedNodes
-    .filter((node) => node.nodeType !== 'answer')
-    .filter((node) => !NON_OUTPUT_NODE_TYPES.has(node.nodeType))
-    .sort((a, b) => a.order - b.order)
-
-  for (const node of outputNodes) {
-    selections.push({ kind: 'node', node })
+  if (selections.length === 0) {
+    const finalAnswer = answerFrom(outputs)
+    if (finalAnswer) {
+      selections.push({ kind: 'markdown', text: finalAnswer })
+    } else if (hasOutputs(outputs)) {
+      selections.push({ kind: 'json', outputs })
+    }
   }
 
-  if (selections.length === 0 && hasOutputs(outputs)) {
-    selections.push({ kind: 'json', outputs })
-  }
   if (selections.length === 0) {
     selections.push({ kind: 'empty' })
   }
@@ -98,7 +90,6 @@ export function WorkflowResultRenderer({
   nodes = [],
   answerText,
   isStreaming = false,
-  t,
 }: WorkflowResultRendererProps) {
   const markdown = React.useCallback((text: string) => (
     <TextWithCitations
@@ -113,10 +104,6 @@ export function WorkflowResultRenderer({
   const renderedBlocks = selections.map((selection, index) => {
     if (selection.kind === 'markdown') {
       return <div key={index}>{markdown(selection.text)}</div>
-    }
-
-    if (selection.kind === 'node' && selection.node.outputs) {
-      return <div key={index}>{renderNodeOutput(selection.node.nodeType, selection.node.outputs, t, markdown)}</div>
     }
 
     if (selection.kind === 'json') {
