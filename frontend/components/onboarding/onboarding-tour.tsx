@@ -125,23 +125,16 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     }
   }, [tourId, config, state.isRunning, state.completedTours, pathname, isTeamLoading, currentTeam, startTour])
 
-  // DOM-backed targets may mount after this layout component. Keep a primitive
-  // availability signature so the filtered list refreshes when they do.
-  const targetAvailability = !config || typeof document === 'undefined'
-    ? null
-    : config.steps.map(step => step.skipIfMissing ? (targetExists(step) ? '1' : '0') : '1').join('')
-  const availableSteps = React.useMemo(() => {
-    if (!config) return []
-    if (targetAvailability === null) return config.steps
-    return config.steps.filter((step, index) =>
-      !step.skipIfMissing || targetAvailability[index] === '1'
-    )
-  }, [config, targetAvailability])
-  const isActiveTour = state.isRunning && state.currentTour === tourId
+  // Permission-gated controls may be absent. Filter explicitly optional steps
+  // before mounting Joyride so controlled mode never enters target-not-found.
   const steps = React.useMemo(() => {
     if (!config) return []
-    return isActiveTour ? availableSteps : config.steps
-  }, [config, availableSteps, isActiveTour])
+    if (!state.isRunning || state.currentTour !== tourId || typeof document === 'undefined') {
+      return config.steps
+    }
+    return config.steps.filter(step => !step.skipIfMissing || targetExists(step))
+  }, [config, state.currentTour, state.isRunning, tourId])
+
   // Allow external links to trigger tours, e.g. /app/apps?tour=appCreate or
   // /app/apps/:id?tour=appConfig&step=1.
   React.useEffect(() => {
@@ -150,6 +143,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     const requestedTour = searchParams.get('tour')
     if (requestedTour !== tourId) return
 
+    const availableSteps = config.steps.filter(step => !step.skipIfMissing || targetExists(step))
     const requestedStep = Number(searchParams.get('step') || '0')
     const initialStep = Number.isInteger(requestedStep)
       ? Math.min(Math.max(requestedStep, 0), Math.max(availableSteps.length - 1, 0))
@@ -157,7 +151,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
     urlTriggeredRef.current = true
     startTour(tourId, initialStep)
-  }, [config, searchParams, startTour, availableSteps.length, tourId])
+  }, [config, searchParams, startTour, tourId])
 
   // Detect the best starting step when a tour starts, then jump to it
   const startingStepDetectedRef = React.useRef<OnboardingTourId | null>(null)

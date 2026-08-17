@@ -53,6 +53,7 @@ describe('onboarding tour configurations', () => {
       '[data-testid="workflow-publish-button"]',
     ])
     expect(getTourConfigById('workflowConfig')?.steps.every(step => step.skipIfMissing)).toBe(true)
+    expect(getTourConfigById('workflowConfig')?.steps[0]?.placement).toBe('center')
   })
 
   test('looks up known tours and returns undefined for unknown IDs', () => {

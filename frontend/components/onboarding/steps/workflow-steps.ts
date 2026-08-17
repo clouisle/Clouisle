@@ -5,7 +5,7 @@ const workflowConfigSteps: OnboardingStep[] = [
     target: '[data-testid="workflow-canvas"]',
     content: 'onboarding.step20a.description',
     title: 'onboarding.step20a.title',
-    placement: 'auto',
+    placement: 'center',
     overlayClickAction: false,
     skipIfMissing: true,
   },
