@@ -199,7 +199,7 @@ export function PauseRequestActions({
       aria-labelledby="workflow-pause-heading"
       className="mt-6 overflow-hidden rounded-xl border border-amber-500/30 bg-amber-500/[0.06] shadow-sm"
     >
-      <div className="flex gap-3 border-b border-amber-500/20 bg-background/60 px-5 py-4 backdrop-blur-sm">
+      <div className="flex gap-3 rounded-t-xl border-b border-amber-500/20 bg-background/60 px-5 py-4 backdrop-blur-sm">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white shadow-sm">
           <CirclePause className="h-4 w-4" />
         </div>
