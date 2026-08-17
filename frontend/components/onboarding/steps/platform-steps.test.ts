@@ -92,6 +92,7 @@ describe('onboarding tour configurations', () => {
     expect(appendedKbSteps[4]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     expect(appendedKbSteps[6]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     expect(appendedKbSteps[11]).toMatchObject({ advanceOnClick: true, waitForRouteChange: true, overlayClickAction: false })
+    expect(appendedKbSteps[0]?.placement).toBe('center')
     expect(appendedKbSteps[12]?.placement).toBe('center')
     expect(appendedKbSteps[13]).toMatchObject({ advanceOnInput: true })
     expect(appendedKbSteps[14]).toMatchObject({ advanceOnClick: true })

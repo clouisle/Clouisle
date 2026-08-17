@@ -67,3 +67,4 @@ Revert the YUN-135 feature branch changes as one unit. No backend schema, API, o
 - Retrieval Lab and platform search-client suite: 16 tests passed, 0 failed.
 - Translation generation, strict EN/ZH parity/ICU validation, and `bunx tsc --noEmit` passed.
 - Full frontend coverage gate: 2,226 tests passed, 0 failed; LCOV covered all 485 eligible source files.
+- Post-implementation correction: overall step 14 (`step31a`) now uses `center` placement because `kb-detail-page` spans the full viewport. The regression reproduced with `auto` and passes with `center`.

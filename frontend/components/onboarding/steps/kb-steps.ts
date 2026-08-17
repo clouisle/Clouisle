@@ -104,7 +104,7 @@ const kbSteps: OnboardingStep[] = [
     target: '[data-testid="kb-detail-page"]',
     content: 'onboarding.step31a.description',
     title: 'onboarding.step31a.title',
-    placement: 'auto',
+    placement: 'center',
     route: '/app/kb',
   },
   {
