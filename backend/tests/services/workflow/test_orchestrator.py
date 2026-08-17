@@ -756,6 +756,7 @@ class TestWorkflowOrchestratorBehavior:
     ):
         workflow_id = uuid4()
         run = MagicMock(id=uuid4())
+        run.save = AsyncMock()
         workflow = MagicMock(id=workflow_id, name="Invalid")
         context = MagicMock(set_inputs=AsyncMock())
         plan = MagicMock()

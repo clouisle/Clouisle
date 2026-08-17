@@ -224,7 +224,7 @@ async def test_run_success_path_streams_metrics_and_profiling(monkeypatch):
         enable_profiling=True,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()
@@ -296,7 +296,7 @@ async def test_run_without_stream_skips_stream_manager(monkeypatch):
         enable_profiling=False,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()
@@ -343,7 +343,7 @@ async def test_run_failure_path_streams_error_and_finishes_profiling(monkeypatch
         enable_profiling=True,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()
@@ -415,7 +415,7 @@ async def test_run_failure_without_stream_skips_stream_manager(monkeypatch):
         enable_profiling=False,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()

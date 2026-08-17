@@ -11,7 +11,7 @@ from app.services.workflow.orchestrator import WorkflowOrchestrator
 def _run_boundaries(*, execute: AsyncMock):
     workflow_id = uuid4()
     user_id = uuid4()
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     workflow = SimpleNamespace(id=workflow_id, name="Release", definition={"nodes": []})
     plan = MagicMock(validate=MagicMock(return_value=[]))
     context = MagicMock(set_inputs=AsyncMock(), set_variable=AsyncMock())
@@ -472,8 +472,12 @@ async def test_execute_resume_rebuilds_sets_and_runs_only_paused_node() -> None:
     with patch("app.services.workflow.orchestrator.NodeExecution") as node_cls:
         node_cls.filter.return_value.all = AsyncMock(
             return_value=[
-                SimpleNamespace(node_id="done", status=NodeStatus.SUCCESS),
-                SimpleNamespace(node_id="skipped", status=NodeStatus.SKIPPED),
+                SimpleNamespace(
+                    node_id="done", node_type="llm", status=NodeStatus.SUCCESS
+                ),
+                SimpleNamespace(
+                    node_id="skipped", node_type="template", status=NodeStatus.SKIPPED
+                ),
             ]
         )
         outputs, count = await orchestrator._execute(
