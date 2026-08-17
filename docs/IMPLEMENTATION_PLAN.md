@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **yun-135-extend-knowledge-base-tour-to-document-ingestion-flow** — Complete. Extend the platform knowledge-base onboarding tour through detail-page ingestion, document processing states, and Retrieval Lab validation while preserving the existing tour state and route semantics. See `docs/plan/yun-135-extend-knowledge-base-tour-to-document-ingestion-flow.md`
+  - [x] 1. Preserve create navigation and nested-tour continuity
+  - [x] 2. Add ingestion and Retrieval Lab anchors
+  - [x] 3. Extend ordered bilingual tour content
+  - [x] 4. Update contract tests and generated message types
 - **workflow-pause-approvers** — Complete. Restrict pause/approval submissions to per-node approvers (fallback: workflow owner + team admins) and notify approvers when a run enters the waiting state. See `docs/plan/workflow-pause-approvers.md`
   - [x] 1. Notification type + i18n keys
   - [x] 2. Approver resolve/notify service
