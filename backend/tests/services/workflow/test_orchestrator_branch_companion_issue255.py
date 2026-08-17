@@ -159,6 +159,9 @@ async def test_issue255_orchestrator_cancel_missing_context_and_nullable_status_
             "app.services.workflow.orchestrator.WorkflowRun.filter", return_value=query
         ),
         patch(
+            "app.services.workflow.orchestrator.WorkflowPauseRequest.filter"
+        ) as pause_filter,
+        patch(
             "app.services.workflow.orchestrator.get_redis",
             AsyncMock(return_value=object()),
         ),
@@ -168,6 +171,8 @@ async def test_issue255_orchestrator_cancel_missing_context_and_nullable_status_
         ),
         patch("app.services.workflow.orchestrator.StreamManager", return_value=stream),
     ):
+        pause_filter.return_value.update = AsyncMock(return_value=1)
+        pause_filter.return_value.all = AsyncMock(return_value=[])
         assert await orchestrator.cancel(str(run.id)) is True
         status = await orchestrator.get_run_status(str(run.id))
 

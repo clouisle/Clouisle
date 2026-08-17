@@ -44,6 +44,7 @@ class RunStatus(str, Enum):
 
     PENDING = "pending"  # Waiting to execute
     RUNNING = "running"  # Executing
+    WAITING = "waiting"  # Paused waiting for a human approval decision
     SUCCESS = "success"  # Completed successfully
     FAILED = "failed"  # Failed
     CANCELLED = "cancelled"  # Cancelled
@@ -55,6 +56,7 @@ class NodeStatus(str, Enum):
 
     PENDING = "pending"  # Waiting to execute
     RUNNING = "running"  # Executing
+    WAITING = "waiting"  # Paused at an approval node awaiting a decision
     SUCCESS = "success"  # Completed successfully
     FAILED = "failed"  # Failed
     SKIPPED = "skipped"  # Skipped
@@ -338,7 +340,7 @@ class NodeExecution(models.Model):
     sub_run_id = fields.UUIDField(null=True, description="Sub-workflow run ID")
 
     # Error info
-    error_message = fields.TextField(null=True, description="Error message")
+    error_message: str | None = fields.TextField(null=True, description="Error message")  # type: ignore[assignment]
     error_type = fields.CharField(max_length=100, null=True, description="Error type")
     error_traceback = fields.TextField(null=True, description="Error traceback")
 
@@ -414,3 +416,113 @@ class WorkflowVersion(models.Model):
 
     def __str__(self):
         return f"Workflow {self.workflow_id} v{self.version}"
+
+
+class PauseRequestStatus(str, Enum):
+    """Pause request lifecycle status"""
+
+    PENDING = "pending"  # Awaiting external variable submission
+    SUBMITTED = "submitted"  # Variables submitted, execution resumed
+    CANCELLED = "cancelled"  # Run cancelled while paused
+
+
+class WorkflowPauseRequest(models.Model):
+    """
+    A pause point raised by a pause node: the run waits for an external
+    submitter to pass variable values (or an approval decision).
+
+    The run pauses (RunStatus.WAITING) while a pending request exists; the
+    submit API resolves it and dispatches a resume task. Approval mode is the
+    same path with a fixed decision/comment payload, so the record doubles as
+    the approval audit trail.
+    """
+
+    id = fields.UUIDField(primary_key=True)
+
+    # Run association
+    run: fields.ForeignKeyRelation[WorkflowRun] = fields.ForeignKeyField(
+        "models.WorkflowRun",
+        related_name="pause_requests",
+        on_delete=fields.CASCADE,
+        description="Workflow run this pause belongs to",
+    )
+    run_id: UUID  # type: ignore[assignment]
+
+    # Node association
+    node_execution: fields.ForeignKeyRelation[NodeExecution] | None = (
+        fields.ForeignKeyField(
+            "models.NodeExecution",
+            related_name="pause_requests",
+            on_delete=fields.CASCADE,
+            null=True,
+            description="Node execution that raised this pause",
+        )
+    )
+    node_execution_id: UUID | None  # type: ignore[assignment]
+
+    workflow: fields.ForeignKeyRelation[Workflow] | None = fields.ForeignKeyField(
+        "models.Workflow",
+        related_name="pause_requests",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="Workflow being run",
+    )
+    workflow_id: UUID | None  # type: ignore[assignment]
+
+    # Node identification
+    node_id = fields.CharField(max_length=100, description="ReactFlow node ID")
+    node_name = fields.CharField(max_length=200, description="Node display name")
+
+    # Pause mode: variables (generic external input) or approval
+    mode = fields.CharField(max_length=20, default="variables")
+
+    # Approval content with variable references resolved at pause time
+    # (stored so the pending endpoint and notifications can show it without
+    # the worker-side execution context).
+    description = fields.TextField(
+        null=True, description="Resolved approval content shown to reviewers"
+    )
+
+    # Lifecycle
+    status = fields.CharEnumField(
+        PauseRequestStatus,
+        default=PauseRequestStatus.PENDING,
+        description="Pause request status",
+    )
+
+    # Submitted payload
+    values: dict | None = fields.JSONField(
+        null=True,
+        description="Submitted variable values",  # type: ignore[assignment]
+    )
+    comment = fields.TextField(null=True, description="Submitter/approver comment")
+
+    # Per-approver decisions when the pause config requires every approver to
+    # process (approval mode, requireAllApprovals): a list of
+    # {"approver_id", "decision", "comment", "submitted_at"} records. The
+    # request resolves (SUBMITTED) once all approvers approved or any one
+    # rejected.
+    approvals: list[dict] | None = fields.JSONField(
+        null=True,
+        description="Per-approver decisions for require-all approvals",  # type: ignore[assignment]
+    )
+
+    # Submitter
+    submitted_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
+        "models.User",
+        related_name="workflow_pause_submissions",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="User who submitted the values",
+    )
+    submitted_by_id: UUID | None  # type: ignore[assignment]
+
+    # Timing
+    created_at = fields.DatetimeField(auto_now_add=True)
+    submitted_at = fields.DatetimeField(
+        null=True, description="When the values were submitted"
+    )
+
+    class Meta:
+        table = "workflow_pause_requests"
+        unique_together = (("run", "node_id"),)

@@ -80,6 +80,7 @@ import { TriggerNode } from './_components/nodes/trigger-node'
 import { LLMNode } from './_components/nodes/llm-node'
 import { MediaGenerationNode } from './_components/nodes/media-generation-node'
 import { ConditionNode } from './_components/nodes/condition-node'
+import { PauseNode } from './_components/nodes/pause-node'
 import { SubWorkflowNode } from './_components/nodes/sub-workflow-node'
 import { AgentNode } from './_components/nodes/agent-node'
 import { ToolNode } from './_components/nodes/tool-node'
@@ -134,6 +135,7 @@ const nodeTypes = {
   llm: LLMNode,
   media_generation: MediaGenerationNode,
   condition: ConditionNode,
+  pause: PauseNode,
   sub_workflow: SubWorkflowNode,
   agent: AgentNode,
   tool: ToolNode,

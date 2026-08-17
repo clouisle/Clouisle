@@ -65,3 +65,13 @@ function getNotificationDisplayKind(type: string, isAnnouncement: boolean): Noti
 
   return 'general'
 }
+
+/** Approval notifications carry the pause-request coordinates in `data`. */
+export function getPauseActionMeta(item: Pick<NotificationItem, 'type' | 'data'>) {
+  if (item.type !== 'workflow.pause_pending') return null
+  const data = item.data as Record<string, unknown> | null | undefined
+  const workflowId = typeof data?.workflow_id === 'string' ? data.workflow_id : null
+  const runId = typeof data?.run_id === 'string' ? data.run_id : null
+  const requestId = typeof data?.pause_request_id === 'string' ? data.pause_request_id : null
+  return workflowId && runId && requestId ? { workflowId, runId, requestId } : null
+}

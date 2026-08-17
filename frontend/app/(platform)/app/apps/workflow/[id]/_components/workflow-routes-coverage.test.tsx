@@ -111,6 +111,8 @@ mock.module('lucide-react', () => ({
   CheckCircle: createIcon('CheckCircle'),
   CheckCircle2: createIcon('CheckCircle2'),
   CheckSquare: createIcon('CheckSquare'),
+  Circle: createIcon('Circle'),
+  CirclePause: createIcon('CirclePause'),
   ChevronDown: createIcon('ChevronDown'),
   ChevronLeft: createIcon('ChevronLeft'),
   ChevronRight: createIcon('ChevronRight'),
@@ -270,6 +272,7 @@ mock.module('./nodes/trigger-node', () => ({ TriggerNode: (props: Record<string,
 mock.module('./nodes/llm-node', () => ({ LLMNode: (props: Record<string, unknown>) => jsx('llm-node', props) }))
 mock.module('./nodes/media-generation-node', () => ({ MediaGenerationNode: (props: Record<string, unknown>) => jsx('media-generation-node', props), defaultMediaGenerationConfig: defaultNodeConfig }))
 mock.module('./nodes/condition-node', () => ({ ConditionNode: (props: Record<string, unknown>) => jsx('condition-node', props), ConditionBranch: {} }))
+mock.module('./nodes/pause-node', () => ({ PauseNode: (props: Record<string, unknown>) => jsx('pause-node', props) }))
 mock.module('./nodes/sub-workflow-node', () => ({ SubWorkflowNode: (props: Record<string, unknown>) => jsx('sub-workflow-node', props) }))
 mock.module('./nodes/agent-node', () => ({ AgentNode: (props: Record<string, unknown>) => jsx('agent-node', props) }))
 mock.module('./nodes/tool-node', () => ({ ToolNode: (props: Record<string, unknown>) => jsx('tool-node', props), defaultToolNodeConfig: defaultNodeConfig }))
@@ -309,6 +312,7 @@ mock.module('./node-config', () => ({
   defaultSubWorkflowNodeConfig: defaultNodeConfig,
   defaultAgentNodeConfig: defaultNodeConfig,
   defaultKnowledgeRetrievalNodeConfig: defaultNodeConfig,
+  defaultPauseNodeConfig: defaultNodeConfig,
   NodeConfigPanel: (props: Record<string, unknown>) => jsx('node-config-panel', props),
   StartNodeConfig: (props: Record<string, unknown>) => jsx('StartNodeConfig', props),
   LLMNodeConfig: (props: Record<string, unknown>) => jsx('LLMNodeConfig', props),
@@ -317,6 +321,7 @@ mock.module('./node-config', () => ({
   ConditionNodeConfig: (props: Record<string, unknown>) => jsx('ConditionNodeConfig', props),
   IterationNodeConfig: (props: Record<string, unknown>) => jsx('IterationNodeConfig', props),
   LoopNodeConfig: (props: Record<string, unknown>) => jsx('LoopNodeConfig', props),
+  PauseNodeConfig: (props: Record<string, unknown>) => jsx('PauseNodeConfig', props),
   TemplateNodeConfig: (props: Record<string, unknown>) => jsx('TemplateNodeConfig', props),
   FileToUrlNodeConfig: (props: Record<string, unknown>) => jsx('FileToUrlNodeConfig', props),
   VariableAggregatorNodeConfig: (props: Record<string, unknown>) => jsx('VariableAggregatorNodeConfig', props),

@@ -66,7 +66,9 @@ def run_workflow_task(
             run = await WorkflowRun.filter(id=run_uuid).first()
             if run:
                 return {
-                    "status": "success",
+                    "status": "waiting"
+                    if run.status == RunStatus.WAITING
+                    else "success",
                     "run_id": result_run_id,
                     "outputs": run.outputs,
                 }
@@ -99,6 +101,105 @@ def run_workflow_task(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(_run())
+
+
+@shared_task(bind=True, max_retries=0)
+def resume_workflow_task(self, run_id: str) -> dict:
+    """
+    Celery task to resume a workflow paused at a pause node.
+
+    Re-runs the workflow with the resume flag so already-completed nodes are
+    skipped and the pause node re-executes to emit the submitted values.
+
+    Args:
+        run_id: UUID string of the workflow run
+
+    Returns:
+        Result dict with status and outputs
+    """
+    import asyncio
+
+    async def _resume():
+        from app.services.workflow import WorkflowOrchestrator
+
+        run_uuid = UUID(run_id)
+
+        try:
+            run = await WorkflowRun.filter(id=run_uuid).first()
+            if not run:
+                default_lang = await get_default_language()
+                return {
+                    "status": "error",
+                    "message": t(
+                        "workflow_run_not_found_after_execution", lang=default_lang
+                    ),
+                }
+            if not run.workflow_id:
+                default_lang = await get_default_language()
+                return {
+                    "status": "error",
+                    "message": t("workflow_not_found", lang=default_lang),
+                }
+            claimed = await WorkflowRun.filter(
+                id=run_uuid,
+                status=RunStatus.WAITING,
+            ).update(status=RunStatus.RUNNING)
+            if claimed != 1:
+                default_lang = await get_default_language()
+                return {
+                    "status": "error",
+                    "message": t("workflow_run_not_waiting", lang=default_lang),
+                }
+            run.status = RunStatus.RUNNING
+            orchestrator = WorkflowOrchestrator()
+            result_run_id = await orchestrator.run_with_run_id(
+                run_id=run_uuid,
+                workflow_id=run.workflow_id,
+                inputs=run.inputs,
+                user_id=run.triggered_by_id,
+                team_id=None,
+                stream=True,
+                is_debug=run.is_debug,
+                resume=True,
+            )
+
+            run = await WorkflowRun.filter(id=run_uuid).first()
+            if run:
+                # A multi-pause workflow parks again after this resume pass.
+                if run.status == RunStatus.WAITING:
+                    return {"status": "waiting", "run_id": result_run_id}
+                return {
+                    "status": "success",
+                    "run_id": result_run_id,
+                    "outputs": run.outputs,
+                }
+            default_lang = await get_default_language()
+            return {
+                "status": "error",
+                "message": t(
+                    "workflow_run_not_found_after_execution", lang=default_lang
+                ),
+            }
+
+        except Exception as e:
+            logger.exception(f"Workflow resume error: {e}")
+            public_error = translate_public_workflow_error(e)
+
+            run = await WorkflowRun.filter(id=run_uuid).first()
+            if run and run.status == RunStatus.RUNNING:
+                run.status = RunStatus.FAILED
+                run.error_message = public_error
+                await run.save()
+
+            return {"status": "error", "message": public_error}
+
+    # Run the async function
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(_resume())
 
 
 @shared_task(bind=True)

@@ -169,3 +169,20 @@ describe('WebhookSettingsTab', () => {
     expect(success).not.toHaveBeenCalled()
   })
 })
+
+describe('AutoNotificationsSettingsTab workflow types', () => {
+  test('exposes the pause-pending approval switch under workflow', async () => {
+    spyOn(siteSettingsApi, 'getAutoNotifications').mockResolvedValue({
+      channels: [], enabled_types: [],
+    })
+    spyOn(siteSettingsApi, 'updateAutoNotifications').mockResolvedValue({
+      channels: [], enabled_types: [],
+    })
+    const renderer = await renderAuto()
+
+    // The type is rendered with its label and a toggle; the toggle behaviour
+    // itself is covered by the save test above.
+    const labels = renderer.root.findAllByProps({ children: 'autoNotifications.types.workflow_pause_pending' })
+    expect(labels.length).toBeGreaterThan(0)
+  })
+})

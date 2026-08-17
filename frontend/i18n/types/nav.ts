@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T18:33:11.648Z
+// GENERATED — 2026-08-17T05:37:33.237Z
 // Source: i18n/en/nav.json
 export type NavMessages = {
   nav: {

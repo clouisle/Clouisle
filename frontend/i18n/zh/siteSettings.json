@@ -68,6 +68,8 @@
         "workflow_run_successDesc": "当工作流运行成功完成时通知",
         "workflow_run_failed": "工作流失败",
         "workflow_run_failedDesc": "当工作流运行失败时通知",
+        "workflow_pause_pending": "工作流审批",
+        "workflow_pause_pendingDesc": "当工作流等待审批或输入时通知处理人",
         "agent_published": "Agent 已发布",
         "agent_publishedDesc": "当 Agent 发布时通知",
         "agent_unpublished": "Agent 已下线",

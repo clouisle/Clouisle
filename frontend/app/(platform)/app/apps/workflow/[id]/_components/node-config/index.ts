@@ -34,5 +34,8 @@ export {
   KnowledgeRetrievalNodeConfig,
   type KnowledgeRetrievalNodeConfigType,
   defaultKnowledgeRetrievalNodeConfig,
+  PauseNodeConfig,
+  type PauseNodeConfigType,
+  defaultPauseNodeConfig,
 } from './configs'
 export { ParameterEditDialog, CodeInputDialog } from './dialogs'

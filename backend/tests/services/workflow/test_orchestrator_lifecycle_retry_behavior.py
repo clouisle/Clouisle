@@ -76,6 +76,46 @@ async def test_execute_node_persists_serializable_success_output(
 
 
 @pytest.mark.asyncio
+async def test_resume_reuses_latest_waiting_execution_by_started_at(
+    node_plan, workflow_run
+):
+    """Resume selects a real NodeExecution timestamp field before executing."""
+    orchestrator = WorkflowOrchestrator(enable_retry=False, enable_cache=False)
+    context = MagicMock(set_node_outputs=AsyncMock())
+    stream = MagicMock(
+        publish_node_start=AsyncMock(), publish_node_complete=AsyncMock()
+    )
+    node_execution = MagicMock(status=NodeStatus.WAITING, save=AsyncMock())
+    executor = MagicMock(
+        execute=AsyncMock(return_value=ExecutionResult(outputs={"text": "ok"}))
+    )
+    waiting_query = MagicMock()
+    waiting_query.order_by.return_value.first = AsyncMock(return_value=node_execution)
+
+    with (
+        patch("app.services.workflow.orchestrator.NodeExecution") as executions,
+        patch(
+            "app.services.workflow.orchestrator.NodeExecutorRegistry.get",
+            return_value=executor,
+        ),
+    ):
+        executions.filter.return_value = waiting_query
+
+        result = await orchestrator._execute_node(
+            node_id="generate",
+            plan=node_plan,
+            context=context,
+            run=workflow_run,
+            stream_manager=stream,
+            resume=True,
+        )
+
+    assert result.outputs == {"text": "ok"}
+    waiting_query.order_by.assert_called_once_with("-started_at")
+    executions.create.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_execute_node_marks_failed_result_and_emits_public_error(
     node_plan, workflow_run
 ):
@@ -262,3 +302,126 @@ async def test_execute_iteration_body_enforces_timeout_and_cancellation():
             set(),
             set(),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_stream", [False, True])
+async def test_execute_node_persists_waiting_result(
+    with_stream, node_plan, workflow_run
+):
+    orchestrator = WorkflowOrchestrator(enable_retry=False, enable_cache=False)
+    context = MagicMock(set_node_outputs=AsyncMock())
+    node_execution = MagicMock(save=AsyncMock())
+    executor = MagicMock(execute=AsyncMock(return_value=ExecutionResult(waiting=True)))
+    stream = (
+        MagicMock(
+            publish_node_start=AsyncMock(),
+            publish_node_complete=AsyncMock(),
+        )
+        if with_stream
+        else None
+    )
+
+    with (
+        patch("app.services.workflow.orchestrator.NodeExecution") as executions,
+        patch(
+            "app.services.workflow.orchestrator.NodeExecutorRegistry.get",
+            return_value=executor,
+        ),
+    ):
+        executions.filter.return_value.all = AsyncMock(return_value=[])
+        executions.create = AsyncMock(return_value=node_execution)
+
+        result = await orchestrator._execute_node(
+            node_id="generate",
+            plan=node_plan,
+            context=context,
+            run=workflow_run,
+            stream_manager=stream,
+        )
+
+    assert result.waiting is True
+    assert node_execution.status == NodeStatus.WAITING
+    node_execution.save.assert_awaited_once()
+    if with_stream:
+        stream.publish_node_complete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_stream", [False, True])
+async def test_execute_node_handles_generic_executor_error(
+    with_stream, node_plan, workflow_run
+):
+    orchestrator = WorkflowOrchestrator(enable_retry=False, enable_cache=False)
+    context = MagicMock()
+    node_execution = MagicMock(save=AsyncMock())
+    executor = MagicMock(execute=AsyncMock(side_effect=RuntimeError("boom")))
+    stream = (
+        MagicMock(publish_node_start=AsyncMock(), publish_node_error=AsyncMock())
+        if with_stream
+        else None
+    )
+
+    with (
+        patch("app.services.workflow.orchestrator.NodeExecution") as executions,
+        patch(
+            "app.services.workflow.orchestrator.NodeExecutorRegistry.get",
+            return_value=executor,
+        ),
+    ):
+        executions.filter.return_value.all = AsyncMock(return_value=[])
+        executions.create = AsyncMock(return_value=node_execution)
+
+        with pytest.raises(NodeExecutionError):
+            await orchestrator._execute_node(
+                node_id="generate",
+                plan=node_plan,
+                context=context,
+                run=workflow_run,
+                stream_manager=stream,
+            )
+
+    assert node_execution.status == NodeStatus.FAILED
+    if with_stream:
+        stream.publish_node_error.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_stream", [False, True])
+async def test_execute_node_handles_failed_result_error(
+    with_stream, node_plan, workflow_run
+):
+    orchestrator = WorkflowOrchestrator(enable_retry=False, enable_cache=False)
+    context = MagicMock()
+    node_execution = MagicMock(save=AsyncMock())
+    executor = MagicMock(
+        execute=AsyncMock(return_value=ExecutionResult(error="failed"))
+    )
+    stream = (
+        MagicMock(publish_node_start=AsyncMock(), publish_node_error=AsyncMock())
+        if with_stream
+        else None
+    )
+
+    with (
+        patch("app.services.workflow.orchestrator.NodeExecution") as executions,
+        patch(
+            "app.services.workflow.orchestrator.NodeExecutorRegistry.get",
+            return_value=executor,
+        ),
+    ):
+        executions.filter.return_value.all = AsyncMock(return_value=[])
+        executions.create = AsyncMock(return_value=node_execution)
+
+        with pytest.raises(NodeExecutionError):
+            await orchestrator._execute_node(
+                node_id="generate",
+                plan=node_plan,
+                context=context,
+                run=workflow_run,
+                stream_manager=stream,
+            )
+
+    assert node_execution.status == NodeStatus.FAILED
+    if with_stream:
+        stream.publish_node_error.assert_awaited_once()

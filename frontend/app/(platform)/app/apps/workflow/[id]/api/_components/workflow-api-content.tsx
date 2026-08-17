@@ -409,6 +409,10 @@ if (result.code === 0) {
                           <td className="px-4 py-2 text-muted-foreground">{t('eventWorkflowStart')}</td>
                         </tr>
                         <tr className="border-t">
+                          <td className="px-4 py-2"><code>workflow_waiting</code></td>
+                          <td className="px-4 py-2 text-muted-foreground">{t('eventWorkflowWaiting')}</td>
+                        </tr>
+                        <tr className="border-t">
                           <td className="px-4 py-2"><code>workflow_complete</code></td>
                           <td className="px-4 py-2 text-muted-foreground">{t('eventWorkflowComplete')}</td>
                         </tr>
@@ -460,8 +464,11 @@ data: {"event":"token","data":{"token":"Hello"},"node_id":"node_123","timestamp"
 event: node_complete
 data: {"event":"node_complete","data":{"outputs":{"result":"Hello World"},"duration_ms":1500},"node_id":"node_123","timestamp":"2026-03-06T10:00:03","sequence":4}
 
+event: workflow_waiting
+data: {"event":"workflow_waiting","data":{"node_id":"pause_node_1"},"node_id":"pause_node_1","timestamp":"2026-03-06T10:00:04","sequence":5}
+
 event: workflow_complete
-data: {"event":"workflow_complete","data":{"outputs":{"result":"Hello World"},"duration_ms":3000},"node_id":null,"timestamp":"2026-03-06T10:00:04","sequence":5}`}
+data: {"event":"workflow_complete","data":{"outputs":{"result":"Hello World"},"duration_ms":3000},"node_id":null,"timestamp":"2026-03-06T10:00:05","sequence":6}`}
                     language="text"
                   />
                 </div>
@@ -549,6 +556,150 @@ eventSource.onerror = (error) => {
                 </div>
               </div>
             </Section>
+            </div>
+
+            {/* Pause Node (Human Input & Approval) */}
+            <div className="pt-8 border-t">
+              <Section title={t('pauseNode')}>
+                <p className="text-sm text-muted-foreground mb-3">{t('pauseNodeDescription')}</p>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium mb-2">{t('pauseFlowTitle')}:</p>
+                    <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
+                      <li>{t('pauseFlowStep1')}</li>
+                      <li>{t('pauseFlowStep2', { run_id: '{run_id}' })}</li>
+                      <li>{t('pauseFlowStep3', { run_id: '{run_id}', pause_request_id: '{pause_request_id}' })}</li>
+                    </ol>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium mb-2">{t('pauseGetEndpoint')}:</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="secondary">GET</Badge>
+                      <code className="text-sm bg-muted px-2 py-1 rounded break-all">
+                        {apiBaseUrl}/api/v1/workflows/{'{workflow_id}'}/runs/{'{run_id}'}/pause-request
+                      </code>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">{t('pauseGetDescription')}</p>
+                    <CodeBlock
+                      code={JSON.stringify({
+                        code: 0,
+                        data: {
+                          pause_request: {
+                            id: "pause-request-id",
+                            node_id: "pause_node_1",
+                            node_name: "Pause",
+                            mode: "variables",
+                            title: "请上传资料",
+                            description: "请上传合同与报价单",
+                            input_variables: [
+                              {
+                                name: "contract",
+                                label: "合同",
+                                type: "files",
+                                required: true,
+                                options: null,
+                                fileConfig: { maxFiles: 3, accept: [".pdf"] },
+                              },
+                              {
+                                name: "amount",
+                                label: "金额",
+                                type: "number",
+                                required: false,
+                                default: "100",
+                                options: null,
+                                fileConfig: null,
+                              },
+                            ],
+                            approver_ids: ["user-id-1"],
+                            approver_names: ["alice"],
+                            require_all: false,
+                            approvals: [],
+                            already_submitted: false,
+                            can_submit: true,
+                          }
+                        },
+                      }, null, 2)}
+                      language="json"
+                    />
+                    <p className="text-sm text-muted-foreground mt-2">{t('pauseGetFieldHint')}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium mb-2">{t('pauseSubmitEndpoint')}:</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="secondary">POST</Badge>
+                      <code className="text-sm bg-muted px-2 py-1 rounded break-all">
+                        {apiBaseUrl}/api/v1/workflows/{'{workflow_id}'}/runs/{'{run_id}'}/pause-requests/{'{pause_request_id}'}/submit
+                      </code>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">{t('pauseSubmitDescription')}</p>
+                    <p className="text-sm font-medium mb-2">{t('pauseSubmitRequest')}:</p>
+                    <CodeBlock
+                      code={JSON.stringify({
+                        values: {
+                          contract: ["/api/v1/upload/files/contract.pdf"],
+                          amount: 100,
+                        },
+                        comment: "已上传合同",
+                      }, null, 2)}
+                      language="json"
+                    />
+                    <p className="text-sm font-medium mt-3 mb-2">{t('pauseSubmitResponse')}:</p>
+                    <CodeBlock
+                      code={JSON.stringify({
+                        code: 0,
+                        data: {
+                          pause_request_id: "pause-request-id",
+                          status: "submitted",
+                        },
+                        msg: "workflow_pause_submitted",
+                      }, null, 2)}
+                      language="json"
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium mb-2">{t('pausePythonExample')}:</p>
+                    <CodeBlock
+                      code={`import requests
+import time
+
+API_KEY = "YOUR_API_KEY"
+headers = {"Authorization": f"Bearer {API_KEY}"}
+
+BASE = "${apiBaseUrl}/api/v1/workflows"
+run_id = result["data"]["run_id"]
+
+# 1) Run is waiting: poll for the pending pause request
+while True:
+    resp = requests.get(
+        f"{BASE}/runs/{run_id}/pause-request", headers=headers
+    ).json()
+    pause_request = resp["data"]["pause_request"]
+    if pause_request:
+        break
+    time.sleep(1)
+
+# 2) Fill the requested variables (or decision for approval mode)
+submission = {"values": {v["name"]: "" for v in pause_request["input_variables"]}}
+# e.g. submission = {"values": {"contract": ["/api/v1/upload/files/a.pdf"]}, "comment": ""}
+# approval mode: submission = {"values": {"decision": "approved"}, "comment": "ok"}
+
+submit = requests.post(
+    f"{BASE}/runs/{run_id}/pause-requests/{pause_request['id']}/submit",
+    headers=headers,
+    json=submission,
+).json()
+
+# 3) Submitted: reconnect the SSE stream to continue receiving events
+print(submit)`}
+                      language="python"
+                    />
+                  </div>
+                </div>
+              </Section>
             </div>
           </>
         )}

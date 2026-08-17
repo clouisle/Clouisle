@@ -186,6 +186,42 @@ async def sync_role_permissions(
             logger.info(f"Removed permission {permission.code} from {role_name} role")
 
 
+async def migrate_auto_notification_types():
+    """Merge newly introduced auto notification types into persisted configs.
+
+    init_default_settings only writes defaults when the key is absent, so an
+    existing deployment keeps its persisted enabled_types and never sees new
+    types (e.g. workflow.pause_pending). Merge them in explicitly, preserving
+    the admin's current choices.
+    """
+    from app.models.site_setting import SiteSetting
+
+    current = await SiteSetting.get_value("auto_notification_config", None)
+    if not isinstance(current, dict):
+        return
+    enabled = current.get("enabled_types")
+    if not isinstance(enabled, list):
+        return
+    missing = [t for t in NEW_AUTO_NOTIFICATION_TYPES if t not in enabled]
+    if not missing:
+        return
+    current["enabled_types"] = enabled + missing
+    await SiteSetting.set_value(
+        key="auto_notification_config",
+        value=current,
+        value_type="json",
+        category="notification",
+        description="Auto notification configuration",
+        is_public=False,
+    )
+    logger.info("Migrated auto notification enabled_types: %s", missing)
+
+
+NEW_AUTO_NOTIFICATION_TYPES = [
+    "workflow.pause_pending",
+]
+
+
 async def init_workflow_tables():
     """
     Initialize workflow-related tables if they don't exist.
@@ -309,6 +345,94 @@ async def init_workflow_tables():
     logger.info("Created workflow indexes")
 
     logger.info("Workflow tables initialization complete")
+
+
+async def init_workflow_pause_requests_table():
+    """Create the workflow_pause_requests table if it does not exist."""
+    logger.info("Initializing workflow pause requests table...")
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    if dialect != "postgres":
+        # The DDL below (JSONB, gen_random_uuid, TIMESTAMPTZ) is Postgres-only.
+        # Workflow tables themselves are Postgres-only (init_workflow_tables
+        # fails first on other backends), so this is defensive.
+        logger.info(
+            "Skipping workflow pause requests table for non-PostgreSQL database"
+        )
+        return
+    # Existing workflow tables predate WorkflowRun.context_snapshot. Pause
+    # resume pins the first-pass definition here, so older installations must
+    # gain the column before a pause request can be created. On a fresh
+    # database the tables do not exist yet (generate_schemas creates them),
+    # so the ALTERs are best-effort and must not block the CREATE below.
+    try:
+        await conn.execute_query(
+            """
+            ALTER TABLE workflow_runs
+            ADD COLUMN IF NOT EXISTS context_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+            """
+        )
+    except Exception:
+        logger.debug("workflow_runs not ready yet; generate_schemas will create it")
+
+    await conn.execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS workflow_pause_requests (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            run_id UUID NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            node_execution_id UUID REFERENCES workflow_node_executions(id) ON DELETE CASCADE,
+            workflow_id UUID REFERENCES workflows(id) ON DELETE SET NULL,
+            node_id VARCHAR(100) NOT NULL,
+            node_name VARCHAR(200) NOT NULL DEFAULT '',
+            mode VARCHAR(20) NOT NULL DEFAULT 'variables',
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            values JSONB,
+            comment TEXT,
+            description TEXT,
+            approvals JSONB,
+            submitted_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            submitted_at TIMESTAMPTZ
+        )
+        """
+    )
+    # Older deployments already have the table without the description column;
+    # add it now so the model and schema match before generate_schemas.
+    try:
+        await conn.execute_query(
+            """
+            ALTER TABLE workflow_pause_requests
+            ADD COLUMN IF NOT EXISTS description TEXT
+            """
+        )
+    except Exception:
+        logger.debug(
+            "workflow_pause_requests not ready yet; generate_schemas will create it"
+        )
+    try:
+        await conn.execute_query(
+            """
+            ALTER TABLE workflow_pause_requests
+            ADD COLUMN IF NOT EXISTS approvals JSONB
+            """
+        )
+    except Exception:
+        logger.debug(
+            "workflow_pause_requests not ready yet; generate_schemas will create it"
+        )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workflow_pause_requests_run_id
+        ON workflow_pause_requests(run_id)
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_pause_requests_run_node
+        ON workflow_pause_requests(run_id, node_id)
+        """
+    )
+    logger.info("Workflow pause requests table ready")
 
 
 async def init_observability_indexes():
@@ -3135,6 +3259,7 @@ async def init_db():
     logger.info("Initializing site settings...")
     await init_model_endpoint_allowlist()
     await init_default_settings()
+    await migrate_auto_notification_types()
 
     # 3.0. Set default_role_id to Viewer if not yet configured
     from app.models.site_setting import SiteSetting

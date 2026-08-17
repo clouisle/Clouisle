@@ -82,7 +82,13 @@ async def test_execute_marks_untaken_branch_and_descendants_skipped(orchestrator
         ]
     )
 
-    with patch("app.services.workflow.orchestrator.time.time", return_value=1):
+    with (
+        patch("app.services.workflow.orchestrator.time.time", return_value=1),
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_cls,
+    ):
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
         outputs, count = await orchestrator._execute(
             plan, context, MagicMock(), stream, 0
         )
@@ -173,6 +179,7 @@ async def test_cancel_pending_run_survives_missing_context(orchestrator):
 
     with (
         patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
+        patch("app.services.workflow.orchestrator.WorkflowPauseRequest") as pause_model,
         patch(
             "app.services.workflow.orchestrator.get_redis",
             new=AsyncMock(return_value=MagicMock()),
@@ -183,6 +190,8 @@ async def test_cancel_pending_run_survives_missing_context(orchestrator):
         ),
         patch("app.services.workflow.orchestrator.StreamManager", return_value=stream),
     ):
+        pause_model.filter.return_value.update = AsyncMock(return_value=1)
+        pause_model.filter.return_value.all = AsyncMock(return_value=[])
         run_model.filter.return_value.first = AsyncMock(return_value=run)
         assert await orchestrator.cancel(str(uuid4())) is True
 
@@ -215,7 +224,7 @@ async def test_run_success_path_streams_metrics_and_profiling(monkeypatch):
         enable_profiling=True,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()
@@ -287,7 +296,7 @@ async def test_run_without_stream_skips_stream_manager(monkeypatch):
         enable_profiling=False,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()
@@ -334,7 +343,7 @@ async def test_run_failure_path_streams_error_and_finishes_profiling(monkeypatch
         enable_profiling=True,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()
@@ -406,7 +415,7 @@ async def test_run_failure_without_stream_skips_stream_manager(monkeypatch):
         enable_profiling=False,
     )
     workflow = SimpleNamespace(id=uuid4(), name="Flow")
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
     plan = MagicMock()
     plan.validate.return_value = []
     context = MagicMock()

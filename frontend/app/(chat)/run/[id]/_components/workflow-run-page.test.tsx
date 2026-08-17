@@ -2,7 +2,9 @@ import { describe, expect, mock, test } from 'bun:test'
 import { WorkflowRunPage } from './workflow-run-page'
 
 const states: unknown[] = []
+const refs: Array<{ current: unknown }> = []
 let stateIndex = 0
+let refIndex = 0
 let effectIndex = 0
 const effects: Array<() => void> = []
 const setState = (i: number) => (value: unknown) => {
@@ -18,14 +20,20 @@ mock.module('react', () => ({
   useEffect: (effect: () => void) => { effects[effectIndex++] = effect },
   useMemo: (factory: () => unknown) => factory(),
   useCallback: (cb: unknown) => cb,
-  useRef: (value: unknown) => ({ current: value }),
+  useRef: (value: unknown) => {
+    const i = refIndex++
+    if (refs.length <= i) refs[i] = { current: value }
+    return refs[i]
+  },
 }))
 mock.module('react/jsx-runtime', () => ({
   jsx: (type: unknown, props: Record<string, unknown> = {}) => ({ type, props }),
   jsxs: (type: unknown, props: Record<string, unknown> = {}) => ({ type, props }),
   Fragment: Symbol.for('react.fragment'),
 }))
-mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}) }) }))
+let searchParams = new URLSearchParams()
+const replaceMock = mock(() => {})
+mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}), replace: replaceMock }), useSearchParams: () => searchParams }))
 mock.module('next/image', () => ({ default: () => null }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('lucide-react', () => ({
@@ -37,7 +45,8 @@ mock.module('@/hooks/use-workflow-run', () => ({ useWorkflowRun: () => ({ messag
 mock.module('@/lib/api', () => ({
   ApiError: class ApiError extends Error { code = 0 },
 }))
-mock.module('@/components/ui/button', () => ({ Button: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
+const buttonMock = (p: Record<string, unknown>) => ({ type: 'button', props: p })
+mock.module('@/components/ui/button', () => ({ Button: buttonMock }))
 mock.module('@/components/ui/alert', () => ({ Alert: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertDescription: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertTitle: (p: Record<string, unknown>) => ({ type: 'h5', props: p }) }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleContent: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleTrigger: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
 mock.module('@/components/ui/tooltip', () => ({
@@ -45,7 +54,7 @@ mock.module('@/components/ui/tooltip', () => ({
   TooltipContent: (p: Record<string, unknown>) => ({ type: 'tooltip-content', props: p }),
   TooltipTrigger: (p: Record<string, unknown>) => ({ type: 'button', props: p }),
 }))
-mock.module('@/components/chat', () => ({ ExecutionTimeline: () => null, VariableForm: () => null, useVariableForm: () => ({ values: {}, setValues: mock(() => {}), fieldErrors: {}, validate: () => true }) }))
+mock.module('@/components/chat', () => ({ ExecutionTimeline: () => null, VariableForm: () => null, useVariableForm: () => ({ values: {}, setValues: mock(() => {}), fieldErrors: {}, validate: () => true, reset: mock(() => {}) }) }))
 mock.module('@/lib/workflow/run-adapter', () => ({ jwtWorkflowRunAdapter: { getWorkflow: mock(async () => ({ id: 'wf-1', name: 'Flow', description: '', icon: '', definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, variables: [], status: 'draft', visibility: 'private', version: 1, trigger_type: 'manual', trigger_config: {}, run_count: 0, success_count: 0, fail_count: 0, team_id: '', created_by_id: '', created_at: '', updated_at: '', embed_config: null, run_page_config: { presentation_mode: 'simple' } })), createRunApi: () => ({ runWorkflow: mock(async () => ({ run_id: 'r1' })), streamWorkflowRun: mock(() => () => {}), cancelWorkflowRun: mock(async () => {}) }), loadHistory: mock(async () => []), loadRunDetail: mock(async () => ({ run: { id: 'r1', status: 'success' }, nodes: [] })), saveRun: mock(() => {}) } }))
 mock.module('@/lib/utils/extract-variables', () => ({ extractVariables: () => [] }))
 mock.module('@/lib/utils', () => ({ cn: (...v: unknown[]) => v.filter(Boolean).join(' ') }))
@@ -53,6 +62,7 @@ mock.module('@/lib/utils', () => ({ cn: (...v: unknown[]) => v.filter(Boolean).j
 ;(globalThis as unknown as { window: unknown }).window = globalThis.window ?? ({ addEventListener: () => {}, removeEventListener: () => {} } as unknown)
 
 mock.module('./workflow-result-renderer', () => ({ WorkflowResultRenderer: () => null }))
+mock.module('@/components/chat/pause-request-actions', () => ({ PauseRequestActions: (p: Record<string, unknown>) => ({ type: 'pause-request-actions', props: p }) }))
 mock.module('@/components/chat/message', () => ({ TextWithCitations: () => null }))
 const renderNodeOutputMock = mock(() => ({ type: 'div', props: { children: 'trace-output-rendered' } }))
 mock.module('@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer', () => ({
@@ -90,8 +100,10 @@ const descendants = (node: unknown): FakeNode[] => {
 describe('WorkflowRunPage', () => {
   test('renders loading state initially', () => {
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.length = 0
+    refs.length = 0
     const tree = WorkflowRunPage({ id: 'wf-1' })
     expect(tree).toBeDefined()
     effects.forEach((e) => e())
@@ -99,8 +111,10 @@ describe('WorkflowRunPage', () => {
 
   test('renders after workflow loads', async () => {
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.length = 0
+    refs.length = 0
     const tree = WorkflowRunPage({ id: 'wf-1' })
     effects.forEach((e) => e())
     await Promise.resolve()
@@ -114,8 +128,10 @@ describe('WorkflowRunPage', () => {
     }))
     const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.length = 0
+    refs.length = 0
     const tree = Reloaded({ id: 'wf-1' })
     effects.forEach((e) => e())
     await Promise.resolve()
@@ -128,8 +144,10 @@ describe('WorkflowRunPage', () => {
     }))
     const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.splice(0)
+    refs.splice(0)
     states[0] = { id: 'wf-1', name: 'Flow' }
     states[1] = false
     states[2] = null
@@ -154,8 +172,10 @@ describe('WorkflowRunPage', () => {
     }))
     const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.splice(0)
+    refs.splice(0)
     states[0] = { id: 'wf-1', name: 'Flow' }
     states[1] = false
     states[2] = null
@@ -174,14 +194,728 @@ describe('WorkflowRunPage', () => {
     expect(tree).toBeDefined()
   })
 
+  test('loads and resumes an approval from a waiting history run', async () => {
+    const workflow = {
+      id: 'wf-1',
+      name: 'Flow',
+      description: '',
+      icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [],
+      status: 'published',
+      visibility: 'private',
+      version: 1,
+      trigger_type: 'manual',
+      trigger_config: {},
+      run_count: 1,
+      success_count: 0,
+      fail_count: 0,
+      team_id: '',
+      created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const waitingRun = {
+      id: 'run-waiting',
+      workflow_id: 'wf-1',
+      trigger_type: 'manual',
+      is_debug: false,
+      status: 'waiting',
+      inputs: {},
+      outputs: null,
+      depth: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      total_nodes: 2,
+      executed_nodes: 1,
+      failed_nodes: 0,
+      skipped_nodes: 0,
+      total_token_usage: {},
+    }
+    const pauseRequest = {
+      id: 'pause-request-1',
+      node_id: 'pause-1',
+      node_name: 'Approval',
+      mode: 'approval',
+      title: 'Review',
+      input_variables: [],
+      approver_ids: ['u-alice'],
+      approver_names: ['alice'],
+      can_submit: true,
+    }
+    const getPendingPauseRequest = mock(async () => pauseRequest)
+    const submitPauseRequest = mock(async () => ({ pause_request_id: 'pause-request-1', status: 'submitted' }))
+    const loadRunDetail = mock(async () => ({
+      run: { ...waitingRun, status: 'success' },
+      nodes: [],
+    }))
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun: mock(async () => {}),
+      }),
+      loadHistory: mock(async () => []),
+      loadRunDetail,
+      getPendingPauseRequest,
+      submitPauseRequest,
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = waitingRun
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+
+    WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(getPendingPauseRequest).toHaveBeenCalledWith('wf-1', 'run-waiting')
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states[6] = 'history'
+    states[10] = waitingRun
+    states[12] = pauseRequest
+    let tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const isPausePanel = (node: FakeNode) =>
+      typeof node.type === 'function' && node.type.name === 'PauseRequestActions'
+    const panel = descendants(tree).find(isPausePanel)
+    expect(panel?.props.request).toEqual(pauseRequest)
+    expect(panel?.props.canSubmit).toBe(true)
+    expect(panel?.props.approverNames).toEqual(['alice'])
+
+    ;(panel?.props.onSubmit as (values: Record<string, unknown>, comment?: string) => void)(
+      { decision: 'approved' },
+      'Looks good',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(submitPauseRequest).toHaveBeenCalledWith(
+      'wf-1',
+      'run-waiting',
+      'pause-request-1',
+      { decision: 'approved' },
+      'Looks good',
+    )
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(loadRunDetail).toHaveBeenCalledWith('wf-1', 'run-waiting')
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    expect(collectText(tree)).toContain('status.success')
+    expect(descendants(tree).some(isPausePanel)).toBe(false)
+  })
+
+  test('waiting history run offers cancel instead of run-again and refreshes after cancel', async () => {
+    const workflow = {
+      id: 'wf-1',
+      name: 'Flow',
+      description: '',
+      icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [],
+      status: 'published',
+      visibility: 'private',
+      version: 1,
+      trigger_type: 'manual',
+      trigger_config: {},
+      run_count: 1,
+      success_count: 0,
+      fail_count: 0,
+      team_id: '',
+      created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const waitingRun = {
+      id: 'run-waiting',
+      workflow_id: 'wf-1',
+      trigger_type: 'manual',
+      is_debug: false,
+      status: 'waiting',
+      inputs: {},
+      outputs: null,
+      depth: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      total_nodes: 2,
+      executed_nodes: 1,
+      failed_nodes: 0,
+      skipped_nodes: 0,
+      total_token_usage: {},
+    }
+    const cancelWorkflowRun = mock(async () => {})
+    const loadRunDetail = mock(async () => ({
+      run: { ...waitingRun, status: 'cancelled' },
+      nodes: [],
+    }))
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun,
+      }),
+      loadHistory: mock(async () => []),
+      loadRunDetail,
+      getPendingPauseRequest: mock(async () => null),
+      submitPauseRequest: mock(async () => ({ pause_request_id: 'pause-1', status: 'submitted' })),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = waitingRun
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const buttons = descendants(tree).filter((node) => node.type === buttonMock)
+    const labels = buttons.map((node) => collectText(node))
+    expect(labels).toContain('cancel')
+    expect(labels).not.toContain('runAgain')
+    expect(labels).toContain('newRun')
+
+    const cancelButton = buttons.find((node) => collectText(node) === 'cancel')
+    await (cancelButton?.props.onClick as () => Promise<void>)()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(cancelWorkflowRun).toHaveBeenCalledWith('run-waiting')
+    expect(loadRunDetail).toHaveBeenCalledWith('wf-1', 'run-waiting')
+
+    // 详情刷新后状态变为 cancelled：按钮切回“再次运行”，取消按钮消失
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const refreshed = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const refreshedLabels = descendants(refreshed)
+      .filter((node) => node.type === buttonMock)
+      .map((node) => collectText(node))
+    expect(refreshedLabels).toContain('runAgain')
+    expect(refreshedLabels).not.toContain('cancel')
+  })
+
+  test('history sidebar loads more runs when scrolled near the bottom', async () => {
+    const workflow = {
+      id: 'wf-1',
+      name: 'Flow',
+      description: '',
+      icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [],
+      status: 'published',
+      visibility: 'private',
+      version: 1,
+      trigger_type: 'manual',
+      trigger_config: {},
+      run_count: 1,
+      success_count: 0,
+      fail_count: 0,
+      team_id: '',
+      created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const runItem = (id: string) => ({
+      id,
+      workflow_id: 'wf-1',
+      trigger_type: 'manual',
+      is_debug: false,
+      status: 'success',
+      inputs: {},
+      outputs: null,
+      depth: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      total_nodes: 1,
+      executed_nodes: 1,
+      failed_nodes: 0,
+      skipped_nodes: 0,
+      total_token_usage: {},
+    })
+    const page1 = Array.from({ length: 20 }, (_, index) => runItem(`r-${index + 1}`))
+    const page2 = [runItem('r-21'), runItem('r-22'), runItem('r-23')]
+    const loadHistoryPage = mock(async (_id: string, params: { page: number }) => ({
+      items: params.page === 1 ? page1 : page2,
+      total: 23,
+    }))
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun: mock(async () => {}),
+      }),
+      loadHistory: mock(async () => page1),
+      loadHistoryPage,
+      loadRunDetail: mock(async () => ({ run: null, nodes: [] })),
+      getPendingPauseRequest: mock(async () => null),
+      submitPauseRequest: mock(async () => ({})),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = page1
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = null
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+    states[17] = 23 // historyTotal
+    states[18] = 1 // historyPage
+    states[19] = false // historyLoadingMore
+
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const scroller = descendants(tree).find((node) => typeof node.props.onScroll === 'function')
+    expect(scroller).toBeDefined()
+
+    // 滚动接近底部 → 加载下一页
+    ;(scroller!.props.onScroll as (event: unknown) => void)({
+      currentTarget: { scrollTop: 1000, clientHeight: 500, scrollHeight: 1500 },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(loadHistoryPage).toHaveBeenCalledWith('wf-1', { page: 2, pageSize: 20 })
+
+    // 追加后重新渲染：两页都在，且不重复
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const next = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const itemIds = descendants(next)
+      .filter((node) => node.type === 'button' && String(collectText(node)).includes('r-'))
+      .map((node) => String(collectText(node)).match(/r-\d+/)?.[0])
+    expect(itemIds).toContain('r-1')
+    expect(itemIds).toContain('r-21')
+    expect(itemIds).toContain('r-23')
+  })
+
+  test('pause submission failure keeps the panel and surfaces the error', async () => {
+    const workflow = {
+      id: 'wf-1', name: 'Flow', description: '', icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [], status: 'published', visibility: 'private', version: 1,
+      trigger_type: 'manual', trigger_config: {}, run_count: 1,
+      success_count: 0, fail_count: 0, team_id: '', created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const waitingRun = {
+      id: 'run-waiting', workflow_id: 'wf-1', trigger_type: 'manual', is_debug: false,
+      status: 'waiting', inputs: {}, outputs: null, depth: 0,
+      created_at: '2026-01-01T00:00:00Z', total_nodes: 2, executed_nodes: 1,
+      failed_nodes: 0, skipped_nodes: 0, total_token_usage: {},
+    }
+    const pauseRequest = {
+      id: 'pause-request-1', node_id: 'pause-1', node_name: 'Pause',
+      mode: 'variables', title: 'Fill', input_variables: [],
+      approver_ids: ['u-alice'], approver_names: ['alice'], can_submit: true,
+    }
+    const submitPauseRequest = mock(async () => { throw new Error('network') })
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun: mock(async () => {}),
+      }),
+      loadHistory: mock(async () => []),
+      loadRunDetail: mock(async () => ({ run: waitingRun, nodes: [] })),
+      getPendingPauseRequest: mock(async () => pauseRequest),
+      submitPauseRequest,
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = waitingRun
+    states[11] = []
+    states[12] = pauseRequest
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const isPausePanel = (node: FakeNode) =>
+      typeof node.type === 'function' && node.type.name === 'PauseRequestActions'
+    const panel = descendants(tree).find(isPausePanel)
+    expect(panel).toBeDefined()
+
+    await (panel!.props.onSubmit as (values: Record<string, unknown>) => Promise<void>)({ price: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 提交失败：错误透传给面板，运行保持等待
+    expect(submitPauseRequest).toHaveBeenCalledTimes(1)
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const errorTree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const errorPanel = descendants(errorTree).find(isPausePanel)
+    expect(errorPanel?.props.error).toBe('pause.submitError')
+  })
+
+  test('history cancel failure surfaces historyDetailError', async () => {
+    const workflow = {
+      id: 'wf-1', name: 'Flow', description: '', icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [], status: 'published', visibility: 'private', version: 1,
+      trigger_type: 'manual', trigger_config: {}, run_count: 1,
+      success_count: 0, fail_count: 0, team_id: '', created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const waitingRun = {
+      id: 'run-waiting', workflow_id: 'wf-1', trigger_type: 'manual', is_debug: false,
+      status: 'waiting', inputs: {}, outputs: null, depth: 0,
+      created_at: '2026-01-01T00:00:00Z', total_nodes: 2, executed_nodes: 1,
+      failed_nodes: 0, skipped_nodes: 0, total_token_usage: {},
+    }
+    const cancelWorkflowRun = mock(async () => { throw new Error('cancel failed') })
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun,
+      }),
+      loadHistory: mock(async () => []),
+      loadRunDetail: mock(async () => ({ run: waitingRun, nodes: [] })),
+      getPendingPauseRequest: mock(async () => null),
+      submitPauseRequest: mock(async () => ({})),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = waitingRun
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const cancelButton = descendants(tree)
+      .filter((node) => node.type === buttonMock)
+      .find((node) => collectText(node) === 'cancel')
+    expect(cancelButton).toBeDefined()
+
+    await (cancelButton!.props.onClick as () => Promise<void>)()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const errorTree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    expect(collectText(errorTree)).toContain('cancelFailed')
+  })
+
+  test('history load failure clears the list and shows the empty state', async () => {
+    const workflow = {
+      id: 'wf-1', name: 'Flow', description: '', icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [], status: 'published', visibility: 'private', version: 1,
+      trigger_type: 'manual', trigger_config: {}, run_count: 1,
+      success_count: 0, fail_count: 0, team_id: '', created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const loadHistoryPage = mock(async () => { throw new Error('offline') })
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun: mock(async () => {}),
+      }),
+      loadHistory: mock(async () => [{ id: 'stale' }]),
+      loadHistoryPage,
+      loadRunDetail: mock(async () => ({ run: null, nodes: [] })),
+      getPendingPauseRequest: mock(async () => null),
+      submitPauseRequest: mock(async () => ({})),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = null
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+    states[16] = false
+
+    WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(loadHistoryPage).toHaveBeenCalledWith('wf-1', { page: 1, pageSize: 20 })
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    const after = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    // 加载失败：历史清空并显示空状态
+    expect(collectText(after)).toContain('noHistory')
+  })
+
+  test('disables the pause panel for non-approvers', async () => {
+    const workflow = {
+      id: 'wf-1',
+      name: 'Flow',
+      description: '',
+      icon: null,
+      definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      variables: [],
+      status: 'published',
+      visibility: 'private',
+      version: 1,
+      trigger_type: 'manual',
+      trigger_config: {},
+      run_count: 1,
+      success_count: 0,
+      fail_count: 0,
+      team_id: '',
+      created_by_id: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      run_page_config: { presentation_mode: 'simple' },
+    }
+    const waitingRun = {
+      id: 'run-waiting',
+      workflow_id: 'wf-1',
+      trigger_type: 'manual',
+      is_debug: false,
+      status: 'waiting',
+      inputs: {},
+      outputs: null,
+      depth: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      total_nodes: 2,
+      executed_nodes: 1,
+      failed_nodes: 0,
+      skipped_nodes: 0,
+      total_token_usage: {},
+    }
+    const pauseRequest = {
+      id: 'pause-request-1',
+      node_id: 'pause-1',
+      node_name: 'Approval',
+      mode: 'approval',
+      title: 'Review',
+      input_variables: [],
+      approver_ids: ['u-alice'],
+      approver_names: ['alice'],
+      can_submit: false,
+    }
+    const adapter = {
+      getWorkflow: mock(async () => workflow),
+      createRunApi: () => ({
+        runWorkflow: mock(async () => ({ run_id: 'unused' })),
+        streamWorkflowRun: mock(() => () => {}),
+        cancelWorkflowRun: mock(async () => {}),
+      }),
+      loadHistory: mock(async () => []),
+      loadRunDetail: mock(async () => ({ run: waitingRun, nodes: [] })),
+      getPendingPauseRequest: mock(async () => pauseRequest),
+      submitPauseRequest: mock(async () => {}),
+      saveRun: mock(() => {}),
+    }
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states.splice(0)
+    refs.splice(0)
+    states[0] = workflow
+    states[1] = false
+    states[2] = null
+    states[3] = []
+    states[4] = false
+    states[5] = false
+    states[6] = 'history'
+    states[7] = true
+    states[8] = false
+    states[9] = null
+    states[10] = waitingRun
+    states[11] = []
+    states[12] = null
+    states[13] = null
+    states[14] = false
+    states[15] = null
+
+    WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    stateIndex = 0
+
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    states[6] = 'history'
+    states[10] = waitingRun
+    states[12] = pauseRequest
+    const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+    const isPausePanel = (node: FakeNode) =>
+      typeof node.type === 'function' && node.type.name === 'PauseRequestActions'
+    const panel = descendants(tree).find(isPausePanel)
+    expect(panel?.props.canSubmit).toBe(false)
+    expect(panel?.props.approverNames).toEqual(['alice'])
+
+    const submitButton = descendants(tree).find(
+      (node) => typeof node.props.onClick === 'function' && node.props.children?.includes?.('run.pause.approve'),
+    )
+    expect(submitButton).toBeUndefined()
+  })
+
   test('renders history trace as a vertical timeline', async () => {
     mock.module('@/hooks/use-workflow-run', () => ({
       useWorkflowRun: () => ({ messages: [], executionState: { nodes: new Map(), outputs: null }, isStreaming: false, runId: null, status: 'idle', outputs: null, submittedInputs: null, error: null, isCancelling: false, start: mock(async () => {}), stop: mock(async () => {}), reset: mock(() => {}) }),
     }))
     const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.splice(0)
+    refs.splice(0)
     states[0] = { id: 'wf-1', name: 'Flow' }
     states[1] = false
     states[2] = null
@@ -216,19 +950,26 @@ describe('WorkflowRunPage', () => {
     expect(text).toContain('"query"')
     expect(text).toContain('trace-output-rendered')
 
-    // sidebar 打开时，切换按钮的 aria-label 应为关闭运行历史
-    const toggle = descendants(tree).find((n) => typeof n.props.className === 'string'
-      && n.props.className.includes('rounded-full bg-background/80') && typeof n.props.onClick === 'function')!
-    expect(toggle.props['aria-label']).toBe('closeHistory')
+    // Keep the Agent chat page shell: floating controls, no fixed top bar.
+    const header = descendants(tree).find((n) => n.type === 'header')!
+    expect(header.props.className).toContain('absolute inset-x-0 top-0')
+    expect(header.props.className).not.toContain('border-b')
+
+    const toggle = descendants(tree).find((n) => n.props['aria-label'] === 'closeHistory')!
+    expect(toggle.props.className).toContain('h-9 w-9 rounded-full')
+    expect(toggle.props.className).toContain('bg-background/80')
+
+    const historyHeading = descendants(tree).find((n) => n.props.id === 'workflow-history-heading')!
+    expect(historyHeading.props.className).toContain('px-4 pb-1 pt-3')
 
     expect(renderNodeOutputMock).toHaveBeenCalledWith('start', { answer: 'ok' }, expect.any(Function))
     expect(renderNodeOutputMock).not.toHaveBeenCalledWith('file_to_url', null, expect.any(Function))
 
     const nodes = descendants(tree)
-    const classNameOf = (n: FakeNode) => typeof n.props.className === 'string' ? n.props.className : ''
-    // 2 个节点之间 1 条竖向线段；2 个状态圆点（h-6 w-6 特征，避开圆角按钮）
-    expect(nodes.filter((n) => classNameOf(n).includes('w-px')).length).toBe(1)
-    expect(nodes.filter((n) => classNameOf(n).includes('rounded-full border bg-background')).length).toBe(2)
+    const classNameOf = (node: FakeNode) => typeof node.props.className === 'string' ? node.props.className : ''
+    // 2 个节点之间 1 条竖向线段；2 个状态圆点（h-6 w-6 特征，避开 Header 分隔线）。
+    expect(nodes.filter((node) => classNameOf(node).includes('absolute bottom-0 left-[11px]')).length).toBe(1)
+    expect(nodes.filter((node) => classNameOf(node).includes('rounded-full border bg-background')).length).toBe(2)
   })
 
   test('hides trace details in embed mode', async () => {
@@ -237,8 +978,10 @@ describe('WorkflowRunPage', () => {
     }))
     const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
     stateIndex = 0
+    refIndex = 0
     effectIndex = 0
     states.splice(0)
+    refs.splice(0)
     states[0] = { id: 'wf-1', name: 'Flow' }
     states[1] = false
     states[2] = null
@@ -265,4 +1008,676 @@ describe('WorkflowRunPage', () => {
     expect(text).not.toContain('boom')
     expect(text).not.toContain('"query"')
   })
+})
+
+
+test('shows a login notice for pause steps on embedded runs without pause support', async () => {
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 0,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+    embed_config: { show_header: false, show_history: false, allow_new: false },
+  }
+  const waitingRun = {
+    id: 'run-embed-waiting',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'waiting',
+    inputs: {},
+    outputs: null,
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 2,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory: mock(async () => []),
+    loadRunDetail: mock(async () => ({ run: waitingRun, nodes: [] })),
+    saveRun: mock(() => {}),
+    // Embed adapters deliberately omit the pause methods.
+  }
+
+  stateIndex = 0
+
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.splice(0)
+  refs.splice(0)
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = []
+  states[4] = false
+  states[5] = false
+  states[6] = 'history'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = waitingRun
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never, embedMode: true })
+  effects.forEach((effect) => effect())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(collectText(tree)).toContain('pause.embedNotice')
+})
+
+
+test('shows a waiting-for-review notice when the viewer is not an approver', async () => {
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 0,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+  }
+  const waitingRun = {
+    id: 'run-waiting-2',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'waiting',
+    inputs: {},
+    outputs: null,
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 2,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory: mock(async () => []),
+    loadRunDetail: mock(async () => ({ run: waitingRun, nodes: [] })),
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => {}),
+    saveRun: mock(() => {}),
+  }
+
+  stateIndex = 0
+
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.splice(0)
+  refs.splice(0)
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = []
+  states[4] = false
+  states[5] = false
+  states[6] = 'history'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = waitingRun
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(collectText(tree)).toContain('pause.waitingForReview')
+})
+
+
+test('deep-links to a waiting run via the ?run= param', async () => {
+  searchParams = new URLSearchParams({ run: 'run-deep' })
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 0,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+  }
+  const waitingRun = {
+    id: 'run-deep',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'waiting',
+    inputs: {},
+    outputs: null,
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 2,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const loadRunDetail = mock(async () => ({ run: waitingRun, nodes: [] }))
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory: mock(async () => []),
+    loadRunDetail,
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => {}),
+    saveRun: mock(() => {}),
+  }
+
+  stateIndex = 0
+
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.splice(0)
+  refs.splice(0)
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = []
+  states[4] = false
+  states[5] = false
+  states[6] = 'form'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = null
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  // The first pass wrote ?run= into state; a second render runs the detail
+  // loading effect against it.
+  stateIndex = 0
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(loadRunDetail).toHaveBeenCalledWith('wf-1', 'run-deep')
+  searchParams = new URLSearchParams()
+})
+
+
+test('does not re-arm the ?run= deep link after the detail loads (refresh must not loop)', async () => {
+  mock.module('@/hooks/use-workflow-run', () => ({
+    useWorkflowRun: () => ({ messages: [], executionState: { nodes: new Map(), outputs: null }, isStreaming: false, runId: null, status: 'idle', outputs: null, submittedInputs: null, error: null, isCancelling: false, start: mock(async () => {}), stop: mock(async () => {}), reset: mock(() => {}) }),
+  }))
+  const { WorkflowRunPage: Reloaded } = await import('./workflow-run-page')
+
+  searchParams = new URLSearchParams({ run: 'run-success' })
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 1,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+  }
+  const successRun = {
+    id: 'run-success',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'success',
+    inputs: {},
+    outputs: { answer: 'ok' },
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 1,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const loadRunDetail = mock(async () => ({ run: successRun, nodes: [] }))
+  const loadHistory = mock(async () => [successRun])
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory,
+    loadRunDetail,
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => {}),
+    saveRun: mock(() => {}),
+  }
+
+  stateIndex = 0
+
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.splice(0)
+  refs.splice(0)
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = []
+  states[4] = false
+  states[5] = false
+  states[6] = 'form'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = null
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  // Simulate a refresh: each pass re-renders with the state the previous
+  // pass's effects wrote, like React committing state updates. The resuming
+  // effect must consume the ?run= deep link exactly once; otherwise the
+  // deep-link effect re-arms it, reloading the run detail and history on
+  // every pass and leaving the sidebar stuck on its loading spinner.
+  let tree: unknown = null
+  for (let pass = 0; pass < 4; pass++) {
+    stateIndex = 0
+    refIndex = 0
+    effectIndex = 0
+    effects.length = 0
+    tree = Reloaded({ id: 'wf-1', adapter: adapter as never })
+    effects.forEach((effect) => effect())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  expect(loadRunDetail).toHaveBeenCalledTimes(1)
+  // The harness re-runs every registered effect per pass, so the mount-time
+  // loadHistory runs 4x; the extra call is the one the resuming effect fires
+  // when the deep link settles. A re-armed deep link would add more.
+  expect(loadHistory).toHaveBeenCalledTimes(5)
+  expect(collectText(tree)).toContain('run-success')
+  searchParams = new URLSearchParams()
+})
+
+
+test('syncs the URL with ?run= when a history item is selected', async () => {
+  searchParams = new URLSearchParams({ type: 'workflow' })
+  replaceMock.mockClear()
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 0,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+  }
+  const historyRun = {
+    id: 'run-h1',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'success',
+    inputs: {},
+    outputs: null,
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 1,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const loadRunDetail = mock(async () => ({ run: historyRun, nodes: [] }))
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory: mock(async () => [historyRun]),
+    loadRunDetail,
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => {}),
+    saveRun: mock(() => {}),
+  }
+
+  stateIndex = 0
+
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.splice(0)
+  refs.splice(0)
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = [historyRun]
+  states[4] = false
+  states[5] = false
+  states[6] = 'history'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = null
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const itemButton = descendants(tree).find(
+    (node) => node.type === 'button' && String(collectText(node)).includes('run-h1'),
+  )
+  expect(itemButton).toBeDefined()
+  ;(itemButton!.props.onClick as () => void)()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(loadRunDetail).toHaveBeenCalledWith('wf-1', 'run-h1')
+  expect(replaceMock).toHaveBeenCalledWith('/run/wf-1?type=workflow&run=run-h1', { scroll: false })
+  searchParams = new URLSearchParams()
+})
+
+
+test('rerunning from a history record does not re-trigger the ?run= deep link', () => {
+  searchParams = new URLSearchParams({ type: 'workflow', run: 'run-h1' })
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 1,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+  }
+  const historyRun = {
+    id: 'run-h1',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'success',
+    inputs: { query: 'hi' },
+    outputs: null,
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 1,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory: mock(async () => [historyRun]),
+    loadRunDetail: mock(async () => ({ run: historyRun, nodes: [] })),
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => ({ status: 'submitted' })),
+    saveRun: mock(() => {}),
+  }
+
+  stateIndex = 0
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.length = 0
+  refs.length = 0
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = [historyRun]
+  states[4] = false
+  states[5] = false
+  states[6] = 'history'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = historyRun
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+
+  const rerunButton = descendants(tree).find(
+    (node) => node.type === buttonMock && String(collectText(node)).includes('runAgain'),
+  )
+  expect(rerunButton).toBeDefined()
+  ;(rerunButton!.props.onClick as () => void)()
+
+  // URL 尚未移除 ?run= 时重渲染（模拟 router.replace 异步落地前的窗口）：
+  // 深链 effect 不得重新武装，否则视图被拉回 history（"原地刷新"）。
+  stateIndex = 0
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+
+  expect(states[6]).toBe('form')
+  expect(states[15]).toBeNull()
+  searchParams = new URLSearchParams()
+})
+
+test('starting a new run from history does not re-trigger the ?run= deep link', () => {
+  searchParams = new URLSearchParams({ type: 'workflow', run: 'run-h1' })
+  const workflow = {
+    id: 'wf-1',
+    name: 'Flow',
+    description: '',
+    icon: null,
+    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    variables: [],
+    status: 'published',
+    visibility: 'private',
+    version: 1,
+    trigger_type: 'manual',
+    trigger_config: {},
+    run_count: 1,
+    success_count: 1,
+    fail_count: 0,
+    team_id: '',
+    created_by_id: '',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    run_page_config: { presentation_mode: 'simple' },
+  }
+  const historyRun = {
+    id: 'run-h1',
+    workflow_id: 'wf-1',
+    trigger_type: 'manual',
+    is_debug: false,
+    status: 'success',
+    inputs: {},
+    outputs: null,
+    depth: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    total_nodes: 1,
+    executed_nodes: 1,
+    failed_nodes: 0,
+    skipped_nodes: 0,
+    total_token_usage: {},
+  }
+  const adapter = {
+    getWorkflow: mock(async () => workflow),
+    createRunApi: () => ({
+      runWorkflow: mock(async () => ({ run_id: 'unused' })),
+      streamWorkflowRun: mock(() => () => {}),
+      cancelWorkflowRun: mock(async () => {}),
+    }),
+    loadHistory: mock(async () => [historyRun]),
+    loadRunDetail: mock(async () => ({ run: historyRun, nodes: [] })),
+    getPendingPauseRequest: mock(async () => null),
+    submitPauseRequest: mock(async () => ({ status: 'submitted' })),
+    saveRun: mock(() => {}),
+  }
+
+  stateIndex = 0
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  states.length = 0
+  refs.length = 0
+  states[0] = workflow
+  states[1] = false
+  states[2] = null
+  states[3] = [historyRun]
+  states[4] = false
+  states[5] = false
+  states[6] = 'history'
+  states[7] = true
+  states[8] = false
+  states[9] = null
+  states[10] = historyRun
+  states[11] = []
+  states[12] = null
+  states[13] = null
+  states[14] = false
+  states[15] = null
+
+  const tree = WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+
+  // 新建运行按钮渲染在 TooltipTrigger 的 render prop 里（descendants 只遍历 children）
+  const newRunTrigger = descendants(tree).find((node) => {
+    const render = node.props.render as FakeNode | undefined
+    return render && render.type === buttonMock && render.props['aria-label'] === 'newRun'
+  })
+  expect(newRunTrigger).toBeDefined()
+  replaceMock.mockClear()
+  ;(newRunTrigger!.props.onClick as () => void)()
+  expect(replaceMock).toHaveBeenCalledWith('/run/wf-1?type=workflow', { scroll: false })
+
+  stateIndex = 0
+  refIndex = 0
+  effectIndex = 0
+  effects.length = 0
+  WorkflowRunPage({ id: 'wf-1', adapter: adapter as never })
+  effects.forEach((effect) => effect())
+
+  expect(states[6]).toBe('form')
+  expect(states[15]).toBeNull()
+  searchParams = new URLSearchParams()
 })

@@ -118,6 +118,11 @@ interface WorkflowNodeData {
     indexVariable?: string
     loopVariables?: Array<{ name: string; type: string }>
   }
+  // 暂停节点
+  pauseConfig?: {
+    mode?: 'variables' | 'approval'
+    inputVariables?: Array<{ name: string; type: string; required?: boolean }>
+  }
   // 子工作流
   subWorkflowConfig?: {
     workflowId?: string
@@ -171,6 +176,7 @@ const nodeTypeLabelKeys: Record<string, string> = {
   parameter_extractor: 'nodeLabels.parameter_extractor',
   question_classifier: 'nodeLabels.question_classifier',
   answer: 'nodeLabels.answer',
+  pause: 'nodeLabels.pause',
   start: 'nodeLabels.start',
   end: 'nodeLabels.end',
 }
@@ -193,6 +199,7 @@ export const getNodeTypeColor = (nodeType: string): string => {
     variable_assignment: 'bg-teal-500',
     iteration: 'bg-amber-500',
     loop: 'bg-amber-500',
+    pause: 'bg-amber-500',
     sub_workflow: 'bg-pink-500',
     file_to_url: 'bg-gray-500',
   }
@@ -366,6 +373,21 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
     case 'question_classifier': {
       // 问题分类器输出匹配的分类 ID
       variables.push(`${node.id}.matched_category`)
+      break
+    }
+
+    case 'pause': {
+      const config = node.data.pauseConfig
+      if (config?.mode === 'approval') {
+        variables.push(`${node.id}.decision`)
+        variables.push(`${node.id}.approved`)
+        variables.push(`${node.id}.comment`)
+        variables.push(`${node.id}.submitted_by`)
+      } else {
+        config?.inputVariables?.forEach((variable) => {
+          if (variable.name) variables.push(`${node.id}.${variable.name}`)
+        })
+      }
       break
     }
   }
@@ -877,6 +899,32 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
 
         break
       }
+
+      // ========== 暂停节点 ==========
+      case 'pause': {
+        const config = node.data.pauseConfig
+        if (node.parentId) {
+          issues.push(createIssue(node, 'error', 'pauseInsideContainer', 'structure'))
+        }
+        if ((config?.mode || 'variables') === 'variables') {
+          const variables = config?.inputVariables || []
+          if (variables.length === 0) {
+            issues.push(createIssue(node, 'error', 'pauseVariablesRequired', 'inputVariables'))
+          }
+          const names = new Set<string>()
+          for (const variable of variables) {
+            const name = (variable.name ?? '').trim()
+            if (!isValidVariableName(name)) {
+              issues.push(createIssue(node, 'error', 'invalidVariableName', 'inputVariables', { name }))
+            } else if (names.has(name)) {
+              issues.push(createIssue(node, 'error', 'duplicateInputNames', 'inputVariables', { names: name }))
+            }
+            names.add(name)
+          }
+        }
+        break
+      }
+
 
       // ========== 子工作流 ==========
       case 'sub_workflow': {

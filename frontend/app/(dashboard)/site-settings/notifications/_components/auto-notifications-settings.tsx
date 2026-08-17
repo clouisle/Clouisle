@@ -24,7 +24,7 @@ const NOTIFICATION_CATEGORIES = {
   team: ['team.member_added', 'team.member_removed', 'team.role_changed', 'team.ownership_transferred', 'team.model_granted', 'team.model_revoked'],
   user: ['user.activated', 'user.deactivated', 'user.password_reset', 'user.pending_approval'],
   kb: ['kb.doc_indexed', 'kb.doc_failed'],
-  workflow: ['workflow.run_success', 'workflow.run_failed'],
+  workflow: ['workflow.run_success', 'workflow.run_failed', 'workflow.pause_pending'],
   agent: ['agent.published', 'agent.unpublished'],
   apikey: ['apikey.expiring', 'apikey.expired'],
   security: ['security.login_anomaly', 'security.account_locked', 'security.password_changed'],

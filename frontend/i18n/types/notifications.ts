@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T18:33:11.648Z
+// GENERATED — 2026-08-17T05:37:33.238Z
 // Source: i18n/en/notifications.json
 export type NotificationsMessages = {
   notifications: {
@@ -59,6 +59,15 @@ export type NotificationsMessages = {
       created: string
       deleted: string
       bulkDeleted: string
+      approvalSubmitted: string
+      approvalFailed: string
+    }
+    inline: {
+      approve: string
+      reject: string
+      submit: string
+      loading: string
+      submitting: string
     }
     admin: {
       title: string

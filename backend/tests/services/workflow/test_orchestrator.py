@@ -418,30 +418,38 @@ class TestWorkflowOrchestratorCancel:
 
         with patch("app.services.workflow.orchestrator.WorkflowRun") as mock_run_cls:
             with patch(
-                "app.services.workflow.orchestrator.ExecutionContext"
-            ) as mock_ctx_cls:
-                mock_stream = MagicMock(publish_workflow_error=AsyncMock())
-                with (
-                    patch(
-                        "app.services.workflow.orchestrator.StreamManager",
-                        return_value=mock_stream,
-                    ),
-                    patch(
-                        "app.services.workflow.orchestrator.get_redis", new=AsyncMock()
-                    ),
-                ):
-                    mock_run_cls.filter.return_value.first = AsyncMock(
-                        return_value=mock_run
-                    )
+                "app.services.workflow.orchestrator.WorkflowPauseRequest"
+            ) as mock_pr_cls:
+                with patch(
+                    "app.services.workflow.orchestrator.ExecutionContext"
+                ) as mock_ctx_cls:
+                    mock_stream = MagicMock(publish_workflow_error=AsyncMock())
+                    with (
+                        patch(
+                            "app.services.workflow.orchestrator.StreamManager",
+                            return_value=mock_stream,
+                        ),
+                        patch(
+                            "app.services.workflow.orchestrator.get_redis",
+                            new=AsyncMock(),
+                        ),
+                    ):
+                        mock_pr_cls.filter.return_value.update = AsyncMock(
+                            return_value=1
+                        )
+                        mock_pr_cls.filter.return_value.all = AsyncMock(return_value=[])
+                        mock_run_cls.filter.return_value.first = AsyncMock(
+                            return_value=mock_run
+                        )
 
-                    mock_ctx = MagicMock()
-                    mock_ctx.set_status = AsyncMock()
-                    mock_ctx_cls.load = AsyncMock(return_value=mock_ctx)
+                        mock_ctx = MagicMock()
+                        mock_ctx.set_status = AsyncMock()
+                        mock_ctx_cls.load = AsyncMock(return_value=mock_ctx)
 
-                    result = await orchestrator.cancel(run_id)
+                        result = await orchestrator.cancel(run_id)
 
-                    assert result is True
-                    assert mock_run.status == "cancelled"
+                        assert result is True
+                        assert mock_run.status == "cancelled"
 
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_workflow(self, orchestrator):
@@ -748,6 +756,7 @@ class TestWorkflowOrchestratorBehavior:
     ):
         workflow_id = uuid4()
         run = MagicMock(id=uuid4())
+        run.save = AsyncMock()
         workflow = MagicMock(id=workflow_id, name="Invalid")
         context = MagicMock(set_inputs=AsyncMock())
         plan = MagicMock()
@@ -858,9 +867,13 @@ class TestWorkflowOrchestratorBehavior:
             ]
         )
 
-        outputs, count = await orchestrator._execute(
-            plan, context, MagicMock(), None, __import__("time").time()
-        )
+        with patch("app.services.workflow.orchestrator.NodeExecution") as node_cls:
+            node_cls.filter.return_value.first = AsyncMock(return_value=None)
+            node_cls.filter.return_value.all = AsyncMock(return_value=[])
+            node_cls.create = AsyncMock()
+            outputs, count = await orchestrator._execute(
+                plan, context, MagicMock(), None, __import__("time").time()
+            )
 
         assert outputs == {"answer": "done"}
         assert count == 2
@@ -924,9 +937,13 @@ class TestWorkflowOrchestratorBehavior:
             ]
         )
 
-        outputs, count = await orchestrator._execute(
-            plan, context, MagicMock(), stream, __import__("time").time()
-        )
+        with patch("app.services.workflow.orchestrator.NodeExecution") as node_cls:
+            node_cls.filter.return_value.first = AsyncMock(return_value=None)
+            node_cls.filter.return_value.all = AsyncMock(return_value=[])
+            node_cls.create = AsyncMock()
+            outputs, count = await orchestrator._execute(
+                plan, context, MagicMock(), stream, __import__("time").time()
+            )
 
         assert outputs == {"answer": "done"}
         assert count == 2
@@ -962,6 +979,52 @@ class TestWorkflowOrchestratorBehavior:
         assert count == 1
         orchestrator._execute_iteration_body.assert_awaited_once()
         assert orchestrator._execute_node.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_defers_container_children_to_iteration_parent(
+        self, orchestrator
+    ):
+        child = MagicMock(
+            node_type="iteration_start",
+            node_data={"id": "child", "parentId": "iteration"},
+            upstream=set(),
+            handle_map={},
+        )
+        iteration = MagicMock(
+            node_type="iteration",
+            node_data={"id": "iteration", "data": {}},
+            upstream=set(),
+            handle_map={},
+        )
+        nodes = {"child": child, "iteration": iteration}
+        plan = MagicMock(
+            stages=[
+                MagicMock(node_ids=["child"]),
+                MagicMock(node_ids=["iteration"]),
+            ]
+        )
+        plan.get_node.side_effect = nodes.get
+        context = MagicMock(get_status=AsyncMock(return_value="running"))
+        orchestrator._get_child_nodes = MagicMock(return_value=["child"])
+        orchestrator._execute_iteration_body = AsyncMock()
+        orchestrator._execute_node = AsyncMock(
+            side_effect=[
+                ExecutionResult(outputs={"_iteration_complete": False}),
+                ExecutionResult(outputs={"_iteration_complete": True}),
+            ]
+        )
+
+        outputs, count = await orchestrator._execute(
+            plan, context, MagicMock(), None, __import__("time").time()
+        )
+
+        assert outputs == {}
+        assert count == 1
+        assert [
+            call.kwargs["node_id"]
+            for call in orchestrator._execute_node.await_args_list
+        ] == ["iteration", "iteration"]
+        orchestrator._execute_iteration_body.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_execute_node_success_serializes_boundary_outputs(self, orchestrator):
@@ -1046,6 +1109,9 @@ class TestWorkflowOrchestratorBehavior:
 
         with (
             patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
+            patch(
+                "app.services.workflow.orchestrator.WorkflowPauseRequest"
+            ) as pause_model,
             patch("app.services.workflow.orchestrator.get_redis", new=AsyncMock()),
             patch(
                 "app.services.workflow.orchestrator.ExecutionContext.load",
@@ -1056,6 +1122,8 @@ class TestWorkflowOrchestratorBehavior:
                 return_value=stream,
             ),
         ):
+            pause_model.filter.return_value.update = AsyncMock(return_value=1)
+            pause_model.filter.return_value.all = AsyncMock(return_value=[])
             run_model.filter.return_value.first = AsyncMock(return_value=run)
             assert await orchestrator.cancel(str(uuid4())) is True
 

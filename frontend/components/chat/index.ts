@@ -7,6 +7,7 @@ export { ChatContainer } from './chat-container';
 export { ChatInput, type ChatInputFile, type AttachmentConfig } from './chat-input';
 export { Message } from './message';
 export { VariableForm, useVariableForm } from './variable-form';
+export { PauseRequestActions, type PauseRequestActionsProps } from './pause-request-actions';
 export { ImageLightbox, VideoLightbox, useLightbox } from './image-lightbox';
 export { ExecutionTimeline } from './execution-timeline';
 export { NodeCard } from './node-card';

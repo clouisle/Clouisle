@@ -121,4 +121,37 @@ describe('WorkflowApiContent', () => {
     act(() => resetCopied?.())
     expect(renderer.root.findAllByProps({ 'data-icon': 'check' })).toHaveLength(0)
   })
+
+  test('documents the pause node flow and its endpoints', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
+    const renderer = render({ webhook_token: 'hook-token', variables: [] })
+    const rendered = output(renderer)
+
+    // Section + flow steps
+    expect(rendered).toContain('pauseNode')
+    expect(rendered).toContain('pauseNodeDescription')
+    expect(rendered).toContain('pauseFlowStep1')
+    expect(rendered).toContain('pauseFlowStep2')
+    expect(rendered).toContain('pauseFlowStep3')
+
+    // workflow_waiting event documented in the SSE tables/example
+    expect(rendered).toContain('workflow_waiting')
+    expect(rendered).toContain('eventWorkflowWaiting')
+
+    // Pause-request endpoints
+    expect(rendered).toContain('pause-request')
+    expect(rendered).toContain('pause-requests/')
+    expect(rendered).toContain('{workflow_id}')
+    expect(rendered).toContain('{run_id}')
+    expect(rendered).toContain('{pause_request_id}')
+    expect(rendered).toContain('/submit')
+
+    // Response schema covers variable types and approval fields
+    expect(rendered).toContain('input_variables')
+    expect(rendered).toContain('files')
+    expect(rendered).toContain('fileConfig')
+    expect(rendered).toContain('can_submit')
+    expect(rendered).toContain('require_all')
+    expect(rendered).toContain('decision')
+  })
 })

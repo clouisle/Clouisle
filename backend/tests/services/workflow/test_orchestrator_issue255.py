@@ -185,6 +185,7 @@ async def test_cancel_pending_run_survives_missing_context_and_publishes_error()
 
     with (
         patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
+        patch("app.services.workflow.orchestrator.WorkflowPauseRequest") as pause_model,
         patch("app.services.workflow.orchestrator.get_redis", new=AsyncMock()),
         patch(
             "app.services.workflow.orchestrator.ExecutionContext.load",
@@ -192,6 +193,8 @@ async def test_cancel_pending_run_survives_missing_context_and_publishes_error()
         ),
         patch("app.services.workflow.orchestrator.StreamManager", return_value=stream),
     ):
+        pause_model.filter.return_value.update = AsyncMock(return_value=1)
+        pause_model.filter.return_value.all = AsyncMock(return_value=[])
         run_model.filter.return_value.first = AsyncMock(return_value=run)
         assert await orchestrator.cancel(run_id) is True
 

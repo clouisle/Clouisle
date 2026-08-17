@@ -341,16 +341,14 @@ class FileToURLNodeExecutor(NodeExecutor):
             if input_type == "path" and output_type == "base64":
                 return await self._legacy_path_to_base64(value, run)
 
-            converted = cast(
-                WorkflowValue, self._normalize_urls(value, ensure_absolute, public_base)
-            )
+            converted = self._normalize_urls(value, ensure_absolute, public_base)
             if isinstance(converted, list):
                 first = str(converted[0]) if converted else ""
                 filename = os.path.basename(urlparse(first).path) or "file"
                 mime_type, _ = mimetypes.guess_type(filename)
                 return ExecutionResult(
                     outputs={
-                        "urls": converted,
+                        "urls": cast(WorkflowValue, converted),
                         "filename": filename,
                         "mimeType": mime_type or "application/octet-stream",
                     }

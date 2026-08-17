@@ -56,7 +56,16 @@
       "readUpdated": "Read status updated",
       "created": "Notification created",
       "deleted": "Notification deleted",
-      "bulkDeleted": "{count} notifications deleted"
+      "bulkDeleted": "{count} notifications deleted",
+      "approvalSubmitted": "Approval submitted",
+      "approvalFailed": "Failed to submit approval. It may already be handled."
+    },
+    "inline": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "submit": "Submit",
+      "loading": "Loading...",
+      "submitting": "Submitting..."
     },
     "admin": {
       "title": "Notification Management",

@@ -477,6 +477,7 @@ class MetricsCollector:
             "agent",
             "http_request",
             "sub_workflow",
+            "pause",
             "file_to_url",
             "knowledge_retrieval",
             "document_extractor",

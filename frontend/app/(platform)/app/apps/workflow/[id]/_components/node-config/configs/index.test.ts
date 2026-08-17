@@ -5,7 +5,7 @@ const modules = [
   'condition-node-config', 'iteration-node-config', 'loop-node-config', 'template-node-config',
   'file-to-url-node-config', 'variable-aggregator-node-config', 'variable-assignment-node-config',
   'parameter-extractor-node-config', 'question-classifier-node-config', 'answer-node-config',
-  'tool-node-config', 'sub-workflow-node-config', 'agent-node-config', 'knowledge-retrieval-node-config',
+  'tool-node-config', 'sub-workflow-node-config', 'agent-node-config', 'knowledge-retrieval-node-config', 'pause-node-config',
 ]
 
 for (const name of modules) {
@@ -18,6 +18,7 @@ for (const name of modules) {
     ...(name === 'agent-node-config' ? { AgentNodeConfig: 'AgentNodeConfig', defaultAgentNodeConfig: { agent: 'agent' } } : {}),
     ...(name === 'knowledge-retrieval-node-config' ? { KnowledgeRetrievalNodeConfig: 'KnowledgeRetrievalNodeConfig', defaultKnowledgeRetrievalNodeConfig: { knowledge: 'kb' } } : {}),
     ...(name === 'media-generation-node-config' ? { MediaGenerationNodeConfig: 'MediaGenerationNodeConfig', defaultMediaGenerationConfig: { model: 'media' } } : {}),
+    ...(name === 'pause-node-config' ? { PauseNodeConfig: 'PauseNodeConfig', defaultPauseNodeConfig: { mode: 'variables' } } : {}),
   }))
 }
 
@@ -32,4 +33,5 @@ test('exposes workflow node configuration components and defaults', () => {
   expect(configs.defaultAgentNodeConfig).toEqual({ agent: 'agent' })
   expect(configs.defaultKnowledgeRetrievalNodeConfig).toEqual({ knowledge: 'kb' })
   expect(configs.defaultMediaGenerationConfig).toEqual({ model: 'media' })
+  expect(configs.defaultPauseNodeConfig).toEqual({ mode: 'variables' })
 })

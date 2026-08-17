@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-15T18:33:11.654Z
+// GENERATED — 2026-08-17T05:37:33.243Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -125,6 +125,21 @@ export type WorkflowMessages = {
       eventFormat: string
       pythonStreamExample: string
       javascriptStreamExample: string
+      eventWorkflowWaiting: string
+      pauseNode: string
+      pauseNodeDescription: string
+      pauseFlowTitle: string
+      pauseFlowStep1: string
+      pauseFlowStep2: string
+      pauseFlowStep3: string
+      pauseGetEndpoint: string
+      pauseGetDescription: string
+      pauseGetFieldHint: string
+      pauseSubmitEndpoint: string
+      pauseSubmitDescription: string
+      pauseSubmitRequest: string
+      pauseSubmitResponse: string
+      pausePythonExample: string
     }
     apiDocumentation: string
     webhookUrl: string
@@ -206,6 +221,7 @@ export type WorkflowMessages = {
     status: string
     allStatus: string
     pending: string
+    waiting: string
     cancelled: string
     timeout: string
     allTime: string
@@ -309,6 +325,7 @@ export type WorkflowMessages = {
       start: string
       end: string
       comment: string
+      pause: string
     }
     nodeCategories: {
       model: string
@@ -336,6 +353,7 @@ export type WorkflowMessages = {
       tool: string
       knowledge_retrieval: string
       answer: string
+      pause: string
     }
     nodePanel: {
       addNode: string
@@ -369,6 +387,7 @@ export type WorkflowMessages = {
       inputsMissingSource: string
       inputVariableRefNotExist: string
       duplicateInputNames: string
+      invalidVariableName: string
       templateEmpty: string
       templateVarsMissingSource: string
       templateVarRefNotExist: string
@@ -400,6 +419,8 @@ export type WorkflowMessages = {
       invalidMediaMode: string
       containerNodeNoInput: string
       nodeNoInput: string
+      pauseInsideContainer: string
+      pauseVariablesRequired: string
       noOutputNode: string
     }
     settings: {
@@ -500,6 +521,7 @@ export type WorkflowMessages = {
       statusSuccess: string
       statusFailed: string
       statusCancelled: string
+      statusWaiting: string
       statusTimeout: string
       statusSkipped: string
       unknownError: string
@@ -544,6 +566,10 @@ export type WorkflowMessages = {
       nodeType: string
       nodeStatus: string
       nodeTime: string
+      pauseLoading: string
+      pauseLoadError: string
+      pauseSubmitError: string
+      pauseWaiting: string
     }
     varTypes: {
       text: string
@@ -660,6 +686,12 @@ export type WorkflowMessages = {
       label: string
       maxIterations: string
     }
+    nodesPause: {
+      label: string
+      approval: string
+      variableCount: string
+      notConfigured: string
+    }
     nodesParameterExtractor: {
       label: string
       methodLlmLabel: string
@@ -768,6 +800,7 @@ export type WorkflowMessages = {
       enterValue: string
       enterValueFor: string
       add: string
+      remove: string
       cancel: string
       save: string
       description: string
@@ -942,6 +975,43 @@ export type WorkflowMessages = {
       satisfy: string
       logicAll: string
       logicAny: string
+    }
+    configPause: {
+      mode: string
+      title: string
+      titlePlaceholder: string
+      requestedVariables: string
+      variablesHint: string
+      noVariables: string
+      variableName: string
+      variableType: string
+      approvers: string
+      approversHint: string
+      noApprovers: string
+      selectApprover: string
+      approvalDescription: string
+      approvalDescriptionPlaceholder: string
+      approvalDescriptionHint: string
+      variables: {
+        title: string
+        description: string
+      }
+      approval: {
+        title: string
+        description: string
+      }
+      variableLabel: string
+      approvalStrategy: string
+      approvalAnyOne: string
+      approvalAnyOneDescription: string
+      approvalAll: string
+      approvalAllDescription: string
+      searchApprovers: string
+      noMatchingApprovers: string
+      editVariable: string
+      variablesDescription: string
+      variablesDescriptionHint: string
+      variablesDescriptionPlaceholder: string
     }
     configParameterExtractor: {
       selectSourceTextVariable: string
@@ -1214,5 +1284,6 @@ export type WorkflowMessages = {
       label: string
       clickToConfigure: string
     }
+    webhookNote4: string
   }
 }

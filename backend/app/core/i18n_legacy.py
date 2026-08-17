@@ -1649,6 +1649,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "node_type_iteration": {"en": "Iteration", "zh": "迭代"},
     "node_type_llm": {"en": "LLM", "zh": "LLM"},
     "node_type_parameter_extractor": {"en": "Parameter Extractor", "zh": "参数提取"},
+    "node_type_pause": {"en": "Pause", "zh": "暂停"},
     "node_type_question_classifier": {"en": "Question Classifier", "zh": "问题分类"},
     "node_type_sub_workflow": {"en": "Sub Workflow", "zh": "子工作流"},
     "node_type_tool": {"en": "Tool", "zh": "工具"},
@@ -1858,6 +1859,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "notify_user_pending_approval_title": {
         "en": "New user pending approval",
         "zh": "新用户待审批",
+    },
+    "notify_workflow_approval_pending_content": {
+        "en": "Workflow **{workflow_name}** is waiting for approval at node **{node_name}**.",
+        "zh": "工作流 **{workflow_name}** 在节点 **{node_name}** 等待审批。",
+    },
+    "notify_workflow_approval_pending_title": {
+        "en": "Workflow approval requested",
+        "zh": "工作流待审批",
+    },
+    "notify_workflow_input_pending_content": {
+        "en": "Workflow **{workflow_name}** is waiting for input at node **{node_name}**.",
+        "zh": "工作流 **{workflow_name}** 在节点 **{node_name}** 等待输入。",
+    },
+    "notify_workflow_input_pending_title": {
+        "en": "Workflow input requested",
+        "zh": "工作流待输入",
+    },
+    "notify_workflow_pause_pending_content": {
+        "en": "Workflow **{workflow_name}** is waiting for input at node **{node_name}**.",
+        "zh": "工作流 **{workflow_name}** 在节点 **{node_name}** 等待处理。",
+    },
+    "notify_workflow_pause_pending_title": {
+        "en": "Workflow waiting for review",
+        "zh": "工作流等待处理",
     },
     "notify_workflow_run_failed_content": {
         "en": "Workflow **{workflow_name}** has failed. Error: {error}",
@@ -2866,6 +2891,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "企业微信消息发送失败",
     },
     "welcome_message": {"en": "Welcome to Clouisle API", "zh": "欢迎使用 Clouisle API"},
+    "workflow_approval_pending": {"en": "Awaiting approval", "zh": "等待审批"},
+    "workflow_approval_rejected": {"en": "Approval was rejected", "zh": "审批未通过"},
     "workflow_auto_saved_before_restore": {
         "en": "Auto-saved before restoring to v{version}",
         "zh": "恢复到 v{version} 前自动保存",
@@ -2911,6 +2938,43 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "workflow_not_found": {"en": "Workflow not found", "zh": "工作流未找到"},
     "workflow_not_published": {"en": "Workflow is not published", "zh": "工作流未发布"},
+    "workflow_pause_already_submitted": {
+        "en": "You have already submitted a decision for this request",
+        "zh": "你已为此请求提交过处理决定",
+    },
+    "workflow_pause_inside_container": {
+        "en": "Pause nodes are not allowed inside iteration/loop bodies",
+        "zh": "暂停节点不允许放在迭代/循环节点内部",
+    },
+    "workflow_pause_invalid_approvers": {
+        "en": "Invalid approvers (must be active members of this team): {users}",
+        "zh": "无效的处理人（必须是本团队的活跃成员）：{users}",
+    },
+    "workflow_pause_invalid_values": {
+        "en": "Submitted pause variables do not match the requested schema",
+        "zh": "提交的暂停变量不符合请求的类型约束",
+    },
+    "workflow_pause_not_approver": {
+        "en": "Only the configured approvers can handle this pause",
+        "zh": "仅配置的处理人可以处理此暂停",
+    },
+    "workflow_pause_pending": {"en": "Awaiting external input", "zh": "等待外部输入"},
+    "workflow_pause_request_not_found": {
+        "en": "Workflow pause request not found",
+        "zh": "未找到工作流暂停请求",
+    },
+    "workflow_pause_request_not_pending": {
+        "en": "Workflow pause request is no longer pending",
+        "zh": "工作流暂停请求不再处于等待状态",
+    },
+    "workflow_pause_submitted": {
+        "en": "Pause variables submitted",
+        "zh": "暂停变量已提交",
+    },
+    "workflow_pause_submitted_partial": {
+        "en": "Your decision was recorded; the workflow resumes once all approvers approve",
+        "zh": "已记录你的处理决定，所有处理人都通过后工作流才会继续执行",
+    },
     "workflow_published": {
         "en": "Workflow published successfully",
         "zh": "工作流发布成功",
@@ -2939,6 +3003,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "workflow_run_not_found_after_execution": {
         "en": "Run not found after execution",
         "zh": "执行后未找到运行记录",
+    },
+    "workflow_run_not_waiting": {
+        "en": "Workflow run is not waiting for input",
+        "zh": "工作流运行未处于等待输入状态",
     },
     "workflow_run_started": {"en": "Workflow run started", "zh": "工作流运行已开始"},
     "workflow_run_stats_fetched": {

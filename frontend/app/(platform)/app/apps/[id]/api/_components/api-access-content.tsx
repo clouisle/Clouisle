@@ -191,6 +191,7 @@ while (true) {
     { event: 'tool_call', description: t('events.toolCall') },
     { event: 'tool_result', description: t('events.toolResult') },
     { event: 'media_result', description: t('events.mediaResult') },
+    { event: 'user_input_request', description: t('events.userInputRequest') },
     { event: 'compression_start', description: t('events.compressionStart') },
     { event: 'compression_end', description: t('events.compressionEnd') },
     { event: 'output_truncated', description: t('events.outputTruncated') },
@@ -382,7 +383,7 @@ while (true) {
                 <p className="text-sm text-muted-foreground mb-2">{t('multiTurn.step2Description')}</p>
                 <CodeBlock 
                   code={`event: message_start
-data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000", "message_id": "..."}`} 
+data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000", "message_id": "...", "user_message_id": "..."}`} 
                   language="text" 
                 />
               </div>

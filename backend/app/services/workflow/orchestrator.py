@@ -16,6 +16,8 @@ from app.models.workflow import (
     Workflow,
     WorkflowRun,
     RunStatus,
+    WorkflowPauseRequest,
+    PauseRequestStatus,
     NodeExecution,
     NodeStatus,
     WorkflowVersion,
@@ -27,11 +29,13 @@ from app.core.i18n import t, get_default_language
 from app.services.auto_notification import AutoNotificationService
 
 from .context import ExecutionContext
+from .pause_approvers import remove_pause_pending_notifications
 from .errors import (
     WorkflowNotFoundError,
     WorkflowNotPublishedError,
     WorkflowValidationError,
     NodeExecutionError,
+    NodeWaitingError,
     ExecutionTimeoutError,
     ExecutionCancelledError,
     translate_public_workflow_error,
@@ -63,6 +67,7 @@ NODE_TYPE_KEYS = {
     "parameter_extractor": "node_type_parameter_extractor",
     "iteration": "node_type_iteration",
     "agent": "node_type_agent",
+    "pause": "node_type_pause",
     "end": "node_type_end",
 }
 
@@ -170,6 +175,11 @@ class WorkflowOrchestrator:
             user_id=user_id,
             team_id=team_id,
         )
+        run.context_snapshot = {
+            "workflow_definition": workflow_def,
+            **({"public_base_url": public_base_url} if public_base_url else {}),
+        }
+        await run.save(update_fields=["context_snapshot"])
 
         # Record metrics - workflow start
         if self._metrics:
@@ -260,6 +270,21 @@ class WorkflowOrchestrator:
 
             return str(run.id)
 
+        except NodeWaitingError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            run.status = RunStatus.WAITING
+            run.total_duration_ms = duration_ms
+            await run.save()
+            if stream_manager:
+                await stream_manager.publish_workflow_waiting(e.node_id)
+            await context.set_ttl()
+            logger.info(
+                "Workflow run %s paused awaiting input at node %s",
+                run.id,
+                e.node_id,
+            )
+            return str(run.id)
+
         except Exception as e:
             # Handle errors
             duration_ms = int((time.time() - start_time) * 1000)
@@ -301,6 +326,7 @@ class WorkflowOrchestrator:
         stream: bool = True,
         is_debug: bool = False,
         public_base_url: str | None = None,
+        resume: bool = False,
     ) -> str:
         """
         Run a workflow with an existing run record.
@@ -332,15 +358,38 @@ class WorkflowOrchestrator:
                 t("workflow_run_not_found"), msg_key="workflow_run_not_found"
             )
 
-        # The persisted run mode is authoritative, so callers cannot make a
-        # normal run execute the live draft by passing an inconsistent flag.
-        workflow_def = await self._get_workflow_definition(
-            workflow, is_debug=run.is_debug
-        )
+        # A resumed run must execute the exact definition that originally
+        # paused, not whichever draft/published version happens to be current
+        # when a human submits values. Persist that definition in the existing
+        # context snapshot on the first pass and reuse it on resume.
+        context_snapshot = dict(getattr(run, "context_snapshot", {}) or {})
+        if resume:
+            saved_definition = context_snapshot.get("workflow_definition")
+            if not isinstance(saved_definition, dict):
+                raise WorkflowValidationError(
+                    details={"reason": "workflow_pause_snapshot_missing"}
+                )
+            workflow_def = saved_definition
+            saved_base_url = context_snapshot.get("public_base_url")
+            if not public_base_url and isinstance(saved_base_url, str):
+                public_base_url = saved_base_url
+        else:
+            # The persisted run mode is authoritative, so callers cannot make
+            # a normal run execute the live draft inconsistently.
+            workflow_def = await self._get_workflow_definition(
+                workflow, is_debug=run.is_debug
+            )
+            context_snapshot["workflow_definition"] = workflow_def
+            if public_base_url:
+                context_snapshot["public_base_url"] = public_base_url
+            run.context_snapshot = context_snapshot
 
         # Update run status to running
         run.status = RunStatus.RUNNING
-        run.started_at = datetime.now(timezone.utc)
+        if not resume:
+            # Keep the original start time across resume passes so the run
+            # history shows the true start, not the resume moment.
+            run.started_at = datetime.now(timezone.utc)
         await run.save()
 
         # Record metrics - workflow start
@@ -364,11 +413,16 @@ class WorkflowOrchestrator:
             redis_client=redis_client,
             workflow_id=str(workflow_id),
             user_id=user_id,
+            public_base_url=public_base_url,
         )
         await context.set_inputs(inputs)
 
         # Create stream manager
         stream_manager = StreamManager(str(run.id)) if stream else None
+        if stream_manager and resume:
+            # Continue pass-1 sequences so the replay filter does not drop the
+            # resumed pass for clients reconnecting with from_sequence.
+            await stream_manager.seed_sequence()
 
         node_count = 0
 
@@ -400,10 +454,15 @@ class WorkflowOrchestrator:
                 stream_manager=stream_manager,
                 start_time=start_time,
                 profiler=profiler,
+                resume=resume,
             )
 
             # Update run record
             duration_ms = int((time.time() - start_time) * 1000)
+            if resume:
+                # Carry the pre-pause execution time forward instead of
+                # reporting only this resume pass.
+                duration_ms += run.total_duration_ms or 0
             await self._complete_run(run, outputs, duration_ms)
 
             # Record metrics
@@ -430,8 +489,32 @@ class WorkflowOrchestrator:
 
             return str(run.id)
 
+        except NodeWaitingError as e:
+            # Pause node: the run is deliberately parked (RunStatus.WAITING,
+            # node already persisted as WAITING, pause request created by the
+            # executor). Keep the Redis context alive while paused so the
+            # resume task can continue without rebuilding state, then exit
+            # cleanly instead of failing the run.
+            duration_ms = int((time.time() - start_time) * 1000)
+            if resume:
+                duration_ms += run.total_duration_ms or 0
+            run.status = RunStatus.WAITING
+            run.total_duration_ms = duration_ms
+            await run.save()
+            if stream_manager:
+                await stream_manager.publish_workflow_waiting(e.node_id)
+            await context.set_ttl()
+            logger.info(
+                "Workflow run %s paused awaiting input at node %s",
+                run.id,
+                e.node_id,
+            )
+            return str(run.id)
+
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
+            if resume:
+                duration_ms += run.total_duration_ms or 0
             public_error = translate_public_workflow_error(e)
 
             await self._fail_run(run, public_error, duration_ms)
@@ -786,6 +869,33 @@ class WorkflowOrchestrator:
             except Exception as e:
                 logger.warning(f"Failed to send workflow run failed notification: {e}")
 
+    async def _persist_skipped_node(
+        self,
+        run: "WorkflowRun",
+        node_id: str,
+        node_type: str | None,
+        node_label: str,
+    ) -> None:
+        """Persist a branch-pruned node so a later resume pass skips it too.
+
+        The resume path rebuilds its skipped set from SKIPPED NodeExecution
+        records, so every in-memory skip must be durable or the pruned branch
+        re-executes after the human resumes the run.
+        """
+        existing = await NodeExecution.filter(run_id=run.id, node_id=node_id).first()
+        if existing:
+            return
+        execution_order = len(await NodeExecution.filter(run_id=run.id).all())
+        await NodeExecution.create(
+            run_id=run.id,
+            node_id=node_id,
+            node_type=node_type or "",
+            node_name=node_label,
+            execution_order=execution_order,
+            status=NodeStatus.SKIPPED,
+            started_at=datetime.now(timezone.utc),
+        )
+
     async def _execute(
         self,
         plan: ExecutionPlan,
@@ -794,6 +904,7 @@ class WorkflowOrchestrator:
         stream_manager: StreamManager | None,
         start_time: float,
         profiler: ExecutionProfiler | None = None,
+        resume: bool = False,
     ) -> tuple[dict[str, WorkflowValue], int]:
         """
         Execute the workflow according to the plan.
@@ -805,6 +916,8 @@ class WorkflowOrchestrator:
             stream_manager: Stream manager for events
             start_time: Execution start time
             profiler: Optional execution profiler
+            resume: When True, skip nodes already completed in a prior pass
+                (resume after a pause node submission)
 
         Returns:
             Tuple of (final outputs dictionary, node count)
@@ -813,6 +926,29 @@ class WorkflowOrchestrator:
         skipped_nodes: set[str] = set()
         node_count = 0
         final_outputs: dict[str, WorkflowValue] = {}
+
+        # Resume after a pause: rebuild the executed/skipped sets from the
+        # persisted node executions so only unpaused work re-runs. The paused
+        # node itself is NOT in the success set, so it re-executes and emits
+        # the submitted values.
+        if resume:
+            prior = await NodeExecution.filter(run_id=run.id).all()
+            executed_nodes = {
+                n.node_id for n in prior if n.status == NodeStatus.SUCCESS
+            }
+            skipped_nodes = {n.node_id for n in prior if n.status == NodeStatus.SKIPPED}
+            for execution in prior:
+                if (
+                    execution.status == NodeStatus.SUCCESS
+                    and execution.node_type == "answer"
+                ):
+                    final_outputs.update(execution.outputs or {})
+            logger.info(
+                "Resuming run %s with %d executed, %d skipped nodes",
+                run.id,
+                len(executed_nodes),
+                len(skipped_nodes),
+            )
 
         # Track iteration state for loop/iteration nodes
 
@@ -834,19 +970,29 @@ class WorkflowOrchestrator:
                 if node_id in executed_nodes or node_id in skipped_nodes:
                     continue
 
-                # Check if node should be skipped due to branch
+                # Container children are executed exclusively by their iteration/loop
+                # parent. React Flow edges still place them in the global plan; running
+                # them here would bypass the per-round variable scope.
                 node = plan.get_node(node_id)
+                node_data = getattr(node, "node_data", None) if node else None
+                if isinstance(node_data, dict) and node_data.get("parentId"):
+                    continue
+
+                # Check if node should be skipped due to branch
                 if node:
                     # Check if any upstream node was skipped
                     if node.upstream & skipped_nodes:
                         # This node's branch was not taken
                         skipped_nodes.add(node_id)
+                        node_label = (
+                            node.node_data.get("data", {}).get("label")
+                            or await get_node_type_label(node.node_type)
+                            or node_id
+                        )
+                        await self._persist_skipped_node(
+                            run, node_id, node.node_type, node_label
+                        )
                         if stream_manager:
-                            node_label = (
-                                node.node_data.get("data", {}).get("label")
-                                or await get_node_type_label(node.node_type)
-                                or node_id
-                            )
                             await stream_manager.publish_node_skip(
                                 node_id=node_id,
                                 reason="upstream_skipped",
@@ -872,13 +1018,29 @@ class WorkflowOrchestrator:
                     )
 
                 # Execute single node
-                result = await self._execute_node(
-                    node_id=node_id,
-                    plan=plan,
-                    context=context,
-                    run=run,
-                    stream_manager=stream_manager,
-                )
+                # Preserve the normal call shape for existing execution paths;
+                # only resume runs need to inspect a prior WAITING record.
+                if resume:
+                    result = await self._execute_node(
+                        node_id=node_id,
+                        plan=plan,
+                        context=context,
+                        run=run,
+                        stream_manager=stream_manager,
+                        resume=True,
+                    )
+                else:
+                    result = await self._execute_node(
+                        node_id=node_id,
+                        plan=plan,
+                        context=context,
+                        run=run,
+                        stream_manager=stream_manager,
+                    )
+
+                # Pause node: stop execution, persist WAITING state upstream
+                if getattr(result, "waiting", False):
+                    raise NodeWaitingError(node_id=node_id)
 
                 # Check for iteration/loop nodes
                 node = plan.get_node(node_id)
@@ -906,14 +1068,24 @@ class WorkflowOrchestrator:
                                 skipped_nodes=skipped_nodes,
                             )
 
-                        # Re-execute iteration node to get next item
-                        result = await self._execute_node(
-                            node_id=node_id,
-                            plan=plan,
-                            context=context,
-                            run=run,
-                            stream_manager=stream_manager,
-                        )
+                        # Re-execute iteration node to get next item.
+                        if resume:
+                            result = await self._execute_node(
+                                node_id=node_id,
+                                plan=plan,
+                                context=context,
+                                run=run,
+                                stream_manager=stream_manager,
+                                resume=True,
+                            )
+                        else:
+                            result = await self._execute_node(
+                                node_id=node_id,
+                                plan=plan,
+                                context=context,
+                                run=run,
+                                stream_manager=stream_manager,
+                            )
                         iteration_complete = result.outputs.get(
                             "_iteration_complete"
                         ) or result.outputs.get("_loop_complete", False)
@@ -955,20 +1127,36 @@ class WorkflowOrchestrator:
                                 logger.info(
                                     f"Skipping node {downstream_id} and all downstream: {all_downstream}"
                                 )
-                                if stream_manager:
-                                    downstream_node = plan.get_node(downstream_id)
-                                    if downstream_node:
-                                        downstream_label = (
-                                            downstream_node.node_data.get(
-                                                "data", {}
-                                            ).get("label")
-                                            or await get_node_type_label(
-                                                downstream_node.node_type
-                                            )
-                                            or downstream_id
+                                downstream_node = plan.get_node(downstream_id)
+                                if downstream_node:
+                                    downstream_label = (
+                                        downstream_node.node_data.get("data", {}).get(
+                                            "label"
                                         )
-                                    else:
-                                        downstream_label = downstream_id
+                                        or await get_node_type_label(
+                                            downstream_node.node_type
+                                        )
+                                        or downstream_id
+                                    )
+                                else:
+                                    downstream_label = downstream_id
+                                await self._persist_skipped_node(
+                                    run,
+                                    downstream_id,
+                                    downstream_node.node_type
+                                    if downstream_node
+                                    else None,
+                                    downstream_label,
+                                )
+                                for pruned_id in all_downstream:
+                                    pruned_node = plan.get_node(pruned_id)
+                                    await self._persist_skipped_node(
+                                        run,
+                                        pruned_id,
+                                        pruned_node.node_type if pruned_node else None,
+                                        pruned_id,
+                                    )
+                                if stream_manager:
                                     await stream_manager.publish_node_skip(
                                         node_id=downstream_id,
                                         reason="branch_not_taken",
@@ -1035,6 +1223,16 @@ class WorkflowOrchestrator:
                     stream_manager=stream_manager,
                 )
 
+                # Defensive: pause nodes are rejected inside iteration/loop
+                # bodies by validation; if one still pauses, surface it as an
+                # execution error instead of corrupting the loop state.
+                if getattr(result, "waiting", False):
+                    raise NodeExecutionError(
+                        node_id=node_id,
+                        node_type="pause",
+                        message=t("workflow_pause_inside_container"),
+                    )
+
                 logger.info(f"Iteration body node {node_id} result: {result.outputs}")
         finally:
             context.pop_iteration_scope()
@@ -1046,6 +1244,7 @@ class WorkflowOrchestrator:
         context: ExecutionContext,
         run: WorkflowRun,
         stream_manager: StreamManager | None,
+        resume: bool = False,
     ) -> ExecutionResult:
         """
         Execute a single node.
@@ -1095,18 +1294,35 @@ class WorkflowOrchestrator:
                 is_streaming=is_streaming_answer,
             )
 
-        # Create NodeExecution record
-        execution_order = len(await NodeExecution.filter(run_id=run.id).all())
-        node_execution = await NodeExecution.create(
-            run_id=run.id,
-            node_id=node_id,
-            node_type=node_type,
-            node_name=node_label,
-            execution_order=execution_order,
-            status=NodeStatus.RUNNING,
-            started_at=datetime.now(timezone.utc),
-            config_snapshot=node_inner_data.get("config"),
-        )
+        # Create NodeExecution record. Only resume runs query for a prior
+        # WAITING record; normal executions preserve the existing single-create
+        # path and do not add a database read.
+        node_execution = None
+        if resume:
+            node_execution = (
+                await NodeExecution.filter(
+                    run_id=run.id, node_id=node_id, status=NodeStatus.WAITING
+                )
+                .order_by("-started_at")
+                .first()
+            )
+        if node_execution is None:
+            execution_order = len(await NodeExecution.filter(run_id=run.id).all())
+            node_execution = await NodeExecution.create(
+                run_id=run.id,
+                node_id=node_id,
+                node_type=node_type,
+                node_name=node_label,
+                execution_order=execution_order,
+                status=NodeStatus.RUNNING,
+                started_at=datetime.now(timezone.utc),
+                config_snapshot=node_inner_data.get("config"),
+            )
+        else:
+            node_execution.status = NodeStatus.RUNNING
+            node_execution.error_message = None
+            node_execution.outputs = None
+            await node_execution.save()
 
         start_time = time.time()
 
@@ -1137,6 +1353,21 @@ class WorkflowOrchestrator:
                     node_type=node_type,
                     message=result.error or "Unknown error",
                 )
+
+            if result.waiting:
+                # Paused for external input (pause node): persist WAITING and
+                # stop this execution; a later submit dispatches a resume task.
+                node_execution.status = NodeStatus.WAITING
+                await node_execution.save()
+                if stream_manager:
+                    await stream_manager.publish_node_complete(
+                        node_id=node_id,
+                        outputs={"waiting": True},
+                        duration_ms=int((time.time() - start_time) * 1000),
+                        node_type=node_type,
+                        is_streaming=is_streaming_answer,
+                    )
+                return result
 
             # Store outputs in context
             await context.set_node_outputs(node_id, result.outputs)
@@ -1234,7 +1465,7 @@ class WorkflowOrchestrator:
 
     async def cancel(self, run_id: str) -> bool:
         """
-        Cancel a running or pending workflow.
+        Cancel a pending, running, or externally paused workflow.
 
         Args:
             run_id: Run ID to cancel
@@ -1246,12 +1477,23 @@ class WorkflowOrchestrator:
         if not run:
             return False
 
-        if run.status not in (RunStatus.RUNNING, RunStatus.PENDING):
+        if run.status not in (RunStatus.RUNNING, RunStatus.PENDING, RunStatus.WAITING):
             return False
 
         run.status = RunStatus.CANCELLED
         run.finished_at = datetime.now(timezone.utc)
         await run.save()
+
+        # Close out any pending pause requests so the approval trail is not
+        # left mid-flight (submit already 409s on non-WAITING runs).
+        if run.status == RunStatus.CANCELLED and run.workflow_id:
+            cancelled_requests = WorkflowPauseRequest.filter(
+                run_id=run.id,
+                status=PauseRequestStatus.PENDING,
+            )
+            await cancelled_requests.update(status=PauseRequestStatus.CANCELLED)
+            for request in await cancelled_requests.all():
+                await remove_pause_pending_notifications(request.id)
 
         # Set cancelled status in context (may not exist yet for PENDING runs)
         redis_client = await get_redis()

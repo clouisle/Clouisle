@@ -128,6 +128,13 @@ class WorkflowRunRequest(BaseModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
 
 
+class PauseRequestSubmitRequest(BaseModel):
+    """External variable values submitted to a paused workflow node."""
+
+    values: dict[str, Any] = Field(default_factory=dict)
+    comment: str | None = Field(default=None, max_length=2000)
+
+
 class WorkflowRunOut(BaseModel):
     """Schema for workflow run response"""
 

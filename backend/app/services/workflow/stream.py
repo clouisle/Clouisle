@@ -24,6 +24,7 @@ class StreamEventType(Enum):
     # Workflow lifecycle events
     WORKFLOW_START = "workflow_start"
     WORKFLOW_COMPLETE = "workflow_complete"
+    WORKFLOW_WAITING = "workflow_waiting"
     WORKFLOW_ERROR = "workflow_error"
 
     # Node lifecycle events
@@ -108,6 +109,31 @@ class StreamManager:
         self._sequence = 0
         self._lock = asyncio.Lock()
 
+    async def seed_sequence(self) -> None:
+        """Continue the per-run sequence from the buffered events.
+
+        A resume pass creates a fresh StreamManager for the same run; without
+        seeding, sequences restart at 1 and collide with pass-1 events, so the
+        replay filter (`sequence <= from_sequence`) drops the whole resumed
+        pass for reconnecting clients.
+        """
+        redis = await get_redis()
+        buffered_result = redis.lrange(self._buffer_key, 0, -1)
+        buffered = cast(
+            list[bytes | str],
+            await buffered_result
+            if asyncio.iscoroutine(buffered_result)
+            else buffered_result,
+        )
+        for event_json in buffered:
+            try:
+                self._sequence = max(
+                    self._sequence,
+                    int(json.loads(event_json).get("sequence", 0)),
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+
     async def publish(self, event: StreamEvent) -> None:
         """
         Publish a stream event.
@@ -120,23 +146,18 @@ class StreamManager:
         async with self._lock:
             self._sequence += 1
             event.sequence = self._sequence
+            event_json = json.dumps(event.to_dict(), ensure_ascii=False)
 
-        event_data = event.to_dict()
-        event_json = json.dumps(event_data, ensure_ascii=False)
+            publish_result = redis.publish(self._channel, event_json)
+            if asyncio.iscoroutine(publish_result):
+                await publish_result
 
-        # Publish to channel
-        publish_result = redis.publish(self._channel, event_json)
-        if asyncio.iscoroutine(publish_result):
-            await publish_result
-
-        # Also store in buffer list for late subscribers
-        rpush_result = redis.rpush(self._buffer_key, event_json)
-        if asyncio.iscoroutine(rpush_result):
-            await rpush_result
-        # Keep buffer for 1 hour
-        expire_result = redis.expire(self._buffer_key, 3600)
-        if asyncio.iscoroutine(expire_result):
-            await expire_result
+            rpush_result = redis.rpush(self._buffer_key, event_json)
+            if asyncio.iscoroutine(rpush_result):
+                await rpush_result
+            expire_result = redis.expire(self._buffer_key, 3600)
+            if asyncio.iscoroutine(expire_result):
+                await expire_result
 
         logger.debug(
             f"Published event {event.event_type.value} "
@@ -158,6 +179,16 @@ class StreamManager:
                     "workflow_name": workflow_name,
                     "inputs": inputs,
                 },
+            )
+        )
+
+    async def publish_workflow_waiting(self, node_id: str) -> None:
+        """Publish that a run is parked until external input is submitted."""
+        await self.publish(
+            StreamEvent(
+                event_type=StreamEventType.WORKFLOW_WAITING,
+                node_id=node_id,
+                data={"node_id": node_id},
             )
         )
 
@@ -369,33 +400,33 @@ class StreamManager:
         self,
         from_sequence: int = 0,
     ) -> AsyncIterator[StreamEvent]:
-        """
-        Subscribe to stream events.
-
-        Args:
-            from_sequence: Start from this sequence number (for reconnection)
-
-        Yields:
-            StreamEvent objects
-        """
+        """Yield buffered and live events newer than ``from_sequence``."""
         redis = await get_redis()
 
-        # First, send buffered events
-        if from_sequence > 0:
-            buffered_result = redis.lrange(self._buffer_key, 0, -1)
-            buffered = cast(
-                list[str],
-                await buffered_result
-                if asyncio.iscoroutine(buffered_result)
-                else buffered_result,
-            )
-            for event_json in buffered:
-                try:
-                    event_data = json.loads(event_json)
-                    if event_data.get("sequence", 0) > from_sequence:
-                        yield self._parse_event(event_data)
-                except json.JSONDecodeError:
-                    continue
+        # A resume task can publish before the browser reconnects, so sequence
+        # 0 must replay the entire buffer rather than waiting only for live data.
+        buffered_result = redis.lrange(self._buffer_key, 0, -1)
+        buffered = cast(
+            list[str],
+            await buffered_result
+            if asyncio.iscoroutine(buffered_result)
+            else buffered_result,
+        )
+        buffered_events: list[StreamEvent] = []
+        for event_json in buffered:
+            try:
+                buffered_events.append(self._parse_event(json.loads(event_json)))
+            except json.JSONDecodeError:
+                continue
+        for event in buffered_events:
+            if event.sequence > from_sequence:
+                yield event
+        if buffered_events and buffered_events[-1].event_type in {
+            StreamEventType.WORKFLOW_COMPLETE,
+            StreamEventType.WORKFLOW_ERROR,
+            StreamEventType.WORKFLOW_WAITING,
+        }:
+            return
 
         # Subscribe to live events
         pubsub = redis.pubsub()
@@ -415,13 +446,13 @@ class StreamManager:
 
                     yield event
 
-                    # Stop on terminal events
+                    # Stop on a terminal event or an external-input pause.
                     if event.event_type in {
                         StreamEventType.WORKFLOW_COMPLETE,
                         StreamEventType.WORKFLOW_ERROR,
+                        StreamEventType.WORKFLOW_WAITING,
                     }:
                         break
-
                 except json.JSONDecodeError:
                     continue
 

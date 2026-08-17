@@ -175,7 +175,7 @@ async def test_get_all_node_metrics_filters_inactive_types(collector):
     result = await collector.get_all_node_metrics()
 
     assert list(result) == ["llm"]
-    assert collector.get_node_metrics.await_count == 20
+    assert collector.get_node_metrics.await_count == 21
 
 
 @pytest.mark.asyncio

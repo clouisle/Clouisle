@@ -75,6 +75,7 @@ class AutoNotificationType(str, Enum):
     # 工作流相关
     WORKFLOW_RUN_SUCCESS = "workflow.run_success"
     WORKFLOW_RUN_FAILED = "workflow.run_failed"
+    WORKFLOW_PAUSE_PENDING = "workflow.pause_pending"
 
     # Agent 相关
     AGENT_PUBLISHED = "agent.published"

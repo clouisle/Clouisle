@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { Check, ChevronLeft, ChevronRight, Megaphone, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { notificationsApi, type NotificationItem, type NotificationLevel, type NotificationScope } from '@/lib/api'
+import { PauseRequestActions } from '@/components/chat/pause-request-actions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,7 +29,7 @@ import {
 import dynamic from 'next/dynamic'
 import { useTheme } from 'next-themes'
 import { useDebounce } from '@/hooks/use-debounce'
-import { getNotificationDisplayMeta, type NotificationDisplayKind } from '@/lib/notifications/display'
+import { getNotificationDisplayMeta, getPauseActionMeta, type NotificationDisplayKind } from '@/lib/notifications/display'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), {
   ssr: false,
@@ -196,6 +197,11 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
     }
   }
 
+  const handleInlineResolved = async () => {
+    onReadUpdated?.()
+    await fetchList()
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const openDetail = (item: NotificationItem) => {
     setSelectedItem(item)
@@ -320,7 +326,15 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                     </TableCell>
                     <TableCell>{formatDateTime(item.created_at, locale)}</TableCell>
                     <TableCell className="text-right">
-                      {!item.is_read ? (
+                      {getPauseActionMeta(item) ? (
+                        <PauseRequestActions
+                          variant="compact"
+                          workflowId={getPauseActionMeta(item)!.workflowId}
+                          runId={getPauseActionMeta(item)!.runId}
+                          pauseRequestId={getPauseActionMeta(item)!.requestId}
+                          onResolved={() => void handleInlineResolved()}
+                        />
+                      ) : !item.is_read ? (
                         <Button
                           variant={meta.isAnnouncement ? 'default' : 'outline'}
                           size="sm"

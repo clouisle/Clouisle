@@ -108,6 +108,7 @@ export function createEmbedWorkflowRunAdapter(apiKey: string): WorkflowRunAdapte
       runWorkflow: (id, body) => embedApi.runWorkflow(id, body.inputs, apiKey),
       streamWorkflowRun: (runId, handlers) =>
         embedApi.streamWorkflowRun(runId, apiKey, {
+          fromSequence: handlers.fromSequence,
           onEvent: handlers.onEvent as ((event: { type: string; data: Record<string, unknown>; sequence: number; timestamp: string }) => void) | undefined,
           onError: handlers.onError,
           onComplete: handlers.onComplete,
@@ -117,6 +118,16 @@ export function createEmbedWorkflowRunAdapter(apiKey: string): WorkflowRunAdapte
       },
     }),
     loadHistory: async (id) => readRuns(id).map((s) => toListItem(s, id)),
+    loadHistoryPage: async (id, params) => {
+      // Local history is not server-paginated; slice for parity with the
+      // authenticated adapter so the run page can scroll through it.
+      const runs = readRuns(id)
+      const start = (params.page - 1) * params.pageSize
+      return {
+        items: runs.slice(start, start + params.pageSize).map((s) => toListItem(s, id)),
+        total: runs.length,
+      }
+    },
     loadRunDetail: async (id, runId) => {
       const s = readRuns(id).find((r) => r.runId === runId)
       if (!s) throw new Error('run not found')

@@ -1,6 +1,22 @@
 # Implementation Plan
 
 ## Active
+- **workflow-pause-approvers** — Complete. Restrict pause/approval submissions to per-node approvers (fallback: workflow owner + team admins) and notify approvers when a run enters the waiting state. See `docs/plan/workflow-pause-approvers.md`
+  - [x] 1. Notification type + i18n keys
+  - [x] 2. Approver resolve/notify service
+  - [x] 3. Executor notification trigger
+  - [x] 4. Submit endpoint approver check
+  - [x] 5. Pending endpoint approver info
+  - [x] 6. Frontend node approver selector
+  - [x] 7. Pause panel gating + run page wiring
+  - [x] 8. i18n + full validation
+- **workflow-pause-node** — Complete. Add a pause (human-in-the-loop) workflow node: runs pause at the node (RunStatus/NodeStatus waiting), an authorized submitter passes variables through an API, and a fresh Celery task resumes execution from the paused node. Human approval is the node's approval mode (submit decision approved/rejected; reject fails the run). See `docs/plan/workflow-pause-node.md`
+  - [x] 1. Backend state machine + pause/resume core
+  - [x] 2. Submit API + resume dispatch
+  - [x] 3. Frontend node (canvas/config/validator)
+  - [x] 4. Frontend run page (waiting state + submit/approval UI)
+  - [x] 5. i18n + full validation
+  - [x] 6. Code-review remediation: authorization, concurrency, resume lifecycle, stream replay, migration, and run-surface regressions
 - **chat-storage-optimization** — Complete. Optimize chat history storage performance without changing the relational row model: composite `(conversation_id, is_active, created_at)` index via startup migration, difference-set activation in `activate_conversation_branch`, single-query column-trimmed chain walks, plus a version-group dedup invariant that makes superseded versions unre-activatable. Cursor pagination deferred. See `docs/plan/chat-storage-optimization.md`
   - [x] 1. P0: messages history index migration + test
   - [x] 2. P1a: difference-set activation + test

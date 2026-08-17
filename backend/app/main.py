@@ -105,6 +105,7 @@ async def lifespan(app: FastAPI):
         init_chunk_status,
         init_embed_config,
         init_workflow_run_page_config,
+        init_workflow_pause_requests_table,
         drop_model_provider_uniqueness,
         init_model_provider_display_name,
         revert_channel_id_to_model_id,
@@ -301,6 +302,10 @@ async def lifespan(app: FastAPI):
 
     # Generate schemas
     await Tortoise.generate_schemas()
+    try:
+        await init_workflow_pause_requests_table()
+    except Exception as e:
+        logger.warning(f"Workflow pause requests table migration failed: {e}")
 
     # pg_search depends on the authoritative knowledge tables above. Detect and
     # initialize it on the first startup; validate it on every later startup.

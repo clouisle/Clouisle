@@ -1546,6 +1546,9 @@ msgstr "问题分类"
 msgid "node_type_sub_workflow"
 msgstr "子工作流"
 
+msgid "node_type_pause"
+msgstr "暂停"
+
 msgid "node_type_tool"
 msgstr "工具"
 
@@ -1758,6 +1761,24 @@ msgstr "工作流 **{workflow_name}** 已成功完成。耗时：{duration}ms，
 
 msgid "notify_workflow_run_success_title"
 msgstr "工作流运行完成"
+
+msgid "notify_workflow_pause_pending_title"
+msgstr "工作流等待处理"
+
+msgid "notify_workflow_pause_pending_content"
+msgstr "工作流 **{workflow_name}** 在节点 **{node_name}** 等待处理。"
+
+msgid "notify_workflow_approval_pending_title"
+msgstr "工作流待审批"
+
+msgid "notify_workflow_approval_pending_content"
+msgstr "工作流 **{workflow_name}** 在节点 **{node_name}** 等待审批。"
+
+msgid "notify_workflow_input_pending_title"
+msgstr "工作流待输入"
+
+msgid "notify_workflow_input_pending_content"
+msgstr "工作流 **{workflow_name}** 在节点 **{node_name}** 等待输入。"
 
 msgid "operation_not_permitted"
 msgstr "操作不允许。需要权限：{permission}"
@@ -2742,6 +2763,45 @@ msgstr "从 v{version} 恢复"
 
 msgid "workflow_run_cancelled"
 msgstr "工作流运行已取消"
+
+msgid "workflow_approval_pending"
+msgstr "等待审批"
+
+msgid "workflow_approval_rejected"
+msgstr "审批未通过"
+
+msgid "workflow_pause_inside_container"
+msgstr "暂停节点不允许放在迭代/循环节点内部"
+
+msgid "workflow_pause_pending"
+msgstr "等待外部输入"
+
+msgid "workflow_pause_request_not_found"
+msgstr "未找到工作流暂停请求"
+
+msgid "workflow_pause_request_not_pending"
+msgstr "工作流暂停请求不再处于等待状态"
+
+msgid "workflow_run_not_waiting"
+msgstr "工作流运行未处于等待输入状态"
+
+msgid "workflow_pause_invalid_values"
+msgstr "提交的暂停变量不符合请求的类型约束"
+
+msgid "workflow_pause_submitted"
+msgstr "暂停变量已提交"
+
+msgid "workflow_pause_submitted_partial"
+msgstr "已记录你的处理决定，所有处理人都通过后工作流才会继续执行"
+
+msgid "workflow_pause_already_submitted"
+msgstr "你已为此请求提交过处理决定"
+
+msgid "workflow_pause_not_approver"
+msgstr "仅配置的处理人可以处理此暂停"
+
+msgid "workflow_pause_invalid_approvers"
+msgstr "无效的处理人（必须是本团队的活跃成员）：{users}"
 
 msgid "workflow_run_deleted"
 msgstr "工作流运行记录删除成功"

@@ -48,7 +48,7 @@ describe('createEmbedWorkflowRunAdapter', () => {
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
     const api = adapter.createRunApi()
     await api.runWorkflow('embed-1', { inputs: { query: 'hi' } })
-    const stop = api.streamWorkflowRun('run-1', { onEvent: () => {}, onError: () => {}, onComplete: () => {} })
+    const stop = api.streamWorkflowRun('run-1', { fromSequence: 7, onEvent: () => {}, onError: () => {}, onComplete: () => {} })
     expect(typeof stop).toBe('function')
     await expect(api.cancelWorkflowRun('run-1')).resolves.toBeUndefined()
   })
@@ -123,3 +123,20 @@ describe('createEmbedWorkflowRunAdapter', () => {
     await expect(adapter.loadRunDetail('embed-1', 'run-1')).rejects.toThrow('run not found')
   })
 })
+
+  test('loadHistoryPage slices local history like the authenticated adapter', async () => {
+    const adapter = createEmbedWorkflowRunAdapter('key-123')
+    // 本地存储有 MAX_RUNS=20 上限
+    for (let index = 1; index <= 22; index += 1) {
+      adapter.saveRun('embed-1', { ...snapshot, runId: `run-${index}`, inputs: { query: `q-${index}` } })
+    }
+
+    const page1 = await adapter.loadHistoryPage('embed-1', { page: 1, pageSize: 20 })
+    expect(page1.total).toBe(20)
+    expect(page1.items).toHaveLength(20)
+    expect(page1.items[0].id).toBe('run-22')
+
+    const page2 = await adapter.loadHistoryPage('embed-1', { page: 2, pageSize: 20 })
+    expect(page2.items).toHaveLength(0)
+    expect(page2.total).toBe(20)
+  })

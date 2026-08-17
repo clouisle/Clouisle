@@ -32,6 +32,29 @@ mock.module('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
 }))
 
+mock.module('lucide-react', () => ({
+  Check: () => null,
+  Loader2: () => null,
+  Megaphone: () => null,
+  ShieldAlert: () => null,
+  Sparkles: () => null,
+  X: () => null,
+}))
+mock.module('sonner', () => ({ toast: { success: mock(), error: mock() } }))
+mock.module('@/components/chat/variable-form', () => ({
+  VariableForm: () => null,
+}))
+mock.module('@/components/chat/pause-request-actions', () => ({
+  PauseRequestActions: (props: Record<string, unknown>) => <div data-pause-actions={JSON.stringify({ variant: props.variant, workflowId: props.workflowId, runId: props.runId, pauseRequestId: props.pauseRequestId })} onResolved={props.onResolved} />,
+}))
+const getPendingPauseRequest = mock(() => Promise.resolve(null))
+const submitPauseRequest = mock(() =>
+  Promise.resolve({ pause_request_id: 'p', status: 'submitted' }),
+)
+mock.module('@/lib/api/workflows', () => ({
+  workflowsApi: { getPendingPauseRequest, submitPauseRequest },
+}))
+
 import { notificationsApi, type NotificationItem } from '@/lib/api'
 import { ProminentNotificationDialog } from './prominent-notification-dialog'
 
@@ -125,5 +148,79 @@ describe('ProminentNotificationDialog', () => {
     expect((await render()).toJSON()).toBeNull()
     expect(list).toHaveBeenCalledTimes(2)
     expect(consoleError).toHaveBeenCalled()
+  })
+})
+
+const pauseNotification = (): NotificationItem => ({
+  id: 'pause-n',
+  scope: 'team',
+  type: 'workflow.pause_pending',
+  source: 'system',
+  title: 'Workflow waiting for review',
+  content: 'Review the quote',
+  level: 'high',
+  status: 'active',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  is_read: false,
+  data: { workflow_id: 'wf-1', run_id: 'run-1', pause_request_id: 'pr-1' },
+})
+
+describe('ProminentNotificationDialog pause actions', () => {
+  test('renders the unified actions for an approval notification', async () => {
+    spyOn(notificationsApi, 'list').mockResolvedValue({
+      items: [pauseNotification()], total: 1, page: 1, page_size: 50,
+    })
+
+    const renderer = await render()
+    await act(async () => { await Promise.resolve() })
+
+    const actions = renderer.root.findAll((node) => typeof node.props['data-pause-actions'] === 'string')[0]
+    const props = JSON.parse(actions.props['data-pause-actions'])
+    expect(props).toMatchObject({
+      workflowId: 'wf-1',
+      runId: 'run-1',
+      pauseRequestId: 'pr-1',
+    })
+    expect(typeof actions.props.onResolved).toBe('function')
+    // The snapshot content is not duplicated next to the live actions.
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('Review the quote')
+  })
+
+  test('hides the snapshot content for pause notifications', async () => {
+    spyOn(notificationsApi, 'list').mockResolvedValue({
+      items: [pauseNotification()], total: 1, page: 1, page_size: 50,
+    })
+
+    const renderer = await render()
+    await act(async () => { await Promise.resolve() })
+
+    // Title stays, content summary is replaced by the live actions.
+    expect(JSON.stringify(renderer.toJSON())).toContain('Workflow waiting for review')
+    expect(renderer.root.findAll((node) => typeof node.props['data-pause-actions'] === 'string')).toHaveLength(1)
+    // The approval is handled inline: no view/mark-read footer buttons.
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('viewNotification')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('markRead')
+  })
+
+  test('resolving a pause request closes the dialog and refetches the queue', async () => {
+    const list = spyOn(notificationsApi, 'list')
+      .mockResolvedValueOnce({
+        items: [pauseNotification()], total: 1, page: 1, page_size: 50,
+      })
+      .mockResolvedValueOnce({
+        items: [], total: 0, page: 1, page_size: 50,
+      })
+
+    const renderer = await render()
+    await act(async () => { await Promise.resolve() })
+
+    const actions = renderer.root.findAll((node) => typeof node.props['data-pause-actions'] === 'string')[0]
+    await act(async () => { await actions.props.onResolved() })
+    await act(async () => { await Promise.resolve() })
+
+    // 解析后：重新拉取队列，无待办则关闭弹窗
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(renderer.toJSON())).toBe('null')
   })
 })

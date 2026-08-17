@@ -62,8 +62,8 @@ function render(options: Parameters<Hook>[0]) {
   return Render(options)
 }
 
-function emit(type: string, data: Record<string, unknown> = {}) {
-  streamOptions.onEvent?.({ type, data, sequence: 1, timestamp: '2026-01-01' } as WorkflowEvent)
+function emit(type: string, data: Record<string, unknown> = {}, sequence = 1) {
+  streamOptions.onEvent?.({ type, data, sequence, timestamp: '2026-01-01' } as WorkflowEvent)
 }
 
 beforeAll(async () => {
@@ -126,6 +126,45 @@ describe('useWorkflowRun', () => {
       { type: 'text', text: 'Hello world', state: 'done' },
     ])
     expect(hook.isStreaming).toBe(false)
+  })
+
+  test('enters waiting state and reconnects after pause submission', async () => {
+    const options = { workflowId: 'workflow-1' }
+    let hook = render(options)
+
+    await hook.start({ value: 1 })
+    emit('node_start', { node_id: 'pause-1', node_type: 'pause', node_label: 'Approval' }, 1)
+    emit('workflow_waiting', { node_id: 'pause-1' }, 2)
+    hook = render(options)
+
+    expect(hook.status).toBe('waiting')
+    expect(hook.isStreaming).toBe(false)
+
+    hook.resume()
+    hook = render(options)
+
+    expect(closeConnection).toHaveBeenCalledOnce()
+    expect(streamWorkflowRun).toHaveBeenCalledTimes(2)
+    expect(hook.status).toBe('pending')
+    expect(hook.isStreaming).toBe(true)
+    expect(streamWorkflowRun.mock.calls[1]?.[1]).toMatchObject({ fromSequence: 2 })
+
+    emit('node_start', { node_id: 'pause-1', node_type: 'pause', node_label: 'Approval' }, 3)
+    emit('node_complete', { node_id: 'pause-1', node_type: 'pause', outputs: { approved: true } }, 4)
+    emit('workflow_complete', { outputs: { approved: true } }, 5)
+    hook = render(options)
+
+    const pauseCalls = hook.messages[0]?.parts.filter(
+      (part) => part.type === 'tool-call' && part.toolCallId === 'pause-1',
+    ) ?? []
+    expect(pauseCalls).toHaveLength(1)
+    hook = render(options)
+
+    expect(hook.executionState.nodes.get('pause-1')).toMatchObject({
+      status: 'completed',
+      output: { approved: true },
+    })
+    expect(hook.status).toBe('success')
   })
 
   test('uses debug execution and exposes stream failure and completion callbacks', async () => {

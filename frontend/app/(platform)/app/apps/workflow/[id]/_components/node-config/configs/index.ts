@@ -16,3 +16,4 @@ export { ToolNodeConfig, type ToolNodeConfig as ToolNodeConfigType, defaultToolN
 export { SubWorkflowNodeConfig, type SubWorkflowNodeConfig as SubWorkflowNodeConfigType, defaultSubWorkflowNodeConfig } from './sub-workflow-node-config'
 export { AgentNodeConfig, type AgentNodeConfig as AgentNodeConfigType, defaultAgentNodeConfig } from './agent-node-config'
 export { KnowledgeRetrievalNodeConfig, type KnowledgeRetrievalNodeConfig as KnowledgeRetrievalNodeConfigType, defaultKnowledgeRetrievalNodeConfig } from './knowledge-retrieval-node-config'
+export { PauseNodeConfig, type PauseNodeConfig as PauseNodeConfigType, defaultPauseNodeConfig } from './pause-node-config'

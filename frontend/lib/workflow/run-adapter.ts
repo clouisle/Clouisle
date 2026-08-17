@@ -1,4 +1,4 @@
-import { workflowsApi, type Workflow, type WorkflowRunListItem, type WorkflowRun, type NodeExecution, type VariableDefinition } from '@/lib/api/workflows'
+import { workflowsApi, type Workflow, type WorkflowRunListItem, type WorkflowRun, type WorkflowPauseRequest, type NodeExecution, type VariableDefinition } from '@/lib/api/workflows'
 import type { EmbedWorkflowInfo } from '@/lib/api/embed'
 import type { WorkflowRunApi } from '@/hooks/use-workflow-run'
 
@@ -33,7 +33,23 @@ export interface WorkflowRunAdapter {
   getWorkflow: (id: string) => Promise<Workflow>
   createRunApi: () => WorkflowRunApi
   loadHistory: (id: string) => Promise<WorkflowRunListItem[]>
+  /**
+   * Paginated history for scroll-loading. When absent the run page falls back
+   * to the single `loadHistory` call and shows no load-more.
+   */
+  loadHistoryPage?: (
+    id: string,
+    params: { page: number; pageSize: number }
+  ) => Promise<{ items: WorkflowRunListItem[]; total: number }>
   loadRunDetail: (id: string, runId: string) => Promise<RunDetail>
+  getPendingPauseRequest?: (workflowId: string, runId: string) => Promise<WorkflowPauseRequest | null>
+  submitPauseRequest?: (
+    workflowId: string,
+    runId: string,
+    pauseRequestId: string,
+    values: Record<string, unknown>,
+    comment?: string,
+  ) => Promise<{ pause_request_id: string; status: string }>
   saveRun: (id: string, snapshot: RunSnapshot) => void
 }
 
@@ -70,7 +86,10 @@ export const jwtWorkflowRunAdapter: WorkflowRunAdapter = {
     streamWorkflowRun: (runId, handlers) => workflowsApi.streamWorkflowRun(runId, handlers),
     cancelWorkflowRun: async (runId) => { await workflowsApi.cancelWorkflowRun(runId) },
   }),
-  loadHistory: (id) => workflowsApi.getMyWorkflowRuns(id, { pageSize: 10 }).then((d) => d.items),
+  loadHistory: (id) => workflowsApi.getMyWorkflowRuns(id, { pageSize: 20 }).then((d) => d.items),
+  loadHistoryPage: (id, params) => workflowsApi
+    .getMyWorkflowRuns(id, { page: params.page, pageSize: params.pageSize })
+    .then((d) => ({ items: d.items, total: d.total })),
   loadRunDetail: async (id, runId) => {
     const [run, nodes] = await Promise.all([
       workflowsApi.getMyWorkflowRun(id, runId),
@@ -78,6 +97,9 @@ export const jwtWorkflowRunAdapter: WorkflowRunAdapter = {
     ])
     return { run, nodes }
   },
+  getPendingPauseRequest: (workflowId, runId) => workflowsApi.getPendingPauseRequest(workflowId, runId),
+  submitPauseRequest: async (workflowId, runId, pauseRequestId, values, comment) =>
+    workflowsApi.submitPauseRequest(workflowId, runId, pauseRequestId, values, comment),
   saveRun: () => {
     // The authenticated run page relies on server-side history; nothing to persist locally.
   },

@@ -56,7 +56,16 @@
       "readUpdated": "已更新已读状态",
       "created": "通知创建成功",
       "deleted": "通知删除成功",
-      "bulkDeleted": "已删除 {count} 条通知"
+      "bulkDeleted": "已删除 {count} 条通知",
+      "approvalSubmitted": "审批已提交",
+      "approvalFailed": "审批提交失败，可能已被处理。"
+    },
+    "inline": {
+      "approve": "通过",
+      "reject": "拒绝",
+      "submit": "提交",
+      "loading": "加载中...",
+      "submitting": "提交中..."
     },
     "admin": {
       "title": "通知管理",

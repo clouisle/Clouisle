@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Bot, GitBranch, Workflow, Wrench, Code } from 'lucide-react'
+import { Bot, CirclePause, GitBranch, Workflow, Wrench, Code } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface NodePanelProps {
@@ -12,6 +12,7 @@ interface NodePanelProps {
 const nodeTypes = [
   { type: 'llm', icon: Bot, color: 'bg-blue-500' },
   { type: 'condition', icon: GitBranch, color: 'bg-orange-500' },
+  { type: 'pause', icon: CirclePause, color: 'bg-amber-500' },
   { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500' },
   { type: 'tool', icon: Wrench, color: 'bg-emerald-500' },
   { type: 'code', icon: Code, color: 'bg-gray-500' },

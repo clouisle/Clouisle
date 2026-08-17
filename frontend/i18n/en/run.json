@@ -14,6 +14,7 @@
     "fillParameters": "Fill in the required parameters to start",
     "startRun": "Run",
     "running": "Running...",
+    "waiting": "Awaiting input",
     "starting": "Starting...",
     "typePlaceholder": "Type your message...",
     "workflowInputPlaceholder": "Enter your query to run the workflow...",
@@ -24,6 +25,7 @@
     "runFailed": "Run failed",
     "cancel": "Cancel run",
     "cancelling": "Cancelling...",
+    "cancelFailed": "Failed to cancel the run. Please try again.",
     "reset": "Reset",
     "newRun": "New run",
     "runAgain": "Run again",
@@ -44,14 +46,46 @@
       "success": "Completed",
       "failed": "Failed",
       "cancelled": "Cancelled",
-      "timeout": "Timed out"
+      "timeout": "Timed out",
+      "waiting": "Awaiting input"
     },
     "nodeStatus": {
       "pending": "Pending",
+      "queued": "Queued",
       "running": "Running",
+      "waiting": "Waiting for input",
       "success": "Completed",
       "failed": "Failed",
-      "skipped": "Skipped"
+      "skipped": "Skipped",
+      "cancelled": "Cancelled"
+    },
+    "pause": {
+      "waiting": "Workflow paused",
+      "variablesHint": "Provide the requested values to continue this run.",
+      "approvalHint": "Review the request, then approve or reject it to continue.",
+      "commentPlaceholder": "Optional comment for the workflow owner",
+      "approve": "Approve",
+      "reject": "Reject",
+      "submit": "Continue workflow",
+      "submitting": "Submitting...",
+      "loadError": "Unable to load the request for external input.",
+      "submitError": "Unable to submit the requested values. Please try again.",
+      "submitted": "Approval submitted",
+      "loading": "Loading...",
+      "fillInline": "Fill in the run page",
+      "triggeredBy": "Initiated by {name}",
+      "typeApproval": "Approval",
+      "typeInput": "Input",
+      "approversOnly": "Only the configured approvers can handle this request: {names}",
+      "ownerAdminOnly": "Only the workflow owner and team admins can handle this request.",
+      "embedNotice": "This workflow requires a logged-in Clouisle session to handle its approval or input step.",
+      "waitingForReview": "This run is waiting for its designated reviewers to handle the approval or input step.",
+      "approvalProgress": "Approval progress {approved}/{total}",
+      "alreadySubmitted": "You have submitted your decision; waiting for the other approvers.",
+      "submittedWaiting": "Your decision was recorded; waiting for the other approvers.",
+      "approverStatusApproved": "Approved",
+      "approverStatusRejected": "Rejected",
+      "approverStatusPending": "Pending"
     }
   }
 }

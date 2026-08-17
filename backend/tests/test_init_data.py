@@ -133,6 +133,21 @@ async def test_startup_migration_resets_lock_timeout_after_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pause_request_migration_uses_mapped_node_execution_table(monkeypatch):
+    conn = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="postgres"),
+        execute_query=AsyncMock(),
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_workflow_pause_requests_table()
+
+    queries = [call.args[0] for call in conn.execute_query.await_args_list]
+    assert any("workflow_node_executions" in query for query in queries)
+    assert any("uq_workflow_pause_requests_run_node" in query for query in queries)
+
+
+@pytest.mark.asyncio
 async def test_postgres_lexical_search_initializes_and_validates(monkeypatch) -> None:
     conn = SimpleNamespace(
         execute_query_dict=AsyncMock(
@@ -358,6 +373,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_scoped_role_assignments_table",
         "init_model_endpoint_allowlist",
         "init_default_settings",
+        "migrate_auto_notification_types",
         "migrate_registration_settings_category",
         "migrate_storage_settings_category",
         "init_workflow_tables",
@@ -1698,3 +1714,62 @@ async def test_migrate_registration_settings_category_already_correct(
     await init_data.migrate_registration_settings_category()
 
     setting.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_migrate_auto_notification_types_merges_persisted_config(monkeypatch):
+    from app.core import init_data
+
+    persisted = {
+        "channels": ["email"],
+        "enabled_types": ["team.member_added", "workflow.run_failed"],
+    }
+    set_value = AsyncMock()
+    monkeypatch.setattr(
+        "app.models.site_setting.SiteSetting.get_value",
+        AsyncMock(return_value=persisted),
+    )
+    monkeypatch.setattr("app.models.site_setting.SiteSetting.set_value", set_value)
+
+    await init_data.migrate_auto_notification_types()
+
+    set_value.assert_awaited_once()
+    merged = set_value.await_args.kwargs["value"]
+    assert "workflow.pause_pending" in merged["enabled_types"]
+    assert "team.member_added" in merged["enabled_types"]
+
+
+@pytest.mark.asyncio
+async def test_migrate_auto_notification_types_skips_when_already_enabled(monkeypatch):
+    from app.core import init_data
+
+    persisted = {
+        "channels": [],
+        "enabled_types": ["workflow.pause_pending"],
+    }
+    set_value = AsyncMock()
+    monkeypatch.setattr(
+        "app.models.site_setting.SiteSetting.get_value",
+        AsyncMock(return_value=persisted),
+    )
+    monkeypatch.setattr("app.models.site_setting.SiteSetting.set_value", set_value)
+
+    await init_data.migrate_auto_notification_types()
+
+    set_value.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_migrate_auto_notification_types_skips_absent_config(monkeypatch):
+    from app.core import init_data
+
+    set_value = AsyncMock()
+    monkeypatch.setattr(
+        "app.models.site_setting.SiteSetting.get_value",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr("app.models.site_setting.SiteSetting.set_value", set_value)
+
+    await init_data.migrate_auto_notification_types()
+
+    set_value.assert_not_awaited()

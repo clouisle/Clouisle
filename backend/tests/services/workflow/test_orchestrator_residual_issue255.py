@@ -190,7 +190,13 @@ async def test_execute_covers_timeout_cancel_limit_and_missing_downstream_node()
         return_value=SimpleNamespace(outputs={}, next_handles=["yes"])
     )
     stream = MagicMock(publish_node_skip=AsyncMock())
-    with patch("app.services.workflow.orchestrator.time.time", return_value=0):
+    with (
+        patch("app.services.workflow.orchestrator.time.time", return_value=0),
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_cls,
+    ):
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
         assert await service._execute(plan, context, MagicMock(), stream, 0) == ({}, 1)
     stream.publish_node_skip.assert_awaited_once_with(
         node_id="missing",
@@ -227,3 +233,75 @@ async def test_iteration_body_checks_timeout_and_cancellation():
                 set(),
                 set(),
             )
+
+
+@pytest.mark.anyio
+async def test_fail_run_without_workflow_still_persists_failure():
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    run = SimpleNamespace(
+        id=uuid4(),
+        workflow_id=uuid4(),
+        total_token_usage={},
+        save=AsyncMock(),
+    )
+    node_query = MagicMock(all=AsyncMock(return_value=[]))
+    workflow_query = MagicMock(first=AsyncMock(return_value=None))
+
+    with (
+        patch(
+            "app.services.workflow.orchestrator.NodeExecution.filter",
+            return_value=node_query,
+        ),
+        patch(
+            "app.services.workflow.orchestrator.Workflow.filter",
+            return_value=workflow_query,
+        ),
+    ):
+        await service._fail_run(run, "failed", 5)
+
+    assert run.status.value == "failed"
+    assert run.error_message == "failed"
+
+
+@pytest.mark.anyio
+async def test_persist_skipped_node_does_not_duplicate_existing_execution():
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    existing = SimpleNamespace(id=uuid4())
+    query = MagicMock(first=AsyncMock(return_value=existing))
+
+    with patch(
+        "app.services.workflow.orchestrator.NodeExecution.filter",
+        return_value=query,
+    ):
+        await service._persist_skipped_node(
+            SimpleNamespace(id=uuid4()), "branch", "condition", "Branch"
+        )
+
+    query.first.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_iteration_body_rejects_waiting_child_node():
+    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    context = MagicMock(
+        get_node_outputs=AsyncMock(return_value={}),
+        get_status=AsyncMock(return_value="running"),
+    )
+    service._execute_node = AsyncMock(
+        return_value=SimpleNamespace(waiting=True, outputs={})
+    )
+
+    with pytest.raises(NodeExecutionError, match="Pause nodes"):
+        await service._execute_iteration_body(
+            "iteration",
+            ["child"],
+            MagicMock(),
+            context,
+            MagicMock(),
+            None,
+            __import__("time").time(),
+            set(),
+            set(),
+        )
+
+    context.pop_iteration_scope.assert_called_once()
