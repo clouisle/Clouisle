@@ -568,8 +568,8 @@ eventSource.onerror = (error) => {
                     <p className="text-sm font-medium mb-2">{t('pauseFlowTitle')}:</p>
                     <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
                       <li>{t('pauseFlowStep1')}</li>
-                      <li>{t('pauseFlowStep2')}</li>
-                      <li>{t('pauseFlowStep3')}</li>
+                      <li>{t('pauseFlowStep2', { run_id: '{run_id}' })}</li>
+                      <li>{t('pauseFlowStep3', { run_id: '{run_id}', pause_request_id: '{pause_request_id}' })}</li>
                     </ol>
                   </div>
 
