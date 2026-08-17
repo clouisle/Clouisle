@@ -42,7 +42,7 @@ export function WorkflowPublishDialog({
 
   return (
     <Dialog open={open} onOpenChange={isPublishing ? undefined : onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent data-testid="workflow-publish-dialog" className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>{t('description')}</DialogDescription>

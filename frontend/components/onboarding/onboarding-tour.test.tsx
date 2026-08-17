@@ -27,7 +27,7 @@ let state = {
 let joyrideProps: React.ComponentProps<typeof joyride.Joyride> | undefined
 let config: OnboardingTourConfig
 
-function installSpies() {
+function installSpies(mockJoyride = true, mockOnboarding = true) {
   const spies = [
     spyOn(navigation, 'useRouter').mockReturnValue({ push } as ReturnType<typeof navigation.useRouter>),
     spyOn(navigation, 'usePathname').mockImplementation(() => pathname),
@@ -36,16 +36,24 @@ function installSpies() {
     ),
     spyOn(intl, 'useTranslations').mockReturnValue(((key: string) => key) as ReturnType<typeof intl.useTranslations>),
     spyOn(teamContext, 'useTeam').mockReturnValue({ currentTeam: { id: 'team-1' }, isLoading: false } as ReturnType<typeof teamContext.useTeam>),
-    spyOn(onboardingProvider, 'useOnboarding').mockImplementation(() => ({
-      state, startTour, nextStep, goToStep, completeTour,
-    }) as ReturnType<typeof onboardingProvider.useOnboarding>),
     spyOn(platformSteps, 'getTourConfigById').mockImplementation(id => id === config.id ? config : undefined),
-    spyOn(joyride, 'Joyride').mockImplementation(props => {
-      joyrideProps = props
-      return null
-    }),
   ]
-  return () => spies.reverse().forEach(spy => spy.mockRestore())
+  const onboardingSpy = mockOnboarding
+    ? spyOn(onboardingProvider, 'useOnboarding').mockImplementation(() => ({
+        state, startTour, nextStep, goToStep, completeTour,
+      }) as ReturnType<typeof onboardingProvider.useOnboarding>)
+    : null
+  const joyrideSpy = mockJoyride
+    ? spyOn(joyride, 'Joyride').mockImplementation(props => {
+        joyrideProps = props
+        return null
+      })
+    : null
+  return () => {
+    joyrideSpy?.mockRestore()
+    onboardingSpy?.mockRestore()
+    spies.reverse().forEach(spy => spy.mockRestore())
+  }
 }
 
 beforeAll(() => GlobalRegistrator.register())
@@ -109,6 +117,57 @@ describe('OnboardingTour', () => {
     expect(startTour).toHaveBeenCalledWith('models', 1)
     view.rerender(<OnboardingTour tourId="models" />)
     expect(startTour).toHaveBeenCalledTimes(1)
+    restore()
+  })
+
+  it('clamps URL step indexes after filtering missing optional targets', () => {
+    const available = document.createElement('div')
+    available.className = 'available'
+    document.body.appendChild(available)
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: 'body', content: 'one' },
+        { target: '.missing', content: 'two', skipIfMissing: true },
+        { target: '.available', content: 'three', skipIfMissing: true },
+      ],
+    }
+    query = new URLSearchParams('tour=models&step=2')
+    const restore = installSpies()
+    render(<OnboardingTour tourId="models" />)
+
+    expect(startTour).toHaveBeenCalledWith('models', 1)
+
+    available.remove()
+    restore()
+  })
+
+  it('starts the real Joyride tour through the real onboarding provider', async () => {
+    const canvas = document.createElement('div')
+    canvas.dataset.testid = 'workflow-canvas'
+    canvas.style.width = '800px'
+    canvas.style.height = '600px'
+    document.body.appendChild(canvas)
+    config = platformSteps.getTourConfigById('workflowConfig')!
+    const restore = installSpies(false, false)
+
+    function Trigger() {
+      const onboarding = onboardingProvider.useOptionalOnboarding()
+      return <button onClick={() => setTimeout(() => onboarding?.startTour('workflowConfig'), 300)}>start</button>
+    }
+
+    const view = render(
+      <onboardingProvider.OnboardingProvider>
+        <Trigger />
+        <OnboardingTour tourId="workflowConfig" />
+      </onboardingProvider.OnboardingProvider>
+    )
+    view.getByText('start').click()
+
+    await waitFor(() => expect(document.body.textContent).toContain('onboarding.step20a.description'), { timeout: 2000 })
+    expect((document.querySelector('.react-joyride__floater') as HTMLElement | null)?.style.position).toBe('fixed')
+
+    canvas.remove()
     restore()
   })
 
@@ -181,6 +240,33 @@ describe('OnboardingTour', () => {
     ))
     await waitFor(() => expect(completeTour).toHaveBeenCalledWith('models'), { timeout: 800 })
     expect(nextStep).not.toHaveBeenCalled()
+    restore()
+  })
+
+  it('filters optional missing targets before mounting Joyride', () => {
+    const available = document.createElement('div')
+    available.className = 'available'
+    document.body.appendChild(available)
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: 'body', content: 'one' },
+        { target: '.available', content: 'two', skipIfMissing: true },
+        { target: '.optional-missing', content: 'three', skipIfMissing: true },
+        { target: '.required-missing', content: 'four' },
+      ],
+    }
+    state = { completedTours: [], currentTour: 'models', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="models" />)
+
+    expect(joyrideProps?.steps.map(step => step.target)).toEqual([
+      'body',
+      '.available',
+      '.required-missing',
+    ])
+
+    available.remove()
     restore()
   })
 

@@ -38,12 +38,14 @@ mock.module('react-dom', () => ({ createPortal: (children: ReactNode) => childre
 mock.module('react', () => ({
   default: {
     useCallback: (fn: unknown) => fn,
+    useContext: () => undefined,
     useEffect: (effect: () => void) => effect(),
     useMemo: (factory: () => unknown) => factory(),
     useRef: (value: unknown) => ({ current: value }),
     useState: (value: unknown) => [value, noop],
   },
   useCallback: (fn: unknown) => fn,
+  useContext: () => undefined,
   useEffect: (effect: () => void) => effect(),
   useMemo: (factory: () => unknown) => factory(),
   useRef: (value: unknown) => ({ current: value }),
@@ -136,6 +138,7 @@ mock.module('lucide-react', () => ({
   GitBranch: createIcon('GitBranch'),
   Globe: createIcon('Globe'),
   GlobeLock: createIcon('GlobeLock'),
+  GraduationCap: createIcon('GraduationCap'),
   GripVertical: createIcon('GripVertical'),
   Hand: createIcon('Hand'),
   Hash: createIcon('Hash'),

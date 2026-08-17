@@ -4,6 +4,7 @@ import { modelsTourConfig } from './models-steps'
 import { kbTourConfig } from './kb-steps'
 import { appCreateTourConfig } from './app-create-steps'
 import { appConfigTourConfig } from './app-config-steps'
+import { workflowConfigTourConfig } from './workflow-steps'
 import { capabilitiesTourConfig } from './capabilities-steps'
 
 // Export individual tour configs
@@ -13,6 +14,7 @@ export {
   kbTourConfig,
   appCreateTourConfig,
   appConfigTourConfig,
+  workflowConfigTourConfig,
   capabilitiesTourConfig,
 }
 
@@ -23,6 +25,7 @@ export const allTourConfigs: OnboardingTourConfig[] = [
   kbTourConfig,
   appCreateTourConfig,
   appConfigTourConfig,
+  workflowConfigTourConfig,
   capabilitiesTourConfig,
 ]
 

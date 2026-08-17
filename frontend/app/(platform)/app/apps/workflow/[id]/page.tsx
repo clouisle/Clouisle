@@ -48,6 +48,7 @@ import {
   Activity,
   GitBranch,
   Code,
+  GraduationCap,
 } from 'lucide-react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -72,6 +73,7 @@ import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition, type W
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
 import { useTeam } from '@/contexts/team-context'
+import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 // Custom Node Types
@@ -266,6 +268,8 @@ export function WorkflowEditorContent({
   const router = useRouter()
   const t = useTranslations('workflow')
   const tCommon = useTranslations('common')
+  const tOnboarding = useTranslations('onboarding')
+  const onboarding = useOptionalOnboarding()
   const { canPerform } = useCanPerform()
   const { currentTeam } = useTeam()
 
@@ -814,6 +818,10 @@ export function WorkflowEditorContent({
   const renderedNodes = React.useMemo(
     () => nodes.map((node) => ({
       ...node,
+      domAttributes: {
+        ...node.domAttributes,
+        'data-testid': `workflow-node-${node.id}`,
+      },
       data: {
         ...node.data,
         runtimeTrace: nodeTraces.get(node.id),
@@ -1437,7 +1445,7 @@ export function WorkflowEditorContent({
   }
 
   return (
-    <div className={`flex h-full bg-background ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+    <div data-testid="workflow-editor" className={`flex h-full bg-background ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col relative">
         {/* Floating Toolbar - 全屏时隐藏 */}
@@ -1514,11 +1522,12 @@ export function WorkflowEditorContent({
             </div>
 
             {/* Right - Action Buttons */}
-            <div className="flex items-center gap-2 pointer-events-auto h-8">
+            <div data-testid="workflow-editor-actions" className="flex items-center gap-2 pointer-events-auto h-8">
               {/* Test Run Button */}
               <Button
                 variant="outline"
                 size="sm"
+                data-testid="workflow-run-button"
                 className="bg-card shadow-sm h-8"
                 onClick={openRunDrawer}
               >
@@ -1532,6 +1541,7 @@ export function WorkflowEditorContent({
                     <Button
                       variant="outline"
                       size="icon"
+                      data-testid="workflow-validation-checklist"
                       className="bg-card shadow-sm relative h-8 w-8"
                       onClick={toggleValidationChecklist}
                     >
@@ -1550,6 +1560,7 @@ export function WorkflowEditorContent({
                 <Button
                   variant="outline"
                   size="sm"
+                  data-testid="workflow-save-button"
                   className="bg-card shadow-sm h-8"
                   onClick={handleSave}
                   disabled={isSaving || !hasChanges}
@@ -1566,6 +1577,7 @@ export function WorkflowEditorContent({
                 <Button
                   variant={workflow?.status === 'published' ? 'default' : 'outline'}
                   size="sm"
+                  data-testid="workflow-publish-button"
                   className={workflow?.status === 'published' ? 'h-8' : 'bg-card shadow-sm h-8'}
                   onClick={() => void handlePublish()}
                   disabled={isPublishing}
@@ -1580,12 +1592,30 @@ export function WorkflowEditorContent({
                   {workflow?.status === 'published' ? t('published') : t('publish')}
                 </Button>
               )}
+              <Tooltip>
+                <TooltipTrigger render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    data-testid="workflow-onboarding-button"
+                    aria-label={tOnboarding('tourWorkflowConfigTitle')}
+                    className="bg-card shadow-sm h-8 w-8"
+                    onClick={() => {
+                      setTimeout(() => onboarding?.startTour('workflowConfig'), 300)
+                    }}
+                  >
+                    <GraduationCap className="h-4 w-4" />
+                  </Button>
+                } />
+                <TooltipContent>{tOnboarding('tourWorkflowConfigTitle')}</TooltipContent>
+              </Tooltip>
               {canUpdateWorkflow && (
                 <Tooltip>
                   <TooltipTrigger render={
                     <Button
                       variant="outline"
                       size="icon"
+                      data-testid="workflow-embed-button"
                       className="bg-card shadow-sm h-8 w-8"
                       onClick={() => setShowEmbed(true)}
                     >
@@ -1601,6 +1631,7 @@ export function WorkflowEditorContent({
                     <Button
                       variant="outline"
                       size="icon"
+                      data-testid="workflow-settings-button"
                       className="bg-card shadow-sm h-8 w-8"
                       onClick={openSettingsDrawer}
                     >
@@ -1610,12 +1641,13 @@ export function WorkflowEditorContent({
                   <TooltipContent>{t('settings.title')}</TooltipContent>
                 </Tooltip>
               )}
+
           </div>
         </div>
         )}
 
         {/* Left Floating Toolbar */}
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-auto">
+        <div data-testid="workflow-editor-tools" className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-auto">
           <div className="flex flex-col items-center gap-0.5 bg-card border border-border rounded-lg p-1 shadow-sm">
             {canUpdateWorkflow && (
               <>
@@ -1625,6 +1657,7 @@ export function WorkflowEditorContent({
                       <button
                         ref={addNodeButtonRef}
                         type="button"
+                        data-testid="workflow-add-node-button"
                         className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
                         onClick={(e) => {
                           const rect = e.currentTarget.getBoundingClientRect()
@@ -1653,32 +1686,36 @@ export function WorkflowEditorContent({
                 <div className="w-full h-px bg-border my-0.5" />
               </>
             )}
-            <Tooltip>
-              <TooltipTrigger
-                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                  editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
-                }`}
-                onClick={() => setEditorMode('pointer')}
-              >
-                <MousePointer2 className={`h-4 w-4 ${
-                  editorMode === 'pointer' ? 'text-primary' : 'text-muted-foreground'
-                }`} />
-              </TooltipTrigger>
-              <TooltipContent side="right">{t('editor.pointerMode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}3</kbd></TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                  editorMode === 'hand' ? 'bg-accent' : 'hover:bg-accent'
-                }`}
-                onClick={() => setEditorMode('hand')}
-              >
-                <Hand className={`h-4 w-4 ${
-                  editorMode === 'hand' ? 'text-primary' : 'text-muted-foreground'
-                }`} />
-              </TooltipTrigger>
-              <TooltipContent side="right">{t('editor.editMode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}4</kbd></TooltipContent>
-            </Tooltip>
+            <div data-testid="workflow-edit-mode-controls" className="flex flex-col items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger
+                  data-testid="workflow-pointer-mode"
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                    editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
+                  }`}
+                  onClick={() => setEditorMode('pointer')}
+                >
+                  <MousePointer2 className={`h-4 w-4 ${
+                    editorMode === 'pointer' ? 'text-primary' : 'text-muted-foreground'
+                  }`} />
+                </TooltipTrigger>
+                <TooltipContent side="right">{t('editor.pointerMode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}3</kbd></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  data-testid="workflow-hand-mode"
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                    editorMode === 'hand' ? 'bg-accent' : 'hover:bg-accent'
+                  }`}
+                  onClick={() => setEditorMode('hand')}
+                >
+                  <Hand className={`h-4 w-4 ${
+                    editorMode === 'hand' ? 'text-primary' : 'text-muted-foreground'
+                  }`} />
+                </TooltipTrigger>
+                <TooltipContent side="right">{t('editor.editMode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}4</kbd></TooltipContent>
+              </Tooltip>
+            </div>
             {canUpdateWorkflow && (
               <>
                 <div className="w-full h-px bg-border my-0.5" />
@@ -1706,7 +1743,7 @@ export function WorkflowEditorContent({
         </div>
 
         {/* ReactFlow Canvas */}
-        <div className={`flex-1 relative ${editorMode === 'hand' ? '[&_.react-flow__pane]:cursor-default!' : ''}`}>
+        <div data-testid="workflow-canvas" className={`flex-1 relative ${editorMode === 'hand' ? '[&_.react-flow__pane]:cursor-default!' : ''}`}>
           <ReactFlow
             nodes={renderedNodes}
             edges={edges}

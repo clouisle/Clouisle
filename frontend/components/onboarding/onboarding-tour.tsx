@@ -125,11 +125,15 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     }
   }, [tourId, config, state.isRunning, state.completedTours, pathname, isTeamLoading, currentTeam, startTour])
 
-  // Get all steps (no filtering by route)
+  // Permission-gated controls may be absent. Filter explicitly optional steps
+  // before mounting Joyride so controlled mode never enters target-not-found.
   const steps = React.useMemo(() => {
     if (!config) return []
-    return config.steps
-  }, [config])
+    if (!state.isRunning || state.currentTour !== tourId || typeof document === 'undefined') {
+      return config.steps
+    }
+    return config.steps.filter(step => !step.skipIfMissing || targetExists(step))
+  }, [config, state.currentTour, state.isRunning, tourId])
 
   // Allow external links to trigger tours, e.g. /app/apps?tour=appCreate or
   // /app/apps/:id?tour=appConfig&step=1.
@@ -139,14 +143,15 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     const requestedTour = searchParams.get('tour')
     if (requestedTour !== tourId) return
 
+    const availableSteps = config.steps.filter(step => !step.skipIfMissing || targetExists(step))
     const requestedStep = Number(searchParams.get('step') || '0')
     const initialStep = Number.isInteger(requestedStep)
-      ? Math.min(Math.max(requestedStep, 0), Math.max(steps.length - 1, 0))
+      ? Math.min(Math.max(requestedStep, 0), Math.max(availableSteps.length - 1, 0))
       : 0
 
     urlTriggeredRef.current = true
     startTour(tourId, initialStep)
-  }, [config, searchParams, startTour, steps.length, tourId])
+  }, [config, searchParams, startTour, tourId])
 
   // Detect the best starting step when a tour starts, then jump to it
   const startingStepDetectedRef = React.useRef<OnboardingTourId | null>(null)
