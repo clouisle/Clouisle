@@ -466,6 +466,21 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     targetSelector.includes('kb-upload-dialog') ||
     targetSelector.includes('kb-import-url-dialog')
   )
+  const isKbDialogContentStep = state.isRunning && state.currentTour === tourId &&
+    targetSelector.includes('kb-dialog-') && !targetSelector.includes('kb-dialog-submit')
+
+  React.useEffect(() => {
+    if (!isKbDialogContentStep) return
+
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector(targetSelector)
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' })
+      }
+    }, 50)
+
+    return () => window.clearTimeout(timer)
+  }, [isKbDialogContentStep, targetSelector])
 
   React.useEffect(() => {
     if (isDialogStep) {

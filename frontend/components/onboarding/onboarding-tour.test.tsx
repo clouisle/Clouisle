@@ -421,6 +421,31 @@ describe('OnboardingTour', () => {
     restore()
   })
 
+  it('scrolls KB dialog targets into the internal dialog viewport', async () => {
+    const target = document.createElement('div')
+    target.dataset.testid = 'kb-dialog-rerank-enabled'
+    const scrollIntoView = mock()
+    Object.assign(target, { scrollIntoView })
+    document.body.appendChild(target)
+    config = {
+      id: 'kb', title: 'Knowledge Base', description: '',
+      steps: [{ target: '[data-testid="kb-dialog-rerank-enabled"]', content: 'rerank' }],
+    }
+    state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="kb" />)
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'center',
+      inline: 'nearest',
+    }), { timeout: 600 })
+
+    view.unmount()
+    target.remove()
+    restore()
+  })
+
   it('adds the dialog overlay class only while dialog steps are mounted', () => {
     config = {
       id: 'appCreate', title: 'Create app', description: '',

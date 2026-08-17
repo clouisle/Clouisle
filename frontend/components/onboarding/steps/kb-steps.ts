@@ -81,6 +81,7 @@ const kbSteps: OnboardingStep[] = [
     content: 'onboarding.step7j.description',
     title: 'onboarding.step7j.title',
     placement: 'left',
+    skipScroll: true,
     overlayClickAction: false,
   },
   {
@@ -88,6 +89,7 @@ const kbSteps: OnboardingStep[] = [
     content: 'onboarding.step7k.description',
     title: 'onboarding.step7k.title',
     placement: 'bottom',
+    skipScroll: true,
     overlayClickAction: false,
   },
   {
