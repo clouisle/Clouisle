@@ -125,11 +125,15 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     }
   }, [tourId, config, state.isRunning, state.completedTours, pathname, isTeamLoading, currentTeam, startTour])
 
-  // Get all steps (no filtering by route)
+  // Permission-gated controls may be absent. Filter explicitly optional steps
+  // before mounting Joyride so controlled mode never enters target-not-found.
   const steps = React.useMemo(() => {
     if (!config) return []
-    return config.steps
-  }, [config])
+    if (!state.isRunning || state.currentTour !== tourId || typeof document === 'undefined') {
+      return config.steps
+    }
+    return config.steps.filter(step => !step.skipIfMissing || targetExists(step))
+  }, [config, state.currentTour, state.isRunning, tourId])
 
   // Allow external links to trigger tours, e.g. /app/apps?tour=appCreate or
   // /app/apps/:id?tour=appConfig&step=1.

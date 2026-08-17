@@ -1412,6 +1412,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
 
   return (
     <div
+      data-testid="workflow-node-config-drawer"
       className={cn(
         'absolute top-14 right-2 bottom-2 w-[380px] min-w-[380px] bg-card border border-border rounded-xl shadow-xl z-40 flex flex-col overflow-hidden',
         'transform transition-all duration-200 ease-out',

@@ -35,6 +35,7 @@ const validateWorkflow = mock(() => [] as Props[])
 const screenToFlowPosition = mock(({ x, y }: { x: number; y: number }) => ({ x, y }))
 const fitView = mock(() => {})
 const setCenter = mock(() => {})
+const startWorkflowTour = mock(() => {})
 
 let states: StateRecord[] = []
 let dependencies: (unknown[] | undefined)[] = []
@@ -141,6 +142,7 @@ mock.module('@xyflow/react', () => ({
 mock.module('lucide-react', () => ({
   ArrowLeft: element, Save: element, Play: element, Settings: element, Loader2: element, Minus: element,
   Plus: element, PlusCircle: element, MousePointer2: element, Hand: element, Sparkles: element, Maximize: element,
+  GraduationCap: element,
   StickyNote: element, ClipboardCheck: element, Globe: element, GlobeLock: element, LayoutGrid: element,
   ExternalLink: element, FileText: element, Activity: element, GitBranch: element, Code: element,
   XIcon: element, ChevronDownIcon: element, CheckIcon: element, X: element, ChevronDown: element, ChevronUp: element,
@@ -148,6 +150,7 @@ mock.module('lucide-react', () => ({
 mock.module('@/lib/api/auth', () => ({ authApi: { getCurrentUser } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => permissionGranted }) }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
+mock.module('@/components/onboarding/onboarding-provider', () => ({ useOptionalOnboarding: () => ({ startTour: startWorkflowTour }) }))
 
 mock.module('@/components/ui/button', () => ({ Button: element }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: element }))
@@ -200,6 +203,7 @@ mock.module('../../[id]/_components/embed-config-dialog', () => ({ EmbedConfigDi
 mock.module('./_components/workflow-validator', () => ({ validateWorkflow }))
 
 const { WorkflowEditorContent } = await import('./page')
+const { workflowConfigTourConfig } = await import('@/components/onboarding/steps/workflow-steps')
 
 const workflow = {
   id: 'workflow-1', team_id: 'team-1', name: 'Coverage Flow', icon: null, status: 'draft',
@@ -275,6 +279,7 @@ beforeEach(() => {
   onEdgesChangeBase.mockClear()
   fitView.mockClear()
   setCenter.mockClear()
+  startWorkflowTour.mockClear()
 })
 
 test('loads an existing workflow and redirects when loading fails', async () => {
@@ -290,6 +295,63 @@ test('loads an existing workflow and redirects when loading fails', async () => 
   const failingApi = api({ getWorkflow: mock(async () => { throw new Error('missing') }) })
   await settle(failingApi)
   expect(push).toHaveBeenCalledWith('/app/apps')
+})
+
+test('starts workflow onboarding from precise writable editor controls', async () => {
+  const tree = await settle(api())
+  for (const target of [
+    'workflow-canvas',
+    'workflow-edit-mode-controls',
+    'workflow-add-node-button',
+    'workflow-validation-checklist',
+    'workflow-run-button',
+    'workflow-save-button',
+    'workflow-settings-button',
+    'workflow-embed-button',
+    'workflow-publish-button',
+  ]) {
+    expect(descendants(tree).some((node) => node.props['data-testid'] === target)).toBe(true)
+  }
+  expect(flow(tree).props.nodes[0].domAttributes).toEqual({
+    'data-testid': 'workflow-node-start-1',
+  })
+  const trigger = descendants(tree).find((node) => node.props['data-testid'] === 'workflow-onboarding-button')!
+
+  expect(trigger).toBeDefined()
+  ;(trigger.props.onClick as () => void)()
+  expect(startWorkflowTour).not.toHaveBeenCalled()
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  expect(startWorkflowTour).toHaveBeenCalledWith('workflowConfig')
+})
+
+test('omits permission-gated controls safely for read-only editors', async () => {
+  currentUser = { id: 'viewer', username: 'viewer', is_superuser: false }
+  currentTeam = { id: 'team-1', role: 'member' }
+  permissionGranted = false
+  const tree = await settle(api())
+  const renderedTestIds = new Set(
+    descendants(tree)
+      .map((node) => node.props['data-testid'])
+      .filter((testId): testId is string => typeof testId === 'string'),
+  )
+
+  for (const target of ['workflow-canvas', 'workflow-edit-mode-controls', 'workflow-run-button']) {
+    expect(renderedTestIds.has(target)).toBe(true)
+  }
+  for (const target of [
+    'workflow-add-node-button',
+    'workflow-validation-checklist',
+    'workflow-save-button',
+    'workflow-settings-button',
+    'workflow-embed-button',
+    'workflow-publish-button',
+  ]) {
+    expect(renderedTestIds.has(target)).toBe(false)
+    expect(workflowConfigTourConfig.steps.find(step => String(step.target).includes(target))?.skipIfMissing).toBe(true)
+  }
+  expect(flow(tree).props.nodes[0].domAttributes).toEqual({
+    'data-testid': 'workflow-node-start-1',
+  })
 })
 
 test('creates the selected start node for an empty workflow', async () => {

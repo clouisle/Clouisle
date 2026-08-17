@@ -184,6 +184,33 @@ describe('OnboardingTour', () => {
     restore()
   })
 
+  it('filters optional missing targets before mounting Joyride', () => {
+    const available = document.createElement('div')
+    available.className = 'available'
+    document.body.appendChild(available)
+    config = {
+      id: 'models', title: 'Models', description: '',
+      steps: [
+        { target: 'body', content: 'one' },
+        { target: '.available', content: 'two', skipIfMissing: true },
+        { target: '.optional-missing', content: 'three', skipIfMissing: true },
+        { target: '.required-missing', content: 'four' },
+      ],
+    }
+    state = { completedTours: [], currentTour: 'models', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="models" />)
+
+    expect(joyrideProps?.steps.map(step => step.target)).toEqual([
+      'body',
+      '.available',
+      '.required-missing',
+    ])
+
+    available.remove()
+    restore()
+  })
+
   it('detects the first available target and cancels lifecycle timers on unmount', async () => {
     const available = document.createElement('div')
     available.className = 'available'

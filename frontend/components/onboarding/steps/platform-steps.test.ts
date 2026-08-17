@@ -14,9 +14,9 @@ describe('onboarding tour configurations', () => {
       'kb',
       'appCreate',
       'appConfig',
+      'workflowConfig',
       'capabilities',
     ])
-
     for (const config of allTourConfigs) {
       expect(config.title).toStartWith('onboarding.')
       expect(config.description).toStartWith('onboarding.')
@@ -33,11 +33,26 @@ describe('onboarding tour configurations', () => {
   test('uses selectors from the current pages', () => {
     const appConfigTargets = getTourConfigById('appConfig')?.steps.map(step => step.target) ?? []
     const knowledgeBaseTargets = getTourConfigById('kb')?.steps.map(step => step.target) ?? []
+    const workflowTargets = getTourConfigById('workflowConfig')?.steps.map(step => step.target) ?? []
 
     expect(appConfigTargets).toContain('[data-testid="agent-attachments-section"]')
     expect(appConfigTargets).not.toContain('[data-testid="agent-vision-section"]')
     expect(appConfigTargets).not.toContain('[data-testid="agent-file-upload-section"]')
     expect(knowledgeBaseTargets).not.toContain('[data-testid="kb-dialog-rerank-fail-open"]')
+    expect(workflowTargets).toEqual([
+      '[data-testid="workflow-canvas"]',
+      '[data-testid="workflow-edit-mode-controls"]',
+      '[data-testid="workflow-add-node-button"]',
+      '[data-testid^="workflow-node-"] .react-flow__handle',
+      '[data-testid^="workflow-node-"]',
+      '[data-testid="workflow-validation-checklist"]',
+      '[data-testid="workflow-run-button"]',
+      '[data-testid="workflow-save-button"]',
+      '[data-testid="workflow-settings-button"]',
+      '[data-testid="workflow-embed-button"]',
+      '[data-testid="workflow-publish-button"]',
+    ])
+    expect(getTourConfigById('workflowConfig')?.steps.every(step => step.skipIfMissing)).toBe(true)
   })
 
   test('looks up known tours and returns undefined for unknown IDs', () => {

@@ -148,6 +148,7 @@ export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsid
   return (
     <div
       ref={popoverRef}
+      data-testid="workflow-add-node-popover"
       className="fixed z-50 w-44 rounded-lg border border-border bg-card shadow-xl animate-in fade-in-0 zoom-in-95"
       style={{
         left: adjustedPosition.x,
