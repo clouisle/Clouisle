@@ -186,6 +186,30 @@ describe('ModelDialog', () => {
     expect(invalidIds).toContain('modelId')
   })
 
+  test('anchors the direct setup controls without targeting portaled options', () => {
+    const tree = render()
+
+    for (const testId of [
+      'admin-model-dialog',
+      'admin-model-dialog-provider-selection',
+      'admin-model-dialog-model-type',
+      'admin-model-dialog-model-id',
+      'admin-model-dialog-api-config',
+      'admin-model-dialog-base-url',
+      'admin-model-dialog-api-key',
+      'admin-model-dialog-test-connection',
+      'admin-model-dialog-enabled',
+    ]) {
+      expect(find(tree, (node) => node.props['data-testid'] === testId)).toBeDefined()
+    }
+
+    const providerTrigger = find(tree, (node) => node.type === 'popovertrigger')
+    const providerButton = resolve(
+      (providerTrigger.props.render as (props: Record<string, unknown>) => ReactNode)({}),
+    ) as Tree
+    expect(providerButton.props['data-testid']).toBe('admin-model-dialog-provider')
+  })
+
   test('creates an Ollama chat model without requiring an API key', async () => {
     change('name', ' Local model ')
     chooseModelType()

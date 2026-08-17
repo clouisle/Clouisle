@@ -6,6 +6,7 @@ import { appCreateTourConfig } from './app-create-steps'
 import { appConfigTourConfig } from './app-config-steps'
 import { workflowConfigTourConfig } from './workflow-steps'
 import { capabilitiesTourConfig } from './capabilities-steps'
+import { adminModelSetupTourConfig } from './admin-models-steps'
 
 // Export individual tour configs
 export {
@@ -16,6 +17,7 @@ export {
   appConfigTourConfig,
   workflowConfigTourConfig,
   capabilitiesTourConfig,
+  adminModelSetupTourConfig,
 }
 
 // Array of all tour configs for easy iteration
@@ -27,6 +29,7 @@ export const allTourConfigs: OnboardingTourConfig[] = [
   appConfigTourConfig,
   workflowConfigTourConfig,
   capabilitiesTourConfig,
+  adminModelSetupTourConfig,
 ]
 
 // Get tour config by ID

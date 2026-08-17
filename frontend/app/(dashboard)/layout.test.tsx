@@ -13,6 +13,15 @@ mock.module('@/hooks/use-settings', () => ({ useSettings: () => settings }))
 mock.module('@/components/auth-guard', () => ({
   AuthGuard: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }))
+mock.module('@/contexts/team-context', () => ({
+  TeamProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
+mock.module('@/components/onboarding/onboarding-provider', () => ({
+  OnboardingProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
+mock.module('@/components/onboarding/onboarding-tour', () => ({
+  OnboardingTour: ({ tourId }: { tourId: string }) => <span data-tour={tourId} />,
+}))
 mock.module('@/components/ui/sidebar', () => ({
   SidebarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SidebarInset: ({ children }: React.PropsWithChildren) => <main>{children}</main>,
@@ -51,4 +60,14 @@ test('uses hydration-safe sidebar defaults before settings mount', () => {
     collapsible: 'offExamples',
     side: 'left',
   })
+})
+
+test('mounts the dashboard-only admin model setup tour', () => {
+  let renderer: ReturnType<typeof create>
+  act(() => {
+    renderer = create(<DashboardLayout>content</DashboardLayout>)
+  })
+
+  expect(renderer!.root.findByProps({ 'data-tour': 'adminModelSetup' })).toBeTruthy()
+  act(() => renderer!.unmount())
 })

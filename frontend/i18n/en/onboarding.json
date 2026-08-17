@@ -16,6 +16,8 @@
     "tourWorkflowConfigDescription": "Build your workflow by adding and connecting nodes, then test and publish",
     "tourCapabilitiesTitle": "Capabilities",
     "tourCapabilitiesDescription": "Learn how to manage tools and skills",
+    "tourAdminModelSetupTitle": "Admin Model Setup",
+    "tourAdminModelSetupDescription": "Connect, test, enable, and authorize models before your team builds Agents and Knowledge Bases.",
     "startTour": "Start Tour",
     "restartTour": "Restart Tour",
     "back": "Back",
@@ -441,6 +443,34 @@
     "step29": {
       "title": "Refresh Skills",
       "description": "Click this button to refresh the skills list and get the latest data from the server."
+    },
+    "step30a": {
+      "title": "Model Provisioning",
+      "description": "This is the administrator model list. A model must be configured, enabled, and authorized to a team before Agents or Knowledge Bases can use it."
+    },
+    "step30b": {
+      "title": "Add a Model",
+      "description": "Click Add Model to register a provider configuration. Give it a name and choose the model type before selecting a provider."
+    },
+    "step30c": {
+      "title": "Choose a Provider",
+      "description": "Select a provider compatible with the model type. The provider can prefill its API base URL."
+    },
+    "step30d": {
+      "title": "Enter Connection Details",
+      "description": "Enter the API base URL and API key when the provider requires one. Discovery starts only after the required connection details are present."
+    },
+    "step30e": {
+      "title": "Discover the Model ID",
+      "description": "After the connection details are valid, select a discovered model ID or enter the exact ID supplied by the provider. Discovery can also fill the model name and capabilities."
+    },
+    "step30f": {
+      "title": "Test the Connection",
+      "description": "Use the form-level Test Connection button before creating the model. Resolve failures before saving."
+    },
+    "step30g": {
+      "title": "Enable and Authorize",
+      "description": "Leave the model enabled and create it. Then open Teams, choose the target team, open Model Authorization, and authorize this enabled model so Agents and Knowledge Bases can select it."
     }
   }
 }

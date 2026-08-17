@@ -1076,11 +1076,11 @@ export function ModelDialog({
           <FieldError>{errors.name}</FieldError>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4" data-testid="admin-model-dialog-provider-selection">
           <div className="space-y-2">
             <Label>{t('modelType')} *</Label>
             <Select value={modelType} onValueChange={handleModelTypeChange} disabled={isEditing}>
-              <SelectTrigger aria-invalid={!!errors.modelType}>
+              <SelectTrigger data-testid="admin-model-dialog-model-type" aria-invalid={!!errors.modelType}>
                 <SelectValue>{modelType ? getModelTypeName(modelType) : t('selectModelType')}</SelectValue>
               </SelectTrigger>
               <SelectContent side="bottom" alignItemWithTrigger={false}>
@@ -1100,6 +1100,7 @@ export function ModelDialog({
               <PopoverTrigger
                 render={(props) => (
                   <Button
+                    data-testid="admin-model-dialog-provider"
                     {...props}
                     type="button"
                     variant="outline"
@@ -1282,6 +1283,7 @@ export function ModelDialog({
               onValueChange={handleDiscoveredModelChange}
             >
               <ComboboxInput
+                data-testid="admin-model-dialog-model-id"
                 id="modelId"
                 placeholder={t('modelIdPlaceholder')}
                 className="w-full"
@@ -1345,13 +1347,14 @@ export function ModelDialog({
       </div>
       
       {/* API 配置 */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-testid="admin-model-dialog-api-config">
         <SectionTitle>{t('apiConfig')}</SectionTitle>
         
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="baseUrl">{t('baseUrl')}</Label>
             <Input
+              data-testid="admin-model-dialog-base-url"
               id="baseUrl"
               value={baseUrl}
               onChange={(e) => {
@@ -1377,6 +1380,7 @@ export function ModelDialog({
             </Label>
             <div className="relative">
               <Input
+                data-testid="admin-model-dialog-api-key"
                 id="apiKey"
                 type={showApiKey ? 'text' : 'password'}
                 value={apiKey}
@@ -1414,6 +1418,7 @@ export function ModelDialog({
         {/* 测试连接按钮和结果 */}
         <div className="space-y-2">
           <Button
+            data-testid="admin-model-dialog-test-connection"
             type="button"
             variant="outline"
             size="sm"
@@ -1464,7 +1469,7 @@ export function ModelDialog({
               <Label className="text-sm font-medium">{t('enabled')}</Label>
               <p className="text-xs text-muted-foreground">{t('enabledHint')}</p>
             </div>
-            <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
+            <Switch data-testid="admin-model-dialog-enabled" checked={isEnabled} onCheckedChange={setIsEnabled} />
           </div>
           
           <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
@@ -2166,7 +2171,7 @@ export function ModelDialog({
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent data-testid="admin-model-dialog" className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? t('editModel') : t('createModel')}</DialogTitle>
           <DialogDescription>

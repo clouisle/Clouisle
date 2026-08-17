@@ -439,7 +439,9 @@ export function PlatformHeader() {
                     {tOnboarding('tourTitle')}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
-                    {allTourConfigs.map((tourConfig) => {
+                    {allTourConfigs
+                      .filter(tourConfig => tourConfig.showInPlatformMenu !== false)
+                      .map((tourConfig) => {
                       const isCompleted = onboarding.isTourCompleted(tourConfig.id)
                       // tourConfig.title is like 'onboarding.tourOverviewTitle', we need 'tourOverviewTitle'
                       const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
