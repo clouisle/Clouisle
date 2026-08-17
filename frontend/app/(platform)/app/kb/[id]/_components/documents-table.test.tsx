@@ -81,7 +81,9 @@ mock.module('@/components/ui/alert-dialog', () => ({
 }))
 mock.module('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipTrigger: ({ children, render, onClick }: { children?: React.ReactNode; render?: React.ReactNode; onClick?: () => void }) => render ? React.cloneElement(render as React.ReactElement<{ onClick?: () => void }>, { onClick }) : <button onClick={onClick}>{children}</button>,
+  TooltipTrigger: ({ children, render, onClick, 'data-testid': dataTestId }: { children?: React.ReactNode; render?: React.ReactNode; onClick?: () => void; 'data-testid'?: string }) => render
+    ? React.cloneElement(render as React.ReactElement<{ onClick?: () => void; 'data-testid'?: string }>, { onClick, 'data-testid': dataTestId })
+    : <button data-testid={dataTestId} onClick={onClick}>{children}</button>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }))
 import { DocumentsTable } from './documents-table'
@@ -167,6 +169,9 @@ describe('platform DocumentsTable', () => {
     mounted.push(view.root)
 
     expect(view.container.textContent).toContain('Pending Guide')
+    expect(view.container.querySelector('[data-testid="kb-document-status-pending-pending-doc"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-testid="kb-document-status-error-error-doc"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-testid="kb-document-status-completed-done-doc"]')).toBeTruthy()
     expect(view.container.textContent).toContain('Broken Guide')
 
     await act(async () => checkbox(view.container, 1).click())
@@ -240,6 +245,7 @@ describe('platform DocumentsTable', () => {
 
     expect(view.container.textContent).toContain('knowledgeBases.embeddingProgress')
     expect(view.container.textContent).toContain('knowledgeBases.failedCount')
+    expect(view.container.querySelector('[data-testid="kb-document-status-processing-processing-doc"]')).toBeTruthy()
     expect(intervalCallback).toBeDefined()
     await act(async () => intervalCallback!())
     expect(getDocuments).toHaveBeenCalledTimes(2)
@@ -268,6 +274,7 @@ describe('platform DocumentsTable', () => {
     mounted.push(view.root)
 
     expect(view.container.textContent).toContain('knowledgeBases.statusProcessing')
+    expect(view.container.querySelector('[data-testid="kb-document-status-processing-processing-doc"]')).toBeTruthy()
     await act(async () => buttonForText(view.container, 'knowledgeBases.downloadOriginal').click())
     expect(toastError).toHaveBeenCalledWith('knowledgeBases.downloadFailed')
   })

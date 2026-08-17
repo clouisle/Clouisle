@@ -99,6 +99,8 @@ test('forwards controlled close actions and resets fields whenever opened', () =
   expect(closed.tree.props).toMatchObject({ open: false, onOpenChange: closed.onOpenChange })
 
   const opened = render(['old-url', 'old-name', false, { url: 'old-error' }])
+  expect(find(opened.tree, (node) => node.props['data-testid'] === 'kb-import-url-dialog')).toBeTruthy()
+  expect(find(opened.tree, (node) => node.props['data-testid'] === 'kb-import-url-dialog-cancel')).toBeTruthy()
   effects.forEach((effect) => effect())
   expect(updates[0]).toEqual([''])
   expect(updates[1]).toEqual([''])

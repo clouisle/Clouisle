@@ -420,7 +420,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+  if (loading) return <div data-testid="kb-search-lab" className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
 
   const aRanks = new Map(responses.a?.results.map((result, index) => [result.chunk_id, index + 1]))
   const bRanks = new Map(responses.b?.results.map((result, index) => [result.chunk_id, index + 1]))
@@ -567,7 +567,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     )}
   </>
 
-  return <div className="relative flex h-full flex-col">
+  return <div data-testid="kb-search-lab" className="relative flex h-full flex-col">
     <Button
       render={<a href={backHref} />}
       nativeButton={false}
@@ -582,26 +582,30 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     <main className="min-h-0 flex-1 overflow-hidden pt-14">
       {!searched ? (
         <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('retrievalLabHint')}</div>
-      ) : searching ? (
-        <div className="grid h-full place-content-center"><Loader2 className="animate-spin" /></div>
-      ) : !responses.a && !responses.b ? (
-        <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('noResults')}</div>
-      ) : responses.a?.results.length === 0 && !responses.b?.results.length ? (
-        <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('noResults')}</div>
-      ) : isMobile ? (
-        <div className="h-full overflow-y-auto">{resultsView}</div>
       ) : (
-        <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel defaultSize={detail ? '62%' : '100%'} minSize="40%">
-            <div className="h-full min-w-0 overflow-y-auto">{resultsView}</div>
-          </ResizablePanel>
-          {detail && <>
-            <ResizableHandle withHandle aria-label={t('resizeResultDetails')} />
-            <ResizablePanel defaultSize="38%" minSize="25%" maxSize="60%">
-              {detail}
-            </ResizablePanel>
-          </>}
-        </ResizablePanelGroup>
+        <div data-testid="kb-search-results" className="h-full">
+          {searching ? (
+            <div className="grid h-full place-content-center"><Loader2 className="animate-spin" /></div>
+          ) : !responses.a && !responses.b ? (
+            <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('noResults')}</div>
+          ) : responses.a?.results.length === 0 && !responses.b?.results.length ? (
+            <div className="grid h-full place-content-center p-4 text-sm text-muted-foreground">{t('noResults')}</div>
+          ) : isMobile ? (
+            <div className="h-full overflow-y-auto">{resultsView}</div>
+          ) : (
+            <ResizablePanelGroup orientation="horizontal" className="h-full">
+              <ResizablePanel defaultSize={detail ? '62%' : '100%'} minSize="40%">
+                <div className="h-full min-w-0 overflow-y-auto">{resultsView}</div>
+              </ResizablePanel>
+              {detail && <>
+                <ResizableHandle withHandle aria-label={t('resizeResultDetails')} />
+                <ResizablePanel defaultSize="38%" minSize="25%" maxSize="60%">
+                  {detail}
+                </ResizablePanel>
+              </>}
+            </ResizablePanelGroup>
+          )}
+        </div>
       )}
     </main>
 
@@ -620,7 +624,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
         <div className="flex-1 flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input value={query} onChange={event => setQuery(event.target.value)} onKeyDown={handleKeyDown} placeholder={t('searchPlaceholder')} className="pl-9" disabled={!canTest} />
+                <Input data-testid="kb-search-query" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={handleKeyDown} placeholder={t('searchPlaceholder')} className="pl-9" disabled={!canTest} />
               </div>
         </div>
         <Popover open={showConfig} onOpenChange={setShowConfig}>
@@ -717,7 +721,7 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        <Button aria-label={t('search')} onClick={() => void runSearch()} disabled={!canTest || !query.trim() || searching || invalidConfig}>
+        <Button data-testid="kb-search-submit" aria-label={t('search')} onClick={() => void runSearch()} disabled={!canTest || !query.trim() || searching || invalidConfig}>
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>

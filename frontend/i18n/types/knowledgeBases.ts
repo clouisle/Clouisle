@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-17T05:37:33.236Z
+// GENERATED — 2026-08-17T22:14:46.511Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -96,6 +96,7 @@ export type KnowledgeBasesMessages = {
     urlImported: string
     dragDropHint: string
     supportedFormats: string
+    maxFileSize: string
     upload: string
     uploading: string
     uploadSuccess: string

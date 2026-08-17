@@ -99,14 +99,14 @@ export default function KnowledgeBaseDetailPage({
 
   if (isLoading || !knowledgeBase) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center" data-testid="kb-detail-page">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     )
   }
   
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto" data-testid="kb-detail-page">
       <div className="flex flex-col gap-6 py-6 px-8 pb-8">
       {/* 页头 */}
       <div className="flex items-start justify-between">
@@ -134,17 +134,17 @@ export default function KnowledgeBaseDetailPage({
         </div>
         
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.push(`/app/kb/${knowledgeBaseId}/search`)}>
+          <Button data-testid="kb-search-test-button" variant="outline" onClick={() => router.push(`/app/kb/${knowledgeBaseId}/search`)}>
             <Search className="mr-2 h-4 w-4" />
             {t('searchTest')}
           </Button>
           {canUpdateKb && (
             <>
-              <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
+              <Button data-testid="kb-import-url-button" variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
                 <LinkIcon className="mr-2 h-4 w-4" />
                 {t('importUrl')}
               </Button>
-              <Button onClick={() => setUploadDialogOpen(true)}>
+              <Button data-testid="kb-upload-button" onClick={() => setUploadDialogOpen(true)}>
                 <Upload className="mr-2 h-4 w-4" />
                 {t('uploadDocument')}
               </Button>

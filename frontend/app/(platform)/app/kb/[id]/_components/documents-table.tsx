@@ -365,10 +365,11 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   
   // 获取状态 Badge
   const getStatusBadge = (status: DocumentStatus, doc?: Document) => {
+    const statusTestId = doc ? `kb-document-status-${status}-${doc.id}` : undefined
     switch (status) {
       case 'completed':
         return (
-          <Badge variant="default" className="bg-emerald-500/10 text-emerald-500 gap-1">
+          <Badge data-testid={statusTestId} variant="default" className="bg-emerald-500/10 text-emerald-500 gap-1">
             <CheckCircle className="h-3 w-3" />
             {t('statusCompleted')}
           </Badge>
@@ -376,7 +377,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
       case 'processing': {
         const progress = doc?.metadata?.embed_progress as { embedded?: number; failed?: number; total?: number } | undefined
         const badge = (
-          <Badge variant="default" className="bg-blue-500/10 text-blue-500 gap-1">
+          <Badge data-testid={statusTestId} variant="default" className="bg-blue-500/10 text-blue-500 gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
             {progress?.total
               ? t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })
@@ -386,7 +387,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         if (progress?.total) {
           return (
             <Tooltip>
-              <TooltipTrigger className="bg-blue-500/10 text-blue-500 gap-1 inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold">
+              <TooltipTrigger data-testid={statusTestId} className="bg-blue-500/10 text-blue-500 gap-1 inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 {t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })}
               </TooltipTrigger>
@@ -404,14 +405,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
       }
       case 'pending':
         return (
-          <Badge variant="outline" className="text-muted-foreground gap-1">
+          <Badge data-testid={statusTestId} variant="outline" className="text-muted-foreground gap-1">
             <Clock className="h-3 w-3" />
             {t('statusPending')}
           </Badge>
         )
       case 'error':
         return (
-          <Badge variant="destructive" className="gap-1">
+          <Badge data-testid={statusTestId} variant="destructive" className="gap-1">
             <XCircle className="h-3 w-3" />
             {t('statusFailed')}
           </Badge>

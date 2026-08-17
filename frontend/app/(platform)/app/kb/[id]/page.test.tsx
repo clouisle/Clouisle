@@ -143,7 +143,9 @@ beforeEach(() => {
 })
 
 test('loads details, statistics, model metadata, and owner actions', async () => {
-  expect(descendants(render()).some((node) => text(node) === 'Engineering')).toBe(false)
+  const loadingNodes = descendants(render())
+  expect(loadingNodes.some((node) => node.props['data-testid'] === 'kb-detail-page')).toBe(true)
+  expect(loadingNodes.some((node) => text(node) === 'Engineering')).toBe(false)
 
   let tree = await load()
   let nodes = descendants(tree)
@@ -156,6 +158,10 @@ test('loads details, statistics, model metadata, and owner actions', async () =>
   expect(text(tree)).toContain('rerank-v2')
   expect(getKnowledgeBase).toHaveBeenCalledWith('kb-1')
   expect(getStats).toHaveBeenCalledWith('kb-1')
+  expect(nodes.some((node) => node.props['data-testid'] === 'kb-detail-page')).toBe(true)
+  expect(nodes.some((node) => node.props['data-testid'] === 'kb-search-test-button')).toBe(true)
+  expect(nodes.some((node) => node.props['data-testid'] === 'kb-import-url-button')).toBe(true)
+  expect(nodes.some((node) => node.props['data-testid'] === 'kb-upload-button')).toBe(true)
 
   const buttons = nodes.filter((node) => node.type === Button)
   expect(buttons).toHaveLength(5)
