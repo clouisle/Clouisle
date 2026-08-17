@@ -36,39 +36,61 @@ export type WorkflowResultSelection =
   | { kind: 'json'; outputs: Record<string, unknown> }
   | { kind: 'empty' }
 
-export function selectWorkflowResult(
+// Node types that only echo inputs / start data; never rendered as output.
+const NON_OUTPUT_NODE_TYPES = new Set(['start', 'user_input', 'trigger'])
+
+/**
+ * Select the result blocks to render. Unlike the previous single-selection
+ * behavior, every completed output node is included: the primary answer text
+ * (accumulated live stream or canonical persisted answer) plus each remaining
+ * non-answer output node stacked in execution order. Answer nodes are not
+ * stacked separately because their text is already rendered by the markdown
+ * block (the live accumulation covers all of them; the persisted one covers
+ * the canonical final answer).
+ */
+export function selectWorkflowResults(
   outputs: Record<string, unknown> | null | undefined,
   nodes: WorkflowResultNode[],
   answerText?: string
-): WorkflowResultSelection {
-  if (answerText) {
-    return { kind: 'markdown', text: answerText }
-  }
-
-  const finalAnswer = answerFrom(outputs)
-  if (finalAnswer) {
-    return { kind: 'markdown', text: finalAnswer }
-  }
+): WorkflowResultSelection[] {
+  const selections: WorkflowResultSelection[] = []
 
   const completedNodes = [...nodes]
     .filter((node) => node.status === 'success' || node.status === 'completed')
     .filter((node) => hasOutputs(node.outputs))
-    .sort((a, b) => b.order - a.order)
 
-  const answerNode = completedNodes.find((node) => node.nodeType === 'answer')
-  const nodeAnswer = answerFrom(answerNode?.outputs)
-  if (nodeAnswer) {
-    return { kind: 'markdown', text: nodeAnswer }
+  const primaryAnswer = answerText || answerFrom(outputs)
+  if (primaryAnswer) {
+    selections.push({ kind: 'markdown', text: primaryAnswer })
+  } else {
+    // Persisted runs without outputs.answer: fall back to the last-executed
+    // answer node's text so history keeps showing the final answer.
+    const lastAnswer = [...completedNodes]
+      .sort((a, b) => b.order - a.order)
+      .find((node) => node.nodeType === 'answer')
+    const nodeAnswer = answerFrom(lastAnswer?.outputs)
+    if (nodeAnswer) {
+      selections.push({ kind: 'markdown', text: nodeAnswer })
+    }
   }
 
-  const outputNode = completedNodes.find((node) => node.nodeType !== 'start')
-  if (outputNode) {
-    return { kind: 'node', node: outputNode }
+  const outputNodes = completedNodes
+    .filter((node) => node.nodeType !== 'answer')
+    .filter((node) => !NON_OUTPUT_NODE_TYPES.has(node.nodeType))
+    .sort((a, b) => a.order - b.order)
+
+  for (const node of outputNodes) {
+    selections.push({ kind: 'node', node })
   }
 
-  return hasOutputs(outputs)
-    ? { kind: 'json', outputs }
-    : { kind: 'empty' }
+  if (selections.length === 0 && hasOutputs(outputs)) {
+    selections.push({ kind: 'json', outputs })
+  }
+  if (selections.length === 0) {
+    selections.push({ kind: 'empty' })
+  }
+
+  return selections
 }
 
 export function WorkflowResultRenderer({
@@ -86,23 +108,31 @@ export function WorkflowResultRenderer({
     />
   ), [isStreaming])
 
-  const selection = selectWorkflowResult(outputs, nodes, answerText)
+  const selections = selectWorkflowResults(outputs, nodes, answerText)
 
-  if (selection.kind === 'markdown') {
-    return markdown(selection.text)
+  const renderedBlocks = selections.map((selection, index) => {
+    if (selection.kind === 'markdown') {
+      return <div key={index}>{markdown(selection.text)}</div>
+    }
+
+    if (selection.kind === 'node' && selection.node.outputs) {
+      return <div key={index}>{renderNodeOutput(selection.node.nodeType, selection.node.outputs, t, markdown)}</div>
+    }
+
+    if (selection.kind === 'json') {
+      return (
+        <pre key={index} className="max-h-[calc(100dvh-18rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-5 text-sm leading-6">
+          {JSON.stringify(selection.outputs, null, 2)}
+        </pre>
+      )
+    }
+
+    return null
+  })
+
+  if (renderedBlocks.length === 0) {
+    return null
   }
 
-  if (selection.kind === 'node' && selection.node.outputs) {
-    return renderNodeOutput(selection.node.nodeType, selection.node.outputs, t, markdown)
-  }
-
-  if (selection.kind === 'json') {
-    return (
-      <pre className="max-h-[calc(100dvh-18rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-5 text-sm leading-6">
-        {JSON.stringify(selection.outputs, null, 2)}
-      </pre>
-    )
-  }
-
-  return null
+  return <div className="space-y-6">{renderedBlocks}</div>
 }
