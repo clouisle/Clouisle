@@ -159,11 +159,13 @@ function button(tree: ReactNode, label: string) {
 describe('RetrievalLab', () => {
   test('loads settings, discards malformed local state, and reports load failure', async () => {
     local.set('retrieval-lab:kb-1', '{bad')
-    const tree = await flush()
-    const backButton = find(tree, 'button', props => props['aria-label'] === 'retrievalLab')
-    expect(backButton.props.className).toContain('absolute left-3 top-3')
-    expect(find(tree, 'main').props.className).toContain('pt-14')
-    expect(elements(tree).filter(element => element.type === 'header')).toHaveLength(0)
+    const loadingTree = render()
+    expect(find(loadingTree, 'div', props => props['data-testid'] === 'kb-search-lab')).toBeTruthy()
+    const tree = await flush(loadingTree)
+    expect(find(tree, 'div', props => props['data-testid'] === 'kb-search-lab')).toBeTruthy()
+    expect(find(tree, 'input', props => props['data-testid'] === 'kb-search-query')).toBeTruthy()
+    expect(find(tree, 'button', props => props['data-testid'] === 'kb-search-submit')).toBeTruthy()
+    expect(elements(tree).find(element => element.props['data-testid'] === 'kb-search-results')).toBeUndefined()
     expect(removeItem).toHaveBeenCalledWith('retrieval-lab:kb-1')
     expect(find(tree, 'switch', props => props.disabled === undefined)).toBeTruthy()
 
@@ -184,6 +186,7 @@ describe('RetrievalLab', () => {
     await searchButton(tree).props.onClick()
     tree = await settle()
     expect(text(tree)).toContain('noResults')
+    expect(find(tree, 'div', props => props['data-testid'] === 'kb-search-results')).toBeTruthy()
     await searchButton(tree).props.onClick()
     tree = await settle()
     find(tree, 'button', props => String(props['aria-label']).startsWith('selectResult')).props.onClick()
@@ -227,6 +230,7 @@ describe('RetrievalLab', () => {
     await searchButton(tree).props.onClick()
     tree = await settle()
     expect(text(tree)).toContain('overlap:1,1')
+    expect(find(tree, 'div', props => props['data-testid'] === 'kb-search-results')).toBeTruthy()
     const resultHeader = elements(tree).find(element => element.type === 'span' && String(element.props.className).includes('items-center gap-2 text-xs'))!
     const headerItems = resultHeader.props.children as ReactElement<Record<string, unknown>>[]
     expect(headerItems[3].type).toBe('badge')

@@ -175,6 +175,48 @@ describe('OnboardingTour', () => {
     canvas.remove()
     restore()
   })
+  it('keeps document-processing guidance anchored to the table with no source rows', () => {
+    const table = document.createElement('div')
+    table.dataset.testid = 'kb-documents-table'
+    document.body.appendChild(table)
+    config = platformSteps.getTourConfigById('kb')!
+    const overviewStepIndex = config.steps.findIndex(step => step.target === '[data-testid="kb-documents-table"]')
+    state = { completedTours: [], currentTour: 'kb', currentStep: overviewStepIndex, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    expect(overviewStepIndex).toBeGreaterThan(0)
+    expect(joyrideProps?.stepIndex).toBe(overviewStepIndex)
+    expect(joyrideProps?.steps[overviewStepIndex]).toMatchObject({
+      target: '[data-testid="kb-documents-table"]',
+      title: 'onboarding.step31h.title',
+      content: 'onboarding.step31h.description',
+    })
+    expect(joyrideProps?.steps[overviewStepIndex + 1]?.target).toBe('[data-testid="kb-search-test-button"]')
+
+    table.remove()
+    restore()
+  })
+  it('shows Next for the KB retrieval query step', () => {
+    config = platformSteps.getTourConfigById('kb')!
+    const queryStepIndex = config.steps.findIndex(step => step.target === '[data-testid="kb-search-query"]')
+    state = { completedTours: [], currentTour: 'kb', currentStep: queryStepIndex, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    expect(config.steps[queryStepIndex]?.advanceOnInput).toBeUndefined()
+    const Tooltip = joyrideProps?.tooltipComponent
+    expect(Tooltip).toBeDefined()
+    const tooltip = render(<Tooltip
+      index={queryStepIndex}
+      isLastStep={false}
+      step={config.steps[queryStepIndex]}
+      size={config.steps.length}
+    />)
+    tooltip.getByText('onboarding.next').click()
+    expect(nextStep).toHaveBeenCalledTimes(1)
+    restore()
+  })
 
   it('navigates before advancing and treats /app as an exact route boundary', async () => {
     config = {
@@ -197,6 +239,23 @@ describe('OnboardingTour', () => {
     expect(nextStep).not.toHaveBeenCalled()
     await waitFor(() => expect(nextStep).toHaveBeenCalled(), { timeout: 800 })
     restore()
+  })
+  it('keeps KB detail and search descendants on the current route family', () => {
+    for (const nestedPath of ['/app/kb/kb-1', '/app/kb/kb-1/search']) {
+      config = {
+        id: 'kb', title: 'Knowledge Base', description: '',
+        steps: [{ target: 'body', content: 'detail', route: '/app/kb' }],
+      }
+      pathname = nestedPath
+      state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+      const restore = installSpies()
+      const view = render(<OnboardingTour tourId="kb" />)
+
+      expect(push).not.toHaveBeenCalledWith('/app/kb')
+      view.unmount()
+      restore()
+      push.mockClear()
+    }
   })
 
   it('completes on Joyride close statuses and on the final custom action', () => {
@@ -404,6 +463,31 @@ describe('OnboardingTour', () => {
     restore()
   })
 
+  it('scrolls KB dialog targets into the internal dialog viewport', async () => {
+    const target = document.createElement('div')
+    target.dataset.testid = 'kb-dialog-rerank-enabled'
+    const scrollIntoView = mock()
+    Object.assign(target, { scrollIntoView })
+    document.body.appendChild(target)
+    config = {
+      id: 'kb', title: 'Knowledge Base', description: '',
+      steps: [{ target: '[data-testid="kb-dialog-rerank-enabled"]', content: 'rerank' }],
+    }
+    state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    const view = render(<OnboardingTour tourId="kb" />)
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'center',
+      inline: 'nearest',
+    }), { timeout: 600 })
+
+    view.unmount()
+    target.remove()
+    restore()
+  })
+
   it('adds the dialog overlay class only while dialog steps are mounted', () => {
     config = {
       id: 'appCreate', title: 'Create app', description: '',
@@ -428,5 +512,22 @@ describe('OnboardingTour', () => {
     adminModelSetupView.unmount()
     expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
     restore()
+
+    for (const target of [
+      '[data-testid="kb-upload-dialog"]',
+      '[data-testid="kb-upload-dialog-cancel"]',
+      '[data-testid="kb-import-url-dialog"]',
+      '[data-testid="kb-import-url-dialog-cancel"]',
+    ]) {
+      config = { id: 'kb', title: 'Knowledge Base', description: '', steps: [{ target, content: 'dialog' }] }
+      state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+      const kbRestore = installSpies()
+      const kbView = render(<OnboardingTour tourId="kb" />)
+
+      expect(document.body.classList.contains('joyride-dialog-active')).toBe(true)
+      kbView.unmount()
+      expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
+      kbRestore()
+    }
   })
 })

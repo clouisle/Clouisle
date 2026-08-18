@@ -140,6 +140,11 @@ describe('platform UploadDocumentDialog', () => {
     const second = file('notes.TXT', 4)
     select(props, [first, second])
     const tree = render(props)
+    expect(find(tree, element => element.type === 'section').props['data-testid']).toBe('kb-upload-dialog')
+    expect(find(tree, element => element.props['data-testid'] === 'kb-upload-dialog-cancel')).toBeTruthy()
+    expect(text(tree)).toContain('supportedFormats')
+    expect(text(tree)).toContain('PDF, TXT')
+    expect(text(tree)).toContain('maxFileSize:5MB')
 
     expect(text(tree)).toContain('guide.pdf')
     expect(text(tree)).toContain('0 B')

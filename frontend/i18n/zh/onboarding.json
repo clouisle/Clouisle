@@ -7,7 +7,7 @@
     "tourModelsTitle": "模型",
     "tourModelsDescription": "了解可用的 AI 模型和配置",
     "tourKBTitle": "知识库",
-    "tourKBDescription": "了解如何创建和管理知识库",
+    "tourKBDescription": "了解如何创建知识库、导入文档、查看处理状态并验证检索效果。",
     "tourAppCreateTitle": "创建应用",
     "tourAppCreateDescription": "创建您的第一个 Agent 或工作流",
     "tourAppConfigTitle": "配置应用",
@@ -471,6 +471,58 @@
     "step30g": {
       "title": "启用并授权",
       "description": "保持模型启用并创建模型。然后打开团队管理，选择目标团队，进入“模型授权”并授权此模型，Agent 和知识库才能选择它。"
+    },
+    "step31a": {
+      "title": "知识库详情",
+      "description": "知识库已准备好。您可以在此添加来源、查看处理状态并测试检索效果。"
+    },
+    "step31b": {
+      "title": "上传文档",
+      "description": "上传本地文件，为知识库添加资料来源。"
+    },
+    "step31c": {
+      "title": "上传规则",
+      "description": "选择文件前，请查看支持的格式和当前最大文件大小。"
+    },
+    "step31d": {
+      "title": "关闭上传对话框",
+      "description": "查看上传规则后关闭对话框，继续下一步。"
+    },
+    "step31e": {
+      "title": "导入网址",
+      "description": "网页或 YouTube 来源可以使用网址导入。"
+    },
+    "step31f": {
+      "title": "网址导入选项",
+      "description": "输入来源网址，也可以填写可选的文档名称。"
+    },
+    "step31g": {
+      "title": "关闭网址导入",
+      "description": "查看导入字段后关闭网址对话框。"
+    },
+    "step31h": {
+      "title": "文档处理状态",
+      "description": "添加来源后，状态会显示在这里：等待处理表示尚未开始；处理中表示正在分块并生成嵌入；已完成可参与检索；失败的文档可以重试或重新处理。"
+    },
+    "step31l": {
+      "title": "命中测试",
+      "description": "打开命中测试，验证知识库能够检索到哪些内容。"
+    },
+    "step31m": {
+      "title": "检索实验室",
+      "description": "使用检索实验室查看搜索行为和排序结果。"
+    },
+    "step31n": {
+      "title": "搜索查询",
+      "description": "输入应该能由文档回答的问题或关键词。"
+    },
+    "step31o": {
+      "title": "执行检索",
+      "description": "执行查询，检索匹配的文档分块。"
+    },
+    "step31p": {
+      "title": "查看结果",
+      "description": "查看返回的分块和排序详情，验证检索效果。"
     }
   }
 }

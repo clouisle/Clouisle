@@ -7,7 +7,7 @@
     "tourModelsTitle": "Models",
     "tourModelsDescription": "Learn about available AI models and configuration",
     "tourKBTitle": "Knowledge Base",
-    "tourKBDescription": "Learn how to create and manage Knowledge Bases",
+    "tourKBDescription": "Learn how to create a knowledge base, ingest documents, monitor processing, and validate retrieval.",
     "tourAppCreateTitle": "Create App",
     "tourAppCreateDescription": "Create your first Agent or Workflow",
     "tourAppConfigTitle": "Configure App",
@@ -471,6 +471,58 @@
     "step30g": {
       "title": "Enable and Authorize",
       "description": "Leave the model enabled and create it. Then open Teams, choose the target team, open Model Authorization, and authorize this enabled model so Agents and Knowledge Bases can select it."
+    },
+    "step31a": {
+      "title": "Knowledge Base Detail",
+      "description": "Your knowledge base is ready. This page is where you add sources, monitor processing, and test retrieval."
+    },
+    "step31b": {
+      "title": "Upload a Document",
+      "description": "Upload a local file to add source material to this knowledge base."
+    },
+    "step31c": {
+      "title": "Upload Rules",
+      "description": "Review the accepted file formats and the current maximum file size before selecting files."
+    },
+    "step31d": {
+      "title": "Close the Upload Dialog",
+      "description": "Close the dialog after reviewing the upload rules to continue."
+    },
+    "step31e": {
+      "title": "Import a URL",
+      "description": "Use URL import for a web page or YouTube source."
+    },
+    "step31f": {
+      "title": "URL Import Options",
+      "description": "Enter the source URL and an optional document name."
+    },
+    "step31g": {
+      "title": "Close URL Import",
+      "description": "Close the URL dialog after reviewing the import fields."
+    },
+    "step31h": {
+      "title": "Document Processing",
+      "description": "After you add a source, its status appears here: Pending waits to start, Processing chunks and embeds it, Completed is ready for retrieval, and Failed can be retried or reprocessed."
+    },
+    "step31l": {
+      "title": "Search Test",
+      "description": "Open Search Test to validate what the knowledge base retrieves."
+    },
+    "step31m": {
+      "title": "Retrieval Lab",
+      "description": "Use the retrieval lab to inspect search behavior and ranking results."
+    },
+    "step31n": {
+      "title": "Search Query",
+      "description": "Enter a question or keyword query that should be answered by your document."
+    },
+    "step31o": {
+      "title": "Run Retrieval",
+      "description": "Run the query to retrieve matching document chunks."
+    },
+    "step31p": {
+      "title": "Inspect Results",
+      "description": "Review returned chunks and ranking details to validate retrieval."
     }
   }
 }

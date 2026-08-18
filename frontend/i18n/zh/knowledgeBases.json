@@ -94,6 +94,7 @@
     "urlImported": "网址导入成功",
     "dragDropHint": "拖放文件到此处，或点击选择",
     "supportedFormats": "支持的格式",
+    "maxFileSize": "最大文件大小：{size}",
     "upload": "上传",
     "uploading": "上传中...",
     "uploadSuccess": "成功上传 {count} 个文档",

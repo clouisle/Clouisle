@@ -94,6 +94,7 @@
     "urlImported": "URL imported successfully",
     "dragDropHint": "Drag and drop files here, or click to select",
     "supportedFormats": "Supported formats",
+    "maxFileSize": "Maximum file size: {size}",
     "upload": "Upload",
     "uploading": "Uploading...",
     "uploadSuccess": "Successfully uploaded {count} document(s)",

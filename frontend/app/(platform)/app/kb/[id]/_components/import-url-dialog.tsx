@@ -111,7 +111,7 @@ export function ImportUrlDialog({
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-125">
+      <DialogContent data-testid="kb-import-url-dialog" className="sm:max-w-125">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{t('importUrl')}</DialogTitle>
@@ -158,7 +158,7 @@ export function ImportUrlDialog({
           </div>
           
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button data-testid="kb-import-url-dialog-cancel" type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {commonT('cancel')}
             </Button>
             <Button type="submit" disabled={isLoading}>

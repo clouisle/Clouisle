@@ -220,45 +220,39 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         }
       }
 
-      // Handle TARGET_NOT_FOUND: wait for drawer/menu elements to render
-      if (type === EVENTS.TARGET_NOT_FOUND) {
-        if (action === ACTIONS.NEXT) {
-          // Wait 500ms for drawer/menu elements to render
-          setTimeout(() => {
-            const nextStepIndex = currentStepIndex + 1
-            const nextStepData = steps[nextStepIndex]
 
-            if (nextStepData) {
-              // Check if the target element exists in DOM
-              const target = nextStepData.target
-              const targetExists = typeof target === 'string'
-                ? !!document.querySelector(target)
-                : !!target
-              if (targetExists) {
-                if (nextStepData.route) {
-                  const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
-                  if (!isOnCorrectRoute) {
-                    router.push(nextStepData.route)
-                    setTimeout(() => {
-                      nextStep()
-                    }, 500)
-                  } else {
+      if (type === EVENTS.TARGET_NOT_FOUND && action === ACTIONS.NEXT) {
+        // Wait briefly for drawer/menu elements to render.
+        setTimeout(() => {
+          const nextStepIndex = currentStepIndex + 1
+          const nextStepData = steps[nextStepIndex]
+
+          if (nextStepData) {
+            const target = nextStepData.target
+            const targetExists = typeof target === 'string'
+              ? !!document.querySelector(target)
+              : !!target
+            if (targetExists) {
+              if (nextStepData.route) {
+                const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
+                if (!isOnCorrectRoute) {
+                  router.push(nextStepData.route)
+                  setTimeout(() => {
                     nextStep()
-                  }
+                  }, 500)
                 } else {
                   nextStep()
                 }
               } else {
-                // Target still not found, skip this step
-                if (nextStepIndex < steps.length - 1) {
-                  nextStep()
-                } else {
-                  completeTour(tourId)
-                }
+                nextStep()
               }
+            } else if (nextStepIndex < steps.length - 1) {
+              nextStep()
+            } else {
+              completeTour(tourId)
             }
-          }, 500)
-        }
+          }
+        }, 500)
       }
 
       if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
@@ -277,8 +271,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     // not for automatic navigation.
     if (currentStep.advanceOnClick && currentStep.waitForRouteChange) return
 
-    // Use strict equality so /app does not match /app/models etc.
-    if (pathname !== currentStep.route) {
+    // Match route families while keeping /app as an exact boundary.
+    if (!routeMatches(pathname, currentStep.route)) {
       router.push(currentStep.route)
     }
   }, [state.isRunning, state.currentTour, tourId, currentStep, pathname, router])
@@ -462,8 +456,25 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     targetSelector.includes('app-create-type-selector') ||
     targetSelector.includes('app-create-name-input') ||
     targetSelector.includes('app-create-description-input') ||
-    targetSelector.includes('app-create-submit')
+    targetSelector.includes('app-create-submit') ||
+    targetSelector.includes('kb-upload-dialog') ||
+    targetSelector.includes('kb-import-url-dialog')
   )
+  const isKbDialogContentStep = state.isRunning && state.currentTour === tourId &&
+    targetSelector.includes('kb-dialog-') && !targetSelector.includes('kb-dialog-submit')
+
+  React.useEffect(() => {
+    if (!isKbDialogContentStep) return
+
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector(targetSelector)
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' })
+      }
+    }, 50)
+
+    return () => window.clearTimeout(timer)
+  }, [isKbDialogContentStep, targetSelector])
 
   React.useEffect(() => {
     if (isDialogStep) {

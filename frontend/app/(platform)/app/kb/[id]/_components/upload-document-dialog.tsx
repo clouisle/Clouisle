@@ -22,6 +22,9 @@ import {
   KNOWLEDGE_BASE_DOCUMENT_ACCEPTED_TYPES,
   KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
 } from '@/lib/constants'
+const acceptedFormatsLabel = KNOWLEDGE_BASE_DOCUMENT_ACCEPTED_TYPES
+  .map(type => type.replace(/^\./, '').toUpperCase())
+  .join(', ')
 
 interface UploadDocumentDialogProps {
   open: boolean
@@ -185,7 +188,7 @@ export function UploadDocumentDialog({
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-125">
+      <DialogContent data-testid="kb-upload-dialog" className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>{t('uploadDocument')}</DialogTitle>
           <DialogDescription>{t('uploadDocumentDescription')}</DialogDescription>
@@ -208,7 +211,10 @@ export function UploadDocumentDialog({
               {t('dragDropHint')}
             </p>
             <p className="text-xs text-muted-foreground">
-              {t('supportedFormats')}: PDF, DOCX, TXT, MD, HTML, CSV, XLSX, JSON, PPTX
+              {t('supportedFormats')}: {acceptedFormatsLabel}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('maxFileSize', { size: maxUploadSizeLabel })}
             </p>
           </div>
           
@@ -262,7 +268,7 @@ export function UploadDocumentDialog({
         </div>
         
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isUploading}>
+          <Button data-testid="kb-upload-dialog-cancel" variant="outline" onClick={() => onOpenChange(false)} disabled={isUploading}>
             {commonT('cancel')}
           </Button>
           <Button onClick={handleUpload} disabled={files.length === 0 || isUploading}>
