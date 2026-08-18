@@ -4,19 +4,19 @@ Clouisle implements a team-based multi-tenancy model that provides secure data i
 
 ## Overview
 
-Multi-tenancy in Clouisle is built around the concept of **Teams**. Every resource (agents, workflows, knowledge bases, etc.) belongs to a team, and users can be members of multiple teams with different roles.
+Multi-tenancy in Clouisle is built around **Teams**. Main user-created resources—such as agents, workflows, and knowledge bases—are team-scoped, while a few platform resources have different ownership rules. Users can be members of multiple teams with different roles.
 
 ## Core Concepts
 
 ### Teams
 
-A **Team** is the primary unit of data isolation in Clouisle. Think of a team as a workspace or organization within the platform.
+A **Team** is the primary unit of application-level authorization in Clouisle. Think of a team as a workspace or organization within the platform.
 
 **Key characteristics**:
-- Every resource must belong to exactly one team
+- Main user-created resources are owned by one team
 - Users can be members of multiple teams
-- Each team has its own set of resources
-- Teams are completely isolated from each other (except for super admins)
+- Team membership and resource permissions are checked in the application layer
+- Platform resources can be exceptions: system skills may have a NULL team, and tools can explicitly be shared across teams
 
 **Example**:
 ```
@@ -32,10 +32,9 @@ Company XYZ
     └── Knowledge Bases: Marketing Materials, Brand Guidelines
 ```
 
-In this example:
 - Alice is a member of both teams (Owner in Engineering, Member in Marketing)
-- Engineering Team cannot access Marketing Team's resources
-- Each team has its own isolated set of agents and knowledge bases
+- Engineering resources are not available to a Marketing-only member unless a resource explicitly supports cross-team sharing
+- Each team normally has its own agents and knowledge bases
 
 ### Team Roles
 
@@ -43,7 +42,7 @@ Each team member has a role that determines their permissions within that team:
 
 | Role | Permissions | Use Case |
 |------|-------------|----------|
-| **Owner** | Full control, can delete team, transfer ownership | Team creator, primary administrator |
+| **Owner** | Manage team-scoped resources and transfer ownership; team deletion requires a global administrator | Team creator, primary administrator |
 | **Admin** | Manage members, create/edit/delete resources | Team administrators |
 | **Member** | Create and manage own resources, use team resources | Regular team members |
 | **Viewer** | Read-only access to team resources | Observers, auditors |
@@ -55,9 +54,9 @@ Owner > Admin > Member > Viewer
 
 ### Resource Ownership
 
-Every resource in Clouisle has two ownership attributes:
+Most user-created resources have two ownership attributes:
 
-1. **Team**: Which team the resource belongs to
+1. **Team**: Which team-scoped resource belongs to
 2. **Creator**: Which user created the resource
 
 **Example**:
@@ -76,21 +75,20 @@ Every resource in Clouisle has two ownership attributes:
 ### Team-Level Isolation
 
 **How it works**:
-1. When a user makes a request, the system identifies which teams they belong to
-2. Database queries automatically filter results to only include resources from those teams
-3. Users cannot access resources from teams they're not members of
+1. When a user makes a request, the backend identifies the relevant team memberships
+2. Resource queries apply team and visibility filters in the application layer
+3. Users cannot access team-scoped resources without membership or an explicit sharing rule
 
-**Implementation**:
+**Implementation pattern**:
 ```python
-# Automatic team filtering in queries
 if user.is_superuser:
-    # Super admins see everything
     agents = await Agent.all()
 else:
-    # Regular users only see their teams' resources
     user_team_ids = [membership.team_id for membership in user.team_memberships]
     agents = await Agent.filter(team_id__in=user_team_ids)
 ```
+
+This is not PostgreSQL Row-Level Security (RLS); callers must retain the backend authorization checks.
 
 ### User-Level Isolation
 
@@ -114,14 +112,15 @@ Some resources have additional user-level isolation:
 
 ## Visibility Levels
 
-Resources can have different visibility levels that control who can access them:
+Visibility is resource-specific. Workflows currently expose `private`, `team`, and a reserved `public` enum value; non-superuser access still requires team membership. Agents expose `private` and `team`, while a legacy agent `public` value is normalized to `team` at startup. Knowledge bases are team-scoped.
 
 | Visibility | Description | Who Can Access |
 |------------|-------------|----------------|
 | **Private** | Only creator can access | Resource creator only |
-| **Team** | Team members can access | All members of the resource's team |
+| **Team** | Team members can access | Members of the resource's team |
+| **Public (reserved)** | Reserved for future workflow sharing; it does not bypass team authorization today | Team members only until public sharing is implemented |
 
-> **Note:** A legacy `public` visibility value exists only for database compatibility and is normalized to `team` at startup. In practice, resources are `private` or `team` only.
+Do not generalize the reserved workflow value to agents or knowledge bases.
 
 **Example use cases**:
 - **Private**: Personal draft agents, experimental workflows
@@ -264,18 +263,11 @@ async def check_team_access(user: User, team_id: str):
 
 ### Audit Logging
 
-All team-related operations are logged:
-- Team creation/deletion
-- Member additions/removals
-- Role changes
-- Resource access across teams
+Selected team mutations and security-relevant operations are recorded in audit logs; exact coverage is endpoint-specific.
 
 ### Rate Limiting
 
-Rate limits are applied per-user, not per-team:
-- Prevents abuse across multiple teams
-- Ensures fair resource usage
-- Protects against malicious actors
+Rate limits are mechanism-specific. Depending on the operation, limits may apply per user, IP address, recipient, or provider/team quota; do not assume one shared team limit.
 
 ## Best Practices
 
@@ -326,17 +318,13 @@ Rate limits are applied per-user, not per-team:
 
 **What happens**:
 1. User's team membership is removed
-2. User loses access to all team resources
+2. User loses access to team resources
 3. Resources created by the user remain in the team
-4. User's conversations and API keys remain accessible to team admins
+4. Team administrators with the required dashboard permission may be able to view relevant conversation records; API keys remain owner-scoped except for superusers
 
-### Scenario 3: Team is Deleted
+### Scenario 3: Team Is Deleted
 
-**What happens**:
-1. All team resources are deleted (agents, workflows, knowledge bases)
-2. All team memberships are removed
-3. Audit logs are retained for compliance
-4. Operation is irreversible (requires confirmation)
+Team deletion is a global-admin operation. Default teams cannot be deleted; review dependent-data effects before confirming a non-default team deletion.
 
 ### Scenario 4: Resource Visibility Change
 

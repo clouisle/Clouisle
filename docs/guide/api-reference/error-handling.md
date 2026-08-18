@@ -33,14 +33,14 @@ The Clouisle API uses a unified error response format with specific error codes 
 | Status Code | Meaning | When Used |
 |-------------|---------|-----------|
 | 200 | OK | Successful request |
-| 201 | Created | Resource created successfully |
 | 400 | Bad Request | `BusinessError` default for invalid requests |
 | 401 | Unauthorized | Authentication failed |
 | 403 | Forbidden | Permission denied / invalid JWT |
 | 404 | Not Found | Resource not found |
 | 422 | Unprocessable Entity | Pydantic validation error (code `1001`) |
-| 429 | Too Many Requests | Quota exceeded (model quota, TOTP lockout) |
+| 429 | Too Many Requests | Only endpoint-specific quota or lockout responses; not a blanket API status |
 | 500 | Internal Server Error | Server error |
+The current v1 resource-creation routes use HTTP 200 rather than a blanket 201 status.
 
 ## Error Code Ranges
 
@@ -162,9 +162,10 @@ class CloudisleAPI:
                 result = e.response.json()
                 raise ApiError(1001, result.get('msg', 'Validation failed'), result.get('data'))
             elif e.response.status_code == 429:
-                # Quota exceeded (e.g. model quota 6103, TOTP lockout 5312)
+                # Some provider/quota endpoints use HTTP 429; do not assume every
+                # error code in the table (for example TOTP 5312) has this status.
                 result = e.response.json()
-                raise ApiError(result.get('code', 0), result.get('msg', 'Quota exceeded'))
+                raise ApiError(result.get('code', 0), result.get('msg', 'Rate limited'))
             else:
                 raise ApiError(1003, f"HTTP error: {e.response.status_code}")
 

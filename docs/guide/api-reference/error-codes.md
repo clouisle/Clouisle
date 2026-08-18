@@ -61,7 +61,7 @@ Error responses carry both an HTTP status and an application `code`. The mapping
 
 **Description**: Operation completed successfully
 
-**HTTP Status**: 200 OK (or 201 Created where a resource is created)
+**HTTP Status**: 200 OK. Current v1 resource-creation endpoints also return the standard success envelope with HTTP 200.
 
 **Example**:
 ```json

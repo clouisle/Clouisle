@@ -19,7 +19,7 @@ The Knowledge Bases API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
+All endpoints require an authenticated JWT user session. API-key authentication is not accepted by these knowledge-base routes.
 
 **Required scopes:**
 - `kb:read` - List and view knowledge bases
@@ -43,9 +43,9 @@ GET /api/v1/knowledge-bases
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
+| `page_size` | integer | No | 20 | Items per page |
 | `team_id` | string | No | - | Filter by team ID |
-| `status` | array | No | - | Filter by status: `active`, `archived` (repeatable) |
+| `status` | array | No | - | Filter by status: `active`, `processing`, `error`, `archived` (repeatable) |
 | `search` | string | No | - | Search by name or description |
 
 ### Request Example
@@ -250,7 +250,7 @@ curl -X POST "https://your-domain.com/api/v1/knowledge-bases" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -309,6 +309,8 @@ All fields are optional. Only include fields you want to update.
   }
 }
 ```
+
+The embedding model is selected when the knowledge base is created and cannot be changed by the update endpoint.
 
 ### Request Example
 
@@ -407,7 +409,7 @@ curl -X POST "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -452,9 +454,9 @@ GET /api/v1/knowledge-bases/{kb_id}/documents
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
-| `status` | array | No | - | Filter by status: `pending`, `processing`, `completed`, `failed` (repeatable) |
-| `doc_type` | array | No | - | Filter by doc type: `pdf`, `docx`, `txt`, `md`, `url`, etc. (repeatable) |
+| `page_size` | integer | No | 20 | Items per page |
+| `status` | array | No | - | Filter by status: `pending`, `processing`, `completed`, `error` (repeatable) |
+| `doc_type` | array | No | - | Filter by doc type: `pdf`, `docx`, `txt`, `markdown`, `url`, etc. (repeatable) |
 | `search` | string | No | - | Search by document name |
 
 ### Request Example
@@ -614,6 +616,68 @@ curl -X PUT "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a
   "msg": "Document updated successfully"
 }
 ```
+
+## Document Processing Lifecycle
+
+Uploading a document creates it with `status: "pending"`; upload does not process it automatically. These routes require an authenticated JWT user with KB update permission, except where noted.
+
+### Process a pending document
+
+```
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/process
+```
+
+Optional JSON body:
+
+```json
+{"chunk_size": 1000, "chunk_overlap": 100, "separator": null, "clean_text": true}
+```
+
+The response is `200 OK` and returns the document, normally transitioning to `processing` before asynchronous embedding completes.
+
+### Process edited chunks
+
+```
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/process-with-chunks
+```
+
+Request body:
+
+```json
+{"chunks": [{"content": "A chunk of text", "chunk_index": 0}]}
+```
+
+This replaces the document chunks and starts embedding; the response is `200 OK`.
+
+### Preview chunks
+
+```
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/preview-chunks
+```
+
+Requires KB read permission. The body accepts `chunk_size` (minimum 100), `chunk_overlap`, optional `separator`, and `clean_text`; the `200 OK` response contains `total_chunks`, `total_tokens`, `total_chars`, and `chunks`.
+
+### Reprocess and retry
+
+```
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/reprocess
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/retry-failed-chunks
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/chunks/{chunk_id}/retry-embedding
+```
+
+`reprocess` re-chunks and re-embeds the document. The retry routes re-run failed embeddings (all failed chunks or one failed chunk). Each returns `200 OK` with the document and uses the document status `pending`, `processing`, `completed`, or `error`.
+
+## Document Chunks
+
+```
+GET  /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/chunks?page=1&page_size=50
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/chunks?after_index=0
+PUT  /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/chunks/{chunk_id}
+DELETE /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/chunks/{chunk_id}
+POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/rechunk
+```
+
+Chunk list responses use `items`, `total`, `page`, and `page_size`. Create/update requests use `{"content": "..."}`; `rechunk` accepts `chunk_size`, `chunk_overlap`, and optional `separator`. Chunk endpoints require JWT KB read/update/delete permission according to the operation.
 
 ## Delete Document
 
@@ -798,13 +862,13 @@ curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a
       "completed": 147,
       "pending": 0,
       "processing": 3,
-      "failed": 6
+      "error": 6
     },
     "documents_by_type": {
       "pdf": 89,
       "docx": 34,
       "txt": 18,
-      "md": 15
+      "markdown": 15
     },
     "embedding_dimension": 1536,
     "embedding_stats": {
@@ -836,7 +900,7 @@ curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a
 - [Authentication](../authentication.md) - Authentication methods
 - [Rate Limiting](../rate-limiting.md) - Rate limit details
 - [Agents API](./agents.md) - Agents endpoints
-- [KB Concepts](../../concepts/knowledge-bases.md) - Understanding KBs
+- [KB User Guide](../../user-guide/knowledge-base/browsing-kb.md) - Using knowledge bases
 
 ---
 

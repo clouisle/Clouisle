@@ -134,114 +134,43 @@ This does not grant or remove global roles. Legacy global `Admin` / `Member` ass
 
 ## 3. Data Visibility and Isolation
 
-### 3.1 Core Concepts
+### 3.1 Scope model
 
-- **Super Admin**: No data isolation, can access all system data
-- **Admin**: Team-level isolation, can access all data of their teams
-- **Member/Viewer**: Team-level isolation + user-level isolation (for conversation data)
+- **Dashboard APIs** under `/api/v1/admin/...` are system-wide for users with the required `admin:*`, `audit:*`, or dashboard permission. They are not automatically limited to the administrator's team; for example, admin Agents/Workflows and team listings query system resources.
+- **Platform APIs** under `/api/v1/...` enforce the resource's team membership and permission checks. Use these endpoints when documenting team-isolated resource access.
+- **Super Admin/Admin** is a dashboard authorization distinction, not a promise that every endpoint exposes the same data scope. Conversation and statistics endpoints have their own ownership/team rules.
 
-### 3.2 Impact of `admin:dashboard:access` Permission
+### 3.2 Impact of `admin:dashboard:access`
 
-`admin:dashboard:access` is the key permission distinguishing "admin view" from "user view":
+`admin:dashboard:access` controls access to dashboard surfaces. Each surface still requires its specific permission, such as `admin:user:read`, `admin:model:read`, `admin:settings:read`, or `audit:read`. Without the dashboard permission, users should use the corresponding team-scoped platform routes where available.
 
-| Data Type | With `admin:dashboard:access` | Without `admin:dashboard:access` |
-|-----------|------------------------|---------------------------|
-| User list | Visible (requires `admin:user:read`) | Not visible |
-| Role list | Visible (requires `admin:role:read`) | Not visible |
-| Model list | Visible (requires `admin:model:read`) | Not visible |
-| Audit logs | Visible (requires `audit:read`) | Not visible |
-| Site settings | Visible (requires `admin:settings:read`) | Not visible |
-| **Conversation list** | **All users' conversations in team** | **Only own conversations** |
-| **Conversation stats** | **Stats for all team conversations** | **Stats for own conversations only** |
+### 3.3 Team-scoped resource access
 
-### 3.3 Special Isolation for Conversation Data
+For platform Agents, Workflows, Knowledge Bases, Tools, and similar resources, the effective scope is determined by the resource's team membership and the caller's scoped permission. A system resource such as an unscoped Skill or an explicitly shared Tool may follow different rules; do not infer universal isolation from the role name.
 
-Conversation data has finer-grained isolation:
+### 3.4 Practical rule
 
-```
-Super Admin
-└── Can view all conversations
-
-Admin (has admin:dashboard:access)
-└── Can view all users' conversations in their teams
-    └── All conversations in Team A
-    └── All conversations in Team B (if member)
-
-Member / Viewer (no admin:dashboard:access)
-└── Can only view own conversations
-    └── Own conversations created in Team A
-    └── Own conversations created in Team B
-```
-
-### 3.4 Isolation for Other Resources
-
-For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
-
-| Role | Visible Scope |
-|------|---------------|
-| Super Admin | All resources |
-| Admin | All resources in their teams |
-| Member | All resources in their teams |
-| Viewer | All resources in their teams (view/use-only) |
+Document the route and permission together: identify whether the example calls `/api/v1/admin/...` (system-wide dashboard API) or `/api/v1/...` (team-scoped platform API), then apply the endpoint's explicit ownership and membership checks.
 
 ---
 
 ## 4. Permission Combination Scenarios
 
-### 4.1 Scenario: Regular User Viewing Activity Logs
+### 4.1 Regular platform user
 
-**User Role**: Member or Viewer (no `admin:dashboard:access`)
+A Member or Viewer without `admin:dashboard:access` can use platform routes only where their scoped permissions allow it. For example, a Viewer may read/chat/run resources but cannot create, modify, delete, or publish them.
 
-**Visible Data**:
-- ✓ Own created conversations
-- ✓ Own conversation statistics
-- ✗ Other team members' conversations
-- ✗ Dashboard management menu
+### 4.2 Dashboard administrator
 
-### 4.2 Scenario: Admin Viewing Activity Logs
+An Admin with `admin:dashboard:access` can use each system-wide dashboard API for which it has the required `admin:*` or `audit:*` permission. Do not describe the result as limited to the Admin's teams unless that specific endpoint documents a team filter.
 
-**User Role**: Admin (has `admin:dashboard:access`)
+### 4.3 Site settings and SSO
 
-**Visible Data**:
-- ✓ All users' conversations in team
-- ✓ Team-level conversation statistics
-- ✓ Dashboard management menu
-- ✗ Other teams' conversations
+`admin:settings:read`/`admin:settings:update` and `admin:sso:read`/`admin:sso:update` remain separate permissions. The current role matrix grants update permissions to Super Admin; Admin is read-only for these settings unless an explicit custom role changes that assignment.
 
-### 4.3 Scenario: View/Use-Only User
+### 4.4 Audit log archiving
 
-**User Role**: Viewer (default role)
-
-**Allowed Operations**:
-- ✓ View team resources (Agent, Workflow, Knowledge Base, etc.)
-- ✓ Chat with Agent (`agent:chat`)
-- ✓ Run workflows (`workflow:run`)
-- ✓ Execute tools (`tool:execute`)
-- ✗ Create/modify/delete/publish resources
-- ✗ Access dashboard management
-
-### 4.4 Scenario: Site Settings Management
-
-| Role | `admin:settings:read` | `admin:settings:update` | Allowed Operations |
-|------|:---------------:|:-----------------:|-------------------|
-| Super Admin | ✓ | ✓ | View and modify all settings |
-| Admin | ✓ | ✗ | View settings only |
-| Member | ✗ | ✗ | No access |
-
-### 4.5 Scenario: SSO Management
-
-| Role | `admin:sso:read` | `admin:sso:update` | Allowed Operations |
-|------|:----------------:|:------------------:|-------------------|
-| Super Admin | ✓ | ✓ | View and manage all SSO providers and disconnect SSO connections |
-| Admin | ✓ | ✗ | View SSO configuration only |
-| Member | ✗ | ✗ | No access |
-
-### 4.6 Scenario: Audit Log Archiving
-
-- Editing storage settings requires `admin:settings:update`
-- Archiving audit logs requires `audit:export`
-- These two capabilities are independent and should not share a single frontend gate
-
+Editing storage settings requires `admin:settings:update`; archiving/exporting audit logs requires `audit:export`. These capabilities are independent and should not share one frontend gate.
 ---
 
 ## 5. Frontend Menu Visibility

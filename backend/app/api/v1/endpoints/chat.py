@@ -1403,8 +1403,10 @@ async def chat(
                     user=current_user,
                     protected_round_id=round_id,
                 )
-            except ContextLengthError:
-                if not should_retry_context_length(agent):
+            except ContextLengthError as context_error:
+                if context_error.details.get(
+                    "retryable"
+                ) is False or not should_retry_context_length(agent):
                     raise
                 prepared_context = await retry_prepare_model_context(
                     agent=agent,
@@ -1433,8 +1435,12 @@ async def chat(
                     model_id=model_id,
                     tools=tools,
                 )
-            except ContextLengthError:
-                if context_retry_used or not should_retry_context_length(agent):
+            except ContextLengthError as context_error:
+                if (
+                    context_retry_used
+                    or context_error.details.get("retryable") is False
+                    or not should_retry_context_length(agent)
+                ):
                     raise
                 prepared_context = await retry_prepare_model_context(
                     agent=agent,
@@ -2075,8 +2081,10 @@ async def chat_stream(
                             if compression_end:
                                 yield compression_end
                                 last_event_time = time.time()
-                        except ContextLengthError:
-                            if not should_retry_context_length(agent):
+                        except ContextLengthError as context_error:
+                            if context_error.details.get(
+                                "retryable"
+                            ) is False or not should_retry_context_length(agent):
                                 raise
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
@@ -2198,9 +2206,11 @@ async def chat_stream(
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
-                        except ContextLengthError:
-                            if context_retry_used or not should_retry_context_length(
-                                agent
+                        except ContextLengthError as context_error:
+                            if (
+                                context_retry_used
+                                or context_error.details.get("retryable") is False
+                                or not should_retry_context_length(agent)
                             ):
                                 raise
                             prepared_context = await retry_prepare_model_context(
@@ -3484,8 +3494,10 @@ async def edit_user_message_stream(
                             if compression_end:
                                 yield compression_end
                                 last_event_time = time.time()
-                        except ContextLengthError:
-                            if not should_retry_context_length(agent):
+                        except ContextLengthError as context_error:
+                            if context_error.details.get(
+                                "retryable"
+                            ) is False or not should_retry_context_length(agent):
                                 raise
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
@@ -3581,9 +3593,11 @@ async def edit_user_message_stream(
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
-                        except ContextLengthError:
-                            if context_retry_used or not should_retry_context_length(
-                                agent
+                        except ContextLengthError as context_error:
+                            if (
+                                context_retry_used
+                                or context_error.details.get("retryable") is False
+                                or not should_retry_context_length(agent)
                             ):
                                 raise
                             prepared_context = await retry_prepare_model_context(
@@ -4515,8 +4529,10 @@ async def regenerate_message(
                             if compression_end:
                                 yield compression_end
                                 last_event_time = time.time()
-                        except ContextLengthError:
-                            if not should_retry_context_length(agent):
+                        except ContextLengthError as context_error:
+                            if context_error.details.get(
+                                "retryable"
+                            ) is False or not should_retry_context_length(agent):
                                 raise
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
@@ -4615,9 +4631,11 @@ async def regenerate_message(
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
-                        except ContextLengthError:
-                            if context_retry_used or not should_retry_context_length(
-                                agent
+                        except ContextLengthError as context_error:
+                            if (
+                                context_retry_used
+                                or context_error.details.get("retryable") is False
+                                or not should_retry_context_length(agent)
                             ):
                                 raise
                             prepared_context = await retry_prepare_model_context(

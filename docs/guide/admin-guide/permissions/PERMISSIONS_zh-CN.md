@@ -109,115 +109,45 @@
 
 ---
 
-## 三、数据隔离规则
+## 三、数据可见性与隔离
 
-### 3.1 核心概念
+### 3.1 作用域模型
 
-- **Super Admin**：无数据隔离，可访问系统所有数据
-- **Admin**：团队级隔离，可访问所属团队的所有数据
-- **Member/Viewer**：团队级隔离 + 用户级隔离（对话数据）
+- `/api/v1/admin/...` 下的后台 API 在调用者拥有相应 `admin:*`、`audit:*` 或后台权限时按系统范围工作，并不会自动限制为管理员所属团队；例如后台 Agent/Workflow 与团队列表查询的是系统资源。
+- `/api/v1/...` 下的平台 API 才按资源的 `team_id`、团队成员关系和作用域权限执行团队隔离。
+- **Super Admin/Admin** 表示后台授权范围的区别，并不意味着每个端点都采用同一数据范围；对话和统计端点仍有各自的所有权/团队规则。
 
-### 3.2 `admin:dashboard:access` 权限的影响
+### 3.2 `admin:dashboard:access` 的影响
 
-`admin:dashboard:access` 是区分「管理员视角」和「用户视角」的关键权限：
+`admin:dashboard:access` 控制后台界面和后台 API 的入口；每个界面仍需要具体权限，例如 `admin:user:read`、`admin:model:read`、`admin:settings:read` 或 `audit:read`。没有后台权限时，应使用可用的平台团队作用域端点。
 
-| 数据类型 | 有 `admin:dashboard:access` | 无 `admin:dashboard:access` |
-|----------|----------------------|----------------------|
-| 用户列表 | 可见（需要 `admin:user:read`） | 不可见 |
-| 角色列表 | 可见（需要 `admin:role:read`） | 不可见 |
-| 模型列表 | 可见（需要 `admin:model:read`） | 不可见 |
-| 审计日志 | 可见（需要 `audit:read`） | 不可见 |
-| 站点设置 | 可见（需要 `admin:settings:read`） | 不可见 |
-| **对话列表** | **团队内所有用户的对话** | **仅自己的对话** |
-| **对话统计** | **团队内所有对话的统计** | **仅自己对话的统计** |
+### 3.3 团队资源访问
 
-### 3.3 对话数据的特殊隔离
+平台 Agent、Workflow、知识库、工具等资源的有效范围由资源所属团队和调用者的作用域权限决定。未绑定团队的系统 Skill 或显式跨团队共享的 Tool 可能遵循不同规则，不要从角色名称推导“所有资源都完全隔离”。
 
-对话（Conversation）数据有更细粒度的隔离：
+### 3.4 实用规则
 
-```
-Super Admin
-└── 可查看所有对话
-
-Admin (有 admin:dashboard:access)
-└── 可查看所属团队内所有用户的对话
-    └── 团队 A 的所有对话
-    └── 团队 B 的所有对话（如果是成员）
-
-Member / Viewer (无 admin:dashboard:access)
-└── 只能查看自己的对话
-    └── 自己在团队 A 创建的对话
-    └── 自己在团队 B 创建的对话
-```
-
-### 3.4 其他资源的隔离
-
-除对话外，其他资源（Agent、Workflow、知识库等）的隔离规则：
-
-| 角色 | 可见范围 |
-|------|---------|
-| Super Admin | 所有资源 |
-| Admin | 所属团队的所有资源 |
-| Member | 所属团队的所有资源 |
-| Viewer | 所属团队的所有资源（只读） |
+记录权限说明时必须同时写出端点和权限：`/api/v1/admin/...` 表示系统范围后台 API，`/api/v1/...` 表示团队作用域平台 API；再以该端点自身的所有权和成员检查为准。
 
 ---
 
 ## 四、权限组合场景
 
-### 4.1 场景：普通用户查看活动日志
+### 4.1 普通平台用户
 
-**用户角色**：Member（无 `admin:dashboard:access`）
+没有 `admin:dashboard:access` 的 Member/Viewer 只能在作用域权限允许的范围内调用平台端点。例如 Viewer 可以读取、聊天和运行资源，但不能创建、修改、删除或发布资源。
 
-**可见数据**：
-- ✓ 自己创建的对话
-- ✓ 自己的对话统计
-- ✗ 团队其他成员的对话
-- ✗ 后台管理菜单
+### 4.2 后台管理员
 
-### 4.2 场景：管理员查看活动日志
+拥有 `admin:dashboard:access` 的 Admin 可在拥有具体 `admin:*` 或 `audit:*` 权限时调用系统范围后台 API。除非端点明确提供团队过滤，不应描述为“仅限管理员所属团队”。
 
-**用户角色**：Admin（有 `admin:dashboard:access`）
+### 4.3 站点设置与 SSO
 
-**可见数据**：
-- ✓ 团队内所有用户的对话
-- ✓ 团队级对话统计
-- ✓ 后台管理菜单
-- ✗ 其他团队的对话
+`admin:settings:read`/`admin:settings:update` 与 `admin:sso:read`/`admin:sso:update` 是独立权限。当前系统角色中 Super Admin 拥有更新权限，Admin 对这些设置只读；自定义角色可另行改变分配。
 
-### 4.3 场景：只读用户
+### 4.4 审计日志归档
 
-**用户角色**：Viewer
-
-**可执行操作**：
-- ✓ 查看团队资源（Agent、Workflow、知识库等）
-- ✓ 与 Agent 对话（`agent:chat`）
-- ✓ 运行工作流（`workflow:run`）
-- ✓ 执行工具（`tool:execute`）
-- ✗ 创建/修改/删除任何资源
-- ✗ 访问后台管理
-
-### 4.4 场景：站点设置管理
-
-| 角色 | `admin:settings:read` | `admin:settings:update` | 可执行操作 |
-|------|:---------------:|:-----------------:|-----------|
-| Super Admin | ✓ | ✓ | 查看和修改所有设置 |
-| Admin | ✓ | ✗ | 仅查看设置 |
-| Member | ✗ | ✗ | 无法访问 |
-
-### 4.5 场景：SSO 管理
-
-| 角色 | `admin:sso:read` | `admin:sso:update` | 可执行操作 |
-|------|:----------------:|:------------------:|-----------|
-| Super Admin | ✓ | ✓ | 查看并管理所有 SSO 提供商，以及断开用户的 SSO 连接 |
-| Admin | ✓ | ✗ | 仅查看 SSO 配置 |
-| Member | ✗ | ✗ | 无法访问 |
-
-### 4.6 场景：审计日志归档
-
-- 编辑存储设置需要 `admin:settings:update`
-- 归档审计日志需要 `audit:export`
-- 这两种能力应分别控制，不应复用同一个前端权限判断
+编辑存储设置需要 `admin:settings:update`；归档/导出审计日志需要 `audit:export`。两项能力应分别控制，不应复用同一个前端权限判断。
 
 ---
 

@@ -255,7 +255,7 @@ curl -N "https://your-domain.com/api/v1/workflows/runs/$RUN_ID/stream?from_seque
   -H "Authorization: Bearer $CLOUISLE_TOKEN"
 ```
 
-Events: `workflow_start`, `workflow_complete`, `workflow_error`, `node_start`, `node_complete`, `node_error`, `node_skip`, `token`, `chunk`, `output`, `progress`, `status`, `iteration_start`, `iteration_complete`, `debug`. See [SSE Streaming](./sse-streaming.md).
+Events: `workflow_start`, `workflow_complete`, `workflow_waiting`, `workflow_error`, `node_start`, `node_complete`, `node_error`, `node_skip`, `token`, `chunk`, `output`, `progress`, `status`, `iteration_start`, `iteration_complete`, `debug`. See [SSE Streaming](./sse-streaming.md).
 
 ### Trigger a Workflow via Webhook
 

@@ -205,7 +205,7 @@ curl -X POST "$API_BASE_URL/api/v1/upload/parse/batch" \
   -F "files=@doc2.md"
 ```
 
-**Response:** a list of `FileParseResponse` objects (`filename`, `content`, `mime_type`, `size`, `truncated`, `original_length`, `title`). Per-file failures (unsupported type, too large, parse error) are collected in an `errors` array in the response `data`; if **all** files fail, the request returns `1001` (`VALIDATION_ERROR`) with `data.errors`.
+**Response:** on mixed success, `data` contains only the successfully parsed `FileParseResponse` items; per-file errors are not returned alongside successful items. If **all** files fail, the request returns `1001` (`VALIDATION_ERROR`) with `data.errors`.
 
 ## 6. Admin Batch Delete Conversations
 
@@ -230,7 +230,7 @@ Same semantics as the platform batch delete, under the `/admin` prefix.
 - Expect generic `/batch` endpoints for arbitrary resources — they do not exist
 - Send more than 5 files to `upload/parse/batch` (returns `1001`)
 - Send more than 10 configurations to `search/batch`
-- Assume partial success semantics — batch deletes are all-or-nothing
+- Expect all requested IDs to be deleted together: when at least one accessible ID matches, missing IDs are ignored and `deleted_count` can be lower than requested; authorization is checked before deletion and can return `403` or `404`, while malformed UUID query values return `422`.
 
 ## Related Documentation
 

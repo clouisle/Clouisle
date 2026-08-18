@@ -54,11 +54,11 @@ curl -X GET "https://your-domain.com/api/v1/users/me" \
 
 ### Logout
 
-**Endpoint**: `POST /api/v1/login/logout`
+**Endpoint**: `POST /api/v1/logout`
 
 **Request:**
 ```bash
-curl -X POST "https://your-domain.com/api/v1/login/logout" \
+curl -X POST "https://your-domain.com/api/v1/logout" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -114,8 +114,8 @@ curl -X POST "https://your-domain.com/api/v1/api-keys" \
   "code": 0,
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "key": "clou_1234567890abcdef...",
-    "key_prefix": "clou_1234567",
+    "key": "clou_a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890",
+    "key_prefix": "clou_a1b2c3d",
     "name": "Production API Key",
     "scopes": ["agent:read", "agent:chat", "kb:read"],
     "rate_limit": 1000,
@@ -134,7 +134,7 @@ Include the API key in the `Authorization` header with `Bearer` prefix:
 
 ```bash
 curl -X GET "https://your-domain.com/api/v1/agents" \
-  -H "Authorization: Bearer clou_1234567890abcdefghijklmnopqrstuvwxyz"
+  -H "Authorization: Bearer clou_a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890"
 ```
 
 ### API Key Format
@@ -144,7 +144,7 @@ API keys follow this format:
 clou_<64 hexadecimal characters>
 ```
 
-The key is generated from 32 random bytes (`secrets.token_hex(32)`), so the full key is 68 characters long including the `clou_` prefix.
+The key is generated from 32 random bytes (`secrets.token_hex(32)`), so the full key is **69 characters** long including the `clou_` prefix.
 
 Example: `clou_a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890`
 
@@ -198,7 +198,7 @@ The `scopes` field is stored on the key (default `["chat"]`) but is **not** used
 | `2000` | 401 | Unauthorized | No authentication provided |
 | `2001` | 401 | Invalid token | Malformed/revoked token or invalid API key |
 | `2002` | 401 | Token expired | **API key** expired |
-| `2003` | 403 | Invalid credentials | Wrong username/password, or JWT expired/invalid |
+| `2003` | 400 | Invalid credentials | Wrong username/password or current password (default `BusinessError` status) |
 | `2004` | 401 | Inactive user | User account deactivated or pending approval |
 | `5300` | 403 | Account locked | Too many failed login attempts |
 

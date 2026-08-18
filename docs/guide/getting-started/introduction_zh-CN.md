@@ -21,8 +21,9 @@ Clouisle 使组织能够构建、部署和管理具有高级知识检索能力�
 - **安全**: 全面的安全功能和合规性
 - **可扩展**: 水平扩展以实现高可用性
 
----
+## 下一步
 
-**Note**: This is a placeholder document. Please update with detailed content.
-
-For more information, see the [main documentation](../README.md).
+- 使用[开发环境搭建](./development_zh-CN.md)在本地启动。
+- 在[多租户模型](../concepts/multi-tenancy_zh-CN.md)中了解团队授权模型。
+- 在 [Agent vs Workflow](../concepts/agent-vs-workflow_zh-CN.md) 中比较对话式 Agent 与图式 Workflow。
+- 参阅 [RAG 详解](../concepts/rag-explained_zh-CN.md) 了解检索模式，参阅[向量嵌入](../concepts/vector-embeddings_zh-CN.md)了解嵌入兼容性。

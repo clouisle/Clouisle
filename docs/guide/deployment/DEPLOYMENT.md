@@ -126,11 +126,18 @@ docker push registry.example.com/clouisle/clouisle-frontend:latest
 Helm is the recommended Kubernetes deployment method:
 
 ```bash
+# Lint only: this placeholder satisfies the chart's required token and is not a deployment.
 helm lint deploy/helm/clouisle \
   --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
+
+# Demo only. Do not expose this install; set every production secret or use an existing Secret.
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
   --create-namespace \
+  --set-string secrets.values.SECRET_KEY="$(openssl rand -hex 32)" \
+  --set-string secrets.values.POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
+  --set-string secrets.values.REDIS_PASSWORD="$(openssl rand -hex 16)" \
+  --set-string secrets.values.QDRANT_API_KEY="$(openssl rand -hex 16)" \
   --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
@@ -177,15 +184,15 @@ Docker installations keep their generated configuration in `<installation-direct
 | `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | Optional API-key authentication for sandbox artifact uploads | `openssl rand -base64 32` |
 | `INTERNAL_API_TOKEN` | Authenticated worker-to-API upload gateway | `openssl rand -base64 32` |
 
-The following should be changed for production domains:
+The following are the public-origin settings to change for production. Keep service-to-service URLs internal:
 
 | Variable | Default | Production Example |
 |----------|---------|-------------------|
-| `API_BASE_URL` | `http://localhost:8000` | `https://api.example.com` |
+| `PUBLIC_API_URL` | *(empty)* | `https://example.com` |
 | `FRONTEND_URL` | `http://localhost:3000` | `https://example.com` |
-| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | `https://example.com` |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | `["https://example.com"]` |
 
-> **Note**: `POSTGRES_SERVER`, `REDIS_HOST`, `QDRANT_URL` are overridden in `docker-compose.yml` via the `environment` section (set to Docker service names `db`, `redis`, `qdrant`). You do not need to change them in `.env`.
+`API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal service URLs (usually `http://api:8000` in Compose/Kubernetes), not public domains. `PUBLIC_API_URL` is for browser-visible absolute API/file URLs. `POSTGRES_SERVER`, `REDIS_HOST`, and `QDRANT_URL` are overridden in the supplied deployment files with internal service names.
 
 ### Sandbox Filesystem Isolation
 
@@ -353,13 +360,20 @@ server {
 }
 ```
 
-When using HTTPS, update these environment variables:
+When using HTTPS, set the public browser origin separately from internal service URLs:
 
 ```bash
-API_BASE_URL=https://example.com
+# Internal service-to-service address; keep this as http://api:8000 in Compose/Kubernetes.
+API_BASE_URL=http://api:8000
+API_INTERNAL_BASE_URL=http://api:8000
+
+# Public/browser origin and CORS policy
+PUBLIC_API_URL=https://example.com
 FRONTEND_URL=https://example.com
-BACKEND_CORS_ORIGINS=https://example.com
+BACKEND_CORS_ORIGINS='["https://example.com"]'
 ```
+
+`API_BASE_URL` is not the public domain. `PUBLIC_API_URL` is used when absolute browser-visible API/file URLs are needed; `FRONTEND_URL` is used for browser/SSO redirects.
 
 ### Scaling
 
@@ -394,7 +408,7 @@ docker compose logs -f frontend
 # View logs for a specific time range
 docker compose logs --since 1h api
 
-# Restart a single service (zero-downtime for stateless services)
+# Restarting a service may cause downtime; Docker Compose provides no zero-downtime guarantee.
 docker compose restart api
 
 # Stop all services
@@ -478,7 +492,7 @@ data:
   INTERNAL_API_TOKEN: <paste-base64-here>
 ```
 
-> **Note**: `INTERNAL_API_TOKEN` and `SANDBOX_ARTIFACT_UPLOAD_API_KEY` are required — `deploy/install.sh` generates them in its output copies (Kubernetes mode writes a `0600` file that you review and apply manually). The API, worker, and sandbox-worker workloads read `INTERNAL_API_TOKEN` from the Secret via the `INTERNAL_API_TOKEN_FILE` mount.
+> **Note**: `INTERNAL_API_TOKEN` is required and shared by the API, worker, and sandbox-worker workloads. `SANDBOX_ARTIFACT_UPLOAD_API_KEY` is optional; set it to add API-key authentication to sandbox artifact uploads. The supplied manifest keeps that Secret key with an empty value when it is unused. `deploy/install.sh` generates the internal token in Kubernetes output copies (mode `0600`); review and apply them manually. The workloads read `INTERNAL_API_TOKEN` through the `INTERNAL_API_TOKEN_FILE` mount.
 
 > **Tip**: For production, consider using an external secret manager (Vault, AWS Secrets Manager, etc.) with the External Secrets Operator instead of storing secrets in YAML.
 
@@ -596,7 +610,8 @@ kubectl -n clouisle logs -f deployment/beat
 kubectl -n clouisle logs -f deployment/frontend
 
 # View logs for a specific pod
-kubectl -n clouisle logs -f <pod-name>
+POD_NAME='replace-with-pod-name'
+kubectl -n clouisle logs -f "$POD_NAME"
 
 # Restart a deployment (rolling restart)
 kubectl -n clouisle rollout restart deployment api
@@ -621,16 +636,18 @@ kubectl -n clouisle top pods
 |----------|-------------|----------------|
 | `SECRET_KEY` | JWT token signing key. Changing this invalidates all existing sessions. | `openssl rand -base64 32` |
 | `POSTGRES_PASSWORD` | PostgreSQL password | `openssl rand -base64 16` |
+| `INTERNAL_API_TOKEN` | Shared internal upload-gateway token for API, worker, and sandbox-worker | `openssl rand -hex 32` |
 
 ### Recommended (Should Change for Production)
-
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REDIS_PASSWORD` | *(empty)* | Redis password. Empty means no authentication. |
 | `QDRANT_API_KEY` | *(empty)* | Qdrant API key. Empty means no authentication. |
-| `API_BASE_URL` | `http://localhost:8000` | Backend URL used internally for file access and SSO callbacks. Set to your actual domain in production. |
-| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL used for SSO redirect URIs. Set to your actual domain in production. |
+| `PUBLIC_API_URL` | *(empty)* | Browser-visible public API origin for absolute API/file URLs. |
+| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL used for SSO redirect URIs. Set to your actual public domain in production. |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Comma-separated list of allowed CORS origins. Must include your frontend domain. |
+
+> `API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal server-to-server addresses used by the backend and workers. Do not set them to public domains. Use `PUBLIC_API_URL` for browser-visible API/file links and `FRONTEND_URL` for SSO redirect URIs.
 
 ### Optional
 
@@ -709,80 +726,52 @@ The external proxy must set `X-Real-IP` and `X-Forwarded-For` correctly. If the 
 
 ```bash
 # Docker Compose — backup
-docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d).sql
+docker compose exec -T db pg_dump -U postgres -Fc clouisle > backup_$(date +%Y%m%d).dump
 
 # Docker Compose — restore
-docker compose exec -T db psql -U postgres clouisle < backup_20260206.sql
+docker compose exec -T db pg_restore -U postgres -d clouisle --clean --if-exists < backup_20260206.dump
 
 # Kubernetes — backup
-kubectl -n clouisle exec statefulset/postgres -- pg_dump -U postgres clouisle > backup.sql
+kubectl -n clouisle exec -i statefulset/postgres -- pg_dump -U postgres -Fc clouisle > backup.dump
 
 # Kubernetes — restore
-kubectl -n clouisle exec -i statefulset/postgres -- psql -U postgres clouisle < backup.sql
+kubectl -n clouisle exec -i statefulset/postgres -- pg_restore -U postgres -d clouisle --clean --if-exists < backup.dump
 ```
 
 ### Qdrant
 
-```bash
-# Docker Compose — backup the volume
-docker run --rm -v deploy_qdrant_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/qdrant_backup.tar.gz -C /data .
+Run these Compose commands from the directory containing the active `docker-compose.yml` and `.env`: `deploy/` for a source checkout, or the installer-created directory such as `/opt/clouisle`. The supplied Compose volume is project-prefixed, so discover its actual Docker volume name instead of assuming `deploy_qdrant_data`.
 
-# Kubernetes — use Qdrant's snapshot API
-kubectl -n clouisle exec statefulset/qdrant -- \
-  wget -qO- -post-data '{}' http://localhost:6333/snapshots
+The file-level volume backup below does not require a Qdrant host port. If you use the API-based snapshot procedure instead and production hardening removed the mapping, temporarily add `127.0.0.1:6333:6333`, recreate Qdrant, then remove the mapping after the API backup. Do not publish Qdrant on all host interfaces just to run a backup.
+
+```bash
+QDRANT_VOLUME="$(docker inspect "$(docker compose ps -q qdrant)" --format '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Name}}{{end}}{{end}}')"
+test -n "$QDRANT_VOLUME"
+docker run --rm -v "$QDRANT_VOLUME:/data:ro" -v "$(pwd):/backup" \
+  alpine tar czf /backup/qdrant_backup.tar.gz -C /data .
 ```
+
+For a portable Qdrant backup, use the Qdrant collection snapshot API for each collection and pass `api-key: $QDRANT_API_KEY` when authentication is enabled. The API is collection-scoped; there is no generic `/snapshots` endpoint in the supplied application.
 
 ### Uploaded Files
 
-```bash
-# Docker Compose
-docker run --rm -v deploy_uploads_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/uploads_backup.tar.gz -C /data .
+Stream the API-mounted uploads directory so the command does not depend on a Docker volume prefix:
 
-# Kubernetes (if using PVC)
-kubectl -n clouisle exec deployment/api -- tar czf - /app/uploads > uploads_backup.tar.gz
+```bash
+docker compose exec -T api \
+  tar -czf - -C /app uploads > uploads_backup.tar.gz
+```
+
+In Kubernetes, use the `uploads-data` PVC mounted by `api` and an explicit backup destination:
+
+```bash
+kubectl -n clouisle exec -i deployment/api -- tar -czf - -C /app uploads > uploads_backup.tar.gz
 ```
 
 ### Automated Backup Schedule
 
-For production, set up a CronJob (K8s) or cron task (Docker host) to run daily backups:
+The supplied Kubernetes manifest does not declare a `backup-pvc` and does not install a backup CronJob. Provision an approved object-store, backup PVC, or CSI snapshot destination first, then schedule the PostgreSQL/Qdrant/uploads commands above. Do not treat a pod-local `emptyDir` as durable backup storage.
 
-```yaml
-# K8s CronJob example
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: postgres-backup
-  namespace: clouisle
-spec:
-  schedule: "0 2 * * *"    # Daily at 2:00 AM
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-            - name: backup
-              image: postgres:16
-              command:
-                - sh
-                - -c
-                - pg_dump -h postgres -U postgres clouisle | gzip > /backup/clouisle_$(date +%Y%m%d).sql.gz
-              env:
-                - name: PGPASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: clouisle-secret
-                      key: POSTGRES_PASSWORD
-              volumeMounts:
-                - name: backup
-                  mountPath: /backup
-          restartPolicy: OnFailure
-          volumes:
-            - name: backup
-              persistentVolumeClaim:
-                claimName: backup-pvc
-```
 
 ---
 
@@ -790,47 +779,46 @@ spec:
 
 ### Docker Compose
 
+The supplied Compose file references prebuilt images; it has no `build:` blocks and `docker compose up -d` is not a rolling-update guarantee.
+
 ```bash
-cd deploy
-
-# 1. Pull latest code
+cd /path/to/clouisle
 git pull
-
-# 2. Rebuild images
-docker compose build
-
-# 3. Rolling restart (services restart one by one)
-docker compose up -d
-
-# 4. Verify
-docker compose ps
-docker compose logs --tail=50 api
+docker compose -f deploy/docker-compose.yml pull
+docker compose -f deploy/docker-compose.yml up -d --force-recreate
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs --tail=50 api worker sandbox-worker beat frontend
 ```
 
 ### Kubernetes
 
+Build and push immutable, versioned tags from the repository root, then update every application workload in the `clouisle` namespace:
+
 ```bash
-# 1. Build and push new images
-docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/api:v2.0.0 .
-docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/clouisle/frontend:v2.0.0 .
-docker push registry.example.com/clouisle/api:v2.0.0
-docker push registry.example.com/clouisle/frontend:v2.0.0
+cd /path/to/clouisle
+REGISTRY=registry.example.com/clouisle
+IMAGE_TAG=vX.Y.Z
+docker build -f deploy/dockerfiles/backend.Dockerfile -t "$REGISTRY/clouisle-backend:$IMAGE_TAG" .
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t "$REGISTRY/clouisle-frontend:$IMAGE_TAG" .
+docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG" .
+docker push "$REGISTRY/clouisle-backend:$IMAGE_TAG"
+docker push "$REGISTRY/clouisle-frontend:$IMAGE_TAG"
+docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
-# 2. Update the image references in clouisle.yaml
-#    (each workload's `image:` — e.g. the api/worker/beat `clouisle-backend`,
-#    sandbox-worker `clouisle-sandbox-worker`, frontend `clouisle-frontend`,
-#    and the PostgreSQL `clouisle-postgres-pg-search` images)
+kubectl -n clouisle set image deployment/api api="$REGISTRY/clouisle-backend:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/worker worker="$REGISTRY/clouisle-backend:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/beat beat="$REGISTRY/clouisle-backend:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/frontend frontend="$REGISTRY/clouisle-frontend:$IMAGE_TAG"
 
-# 3. Apply
-kubectl apply -f deploy/k8s/clouisle.yaml
-
-# 4. Monitor rollout
-kubectl -n clouisle rollout status deployment api
-kubectl -n clouisle rollout status deployment worker
-kubectl -n clouisle rollout status deployment frontend
+kubectl -n clouisle rollout status deployment/api
+kubectl -n clouisle rollout status deployment/worker
+kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status deployment/beat
+kubectl -n clouisle rollout status deployment/frontend
 ```
 
-> **Note**: Database migrations (if any) should be run before updating the backend deployment. Check the release notes for migration instructions.
+The backend initializes/updates the schema at startup through Tortoise ORM (`init_db`); do not run a routine Alembic migration command. Follow release-specific notes only when a release explicitly documents an additional data migration.
 
 ---
 
@@ -840,7 +828,7 @@ kubectl -n clouisle rollout status deployment frontend
 - [ ] **Enable HTTPS** — Use TLS termination at the external reverse proxy or K8s Ingress
 - [ ] **Restrict exposed ports** — In production, only expose port 3000 (or 443 via reverse proxy). Remove database/Redis/Qdrant port mappings.
 - [ ] **Set CORS origins** — `BACKEND_CORS_ORIGINS` should only contain your actual frontend domain, not `*`
-- [ ] **Update `API_BASE_URL` and `FRONTEND_URL`** — Must match your actual production domain for SSO and internal file access to work correctly
+- [ ] **Set URL variables by role** — keep `API_BASE_URL` internal (for example `http://api:8000` inside Compose/K8s); use `PUBLIC_API_URL` for browser-visible API/file links and `FRONTEND_URL` for SSO redirects
 - [ ] **Network isolation** — In Docker Compose, infrastructure services (db, redis, qdrant) should not be accessible from outside. In K8s, they use ClusterIP services (no external access by default).
 - [ ] **Regular backups** — Set up automated PostgreSQL and Qdrant backups
 - [ ] **Resource limits** — Review and adjust CPU/memory limits in K8s manifests based on actual usage
@@ -946,7 +934,8 @@ docker stats
 
 # Kubernetes
 kubectl -n clouisle top pods
-kubectl -n clouisle describe pod <pod-name>    # Check "Last State" for OOMKilled
+POD_NAME='replace-with-pod-name'
+kubectl -n clouisle describe pod "$POD_NAME"  # Check "Last State" for OOMKilled
 ```
 
 Adjust resource limits in `docker-compose.yml` (add `deploy.resources`) or in `clouisle.yaml` (edit the `resources` section).

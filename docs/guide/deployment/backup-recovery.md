@@ -64,7 +64,7 @@ Backup and recovery ensures:
 
 ### Backup Schedule
 
-**Recommended Schedule:**
+**Example operator schedule (external design only; not a shipped WAL/PITR capability):**
 ```yaml
 Full Backup:
   Frequency: Weekly
@@ -77,10 +77,12 @@ Incremental Backup:
   Time: 2:00 AM
   Retention: 7 days
 
-Transaction Logs:
-  Frequency: Continuous
-  Retention: 7 days
+WAL/PITR:
+  Frequency: Operator-defined
+  Retention: Operator-defined
 ```
+
+WAL archiving and point-in-time recovery (PITR) require a separately designed and operated PostgreSQL process; they are not provided by this Compose deployment.
 
 ## Database Backup
 
@@ -180,19 +182,37 @@ POSTGRES_DB=clouisle_restored
 ## Vector Database Backup
 
 ### Qdrant Backup
+Qdrant snapshots are collection-scoped. Back up every collection returned by `GET /collections`; Clouisle commonly uses `kb_dim_<dimension>` for knowledge-base vectors and `memory_entities_dim_<dimension>` for memory vectors when those features have been used. Before any Qdrant API command, export `QDRANT_API_KEY` into the invoking shell or cron environment from the protected deployment `.env` or Kubernetes Secret when authentication is enabled; Docker Compose does not export `.env` values into the shell.
+
+The snippets default to `http://localhost:6333`, which works only while the Qdrant host-port mapping is published. If production hardening removed that mapping, temporarily bind Qdrant to `127.0.0.1:6333:6333` and recreate the service, or run the commands from a network-attached helper; remove the temporary host mapping afterward.
 
 **Create Snapshot:**
 
 ```bash
-# Create snapshot via API
-curl -X POST "http://localhost:6333/collections/{collection_name}/snapshots"
+# The supplied Compose layout uses qdrant/qdrant:v1.18.3. Keep restore and
+# backup operations on a Qdrant version with compatible snapshot API semantics.
+QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+QDRANT_AUTH=()
+if [ -n "${QDRANT_API_KEY:-}" ]; then
+  QDRANT_AUTH=(--header "api-key: $QDRANT_API_KEY")
+fi
 
-# List snapshots
-curl "http://localhost:6333/collections/{collection_name}/snapshots"
+# List every current collection. Set COLLECTION to one returned name, then
+# repeat the create/list/download commands for every name.
+curl --fail "${QDRANT_URL}/collections" "${QDRANT_AUTH[@]}"
+COLLECTION='replace-with-a-name-returned-above'
 
-# Download snapshot
-curl "http://localhost:6333/collections/{collection_name}/snapshots/{snapshot_name}" \
-  --output snapshot.snapshot
+# Create a collection snapshot.
+curl --fail --request POST "${QDRANT_URL}/collections/${COLLECTION}/snapshots" \
+  "${QDRANT_AUTH[@]}"
+
+# List snapshots and use the returned name in the download request.
+curl --fail "${QDRANT_URL}/collections/${COLLECTION}/snapshots" \
+  "${QDRANT_AUTH[@]}"
+SNAPSHOT_NAME='replace-with-the-name-returned-above'
+curl --fail "${QDRANT_URL}/collections/${COLLECTION}/snapshots/${SNAPSHOT_NAME}" \
+  "${QDRANT_AUTH[@]}" \
+  --output "${COLLECTION}_${SNAPSHOT_NAME}.snapshot"
 ```
 
 **Automated Qdrant Backup:**
@@ -202,27 +222,31 @@ curl "http://localhost:6333/collections/{collection_name}/snapshots/{snapshot_na
 # backup-qdrant.sh
 
 BACKUP_DIR="/backups/qdrant"
-QDRANT_URL="http://localhost:6333"
+QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+# When Qdrant authentication is enabled, inject QDRANT_API_KEY into this script's
+# environment securely before it runs; Docker Compose does not export .env values.
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+QDRANT_AUTH=()
+if [ -n "${QDRANT_API_KEY:-}" ]; then
+  QDRANT_AUTH=(--header "api-key: $QDRANT_API_KEY")
+fi
 
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
+collections=$(curl --fail --silent --show-error "${QDRANT_URL}/collections" \
+  "${QDRANT_AUTH[@]}" | jq -r '.result.collections[].name')
 
-# Get all collections
-collections=$(curl -s "$QDRANT_URL/collections" | jq -r '.result.collections[].name')
-
-# Backup each collection
 for collection in $collections; do
-    echo "Backing up collection: $collection"
-
-    # Create snapshot
-    snapshot=$(curl -s -X POST "$QDRANT_URL/collections/$collection/snapshots" | jq -r '.result.name')
-
-    # Download snapshot
-    curl -s "$QDRANT_URL/collections/$collection/snapshots/$snapshot" \
-      --output "$BACKUP_DIR/${collection}_${TIMESTAMP}.snapshot"
-
-    # Delete remote snapshot
-    curl -X DELETE "$QDRANT_URL/collections/$collection/snapshots/$snapshot"
+  echo "Backing up collection: $collection"
+  snapshot=$(curl --fail --silent --show-error --request POST \
+    "${QDRANT_URL}/collections/${collection}/snapshots" \
+    "${QDRANT_AUTH[@]}" | jq -r '.result.name')
+  curl --fail --silent --show-error \
+    "${QDRANT_URL}/collections/${collection}/snapshots/${snapshot}" \
+    "${QDRANT_AUTH[@]}" \
+    --output "$BACKUP_DIR/${collection}_${TIMESTAMP}.snapshot"
+  curl --fail --silent --show-error --request DELETE \
+    "${QDRANT_URL}/collections/${collection}/snapshots/${snapshot}" \
+    "${QDRANT_AUTH[@]}"
 done
 
 echo "Qdrant backup completed"
@@ -230,16 +254,56 @@ echo "Qdrant backup completed"
 
 ### Qdrant Restore
 
-**Restore Collection:**
+Restore a collection snapshot using the snapshot upload operation supported by the target Qdrant version. The supplied Compose image is `qdrant/qdrant:v1.18.3`; do not substitute an endpoint from another Qdrant release without checking that release's snapshot API semantics. The upload operation restores the collection; there is no separate `/recover` command here. Set `COLLECTION` and `SNAPSHOT_FILE` to one matching pair and repeat the upload for every backed-up collection.
 
 ```bash
-# Upload snapshot
-curl -X PUT "http://localhost:6333/collections/{collection_name}/snapshots/upload" \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @snapshot.snapshot
+QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+# Set these to one matching collection/snapshot pair; repeat for every collection.
+COLLECTION='replace-with-a-backed-up-collection-name'
+SNAPSHOT_FILE='replace-with-the-matching-snapshot.snapshot'
+QDRANT_AUTH=()
+if [ -n "${QDRANT_API_KEY:-}" ]; then
+  QDRANT_AUTH=(--header "api-key: $QDRANT_API_KEY")
+fi
 
-# Restore from snapshot
-curl -X PUT "http://localhost:6333/collections/{collection_name}/snapshots/{snapshot_name}/recover"
+curl --fail --request POST \
+  "${QDRANT_URL}/collections/${COLLECTION}/snapshots/upload" \
+  "${QDRANT_AUTH[@]}" \
+  --form "snapshot=@${SNAPSHOT_FILE}"
+```
+
+
+### Backup Configuration Files
+
+```bash
+#!/bin/bash
+# backup-config.sh
+
+COMPOSE_DIR="${COMPOSE_DIR:-$(pwd)}"
+BACKUP_DIR="/backups/config"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+CONFIG_ITEMS=(docker-compose.yml .env)
+
+mkdir -p "$BACKUP_DIR"
+test -f "$COMPOSE_DIR/docker-compose.yml" || { echo "Missing docker-compose.yml" >&2; exit 1; }
+test -f "$COMPOSE_DIR/.env" || { echo "Missing .env" >&2; exit 1; }
+
+# The supplied layout has deploy/nginx/default.conf. Include it and
+# deploy/nginx/certs only when an operator has actually provided them.
+[ -f "$COMPOSE_DIR/nginx/default.conf" ] && CONFIG_ITEMS+=(nginx/default.conf)
+[ -d "$COMPOSE_DIR/nginx/certs" ] && CONFIG_ITEMS+=(nginx/certs)
+
+tar -czf "$BACKUP_DIR/config_$TIMESTAMP.tar.gz" \
+  -C "$COMPOSE_DIR" "${CONFIG_ITEMS[@]}"
+
+echo "Configuration backup completed"
+```
+
+### Restore Configuration
+
+```bash
+# Extract configuration into the directory used by Compose.
+tar -xzf config_backup.tar.gz -C /path/to/clouisle/deploy
 ```
 
 ## File Storage Backup
@@ -262,22 +326,24 @@ rsync -avz /path/to/uploads/ user@backup-server:/backups/uploads/
 #!/bin/bash
 # backup-files.sh
 
-UPLOADS_DIR="/app/uploads"
+COMPOSE_DIR="${COMPOSE_DIR:-$(pwd)}"
+COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 BACKUP_DIR="/backups/files"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/uploads_$TIMESTAMP.tar.gz"
 
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
 
-# Create backup
-tar -czf $BACKUP_FILE $UPLOADS_DIR
+# Stream the api service's mounted uploads directory; do not assume a host
+# path or a generated Docker volume name.
+docker compose --project-directory "$COMPOSE_DIR" -f "$COMPOSE_FILE" \
+  exec -T api tar -czf - -C /app uploads > "$BACKUP_FILE"
 
-# Remove old backups (keep 30 days)
-find $BACKUP_DIR -name "uploads_*.tar.gz" -mtime +30 -delete
+# This basic -name/-mtime form is supported by both GNU and BSD/macOS find.
+find "$BACKUP_DIR" -name 'uploads_*.tar.gz' -mtime +30 -delete
 
 echo "File backup completed: $BACKUP_FILE"
 ```
-
 ### Restore Files
 
 ```bash
@@ -286,37 +352,6 @@ tar -xzf uploads_backup.tar.gz -C /
 
 # Or to specific location
 tar -xzf uploads_backup.tar.gz -C /restore/location
-```
-
-## Configuration Backup
-
-### Backup Configuration Files
-
-```bash
-#!/bin/bash
-# backup-config.sh
-
-CONFIG_DIR="/path/to/clouisle"
-BACKUP_DIR="/backups/config"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
-mkdir -p $BACKUP_DIR
-
-# Backup configuration files
-tar -czf "$BACKUP_DIR/config_$TIMESTAMP.tar.gz" \
-  $CONFIG_DIR/.env \
-  $CONFIG_DIR/docker-compose.yml \
-  $CONFIG_DIR/nginx.conf \
-  $CONFIG_DIR/ssl/
-
-echo "Configuration backup completed"
-```
-
-### Restore Configuration
-
-```bash
-# Extract configuration
-tar -xzf config_backup.tar.gz -C /path/to/clouisle
 ```
 
 ## Complete System Backup
@@ -328,42 +363,56 @@ tar -xzf config_backup.tar.gz -C /path/to/clouisle
 # full-backup.sh
 
 BACKUP_ROOT="/backups"
+COMPOSE_DIR="${COMPOSE_DIR:-$(pwd)}"
+COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="$BACKUP_ROOT/full_$TIMESTAMP"
+ARCHIVE_PATH="$BACKUP_ROOT/full_backup_$TIMESTAMP.tar.gz"
 
-mkdir -p $BACKUP_DIR
+compose() {
+  docker compose --project-directory "$COMPOSE_DIR" -f "$COMPOSE_FILE" "$@"
+}
 
+mkdir -p "$BACKUP_DIR"
 echo "Starting full system backup..."
+compose stop sandbox-worker worker beat
 
-# 1. Backup PostgreSQL
 echo "Backing up PostgreSQL..."
-docker compose exec -T db pg_dump -U postgres -Fc clouisle > $BACKUP_DIR/postgres.dump
-gzip $BACKUP_DIR/postgres.dump
+compose exec -T db pg_dump -U "${POSTGRES_USER:-postgres}" \
+  -Fc "${POSTGRES_DB:-clouisle}" > "$BACKUP_DIR/postgres.dump"
+gzip "$BACKUP_DIR/postgres.dump"
 
-# 2. Backup Qdrant (volume tar — or use the snapshot API, see "Qdrant Backup")
 echo "Backing up Qdrant..."
-mkdir -p $BACKUP_DIR/qdrant
-docker run --rm -v deploy_qdrant_data:/data -v $BACKUP_DIR/qdrant:/backup \
+QDRANT_CONTAINER="$(compose ps -q qdrant)"
+test -n "$QDRANT_CONTAINER" || { echo "Qdrant container not found" >&2; exit 1; }
+QDRANT_VOLUME="$(docker inspect "$QDRANT_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Name}}{{end}}{{end}}')"
+test -n "$QDRANT_VOLUME" || { echo "Qdrant volume not found" >&2; exit 1; }
+
+mkdir -p "$BACKUP_DIR/qdrant"
+docker run --rm -v "$QDRANT_VOLUME:/data:ro" -v "$BACKUP_DIR/qdrant:/backup" \
   alpine tar czf /backup/storage.tar.gz -C /data .
 
-# 3. Backup Redis (optional)
 echo "Backing up Redis..."
-docker compose exec redis redis-cli SAVE
-docker compose cp redis:/data/dump.rdb $BACKUP_DIR/redis_dump.rdb
+compose exec -T redis sh -c 'redis-cli ${REDIS_PASSWORD:+-a "$REDIS_PASSWORD"} SAVE'
+compose cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
 
-# 4. Backup files
 echo "Backing up uploaded files..."
-docker run --rm -v deploy_uploads_data:/data -v $BACKUP_DIR:/backup \
+UPLOADS_CONTAINER="$(compose ps -q api)"
+test -n "$UPLOADS_CONTAINER" || { echo "API container not found" >&2; exit 1; }
+UPLOADS_VOLUME="$(docker inspect "$UPLOADS_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/app/uploads"}}{{.Name}}{{end}}{{end}}')"
+test -n "$UPLOADS_VOLUME" || { echo "Uploads volume not found" >&2; exit 1; }
+docker run --rm -v "$UPLOADS_VOLUME:/data:ro" -v "$BACKUP_DIR:/backup" \
   alpine tar czf /backup/uploads.tar.gz -C /data .
 
-# 5. Backup configuration
 echo "Backing up configuration..."
-tar -czf $BACKUP_DIR/config.tar.gz \
-  .env \
-  docker-compose.yml
+CONFIG_ITEMS=(docker-compose.yml .env)
+test -f "$COMPOSE_DIR/docker-compose.yml" || { echo "Missing docker-compose.yml" >&2; exit 1; }
+test -f "$COMPOSE_DIR/.env" || { echo "Missing .env" >&2; exit 1; }
+[ -f "$COMPOSE_DIR/nginx/default.conf" ] && CONFIG_ITEMS+=(nginx/default.conf)
+[ -d "$COMPOSE_DIR/nginx/certs" ] && CONFIG_ITEMS+=(nginx/certs)
+tar -czf "$BACKUP_DIR/config.tar.gz" -C "$COMPOSE_DIR" "${CONFIG_ITEMS[@]}"
 
-# 6. Create backup manifest
-cat > $BACKUP_DIR/manifest.txt <<EOF
+cat > "$BACKUP_DIR/manifest.txt" <<EOF
 Backup Date: $(date)
 Backup Type: Full System Backup
 Components:
@@ -374,15 +423,12 @@ Components:
   - Config: config.tar.gz
 EOF
 
-# 7. Create archive
-cd $BACKUP_ROOT
-tar -czf "full_backup_$TIMESTAMP.tar.gz" "full_$TIMESTAMP"
-rm -rf "full_$TIMESTAMP"
+# Keep Compose operations independent of the shell's current directory.
+tar -czf "$ARCHIVE_PATH" -C "$BACKUP_ROOT" "full_$TIMESTAMP"
+rm -rf "$BACKUP_DIR"
+compose start worker sandbox-worker beat
 
-echo "Full backup completed: full_backup_$TIMESTAMP.tar.gz"
-
-# 8. Upload to remote storage (optional)
-# aws s3 cp "full_backup_$TIMESTAMP.tar.gz" s3://your-bucket/backups/
+echo "Full backup completed: $ARCHIVE_PATH"
 ```
 
 ## Remote Backup
@@ -393,21 +439,25 @@ echo "Full backup completed: full_backup_$TIMESTAMP.tar.gz"
 #!/bin/bash
 # backup-to-s3.sh
 
-BACKUP_DIR="/backups"
 S3_BUCKET="s3://your-bucket/clouisle-backups"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE=$(mktemp)
+set -o pipefail
 
-# Perform local backup
-./full-backup.sh
 
-# Upload to S3
-aws s3 cp "$BACKUP_DIR/full_backup_$TIMESTAMP.tar.gz" \
-  "$S3_BUCKET/full_backup_$TIMESTAMP.tar.gz" \
+# Upload the exact archive path emitted by full-backup.sh; do not derive a
+# second timestamp.
+if ! ./full-backup.sh | tee "$LOG_FILE"; then
+  rm -f "$LOG_FILE"
+  exit 1
+fi
+ARCHIVE_PATH=$(sed -n 's/^Full backup completed: //p' "$LOG_FILE" | tail -n 1)
+rm -f "$LOG_FILE"
+test -n "$ARCHIVE_PATH"
+ARCHIVE_NAME=$(basename "$ARCHIVE_PATH")
+
+aws s3 cp "$ARCHIVE_PATH" "$S3_BUCKET/$ARCHIVE_NAME" \
   --storage-class STANDARD_IA
-
-# Remove local backup after upload
-rm "$BACKUP_DIR/full_backup_$TIMESTAMP.tar.gz"
-
+rm "$ARCHIVE_PATH"
 echo "Backup uploaded to S3"
 ```
 
@@ -417,22 +467,28 @@ echo "Backup uploaded to S3"
 #!/bin/bash
 # backup-to-azure.sh
 
-BACKUP_DIR="/backups"
 CONTAINER="clouisle-backups"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE=$(mktemp)
+set -o pipefail
 
-# Perform local backup
-./full-backup.sh
+if ! ./full-backup.sh | tee "$LOG_FILE"; then
+  rm -f "$LOG_FILE"
+  exit 1
+fi
+ARCHIVE_PATH=$(sed -n 's/^Full backup completed: //p' "$LOG_FILE" | tail -n 1)
+rm -f "$LOG_FILE"
+test -n "$ARCHIVE_PATH"
+ARCHIVE_NAME=$(basename "$ARCHIVE_PATH")
 
-# Upload to Azure
 az storage blob upload \
   --account-name your-account \
-  --container-name $CONTAINER \
-  --name "full_backup_$TIMESTAMP.tar.gz" \
-  --file "$BACKUP_DIR/full_backup_$TIMESTAMP.tar.gz"
-
+  --container-name "$CONTAINER" \
+  --name "$ARCHIVE_NAME" \
+  --file "$ARCHIVE_PATH"
 echo "Backup uploaded to Azure"
 ```
+
+
 
 ## Disaster Recovery
 
@@ -440,74 +496,70 @@ echo "Backup uploaded to Azure"
 
 **Complete System Recovery:**
 
-1. **Prepare Environment:**
+1. **Prepare the environment and unpack the full archive:**
    ```bash
-   # Install Docker and Docker Compose
-   # Clone repository
-   git clone https://github.com/your-org/clouisle.git
-   cd clouisle
+   # Install Docker and Docker Compose, then clone the repository.
+   git clone https://github.com/clouisle/Clouisle.git /opt/clouisle
+   RESTORE_ROOT=/tmp/clouisle-restore
+   mkdir -p "$RESTORE_ROOT"
+   tar -xzf /backups/full_backup_TIMESTAMP.tar.gz -C "$RESTORE_ROOT"
+   BACKUP_DIR="$RESTORE_ROOT/full_TIMESTAMP"
+
+   # The full-backup script stores .env and docker-compose.yml in config.tar.gz.
+   mkdir -p /opt/clouisle/deploy
+   tar -xzf "$BACKUP_DIR/config.tar.gz" -C /opt/clouisle/deploy
+   cd /opt/clouisle/deploy
    ```
 
-2. **Restore Configuration:**
+2. **Start infrastructure only:**
    ```bash
-   # Extract configuration backup
-   tar -xzf config_backup.tar.gz
-   ```
-
-3. **Start Infrastructure:**
-   ```bash
-   # Start databases only
    docker compose up -d db redis qdrant
-
-   # Wait for databases to be ready
-   sleep 30
-   ```
-
-4. **Restore PostgreSQL:**
-   ```bash
-   # Restore database
-   gunzip -c postgres.dump.gz | docker compose exec -T db pg_restore -U postgres -d clouisle -c
-   ```
-
-5. **Restore Qdrant:**
-   ```bash
-   # Stop Qdrant
-   docker compose stop qdrant
-
-   # Restore Qdrant data
-   tar -xzf qdrant_storage.tar.gz -C /var/lib/docker/volumes/clouisle_qdrant_data/_data/
-
-   # Start Qdrant
-   docker compose start qdrant
-   ```
-
-6. **Restore Files:**
-   ```bash
-   # Restore uploaded files
-   tar -xzf uploads.tar.gz -C /
-   ```
-
-7. **Start Application:**
-   ```bash
-   # Start all services
-   docker compose up -d
-
-   # Verify services
    docker compose ps
    ```
 
-8. **Verify Recovery:**
+3. **Restore PostgreSQL:**
    ```bash
-   # Check health
-   curl http://localhost:8000/api/v1/health
+   gunzip -c "$BACKUP_DIR/postgres.dump.gz" \
+     | docker compose exec -T db pg_restore -U "${POSTGRES_USER:-postgres}" \
+         -d "${POSTGRES_DB:-clouisle}" --clean --if-exists
+   ```
 
-   # Test login
-   # Verify data integrity
+4. **Restore Qdrant storage:**
+   ```bash
+   # Discover the volume while qdrant is running; compose ps -q may be empty
+   # after the service is stopped.
+   QDRANT_CONTAINER="$(docker compose ps -q qdrant)"
+   QDRANT_VOLUME="$(docker inspect "$QDRANT_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Name}}{{end}}{{end}}')"
+   test -n "$QDRANT_VOLUME"
+   docker compose stop qdrant
+   docker run --rm -v "$QDRANT_VOLUME:/data" -v "$BACKUP_DIR/qdrant:/backup" \
+     alpine tar xzf /backup/storage.tar.gz -C /data
+   docker compose start qdrant
+   ```
+
+
+5. **Restore uploads:**
+   ```bash
+   # The API must be running because it owns the uploads volume.
+   docker compose up -d api
+   docker compose exec -T api tar -xzf - -C /app/uploads < "$BACKUP_DIR/uploads.tar.gz"
+   ```
+
+6. **Start the remaining application services:**
+   ```bash
+   docker compose up -d worker sandbox-worker beat frontend
+   docker compose ps
+   ```
+
+7. **Verify recovery:**
+   ```bash
+   curl --fail http://localhost:8000/api/v1/health
+   # Test login, a knowledge-base search, an upload, and a representative workflow.
    ```
 
 ### Recovery Time Objective (RTO)
 
-**Target RTO by Component:**
+The following figures are **external operator targets**, not shipped service guarantees. Set them against your infrastructure, backup destination, and restore test results.
 
 | Component | RTO | Notes |
 |-----------|-----|-------|
@@ -519,14 +571,14 @@ echo "Backup uploaded to Azure"
 
 ### Recovery Point Objective (RPO)
 
-**Target RPO:**
+The following figures are **external operator targets**, not shipped backup or WAL/PITR capabilities:
 
 | Data Type | RPO | Backup Frequency |
 |-----------|-----|------------------|
 | Database | 24 hours | Daily |
 | Files | 24 hours | Daily |
 | Vectors | 24 hours | Daily |
-| Logs | 1 hour | Continuous |
+| Logs | 1 hour | Continuous only if separately implemented |
 
 ## Backup Verification
 
@@ -546,8 +598,8 @@ if [ ! -f "$BACKUP_FILE" ]; then
     exit 1
 fi
 
-# 2. Check file size
-SIZE=$(stat -f%z "$BACKUP_FILE")
+# BSD/macOS stat uses -f%z; GNU/Linux stat uses -c%s.
+SIZE=$(stat -f%z "$BACKUP_FILE" 2>/dev/null || stat -c%s "$BACKUP_FILE")
 if [ $SIZE -lt 1000000 ]; then
     echo "WARNING: Backup file seems too small"
 fi
@@ -616,7 +668,10 @@ BACKUP_DIR="/backups"
 MAX_AGE_HOURS=26  # Alert if no backup in 26 hours
 
 # Check last backup time
-LAST_BACKUP=$(find $BACKUP_DIR -name "*.dump.gz" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2)
+# GNU find -printf and GNU stat -c are used below. On BSD/macOS, replace
+# -printf '%T@ %p\\n' with find -print plus stat -f %m, or use a platform-
+# appropriate backup-monitoring implementation.
+LAST_BACKUP=$(find "$BACKUP_DIR" -name '*.dump.gz' -type f -printf '%T@ %p\\n' | sort -n | tail -1 | cut -d' ' -f2)
 LAST_BACKUP_TIME=$(stat -c %Y "$LAST_BACKUP")
 CURRENT_TIME=$(date +%s)
 AGE_HOURS=$(( ($CURRENT_TIME - $LAST_BACKUP_TIME) / 3600 ))

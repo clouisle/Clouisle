@@ -34,7 +34,7 @@ The agent list shows:
 
 **Filters:**
 - Status (Draft, Published)
-- Visibility (Team, Public)
+- Visibility (`private` or `team`; `public` is retained only for legacy records)
 - Team
 - Creator
 
@@ -60,8 +60,8 @@ The agent list shows:
    - **RAG Mode**: Off, Auto, or Agentic
    - **Variables**: Define user-facing input variables
 
-4. Set permissions:
-   - **Visibility**: Team (team only) or Public
+4. Set visibility:
+   - **Visibility**: Private or Team
 
 5. Click **Create Agent**
 
@@ -179,21 +179,17 @@ Tool Settings:
 
 ### Usage Statistics
 
-The agent statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agent metrics for a time period (`period`: `24h`, `7d`, `30d`, `all`):
+The statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agent metrics for a time period (`period`: `24h`, `7d`, `30d`, `all`):
 
-- Total conversations
-- Total messages
-- Token usage
+- Total conversations and messages
+- Active users
+- Token usage (prompt, completion, and total tokens)
 - Average response time
-- Tool usage (via `GET /api/v1/agents/{agent_id}/stats/tool-usage`)
-- Usage trends (via `GET /api/v1/agents/{agent_id}/stats/trends`)
-- Recent conversations (via `GET /api/v1/agents/{agent_id}/stats/recent-conversations`)
+- Tool call count and tool usage (`GET /api/v1/agents/{agent_id}/stats/tool-usage`)
+- Usage trends (`GET /api/v1/agents/{agent_id}/stats/trends`)
+- Recent conversations (`GET /api/v1/agents/{agent_id}/stats/recent-conversations`)
 
-### View Agent Statistics
-
-1. Select agent
-2. Click **Statistics** tab
-3. View metrics for the selected period
+The admin list/detail actions expose these metrics; there is no separate **Statistics** tab.
 
 > **Note:** Not implemented / Roadmap: per-agent cost breakdowns, response-time percentiles (p50/p95/p99), export of statistics (CSV/PDF), and scheduled usage reports are not available. The statistics API returns the metrics listed above only.
 

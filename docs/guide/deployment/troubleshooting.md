@@ -180,28 +180,28 @@ bun run build
 
 **Solutions**:
 
-1. **Check backend is running:**
+1. **Check the backend from the appropriate network:**
 ```bash
+# Development only, when the Compose API port is intentionally published
 curl http://localhost:8000/api/v1/health
+
+# Preferred container-network check (does not require a host API port)
+docker compose exec frontend wget -qO- http://api:8000/api/v1/health
 ```
 
 2. **Check CORS configuration:**
 ```bash
-# In .env
+# In .env; use the actual browser-facing origins
 BACKEND_CORS_ORIGINS=["http://localhost:3000","https://your-domain.com"]
 ```
 
-3. **Check network:**
+3. **Check the frontend reverse-proxy path:**
 ```bash
-# From frontend container
-docker compose exec frontend wget -qO- http://api:8000/api/v1/health
+# The frontend container reaches the backend through BACKEND_INTERNAL_URL
+docker compose logs frontend
+docker compose logs api
 ```
-
-4. **Check firewall:**
-```bash
-sudo ufw status
-sudo ufw allow 8000
-```
+If a reverse proxy or ingress is in front of the frontend, inspect its upstream target and logs, then test the public frontend URL. Do not solve an internal-network failure by globally opening host port `8000`; keep the API on the private Compose network unless that port is intentionally published for development.
 
 ### Database Connection Failed
 
@@ -718,10 +718,8 @@ docker compose config > config.yml
 ### Support Channels
 
 1. **Documentation**: Review relevant guides
-2. **GitHub Issues**: https://github.com/your-org/clouisle/issues
-3. **Community Forum**: https://community.clouisle.com
-4. **Email Support**: support@clouisle.com
-5. **Enterprise Support**: For enterprise customers
+2. **GitHub Issues**: https://github.com/clouisle/Clouisle/issues
+3. **Enterprise Support**: For enterprise customers with an applicable support agreement
 
 ### Reporting Bugs
 
@@ -771,7 +769,7 @@ If applicable
 - [Docker Deployment](./docker-compose.md) - Docker setup
 - [Environment Variables](./environment-variables.md) - Configuration
 - [User Management](../admin-guide/users/user-management.md) - User admin
-- [Security Best Practices](../best-practices/security.md) - Security guide
+- [Security Checklist](../operations/security-checklist.md) - Security guidance
 
 ---
 

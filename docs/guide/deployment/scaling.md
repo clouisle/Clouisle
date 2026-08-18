@@ -40,6 +40,7 @@ Scaling strategies include:
 - API calls
 
 ### Performance Targets
+These are operator-defined baseline targets, not guarantees provided by the shipped configuration. Validate them with representative workload tests.
 
 **Response Time Targets:**
 ```yaml
@@ -135,30 +136,21 @@ command: python main.py worker -c 8 -Q default,knowledge,workflow
 
 **Docker Compose:**
 
-```yaml
-# docker-compose.yml
-services:
-  api:
-    deploy:
-      replicas: 3
-      update_config:
-        parallelism: 1
-        delay: 10s
-      restart_policy:
-        condition: on-failure
+The supplied Compose file publishes the API on host port `8000`. Before adding replicas, remove that `ports` mapping from the `api` service and keep the service reachable through an internal `expose` entry and a reverse proxy. Then scale with Compose:
+
+```bash
+docker compose up -d --scale api=3
 ```
+
+Compose does not provide rolling-update or zero-downtime guarantees. For Docker Swarm, use a separate stack file and deploy it with `docker stack deploy`; the `deploy:` keys below are not applied by ordinary `docker compose up`.
 
 **Kubernetes:**
 
-```yaml
-# api-deployment.yaml
-spec:
-  replicas: 5
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+The supplied manifest already uses a `RollingUpdate` strategy. Change the replica count declaratively in `deploy/k8s/clouisle.yaml`, or apply a temporary scale and watch the rollout:
+
+```bash
+kubectl -n clouisle scale deployment/api --replicas=5
+kubectl -n clouisle rollout status deployment/api
 ```
 
 ### Auto-Scaling
@@ -227,29 +219,26 @@ services:
 
 ## Load Balancing
 
-### Nginx Load Balancer
+### Nginx Load Balancer (generic example)
+
+The supplied Compose deployment has no Nginx service; place an external proxy in front of the frontend when needed. For API/SSE traffic, disable buffering and use long read/send timeouts:
 
 ```nginx
-# nginx.conf
+# Generic example; replace upstream names and public server_name.
 upstream api {
     least_conn;
     server api-1:8000 weight=1 max_fails=3 fail_timeout=30s;
     server api-2:8000 weight=1 max_fails=3 fail_timeout=30s;
-    server api-3:8000 weight=1 max_fails=3 fail_timeout=30s;
-    keepalive 32;
 }
-
 upstream frontend {
     least_conn;
-    server frontend-1:3000 weight=1;
-    server frontend-2:3000 weight=1;
-    server frontend-3:3000 weight=1;
-    keepalive 32;
+    server frontend-1:3000;
+    server frontend-2:3000;
 }
 
 server {
     listen 80;
-    server_name your-domain.com;
+    server_name example.com;
 
     location /api {
         proxy_pass http://api;
@@ -260,15 +249,12 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-
-        # Buffering
-        proxy_buffering on;
-        proxy_buffer_size 4k;
-        proxy_buffers 8 4k;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 1800s;
+        proxy_read_timeout 1800s;
+        proxy_buffering off;
+        proxy_cache off;
+        add_header X-Accel-Buffering no;
     }
 
     location / {
@@ -298,6 +284,7 @@ upstream backend {
 ## Database Scaling
 
 ### PostgreSQL Optimization
+> **Scope:** The following pooling example is generic architecture guidance. The shipped Clouisle backend does not expose `app/core/database.py` or configure application pool knobs in this guide; validate any external PgBouncer deployment against your database and connection limits.
 
 **Connection Pooling:**
 
@@ -322,7 +309,7 @@ async def init_db():
 ```ini
 # pgbouncer.ini
 [databases]
-clouisle = host=postgres port=5432 dbname=clouisle
+clouisle = host=db port=5432 dbname=clouisle
 
 [pgbouncer]
 listen_addr = 0.0.0.0
@@ -351,7 +338,7 @@ services:
   pgbouncer:
     image: pgbouncer/pgbouncer:latest
     environment:
-      DATABASES_HOST: postgres
+      DATABASES_HOST: db
       DATABASES_PORT: 5432
       DATABASES_DBNAME: clouisle
       DATABASES_USER: clouisle
@@ -406,51 +393,13 @@ CREATE INDEX idx_messages_conv_created ON messages(conversation_id, created_at D
 
 ### Read Replicas
 
-**PostgreSQL Replication:**
-
-```yaml
-# docker-compose.yml
-services:
-  postgres-primary:
-    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: clouisle
-    volumes:
-      - postgres-primary-data:/var/lib/postgresql/data
-    command: >
-      postgres
-      -c shared_preload_libraries=pg_search,pg_stat_statements
-      -c wal_level=replica
-      -c max_wal_senders=3
-      -c max_replication_slots=3
-
-  postgres-replica:
-    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      PGUSER: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres-replica-data:/var/lib/postgresql/data
-    command: >
-      bash -c "
-      until pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U postgres -v -P -W; do
-        echo 'Waiting for primary to be ready...'
-        sleep 1
-      done
-      echo 'standby_mode = on' > /var/lib/postgresql/data/recovery.conf
-      echo 'primary_conninfo = \"host=postgres-primary port=5432 user=postgres password=${POSTGRES_PASSWORD}\"' >> /var/lib/postgresql/data/recovery.conf
-      postgres
-      "
-```
+The supplied Compose and Kubernetes manifests run a single PostgreSQL primary; read replicas are an external scaling design, not a shipped workload. If you add replicas for PostgreSQL 17, use the upstream physical-replication procedure with `standby.signal` and `primary_conninfo` in `postgresql.auto.conf`. Do not use the removed PostgreSQL 12-era `recovery.conf` file or copy this guide as a complete production replication configuration.
 
 ## Caching Strategy
 
 ### Redis Caching
 
+> **Scope:** The shipped application does not provide a general `app/core/cache.py` LLM-response cache. Current caches are limited to workflow definitions and selected deterministic workflow nodes; add privacy, invalidation, and TTL controls before introducing another cache.
 **Cache Configuration:**
 
 ```python
@@ -683,25 +632,17 @@ celery_app.conf.task_routes = {
 
 ### Message Queue Scaling
 
-**Multiple Celery Workers:**
+**Multiple Compose workers:**
 
-```yaml
-# docker-compose.yml — scale the supplied worker service
-services:
-  worker:
-    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
-    command: python main.py worker -c 4 -Q default,knowledge,workflow
-    deploy:
-      replicas: 3
+The supplied Compose services can be scaled directly; worker and sandbox-worker have no published host ports:
 
-  sandbox-worker:
-    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
-    command: python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}
-    deploy:
-      replicas: 2
+```bash
+docker compose up -d --scale worker=3 --scale sandbox-worker=2
 ```
 
-Note that knowledge-base document processing, workflow execution, and sandbox jobs are already split into separate queues (`knowledge`, `workflow`, `sandbox`) by the real route table, so a single `worker` service with `-Q default,knowledge,workflow` handles them together; scale it when queue lag appears.
+For Docker Swarm, use a separate stack file with `deploy.replicas` and deploy it with `docker stack deploy`; ordinary `docker compose up` ignores those Swarm keys.
+
+Knowledge-base and workflow tasks use the `knowledge` and `workflow` queues on the worker service; sandbox jobs use the separate `sandbox-worker` queue. Scale the corresponding service when queue lag appears.
 
 ## Vector Database Scaling
 
@@ -734,6 +675,7 @@ client.create_collection(
 ```
 
 **Qdrant Cluster:**
+The following is an external Qdrant cluster design, not part of the supplied Compose or Kubernetes manifests (both deploy one Qdrant instance with one data volume). Treat it as a migration design: configure replication, peer discovery, storage, authentication, and client failover before using it in production.
 
 ```yaml
 # docker-compose.yml
@@ -802,6 +744,7 @@ db_connections = Gauge(
 
 ### Query Optimization
 
+> **Scope:** The shipped deployment has no `app/core/metrics.py`, Prometheus middleware, `/metrics` route, or ServiceMonitor. Use the authenticated admin observability endpoints for current metrics; the snippet below is a generic integration example only.
 **Slow Query Logging:**
 
 ```sql
@@ -932,7 +875,7 @@ total_cost = sum(sum(v.values()) if isinstance(v, dict) else v for v in costs.va
 
 - [Kubernetes Deployment](./kubernetes.md) - K8s deployment
 - [Monitoring](../operations/monitoring.md) - Monitoring guide
-- [Performance Tuning](../best-practices/performance.md) - Performance tips
+- [Performance Tuning](../best-practices/performance-tuning.md) - Performance guidance
 - [High Availability](./high-availability.md) - HA setup
 
 ---

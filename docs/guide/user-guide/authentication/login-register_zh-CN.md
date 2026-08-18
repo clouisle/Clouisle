@@ -65,7 +65,7 @@ Clouisle 支持自助注册（由管理员启用）。
 - SAML 2.0（Azure AD、Okta、OneLogin）
 - CAS（大学系统）
 
-有关 SSO 配置，请参阅 [SSO 用户指南](./sso-user-guide_zh-CN.md)。
+有关 SSO 配置，请参阅 [SSO 用户指南](./sso-user-guide.md)。
 
 ## 首次登录
 
@@ -161,7 +161,7 @@ Clouisle 强制执行密码策略（管理员可配置）：
 4. 点击链接并输入新密码
 5. 使用新密码登录
 
-详见[密码管理](./password-management_zh-CN.md)。
+详见[密码管理](./password-management.md)。
 
 ### 账号被锁定
 
@@ -194,7 +194,7 @@ Clouisle 强制执行密码策略（管理员可配置）：
 4. 联系您的 SSO 管理员
 5. 如果可用，尝试密码登录
 
-详见 [SSO 用户指南](./sso-user-guide_zh-CN.md) 了解 SSO 特定的故障排查。
+详见 [SSO 用户指南](./sso-user-guide.md) 了解 SSO 特定的故障排查。
 
 ### "账号待审批"消息
 
@@ -242,9 +242,9 @@ Clouisle 强制执行密码策略（管理员可配置）：
 
 ## 相关文档
 
-- [密码管理](./password-management_zh-CN.md) - 更改和重置密码
-- [SSO 用户指南](./sso-user-guide_zh-CN.md) - 单点登录详情
-- [个人资料设置](../profile/profile-settings_zh-CN.md) - 管理您的个人资料
+- [密码管理](./password-management.md) - 更改和重置密码
+- [SSO 用户指南](./sso-user-guide.md) - 单点登录详情
+- [个人资料设置](../profile/profile-settings.md) - 管理您的个人资料
 
 ## 获取帮助
 

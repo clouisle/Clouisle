@@ -19,19 +19,25 @@ Kubernetes deployment provides:
 Helm is the recommended Kubernetes deployment method for Clouisle. It keeps the large manifest behind templates and lets each environment maintain a small values file.
 
 ```bash
+# Lint only: this token is a non-production placeholder used to satisfy the chart's required key.
 helm lint deploy/helm/clouisle \
   --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
+
+# Demo only. Do not expose this install; set every production secret or use an existing Secret.
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
   --create-namespace \
+  --set-string secrets.values.SECRET_KEY="$(openssl rand -hex 32)" \
+  --set-string secrets.values.POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
+  --set-string secrets.values.REDIS_PASSWORD="$(openssl rand -hex 16)" \
+  --set-string secrets.values.QDRANT_API_KEY="$(openssl rand -hex 16)" \
   --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
-The existing Secret must include a unique non-empty `INTERNAL_API_TOKEN` shared by the API, worker, and sandbox-worker.
-For production, create `clouisle-secret` and use `deploy/helm/clouisle/values-production.yaml`:
+The chart requires a non-empty `INTERNAL_API_TOKEN` when it creates a Secret; the same token is shared by API, worker, and sandbox-worker. For production, create `clouisle-secret` with all required values (including `INTERNAL_API_TOKEN`) and use `values-production.yaml`, which references that existing Secret:
 
 ```bash
-kubectl create namespace clouisle
+kubectl create namespace clouisle --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n clouisle create secret generic clouisle-secret \
   --from-literal=SECRET_KEY='replace-with-strong-random-key' \
   --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
@@ -46,7 +52,8 @@ helm upgrade --install clouisle deploy/helm/clouisle \
   -f deploy/helm/clouisle/values-production.yaml
 ```
 
-The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fallback for debugging or non-Helm environments. `deploy/install.sh` (`CLOUISLE_DEPLOYMENT=k8s`) generates a separate, secret-filled copy (mode `0600`) that you review and apply manually.
+The single-file manifest `deploy/k8s/clouisle.yaml` is available as a fallback for non-Helm environments. `deploy/install.sh` (`CLOUISLE_DEPLOYMENT=k8s`) generates a separate, secret-filled copy (mode `0600`) for review and manual application.
+
 
 ## Prerequisites
 
@@ -75,7 +82,10 @@ The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fall
 brew install kubectl
 
 # Linux
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+# Select the release architecture: amd64 for x86_64, arm64 for aarch64/arm64.
+ARCH="$(uname -m)"
+case "$ARCH" in x86_64) ARCH=amd64 ;; aarch64|arm64) ARCH=arm64 ;; *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; esac
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 
 # Verify installation
@@ -138,8 +148,9 @@ All resources are defined in a single file: `deploy/k8s/clouisle.yaml`.
 # 1. Edit the manifest — replace secret placeholders and set your domain
 vi deploy/k8s/clouisle.yaml
 
-# 2. Apply everything. Backend workloads wait for PostgreSQL via
-#    wait-for-postgres init containers, so there is no startup race.
+# 2. Apply everything. Backend workloads use wait-for-postgres init
+#    containers to handle PostgreSQL startup; Redis and Qdrant readiness
+#    still must be checked before application use.
 kubectl apply -f deploy/k8s/clouisle.yaml
 
 # 3. Wait for infrastructure
@@ -937,10 +948,10 @@ kubectl rollout history deployment/api -n clouisle
 
 ```bash
 # Backup PostgreSQL
-kubectl exec -n clouisle statefulset/postgres -- pg_dump -U postgres clouisle > backup.sql
+kubectl exec -i -n clouisle statefulset/postgres -- pg_dump -U postgres -Fc clouisle > backup.dump
 
 # Restore PostgreSQL
-kubectl exec -i -n clouisle statefulset/postgres -- psql -U postgres clouisle < backup.sql
+kubectl exec -i -n clouisle statefulset/postgres -- pg_restore -U postgres -d clouisle --clean --if-exists < backup.dump
 ```
 
 See [Backup & Recovery](./backup-recovery.md) for the full procedures (Qdrant snapshot API, `uploads-data` PVC, Redis persistence).

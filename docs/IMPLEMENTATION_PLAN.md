@@ -1,6 +1,13 @@
 # Implementation Plan
 
 ## Active
+- **context-compression-three-level-redesign** — Planned. Replace the current overlapping compaction paths with bounded content normalization, active tool-loop rolling compaction, and Pi-style between-turn historical checkpoints while preserving branch-aware context assembly. See `docs/plan/context-compression-three-level-redesign.md`
+  - [ ] 1. Establish the budget contract and compression observability
+  - [ ] 2. Implement always-on bounded content normalization
+  - [ ] 3. Implement active tool-loop rolling compaction
+  - [ ] 4. Implement valid-cutpoint historical checkpoint compaction
+  - [ ] 5. Rebuild context assembly and retire overlapping fallback paths
+  - [ ] 6. Validate rollout across all Chat execution paths
 - **yun-135-extend-knowledge-base-tour-to-document-ingestion-flow** — Complete. Extend the platform knowledge-base onboarding tour through detail-page ingestion, document processing states, and Retrieval Lab validation while preserving the existing tour state and route semantics. See `docs/plan/yun-135-extend-knowledge-base-tour-to-document-ingestion-flow.md`
   - [x] 1. Preserve create navigation and nested-tour continuity
   - [x] 2. Add ingestion and Retrieval Lab anchors

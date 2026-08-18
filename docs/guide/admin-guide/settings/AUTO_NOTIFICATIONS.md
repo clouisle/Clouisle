@@ -43,6 +43,7 @@ The auto notification feature allows administrators to configure automatic notif
 |------|-------------|------------|
 | `workflow.run_success` | Workflow run succeeded | Trigger user |
 | `workflow.run_failed` | Workflow run failed | Trigger user |
+| `workflow.pause_pending` | Workflow is waiting for approval or input | Approvers or users assigned to the pause request |
 
 ### Agent Related
 
@@ -75,6 +76,16 @@ The auto notification feature allows administrators to configure automatic notif
 - When user logs in from new IP or device, anomaly notification is triggered
 - Login history retained for 30 days, max 10 IPs and 10 devices per user
 
+### Password Expiration Related
+
+| Type | Description | Recipients |
+|------|-------------|------------|
+| `password.expiring` | Password is approaching expiration | Affected user |
+| `password.expired` | Password has expired | Affected user |
+| `password.force_change` | Administrator requires a password change | Affected user |
+
+These are valid notification types, but the default seeded `enabled_types` list does not enable the password-expiration types. Enable them explicitly when the corresponding password policy notifications are required.
+
 ## Configuration
 
 ### Admin Dashboard Configuration
@@ -84,12 +95,14 @@ The auto notification feature allows administrators to configure automatic notif
 3. Select external notification channels (must be enabled in respective channel settings first)
 4. Save configuration
 
+The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email`, `dingtalk`, `wechat`, `feishu`, `webhook`, and `slack`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
+
 ### API Configuration
 
 **Get Configuration**
 
 ```http
-GET /api/v1/site-settings/auto-notifications
+GET /api/v1/admin/site-settings/auto-notifications
 ```
 
 Response example:
@@ -112,7 +125,7 @@ Response example:
 **Update Configuration**
 
 ```http
-PUT /api/v1/site-settings/auto-notifications
+PUT /api/v1/admin/site-settings/auto-notifications
 Content-Type: application/json
 
 {
@@ -294,6 +307,7 @@ The following notification types are enabled by default:
 - `kb.doc_indexed`
 - `kb.doc_failed`
 - `workflow.run_failed`
+- `workflow.pause_pending`
 - `apikey.expiring`
 - `apikey.expired`
 - `security.login_anomaly`

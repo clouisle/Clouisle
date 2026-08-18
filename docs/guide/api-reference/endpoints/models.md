@@ -14,14 +14,14 @@ The Models API allows you to:
 - **Test models**: Test model connectivity (admin only)
 
 **Base URLs**:
-- Public catalog: `/api/v1/models`
-- Admin management: `/api/v1/admin/models`
+- Public catalog metadata: `/api/v1/models/providers`, `/api/v1/models/types`, `/api/v1/models/available`, and `/api/v1/models/default/{model_type}`
+- Admin management and listing: `/api/v1/admin/models`
 
 ## Authentication
 
 - `GET /api/v1/models/providers` and `GET /api/v1/models/types` require no authentication.
-- `GET /api/v1/models/available` and `GET /api/v1/models/default/{model_type}` require an authenticated JWT token or API key.
-- Admin endpoints require authentication with the appropriate scope.
+- `GET /api/v1/models/available` and `GET /api/v1/models/default/{model_type}` require an authenticated JWT user session.
+- Admin endpoints require an authenticated JWT user with the appropriate scope.
 
 **Required scopes (admin):**
 - `admin:model:read` - List and view models
@@ -64,13 +64,13 @@ curl -X GET "https://your-domain.com/api/v1/models/providers"
     {
       "code": "anthropic",
       "name": "Anthropic",
-      "base_url": "https://api.anthropic.com/v1",
+      "base_url": "https://api.anthropic.com",
       "icon": "anthropic"
     },
     {
       "code": "azure",
       "name": "Azure OpenAI",
-      "base_url": "https://{resource}.openai.azure.com",
+      "base_url": null,
       "icon": "azure"
     }
   ],
@@ -473,7 +473,7 @@ curl -X POST "https://your-domain.com/api/v1/admin/models" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {

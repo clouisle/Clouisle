@@ -33,7 +33,7 @@ curl -X POST "https://your-domain.com/api/v1/login/access-token" \
 }
 ```
 
-The token is valid for the `session_timeout_days` site setting (default **30 days**, configurable by administrators). There is no refresh endpoint — login again when it expires. Logout is `POST /api/v1/login/logout`.
+The token is valid for the `session_timeout_days` site setting (default **30 days**, configurable by administrators). There is no refresh endpoint — login again when it expires. Logout is `POST /api/v1/logout`.
 
 ### Option 2: API Key (Long-lived)
 

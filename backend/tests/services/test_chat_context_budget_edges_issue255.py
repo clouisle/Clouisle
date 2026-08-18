@@ -243,7 +243,7 @@ async def test_disabled_preflight_reports_over_budget_without_compacting(monkeyp
 
 
 @pytest.mark.anyio
-async def test_emergency_fallback_keeps_system_and_protected_round(monkeypatch):
+async def test_emergency_fallback_keeps_system_and_current_user(monkeypatch):
     built = [
         Message(role=MessageRole.SYSTEM, content="system"),
         Message(role=MessageRole.USER, content="old"),
@@ -294,9 +294,8 @@ async def test_emergency_fallback_keeps_system_and_protected_round(monkeypatch):
     assert [message.content for message in prepared.messages] == [
         "system",
         "current",
-        "current partial",
     ]
-    assert prepared.protected_indexes == {1, 2}
+    assert prepared.protected_indexes == {1}
     assert prepared.compression.actions == ["emergency_fallback"]
     assert prepared.compression.pressure_level == "over_budget"
 
@@ -349,6 +348,8 @@ async def test_emergency_fallback_raises_when_current_round_cannot_fit(monkeypat
 
     assert exc_info.value.max_tokens == 100
     assert exc_info.value.actual_tokens == 150
+    assert exc_info.value.details["retryable"] is False
+    assert exc_info.value.details["reason"] == "system_and_user_exceed_input_budget"
 
 
 @pytest.mark.anyio

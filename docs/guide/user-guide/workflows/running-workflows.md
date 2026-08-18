@@ -9,18 +9,18 @@ Workflows in Clouisle are automated processes that can:
 - Make decisions based on conditions
 - Call APIs and use tools
 - Process data and generate outputs
-- Run manually or via webhook triggers
+- Run manually, on a cron schedule, or via a webhook trigger
 
 ## Accessing Workflows
 
-### From Platform Interface
+### From the Apps page
 
-1. Navigate to **Apps** or **Workflows** section
-2. Browse available workflows
-3. Click on a workflow card to open it
-4. Click **"Run"** button
+1. Navigate to **Apps** (`/app/apps`).
+2. Open the **Workflow** tab.
+3. Select a workflow card to open `/app/apps/workflow/{id}`.
+4. Choose **Run** to start a manual execution.
 
-### Workflow List
+## Workflow List
 
 The list shows:
 
@@ -29,7 +29,7 @@ The list shows:
 | **Name** | Workflow name |
 | **Team** | Team that owns the workflow |
 | **Status** | Draft or Published |
-| **Last Run** | Last execution time |
+| **Last Run** | Last execution time; a run may be waiting at a pause node |
 | **Actions** | Run, View, Edit |
 
 ## Running a Workflow
@@ -99,6 +99,7 @@ Optional Inputs:
 **Node Status Icons:**
 - ⏸️ **Pending**: Not started yet
 - ⏳ **Running**: Currently executing
+- ⏳ **Waiting**: Paused for an external input or approval
 - ✅ **Success**: Completed successfully
 - ❌ **Failed**: Execution failed
 - ⏭️ **Skipped**: Skipped (conditional)
@@ -227,7 +228,7 @@ The webhook token is generated per workflow (regenerable via `POST /api/v1/workf
 
 ### Scheduled Trigger
 
-> **Note:** `trigger_type` supports a cron value, but **no scheduler is implemented** — scheduled executions are **not available** in the current version (Roadmap).
+Workflows support a **Cron** trigger. In workflow settings, select the cron trigger and configure a five-field cron expression (for example, `30 8 * * 2` for Tuesdays at 08:30), then save and publish the workflow. The deployed Celery periodic task `workflow.check_scheduled` evaluates published cron workflows; scheduled execution therefore requires the deployment's worker/periodic-task configuration to run that task.
 
 ## Workflow Variables
 

@@ -164,11 +164,11 @@ async def test_prepare_context_emergency_budget_edges(monkeypatch, emergency_tok
         "_apply_session_memory_compaction",
         AsyncMock(return_value=(messages, False, {2})),
     )
-    token_counts = iter([20, 20, 20, emergency_tokens, emergency_tokens])
+    token_counts = iter([20] * 5 + [emergency_tokens])
     monkeypatch.setattr(
         chat_context,
         "_estimate_message_tokens",
-        lambda *args, **kwargs: next(token_counts),
+        lambda *args, **kwargs: next(token_counts, emergency_tokens),
     )
 
     call = chat_context.prepare_model_context(

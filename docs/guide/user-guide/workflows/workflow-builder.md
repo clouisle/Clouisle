@@ -17,21 +17,17 @@ The workflow builder allows you to:
 
 ### Create New Workflow
 
-1. Navigate to **Workflows**
-2. Click **Create Workflow** button
-3. Enter workflow details:
-   - Name
-   - Description
-   - Team
-4. Click **Create**
-5. The workflow builder opens
+1. Navigate to **Apps** (`/app/apps`).
+2. Open the **Workflow** tab.
+3. Click **Create Workflow**.
+4. Enter the workflow name and optional description, then create it.
+5. The builder opens at `/app/apps/workflow/{id}`.
 
 ### Edit Existing Workflow
 
-1. Navigate to **Workflows**
-2. Click on the workflow to edit
-3. Click **Edit** button
-4. The workflow builder opens
+1. Open **Apps** → **Workflow**.
+2. Select a workflow card.
+3. The workflow builder opens at `/app/apps/workflow/{id}`.
 
 ## Workflow Builder Interface
 
@@ -63,7 +59,7 @@ The workflow builder allows you to:
 **Nodes Panel (Left):**
 - Available node types, organized by category:
   - **Model**: LLM, Media Generation
-  - **Logic**: Condition, Question Classifier, Iteration, Loop
+  - **Logic**: Condition, Question Classifier, Iteration, Loop, Pause
   - **Transform**: Code, Template, File to URL, Variable Aggregator, Variable Assignment, Parameter Extractor
   - **Extension**: Sub-workflow, Agent, Tool, Knowledge Retrieval, Answer
 

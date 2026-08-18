@@ -21,8 +21,9 @@ Clouisle enables organizations to build, deploy, and manage intelligent AI agent
 - **Secure**: Comprehensive security features and compliance
 - **Scalable**: Horizontal scaling for high availability
 
----
+## Where to go next
 
-**Note**: This is a placeholder document. Please update with detailed content.
-
-For more information, see the [main documentation](../README.md).
+- Start locally with the [Development Setup](./development.md) guide.
+- Learn the team authorization model in [Multi-Tenancy](../concepts/multi-tenancy.md).
+- Compare conversational agents and graph-based workflows in [Agent vs Workflow](../concepts/agent-vs-workflow.md).
+- See [RAG Explained](../concepts/rag-explained.md) for retrieval modes and [Vector Embeddings](../concepts/vector-embeddings.md) for embedding compatibility.

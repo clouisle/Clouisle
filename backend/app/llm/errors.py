@@ -84,16 +84,20 @@ class ContextLengthError(LLMError):
         actual_tokens: int | None = None,
         provider: str | None = None,
         model: str | None = None,
+        details: dict[str, Any] | None = None,
         **kwargs,
     ):
         self.max_tokens = max_tokens
         self.actual_tokens = actual_tokens
+        error_details = {"max_tokens": max_tokens, "actual_tokens": actual_tokens}
+        if details:
+            error_details.update(details)
         super().__init__(
             message=message,
             code="context_length_error",
             provider=provider,
             model=model,
-            details={"max_tokens": max_tokens, "actual_tokens": actual_tokens},
+            details=error_details,
             **kwargs,
         )
 

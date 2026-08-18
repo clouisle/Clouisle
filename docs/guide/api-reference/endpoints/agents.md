@@ -18,8 +18,7 @@ The Agents API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
-
+All endpoints require an authenticated JWT user session. The chat endpoints additionally accept an API key where noted.
 **Required scopes:**
 - `agent:read` - List and view agents
 - `agent:create` - Create agents
@@ -43,10 +42,10 @@ GET /api/v1/agents
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
+| `page_size` | integer | No | 20 | Items per page |
 | `team_id` | string | No | - | Filter by team ID |
 | `status` | string | No | - | Filter by status: `draft`, `published` |
-| `visibility` | string | No | - | Filter by visibility: `private`, `team` |
+| `visibility` | string | No | - | Filter by visibility: `private`, `team`, `public` (legacy compatibility value) |
 | `keyword` | string | No | - | Search by name or description |
 | `own_only` | boolean | No | false | Only show agents created by the current user |
 
@@ -335,7 +334,7 @@ curl -X POST "https://your-domain.com/api/v1/agents" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -526,6 +525,8 @@ curl -X POST "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-4466
 
 ### Response
 
+The publish endpoint returns the full `AgentOut` object (`200 OK`). The abbreviated example below shows the changed status field.
+
 **Success (200 OK):**
 
 ```json
@@ -533,24 +534,13 @@ curl -X POST "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-4466
   "code": 0,
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "published",
-    "published_at": "2026-02-11T16:00:00Z"
+    "status": "published"
   },
   "msg": "Agent published successfully"
 }
 ```
 
-**Error (6202 Agent Not Published):**
-
-Publishing fails with `6202` when the agent is in a state that cannot be published (e.g. it has no bound model).
-
-```json
-{
-  "code": 6202,
-  "data": null,
-  "msg": "Agent is not published"
-}
-```
+The publish route sets the agent status to `published` and does not perform a model-presence validation. Error `6202` is used when a later chat/access path requires a published agent but receives a draft agent; it is not a publish response.
 
 ## Unpublish Agent
 
@@ -577,6 +567,8 @@ curl -X POST "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-4466
 
 ### Response
 
+The unpublish endpoint returns the full `AgentOut` object (`200 OK`). The abbreviated example below shows the changed status field.
+
 **Success (200 OK):**
 
 ```json
@@ -584,8 +576,7 @@ curl -X POST "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-4466
   "code": 0,
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "draft",
-    "unpublished_at": "2026-02-11T16:00:00Z"
+    "status": "draft"
   },
   "msg": "Agent unpublished successfully"
 }
@@ -820,7 +811,7 @@ Additional stats endpoints exist at `GET /agents/{agent_id}/stats/trends` (perio
 - [Authentication](../authentication.md) - Authentication methods
 - [Rate Limiting](../rate-limiting.md) - Rate limit details
 - [SSE Streaming](../sse-streaming.md) - Streaming responses
-- [Agent Concepts](../../concepts/agents.md) - Understanding agents
+- [Agent Concepts](../../user-guide/agents/agent-configuration.md) - Agent configuration
 
 ---
 

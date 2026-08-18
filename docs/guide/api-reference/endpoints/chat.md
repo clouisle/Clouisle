@@ -19,7 +19,7 @@ Chat endpoints live under the agents router; conversation-management endpoints l
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
+`POST /api/v1/agents/{agent_id}/chat` and `/chat/stream` support either a JWT bearer token or an API key. Conversation management and message-version routes require the authenticated JWT user who owns the conversation.
 
 **Required scopes:**
 - `agent:read` - View agents
@@ -460,6 +460,48 @@ curl -X POST "https://your-domain.com/api/v1/agents/agent-123/messages/msg-002/r
   "msg": "success"
 }
 ```
+
+## List Message Versions
+
+List the versions in a message's version group. This route requires the authenticated owner of the conversation.
+
+```
+GET /api/v1/agents/{agent_id}/messages/{message_id}/versions
+```
+
+The `200 OK` response is an array of message-version objects containing `id`, `version_number`, `is_active`, `content`, and `created_at`.
+
+## Switch Message Version
+
+Activate a different version in the same message group. Versions after the selected message are deactivated because they were based on the previous branch.
+
+```
+POST /api/v1/agents/{agent_id}/messages/{message_id}/switch-version
+```
+
+Request body:
+
+```json
+{"version_id": "msg-version-003"}
+```
+
+The `200 OK` response returns the selected `MessageOut`, including version information. The authenticated user must own the conversation.
+
+## Edit User Message and Regenerate (SSE)
+
+Edit a user message, create a new version, and stream the regenerated reply:
+
+```
+POST /api/v1/agents/{agent_id}/messages/{message_id}/edit/stream
+```
+
+Request body:
+
+```json
+{"content": "What are your holiday hours?"}
+```
+
+Only user messages can be edited. The response is an authenticated SSE stream (`text/event-stream`) using the chat stream event format; the final `message_end` event includes `edited_version_number` and `edited_version_count`.
 
 ## Share Conversation
 

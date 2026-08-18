@@ -12,19 +12,19 @@ You can upload documents to knowledge bases to:
 
 ## Supported File Types
 
-### Documents
+The knowledge-base upload dialog accepts:
 
-| Format | Extension | Description |
-|--------|-----------|-------------|
-| **PDF** | `.pdf` | Portable Document Format |
-| **Word** | `.doc`, `.docx` | Microsoft Word documents |
-| **Excel** | `.xls`, `.xlsx` | Microsoft Excel spreadsheets |
-| **PowerPoint** | `.pptx` | Microsoft PowerPoint presentations |
-| **Text** | `.txt` | Plain text files |
-| **Markdown** | `.md` | Markdown documents |
-| **HTML** | `.html` | HTML documents |
-| **CSV** | `.csv` | Comma-separated values |
-| **JSON** | `.json` | JSON data files |
+| Format | Extensions |
+|--------|------------|
+| PDF | `.pdf` |
+| Word | `.doc`, `.docx` |
+| Excel | `.xls`, `.xlsx` |
+| PowerPoint | `.pptx` |
+| Text | `.txt` |
+| Markdown | `.md`, `.markdown` |
+| HTML | `.html`, `.htm` |
+| CSV | `.csv` |
+| JSON | `.json` |
 
 ### Web Pages
 
@@ -32,18 +32,13 @@ Documents can also be added from a **URL** (web page).
 
 **Max file size:** 50 MB per file by default, configurable by administrators between 1 MB and 1024 MB (`kb_document_max_upload_size_mb`).
 
-> **Note:** XML files, `.ppt` (legacy PowerPoint), and archive auto-extraction (ZIP/TAR/GZ) are **not supported**. OCR for scanned documents/images is **not implemented**.
+> **Note:** The KB upload UI and endpoint support `.pptx`, not legacy `.ppt`. XML files and archive auto-extraction (ZIP/TAR/GZ) are not supported. OCR for scanned documents/images is not implemented.
 
 ## Accessing Knowledge Bases
 
-### From Platform Interface
-
-**Steps:**
-
-1. Navigate to **Knowledge Bases** section
-2. Click on a knowledge base to open it
-3. Go to **Documents** tab
-4. Click **"Upload"** button
+1. In the platform header, select **Knowledge Base** (`/app/kb`).
+2. Select a knowledge base to open `/app/kb/{id}`.
+3. Open the **Documents** area, then choose **Upload**.
 
 ## Uploading Documents
 
@@ -51,31 +46,30 @@ Documents can also be added from a **URL** (web page).
 
 **Steps:**
 
-1. Open a knowledge base
-2. Click **"Upload"** button
-3. File picker dialog opens
-4. Select a file
-5. Click **"Open"**
-6. The file is uploaded (status: pending)
-7. Process the document to index it
+1. Open a knowledge base.
+2. Click **Upload**.
+3. Click the upload dialog's drop zone to open the file picker.
+4. Select one or more files, then click **Open**.
+5. Review the selection and click **Upload**.
+6. Each file is uploaded as a `pending` document; process it to index it.
 
 ### Method 2: Drag and Drop
 
 **Steps:**
 
-1. Open a knowledge base
-2. Open file explorer on your computer
-3. Drag a file into the documents area
-4. Drop the file when you see the drop zone
-5. The file is uploaded automatically
+1. Open a knowledge base and click **Upload**.
+2. Open file explorer on your computer.
+3. Drag one or more files into the upload dialog's drop zone.
+4. Review the selection and click **Upload**.
+5. Each file is uploaded as a `pending` document; process it to index it.
 
 ### Method 3: Add from URL
 
-1. Click the add/URL action
-2. Enter the web page URL
-3. Submit — the page is fetched and added as a document
+1. Click **Import URL**.
+2. Enter the web page URL and, optionally, a document name.
+3. Click **Import** — a `pending` URL document is created and its preview editor opens. Generate a preview to fetch the page, then process the reviewed chunks.
 
-> **Note:** Folder upload and batch upload are **not implemented** — files are uploaded one at a time.
+> **Note:** Folder upload is not implemented. The upload dialog accepts multiple files, but each file is created as a separate `pending` document; uploading does not process it. Use the document's **Process** action or preview editor for each file.
 
 ## Upload Process
 
@@ -86,7 +80,7 @@ Documents can also be added from a **URL** (web page).
 1. **Upload**: File is uploaded to the server
 2. **Validation**: File type and size are checked
 3. **Status**: Document is created in `pending` status
-4. **Process**: The document must be processed (automatically, or manually via the process action) to:
+4. **Process**: The document must be processed manually through the process action or preview editor to:
    - Extract text
    - Split into chunks (default: size 1000, overlap 100)
    - Generate embeddings
@@ -110,7 +104,7 @@ Documents can also be added from a **URL** (web page).
 
 ## Document Name
 
-The document **name** (defaults to the filename) can be edited after upload via the rename action — it is the only editable document field.
+For file uploads, the current UI uses the filename and does not provide a rename action. When importing a URL, you can provide an optional document name before creating it.
 
 ## Upload Errors
 

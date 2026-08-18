@@ -491,7 +491,7 @@ Database Connections:
 
 - [Docker Compose Deployment](./docker-compose.md) - Docker deployment
 - [Kubernetes Deployment](./kubernetes.md) - K8s deployment
-- [Security Best Practices](../best-practices/security.md) - Security guide
+- [Security Checklist](../operations/security-checklist.md) - Security guidance
 - [High Availability](./high-availability.md) - HA setup
 
 ---

@@ -500,7 +500,7 @@ curl -X POST "https://your-domain.com/api/v1/admin/site-settings/archive-audit-l
 ## Related Documentation
 
 - [System Settings](../../admin-guide/settings/system-settings.md) - System configuration
-- [Authentication](./authentication.md) - Authentication guide
+- [Authentication](../authentication.md) - Authentication guide
 
 ---
 

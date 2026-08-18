@@ -86,6 +86,11 @@ async def test_session_memory_from_inactive_branch_is_ignored(monkeypatch):
 async def test_history_override_inserts_and_protects_current_round(monkeypatch):
     protected_round_id = uuid4()
 
+    async def no_history(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(chat_context, "get_visible_conversation_messages", no_history)
+
     messages, protected = await chat_context._build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),

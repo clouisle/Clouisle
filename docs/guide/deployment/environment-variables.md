@@ -18,11 +18,11 @@ Environment variables configure:
 
 Clouisle's configuration is not env-only. Values are resolved from three layers:
 
-1. **Environment variables** — read by `backend/app/core/config.py` (Pydantic `Settings`, loaded from `.env` at the project root or the deployment directory). All variables below are defined there.
+1. **Backend environment variables** — the variables in the Backend Settings section are read by `backend/app/core/config.py` (Pydantic `Settings`, loaded from `.env` at the project root or the deployment directory). The frontend build/runtime variables documented later are handled by Next.js instead and are not backend `Settings` fields.
 2. **Database `SiteSetting` model** — runtime settings that admins manage through the admin UI and are stored in PostgreSQL (`backend/app/models/site_setting.py`). These include SMTP/email, registration, SSO, upload size limits, session timeout, default language, and more. They are **not** environment variables.
 3. **LLM provider models** — LLM API keys, base URLs, and model configurations are stored in database models (admin-managed per provider), **not** in environment variables.
 
-Deployment files (`deploy/docker-compose.yml`, Helm values, `deploy/k8s/clouisle.yaml`) set the container-relevant values explicitly (e.g. `POSTGRES_SERVER=db`, `API_BASE_URL=http://api:8000`), overriding `.env` defaults.
+Deployment files (`deploy/docker-compose.yml`, Helm values, `deploy/k8s/clouisle.yaml`) set the container-relevant backend values explicitly (e.g. `POSTGRES_SERVER=db`, `API_BASE_URL=http://api:8000`), overriding `.env` defaults. `API_BASE_URL` and `API_INTERNAL_BASE_URL` stay on the private container network; use `PUBLIC_API_URL`, `FRONTEND_URL`, and `BACKEND_CORS_ORIGINS` for browser-facing origins.
 
 ## Configuration File
 
@@ -43,7 +43,13 @@ ANOTHER_VARIABLE=another_value
 PROJECT_NAME=Clouisle
 SECRET_KEY=changethis-to-a-secure-random-secret-key
 TIMEZONE=Asia/Shanghai
+
+# Internal service URLs; keep these on the private container network.
 API_BASE_URL=http://api:8000
+API_INTERNAL_BASE_URL=http://api:8000
+
+# Public/browser origins
+PUBLIC_API_URL=
 FRONTEND_URL=http://localhost:3000
 BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 
@@ -64,13 +70,15 @@ VECTOR_BACKEND=qdrant
 QDRANT_URL=http://qdrant:6333
 QDRANT_API_KEY=
 
-# Internal services
+# Internal service authentication (required)
 INTERNAL_API_TOKEN=generate-a-secure-random-token
-API_INTERNAL_BASE_URL=http://api:8000
+
 UPLOAD_STORAGE_MODE=remote
 ```
 
-## Application Settings
+## Backend Settings Variables
+
+The variables in this section are read by the backend Pydantic `Settings` class (`backend/app/core/config.py`). They are distinct from the frontend build-time and runtime variables documented near the end of this page; `NEXT_PUBLIC_*`, `BACKEND_INTERNAL_URL`, and `DEV_ALLOWED_ORIGINS` are not backend `Settings` fields.
 
 ### PROJECT_NAME
 
@@ -609,9 +617,9 @@ When enabled, Bubblewrap must be installed and usable. Rootless Bubblewrap needs
 | `SANDBOX_SESSION_CLEANUP_BATCH_SIZE` | `100` | Sandbox session cleanup batch size |
 | `SANDBOX_DEFAULT_PYTHON_BINARIES` | `/usr/local/bin/python3`, `/usr/bin/python3`, `/bin/python3` | Candidate Python interpreters for sandbox execution (JSON list) |
 
-## Frontend Build & Runtime
+## Frontend Build & Runtime Variables (Not Backend Settings)
 
-The frontend image is built with `bun run build`; these values are baked in as build-time ARGs (see `deploy/dockerfiles/frontend.Dockerfile`):
+These variables configure the separate Next.js frontend image, not the backend Pydantic `Settings` class. The frontend image is built with `bun run build`; the first three values are baked in as build-time ARGs (see `deploy/dockerfiles/frontend.Dockerfile`):
 
 | Variable | Default | Description |
 |---|---|---|

@@ -90,7 +90,7 @@ The login flow works as follows:
 | Homepage URL | `https://your-domain.com` |
 | Authorization callback URL | `https://your-domain.com/api/v1/sso/callback/github` |
 
-> The callback URL format is `{API_BASE_URL}/api/v1/sso/callback/{provider_name}`. The `provider_name` must match the name you set in Clouisle (next step).
+> The callback URL uses the externally reachable backend origin: `{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`. If the frontend proxies `/api/*`, use the frontend's public origin; otherwise use the backend's public origin. The backend derives this from the incoming request/proxy headers; `API_BASE_URL` is an internal service URL and does not select the callback origin.
 
 3. Click **Register application**
 4. Copy the **Client ID**
@@ -192,7 +192,7 @@ If **Auto Create Users** is enabled, a new user account is created automatically
 | `idp_entity_id` | Yes | Identity Provider Entity ID |
 | `sso_url` | Yes | IdP Single Sign-On URL |
 | `x509_cert` | Yes | IdP X.509 certificate (PEM format, without header/footer) |
-| `acs_url` | Yes | Assertion Consumer Service URL (`{API_BASE_URL}/api/v1/sso/callback/{provider_name}`) |
+| `acs_url` | Yes | Assertion Consumer Service URL (`{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`) |
 | `slo_url` | No | SP Single Logout URL |
 | `idp_slo_url` | No | IdP Single Logout URL |
 | `name_id_format` | No | NameID format (default: `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified`) |
@@ -305,17 +305,17 @@ Handles the provider callback. This URL is used as the redirect/callback URI whe
 Admin endpoints are protected by permission checks rather than a hard superuser requirement: listing providers requires `admin:sso:read`, while creating, updating, deleting, and testing providers (as well as disconnecting user SSO connections) require `admin:sso:update`. The `Admin` role has `admin:sso:read`; `admin:sso:update` is limited to Super Admin.
 
 ```http
-GET    /api/v1/sso/admin/providers
-POST   /api/v1/sso/admin/providers
-PUT    /api/v1/sso/admin/providers/{provider_id}
-DELETE /api/v1/sso/admin/providers/{provider_id}
-POST   /api/v1/sso/admin/providers/{provider_id}/test
+GET    /api/v1/admin/sso/providers
+POST   /api/v1/admin/sso/providers
+PUT    /api/v1/admin/sso/providers/{provider_id}
+DELETE /api/v1/admin/sso/providers/{provider_id}
+POST   /api/v1/admin/sso/providers/{provider_id}/test
 ```
 
 ### Create Provider Example
 
 ```http
-POST /api/v1/sso/admin/providers
+POST /api/v1/admin/sso/providers
 Content-Type: application/json
 
 {
@@ -368,17 +368,17 @@ Response:
 
 - Verify **Enable SSO** is turned on in **Site Settings** -> **Security**
 - Verify the provider's **Enabled** toggle is on
-- Check that `FRONTEND_URL` and `API_BASE_URL` environment variables are set correctly
+- Check `FRONTEND_URL` and the reverse proxy's forwarded host/proto headers; `API_BASE_URL` does not select the public callback origin
 
 ### Callback URL mismatch error
 
 The callback URL registered with the provider must exactly match:
 
 ```
-{API_BASE_URL}/api/v1/sso/callback/{provider_name}
+{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}
 ```
 
-- `API_BASE_URL` is the backend URL (e.g., `https://example.com` if the frontend proxies `/api/*` to the backend, or `https://api.example.com` if the backend has a separate domain)
+- `{BACKEND_ORIGIN}` is the externally reachable origin used by the backend callback route. Use the frontend public origin when it proxies `/api/*`; otherwise use the backend public origin.
 - `provider_name` is the name you set when creating the provider in Clouisle (e.g., `github`)
 
 ### User redirected to error page after SSO login

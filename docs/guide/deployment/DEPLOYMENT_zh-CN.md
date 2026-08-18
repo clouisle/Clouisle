@@ -126,11 +126,18 @@ docker push registry.example.com/clouisle/clouisle-frontend:latest
 Kubernetes 推荐使用 Helm 部署：
 
 ```bash
+# 仅用于 lint：此占位令牌只用于满足 chart 的必填校验，不会部署服务。
 helm lint deploy/helm/clouisle \
   --set-string secrets.values.INTERNAL_API_TOKEN=lint-only-token
+
+# 仅用于演示。不要直接暴露此安装；生产环境请设置全部密钥，或使用已有 Secret。
 helm upgrade --install clouisle deploy/helm/clouisle \
   --namespace clouisle \
   --create-namespace \
+  --set-string secrets.values.SECRET_KEY="$(openssl rand -hex 32)" \
+  --set-string secrets.values.POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
+  --set-string secrets.values.REDIS_PASSWORD="$(openssl rand -hex 16)" \
+  --set-string secrets.values.QDRANT_API_KEY="$(openssl rand -hex 16)" \
   --set-string secrets.values.INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
 ```
 
@@ -188,13 +195,14 @@ Docker 安装会把生成的配置保存在 `<安装目录>/.env`（默认为 `/
 | `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | 沙箱产物上传的可选 API Key 认证 | `openssl rand -base64 32` |
 | `INTERNAL_API_TOKEN` | worker 到 API 上传网关的认证令牌 | `openssl rand -base64 32` |
 
-以下变量在生产域名下建议修改：
+以下 URL 与安全变量需要按生产环境配置：
 
-| 变量 | 默认值 | 生产示例 |
-|------|--------|----------|
-| `API_BASE_URL` | `http://localhost:8000` | `https://api.example.com` |
-| `FRONTEND_URL` | `http://localhost:3000` | `https://example.com` |
-| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | `https://example.com` |
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `API_BASE_URL` | `http://localhost:8000` | 服务端文件解析和沙箱产物链接使用的内部 API 地址；不要填写公网域名。 |
+| `PUBLIC_API_URL` | *(empty)* | 浏览器可见的公网 API origin，用于绝对 API/文件 URL。 |
+| `FRONTEND_URL` | `http://localhost:3000` | 前端公网 origin，用于 SSO 重定向 URI。生产环境请设置为实际域名。 |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | 精确的允许 CORS origin 列表，不要使用 `*`。 |
 
 > **说明**：`POSTGRES_SERVER`、`REDIS_HOST`、`QDRANT_URL` 会在 `docker-compose.yml` 的 `environment` 中被覆盖为 Docker 服务名（`db`、`redis`、`qdrant`）。无需在 `.env` 里修改它们。
 
@@ -364,12 +372,17 @@ server {
 }
 ```
 
-启用 HTTPS 后，同时更新如下环境变量：
+启用 HTTPS 后，将浏览器可见的公网 origin 与服务间内部地址分开配置：
 
 ```bash
-API_BASE_URL=https://example.com
+# Compose/Kubernetes 内部服务地址
+API_BASE_URL=http://api:8000
+API_INTERNAL_BASE_URL=http://api:8000
+
+# 浏览器公网 origin 与 CORS
+PUBLIC_API_URL=https://example.com
 FRONTEND_URL=https://example.com
-BACKEND_CORS_ORIGINS=https://example.com
+BACKEND_CORS_ORIGINS='["https://example.com"]'
 ```
 
 ### 扩缩容
@@ -405,7 +418,7 @@ docker compose logs -f frontend
 # View logs for a specific time range
 docker compose logs --since 1h api
 
-# Restart a single service (zero-downtime for stateless services)
+# 重启服务可能造成短暂中断；Docker Compose 不提供零停机保证。
 docker compose restart api
 
 # Stop all services
@@ -414,9 +427,9 @@ docker compose down
 # Stop and destroy all data (CAUTION)
 docker compose down -v
 
-# Update images and restart
+# 更新镜像并重建服务（提供的 Compose 没有 rolling update 保证）
 docker compose pull
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 ---
@@ -489,7 +502,7 @@ data:
   INTERNAL_API_TOKEN: <paste-base64-here>
 ```
 
-> **说明**：`INTERNAL_API_TOKEN` 与 `SANDBOX_ARTIFACT_UPLOAD_API_KEY` 为必填——`deploy/install.sh` 会在其生成的输出副本中生成这两个值（K8s 模式输出 `0600` 权限的文件，需审阅后手动应用）。api、worker 与 sandbox-worker 通过 `INTERNAL_API_TOKEN_FILE` 挂载从 Secret 读取 `INTERNAL_API_TOKEN`。
+> **说明**：`INTERNAL_API_TOKEN` 为必填，并由 api、worker 与 sandbox-worker 共享。`SANDBOX_ARTIFACT_UPLOAD_API_KEY` 为可选项；设置后可为沙箱产物上传增加 API Key 认证。未使用时，随附 manifest 仍保留该 Secret key，但值可以为空。`deploy/install.sh` 会在 Kubernetes 输出副本中生成内部令牌（权限为 `0600`），请审阅后手动应用；各工作负载通过 `INTERNAL_API_TOKEN_FILE` 挂载读取该令牌。
 
 > **提示**：生产环境建议使用外部密钥管理（Vault、AWS Secrets Manager 等）配合 External Secrets Operator，而不是将明文/编码后的密钥直接放在 YAML 中。
 
@@ -607,7 +620,8 @@ kubectl -n clouisle logs -f deployment/beat
 kubectl -n clouisle logs -f deployment/frontend
 
 # View logs for a specific pod
-kubectl -n clouisle logs -f <pod-name>
+POD_NAME='replace-with-pod-name'
+kubectl -n clouisle logs -f "$POD_NAME"
 
 # Restart a deployment (rolling restart)
 kubectl -n clouisle rollout restart deployment api
@@ -632,16 +646,19 @@ kubectl -n clouisle top pods
 |------|------|----------|
 | `SECRET_KEY` | JWT 签名密钥。修改后会使现有会话全部失效。 | `openssl rand -base64 32` |
 | `POSTGRES_PASSWORD` | PostgreSQL 密码 | `openssl rand -base64 16` |
+| `INTERNAL_API_TOKEN` | API、worker、sandbox-worker 共享的内部上传网关令牌 | `openssl rand -hex 32` |
 
-### 推荐（生产环境应修改）
+### 生产环境 URL 与安全配置
 
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
-| `REDIS_PASSWORD` | *(empty)* | Redis 密码。为空表示不鉴权。 |
-| `QDRANT_API_KEY` | *(empty)* | Qdrant API 密钥。为空表示不鉴权。 |
-| `API_BASE_URL` | `http://localhost:8000` | 后端访问地址，用于文件访问与 SSO 回调。生产环境应设置为真实域名。 |
-| `FRONTEND_URL` | `http://localhost:3000` | 前端地址，用于 SSO 重定向 URI。生产环境应设置为真实域名。 |
-| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | 允许的 CORS 源（逗号分隔）。必须包含前端域名。 |
+| `REDIS_PASSWORD` | *(empty)* | Redis 密码。生产环境应设置。 |
+| `QDRANT_API_KEY` | *(empty)* | Qdrant API 密钥。生产环境应设置。 |
+| `PUBLIC_API_URL` | *(empty)* | 浏览器可见的公网 API origin；需要绝对文件/API URL 时设置。 |
+| `FRONTEND_URL` | `http://localhost:3000` | 前端公网 origin，用于 SSO 重定向 URI。 |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | 精确的允许 CORS origin 列表，不要使用 `*`。 |
+
+`API_BASE_URL` 和 `API_INTERNAL_BASE_URL` 是服务间内部地址（Compose/K8s 中通常为 `http://api:8000`），不是公网域名。部署文件会覆盖 `POSTGRES_SERVER`、`REDIS_HOST`、`QDRANT_URL` 等容器内部连接地址。
 
 ### 可选
 
@@ -720,80 +737,51 @@ External Proxy → frontend 容器（node server.js，:3000）→ Next rewrites 
 
 ```bash
 # Docker Compose — backup
-docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d).sql
+docker compose exec -T db pg_dump -U postgres -Fc clouisle > backup_$(date +%Y%m%d).dump
 
 # Docker Compose — restore
-docker compose exec -T db psql -U postgres clouisle < backup_20260206.sql
+docker compose exec -T db pg_restore -U postgres -d clouisle --clean --if-exists < backup_20260206.dump
 
 # Kubernetes — backup
-kubectl -n clouisle exec statefulset/postgres -- pg_dump -U postgres clouisle > backup.sql
+kubectl -n clouisle exec -i statefulset/postgres -- pg_dump -U postgres -Fc clouisle > backup.dump
 
 # Kubernetes — restore
-kubectl -n clouisle exec -i statefulset/postgres -- psql -U postgres clouisle < backup.sql
+kubectl -n clouisle exec -i statefulset/postgres -- pg_restore -U postgres -d clouisle --clean --if-exists < backup.dump
 ```
 
 ### Qdrant
 
-```bash
-# Docker Compose — backup the volume
-docker run --rm -v deploy_qdrant_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/qdrant_backup.tar.gz -C /data .
+请在包含当前 `docker-compose.yml` 和 `.env` 的目录运行这些 Compose 命令：源码 checkout 使用 `deploy/`，安装脚本创建的部署使用如 `/opt/clouisle` 的安装目录。提供的 Compose 卷带项目名前缀，不要假定卷名为 `deploy_qdrant_data`，先发现实际卷名再做文件备份。
 
-# Kubernetes — use Qdrant's snapshot API
-kubectl -n clouisle exec statefulset/qdrant -- \
-  wget -qO- -post-data '{}' http://localhost:6333/snapshots
+下面的 Qdrant 卷文件备份不需要主机端口。如果改用 API 快照流程而生产环境已移除端口映射，请临时添加 `127.0.0.1:6333:6333`、重新创建 Qdrant，并在 API 备份完成后移除映射。不要为了备份而将 Qdrant 发布到所有主机网卡。
+
+```bash
+QDRANT_VOLUME="$(docker inspect "$(docker compose ps -q qdrant)" --format '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Name}}{{end}}{{end}}')"
+test -n "$QDRANT_VOLUME"
+docker run --rm -v "$QDRANT_VOLUME:/data:ro" -v "$(pwd):/backup" \
+  alpine tar czf /backup/qdrant_backup.tar.gz -C /data .
 ```
+
+可移植的 Qdrant 备份应针对每个 collection 使用 Qdrant 的 collection snapshot API，并在启用鉴权时传递 `api-key: $QDRANT_API_KEY`。该 API 按 collection 作用；项目没有通用的 `/snapshots` 端点。
 
 ### 上传文件
 
-```bash
-# Docker Compose
-docker run --rm -v deploy_uploads_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/uploads_backup.tar.gz -C /data .
+从挂载 uploads 卷的 API 容器流式备份，不依赖 Docker 卷前缀：
 
-# Kubernetes (if using PVC)
-kubectl -n clouisle exec deployment/api -- tar czf - /app/uploads > uploads_backup.tar.gz
+```bash
+docker compose exec -T api \
+  tar -czf - -C /app uploads > uploads_backup.tar.gz
+```
+
+Kubernetes 中使用由 `api` 挂载的 `uploads-data` PVC，并指定明确的备份目的地：
+
+```bash
+kubectl -n clouisle exec -i deployment/api -- tar -czf - -C /app uploads > uploads_backup.tar.gz
 ```
 
 ### 自动备份计划
 
-生产环境建议配置 CronJob（K8s）或主机 cron（Docker）执行每日备份：
-
-```yaml
-# K8s CronJob example
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: postgres-backup
-  namespace: clouisle
-spec:
-  schedule: "0 2 * * *"    # Daily at 2:00 AM
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-            - name: backup
-              image: postgres:16
-              command:
-                - sh
-                - -c
-                - pg_dump -h postgres -U postgres clouisle | gzip > /backup/clouisle_$(date +%Y%m%d).sql.gz
-              env:
-                - name: PGPASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: clouisle-secret
-                      key: POSTGRES_PASSWORD
-              volumeMounts:
-                - name: backup
-                  mountPath: /backup
-          restartPolicy: OnFailure
-          volumes:
-            - name: backup
-              persistentVolumeClaim:
-                claimName: backup-pvc
-```
+提供的 Kubernetes manifest 没有声明 `backup-pvc`，也不会自动安装备份 CronJob。请先准备批准的对象存储、备份 PVC 或 CSI snapshot 目的地，再调度上述 PostgreSQL/Qdrant/uploads 命令；不要把 Pod 内的 `emptyDir` 当作持久备份存储。
 
 ---
 
@@ -802,46 +790,44 @@ spec:
 ### Docker Compose
 
 ```bash
-cd deploy
-
-# 1. Pull latest code
+cd /opt/clouisle  # 替换为实际安装目录；源代码 checkout 才需要 git pull
 git pull
 
-# 2. Rebuild images
-docker compose build
-
-# 3. Rolling restart (services restart one by one)
-docker compose up -d
-
-# 4. Verify
+# Compose 使用预构建镜像；拉取并重建，不保证滚动重启。
+docker compose pull
+docker compose up -d --force-recreate
 docker compose ps
-docker compose logs --tail=50 api
+docker compose logs --tail=50 api worker sandbox-worker beat frontend
 ```
 
 ### Kubernetes
 
+以下是通用 registry/tag 示例，请替换 `REGISTRY` 和 `IMAGE_TAG`。命令从仓库根目录构建三个实际镜像，并在 `clouisle` 命名空间更新全部应用工作负载：
+
 ```bash
-# 1. Build and push new images
-docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/api:v2.0.0 .
-docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/clouisle/frontend:v2.0.0 .
-docker push registry.example.com/clouisle/api:v2.0.0
-docker push registry.example.com/clouisle/frontend:v2.0.0
+REGISTRY=registry.example.com/clouisle
+IMAGE_TAG=vX.Y.Z
+docker build -f deploy/dockerfiles/backend.Dockerfile -t "$REGISTRY/clouisle-backend:$IMAGE_TAG" .
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t "$REGISTRY/clouisle-frontend:$IMAGE_TAG" .
+docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG" .
+docker push "$REGISTRY/clouisle-backend:$IMAGE_TAG"
+docker push "$REGISTRY/clouisle-frontend:$IMAGE_TAG"
+docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
-# 2. 更新 clouisle.yaml 中的镜像引用
-#    （各工作负载的 `image:` —— 如 api/worker/beat 的 `clouisle-backend`、
-#    sandbox-worker 的 `clouisle-sandbox-worker`、frontend 的 `clouisle-frontend`、
-#    以及 PostgreSQL 的 `clouisle-postgres-pg-search`）
+kubectl -n clouisle set image deployment/api api="$REGISTRY/clouisle-backend:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/worker worker="$REGISTRY/clouisle-backend:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/beat beat="$REGISTRY/clouisle-backend:$IMAGE_TAG"
+kubectl -n clouisle set image deployment/frontend frontend="$REGISTRY/clouisle-frontend:$IMAGE_TAG"
 
-# 3. Apply
-kubectl apply -f deploy/k8s/clouisle.yaml
-
-# 4. Monitor rollout
-kubectl -n clouisle rollout status deployment api
-kubectl -n clouisle rollout status deployment worker
-kubectl -n clouisle rollout status deployment frontend
+kubectl -n clouisle rollout status deployment/api
+kubectl -n clouisle rollout status deployment/worker
+kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status deployment/beat
+kubectl -n clouisle rollout status deployment/frontend
 ```
 
-> **说明**：若有数据库迁移，请先执行迁移再更新 backend Deployment。具体步骤请查看发布说明。
+不要执行常规 Alembic 迁移命令：Clouisle 在 backend 启动时通过 Tortoise ORM（`init_db`）初始化/更新 schema。
 
 ---
 
@@ -851,7 +837,7 @@ kubectl -n clouisle rollout status deployment frontend
 - [ ] **启用 HTTPS**：在外部反向代理或 K8s Ingress 做 TLS 终止
 - [ ] **限制暴露端口**：生产环境仅暴露 3000（或反向代理后的 443），移除 DB/Redis/Qdrant 的端口映射
 - [ ] **设置 CORS 来源**：`BACKEND_CORS_ORIGINS` 仅包含真实前端域名，不要使用 `*`
-- [ ] **更新 `API_BASE_URL` 与 `FRONTEND_URL`**：必须与生产域名一致，否则 SSO 与内部文件访问可能异常
+- [ ] **按职责设置 URL 变量**：`API_BASE_URL` 保持内部地址（Compose/K8s 中例如 `http://api:8000`）；浏览器可见的 API/文件链接使用 `PUBLIC_API_URL`，SSO 重定向使用 `FRONTEND_URL`
 - [ ] **网络隔离**：Compose 下基础设施服务（db、redis、qdrant）不应对外访问；K8s 下默认使用 ClusterIP（不对外）
 - [ ] **定期备份**：配置 PostgreSQL 与 Qdrant 自动备份
 - [ ] **资源限制**：按实际负载调整 K8s 清单中的 CPU/内存 limits
@@ -957,7 +943,8 @@ docker stats
 
 # Kubernetes
 kubectl -n clouisle top pods
-kubectl -n clouisle describe pod <pod-name>    # Check "Last State" for OOMKilled
+POD_NAME='replace-with-pod-name'
+kubectl -n clouisle describe pod "$POD_NAME"  # Check "Last State" for OOMKilled
 ```
 
 可在 `docker-compose.yml`（`deploy.resources`）或 `clouisle.yaml`（`resources` 段）中调大限制。

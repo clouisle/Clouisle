@@ -130,7 +130,7 @@ When you are added to a team, you receive a team notification (`team.member_adde
 3. Confirm leaving
 4. You're removed from the team
 
-**Note**: The team Owner cannot leave until ownership is transferred (see [Team Settings](../settings/team-settings.md)).
+**Note**: The team Owner cannot leave until ownership is transferred (see [Team Management](../settings/team-settings.md)).
 
 ### After Leaving
 
@@ -174,7 +174,7 @@ When you are added to a team, you receive a team notification (`team.member_adde
 
 - [Team Roles](./team-roles.md) - Understanding roles and permissions
 - [Team Collaboration](./team-collaboration.md) - Working with teams
-- [Team Settings](../settings/team-settings.md) - Team configuration
+- [Team Management](../settings/team-settings.md) - Team membership and model authorization
 
 ## Getting Help
 

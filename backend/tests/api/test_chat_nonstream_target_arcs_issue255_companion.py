@@ -191,6 +191,24 @@ async def test_nonstream_does_not_retry_context_error(monkeypatch, error_source)
 
 
 @pytest.mark.anyio
+async def test_nonstream_does_not_retry_non_retryable_context_error(monkeypatch):
+    state = await setup_chat(monkeypatch)
+    chat.prepare_model_context.side_effect = ContextLengthError(
+        details={"retryable": False}
+    )
+    monkeypatch.setattr(chat, "should_retry_context_length", lambda _agent: True)
+    retry = AsyncMock(
+        return_value=SimpleNamespace(messages=[Message(role="user", content="x")])
+    )
+    monkeypatch.setattr(chat, "retry_prepare_model_context", retry)
+
+    with pytest.raises(BusinessError):
+        await run_chat(state)
+
+    retry.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_nonstream_retried_prepare_does_not_retry_model_error(monkeypatch):
     state = await setup_chat(monkeypatch)
     chat.prepare_model_context.side_effect = ContextLengthError()
