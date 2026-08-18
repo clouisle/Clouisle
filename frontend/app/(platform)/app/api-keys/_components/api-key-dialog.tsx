@@ -274,7 +274,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
           {/* Agent 和 Workflow 选择 - 横向布局 */}
           <div className="grid grid-cols-2 gap-4">
             {/* Agent 选择 */}
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-testid="api-key-allowed-agents">
               <Label>{t('allowedAgents')}</Label>
               <p className="text-xs text-muted-foreground">{t('allowedAgentsHint')}</p>
               <div className="h-[150px] rounded-md border p-2">
@@ -321,7 +321,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             </div>
 
             {/* Workflow 选择 */}
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-testid="api-key-allowed-workflows">
               <Label>{t('allowedWorkflows')}</Label>
               <p className="text-xs text-muted-foreground">{t('allowedWorkflowsHint')}</p>
               <div className="h-[150px] rounded-md border p-2">

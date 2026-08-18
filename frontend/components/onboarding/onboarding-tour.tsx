@@ -507,6 +507,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     targetSelector.includes('embed-config-dialog') ||
     targetSelector.includes('api-key-dialog') ||
     targetSelector.includes('api-key-name-input') ||
+    targetSelector.includes('api-key-allowed-agents') ||
+    targetSelector.includes('api-key-allowed-workflows') ||
     targetSelector.includes('api-key-submit')
   )
   const isKbDialogContentStep = state.isRunning && state.currentTour === tourId &&

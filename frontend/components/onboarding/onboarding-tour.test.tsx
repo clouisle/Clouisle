@@ -521,6 +521,8 @@ describe('OnboardingTour', () => {
       '[data-testid="embed-config-dialog"]',
       '[data-testid="api-key-dialog"]',
       '[data-testid="api-key-name-input"]',
+      '[data-testid="api-key-allowed-agents"]',
+      '[data-testid="api-key-allowed-workflows"]',
       '[data-testid="api-key-submit"]',
     ]) {
       config = { id: 'kb', title: 'Knowledge Base', description: '', steps: [{ target, content: 'dialog' }] }

@@ -112,6 +112,8 @@ test("blocks API-key creation until a name is provided", async () => {
 
   expect(renderer.root.findByProps({ "data-testid": "api-key-dialog" })).toBeDefined();
   expect(renderer.root.findByProps({ "data-testid": "api-key-name-input" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-allowed-agents" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-allowed-workflows" })).toBeDefined();
   expect(renderer.root.findByProps({ "data-testid": "api-key-submit" })).toBeDefined();
 
   await act(async () =>

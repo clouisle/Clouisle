@@ -549,6 +549,14 @@
       "description": "Give the key a recognizable name so you can identify it later. The key itself is not shown in this form."
     },
     "step32d": {
+      "title": "Allowed Agents",
+      "description": "Limit this API key to selected Agents when it should not access every Agent in the workspace. Leave the list empty when the key should have unrestricted Agent access."
+    },
+    "step32e": {
+      "title": "Allowed Workflows",
+      "description": "Limit this API key to selected Workflows when it should not access every Workflow in the workspace. Leave the list empty when the key should have unrestricted Workflow access."
+    },
+    "step32f": {
       "title": "Create and Copy Once",
       "description": "Create the key here. The full key appears in the next dialog only once — copy it immediately and store it somewhere safe."
     }
