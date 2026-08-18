@@ -18,23 +18,24 @@ As an administrator, you can:
 ### Permission Hierarchy
 
 ```
-System Level (Super Admin, Admin)
-  ├── Global Settings (admin:settings:*)
-  ├── User Management (admin:user:*)
-  ├── Role Management (admin:role:*)
-  ├── Team Management (admin:team:*)
-  ├── Model Management (admin:model:*)
-  ├── App Management (admin:app:*)
-  ├── Capability Management (admin:capability:*)
-  ├── Knowledge Base Management (admin:knowledge-base:*)
-  ├── SSO Management (admin:sso:*)
-  └── Audit Logs (audit:read, audit:export)
+System level (Super Admin/Admin dashboard APIs)
+  ├── Global settings (`admin:settings:*`)
+  ├── User management (`admin:user:*`)
+  ├── Role and permission management (`admin:role:*`, `admin:permission:*`)
+  ├── Team management (`admin:team:*`)
+  ├── Model management (`admin:model:*`)
+  ├── App management (`admin:app:*`)
+  ├── Capability management (`admin:capability:*`)
+  ├── Knowledge-base management (`admin:knowledge-base:*`)
+  ├── SSO management (`admin:sso:*`)
+  └── Audit logs (`audit:read`, `audit:export`)
 
-Team Level (Owner, Admin, Member, Viewer)
-  ├── Team Settings (team:*)
-  ├── Member Management (team:manage)
-  └── Resource Management (agent:*, workflow:*, kb:*, tool:*, skill:*)
+Team-scoped platform APIs
+  ├── Team permissions (`team:read/create/update/delete/manage`)
+  └── Resource permissions (`agent:*`, `workflow:*`, `kb:*`, `tool:*`, `skill:*`)
 ```
+
+Dashboard permissions authorize system-wide admin APIs for Super Admin/Admin users; team-scoped permissions authorize platform resource APIs only within the user's teams. Team member roles map to scoped permissions as `admin → Admin`, `member → Member`, and `viewer → Viewer`; `Owner` is a team ownership concept, not an additional selectable member role in this permission matrix.
 
 ### Permission Types
 
@@ -63,6 +64,8 @@ Team Level (Owner, Admin, Member, Viewer)
 - `skill:read/create/update/delete/execute` - Skill management
 - `apikey:read/create/update/delete` - API Key management
 - `conversation:read/delete` - Conversation management
+
+In the admin dashboard, tools and skills are reached through **Capabilities** (`/capabilities`), not a separate Tools navigation item.
 
 ## Accessing Permission Management
 
@@ -115,7 +118,7 @@ Permissions:
   - admin:memory:read
   - audit:read
   - audit:export
-  - (all team-scoped resource permissions: team:*, agent:*, workflow:*, kb:*, tool:*, skill:*, apikey:*, conversation:*)
+  # Team-scoped permissions use explicit codes; there is no wildcard permission code.
 ```
 
 **Member:**
@@ -154,73 +157,22 @@ Permissions:
   - conversation:read
 ```
 
-### Team Roles
+### Team-scoped roles and permissions
 
-**Owner:**
-```yaml
-Name: Owner
-Type: Team
-Description: Team owner with full control
-Permissions:
-  - team:*
-  - agent:*
-  - workflow:*
-  - kb:*
-  - tool:*
-  - skill:*
-```
+Team membership roles are relationship roles, not wildcard permission sets. The fixed roles are `owner`, `admin`, `member`, and `viewer`; startup migration maps `owner` and `admin` to the scoped **Admin** role, `member` to **Member**, and `viewer` to **Viewer**.
 
-**Admin:**
-```yaml
-Name: Admin
-Type: Team
-Description: Team administrator
-Permissions:
-  - team:manage
-  - team:members
-  - agent:*
-  - workflow:*
-  - kb:*
-```
+The platform permission codes are explicit values such as:
 
-**Member:**
-```yaml
-Name: Member
-Type: Team
-Description: Team member with standard access
-Permissions:
-  - team:view
-  - agent:create
-  - agent:read
-  - agent:update
-  - agent:chat
-  - workflow:create
-  - workflow:read
-  - workflow:update
-  - workflow:run
-  - kb:create
-  - kb:read
-  - kb:update
-  - kb:test
-  - tool:create/update/execute
-```
+| Area | Codes |
+|------|-------|
+| Teams | `team:read`, `team:create`, `team:update`, `team:delete`, `team:manage` |
+| Agents | `agent:read`, `agent:create`, `agent:update`, `agent:delete`, `agent:publish`, `agent:chat` |
+| Workflows | `workflow:read`, `workflow:create`, `workflow:update`, `workflow:delete`, `workflow:publish`, `workflow:run` |
+| Knowledge bases | `kb:read`, `kb:create`, `kb:update`, `kb:delete`, `kb:test` |
 
-**Viewer:**
-```yaml
-Name: Viewer
-Type: Team
-Description: Read-only team access
-Permissions:
-  - team:view
-  - agent:read
-  - agent:chat
-  - workflow:read
-  - workflow:run
-  - kb:read
-  - kb:test
-  - tool:read
-  - tool:execute
-```
+Use `team:update`/`team:delete` for team mutations and `team:manage` for member management. There are no `team:view` or `team:members` permission codes and platform permissions are not expressed as `team:*` wildcards in the permission registry.
+
+Global dashboard permissions use the separate `admin:*` namespace; a team-scoped role does not grant dashboard access.
 
 ### Create Custom Role
 
@@ -589,7 +541,7 @@ scopes = api.get("/api/v1/admin/permissions/scopes")
 
 - [Team Roles](../../user-guide/teams/team-roles.md) - User guide to roles
 - [API Key Scopes](../../user-guide/api-keys/api-key-scopes.md) - API scope reference
-- [Security Best Practices](../../best-practices/security.md) - Security guide
+- [Security Checklist](../../operations/security-checklist.md) - Security guidance
 - [Audit Logs](../audit-logs/audit-log-management.md) - Audit log management
 
 ---

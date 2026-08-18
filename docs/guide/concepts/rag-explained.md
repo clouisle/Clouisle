@@ -4,31 +4,40 @@ Understanding how RAG works in Clouisle.
 
 ## What is RAG?
 
-RAG combines information retrieval with language model generation to provide accurate, context-aware responses.
+RAG combines retrieval with language-model generation. Clouisle retrieves completed knowledge-base chunks, adds them to the model context, and generates an answer grounded in those chunks.
 
-## How RAG Works
+## Retrieval pipeline
 
-1. **Retrieve**: Search knowledge base for relevant documents
-2. **Augment**: Add retrieved context to the prompt
-3. **Generate**: LLM generates response using the context
+1. **Prepare**: MarkItDown extracts text; the knowledge-base splitter creates deterministic character-based chunks.
+2. **Index**: Each chunk is stored with metadata in PostgreSQL and its embedding is stored in a Qdrant collection. PostgreSQL `pg_search` provides the lexical index.
+3. **Recall**: A query can use `vector`, `fulltext`, or `hybrid` search. Hybrid retrieval combines dense and lexical candidates; an optional authorized rerank model can reorder the candidate pool.
+4. **Augment**: The selected chunks are formatted as knowledge-base context for the agent.
+5. **Generate**: The configured LLM produces the response; retrieval and generation are separate stages.
+
+The retrieval mode is independent from the agent's RAG mode. `off`, `auto`, and `agentic` control whether and when the agent invokes retrieval, while `vector`, `fulltext`, and `hybrid` control how a knowledge base searches.
 
 ## RAG Modes in Clouisle
 
 Agents expose three RAG modes (`RAGMode`):
 
-- **Off**: No knowledge base retrieval, even if knowledge bases are configured
-- **Auto**: Traditional RAG — relevant chunks are retrieved automatically on every message
-- **Agentic**: Agentic RAG — the agent decides when to search based on the conversation
+- **Off**: No knowledge-base retrieval, even if knowledge bases are configured.
+- **Auto**: Retrieve relevant chunks automatically for each message.
+- **Agentic**: Let the agent decide when to search based on the conversation.
 
-## When to Use RAG
+## Embedding compatibility
 
-- Answering questions about specific documents
-- Providing accurate, sourced information
-- Reducing hallucinations
-- Grounding responses in facts
+A knowledge base records its embedding dimension when the first document is processed. All later documents and queries must use a compatible dimension; Qdrant collection names are partitioned by configured prefix and dimension. Changing the embedding model is rejected after KB creation, so use an explicit reprocess/rechunk flow or create a replacement KB rather than assuming automatic re-indexing.
 
----
+## When to use RAG
 
-**Note**: This is a placeholder document. Please update with detailed content.
+- Questions about specific documents
+- Answers that should be grounded in team knowledge
+- Retrieval experiments comparing vector, lexical, and hybrid modes
 
-For more information, see the [main documentation](../README.md).
+Related tuning guidance is in [Knowledge Base Optimization](../best-practices/kb-optimization.md).
+
+## Related documentation
+
+- [Multi-tenancy model](./multi-tenancy.md) - Team-scoped authorization
+- [Vector embeddings](./vector-embeddings.md) - Embedding and collection compatibility
+- [Agent vs Workflow](./agent-vs-workflow.md) - Choosing the interaction model

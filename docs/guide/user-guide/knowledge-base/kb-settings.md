@@ -8,9 +8,9 @@ Knowledge base settings control how documents are processed, indexed, and retrie
 
 ## Accessing Settings
 
-1. Navigate to **Knowledge Bases**
-2. Select a knowledge base
-3. Click **Settings** tab (or the KB edit action)
+1. In the platform header, select **Knowledge Base** (`/app/kb`).
+2. Select a knowledge base to open `/app/kb/{id}`.
+3. Open the knowledge-base settings/edit action.
 
 ## General Settings
 
@@ -101,7 +101,7 @@ Documents: PDF, DOCX, DOC, TXT, MD, HTML, CSV, XLSX, XLS, JSON, plus web pages a
 ### Processing Flow
 
 1. Upload (or add by URL) → document status `pending`
-2. Process (automatically or via the process action) → text extraction → chunking → embedding → `completed`
+2. Start **Process** from the document action/editor → text extraction → chunking → embedding → `completed`
 3. Failures leave the document in `error` status with an error message
 
 ## RAG Settings

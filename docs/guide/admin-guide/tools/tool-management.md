@@ -28,7 +28,6 @@ The tool list shows:
 - **Type** (Builtin, Custom — HTTP or Code, MCP)
 - **Category** (Time, Math, Search, Web, File, Code, Sandbox, API, Data, etc.)
 - **Status** (Enabled / Disabled)
-- **Last used**
 
 **Filters:**
 - Type
@@ -123,11 +122,13 @@ Category: Data
 Type: Custom
 
 Endpoint Configuration:
-  URL: https://api.crm.example.com/customers/{customer_id}
+  URL: https://api.crm.example.com/customers
   Method: GET
   Authentication: API Key
   API Key Header: X-API-Key
   API Key: crm_...
+  Query Parameters:
+    customer_id: "{{customer_id}}"
   Timeout: 30 seconds
 
 Input Parameters:
@@ -146,7 +147,7 @@ Response Format:
     status: string
 
 Example Request:
-  GET https://api.crm.example.com/customers/12345
+  GET https://api.crm.example.com/customers?customer_id=12345
   Headers:
     X-API-Key: crm_...
 
@@ -159,6 +160,7 @@ Example Response:
     "status": "active"
   }
 ```
+> **Important:** Custom HTTP tools do not support `{{variable}}` substitution in the URL path or URL string. Keep the endpoint URL static and pass variables through `Query Parameters`, request `Headers`, or `Body Template` fields.
 
 ### Custom Tool with POST
 
@@ -524,7 +526,7 @@ code_result = api.post("/api/v1/admin/tools/execute-code", json={
 - [Agent Configuration](../../user-guide/agents/agent-configuration.md) - Using tools with agents
 - [Workflow Nodes](../../user-guide/workflows/workflow-nodes.md) - Tool nodes in workflows
 - [API Reference](../../api-reference/endpoints/tools.md) - Tools API
-- [Security Best Practices](../../best-practices/security.md) - Security guide
+- [Security Checklist](../../operations/security-checklist.md) - Security guidance
 
 ---
 

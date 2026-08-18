@@ -58,9 +58,9 @@ auth_page_layout: centered  # centered or split
 
 **Theme:**
 ```yaml
-theme_mode: light          # light or dark
+theme_mode: light          # light, dark, or system
 theme_primary_color: #3B82F6
-theme_branding_display: icon_and_name   # icon, name, or both
+theme_branding_display: full   # full, name_only, icon_only, or hidden
 ```
 
 Additional theme tokens (primary foreground, background, foreground, card, sidebar, navbar, accent, chart colors, etc.) can be customized per color token.
@@ -73,14 +73,18 @@ Additional theme tokens (primary foreground, background, foreground, card, sideb
 ### Legal & Compliance
 
 ```yaml
-icp_record: ""             # ICP record number
+icp_record_number: ""       # ICP record number
 icp_record_url: ""
-show_terms_of_service: false
-terms_of_service_url: ""
-show_privacy_policy: false
-privacy_policy_url: ""
-require_terms_acceptance: false
+terms_enabled: false
+terms_url: ""
+terms_text: ""              # Markdown text used when no URL is provided
+privacy_enabled: false
+privacy_url: ""
+privacy_text: ""            # Markdown text used when no URL is provided
+require_terms_acceptance_on_register: false
 ```
+
+Terms and privacy entries are shown only when enabled and a URL or text is provided. Registration acceptance is enforced only when `require_terms_acceptance_on_register` is true.
 
 ## Security Settings
 
@@ -283,7 +287,7 @@ SSO providers are managed in **Settings** → **SSO**. Providers are created gen
 ## Related Documentation
 
 - [Environment Variables](../../deployment/environment-variables.md) - Environment config
-- [Security Best Practices](../../best-practices/security.md) - Security guide
+- [Security Checklist](../../operations/security-checklist.md) - Security guidance
 - [Auto Notifications](./AUTO_NOTIFICATIONS.md) - Notification types and channels
 - [SSO Configuration](./SSO.md) - Single sign-on setup
 - [User Management](../users/user-management.md) - User admin

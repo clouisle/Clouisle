@@ -90,7 +90,7 @@ Clouisle 支持 SSO 认证，允许用户通过 GitHub、Google、Azure AD、Okt
 | Homepage URL | `https://your-domain.com` |
 | Authorization callback URL | `https://your-domain.com/api/v1/sso/callback/github` |
 
-> 回调 URL 格式为 `{API_BASE_URL}/api/v1/sso/callback/{provider_name}`，其中 `provider_name` 必须与你在 Clouisle 中设置的提供商名称一致（见下一步）。
+> 回调 URL 使用后端可从外部访问的 origin：`{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`。如果前端代理 `/api/*`，使用前端公网 origin；否则使用后端公网 origin。后端根据入站请求和反向代理 Header 推导该地址；`API_BASE_URL` 是内部服务地址，不决定回调 origin。
 
 3. 点击 **Register application**
 4. 复制 **Client ID**
@@ -192,7 +192,7 @@ Clouisle 支持 SSO 认证，允许用户通过 GitHub、Google、Azure AD、Okt
 | `idp_entity_id` | 是 | 身份提供商实体 ID |
 | `sso_url` | 是 | IdP 单点登录 URL |
 | `x509_cert` | 是 | IdP X.509 证书（PEM 格式，不含头尾标记） |
-| `acs_url` | 是 | 断言消费服务 URL（`{API_BASE_URL}/api/v1/sso/callback/{provider_name}`） |
+| `acs_url` | 是 | 断言消费服务 URL（`{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`） |
 | `slo_url` | 否 | SP 单点登出 URL |
 | `idp_slo_url` | 否 | IdP 单点登出 URL |
 | `name_id_format` | 否 | NameID 格式（默认：`urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified`） |
@@ -305,17 +305,17 @@ GET /api/v1/sso/callback/{provider_name}
 管理接口通过权限检查保护，而非强制超级管理员：查看提供商列表需要 `admin:sso:read`；创建、更新、删除、测试提供商以及解除用户 SSO 连接需要 `admin:sso:update`。`Admin` 角色拥有 `admin:sso:read`；`admin:sso:update` 仅限 Super Admin。
 
 ```http
-GET    /api/v1/sso/admin/providers
-POST   /api/v1/sso/admin/providers
-PUT    /api/v1/sso/admin/providers/{provider_id}
-DELETE /api/v1/sso/admin/providers/{provider_id}
-POST   /api/v1/sso/admin/providers/{provider_id}/test
+GET    /api/v1/admin/sso/providers
+POST   /api/v1/admin/sso/providers
+PUT    /api/v1/admin/sso/providers/{provider_id}
+DELETE /api/v1/admin/sso/providers/{provider_id}
+POST   /api/v1/admin/sso/providers/{provider_id}/test
 ```
 
 ### 创建提供商示例
 
 ```http
-POST /api/v1/sso/admin/providers
+POST /api/v1/admin/sso/providers
 Content-Type: application/json
 
 {
@@ -368,18 +368,18 @@ Content-Type: application/json
 
 - 确认 **站点设置** -> **安全** 中已开启 **启用 SSO**
 - 确认提供商的 **启用** 开关已打开
-- 检查 `FRONTEND_URL` 和 `API_BASE_URL` 环境变量是否正确设置
+- 检查 `FRONTEND_URL` 和反向代理转发的 host/proto Header；`API_BASE_URL` 不决定公网回调 origin
 
 ### 回调 URL 不匹配错误
 
 在提供商处注册的回调 URL 必须与以下格式完全一致：
 
 ```
-{API_BASE_URL}/api/v1/sso/callback/{provider_name}
+{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}
 ```
 
-- `API_BASE_URL` 是后端 URL（如果前端代理了 `/api/*` 到后端，则为 `https://example.com`；如果后端有独立域名，则为 `https://api.example.com`）
-- `provider_name` 是你在 Clouisle 中创建提供商时设置的名称（如 `github`）
+- `{BACKEND_ORIGIN}` 是后端回调路由可从外部访问的 origin。前端代理 `/api/*` 时使用前端公网 origin；否则使用后端公网 origin。
+- `provider_name` 是创建提供商时设置的名称（例如 `github`）
 
 ### SSO 登录后跳转到错误页面
 

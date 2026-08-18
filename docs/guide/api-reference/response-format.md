@@ -239,14 +239,13 @@ Clouisle uses standard HTTP status codes:
 
 | Status | Meaning | When Used |
 |--------|---------|-----------|
-| **200** | OK | Successful GET, PUT, DELETE |
-| **201** | Created | Successful POST (resource created) |
+| **200** | OK | Successful API request |
 | **400** | Bad Request | `BusinessError` default for invalid requests |
 | **401** | Unauthorized | Authentication required or failed |
 | **403** | Forbidden | Insufficient permissions / invalid JWT |
 | **404** | Not Found | Resource not found |
 | **422** | Unprocessable Entity | Pydantic validation error (`1001`) |
-| **429** | Too Many Requests | Quota exceeded (e.g. `6103`, `5312`) |
+| **429** | Too Many Requests | Only endpoint-specific quota or lockout responses |
 | **500** | Internal Server Error | Server error |
 
 Note: validation errors return **422** (not 400). The response `code` field is the authoritative error identifier — branch on it, not on the HTTP status.

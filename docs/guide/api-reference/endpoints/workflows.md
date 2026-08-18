@@ -19,7 +19,7 @@ The Workflows API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
+Workflow management and user-initiated run/status routes require an authenticated JWT user session; API-key authentication is not accepted by those routes. The webhook trigger is the exception: `POST /api/v1/workflows/webhook/{webhook_token}` requires a `clou_` API key in its `Authorization` header.
 
 **Required scopes:**
 - `workflow:read` - List and view workflows
@@ -43,10 +43,10 @@ GET /api/v1/workflows
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
+| `page_size` | integer | No | 20 | Items per page |
 | `team_id` | string | No | - | Filter by team ID |
-| `status` | string | No | - | Filter by status: `draft`, `published` |
-| `trigger_type` | string | No | - | Filter by trigger type: `manual`, `webhook` |
+| `status` | string | No | - | Filter by status: `draft`, `published`, `archived` |
+| `trigger_type` | string | No | - | Filter by trigger type: `manual`, `cron`, `webhook` |
 | `visibility` | string | No | - | Filter by visibility: `private`, `team`, `public` |
 | `keyword` | string | No | - | Search by name or description |
 | `own_only` | boolean | No | false | Only show workflows created by the current user |
@@ -225,7 +225,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -236,7 +236,11 @@ curl -X POST "https://your-domain.com/api/v1/workflows" \
     "name": "Document Summarizer",
     "description": "Summarizes documents automatically",
     "icon": null,
-    "definition": {},
+    "definition": {
+      "nodes": [{"id": "user_input-1", "type": "user_input"}],
+      "edges": [],
+      "viewport": {"x": 0, "y": 0, "zoom": 1}
+    },
     "variables": [],
     "status": "draft",
     "visibility": "private",
@@ -415,7 +419,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-4
 
 Execution is always asynchronous: the run is submitted to Celery and the endpoint returns immediately with the run ID and stream URL. The workflow must be published (`status: published`) before it can be run.
 
-**Success (202 Accepted):**
+**Success (200 OK):**
 
 ```json
 {
@@ -428,8 +432,7 @@ Execution is always asynchronous: the run is submitted to Celery and the endpoin
 }
 ```
 
-Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter) and `GET /api/v1/workflows/runs/{run_id}`.
-```
+Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter) and `GET /api/v1/workflows/runs/{run_id}`. The SSE stream requires an authenticated user with access to the workflow; a webhook token or stream URL is not a public authorization mechanism.
 
 ## Get Execution Status
 
@@ -498,8 +501,7 @@ curl -X GET "https://your-domain.com/api/v1/workflows/runs/run-789" \
 
 **Note:** A user's own published-workflow runs can also be retrieved via `GET /api/v1/workflows/{workflow_id}/runs/mine/{run_id}` (requires `workflow:run`). Node-level execution detail is available at `GET /api/v1/workflows/runs/{run_id}/nodes`.
 
-**Run status values:** `pending`, `running`, `success`, `failed`, `cancelled`, `timeout`.
-```
+**Run status values:** `pending`, `running`, `success`, `waiting`, `failed`, `cancelled`, `timeout`.
 
 ## List Executions
 
@@ -522,8 +524,8 @@ GET /api/v1/workflows/{workflow_id}/runs
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
-| `status` | string | No | - | Filter by status: `pending`, `running`, `success`, `failed`, `cancelled`, `timeout` |
+| `page_size` | integer | No | 20 | Items per page (maximum 100) |
+| `status` | string | No | - | Filter by status: `pending`, `running`, `success`, `waiting`, `failed`, `cancelled`, `timeout` |
 | `is_debug` | boolean | No | - | Filter by debug runs |
 | `search` | string | No | - | Search runs |
 
@@ -619,7 +621,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows/runs/run-789/cancel" \
 
 ## Webhook Trigger
 
-Trigger a workflow via webhook. The webhook token is in the URL path, and the request must additionally authenticate with an API key via the `Authorization` header (`Bearer clou_...`). The workflow must be published and its trigger type must be `webhook`. The API key must be allowed to access the workflow.
+Trigger a workflow via webhook. The webhook token is in the URL path, and the request must additionally authenticate with an API key via the `Authorization` header (`Bearer clou_...`). The workflow must be published and its trigger type must be `webhook`. The API key must be allowed to access the workflow. The token and stream URL are not public/no-auth access; workflow access is still enforced.
 
 ### Endpoint
 
@@ -666,7 +668,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/wh_abc123" \
 
 ### Response
 
-**Success (202 Accepted):**
+**Success (200 OK):**
 
 ```json
 {
@@ -681,7 +683,6 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/wh_abc123" \
 ```
 
 **Note:** A new webhook token can be generated with `POST /api/v1/workflows/{workflow_id}/regenerate-webhook-token`.
-```
 
 ## Get Workflow Statistics
 
@@ -726,7 +727,6 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
 ```
 
 A trends endpoint is also available: `GET /api/v1/workflows/{workflow_id}/stats/trends?period=7d` (period: `7d`, `30d`).
-```
 
 ## Error Codes
 
@@ -746,7 +746,7 @@ A trends endpoint is also available: `GET /api/v1/workflows/{workflow_id}/stats/
 - [Authentication](../authentication.md) - Authentication methods
 - [Rate Limiting](../rate-limiting.md) - Rate limit details
 - [Agents API](./agents.md) - Agents endpoints
-- [Workflow Concepts](../../concepts/workflows.md) - Understanding workflows
+- [Workflow User Guide](../../user-guide/workflows/workflow-builder.md) - Building workflows
 
 ---
 

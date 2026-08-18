@@ -24,10 +24,18 @@
 
 迭代执行: A → while(条件) → B → A
 
-**使用场景**: 批量处理
+**使用场景**: 批量处理和有界重试
+
+配置明确的终止条件和有限上限。工作流编辑器的循环上限默认值为 10；执行器强制最大 1000 次迭代。处理数组或对象时，使用 Iteration 节点为每个项目提供清晰的输入和输出，不要依赖无界循环。
+
+**安全检查清单**:
+- 根据输入规模设置上限
+- 确保条件会朝终止方向推进
+- 处理空输入和单个项目失败
+- 将重试与业务迭代分开
 
 ## 相关文档
 
-- [Agent vs Workflow](../concepts/agent-vs-workflow_zh-CN.md) - 对比指南
-- [系统架构](../concepts/architecture_zh-CN.md) - 架构概述
+- [Agent vs Workflow](../concepts/agent-vs-workflow_zh-CN.md) - 选择合适的抽象
+- [系统架构](../concepts/architecture_zh-CN.md) - 组件概览
 - [Prompt 工程最佳实践](./prompt-engineering_zh-CN.md) - 提示词编写

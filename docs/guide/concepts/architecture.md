@@ -41,8 +41,8 @@ Clouisle uses a modern, scalable architecture with clear separation between fron
 ### Frontend Layer
 
 **Framework**: Next.js 16 with App Router
-- **Runtime**: Bun 1.0+
-- **UI Library**: shadcn/ui (base-vega) + Tailwind CSS
+- **Development/build tooling**: Bun 1.0+
+- **Production runtime**: Node.js 22 running the Next.js standalone server (`node server.js`)
 - **Language**: TypeScript
 - **State Management**: React hooks + Context API
 - **API Client**: Axios with custom interceptors
@@ -67,7 +67,7 @@ Clouisle uses a modern, scalable architecture with clear separation between fron
 - Async/await throughout for high concurrency
 - Unified response format for all endpoints
 - Comprehensive error handling with i18n
-- Audit logging for all operations
+- Audit logging for selected security-relevant and mutating operations
 - Multi-channel notification system
 
 ### Infrastructure Layer
@@ -78,15 +78,15 @@ Clouisle uses a modern, scalable architecture with clear separation between fron
 - Full-text search capabilities via the `pg_search` extension
 
 **Cache & Queue**: Redis 7
-- Session storage
+- JWT authentication is primary; Redis stores token-blacklist entries and supports optional single-session enforcement
 - Celery task broker and result backend
 - Rate limiting counters
 - Temporary data caching
 
 **Vector Database**: Qdrant
-- Stores document embeddings
-- Similarity search for RAG
-- Collection per embedding dimension
+- Stores document embeddings for the vector leg of retrieval
+- Collection names use the configured prefix plus embedding dimension (for example, `<prefix>_1536`)
+- A knowledge base records its embedding dimension; all documents in that KB must use the same dimension
 - Efficient vector operations
 
 ## Component Interactions
@@ -106,42 +106,43 @@ Browser → (optional external reverse proxy / Ingress) → Next.js SSR (node se
 #### 2. Chat Request Flow (with RAG)
 
 ```
-User Message → FastAPI → Agent Engine → RAG Retrieval → Qdrant
-                              ↓                            ↓
-                         LLM Adapter                  Documents
-                              ↓                            ↓
-                         LLM Provider ← Context ← Chunks Retrieved
-                              ↓
-                         Response (SSE Stream)
-                              ↓
-                         Frontend (Real-time Display)
+User Message → FastAPI → Agent Engine → Retrieval target
+                                      ├── Vector search → Qdrant
+                                      ├── Lexical search → PostgreSQL/pg_search
+                                      └── Optional rerank model
+                                                       ↓
+                                              Retrieved chunks
+                                      ↓
+                         LLM Adapter → LLM Provider → Response (SSE)
 ```
+
+Agents select RAG behavior with `off`, `auto`, or `agentic`. Knowledge-base retrieval separately supports `vector`, `fulltext`, or `hybrid` search, with optional reranking.
 
 #### 3. Document Processing Flow
 
 ```
-Upload → FastAPI → Celery Task → MarkItDown → Text Extraction
-                                      ↓
-                                  Chunking
-                                      ↓
-                              Embedding Generation
-                                      ↓
-                                  Qdrant Storage
-                                      ↓
-                              Status Update (PostgreSQL)
+Upload → FastAPI → Celery knowledge queue → MarkItDown → Text Extraction
+                                             ↓
+                                           Chunking (characters)
+                                             ↓
+                                      Embedding Generation
+                                             ↓
+                             Qdrant vector + pg_search lexical index
+                                             ↓
+                                  Status Update (PostgreSQL)
 ```
 
 #### 4. Workflow Execution Flow
 
 ```
-Trigger → FastAPI → Celery Task → Workflow Orchestrator
-                                        ↓
-                                   Node Execution
-                                   (LLM, Tool, Code, etc.)
-                                        ↓
-                                   Result Storage
-                                        ↓
-                                   SSE Stream (if real-time)
+Trigger → FastAPI → Celery workflow queue → Workflow Orchestrator
+                                             ↓
+                                        Node Execution
+                              (user input/trigger/answer; LLM/Agent/media; tool/HTTP/sub-workflow; retrieval/document/file-to-URL; code/template/variable/parameter transforms; condition/classifier/iteration/loop/pause)
+                                             ↓
+                                        Result Storage
+                                             ↓
+                                      SSE Stream (if real-time)
 ```
 
 ## Scalability Considerations
@@ -149,14 +150,14 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 ### Horizontal Scaling
 
 **Frontend**:
-- Stateless Next.js instances
+- Stateless Next.js standalone instances
 - Can scale to multiple replicas
 - Load balancer distributes traffic
 
 **Backend**:
 - Stateless FastAPI instances
 - Can scale to multiple replicas
-- Session stored in Redis (shared)
+- JWT requests are validated independently; Redis is used for blacklist/single-session state when configured
 
 **Celery Workers**:
 - Can scale to multiple workers
@@ -181,15 +182,12 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 - Increase memory for larger vector collections
 - SSD for faster disk I/O
 
-## Security Architecture
-
 ### Authentication & Authorization
 
 **Multi-layer Security**:
 1. **Frontend**: Route guards, role-based UI rendering
-2. **Backend**: JWT token validation, permission checks
-3. **Database**: Row-level security via team isolation
-
+2. **Backend**: JWT token validation, permission checks, and team-membership checks
+3. **Database**: Application-layer filters enforce team and resource authorization; PostgreSQL RLS is not used
 **Authentication Methods**:
 - Password-based (with bcrypt hashing)
 - SSO (OAuth2, OIDC, SAML, CAS)
@@ -198,25 +196,25 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 ### Data Isolation
 
 **Team-based Multi-tenancy**:
-- All resources belong to a team
+- Most user-created resources are team-scoped; system skills and explicitly shared tools are exceptions
 - Users can be members of multiple teams
-- Queries automatically filtered by team membership
+- Each endpoint applies its own team, ownership, and visibility authorization filters
 - Super admins can access all data
 
 ### Audit Trail
 
-**Comprehensive Logging**:
-- All user actions logged
-- Before/after snapshots for changes
-- IP address and user agent tracking
-- Retention policies for compliance
+**Audit Logging**:
+- Key authentication, administrative, and mutating operations are logged; coverage is endpoint-specific
+- Before/after snapshots are recorded where the endpoint supplies them
+- IP address and user-agent data are recorded where available
+- Retention is configured through the audit-log settings
 
 ## Performance Optimizations
 
 ### Caching Strategy
 
 **Caching**:
-- User sessions (default 30 days, configurable via `session_timeout_days` site setting; JWT fallback of 8 days in `config.py`)
+- JWT access-token lifetime is controlled by the `session_timeout_days` security setting (seeded to 30 days; the login endpoint uses a 7-day fallback if the setting is absent); Redis stores blacklist entries and optional single-session state, not primary sessions
 - Site settings (no cache — read directly from the database on each lookup)
 - Rate limit counters (1-hour TTL, stored in Redis)
 
@@ -236,8 +234,7 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 **Real-time Updates**:
 - SSE for chat responses
 - SSE for workflow execution
-- WebSocket for future features
-
+- WebSocket support is not currently provided
 ## Deployment Architecture
 
 ### Docker Compose (Development/Small Production)
@@ -249,12 +246,14 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 │  │ Frontend │  │ Backend  │  │  Worker  │  │   Beat   │   │
 │  │  :3000   │  │  :8000   │  │          │  │          │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │PostgreSQL│  │  Redis   │  │  Qdrant  │                 │
-│  │  :5432   │  │  :6379   │  │  :6333   │                 │
-│  └──────────┘  └──────────┘  └──────────┘                 │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐ │
+│  │PostgreSQL│  │  Redis   │  │  Qdrant  │  │Sandbox     │ │
+│  │  :5432   │  │  :6379   │  │  :6333   │  │worker      │ │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+The worker consumes the `default`, `knowledge`, and `workflow` queues; sandbox execution uses the dedicated sandbox-worker process/queue when enabled.
 
 ### Kubernetes (Large Production)
 
@@ -307,7 +306,7 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 ### Health Checks
 
 **Endpoints**:
-- `/api/v1/health` — public basic health check (container HEALTHCHECK uses `curl -f http://localhost:8000/api/v1/health`)
+- `/api/v1/health` — public basic health check; Compose probes it with Python `urllib.request`, while Helm/Kubernetes uses HTTP probes
 - `/api/v1/admin/observability/system/health` — admin observability health (CPU/memory/disk/database/Redis/worker), requires `admin:dashboard:access`
 
 ## Future Architecture Considerations
@@ -336,7 +335,7 @@ Trigger → FastAPI → Celery Task → Workflow Orchestrator
 
 ## Related Documentation
 
-- [Multi-Tenancy Model](./multi-tenancy.md) - Team-based isolation
+- [Multi-Tenancy Model](./multi-tenancy.md) - Team and resource authorization
 - [RAG Explained](./rag-explained.md) - Retrieval-Augmented Generation
 - [Agent vs Workflow](./agent-vs-workflow.md) - Comparison guide
 - [Vector Embeddings](./vector-embeddings.md) - Vector search concepts

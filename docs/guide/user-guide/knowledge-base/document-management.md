@@ -11,19 +11,17 @@ Document management allows you to:
 - **Delete documents**: Remove unwanted content
 - **Reprocess documents**: Re-run processing after configuration changes
 - **Manage chunks**: View, edit, and delete chunks
+- **Run bulk actions**: Process pending documents, retry failed chunks, or delete selected documents
 
-> **Note:** Document categories, tags, folders, bulk operations, bulk ZIP download, archiving, replacing a document's content, and per-document permissions/sharing are **not implemented**.
+> **Note:** Document categories, tags, folders, bulk ZIP download, archiving, replacing a document's content, and per-document permissions/sharing are **not implemented**.
 
 ## Accessing Documents
 
 ### From Knowledge Base
 
-**Steps:**
-
-1. Navigate to **Knowledge Bases** section
-2. Click on a knowledge base to open it
-3. Go to **Documents** tab
-4. View all documents in the knowledge base
+1. In the platform header, select **Knowledge Base** (`/app/kb`).
+2. Open a knowledge base at `/app/kb/{id}`.
+3. Use the document list and its row or selection actions.
 
 **Documents list:**
 ```
@@ -171,6 +169,17 @@ Each document is split into chunks that can be viewed, edited, or deleted indivi
 - Vector embeddings
 - Chunks
 - Search index entries
+
+### Bulk actions
+
+1. In the Documents list, select one or more rows.
+2. Choose the available bulk action:
+   - **Process** starts processing for selected pending documents.
+   - **Retry** retries failed chunks for selected documents in error state.
+   - **Delete** permanently deletes the selected documents after confirmation.
+3. Refresh the list to confirm the updated statuses.
+
+Bulk ZIP download is not available; download documents individually.
 
 ## Downloading Documents
 

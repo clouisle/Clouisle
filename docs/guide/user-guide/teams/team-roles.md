@@ -129,7 +129,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 
 **Shared with Admin:**
 - Add/remove members
-- Update team settings
+- Update team information from **Manage Teams**
 
 > **Note:** Billing and subscriptions are **not implemented**.
 
@@ -145,7 +145,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 
 **Steps:**
 
-1. Go to **Team Settings** → **Members**
+1. Open **Manage Teams** (`/teams`) and select the team.
 2. Find member to transfer to
 3. Click **"..."** menu
 4. Select **"Transfer Ownership"**
@@ -183,7 +183,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 **Admins help manage the team:**
 
 - Manage team members
-- Configure team settings
+- Configure team information from **Manage Teams**
 - Oversee resources
 - Monitor team activity
 - Support team members
@@ -200,8 +200,8 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Manage agents, workflows, knowledge bases
 - Configure resource settings
 
-**Team settings:**
-- Update team name, description, and avatar
+**Team information:**
+- Update team name, description, and avatar from **Manage Teams**
 
 **Monitoring:**
 - View team resources and usage
@@ -261,7 +261,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 ### Member Limitations
 
 **Cannot:**
-- Manage team settings
+- Manage team information from **Manage Teams**
 - Add or remove members
 - Change member roles
 - Delete or publish agents and workflows
@@ -300,7 +300,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Create any resources
 - Update any resources
 - Delete any resources
-- Manage team settings
+- Manage team information from **Manage Teams**
 - Add members
 - Upload documents
 - Create API keys
@@ -325,7 +325,7 @@ When a default team is configured, new users can be added automatically as `view
 
 **Steps (Owner only):**
 
-1. Go to **Team Settings** → **Members**
+1. Open **Manage Teams** (`/teams`) and select the team.
 2. Find member
 3. Click **"..."** menu
 4. Select **"Change Role"**
@@ -363,7 +363,7 @@ Your role in "Marketing Team" has been changed from Member to Admin by Alice.
 
 You now have additional permissions:
 • Manage team members
-• Update team settings
+• Update team information from **Manage Teams**
 • View audit logs
 
 [View New Permissions]
@@ -377,7 +377,7 @@ You now have additional permissions:
 
 1. Go to team dashboard
 2. Your role is displayed under team name
-3. Or go to **Team Settings** → **Members**
+3. Or open **Manage Teams** (`/teams`) and select the team.
 4. Find yourself in member list
 
 **Role display:**
@@ -510,7 +510,7 @@ You now have additional permissions:
 - [Joining Teams](./joining-teams.md) - How to join teams
 - [Team Collaboration](./team-collaboration.md) - Working with teams
 - [Team Management](../../admin-guide/teams/team-management.md) - Admin guide
-- [Permissions System](../../concepts/permissions.md) - Understanding permissions
+- [Team Management](../settings/team-settings.md) - Team membership and model authorization
 
 ## Getting Help
 

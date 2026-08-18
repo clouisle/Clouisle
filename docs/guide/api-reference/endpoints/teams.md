@@ -19,12 +19,12 @@ The Teams API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
+All team endpoints require an authenticated JWT user session. API-key authentication is not accepted.
 
 **Required scopes:**
 - `team:read` - View team information
-- `team:manage` - Manage teams
-- `admin:team:read` - List all teams (admin)
+- `team:update` - Update team details
+- `team:manage` - Manage team members and membership operations
 - `admin:team:create` - Create teams (admin)
 - `admin:team:delete` - Delete teams (admin)
 
@@ -179,7 +179,7 @@ curl -X POST "https://your-domain.com/api/v1/admin/teams" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -348,7 +348,7 @@ curl -X POST "https://your-domain.com/api/v1/teams/team-123/members" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {

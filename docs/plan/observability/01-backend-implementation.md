@@ -841,4 +841,4 @@ async def test_get_overview_endpoint(client: AsyncClient, superuser_token_header
 
 ---
 
-**下一步**: 查看 [02-frontend-implementation.md](./02-frontend-implementation.md) 了解前端实施细节。
+**下一步**：前端观测面板实现位于 `frontend/app/(dashboard)/dashboard/observability/_components/`；当前没有单独的前端实施文档。

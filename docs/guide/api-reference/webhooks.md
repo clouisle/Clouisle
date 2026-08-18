@@ -150,19 +150,18 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/$WEBHOOK_TOKEN" \
 }
 ```
 
-The `stream_url` can be polled via SSE (`GET /api/v1/workflows/runs/{run_id}/stream`) to track execution. Webhook-triggered runs are publicly streamable (no auth required); see [SSE Streaming](./sse-streaming.md).
+The `stream_url` can be consumed via SSE (`GET /api/v1/workflows/runs/{run_id}/stream`) by an authenticated user with access to the workflow. Webhook-triggered runs are not publicly streamable; the webhook token authorizes only the trigger request. See [SSE Streaming](./sse-streaming.md).
 
 ### Requirements & Errors
 
 | Condition | Result |
 |-----------|--------|
-| Missing/invalid `Authorization` header | `2000` (`UNAUTHORIZED`), HTTP 401 |
-| API key format not `clou_...` | `2000` (`UNAUTHORIZED`) |
-| API key authentication failure | `2000` (`UNAUTHORIZED`) |
+| Missing/invalid-format `Authorization` header | `2000` (`UNAUTHORIZED`), HTTP 401 |
+| API key lookup fails | `2001` (`INVALID_TOKEN`), HTTP 401 |
 | Unknown `webhook_token` | `1004` (`FORBIDDEN`), HTTP 403 |
 | Workflow not published | `1004` (`FORBIDDEN`) |
 | Workflow trigger type is not `webhook` | `1004` (`FORBIDDEN`) |
-| API key restricted to other workflows | `3000` (`PERMISSION_DENIED`), HTTP 403 |
+| API key restricted to other workflows | `1004` (`FORBIDDEN`), HTTP 403 |
 
 The webhook token is compared in constant time and can be regenerated via `POST /api/v1/workflows/{workflow_id}/regenerate-webhook-token`.
 

@@ -4,34 +4,33 @@ Optimizing knowledge base performance.
 
 ## Chunking Strategies
 
-> **Note:** The presets below are recommendations, not hard defaults. Clouisle chunks by characters with a default `chunk_size` of 1000 and `chunk_overlap` of 100; there is no built-in per-document-type preset table.
+Clouisle uses character-based chunking. The defaults are `chunk_size = 1000` characters and `chunk_overlap = 100` characters; the UI accepts chunk sizes from 100 to 2000 characters. These are starting points, not per-document-type presets.
 
-| Document Type | Chunk Size | Overlap |
-|---------------|------------|---------|
-| General docs | 500-1000 tokens | 10-20% |
-| Q&A | 200-400 tokens | 5-10% |
-| Code | 300-600 tokens | 15-25% |
+| Starting point | Chunk size | Overlap |
+|----------------|------------|---------|
+| General prose | 1000 characters | 100 characters |
+| Short Q&A | 400-800 characters | 50-100 characters |
+| Code or structured text | 800-1500 characters | 100-200 characters |
+
+Tune against representative documents and retrieval quality; these values are recommendations rather than hard defaults.
 
 ## Search Parameters
 
-> **Note:** The values below are recommendations, not hard defaults. The implementation defaults to `top_k = 5` and `score_threshold = 0.0`; context length is governed by a token budget rather than a fixed `max_tokens`.
+The retrieval API uses `top_k`, `score_threshold`, and (for hybrid search) dense/lexical weights and `rrf_k`. Defaults are `top_k = 5` and `score_threshold = 0.0`; there is no KB search `max_tokens` parameter. Context length is governed by the chat model's available token budget.
 
-- **top_k**: 3-5 for most cases (recommended)
-- **score_threshold**: 0.7-0.8 for quality (recommended)
-- **max_tokens**: 2000-4000 for context (recommended; actual limits follow the configured token budget)
+- **top_k**: Start with 3-5 and increase only when recall is insufficient
+- **score_threshold**: Start at 0.0, then raise it using a representative evaluation set
+- **search_mode**: Compare `vector`, `fulltext`, and `hybrid` for the corpus
+- **reranking**: Enable only with an authorized rerank model; tune candidate count and threshold using measured quality/latency
 
-## When to Re-index
+## When to Reprocess
 
 - Document content changed
-- Chunking strategy updated
-- Embedding model changed
+- Chunking settings or separators changed
+- A document needs explicit reprocessing/rechunking
 
----
+Changing the embedding model on an existing KB is rejected because its dimension must remain compatible. Create a replacement KB or use an explicit migration/reprocessing process; the application does not silently auto-reindex the KB.
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+## Evaluation
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+Keep a small set of representative queries and record recall, answer quality, latency, and cost before changing settings. Compare retrieval modes and reranking with the same queries rather than relying on a single example.

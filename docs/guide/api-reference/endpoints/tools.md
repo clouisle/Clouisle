@@ -16,9 +16,9 @@ The Tools API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
+All endpoints require an authenticated JWT user session. API-key authentication is not accepted by these management and execution routes.
 
-**Required scopes:**
+**Required permissions:**
 - `tool:read` - View tools
 - `tool:create` - Create tools
 - `tool:update` - Update tools
@@ -438,7 +438,7 @@ curl -X POST "https://your-domain.com/api/v1/tools?team_id=team-123" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {

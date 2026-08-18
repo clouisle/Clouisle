@@ -131,22 +131,22 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/$WEBHOOK_TOKEN" \
 **Track the run:**
 
 ```bash
-curl -N "https://your-domain.com/api/v1/workflows/runs/$RUN_ID/stream?from_sequence=0"
+curl -N "https://your-domain.com/api/v1/workflows/runs/$RUN_ID/stream?from_sequence=0" \
+  -H "Authorization: Bearer $CLOUISLE_TOKEN"
 ```
 
-Webhook-triggered runs are streamable without authentication. Alternatively poll `GET /api/v1/workflows/runs/{run_id}`.
+The stream endpoint requires an authenticated user with access to the workflow, including for webhook-triggered runs. A webhook token authorizes the trigger request, not the subsequent SSE stream. Alternatively poll `GET /api/v1/workflows/runs/{run_id}` with the same access requirements.
 
 ### Error Cases
 
 | Situation | HTTP / Code |
 |-----------|-------------|
-| No `Authorization` header | 401, code `2000` |
-| Token not a `clou_` API key | 401, code `2000` |
-| API key invalid | 401, code `2000` |
+| No `Authorization` header or malformed authorization | 401, code `2000` |
+| Token is well-formed but API key lookup fails | 401, code `2001` |
 | Unknown webhook token | 403, code `1004` |
 | Workflow not published | 403, code `1004` |
 | Trigger type is not `webhook` | 403, code `1004` |
-| Key restricted to other workflows | 403, code `3000` |
+| Key restricted to other workflows | 403, code `1004` |
 
 ## Example Receiver
 

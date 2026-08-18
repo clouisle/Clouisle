@@ -405,25 +405,25 @@ The audit log list endpoint (`GET /api/v1/admin/audit-logs`) supports the follow
 |-----------|-------------|
 | `user_id` | Filter by user UUID |
 | `team_id` | Filter by team UUID |
-| `action` | Filter by one or more action types |
+| `action` | Filter by exact action values; the API applies an `action__in` match for repeated values (wildcards are not supported) |
 | `resource_type` | Filter by resource type (user, team, agent, workflow, etc.) |
 | `resource_id` | Filter by resource UUID |
 | `status` | Filter by status (`success`, `failed`, etc.) |
 | `start_date` / `end_date` | Filter by time period |
-| `search` | Free-text search over resource name, resource ID, and IP address |
+| `search` | Case-insensitive substring (`icontains`) search over resource name, resource ID, and IP address |
 
 **Search Example:**
 ```bash
 1. Navigate to Audit Logs
 2. Enter search criteria:
    - User: john.doe@example.com
-   - Action: delete_*
+   - Action: delete_agent
    - Date Range: Last 7 days
 3. Click "Search"
 4. View filtered results
 ```
 
-> **Note:** There is no dedicated IP address filter parameter. IP-based lookup is covered by the `search` text field, which matches resource name, resource ID, and IP address.
+> **Note:** There is no dedicated IP address filter parameter. The `search` field performs a case-insensitive substring match; it does not interpret `*` or other glob patterns.
 
 ### Advanced Filters
 
@@ -435,7 +435,7 @@ Filters:
   Resource Type: agent
   Status: success
   Date Range: 2026-02-01 to 2026-02-11
-  Search: 192.168.1.*
+  Search: 192.168.1.
 ```
 
 **Filter by Changes:**
@@ -687,9 +687,9 @@ Metadata:
 ## Related Documentation
 
 - [Permission Management](../permissions/permission-management.md) - Permission admin
-- [Security Best Practices](../../best-practices/security.md) - Security guide
+- [Security Checklist](../../operations/security-checklist.md) - Security guidance
 - [User Management](../users/user-management.md) - User admin
-- [Compliance](../../best-practices/compliance.md) - Compliance guide
+- [Compliance operations](../../operations/backup-restore.md) - Backup and retention guidance
 
 ---
 

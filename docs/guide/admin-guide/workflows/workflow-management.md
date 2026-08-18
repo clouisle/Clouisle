@@ -27,7 +27,7 @@ The workflow list shows:
 - **Workflow name and description**
 - **Team ownership**
 - **Status** (Draft, Published, Archived)
-- **Trigger type** (Manual, Webhook, Schedule)
+- **Trigger type** (Manual, Webhook, Cron; wire value `cron`)
 - **Execution count**
 - **Last execution**
 - **Created date**
@@ -49,7 +49,7 @@ The workflow list shows:
    - **Name**: Workflow display name
    - **Description**: Workflow purpose
    - **Team**: Select team owner
-   - **Trigger**: Manual, Webhook, or Schedule
+   - **Trigger**: Manual, Webhook, or Cron (`cron` on the API)
 
 3. Design workflow:
    - Add nodes (Start, LLM, Tool, Condition, etc.)
@@ -67,30 +67,26 @@ The workflow list shows:
 
 ### Workflow Node Types
 
-**Input/Output Nodes:**
-- **Start**: Workflow entry point
-- **End**: Workflow exit point
-- **Input**: Accept external input
-- **Output**: Return results
+The editor provides these node types:
 
-**Processing Nodes:**
-- **LLM**: Call language model
-- **Tool**: Execute tool (web search, calculator, etc.)
-- **HTTP**: Make HTTP requests
-- **Transform**: Transform data
-- **Code**: Execute custom code
-
-**Control Flow:**
-- **Condition**: Branch based on condition
-- **Loop**: Iterate over items
-- **Parallel**: Execute nodes in parallel
-- **Wait**: Delay execution
-
-**Integration:**
-- **Database**: Query database
-- **API**: Call external API
-- **Email**: Send email
-- **Webhook**: Trigger webhook
+- **LLM** (`llm`): Call a language model
+- **Media Generation** (`media_generation`): Generate media with a compatible model
+- **Condition** (`condition`): Branch on a condition
+- **Question Classifier** (`question_classifier`): Classify input questions
+- **Iteration** (`iteration`): Iterate over items
+- **Loop** (`loop`): Repeat a branch
+- **Pause** (`pause`): Wait for approval or variable input
+- **Code** (`code`): Execute custom code
+- **Template** (`template`): Render a template
+- **File to URL** (`file_to_url`): Convert a file asset to a URL
+- **Variable Aggregator** (`variable_aggregator`): Combine variables
+- **Variable Assignment** (`variable_assignment`): Assign variables
+- **Parameter Extractor** (`parameter_extractor`): Extract structured parameters
+- **Sub-workflow** (`sub_workflow`): Invoke another workflow
+- **Agent** (`agent`): Invoke an agent
+- **Tool** (`tool`): Execute a tool
+- **Knowledge Retrieval** (`knowledge_retrieval`): Retrieve knowledge-base content
+- **Answer** (`answer`): Return the workflow answer
 
 ## Workflow Configuration
 
@@ -116,16 +112,16 @@ Requires Input: true
 ```yaml
 Type: webhook
 Endpoint: POST /api/v1/workflows/webhook/{webhook_token}
-Authentication: Optional API key in Authorization header
+Authentication: Required `Bearer clou_...` API key in Authorization header
 ```
 
-**Schedule Trigger:**
+**Cron Trigger:**
 ```yaml
-Type: schedule
+Type: cron
 Cron: "0 9 * * 1-5"  # 9 AM weekdays
 ```
 
-> **Note:** Schedule (cron) triggers are **not implemented**: `trigger_type = cron` and the cron expression can be stored in `trigger_config`, but the Celery beat schedule contains no workflow cron task, so scheduled runs are never executed. Publish/unpublish and manual/webhook execution are the working paths.
+The `workflow.check_scheduled` task implements cron evaluation for published workflows. It is not included in the supplied Celery Beat schedule by default, so operators who need cron execution must schedule this task (for example every minute) in their deployment. A stored `trigger_type: cron` alone does not run a workflow.
 
 ### Node Configuration Example
 
@@ -180,7 +176,7 @@ Output Variable: kb_results
 2. Click **Execution History** tab
 3. View run list:
    - Run ID
-   - Status (running, completed, failed, etc.)
+   - Status (`running`, `success`, `failed`, etc.)
    - Start time
    - Duration
    - Trigger source
@@ -196,7 +192,7 @@ Run history endpoints: `GET /api/v1/workflows/runs`, `GET /api/v1/workflows/{wor
 ```yaml
 Run ID: run-789
 Workflow: Customer Inquiry Processing
-Status: completed
+Status: success
 Started: 2026-02-11 14:30:00
 Completed: 2026-02-11 14:30:45
 Duration: 45 seconds
@@ -264,7 +260,7 @@ A workflow with trigger type `webhook` gets a webhook token. The endpoint is:
 POST /api/v1/workflows/webhook/{webhook_token}
 ```
 
-### Create Webhook
+### Create or Regenerate a Webhook Token
 
 1. Edit workflow
 2. Set trigger type to **Webhook**
@@ -275,10 +271,11 @@ POST /api/v1/workflows/webhook/{webhook_token}
 
 ```yaml
 Endpoint: POST /api/v1/workflows/webhook/{webhook_token}
-Authentication: Optional API key in the Authorization header
+Authentication: Required API key in the Authorization header
+Payload: workflow inputs (raw JSON or {"inputs": {...}})
 ```
 
-The webhook payload is the workflow input (either raw JSON or `{"inputs": {...}}`). If the workflow's trigger config defines an API key, requests must present it in the `Authorization` header; the token itself is matched with constant-time comparison.
+Requests must present a valid `clou_` API key in the `Authorization` header; the webhook token is matched with constant-time comparison.
 
 > **Note:** Not implemented / Roadmap: `wh_...`/`whsec_...` credential pairs, IP allowlists, per-webhook rate limits, retry policies, and webhook request logs are not available.
 
@@ -303,7 +300,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/TOKEN" \
 
 ### View Schedules
 
-> **Note:** Not implemented / Roadmap. Scheduled (cron) workflow triggers are not executed: `trigger_type = cron` can be stored with a cron expression in `trigger_config`, but no Celery beat task dispatches workflow runs on a schedule, and there is no schedule list, next-run time, or pause/resume management.
+There is no schedule-management UI or next-run listing. Cron configuration is stored in the workflow's `trigger_config`; operators must ensure `workflow.check_scheduled` is dispatched periodically.
 
 ## Workflow Limits
 
@@ -360,8 +357,9 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/TOKEN" \
 - Missed executions
 
 **Solutions:**
-
-> **Note:** Scheduled (cron) triggers are not implemented — no Celery beat task dispatches workflow runs. Use manual runs or webhook triggers instead.
+1. Confirm the workflow is `published` and `trigger_type` is `cron`.
+2. Confirm `trigger_config.cron` contains a valid cron expression.
+3. Confirm Celery Beat or another scheduler dispatches `workflow.check_scheduled` periodically; the supplied Beat schedule does not add it automatically.
 
 ### High Execution Time
 

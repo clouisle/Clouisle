@@ -16,9 +16,9 @@ The API Keys API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token.
+All API-key management endpoints require an authenticated JWT user with the applicable permission.
 
-**Required scopes:**
+**Required permissions:**
 - `apikey:read` - View API keys
 - `apikey:create` - Create API keys
 - `apikey:update` - Update API keys
@@ -41,7 +41,7 @@ GET /api/v1/api-keys
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
+| `page_size` | integer | No | 20 | Items per page |
 | `status` | array | No | - | Filter by status: `active`, `inactive`, `expired` (repeatable) |
 | `user_id` | array | No | - | Filter by owner user ID (admin only) |
 | `search` | string | No | - | Search by name or key prefix |
@@ -65,7 +65,7 @@ curl -X GET "https://your-domain.com/api/v1/api-keys" \
       {
         "id": "key-123",
         "name": "Production API Key",
-        "key_prefix": "clou_",
+        "key_prefix": "clou_a1b2c3d",
         "user_id": "user-001",
         "user": {
           "id": "user-001",
@@ -93,7 +93,7 @@ curl -X GET "https://your-domain.com/api/v1/api-keys" \
       {
         "id": "key-456",
         "name": "Development API Key",
-        "key_prefix": "clou_",
+        "key_prefix": "clou_f6e5d4c",
         "user_id": "user-001",
         "user": {
           "id": "user-001",
@@ -155,7 +155,7 @@ curl -X GET "https://your-domain.com/api/v1/api-keys/key-123" \
   "data": {
     "id": "key-123",
     "name": "Production API Key",
-    "key_prefix": "clou_",
+    "key_prefix": "clou_a1b2c3d",
     "user_id": "user-001",
     "user": {
       "id": "user-001",
@@ -239,7 +239,7 @@ curl -X POST "https://your-domain.com/api/v1/api-keys" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -247,8 +247,8 @@ curl -X POST "https://your-domain.com/api/v1/api-keys" \
   "data": {
     "id": "key-789",
     "name": "Production API Key",
-    "key": "clou_1234567890abcdefghijklmnopqrstuvwxyz",
-    "key_prefix": "clou_",
+    "key": "clou_a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890",
+    "key_prefix": "clou_a1b2c3d",
     "user_id": "user-001",
     "user": {
       "id": "user-001",
@@ -441,7 +441,7 @@ curl -X POST "https://your-domain.com/api/v1/api-keys/key-123/deactivate" \
   "data": {
     "id": "key-123",
     "name": "Production API Key",
-    "key_prefix": "clou_",
+    "key_prefix": "clou_a1b2c3d",
     "user_id": "user-001",
     "scopes": ["chat", "agent:read"],
     "rate_limit": 1000,
@@ -469,7 +469,7 @@ curl -X POST "https://your-domain.com/api/v1/api-keys/key-123/deactivate" \
 | `3000` | Permission denied | Insufficient permissions |
 | `1001` | Validation failed | Invalid request data |
 
-> **Note:** No per-endpoint rate limits are implemented. The `rate_limit` field on an API key is enforced per minute (0 = unlimited) when the key is used.
+> **Note:** No per-endpoint rate limits are implemented. The `rate_limit` field is stored for informational purposes and is not enforced by middleware.
 
 ## Best Practices
 
@@ -654,7 +654,7 @@ keys.forEach(key => {
 - [Authentication](../authentication.md) - Authentication methods
 - [API Key Scopes](../../user-guide/api-keys/api-key-scopes.md) - Scope reference
 - [Managing API Keys](../../user-guide/api-keys/managing-api-keys.md) - User guide
-- [Security Best Practices](../../best-practices/security.md) - Security guide
+- [Security Checklist](../../operations/security-checklist.md) - Security guidance
 
 ---
 

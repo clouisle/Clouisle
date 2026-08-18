@@ -64,12 +64,10 @@ User management allows administrators to:
 
 1. Click **"+ Create User"** button
 2. Fill in user information:
-   - **Email**: User's email address
    - **Username**: Unique username
-   - **Full Name**: User's full name
-   - **Password**: Initial password (or auto-generate)
-   - **Role**: Global role (Super Admin, Admin, Member, Viewer)
-   - **Teams**: Assign to teams (optional)
+   - **Email**: User's email address
+   - **Password**: Initial password
+   - **Active**: Whether the account is active (`is_active`)
 3. Click **"Create User"**
 4. User is created
 
@@ -79,31 +77,24 @@ User management allows administrators to:
 │ Create User                             │
 ├─────────────────────────────────────────┤
 │                                         │
-│ Email: *                                │
-│ [alice@example.com__________]           │
-│                                         │
 │ Username: *                             │
 │ [alice___________________]              │
 │                                         │
-│ Full Name: *                            │
-│ [Alice Johnson___________]              │
+│ Email: *                                │
+│ [alice@example.com__________]           │
 │                                         │
 │ Password: *                             │
-│ [••••••••••] [Generate] [Show]          │
+│ [••••••••••] [Show]                     │
 │                                         │
-│ Global Role:                            │
-│ ○ Super Admin                           │
-│ ○ Admin                                 │
-│ ● Member                                │
-│ ○ Viewer                                │
-│                                         │
-│ Teams: (optional)                       │
-│ [Select teams...________] [+ Add]       │
+│ Active:                                  │
+│ ☑ Active                                 │
 │                                         │
 │ [Cancel]  [Create User]                 │
 │                                         │
 └─────────────────────────────────────────┘
 ```
+
+Global roles and team roles are assigned after creation from the corresponding edit or team-management flows; the create-user form does not assign roles or teams.
 
 ### Bulk User Import
 
@@ -165,30 +156,26 @@ User management allows administrators to:
 │ 👤 alice@example.com                    │
 │    Username: alice                      │
 │    Status: ✅ Active                    │
-│    Global Role: Admin                   │
 │                                         │
 │ Account Information:                    │
 │ • Created: 2026-01-15 10:00:00         │
 │ • Last Login: 2 hours ago              │
-│ • Login Count: 234                     │
-│ • Failed Logins: 0                     │
+│ • Force Password Change: No             │
 │ • Password Expiration: exempt/expiring │
 │                                         │
-│ Teams (3):                              │
-│ • Marketing Team (Owner)               │
-│ • Sales Team (Admin)                   │
-│ • Support Team (Member)                │
+│ Roles:                                  │
+│ • Admin                                 │
 │                                         │
 │ Security:                               │
-│ • 2FA: ✅ Enabled (admin status)        │
 │ • SSO: ✅ Google                        │
-│ • Last Password Change: 30 days ago    │
 │                                         │
 │ [Force Password Change] [Deactivate]    │
 │ [Delete]                                │
 │                                         │
 └─────────────────────────────────────────┘
 ```
+
+The detail response exposes `last_login`, `force_password_change`, `password_expiration_exempt`, the user's `roles`, and SSO connection information. It does not expose login-count, failed-login-count, or last-password-change fields.
 
 ### User Activity
 
@@ -203,21 +190,17 @@ User management allows administrators to:
 1. Open user details
 2. Click **"Edit"** button
 3. Update fields:
-   - Full name
    - Email (if allowed)
    - Username (if allowed)
-   - Role
-   - Status
+   - Global role
+   - Active status
 4. Click **"Save Changes"**
 
 **Edit user form:**
 ```
 ┌─────────────────────────────────────────┐
-│ Edit User - Alice Johnson               │
+│ Edit User - Alice                       │
 ├─────────────────────────────────────────┤
-│                                         │
-│ Full Name:                              │
-│ [Alice Johnson___________]              │
 │                                         │
 │ Email:                                  │
 │ [alice@example.com__________]           │
@@ -228,7 +211,7 @@ User management allows administrators to:
 │                                         │
 │ Global Role:                            │
 │ ○ Super Admin                           │
-│ ● Admin                                 │
+│ ○ Admin                                 │
 │ ○ Member                                │
 │ ○ Viewer                                │
 │                                         │
@@ -549,7 +532,7 @@ See [Team Roles](../../user-guide/teams/team-roles.md) for details.
 
 ## Related Documentation
 
-- [Team Management](./team-management.md) - Managing teams
+- [Team Management](../teams/team-management.md) - Managing teams
 - [System Settings](../settings/system-settings.md) - Security configuration
 - [Audit Logs](../audit-logs/audit-log-management.md) - Viewing audit logs
 - [SSO Configuration](../settings/SSO.md) - SSO setup

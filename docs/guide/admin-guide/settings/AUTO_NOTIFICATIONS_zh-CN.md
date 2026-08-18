@@ -43,6 +43,7 @@
 |------|------|----------|
 | `workflow.run_success` | 工作流运行成功 | 触发者 |
 | `workflow.run_failed` | 工作流运行失败 | 触发者 |
+| `workflow.pause_pending` | 工作流等待审批或输入 | 审批人或暂停请求指定的处理人 |
 
 ### Agent 相关
 
@@ -75,6 +76,16 @@
 - 当用户从新的 IP 地址或设备登录时，会触发异常登录通知
 - 登录历史保留 30 天，每个用户最多记录 10 个 IP 和 10 个设备
 
+### 密码过期相关
+
+| 类型 | 说明 | 通知对象 |
+|------|------|----------|
+| `password.expiring` | 密码即将过期 | 受影响的用户 |
+| `password.expired` | 密码已过期 | 受影响的用户 |
+| `password.force_change` | 管理员要求修改密码 | 受影响的用户 |
+
+这些是有效的通知类型，但默认种入的 `enabled_types` 不会启用密码过期相关类型。需要密码策略通知时，请显式启用它们。
+
 ## 配置方式
 
 ### 管理后台配置
@@ -84,12 +95,14 @@
 3. 选择外部通知渠道（需先在对应渠道配置页面启用）
 4. 保存配置
 
+接口为 `GET/PUT /api/v1/admin/site-settings/auto-notifications`。可用渠道为 `email`、`dingtalk`、`wechat`、`feishu`、`webhook`、`slack`。默认不会启用外部渠道；默认种入的通知类型包含 `workflow.pause_pending`，但不包含密码过期相关类型。
+
 ### API 配置
 
 **获取配置**
 
 ```http
-GET /api/v1/site-settings/auto-notifications
+GET /api/v1/admin/site-settings/auto-notifications
 ```
 
 响应示例：
@@ -112,7 +125,7 @@ GET /api/v1/site-settings/auto-notifications
 **更新配置**
 
 ```http
-PUT /api/v1/site-settings/auto-notifications
+PUT /api/v1/admin/site-settings/auto-notifications
 Content-Type: application/json
 
 {
@@ -294,6 +307,7 @@ TRANSLATIONS = {
 - `kb.doc_indexed`
 - `kb.doc_failed`
 - `workflow.run_failed`
+- `workflow.pause_pending`
 - `apikey.expiring`
 - `apikey.expired`
 - `security.login_anomaly`

@@ -91,7 +91,7 @@ See [Notifications](../profile/notifications.md) for details.
 ## Related Documentation
 
 - [Notifications](../profile/notifications.md) - Viewing notifications
-- [Team Settings](./team-settings.md) - Team configuration
+- [Team Management](./team-settings.md) - Team membership and model authorization
 
 ---
 

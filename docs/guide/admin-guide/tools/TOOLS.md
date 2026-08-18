@@ -52,7 +52,7 @@ Call external REST APIs with configurable requests.
 
 **Features:**
 - Support GET, POST, PUT, PATCH, DELETE methods
-- Variable substitution in URL, headers, query params, and body
+- Variable substitution in query parameters, headers, and request body templates; URL strings must remain static
 - Secure credential storage
 - Response path extraction
 
@@ -71,6 +71,7 @@ Call external REST APIs with configurable requests.
   "response_path": "data.translation"
 }
 ```
+> **Important:** HTTP tool URL templates are not supported. Do not put `{{variable}}` placeholders in the URL path or URL string; use query parameters, headers, or the request body instead.
 
 ### Code Tools
 

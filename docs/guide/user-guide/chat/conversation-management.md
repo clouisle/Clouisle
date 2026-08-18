@@ -14,122 +14,49 @@ Conversations in Clouisle are persistent chat sessions with AI agents. You can:
 
 > **Note:** Archiving, sharing, exporting, folders, and tags for conversations are **not implemented**.
 
-## Conversation List
+## Conversations within an agent chat
 
-### Accessing Conversations
+### Accessing recent conversations
 
-**From Platform Interface:**
+There is no global **Chat** or **Conversations** section. Conversations are scoped to the agent you are chatting with.
 
-1. Navigate to **Chat** or **Conversations** section
-2. View the list of your conversations
-3. Click on a conversation to open it
+1. Open **Apps** (`/app/apps`).
+2. Select the **Agent** tab.
+3. Open an agent card's menu and choose **Chat**.
+4. In `/chat/{agent_id}`, use that agent's conversation controls to open a recent conversation or start a new one.
 
-**Conversation list view:**
-```
-┌─────────────────────────────────────────────────────┐
-│ Conversations                          [+ New Chat] │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│ 🤖 Product Analysis                                 │
-│    Last message: "Thanks for the summary"          │
-│    2 hours ago • 15 messages                       │
-│                                                     │
-│ 🤖 Code Review Assistant                            │
-│    Last message: "The function looks good"         │
-│    Yesterday • 8 messages                          │
-│                                                     │
-└─────────────────────────────────────────────────────┘
-```
+The recent-conversation view is for the current agent; it does not combine conversations from other agents.
 
-### Conversation Information
+### Conversation information
 
-Each conversation shows:
+Recent conversations can show:
 
 | Field | Description |
 |-------|-------------|
-| **Agent Name** | The AI agent you're chatting with |
-| **Title** | Conversation title (auto-generated or custom) |
-| **Last Message** | Preview of the most recent message |
-| **Timestamp** | When the last message was sent |
-| **Message Count** | Total number of messages |
+| **Agent** | The agent associated with the conversation (the current agent page) |
+| **Title** | Conversation title |
+| **Last message** | Preview of the most recent message |
+| **Timestamp** | When the conversation was last updated |
 
 ## Creating Conversations
 
-### Starting a New Conversation
-
-**Method 1: From Agent Page**
-
-1. Navigate to **Agents** section
-2. Click on an agent card
-3. Click **"Start Chat"** or **"Chat"** button
-4. New conversation opens
-5. Send your first message
-
-**Method 2: From Conversations List**
-
-1. Go to **Conversations** section
-2. Click **"+ New Chat"** button
-3. Select an agent from the list
-4. New conversation opens
-5. Send your first message
-
-### Conversation Titles
-
-**Auto-generated titles:**
-- The first message is used as the title (truncated if long)
-
-**Custom titles:**
-- You can rename conversations anytime
-- See "Renaming Conversations" below
+Start a conversation from the current agent's chat page. There is no global **New Chat** picker.
 
 ## Managing Conversations
 
 ### Renaming Conversations
 
-**Steps:**
-
-1. Open the conversation
-2. Click the **"..."** menu in the header
-3. Select **"Rename"**
-4. Enter the new title (max 200 chars)
-5. Click **"Save"** or press **Enter**
+Open a conversation in the agent chat and use its **...** menu to rename it when the rename action is available. The title is the only editable conversation setting.
 
 ### Deleting Conversations
 
-**Warning**: Deleted conversations cannot be recovered.
-
-**Steps:**
-
-1. Open the conversation or hover in the list
-2. Click the **"..."** menu
-3. Select **"Delete"**
-4. Confirm deletion in the dialog
-5. The conversation is permanently deleted
-
-**What gets deleted:**
-- All messages in the conversation
-- Conversation metadata
-- Cannot be undone
-
-**Bulk delete** is available to administrators only (admin dashboard conversations page).
+Open the conversation's **...** menu, choose **Delete**, and confirm. Deletion removes the conversation and its messages and cannot be undone.
 
 ## Searching Conversations
 
-### Search Bar
+Conversation search is available from the current agent's chat page. Enter a term in that page's conversation controls to filter that agent's recent conversations. There is no cross-agent/global conversation search.
 
-**Basic search:**
-
-1. Go to **Conversations** section
-2. Enter a search term in the search bar
-3. Results are filtered
-4. Click on a result to open
-
-**What you can search:**
-- Conversation titles
-- Conversation IDs
-
-> **Note:** Searching by message content is not supported. Conversations are matched by title or ID only.
-
+Search matches conversation title or ID; message content is not searched.
 ## Conversation Settings
 
 A conversation's only editable setting is its **title** (rename). There are no per-conversation notification, auto-save, or context-window settings.

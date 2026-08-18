@@ -49,7 +49,7 @@ Team collaboration enables you to:
 2. Filter by the current team
 3. Select a team agent
 4. Start chatting
-5. The agent has access to the team's knowledge bases
+5. The agent can use only knowledge bases attached in its configuration
 
 ### Running Team Workflows
 
@@ -109,11 +109,10 @@ These are global auto-notifications; delivery channels are configured by adminis
 
 **Monitor team workflow executions:**
 
-1. Go to the workflow
-2. View the **History** tab
-3. See the team's executions
-4. Filter by status/date/user
-5. View execution details and node executions
+1. Go to the workflow and open **Logs** (`/app/apps/workflow/{id}/logs`)
+2. See the team's executions
+3. Filter by status or date, or search by run ID
+4. View execution details and node executions
 
 **Execution history:**
 ```

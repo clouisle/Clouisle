@@ -24,14 +24,18 @@ Branching logic: A → if(condition) → B else C
 
 Iterative execution: A → while(condition) → B → A
 
-**Use case**: Batch processing
+**Use case**: Batch processing and bounded retries
 
----
+Configure an explicit termination condition and a finite cap. The workflow editor defaults the loop limit to 10; the executor enforces a maximum of 1000 iterations. Use an Iteration node when processing an array or object so each item has a clear input and output rather than relying on an unbounded loop.
 
-**Status**: This is a framework document. Content will be expanded based on the comprehensive research completed by the documentation agents.
+**Safety checklist**:
+- Set a cap appropriate to the input size
+- Ensure the condition can make progress toward termination
+- Handle empty input and per-item failures
+- Keep retries separate from business iteration
 
-For immediate needs, refer to:
-- [Deployment Guide](../deployment/DEPLOYMENT.md)
-- [SSO Configuration](../admin-guide/settings/SSO.md)
-- [Tools Guide](../admin-guide/tools/TOOLS.md)
-- [Permissions System](../admin-guide/permissions/PERMISSIONS.md)
+## Related documentation
+
+- [Agent vs Workflow](../concepts/agent-vs-workflow.md) - Choosing the right abstraction
+- [System Architecture](../concepts/architecture.md) - Component overview
+- [Prompt Engineering](./prompt-engineering.md) - Prompt-writing guidance

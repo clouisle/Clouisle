@@ -1,6 +1,6 @@
-# Workflow History
+# Workflow Logs
 
-This guide explains how to view workflow execution history.
+This guide explains how to view workflow execution logs and monitor runs.
 
 ## Overview
 
@@ -11,18 +11,17 @@ Workflow history allows you to:
 - **Debug issues**: Investigate failed runs
 - **Audit activity**: Review who ran workflows and when
 
-> **Note:** Retrying failed runs from the failed node, exporting history (CSV/JSON/PDF), comparing executions, bulk deletion, and automatic retention/cleanup policies are **not implemented**.
+> **Note:** Retrying from a failed node, exporting history (CSV/JSON/PDF), comparing executions, and bulk deletion are **not implemented**. A `workflow.cleanup_old_runs` task exists, but it is not automatically scheduled by the application; run approved cleanup explicitly.
 
-## Accessing Workflow History
+## Accessing Workflow Logs
 
-### From Workflow Page
+Workflow execution history is available from the workflow's **Logs** view at `/app/apps/workflow/{id}/logs`. Open **Apps** → **Workflow**, select the workflow, then choose **Logs** from its workflow menu.
 
-**Steps:**
+1. Navigate to **Apps** (`/app/apps`) and open the **Workflow** tab.
+2. Open a workflow and choose **Logs**.
+3. Select a run to inspect its details and node executions.
 
-1. Navigate to **Workflows** section
-2. Click on a workflow to open it
-3. Go to **History** tab
-4. View the execution history
+There is no separate **Workflows → History** tab.
 
 ### History List
 
@@ -32,11 +31,11 @@ Workflow history allows you to:
 │ Workflow History                                    │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
-│ ✅ Run #156 - Completed                             │
+│ ✅ Run #156 - Completed                            │
 │    Started: 2026-02-11 14:30:00                    │
 │    Duration: 1m 23s                                │
 │    Triggered by: John Doe (Manual)                 │
-│    [View Details] [Replay]                         │
+│    [View Details]                                  │
 │                                                     │
 │ ❌ Run #155 - Failed                                │
 │    Started: 2026-02-11 10:15:00                    │
@@ -56,8 +55,7 @@ Each execution shows:
 
 | Field | Description |
 |-------|-------------|
-| **Run ID** | Unique execution identifier |
-| **Status** | Completed, Failed, Running, Stopped |
+| **Status** | The Logs UI displays Completed (API `success`), Failed, Running, Pending, Cancelled, or Timeout. Raw API `waiting` runs currently fall back to the Pending badge in both the list and run-detail drawer; Cancelled and Timeout have dedicated badges but no filter controls. |
 | **Started** | Execution start time |
 | **Duration** | Total execution time |
 | **Triggered By** | User or Webhook |
@@ -68,13 +66,15 @@ Each execution shows:
 
 ### Status Icons
 
-| Icon | Status | Description |
-|------|--------|-------------|
-| ✅ | **Completed** | Successfully finished |
-| ❌ | **Failed** | Execution failed |
-| ⏳ | **Running** | Currently executing |
-| ⏹️ | **Stopped** | Manually stopped |
-| ⏭️ | **Skipped** | Skipped (conditional) |
+| Badge | Logs label | API status | Description |
+|------|------------|------------|-------------|
+| ✅ | **Completed** | `success` | Successfully finished |
+| ❌ | **Failed** | `failed` | Execution failed |
+| ⏳ | **Running** | `running` | Currently executing |
+| ⏳ | **Pending** | `pending` | Queued before execution |
+| ⏳ | **Pending** | `waiting` | This raw status currently has no dedicated Logs badge or filter and falls back to Pending. |
+| ⏹️ | **Cancelled** | `cancelled` | Stopped or cancelled; no dedicated filter control is currently available. |
+| ⏱️ | **Timeout** | `timeout` | Exceeded the execution timeout; no dedicated filter control is currently available. |
 
 ## Viewing Execution Details
 
@@ -144,13 +144,11 @@ Runs stream events in real-time (`GET /api/v1/workflows/runs/{run_id}/stream`), 
 
 ### Filter Options
 
-**Available filters:**
-
 | Filter | Options |
 |--------|---------|
-| **Status** | Completed, Failed, Running, Stopped |
-| **Date Range** | Custom date range |
-| **User** | Specific user who triggered |
+| **Status** | All Status, Completed, Failed, Running, Pending |
+| **Date Range** | All Time, Last 7 Days, Last 30 Days, Last 90 Days |
+| **Run ID** | Exact run UUID |
 
 ## Execution Statistics
 
@@ -171,20 +169,14 @@ Runs stream events in real-time (`GET /api/v1/workflows/runs/{run_id}/stream`), 
 └─────────────────────────────────────────┘
 ```
 
-## Replaying Workflows
+## Starting Another Run
 
-### Replay Execution
+The Logs view has no **Replay** control and does not retry from a failed node. To run a workflow again:
 
-**Re-run with the same inputs:**
-
-1. Find the execution in the history
-2. Click **"Replay"** button
-3. Review the input variables
-4. Optionally modify the inputs
-5. Click **"Run"**
-6. A new execution starts
-
-> **Note:** There is no "retry from failed node" option — replay always starts a fresh run.
+1. Return to the workflow page
+2. Choose **Run**
+3. Provide the required inputs
+4. Start a new execution
 
 ## Deleting History
 
@@ -220,7 +212,7 @@ Runs stream events in real-time (`GET /api/v1/workflows/runs/{run_id}/stream`), 
 **✅ Do:**
 - Check node execution details
 - Review input/output data
-- Replay with test inputs
+- Start a fresh test run from the workflow page when needed
 - Document recurring issues
 
 **❌ Don't:**
@@ -231,7 +223,7 @@ Runs stream events in real-time (`GET /api/v1/workflows/runs/{run_id}/stream`), 
 
 ### Cannot View History
 
-**Problem**: History tab is empty or not loading
+**Problem**: The Logs view is empty or not loading
 
 **Solutions:**
 1. Refresh the page
@@ -249,14 +241,14 @@ Runs stream events in real-time (`GET /api/v1/workflows/runs/{run_id}/stream`), 
 2. Verify the date range
 3. Check if executions were deleted
 
-### Cannot Replay
+### Cannot Start a New Run
 
-**Problem**: Replay button is disabled
+**Problem**: The workflow cannot be run
 
 **Solutions:**
-1. Check if you have permission to run the workflow
+1. Check that you have permission to run the workflow
 2. Verify the workflow is published
-3. Try creating a new execution manually
+3. Start a new execution from the workflow page
 
 ## Related Documentation
 

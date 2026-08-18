@@ -111,11 +111,10 @@ Tone: Friendly and professional
 ```
 You are a customer support agent for {{company_name}}.
 
-Current date: {{current_date}}
-User name: {{user_name}}
+Respond to the user's request: {{query}}
 ```
 
-**Available variables:** `{{user_name}}`, `{{user_email}}`, `{{team_name}}`, `{{current_date}}`, `{{current_time}}`, plus any custom variables defined in the agent's **Variables** section (text, paragraph, select, number, checkbox types). Variables are collected from the user when a conversation starts.
+**Available variables:** Custom variables defined in the agent's **Variables** section (text, paragraph, select, number, checkbox types), plus `{{query}}` for the current chat request. Only values supplied for those variables are substituted; Clouisle does not inject built-in user, team, date, or time variables.
 
 ## Chat Behavior Settings
 
@@ -217,9 +216,9 @@ Configure an optional opening message and suggested questions shown when a new c
 
 ### Test Agent
 
-1. Click **Test Agent** button (this runs the workflow debug flow or a test chat)
-2. Enter a test message
-3. Review the response, citations, and tool usage
+1. Click **Test Agent** (this runs the workflow debug flow or a test chat)
+2. Send a disposable test message
+3. Review the response, source citations, and tool usage
 4. Adjust configuration if needed
 
 ## Best Practices
@@ -237,7 +236,7 @@ Configure an optional opening message and suggested questions shown when a new c
 
 ## Related Documentation
 
-- [Chatting with Agents](./chatting-with-agents.md) - Using agents
+- [Chatting with Agents](../chat/chatting-with-agents.md) - Using agents
 - [Knowledge Base Settings](../knowledge-base/kb-settings.md) - KB configuration
 - [Model Management](../../admin-guide/models/model-management.md) - Model admin
 

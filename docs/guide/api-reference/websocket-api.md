@@ -60,7 +60,7 @@ event: message_end
 data: {"usage": {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17}, "timing": {...}, "version_number": 1, "version_count": 1}
 
 event: error
-data: {"code": 0, "msg": "Something went wrong, please try again later"}
+data: {"code": 1000, "msg": "Something went wrong, please try again later"}
 ```
 
 **Event types:** `message_start`, `rag_start`, `rag_context`, `reasoning_start`, `reasoning_delta`, `reasoning_end`, `content_delta`, `tool_call`, `tool_result`, `media_result`, `compression_start`, `compression_end`, `output_truncated`, `iteration_cap_reached`, `message_end`, `error` (see [SSE Streaming](./sse-streaming.md) for the full reference; `user_input_request` is declared but has no emitter).
@@ -181,7 +181,7 @@ curl -N "https://your-domain.com/api/v1/workflows/runs/{run_id}/stream?from_sequ
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-**Event types:** `workflow_start`, `workflow_complete`, `workflow_error`, `node_start`, `node_complete`, `node_error`, `node_skip`, `token`, `chunk`, `output`, `progress`, `status`, `iteration_start`, `iteration_complete`, `debug`.
+**Event types:** `workflow_start`, `workflow_complete`, `workflow_waiting`, `workflow_error`, `node_start`, `node_complete`, `node_error`, `node_skip`, `token`, `chunk`, `output`, `progress`, `status`, `iteration_start`, `iteration_complete`, `debug`.
 
 Each event's `data` is `{"event": ..., "data": ..., "node_id": ..., "timestamp": ..., "sequence": ...}`. Use `from_sequence=<last sequence>` to resume after a disconnect.
 

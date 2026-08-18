@@ -12,11 +12,9 @@ Knowledge bases in Clouisle store documents that AI agents can access for answer
 
 ## Accessing Knowledge Bases
 
-### From Platform Interface
-
-1. Navigate to **Knowledge Bases** or **KB** section in the sidebar
-2. You'll see a list of knowledge bases you have access to
-3. Click on a knowledge base to open it
+1. In the platform header, select **Knowledge Base** (`/app/kb`).
+2. Select a knowledge base to open its detail page (`/app/kb/{id}`).
+3. Use **Search Test** to test retrieval, or use **Import URL** and **Upload** to add documents.
 
 ### Knowledge Base List
 
@@ -56,7 +54,7 @@ Shows knowledge base information:
 
 **Statistics:**
 - Document count by type (PDF, DOCX, etc.)
-- Processing status (Completed, Processing, Failed)
+- Processing status (Completed, Processing, Error, Pending)
 
 ### Documents Tab
 

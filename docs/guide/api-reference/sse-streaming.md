@@ -80,7 +80,7 @@ curl -N "https://your-domain.com/api/v1/workflows/runs/{run_id}/stream?from_sequ
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-> **Note:** `WorkflowRunRequest` accepts only `inputs` — there is no `stream` field. Streaming is always consumed via `GET /api/v1/workflows/runs/{run_id}/stream`. Runs triggered by the workflow webhook (`POST /api/v1/workflows/webhook/{webhook_token}`) are publicly streamable; user-triggered runs require authentication.
+> **Note:** `WorkflowRunRequest` accepts only `inputs` — there is no `stream` field. Streaming is always consumed via `GET /api/v1/workflows/runs/{run_id}/stream`. The stream endpoint requires an authenticated user with access to the workflow, including for runs started through a webhook; a webhook token is not stream authorization.
 
 ## SSE Response Format
 
@@ -246,12 +246,12 @@ data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 
 **error event:**
 ```json
 {
-  "code": 0,
+  "code": 1000,
   "msg": "Something went wrong, please try again later"
 }
 ```
 
-The `error` event carries the error `code` (0 indicates a generic failure) and a localized message. For agent chat streams, the stream is terminated after the `error` event.
+The `error` event carries a nonzero error code and a localized message. Generic and timeout failures use `1000` (`UNKNOWN_ERROR`); a `BusinessError` can supply its own code. For agent chat streams, the stream is terminated after the `error` event.
 
 **message_end event:**
 ```json
@@ -286,25 +286,19 @@ The `error` event carries the error `code` (0 indicates a generic failure) and a
 
 ```
 event: workflow_start
-data: {"event": "workflow_start", "data": {"run_id": "run-789", "workflow_id": "workflow-123"}, "node_id": null, "timestamp": "2026-02-11T14:30:00Z", "sequence": 1}
+data: {"event": "workflow_start", "data": {"workflow_id": "workflow-123", "workflow_name": "Document workflow", "inputs": {"customer_id": "customer-456"}}, "node_id": null, "timestamp": "2026-02-11T14:30:00Z", "sequence": 1}
 
 event: node_start
-data: {"event": "node_start", "data": {}, "node_id": "node-1", "timestamp": "2026-02-11T14:30:00Z", "sequence": 2}
+data: {"event": "node_start", "data": {"node_type": "knowledge_retrieval", "node_label": "Fetch document", "is_streaming": false}, "node_id": "node-1", "timestamp": "2026-02-11T14:30:00Z", "sequence": 2}
 
 event: node_complete
-data: {"event": "node_complete", "data": {"duration": 0.1}, "node_id": "node-1", "timestamp": "2026-02-11T14:30:00Z", "sequence": 3}
+data: {"event": "node_complete", "data": {"outputs": {"text": "Document content..."}, "duration_ms": 100, "node_type": "knowledge_retrieval", "is_streaming": false}, "node_id": "node-1", "timestamp": "2026-02-11T14:30:00Z", "sequence": 3}
 
-event: node_start
-data: {"event": "node_start", "data": {}, "node_id": "node-2", "timestamp": "2026-02-11T14:30:01Z", "sequence": 4}
-
-event: progress
-data: {"event": "progress", "data": {"progress": 0.33, "message": "Fetching document..."}, "node_id": "node-2", "timestamp": "2026-02-11T14:30:02Z", "sequence": 5}
-
-event: node_complete
-data: {"event": "node_complete", "data": {"duration": 2.5, "output": {}}, "node_id": "node-2", "timestamp": "2026-02-11T14:30:03Z", "sequence": 6}
+event: workflow_waiting
+data: {"event": "workflow_waiting", "data": {"node_id": "approval-1"}, "node_id": "approval-1", "timestamp": "2026-02-11T14:30:01Z", "sequence": 4}
 
 event: workflow_complete
-data: {"event": "workflow_complete", "data": {"status": "completed", "duration": 83, "output": {}}, "node_id": null, "timestamp": "2026-02-11T14:31:23Z", "sequence": 7}
+data: {"event": "workflow_complete", "data": {"outputs": {"answer": "Done"}, "duration_ms": 83000}, "node_id": null, "timestamp": "2026-02-11T14:31:23Z", "sequence": 5}
 ```
 
 ### Event Types
@@ -313,6 +307,7 @@ data: {"event": "workflow_complete", "data": {"status": "completed", "duration":
 |------------|-------------|
 | `workflow_start` | Workflow execution started |
 | `workflow_complete` | Workflow completed successfully |
+| `workflow_waiting` | Run is parked at a pause node; `data.node_id` identifies the node |
 | `workflow_error` | Workflow failed |
 | `node_start` | Node execution started |
 | `node_complete` | Node completed |
@@ -349,11 +344,12 @@ Workflow events use the standard SSE envelope. `data.data` holds the event-speci
 {
   "event": "node_complete",
   "data": {
-    "duration": 2.5,
-    "output": {
-      "text": "Document content...",
-      "size": 2500
-    }
+    "outputs": {
+      "text": "Document content..."
+    },
+    "duration_ms": 2500,
+    "node_type": "knowledge_retrieval",
+    "is_streaming": false
   },
   "node_id": "node-2",
   "timestamp": "2026-02-11T14:30:03Z",

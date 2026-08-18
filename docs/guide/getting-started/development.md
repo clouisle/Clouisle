@@ -80,14 +80,8 @@ uv run ruff check .
 # Format
 uv run ruff format .
 
-# Type check
-uv run mypy app/
-
 # Test
 uv run pytest
-
-# Dependency license compliance
-uv run python scripts/check_licenses.py
 ```
 
 ### Frontend
@@ -99,11 +93,10 @@ bun run --cwd frontend lint
 # Build
 bun run --cwd frontend build
 
-# Test
-bun --cwd frontend test
-
-# Dependency license compliance
-bun run --cwd frontend license:check
+# Test and coverage
+bun run --cwd frontend test
+bun run --cwd frontend test:coverage
+bun run --cwd frontend coverage:check
 ```
 
 ### Sandbox Worker (optional)
@@ -148,11 +141,11 @@ clouisle/
 
 ### Database initialization fails
 
-Ensure PostgreSQL is running and accessible. Check `POSTGRES_*` values in `.env` match the Docker Compose configuration.
+Ensure PostgreSQL is running and accessible. The dev Compose file uses fixed PostgreSQL/Redis credentials and reads only `QDRANT_API_KEY` from `.env`; inspect `deploy/docker-compose.dev.yml` if the services do not start.
 
 ### Port conflicts
 
-Default ports: backend `8000`, frontend `3000`, PostgreSQL `5432`, Redis `6379`, Qdrant `6333`. Adjust in `.env` if needed.
+Default ports: backend `8000`, frontend `3000`, PostgreSQL `5432`, Redis `6379`, Qdrant `6333`. The dev Compose file exposes only PostgreSQL, Redis, and Qdrant; backend and frontend run separately, so change their launch/config settings when those ports conflict.
 
 ### Hot reload not working
 

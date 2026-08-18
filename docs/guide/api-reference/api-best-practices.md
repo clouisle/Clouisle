@@ -8,7 +8,7 @@ This guide provides best practices for using the Clouisle API effectively and se
 
 **✅ Do:**
 - Store tokens securely (environment variables, secure storage)
-- Refresh tokens before expiration
+- Re-authenticate before expiration (there is no refresh endpoint)
 - Use API keys for server-to-server communication
 - Implement token rotation
 - Use different tokens for different environments
@@ -727,8 +727,8 @@ def test_retry_on_rate_limit():
 - [Authentication](./authentication.md) - Authentication guide
 - [Error Handling](./error-handling.md) - Error handling
 - [Rate Limiting](./rate-limiting.md) - Rate limits
-- [Security](../best-practices/security.md) - Security practices
-- [Performance](../best-practices/performance.md) - Performance optimization
+- [Security Checklist](../operations/security-checklist.md) - Security guidance
+- [Performance Tuning](../best-practices/performance-tuning.md) - Performance guidance
 
 ---
 

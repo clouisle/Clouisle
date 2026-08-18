@@ -15,15 +15,12 @@ Clouisle provides search capabilities:
 
 ## Accessing Search
 
-### From Knowledge Base
+### From a knowledge-base detail page
 
-**Steps:**
-
-1. Navigate to **Knowledge Bases** section
-2. Click on a knowledge base to open it
-3. Use the search bar
-4. Enter your search query
-5. View results
+1. In the platform header, select **Knowledge Base** (`/app/kb`).
+2. Open a knowledge base at `/app/kb/{id}`.
+3. Select **Search Test**.
+4. Enter a query, choose a search mode, and view the results.
 
 ## Search Modes
 

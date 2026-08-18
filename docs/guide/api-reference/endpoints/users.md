@@ -20,7 +20,7 @@ The Users API allows you to:
 
 ## Authentication
 
-All endpoints require authentication via JWT token or API key.
+User profile endpoints require an authenticated JWT user session. Admin endpoints require an authenticated JWT user with the applicable `admin:user:*` permission.
 
 **Required scopes (admin):**
 - `admin:user:read` - View user information
@@ -201,7 +201,7 @@ curl -X POST "https://your-domain.com/api/v1/users/me/change-password" \
 }
 ```
 
-**Error (401 Unauthorized):**
+**Error (400 Bad Request):** `BusinessError` uses the default 400 transport status for an incorrect current password; the response code remains `2003` (`INVALID_CREDENTIALS`).
 
 ```json
 {
@@ -226,7 +226,7 @@ GET /api/v1/admin/users
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
-| `page_size` | integer | No | 20 | Items per page (max: 100) |
+| `page_size` | integer | No | 20 | Items per page |
 | `status` | array | No | - | Filter by status: `active`, `inactive`, `pending` (repeatable) |
 | `search` | string | No | - | Search by username or email |
 | `role` | array | No | - | Filter by role name (repeatable) |
@@ -384,7 +384,7 @@ curl -X POST "https://your-domain.com/api/v1/admin/users" \
 
 ### Response
 
-**Success (201 Created):**
+**Success (200 OK):**
 
 ```json
 {
@@ -583,16 +583,81 @@ curl -X POST "https://your-domain.com/api/v1/admin/users/user-789/deactivate" \
 
 Returns the updated `UserSchema` with `is_active` toggled.
 
-## Reset User Password
+## Password Lifecycle Management (admin)
 
-> **Note:** Not implemented / Roadmap. There is no direct password-reset endpoint. Admin alternatives under `/api/v1/admin/users/{user_id}`:
-> - `POST /{user_id}/force-password-change` - force the user to change their password at next login
-> - `POST /{user_id}/reset-password-expiration` - reset the password expiration timer
-> - `POST /{user_id}/exempt-password-expiration` - toggle password expiration exemption
+There is no direct admin password-reset endpoint. Administrators can manage password-expiration state with these JWT-authenticated endpoints; each requires `admin:user:update` unless noted.
+
+### Force password change
+
+```
+POST /api/v1/admin/users/{user_id}/force-password-change
+```
+
+Sets `force_password_change` so the user must change the password at the next login. The response is `200 OK` with `data: null`.
+
+### Reset password expiration
+
+```
+POST /api/v1/admin/users/{user_id}/reset-password-expiration
+```
+
+Resets the password-change timestamp and recalculates expiration. The response is `200 OK` with `data: null`.
+
+### Set expiration exemption
+
+```
+POST /api/v1/admin/users/{user_id}/exempt-password-expiration
+```
+
+Request body:
+
+```json
+{"exempt": true}
+```
+
+The response is `200 OK` with `data: null`.
+
+### Force password change for multiple users
+
+```
+POST /api/v1/admin/users/bulk-force-password-change
+```
+
+Request body:
+
+```json
+{"user_ids": ["user-123", "user-456"]}
+```
+
+The response is `200 OK` with `data: {"count": 2}` (the count reflects users updated).
+
+### Password expiration statistics
+
+```
+GET /api/v1/admin/users/password-expiration-stats
+```
+
+Requires `admin:user:read`. The response contains `total_users`, `expired_count`, `expiring_soon_count`, `force_change_count`, and `exempt_count`.
+
+### List expiring passwords
+
+```
+GET /api/v1/admin/users/expiring-passwords?page=1&page_size=20&filter=expiring
+```
+
+Requires `admin:user:read`. `filter` is one of `all`, `expired`, `expiring`, or `force_change`; `page_size` is bounded to 1–100. The paginated response uses only `items`, `total`, `page`, and `page_size`.
+
+## User Statistics
+
+```
+GET /api/v1/admin/users/stats
+```
+
+Requires `admin:user:read`. The response is `200 OK` with counts `total`, `active`, `inactive`, and `pending`.
 
 ## Get User Activity
 
-> **Note:** Not implemented / Roadmap. There is no per-user activity endpoint. User actions are recorded in the audit log (`GET /api/v1/admin/audit-logs`).
+> **Note:** There is no per-user activity endpoint. User actions are recorded in the audit log (`GET /api/v1/admin/audit-logs`).
 
 ## Error Codes
 

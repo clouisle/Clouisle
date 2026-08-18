@@ -12,20 +12,20 @@ AI Agents in Clouisle are conversational assistants that can:
 
 ## Starting a Conversation
 
-### From Platform Interface
+### From the Apps page
 
-1. Navigate to **Apps** or **Agents** section
-2. Browse available agents or search by name
-3. Click on an agent card to open it
-4. Click **"Start Chat"** or **"New Conversation"**
-5. The chat interface opens
+1. Navigate to **Apps** (`/app/apps`).
+2. Open the **Agent** tab and find the agent you want to use.
+3. Open the agent card menu and choose **Chat**.
+4. The agent chat opens at `/chat/{agent_id}`. Send your first message.
 
-### From Chat Interface
+There is no global Chat/Conversations page or global **New Chat** picker. Each agent's chat page contains that agent's recent conversations.
 
-1. Navigate to **Chat** section
-2. Click **"New Chat"** button
-3. Select an agent from the list
-4. Start typing your message
+### From an existing agent chat
+
+1. Open the agent's chat page.
+2. Use the conversation controls in that page to continue a recent conversation or start a new one.
+3. Type your message and send it.
 
 ## Chat Interface
 
@@ -365,7 +365,7 @@ See [File Uploads](./file-uploads.md) for detailed troubleshooting.
 
 - [File Uploads](./file-uploads.md) - Uploading files in chat
 - [Conversation Management](./conversation-management.md) - Managing conversations
-- [Agent Configuration](./agent-configuration.md) - Configuring agents
+- [Agent Configuration](../agents/agent-configuration.md) - Configuring agents
 
 ## Getting Help
 

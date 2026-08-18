@@ -10,10 +10,11 @@ Documentation is split by audience:
 ## Entry points
 
 ### User and operator docs
-- `guide/README.md`
+- [`guide/README.md`](guide/README.md)
+- [Chinese product overview and guide navigation](guide/README_zh-CN.md)
 
 ### Developer docs
-- `dev/README.md`
+- [`dev/README.md`](dev/README.md)
 
 ## Key areas
 
@@ -36,19 +37,19 @@ Use this area for:
 
 ## Developer sections
 
-- `dev/backend/README.md`
-- `dev/frontend/README.md`
-- `dev/api/BACKEND_API.md`
-- `dev/design/`
-- `dev/analysis/README.md`
-- `dev/status/README.md`
+- [`dev/backend/README.md`](dev/backend/README.md)
+- [`dev/frontend/README.md`](dev/frontend/README.md)
+- [`dev/api/BACKEND_API.md`](dev/api/BACKEND_API.md)
+- [`dev/design/`](dev/design/)
+- [`dev/analysis/README.md`](dev/analysis/README.md)
+- [`dev/status/README.md`](dev/status/README.md)
 
 ## Quick links
 
-- `guide/getting-started/quick-start.md`
-- `guide/concepts/architecture.md`
-- `dev/api/BACKEND_API.md`
-- `dev/backend/api-conventions.md`
-- `dev/frontend/conventions.md`
-- `dev/design/access-control/TEAM_MODEL_AUTH_SPEC.md`
-- `dev/design/app-platform/WORKFLOW_ENGINE_ARCHITECTURE.md`
+- [Quick start](guide/getting-started/quick-start.md)
+- [Architecture](guide/concepts/architecture.md)
+- [Backend API reference](dev/api/BACKEND_API.md)
+- [Backend API conventions](dev/backend/api-conventions.md)
+- [Frontend conventions](dev/frontend/conventions.md)
+- [Team model auth specification](dev/design/access-control/TEAM_MODEL_AUTH_SPEC.md)
+- [Workflow engine architecture](dev/design/app-platform/WORKFLOW_ENGINE_ARCHITECTURE.md)

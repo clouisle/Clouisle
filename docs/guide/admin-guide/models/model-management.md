@@ -31,7 +31,6 @@ The model list shows:
 - **Type** (chat, embedding, rerank, tts, stt, image/video generation, etc.)
 - **Status** (Enabled / Disabled)
 - **Default** (whether it is the default model)
-- **Last used**
 
 **Filters:**
 - Provider
@@ -512,7 +511,7 @@ discovery = api.post("/api/v1/admin/models/discover", json={...})
 - [Models API](../../api-reference/endpoints/models.md) - API reference
 - [Agent Configuration](../../user-guide/agents/agent-configuration.md) - Using models
 - [System Settings](../settings/system-settings.md) - System config
-- [Cost Optimization](../../best-practices/cost-optimization.md) - Cost best practices
+- [Performance Tuning](../../best-practices/performance-tuning.md) - Performance guidance
 
 ---
 

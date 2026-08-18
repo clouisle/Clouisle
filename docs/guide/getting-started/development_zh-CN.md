@@ -80,14 +80,8 @@ uv run ruff check .
 # 代码格式化
 uv run ruff format .
 
-# 类型检查
-uv run mypy app/
-
 # 测试
 uv run pytest
-
-# 依赖许可证合规检查
-uv run python scripts/check_licenses.py
 ```
 
 ### 前端
@@ -99,11 +93,10 @@ bun run --cwd frontend lint
 # 构建
 bun run --cwd frontend build
 
-# 测试
-bun --cwd frontend test
-
-# 依赖许可证合规检查
-bun run --cwd frontend license:check
+# 测试与覆盖率
+bun run --cwd frontend test
+bun run --cwd frontend test:coverage
+bun run --cwd frontend coverage:check
 ```
 
 ### 沙箱 Worker（可选）
@@ -146,13 +139,11 @@ clouisle/
 
 ## 常见问题
 
-### 数据库初始化失败
-
-确保 PostgreSQL 正在运行且可访问。检查 `.env` 中的 `POSTGRES_*` 配置是否与 Docker Compose 配置一致。
+确保 PostgreSQL 正在运行且可访问。开发 compose 文件使用固定凭据和端口：PostgreSQL `postgres`/`password` 使用 `5432`，Redis 密码为 `clouisle-redis-cbd3c07` 使用 `6379`，Qdrant 使用 `6333`。`.env` 不会改变这些 compose 值；文档化的 compose 配置只从 `.env` 读取 `QDRANT_API_KEY`。
 
 ### 端口冲突
 
-默认端口：后端 `8000`、前端 `3000`、PostgreSQL `5432`、Redis `6379`、Qdrant `6333`。可在 `.env` 中按需调整。
+开发 compose 文件只绑定 PostgreSQL `5432`、Redis `6379` 和 Qdrant `6333`；后端 `8000` 和前端 `3000` 单独启动。若本地服务占用端口，请修改对应的启动或配置设置，而不是修改不存在的 compose 映射。
 
 ### 热重载不生效
 

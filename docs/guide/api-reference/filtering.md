@@ -68,7 +68,7 @@ GET /api/v1/conversations?search=invoice
 |-----------|------|-------------|
 | `team_id` | UUID | Only KBs in this team (requires team membership) |
 | `search` | string | Case-insensitive match on KB name |
-| `status` | list (repeatable) | `active` / `archived`; repeat the parameter for multiple values |
+| `status` | list (repeatable) | `active`, `processing`, `error`, `archived`; repeat the parameter for multiple values |
 | `own_only` | boolean | Only KBs created by the current user (non-superusers) |
 
 **Examples:**
@@ -88,7 +88,7 @@ GET /api/v1/knowledge-bases?status=active&status=archived
 |-----------|------|-------------|
 | `search` | string | Case-insensitive match on document name |
 | `status` | list (repeatable) | `pending`, `processing`, `completed`, `error`, ... |
-| `doc_type` | list (repeatable) | `pdf`, `docx`, `txt`, `md`, `html`, `csv`, `xlsx`, `json`, `pptx`, `url`, ... |
+| `doc_type` | list (repeatable) | `pdf`, `docx`, `txt`, `markdown`, `html`, `csv`, `xlsx`, `json`, `pptx`, `url`, ... |
 
 **Example:**
 ```bash

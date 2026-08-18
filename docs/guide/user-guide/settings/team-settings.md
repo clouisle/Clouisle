@@ -1,20 +1,17 @@
-# Team Settings
+# Team Management
 
-This guide explains the team settings available in Clouisle.
+This guide explains the team management controls available in Clouisle. Teams group users and resources (agents, workflows, and knowledge bases).
 
-## Overview
+> **Note:** Team slugs, visibility, invitation flows, join requests, member limits, per-team resource limits, per-team security/API settings, billing, data retention, custom domains, and branding are **not implemented**.
 
-Team settings cover the team's basic information and member management. Teams in Clouisle are organizational units that group users and resources (agents, workflows, knowledge bases) together.
+## Accessing Team Management
 
-> **Note:** Team slugs, visibility, invitation flows, join requests, member limits, per-team resource limits, per-team security/API settings, billing, data retention, custom domains, and branding are **not implemented**. Team settings are limited to name, description, and avatar, plus member management.
+1. Open the platform **Team switcher**.
+2. Choose **Manage Teams**.
+3. The team management page opens at `/teams`.
+4. Select a team to view its **Members** tab or, for authorized managers, its **Model Authorization** tab.
 
-## Accessing Team Settings
-
-1. Open the team view (team selector)
-2. Select **Team Settings**
-3. Choose the settings section
-
-**Required Permission:** Team Admin or Owner (for editing and member management).
+**Required Permission:** Team Admin or Owner (for editing and member/model management).
 
 ## General Settings
 
@@ -28,30 +25,32 @@ Only three fields can be edited:
 | **Description** | Optional description (max 500 chars) |
 | **Avatar URL** | Optional avatar image URL |
 
-**Example:**
-```yaml
-Name: Engineering Team
-Description: Product engineering and development team
-Avatar URL: https://example.com/team-avatar.png
-```
-
 > **Note:** There is no team slug — teams are identified by ID and referenced by name in the UI.
+
+## Model Authorization
+
+Team admins and owners can manage which enabled models the team may use:
+
+1. Open **Manage Teams** (`/teams`) and select a team.
+2. Open **Model Authorization**.
+3. Choose **Authorize Model** and select an enabled model, or revoke an existing authorization.
+4. Save the authorization change.
+
+Authorized models become available for the team's agents and knowledge bases when their configuration requires a model.
 
 ## Member Management
 
-Members are added directly by user ID (the user must already have a Clouisle account). There is no email-invitation or join-request flow.
+Members must already have Clouisle accounts; there is no email-invitation or join-request flow.
 
 ### Adding Members
 
-**Steps:**
-
-1. Open team settings → **Members**
-2. Click **"Add Member"**
-3. Enter the user's ID and choose a role (Admin, Member, or Viewer — Owner cannot be assigned via this action)
-4. Confirm
+1. Open **Manage Teams** (`/teams`) and select a team.
+2. Open the **Members** tab.
+3. Click **Add Member**.
+4. Choose an existing user and a role (Admin, Member, or Viewer — Owner cannot be assigned here).
+5. Confirm.
 
 Only the team Owner or Admin can add members. The Owner cannot add another member as Owner.
-
 ### Changing Member Roles
 
 1. Find the member in the member list
@@ -70,16 +69,16 @@ The Owner cannot be removed by other members.
 
 ### Leaving a Team
 
-1. Open team settings → **Members**
-2. Click **"Leave Team"**
+1. Open **Manage Teams** (`/teams`) and select the team.
+2. Open **Members**.
 3. Confirm
 
 The Owner cannot leave until ownership is transferred.
 
 ### Transferring Ownership
 
-1. Open team settings → **Members**
-2. Click **"Transfer Ownership"** next to a member
+1. Open **Manage Teams** (`/teams`) and select the team.
+2. Open **Members**.
 3. Confirm the transfer
 
 The previous owner becomes an Admin, and the new owner gains full control.

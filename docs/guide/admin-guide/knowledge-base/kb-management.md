@@ -30,7 +30,7 @@ The KB list shows:
 - **Document count**
 - **Total size**
 - **Embedding model**
-- **Status** (Active, Indexing, Error)
+- **Status** (`active`, `processing`, `error`, or `archived`)
 - **Last updated**
 - **Created date**
 
@@ -52,7 +52,7 @@ The KB list shows:
    - **Name**: KB display name
    - **Description**: KB purpose and content
    - **Team**: Select team owner
-   - **Embedding Model**: Choose embedding model (optional, can be set later)
+   - **Embedding Model**: Choose a team-authorized embedding model, or rely on the configured default; `embedding_model_id` cannot be changed after creation
    - **Rerank Model**: Choose rerank model (optional)
 
 3. Configure settings:
@@ -105,13 +105,14 @@ RRF K: 60
 **Single Upload:**
 1. Select knowledge base
 2. Click **Upload Document**
-3. Choose file
+3. Choose one or more supported files
 4. Click **Upload**
 
-Documents are uploaded via `POST /api/v1/knowledge-bases/{kb_id}/documents/upload` (multipart). After upload, documents are processed (extract → chunk → embed → index); processing can also be triggered or retried explicitly with the `/process`, `/process-with-chunks`, `/reprocess`, and `/retry-failed-chunks` endpoints.
+Documents are uploaded via `POST /api/v1/knowledge-bases/{kb_id}/documents/upload` (multipart). Upload creates each document with status `pending`; it does **not** start extraction or embedding automatically.
 
-**Bulk Upload:**
-> **Note:** Not implemented / Roadmap. There is no ZIP/multi-file bulk upload with batch settings. Upload files one at a time; a URL can be added via `POST /api/v1/knowledge-bases/{kb_id}/documents/url`.
+After upload, select a pending document and click **Configure** to open the preview/editor. Review or adjust chunk settings, click **Preview Chunks**, then click **Process** to start extraction, chunking, embedding, and indexing. **Quick Process** starts processing with the current/default settings. URL imports also open the preview/editor after import.
+
+**Bulk Actions:** Select documents in the table to run **Quick Process** for pending documents, **Retry Failed Chunks** for error documents, or **Delete** for selected documents. There is no ZIP/multi-file upload; files are uploaded individually.
 
 **Supported Formats:**
 - PDF
@@ -132,11 +133,10 @@ Upload → Extract Text → Clean → Chunk → Generate Embeddings → Index
 ```
 
 **Processing Status:**
-- **Pending**: Waiting in queue
-- **Processing**: Currently processing
+- **Pending**: Uploaded and waiting for an administrator to start processing
+- **Processing**: Currently extracting, chunking, embedding, or indexing
 - **Completed**: Successfully indexed
-- **Failed**: Processing error
-- **Retrying**: Retry after failure
+- **Error**: Processing error; inspect the error message and retry or reprocess
 
 **View Processing Status:**
 1. Select knowledge base
@@ -171,19 +171,17 @@ Statistics:
 ### Reprocess Documents
 
 **Reprocess Single Document:**
-1. Select document
-2. Click **Reprocess**
-3. Choose options:
-   - Re-extract text
-   - Re-chunk
-   - Re-generate embeddings
-4. Confirm reprocess
+1. Select a completed or error document
+2. Click **Reprocess** to open the preview/editor
+3. Review or change chunk settings and click **Preview Chunks**
+4. Click **Process** to reprocess and regenerate embeddings
 
-**Bulk Reprocess:**
-1. Select multiple documents
-2. Click **Bulk Actions** → **Reprocess**
-3. Choose reprocess options
-4. Confirm bulk reprocess
+**Retry Failed Chunks:**
+1. Select an error document
+2. Click **Retry Failed Chunks**
+3. Confirm or monitor the processing status
+
+Bulk reprocessing is not a separate action. Use the selection toolbar for bulk quick processing of pending documents or bulk retry of failed chunks.
 
 ### Delete Documents
 
@@ -280,24 +278,20 @@ Rerank Score Threshold: (optional)
 
 Embedding models are regular platform models with `model_type = embedding` (for example OpenAI `text-embedding-3-small` or compatible local models), granted to teams via model authorization. A KB references one embedding model (`embedding_model_id`) and optionally a rerank model (`rerank_model_id`).
 
-### Change Embedding Model
+### Embedding Model Lock
 
-**Warning:** Changing embedding model requires reindexing all documents.
+The embedding model is fixed when the knowledge base is created because stored vectors depend on that model. The admin edit form does not allow changing `embedding_model_id` after creation; attempting to update it is rejected. To use another embedding model, create a new knowledge base and process its documents with the new model.
 
-1. Select knowledge base
-2. Click **Settings** → **Embeddings**
-3. Choose new embedding model
-4. Confirm change
-5. Reprocess / re-embed documents to index them with the new model
+### Reprocess Documents Through the API
 
-### Reindex Knowledge Base
+Documents are (re)processed through document endpoints rather than a single KB-level “reindex” action:
 
-Documents are (re)processed through the document endpoints rather than a single "reindex" action:
-
-- `POST /{kb_id}/documents/{doc_id}/reprocess` — reprocess a document
-- `POST /{kb_id}/documents/{doc_id}/rechunk` — re-chunk a document
-- `POST /{kb_id}/documents/{doc_id}/retry-failed-chunks` — retry failed chunk embeddings
-- `POST /{kb_id}/documents/{doc_id}/chunks/{chunk_id}/retry-embedding` — retry a single chunk
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/process` — process a pending document
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/process-with-chunks` — process with supplied chunk settings
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/reprocess` — reprocess a document
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/rechunk` — re-chunk a document
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/retry-failed-chunks` — retry failed chunk embeddings
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/chunks/{chunk_id}/retry-embedding` — retry a single chunk
 
 ## Storage Management
 
@@ -495,7 +489,13 @@ Documents are (re)processed through the document endpoints rather than a single 
 
 ### Bulk Actions
 
-> **Note:** Not implemented / Roadmap. There are no bulk document actions (bulk upload/delete/reprocess/metadata updates). Documents are managed individually through the document endpoints.
+The Documents table supports selection-based actions:
+
+- **Quick Process** selected documents whose status is `pending`.
+- **Retry Failed Chunks** selected documents whose status is `error`.
+- **Delete** selected documents.
+
+There is no ZIP/multi-file bulk upload or bulk metadata update. Upload files individually, then use the preview/editor or the selection toolbar to process them.
 
 ### Import/Export
 

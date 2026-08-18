@@ -18,8 +18,8 @@ Clouisle allows you to upload files during chat conversations to:
 |--------|-----------|----------|-------------|
 | **PDF** | `.pdf` | 10 MB | Portable Document Format |
 | **Word** | `.doc`, `.docx` | 10 MB | Microsoft Word documents |
-| **Excel** | `.xlsx` | 10 MB | Microsoft Excel spreadsheets |
-| **PowerPoint** | `.pptx` | 10 MB | Microsoft PowerPoint presentations |
+| **Excel** | `.xls`, `.xlsx` | 10 MB | Microsoft Excel spreadsheets |
+| **PowerPoint** | `.ppt`, `.pptx` | 10 MB | Microsoft PowerPoint presentations |
 | **Text** | `.txt`, `.md` | 10 MB | Plain text and Markdown |
 | **CSV** | `.csv` | 10 MB | Comma-separated values |
 | **JSON** | `.json` | 10 MB | JSON data files |
@@ -153,7 +153,7 @@ You can attach several files to one message (subject to the agent's configured m
 **File handling:**
 - Files are stored on the server (no client-side encryption)
 - Files are only accessible to users who can access the conversation
-- Files are deleted when the conversation is deleted
+- Deleting a conversation removes its message links; it does not currently guarantee deletion of the uploaded asset
 
 > **Note:** There is no virus scanning of uploaded files.
 

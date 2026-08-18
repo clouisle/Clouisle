@@ -20,7 +20,6 @@ Common fixed orderings used by list endpoints:
 | `GET /api/v1/workflows` | `-updated_at` |
 | `GET /api/v1/workflows/runs` | `-created_at` |
 | `GET /api/v1/notifications` | `-created_at` |
-| `GET /api/v1/models` | `sort_order`, then `name` |
 | `GET /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/chunks` | `chunk_index` |
 
 These are implementation details and may change; do not rely on the exact order other than the documented intent (e.g. "newest first").

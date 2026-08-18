@@ -38,24 +38,22 @@ Team management allows administrators to:
 │ Search: [________________] [Filters ▼]              │
 │                                                     │
 │ 👥 Marketing Team                                   │
-│    Members: 12 • Owner: Alice Johnson              │
-│    Resources: 23 agents, 15 workflows, 8 KBs       │
+│    Members: 12                                     │
 │    Created: 2026-01-15                             │
 │    [View] [Edit] [...]                             │
 │                                                     │
 │ 👥 Engineering Team                                 │
-│    Members: 25 • Owner: Bob Smith                  │
-│    Resources: 45 agents, 32 workflows, 15 KBs      │
+│    Members: 25                                     │
 │    Created: 2026-01-10                             │
 │    [View] [Edit] [...]                             │
 │                                                     │
 │ 👥 Sales Team                                       │
-│    Members: 8 • Owner: Carol Davis                 │
-│    Resources: 12 agents, 8 workflows, 5 KBs        │
+│    Members: 8                                      │
 │    Created: 2026-02-01                             │
 │    [View] [Edit] [...]                             │
 │                                                     │
 └─────────────────────────────────────────────────────┘
+
 ```
 
 ## Creating Teams
@@ -118,8 +116,8 @@ Team management allows administrators to:
 │ Created: 2026-01-15 10:00:00           │
 │ Updated: 2026-02-11 15:30:00           │
 │                                         │
-│ [View Members] [View Resources]         │
-│ [Delete Team]                           │
+│ [Members] [Model Authorization]            │
+│ [Delete Team]                              │
 │                                         │
 └─────────────────────────────────────────┘
 ```
@@ -160,40 +158,9 @@ Team management allows administrators to:
 └─────────────────────────────────────────┘
 ```
 
-### Team Resources
+### Model Authorization
 
-**View team resources:**
-
-1. Open team details
-2. Click **"View Resources"** tab
-3. See all team resources
-
-**Resources view:**
-```
-┌─────────────────────────────────────────┐
-│ Team Resources                          │
-├─────────────────────────────────────────┤
-│                                         │
-│ Agents (23):                            │
-│ • Customer Support Agent (Published)   │
-│ • Content Writer (Published)           │
-│ • Code Reviewer (Draft)                │
-│ ... and 20 more                         │
-│                                         │
-│ Workflows (15):                         │
-│ • Document Summarizer (Published)      │
-│ • SEO Analysis (Published)             │
-│ • Data Processing (Draft)              │
-│ ... and 12 more                         │
-│                                         │
-│ Knowledge Bases (8):                    │
-│ • Product Documentation (156 docs)     │
-│ • Marketing Materials (89 docs)        │
-│ • Internal Wiki (234 docs)             │
-│ ... and 5 more                          │
-│                                         │
-└─────────────────────────────────────────┘
-```
+Model access is managed from the **Model Authorization** tab. It lists the models granted to the team and lets an authorized administrator grant or revoke available platform models. There is no separate Resources tab in the team detail UI.
 
 ## Managing Team Members
 
@@ -221,12 +188,9 @@ Team management allows administrators to:
 │ david@example.com                       │
 │                                         │
 │ Role:                                   │
-│ ○ Owner                                 │
 │ ○ Admin                                 │
 │ ● Member                                │
 │ ○ Viewer                                │
-│                                         │
-│ ☑ Send invitation email                 │
 │                                         │
 │ [Cancel]  [Add Member]                  │
 │                                         │
@@ -253,7 +217,6 @@ Team management allows administrators to:
 │ Current Role: Admin                     │
 │                                         │
 │ New Role:                               │
-│ ○ Owner                                 │
 │ ○ Admin                                 │
 │ ● Member                                │
 │ ○ Viewer                                │
@@ -306,21 +269,10 @@ Team management allows administrators to:
 ┌─────────────────────────────────────────┐
 │ ⚠️ Transfer Team Ownership?             │
 ├─────────────────────────────────────────┤
-│                                         │
 │ Current Owner: Alice Johnson            │
 │ New Owner: Bob Smith                    │
 │                                         │
-│ What happens:                           │
-│ • Bob becomes team Owner                │
-│ • Alice becomes team Admin              │
-│ • Bob gains full team control           │
-│ • This cannot be undone                 │
-│                                         │
-│ Type "TRANSFER" to confirm:             │
-│ [________________]                      │
-│                                         │
 │ [Cancel]  [Transfer Ownership]          │
-│                                         │
 └─────────────────────────────────────────┘
 ```
 

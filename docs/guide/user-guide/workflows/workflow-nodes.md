@@ -1,6 +1,6 @@
 # Workflow Nodes Reference
 
-This document provides a complete reference for all workflow node types in Clouisle.
+This document provides a reference for the user-configurable workflow node types shown in the Clouisle builder.
 
 ## Overview
 
@@ -8,13 +8,15 @@ Workflow nodes are building blocks for creating automated processes. Each node t
 
 ## Node Categories
 
-Clouisle supports the following node types (executors registered in the workflow engine):
+Clouisle supports the following user-configurable node types:
 
-- **Flow / Logic**: `trigger`, `user_input`, `end`, `condition`, `question_classifier`, `iteration_start`, `loop_start`, `iteration`, `loop`
+- **Flow / Logic**: `trigger`, `user_input`, `end`, `condition`, `question_classifier`, `iteration_start`, `loop_start`, `iteration`, `loop`, `pause`
 - **Model**: `llm`, `media_generation`
 - **Data**: `code`, `template`, `file_to_url`, `variable_assignment`, `variable_aggregator`, `parameter_extractor`
-- **Knowledge**: `knowledge_retrieval`, `document_extractor`
-- **Integration**: `tool`, `agent`, `sub_workflow`, `http_request`, `answer`
+- **Knowledge**: `knowledge_retrieval`
+- **Integration**: `tool`, `agent`, `sub_workflow`, `answer`
+
+`document_extractor` and `http_request` remain executor/API-level capabilities rather than nodes shown in the builder palette. `iteration_exit` and `loop_exit` are internal container nodes used by the workflow engine; do not add them as standalone nodes.
 
 > **Note:** Node types such as Transform, Parallel, Wait, Switch, Database, Email, Webhook (as a node), Log, Delay, Merge, Input, and Output are **not implemented**. Variable handling is done via `variable_assignment` and `variable_aggregator`.
 
@@ -235,6 +237,21 @@ Collection: "{{items}}"
 Item Variable: item
 Body: [...]
 Output Variable: results
+```
+
+### pause
+
+Pause execution until a team member supplies requested variables or submits an approval decision. A pause can be configured in **Variables** mode or **Approval** mode; a waiting run resumes after the request is handled.
+
+**Configuration:**
+```yaml
+Type: pause
+Mode: variables | approval
+Title: Review request
+Input Variables:
+  - name: customer_email
+    type: string
+    required: true
 ```
 
 ## Node Properties

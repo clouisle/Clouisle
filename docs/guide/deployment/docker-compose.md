@@ -18,13 +18,14 @@ Docker deployment provides:
 
 ### System Requirements
 
-**Minimum requirements:**
+**Planning baseline only (not a product guarantee):**
+The following starting point is an estimate for a small deployment. Validate CPU, memory, and storage with a representative load test for your workload before production use.
 - CPU: 4 cores
 - RAM: 8 GB
 - Storage: 50 GB
 - OS: Linux, macOS, or Windows with WSL2
 
-**Recommended for production:**
+**Example production starting point (also load-test-required):**
 - CPU: 8+ cores
 - RAM: 16+ GB
 - Storage: 100+ GB SSD
@@ -91,10 +92,12 @@ cp .env.example .env
 SECRET_KEY=generate-a-secure-random-key-here
 TIMEZONE=Asia/Shanghai
 
-# URLs (internal service names)
+# Internal service URLs (keep these on the private Compose network)
 API_BASE_URL=http://api:8000
-PUBLIC_API_URL=
 API_INTERNAL_BASE_URL=http://api:8000
+
+# Public/browser origins (set these to the deployed public origin)
+PUBLIC_API_URL=
 FRONTEND_URL=http://localhost:3000
 BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 
@@ -364,9 +367,11 @@ volumes:
   qdrant_data:
 ```
 
-**Start development services:**
+**Start development services (Qdrant requires a non-empty API key):**
 
 ```bash
+export QDRANT_API_KEY="replace-with-a-development-key"
+: "${QDRANT_API_KEY:?QDRANT_API_KEY must be non-empty}"
 docker compose -f docker-compose.dev.yml up -d
 ```
 
@@ -413,6 +418,8 @@ docker compose stop api
 ```
 
 ### Restarting Services
+
+> `docker compose restart` stops and starts the selected containers and can cause downtime. It is not a zero-downtime restart.
 
 **Restart all services:**
 
@@ -474,7 +481,10 @@ No manual migration step is needed — schema updates run automatically at backe
 # Scale Celery workers (safe to run multiple)
 docker compose up -d --scale worker=4
 
-# Scale API (safe to run multiple behind the frontend proxy)
+# Before scaling the API, remove the api service's host port mapping
+# ("8000:8000") from the Compose file; one host port cannot be shared by
+# multiple API replicas. The frontend proxy uses the internal service name.
+# Then scale API replicas:
 docker compose up -d --scale api=2
 
 # Scale sandbox workers
@@ -491,7 +501,7 @@ docker compose up -d --scale sandbox-worker=2
 **Create backup:**
 
 ```bash
-docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d_%H%M%S).sql
+docker compose exec -T db pg_dump -U postgres -Fc clouisle > backup_$(date +%Y%m%d_%H%M%S).dump
 ```
 
 **Automated backup script:**
@@ -502,16 +512,16 @@ docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d_%H%M
 
 BACKUP_DIR="/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="$BACKUP_DIR/clouisle_$DATE.sql"
+BACKUP_FILE="$BACKUP_DIR/clouisle_$DATE.dump"
 
-# Create backup
-docker compose exec -T db pg_dump -U postgres clouisle > "$BACKUP_FILE"
+# Create a custom-format backup
+docker compose exec -T db pg_dump -U postgres -Fc clouisle > "$BACKUP_FILE"
 
 # Compress backup
 gzip "$BACKUP_FILE"
 
 # Keep only last 7 days
-find "$BACKUP_DIR" -name "clouisle_*.sql.gz" -mtime +7 -delete
+find "$BACKUP_DIR" -name "clouisle_*.dump.gz" -mtime +7 -delete
 
 echo "Backup completed: $BACKUP_FILE.gz"
 ```
@@ -537,31 +547,27 @@ docker compose up -d db
 # Wait for database to be ready
 sleep 10
 
-# Restore backup
-gunzip -c backup_20260211_020000.sql.gz | \
-  docker compose exec -T db psql -U postgres clouisle
+# Restore the custom-format backup
+gunzip -c backup_20260211_020000.dump.gz | \
+  docker compose exec -T db pg_restore -U postgres -d clouisle --clean --if-exists
 
 # Start all services
 docker compose up -d
 ```
 
-### Volume Backup
+### Uploads Backup
 
-The Compose named volumes are `postgres_data`, `redis_data`, `qdrant_data`, `uploads_data` (project-prefixed, e.g. `deploy_postgres_data`):
+Do not hard-code Compose project-prefixed volume names; the prefix changes with the Compose project name. Use a logical PostgreSQL dump and archive uploads through the API container instead:
 
 ```bash
-# Backup postgres data
-docker run --rm \
-  -v deploy_postgres_data:/data \
-  -v $(pwd):/backup \
-  alpine tar czf /backup/postgres_data.tar.gz -C /data .
+# PostgreSQL backup (the supported database backup method)
+docker compose exec -T db pg_dump -U postgres -Fc -d clouisle > postgres_$(date +%Y%m%d_%H%M%S).dump
 
-# Backup uploads (mounted by api only)
-docker run --rm \
-  -v deploy_uploads_data:/data \
-  -v $(pwd):/backup \
-  alpine tar czf /backup/uploads.tar.gz -C /data .
+# Uploads backup (uploads are mounted by api only)
+docker compose exec -T api tar czf - -C /app uploads > uploads_$(date +%Y%m%d_%H%M%S).tar.gz
 ```
+
+Keep these files outside the Compose project directory and protect them as sensitive backups.
 
 See [Backup & Recovery](./backup-recovery.md) for the full backup/restore procedures.
 

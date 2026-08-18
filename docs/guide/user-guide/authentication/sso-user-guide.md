@@ -269,7 +269,7 @@ When you log in with SSO for the first time (and automatic creation is enabled):
 
 ### From SSO to Password
 
-There is no standalone "Set Password" endpoint. If your account was created via SSO, use **Change Password** in Profile Settings (which requires your current password) or ask an administrator to reset the password.
+For an SSO-only account, open **Account** and choose **Set Password**; no current password is required. Once set, use **Change Password** for later updates. If the organization disables password login, contact an administrator instead.
 
 ### From Password to SSO
 
@@ -284,9 +284,9 @@ There is no standalone "Set Password" endpoint. If your account was created via 
 If you're an administrator setting up SSO:
 
 **See:**
-- [SSO Configuration](../../admin-guide/settings/sso-configuration.md) - Configure SSO providers
+- [SSO Configuration](../../admin-guide/settings/SSO.md) - Configure SSO providers
 - [User Management](../../admin-guide/users/user-management.md) - Manage SSO users
-- [Security Settings](../../admin-guide/settings/security-settings.md) - SSO security options
+- [System Settings](../../admin-guide/settings/system-settings.md) - Related security settings
 
 ## Related Documentation
 
