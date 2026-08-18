@@ -23,7 +23,7 @@
     "startTour": "Start Tour",
     "restartTour": "Restart Tour",
     "replayAllTours": "Replay all tours",
-    "tourPrerequisiteHint": "Complete the prerequisite tours first",
+    "tourPrerequisiteHint": "Complete {tours} first to unlock this tour.",
     "back": "Back",
     "next": "Next",
     "skip": "Skip",

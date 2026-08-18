@@ -376,6 +376,14 @@ export function PlatformHeader() {
                       prereq => !onboarding.isTourCompleted(prereq)
                     )
                     const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
+                    const prerequisiteNames = isLocked
+                      ? (tourConfig.prerequisites ?? []).map((prerequisiteId) => {
+                          const prerequisiteConfig = allTourConfigs.find(config => config.id === prerequisiteId)
+                          if (!prerequisiteConfig) return prerequisiteId
+                          const prerequisiteTitleKey = prerequisiteConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
+                          return tOnboarding(prerequisiteTitleKey)
+                        }).join(locale.startsWith('zh') ? '、' : ', ')
+                      : ''
                     const tourItem = (
                       <DropdownMenuItem
                         key={tourConfig.id}
@@ -400,7 +408,9 @@ export function PlatformHeader() {
                     return (
                       <Tooltip key={tourConfig.id}>
                         <TooltipTrigger render={<span className="block cursor-not-allowed">{tourItem}</span>} />
-                        <TooltipContent>{tOnboarding('tourPrerequisiteHint')}</TooltipContent>
+                        <TooltipContent>
+                          {tOnboarding('tourPrerequisiteHint', { tours: prerequisiteNames })}
+                        </TooltipContent>
                       </Tooltip>
                     )
                   })}

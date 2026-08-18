@@ -25,7 +25,7 @@ const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boole
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${String(values.tours ?? '')}` : key,
 }))
 
 mock.module('next/navigation', () => ({
@@ -313,6 +313,7 @@ describe('PlatformHeader', () => {
   test('locks tours whose prerequisites are not completed', async () => {
     onboarding = { isTourCompleted: (tourId) => tourId === 'overview', startTour, resetAllTours }
     tourConfigs.push(
+      { id: 'kb', title: 'onboarding.tourKBTitle' },
       { id: 'models', title: 'onboarding.tourModelsTitle', prerequisites: ['overview'] },
       { id: 'appCreate', title: 'onboarding.tourAppCreateTitle', prerequisites: ['kb'] },
     )
@@ -323,6 +324,6 @@ describe('PlatformHeader', () => {
     expect(modelsItem.props.disabled).toBe(false)
     const appCreateItem = items.find(node => node.children.some(child => child === 'tourAppCreateTitle'))!
     expect(appCreateItem.props.disabled).toBe(true)
-    expect(renderer.root.findAllByType('span').some(node => node.children.includes('tourPrerequisiteHint'))).toBe(true)
+    expect(renderer.root.findAllByType('span').some(node => node.children.includes('tourPrerequisiteHint:tourKBTitle'))).toBe(true)
   })
 })
