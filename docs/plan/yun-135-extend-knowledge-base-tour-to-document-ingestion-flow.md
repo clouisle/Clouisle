@@ -66,7 +66,8 @@ Revert the YUN-135 feature branch changes as one unit. No backend schema, API, o
 - KB dialog/detail/upload/import/document suite: 23 tests passed, 0 failed.
 - Retrieval Lab and platform search-client suite: 16 tests passed, 0 failed.
 - Translation generation, strict EN/ZH parity/ICU validation, and `bunx tsc --noEmit` passed.
-- Full frontend coverage gate: 2,228 tests passed, 0 failed; LCOV covered all 485 eligible source files.
+- Full frontend coverage gate: 2,229 tests passed, 0 failed; LCOV covered all 485 eligible source files.
 - Post-implementation correction: overall step 14 (`step31a`) now uses `center` placement because `kb-detail-page` spans the full viewport. The regression reproduced with `auto` and passes with `center`.
 - Post-implementation correction: deep create-dialog targets (`kb-dialog-rerank-enabled` and `kb-dialog-rerank-params`) opt out of Joyride's outer scroll and are centered with `scrollIntoView` in the nested dialog viewport.
 - Post-implementation correction: a newly created knowledge base has no status badges because the ingestion dialogs deliberately close without side effects. The tour now uses one permanent document-table overview instead of dynamically skipping four absent status targets before Retrieval Lab guidance.
+- Post-implementation correction: the retrieval query step (`step31n`) keeps the normal Next button visible after input instead of auto-advancing on input.

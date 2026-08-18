@@ -197,6 +197,26 @@ describe('OnboardingTour', () => {
     table.remove()
     restore()
   })
+  it('shows Next for the KB retrieval query step', () => {
+    config = platformSteps.getTourConfigById('kb')!
+    const queryStepIndex = config.steps.findIndex(step => step.target === '[data-testid="kb-search-query"]')
+    state = { completedTours: [], currentTour: 'kb', currentStep: queryStepIndex, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    expect(config.steps[queryStepIndex]?.advanceOnInput).toBeUndefined()
+    const Tooltip = joyrideProps?.tooltipComponent
+    expect(Tooltip).toBeDefined()
+    const tooltip = render(<Tooltip
+      index={queryStepIndex}
+      isLastStep={false}
+      step={config.steps[queryStepIndex]}
+      size={config.steps.length}
+    />)
+    tooltip.getByText('onboarding.next').click()
+    expect(nextStep).toHaveBeenCalledTimes(1)
+    restore()
+  })
 
   it('navigates before advancing and treats /app as an exact route boundary', async () => {
     config = {

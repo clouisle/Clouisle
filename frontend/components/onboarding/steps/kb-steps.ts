@@ -191,7 +191,6 @@ const kbSteps: OnboardingStep[] = [
     title: 'onboarding.step31n.title',
     placement: 'top',
     route: '/app/kb',
-    advanceOnInput: true,
   },
   {
     target: '[data-testid="kb-search-submit"]',

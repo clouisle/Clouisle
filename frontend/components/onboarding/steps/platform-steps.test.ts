@@ -105,7 +105,7 @@ describe('onboarding tour configurations', () => {
     expect(kbConfig?.steps[11]?.skipScroll).toBe(true)
     expect(appendedKbSteps[0]?.placement).toBe('center')
     expect(appendedKbSteps[9]?.placement).toBe('center')
-    expect(appendedKbSteps[10]).toMatchObject({ advanceOnInput: true })
+    expect(appendedKbSteps[10]?.advanceOnInput).toBeUndefined()
     expect(appendedKbSteps[11]).toMatchObject({ advanceOnClick: true })
     expect(workflowTargets).toEqual([
       '[data-testid="workflow-canvas"]',
