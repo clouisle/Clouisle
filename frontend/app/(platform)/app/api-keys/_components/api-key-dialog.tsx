@@ -224,6 +224,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             <Label htmlFor="name">{t('name')}</Label>
             <Input
               id="name"
+              data-testid="api-key-name-input"
               value={formData.name}
               onChange={(e) => {
                 setFormData({ ...formData, name: e.target.value })

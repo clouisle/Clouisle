@@ -223,7 +223,7 @@ describe('onboarding tour configurations', () => {
     expect(apiKeys?.steps.map(step => step.target)).toEqual([
       '[data-testid="api-keys-page"]',
       '[data-testid="api-keys-create-button"]',
-      '[data-testid="api-key-dialog"]',
+      '[data-testid="api-key-name-input"]',
       '[data-testid="show-key-dialog"]',
       '[data-testid="show-key-copy-button"]',
     ])
@@ -232,8 +232,9 @@ describe('onboarding tour configurations', () => {
     expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     // Full-viewport page root keeps the tooltip in view with center placement
     expect(apiKeys?.steps[0]?.placement).toBe('center')
-    // Dialog targets keep the tooltip below the dialog (KB dialog pattern)
-    // so the form and the key display stay interactable
+    // The create-dialog step targets the required name field, not the tall
+    // dialog root, so the tooltip stays inside the dialog and the form stays
+    // usable (the show-key dialog below keeps bottom placement)
     expect(apiKeys?.steps[2]?.placement).toBe('bottom')
     expect(apiKeys?.steps[3]?.placement).toBe('bottom')
   })

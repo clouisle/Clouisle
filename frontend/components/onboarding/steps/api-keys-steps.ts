@@ -22,11 +22,11 @@ const apiKeysSteps: OnboardingStep[] = [
     overlayClickAction: false,
   },
   {
-    target: '[data-testid="api-key-dialog"]',
+    target: '[data-testid="api-key-name-input"]',
     content: 'onboarding.step32c.description',
     title: 'onboarding.step32c.title',
-    // Dialog target: bottom keeps the tooltip below the dialog so the form
-    // stays visible and fillable (same pattern as the KB dialog steps).
+    // Target the required name field instead of the tall dialog root: the
+    // tooltip stays inside the dialog and never overflows the viewport.
     placement: 'bottom',
     route: '/app/api-keys',
     overlayClickAction: false,
