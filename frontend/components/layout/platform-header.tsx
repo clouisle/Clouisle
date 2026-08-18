@@ -42,9 +42,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -346,6 +343,93 @@ export function PlatformHeader() {
             </Button>
           )}
 
+          {/* Onboarding Tours */}
+          {onboarding && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <DropdownMenuTrigger
+                      render={(props) => (
+                        <Button
+                          {...props}
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 cursor-pointer text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
+                          aria-label={tOnboarding('tourTitle')}
+                          data-testid="platform-onboarding-menu"
+                        >
+                          <GraduationCap className="h-4 w-4" />
+                        </Button>
+                      )}
+                    />
+                  }
+                />
+                <TooltipContent>{tOnboarding('tourTitle')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-56">
+                {allTourConfigs
+                  .filter(tourConfig => tourConfig.showInPlatformMenu !== false)
+                  .map((tourConfig) => {
+                    const isCompleted = onboarding.isTourCompleted(tourConfig.id)
+                    const isLocked = (tourConfig.prerequisites ?? []).some(
+                      prereq => !onboarding.isTourCompleted(prereq)
+                    )
+                    const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
+                    const prerequisiteNames = isLocked
+                      ? (tourConfig.prerequisites ?? []).map((prerequisiteId) => {
+                          const prerequisiteConfig = allTourConfigs.find(config => config.id === prerequisiteId)
+                          if (!prerequisiteConfig) return prerequisiteId
+                          const prerequisiteTitleKey = prerequisiteConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
+                          return tOnboarding(prerequisiteTitleKey)
+                        }).join(locale.startsWith('zh') ? '、' : ', ')
+                      : ''
+                    const tourItem = (
+                      <DropdownMenuItem
+                        key={tourConfig.id}
+                        disabled={isLocked}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStartTour(tourConfig.id)
+                        }}
+                      >
+                        {isCompleted && (
+                          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
+                        )}
+                        {isLocked && (
+                          <Lock className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                        {tOnboarding(titleKey)}
+                      </DropdownMenuItem>
+                    )
+
+                    if (!isLocked) return tourItem
+
+                    return (
+                      <Tooltip key={tourConfig.id}>
+                        <TooltipTrigger render={<span className="block cursor-not-allowed">{tourItem}</span>} />
+                        <TooltipContent>
+                          {tOnboarding('tourPrerequisiteHint', { tours: prerequisiteNames })}
+                        </TooltipContent>
+                      </Tooltip>
+                    )
+                  })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-testid="platform-replay-tours"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleReplayAllTours()
+                  }}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {tOnboarding('replayAllTours')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+
           {/* Settings Drawer Toggle */}
           <Tooltip>
             <TooltipTrigger render={
@@ -445,56 +529,6 @@ export function PlatformHeader() {
 
               {/* System */}
               <DropdownMenuSeparator />
-              {onboarding && (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger data-testid="user-menu-tours">
-                    <GraduationCap className="mr-2 h-4 w-4" />
-                    {tOnboarding('tourTitle')}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    {allTourConfigs
-                      .filter(tourConfig => tourConfig.showInPlatformMenu !== false)
-                      .map((tourConfig) => {
-                      const isCompleted = onboarding.isTourCompleted(tourConfig.id)
-                      const isLocked = (tourConfig.prerequisites ?? []).some(
-                        prereq => !onboarding.isTourCompleted(prereq)
-                      )
-                      // tourConfig.title is like 'onboarding.tourOverviewTitle', we need 'tourOverviewTitle'
-                      const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
-                      return (
-                        <DropdownMenuItem
-                          key={tourConfig.id}
-                          disabled={isLocked}
-                          title={isLocked ? tOnboarding('tourPrerequisiteHint') : undefined}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleStartTour(tourConfig.id)
-                          }}
-                        >
-                          {isCompleted && (
-                            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
-                          )}
-                          {isLocked && (
-                            <Lock className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                          {tOnboarding(titleKey)}
-                        </DropdownMenuItem>
-                      )
-                    })}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      data-testid="user-menu-replay-tours"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleReplayAllTours()
-                      }}
-                    >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      {tOnboarding('replayAllTours')}
-                    </DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              )}
               <DropdownMenuItem onClick={() => setAboutOpen(true)} data-testid="user-menu-about">
                 <Info className="mr-2 h-4 w-4" />
                 {t('about')}

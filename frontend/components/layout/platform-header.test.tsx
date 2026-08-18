@@ -25,7 +25,7 @@ const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boole
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${String(values.tours ?? '')}` : key,
 }))
 
 mock.module('next/navigation', () => ({
@@ -280,7 +280,7 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findByProps({ 'data-testid': 'platform-user-menu' })).toBeTruthy()
   })
 
-  test('excludes dashboard-scoped tours from the platform menu', async () => {
+  test('places onboarding tours before appearance settings and excludes dashboard-scoped tours', async () => {
     onboarding = { isTourCompleted: () => false, startTour, resetAllTours }
     tourConfigs.push(
       { id: 'models', title: 'onboarding.tourModelsTitle' },
@@ -288,17 +288,22 @@ describe('PlatformHeader', () => {
     )
     const renderer = await renderHeader()
 
-    expect(renderer.root.findByProps({ 'data-testid': 'user-menu-tours' })).toBeTruthy()
-    const tourLabels = renderer.root.findAllByType('button').flatMap(button => button.children)
+    expect(renderer.root.findByProps({ 'data-testid': 'platform-onboarding-menu' })).toBeTruthy()
+    expect(renderer.root.findAllByProps({ 'data-testid': 'user-menu-tours' })).toHaveLength(0)
+    const rendered = JSON.stringify(renderer.toJSON())
+    expect(rendered.indexOf('platform-onboarding-menu')).toBeLessThan(rendered.indexOf('platform-theme-button'))
+
+    const buttons = renderer.root.findAllByType('button')
+    const tourLabels = buttons.flatMap(button => button.children)
     expect(tourLabels).toContain('tourModelsTitle')
     expect(tourLabels).not.toContain('tourAdminModelSetupTitle')
   })
 
-  test('replays all tours from the Tours submenu', async () => {
+  test('replays all tours from the header onboarding menu', async () => {
     onboarding = { isTourCompleted: () => false, startTour, resetAllTours }
     const renderer = await renderHeader()
 
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-replay-tours' }).props.onClick({ stopPropagation: () => {} }))
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'platform-replay-tours' }).props.onClick({ stopPropagation: () => {} }))
     await act(async () => new Promise(resolve => setTimeout(resolve, 400)))
 
     expect(resetAllTours).toHaveBeenCalledTimes(1)
@@ -308,6 +313,7 @@ describe('PlatformHeader', () => {
   test('locks tours whose prerequisites are not completed', async () => {
     onboarding = { isTourCompleted: (tourId) => tourId === 'overview', startTour, resetAllTours }
     tourConfigs.push(
+      { id: 'kb', title: 'onboarding.tourKBTitle' },
       { id: 'models', title: 'onboarding.tourModelsTitle', prerequisites: ['overview'] },
       { id: 'appCreate', title: 'onboarding.tourAppCreateTitle', prerequisites: ['kb'] },
     )
@@ -318,5 +324,6 @@ describe('PlatformHeader', () => {
     expect(modelsItem.props.disabled).toBe(false)
     const appCreateItem = items.find(node => node.children.some(child => child === 'tourAppCreateTitle'))!
     expect(appCreateItem.props.disabled).toBe(true)
+    expect(renderer.root.findAllByType('span').some(node => node.children.includes('tourPrerequisiteHint:tourKBTitle'))).toBe(true)
   })
 })

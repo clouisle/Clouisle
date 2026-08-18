@@ -58,20 +58,7 @@ const overviewSteps: OnboardingStep[] = [
     placement: 'auto',
     route: '/app',
   },
-  {
-    target: '[data-testid="platform-theme-button"]',
-    content: 'onboarding.step1g.description',
-    title: 'onboarding.step1g.title',
-    placement: 'auto',
-    route: '/app',
-  },
-  {
-    target: '[data-testid="platform-user-menu"]',
-    content: 'onboarding.step1h.description',
-    title: 'onboarding.step1h.title',
-    placement: 'auto',
-    route: '/app',
-  },
+  // Workspace overview
   {
     target: '[data-testid="platform-home-header"]',
     content: 'onboarding.step1b.description',
@@ -111,6 +98,21 @@ const overviewSteps: OnboardingStep[] = [
     target: '[data-testid="platform-home-recent-items"]',
     content: 'onboarding.step3b.description',
     title: 'onboarding.step3b.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  // Appearance and account
+  {
+    target: '[data-testid="platform-theme-button"]',
+    content: 'onboarding.step1g.description',
+    title: 'onboarding.step1g.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-user-menu"]',
+    content: 'onboarding.step1h.description',
+    title: 'onboarding.step1h.title',
     placement: 'auto',
     route: '/app',
   },
