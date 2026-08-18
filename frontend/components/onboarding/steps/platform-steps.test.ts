@@ -52,6 +52,10 @@ describe('onboarding tour configurations', () => {
     expect(appConfigTargets).not.toContain('[data-testid="agent-file-upload-section"]')
     expect(appConfigTargets).toContain('[data-testid="embed-config-dialog"]')
     expect(appConfigTargets).toContain('[data-slot="dialog-close"]')
+    const embedDialogStep = getTourConfigById('appConfig')?.steps.find(
+      step => step.target === '[data-testid="embed-config-dialog"]'
+    )
+    expect(embedDialogStep?.placement).toBe('bottom')
     expect(knowledgeBaseTargets).not.toContain('[data-testid="kb-dialog-rerank-fail-open"]')
     expect(knowledgeBaseTargets).toEqual([
       '[data-testid="nav-kb"]',
@@ -228,6 +232,10 @@ describe('onboarding tour configurations', () => {
     expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     // Full-viewport page root keeps the tooltip in view with center placement
     expect(apiKeys?.steps[0]?.placement).toBe('center')
+    // Dialog targets keep the tooltip below the dialog (KB dialog pattern)
+    // so the form and the key display stay interactable
+    expect(apiKeys?.steps[2]?.placement).toBe('bottom')
+    expect(apiKeys?.steps[3]?.placement).toBe('bottom')
   })
 
   test('selects the configured auto-start tour', () => {

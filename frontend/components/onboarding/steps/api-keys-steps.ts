@@ -25,7 +25,9 @@ const apiKeysSteps: OnboardingStep[] = [
     target: '[data-testid="api-key-dialog"]',
     content: 'onboarding.step32c.description',
     title: 'onboarding.step32c.title',
-    placement: 'center',
+    // Dialog target: bottom keeps the tooltip below the dialog so the form
+    // stays visible and fillable (same pattern as the KB dialog steps).
+    placement: 'bottom',
     route: '/app/api-keys',
     overlayClickAction: false,
   },
@@ -34,7 +36,7 @@ const apiKeysSteps: OnboardingStep[] = [
     target: '[data-testid="show-key-dialog"]',
     content: 'onboarding.step32d.description',
     title: 'onboarding.step32d.title',
-    placement: 'center',
+    placement: 'bottom',
     route: '/app/api-keys',
     overlayClickAction: false,
   },

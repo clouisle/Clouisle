@@ -134,7 +134,8 @@ const appConfigSteps: OnboardingStep[] = [
     target: '[data-testid="embed-config-dialog"]',
     content: 'onboarding.step14g2.description',
     title: 'onboarding.step14g2.title',
-    placement: 'center',
+    // Dialog target: bottom keeps the tooltip below the dialog content.
+    placement: 'bottom',
     overlayClickAction: false,
   },
   {
