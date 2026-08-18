@@ -56,7 +56,7 @@ const apiKeysSteps: OnboardingStep[] = [
     title: 'onboarding.step32f.title',
     placement: 'top',
     route: '/app/api-keys',
-    advanceOnClick: true,
+    advanceOnSuccess: true,
     overlayClickAction: false,
     targetWaitTimeout: 5000,
   },

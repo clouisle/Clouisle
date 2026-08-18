@@ -172,6 +172,48 @@ test("creates an API key with selected agents and workflows", async () => {
   act(() => renderer.unmount());
 });
 
+test("dispatches the onboarding success event after creating a key", async () => {
+  const dispatchEvent = mock();
+  const previousWindow = globalThis.window;
+  globalThis.window = { dispatchEvent } as unknown as Window & typeof globalThis;
+  try {
+    const renderer = await render();
+    act(() => {
+      renderer.root.findByProps({ id: "name" }).props.onChange({ target: { value: "Release key" } });
+    });
+    await act(async () =>
+      renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+    );
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchEvent.mock.calls[0][0].type).toBe("clouisle:onboarding-context");
+    expect(dispatchEvent.mock.calls[0][0].detail).toEqual({ type: "api-key-created" });
+    act(() => renderer.unmount());
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("does not dispatch the onboarding success event when creation fails", async () => {
+  const dispatchEvent = mock();
+  const previousWindow = globalThis.window;
+  globalThis.window = { dispatchEvent } as unknown as Window & typeof globalThis;
+  createAPIKey.mockImplementationOnce(() => Promise.reject(new Error("failed")));
+  try {
+    const renderer = await render();
+    act(() => {
+      renderer.root.findByProps({ id: "name" }).props.onChange({ target: { value: "Release key" } });
+    });
+    await act(async () =>
+      renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+    );
+    expect(dispatchEvent).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    act(() => renderer.unmount());
+  } finally {
+    globalThis.window = previousWindow;
+  }
+})
+
 test("updates an existing API key and clears selected resources", async () => {
   getAgents.mockImplementationOnce(() =>
     Promise.resolve({ items: [{ id: "agent-1", name: "Agent", avatar_url: "avatar.png" }] }),

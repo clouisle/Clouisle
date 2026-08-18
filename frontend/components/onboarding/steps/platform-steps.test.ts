@@ -235,7 +235,7 @@ describe('onboarding tour configurations', () => {
     expect(apiKeys?.steps[3]).toMatchObject({ placement: 'left', overlayClickAction: false })
     expect(apiKeys?.steps[4]).toMatchObject({ placement: 'right', overlayClickAction: false })
     expect(apiKeys?.steps[5]).toMatchObject({
-      advanceOnClick: true,
+      advanceOnSuccess: true,
       overlayClickAction: false,
       placement: 'top',
     })

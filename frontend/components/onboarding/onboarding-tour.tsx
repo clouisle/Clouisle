@@ -162,6 +162,12 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   React.useEffect(() => {
     const handleContextEvent = (event: Event) => {
       const type = (event as CustomEvent<{ type?: string }>).detail?.type
+      if (type === 'api-key-created') {
+        if (tourId === 'apiKeys' && state.isRunning && state.currentTour === 'apiKeys') {
+          completeTour('apiKeys')
+        }
+        return
+      }
       if (type !== 'kb-created' && type !== 'agent-created') return
 
       const prerequisite: OnboardingTourId = type === 'kb-created' ? 'kb' : 'appCreate'
@@ -187,7 +193,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
     window.addEventListener('clouisle:onboarding-context', handleContextEvent)
     return () => window.removeEventListener('clouisle:onboarding-context', handleContextEvent)
-  }, [state.isRunning, state.currentTour, state.completedTours, startTour, tourId])
+  }, [state.isRunning, state.currentTour, state.completedTours, startTour, completeTour, tourId])
 
   // Detect the best starting step when a tour starts, then jump to it
   const startingStepDetectedRef = React.useRef<OnboardingTourId | null>(null)
@@ -337,7 +343,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     // Check if current step should hide the Next button
     const isAdvanceOnClick = currentStep?.advanceOnClick
     const isAdvanceOnInput = currentStep?.advanceOnInput
-    const shouldHideNextButton = isAdvanceOnClick || isAdvanceOnInput
+    const isAdvanceOnSuccess = currentStep?.advanceOnSuccess
+    const shouldHideNextButton = isAdvanceOnClick || isAdvanceOnInput || isAdvanceOnSuccess
 
     // Only enable shortcut if Next button is visible
     if (shouldHideNextButton) return
@@ -579,7 +586,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         const currentOnboardingStep = steps[currentStepIndex] as OnboardingStep | undefined
         const isAdvanceOnClick = currentOnboardingStep?.advanceOnClick
         const isAdvanceOnInput = currentOnboardingStep?.advanceOnInput
-        const shouldHideNextButton = isAdvanceOnClick || isAdvanceOnInput
+        const isAdvanceOnSuccess = currentOnboardingStep?.advanceOnSuccess
+        const shouldHideNextButton = isAdvanceOnClick || isAdvanceOnInput || isAdvanceOnSuccess
         return (
         <div style={tooltipStyles}>
           {step.title && (

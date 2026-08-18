@@ -587,6 +587,22 @@ describe('OnboardingTour', () => {
     restore()
   })
 
+  it('completes the API key tour only after successful creation', () => {
+    config = {
+      id: 'apiKeys', title: 'API Keys', description: '',
+      steps: [{ target: 'body', content: 'create', advanceOnSuccess: true }],
+    }
+    state = { completedTours: [], currentTour: 'apiKeys', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="apiKeys" />)
+
+    expect(completeTour).not.toHaveBeenCalled()
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'api-key-created' } }))
+    expect(completeTour).toHaveBeenCalledWith('apiKeys')
+    restore()
+  })
+
+
   it('does not chain when the prerequisite tour is incomplete or the target is completed', async () => {
     config = {
       id: 'kb', title: 'Knowledge Base', description: '',

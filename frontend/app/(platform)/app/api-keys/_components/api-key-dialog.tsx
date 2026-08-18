@@ -186,6 +186,11 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         const result = await apiKeysApi.createAPIKey(createData)
         toast.success(t('keyCreated'))
         onSuccess?.(result.key) // 传递新创建的 key
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', {
+            detail: { type: 'api-key-created' },
+          }))
+        }
       }
       
       onOpenChange(false)

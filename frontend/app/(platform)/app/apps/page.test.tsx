@@ -123,13 +123,23 @@ describe('AppsPage', () => {
     ], false]
 
     const html = renderPage()
+    const workflowStart = html.indexOf('data-testid="app-card-workflow-1"')
+    const agentStart = html.indexOf('data-testid="app-card-first"')
+    const dialogStart = html.indexOf('data-testid="create-dialog"')
+    expect(workflowStart).toBeGreaterThanOrEqual(0)
+    expect(agentStart).toBeGreaterThan(workflowStart)
+    expect(dialogStart).toBeGreaterThan(agentStart)
 
-    expect(html).toContain('data-testid="app-card-first"')
-    expect(html).toContain('data-testid="app-actions-button-first"')
-    expect(html).toContain('data-testid="app-chat-button-first"')
-    expect(html).toContain('data-testid="app-card-workflow-1"')
-    expect(html).toContain('data-testid="app-actions-button-workflow-1"')
-    expect(html).not.toContain('data-testid="app-chat-button-workflow-1"')
+    const workflowCard = html.slice(workflowStart, agentStart)
+    const agentCard = html.slice(agentStart, dialogStart)
+    expect(workflowCard).toContain('data-testid="app-actions-button-workflow-1"')
+    expect(workflowCard).not.toContain('data-testid="app-card-first"')
+    expect(workflowCard).not.toContain('data-testid="app-actions-button-first"')
+    expect(workflowCard).not.toContain('data-testid="app-chat-button-first"')
+
+    expect(agentCard).toContain('data-testid="app-card-first"')
+    expect(agentCard).toContain('data-testid="app-actions-button-first"')
+    expect(agentCard).toContain('data-testid="app-chat-button-first"')
   })
 
   it('opens create dialog from query params and preserves remaining tab query', () => {
