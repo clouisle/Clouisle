@@ -53,13 +53,13 @@
     "keyWarning": "Make sure to copy your API key now. You won't be able to see it again!",
     "copied": "Copied to clipboard",
     "copyFailed": "Failed to copy",
-    "allowedAgents": "Allowed Applications",
-    "allowedAgentsHint": "Select which applications this API key can access. Leave empty to allow all applications.",
-    "noAgentsAvailable": "No published applications available.",
+    "allowedAgents": "Allowed Agents",
+    "allowedAgentsHint": "Select which Agents this API key can access. Leave empty to allow all Agents.",
+    "noAgentsAvailable": "No published Agents available.",
     "allowedWorkflows": "Allowed Workflows",
-    "allowedWorkflowsHint": "Select which workflows this API key can access. Leave empty to allow all workflows.",
-    "noWorkflowsAvailable": "No published workflows available.",
-    "agents": "Applications",
-    "allAgents": "All Applications"
+    "allowedWorkflowsHint": "Select which Workflows this API key can access. Leave empty to allow all Workflows.",
+    "noWorkflowsAvailable": "No published Workflows available.",
+    "agents": "Agents",
+    "allAgents": "All Agents"
   }
 }
