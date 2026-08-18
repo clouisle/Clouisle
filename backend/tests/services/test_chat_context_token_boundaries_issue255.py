@@ -138,7 +138,7 @@ async def test_prepare_context_emergency_fallback_boundary(
     async def no_session_memory(messages, protected_indexes, **_kwargs):
         return list(messages), False, set(protected_indexes)
 
-    estimates = iter([101, 101, 101, emergency_tokens, emergency_tokens])
+    estimates = iter([101] * 5 + [emergency_tokens])
     monkeypatch.setattr(
         chat_context, "_build_messages_with_file_content", build_messages
     )
@@ -148,7 +148,7 @@ async def test_prepare_context_emergency_fallback_boundary(
     monkeypatch.setattr(
         chat_context,
         "_estimate_message_tokens",
-        lambda *_args, **_kwargs: next(estimates),
+        lambda *_args, **_kwargs: next(estimates, emergency_tokens),
     )
 
     call = chat_context.prepare_model_context(

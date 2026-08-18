@@ -21,6 +21,8 @@ from app.models.agent import (
     ConversationContextCheckpointStatus,
     Message as ConversationMessage,
     MessageRole as ConversationMessageRole,
+    MessageRoundRole,
+    MessageRoundStatus,
 )
 from app.services.message_branching import is_message_on_active_branch
 from tortoise.transactions import in_transaction
@@ -99,20 +101,94 @@ def _message_has_tool_state(message: ConversationMessage) -> bool:
 def _split_turn_blocks(
     messages: Sequence[ConversationMessage],
 ) -> list[list[ConversationMessage]]:
+    """Split history at persisted round boundaries without splitting tool pairs."""
     blocks: list[list[ConversationMessage]] = []
     current: list[ConversationMessage] = []
+    current_round_id: str | None = None
     for message in messages:
-        if _role_value(message) == ConversationMessageRole.USER.value:
-            if current:
-                blocks.append(current)
-            current = [message]
-        elif current:
-            current.append(message)
-        else:
-            current = [message]
+        raw_round_id = getattr(message, "round_id", None)
+        round_id = str(raw_round_id) if raw_round_id is not None else None
+        role = _role_value(message)
+        boundary = False
+        if current:
+            if current_round_id is not None:
+                boundary = round_id != current_round_id
+            elif round_id is not None or role == ConversationMessageRole.USER.value:
+                boundary = True
+        if boundary:
+            blocks.append(current)
+            current = []
+            current_round_id = None
+        current.append(message)
+        if round_id is not None:
+            current_round_id = round_id
     if current:
         blocks.append(current)
     return blocks
+
+
+def _tool_call_ids(message: ConversationMessage) -> set[str]:
+    ids: set[str] = set()
+    for tool_call in getattr(message, "tool_calls", None) or []:
+        if isinstance(tool_call, dict):
+            tool_id = tool_call.get("id")
+        else:
+            tool_id = getattr(tool_call, "id", None)
+        if tool_id:
+            ids.add(str(tool_id))
+    return ids
+
+
+def _block_is_complete(block: Sequence[ConversationMessage]) -> bool:
+    if not block:
+        return False
+    call_ids = {tool_id for message in block for tool_id in _tool_call_ids(message)}
+    result_ids = {
+        str(getattr(message, "tool_call_id"))
+        for message in block
+        if _role_value(message) == ConversationMessageRole.TOOL.value
+        and getattr(message, "tool_call_id", None)
+    }
+    if call_ids and not call_ids.issubset(result_ids):
+        return False
+    final_messages = [
+        message
+        for message in block
+        if _role_value(message) == ConversationMessageRole.ASSISTANT.value
+        and (
+            getattr(message, "round_role", None)
+            in {
+                MessageRoundRole.ASSISTANT_FINAL,
+                MessageRoundRole.ASSISTANT_FINAL.value,
+            }
+            or getattr(message, "round_status", None)
+            in {
+                MessageRoundStatus.COMPLETED,
+                MessageRoundStatus.COMPLETED.value,
+                MessageRoundStatus.MAX_ITERATIONS_REACHED,
+                MessageRoundStatus.MAX_ITERATIONS_REACHED.value,
+                MessageRoundStatus.MANUALLY_STOPPED,
+                MessageRoundStatus.MANUALLY_STOPPED.value,
+                MessageRoundStatus.ERROR,
+                MessageRoundStatus.ERROR.value,
+            }
+        )
+    ]
+    if final_messages:
+        return True
+    # Legacy rows do not carry round metadata. A plain assistant tail is a
+    # complete turn; a tool call without a paired result is not.
+    return _role_value(block[-1]) == ConversationMessageRole.ASSISTANT.value
+
+
+def _block_token_estimate(
+    block: Sequence[ConversationMessage], *, model_id: str | None, provider: str | None
+) -> int:
+    return count_tokens(
+        render_checkpoint_transcript(block),
+        model_id=model_id,
+        provider=provider,
+    )
 
 
 def select_checkpoint_candidate(
@@ -121,15 +197,35 @@ def select_checkpoint_candidate(
     recent_raw_turns: int,
     recent_tool_turns: int,
     min_new_turns: int,
+    keep_recent_tokens: int | None = None,
+    model_id: str | None = None,
+    provider: str | None = None,
 ) -> CheckpointCandidate | None:
-    """Select a contiguous prefix while retaining recent/protected turn blocks."""
+    """Select a complete-round prefix while retaining a token-bounded suffix."""
     blocks = _split_turn_blocks(messages)
     if not blocks:
         return None
 
-    keep_indexes: set[int] = set(
-        range(max(len(blocks) - max(recent_raw_turns, 1), 0), len(blocks))
-    )
+    keep_indexes: set[int] = set()
+    if keep_recent_tokens is None:
+        keep_indexes.update(
+            range(max(len(blocks) - max(recent_raw_turns, 1), 0), len(blocks))
+        )
+    else:
+        retained_tokens = 0
+        for index in range(len(blocks) - 1, -1, -1):
+            block = blocks[index]
+            block_tokens = _block_token_estimate(
+                block, model_id=model_id, provider=provider
+            )
+            if (
+                retained_tokens < max(keep_recent_tokens, 1)
+                or not _block_is_complete(block)
+                or any(_message_has_media(message) for message in block)
+            ):
+                keep_indexes.add(index)
+                retained_tokens += block_tokens
+
     for index, block in enumerate(blocks):
         if any(_message_has_media(message) for message in block):
             keep_indexes.add(index)
@@ -145,12 +241,17 @@ def select_checkpoint_candidate(
                 if kept_tool_turns >= recent_tool_turns:
                     break
 
-    # A checkpoint can only cover a prefix. Keeping the earliest protected block
-    # makes the cut safe for media and tool-turn continuity.
     cut_index = min(keep_indexes) if keep_indexes else len(blocks)
+    first_incomplete = next(
+        (index for index, block in enumerate(blocks) if not _block_is_complete(block)),
+        len(blocks),
+    )
+    cut_index = min(cut_index, first_incomplete)
     covered_blocks = blocks[:cut_index]
     retained_blocks = blocks[cut_index:]
     if len(covered_blocks) < max(min_new_turns, 1):
+        return None
+    if any(not _block_is_complete(block) for block in covered_blocks):
         return None
 
     return CheckpointCandidate(
@@ -520,6 +621,7 @@ async def create_context_checkpoint(
     recent_tool_turns: int,
     min_new_turns: int,
     input_budget: int,
+    keep_recent_tokens: int | None = None,
 ) -> ContextCheckpointResult:
     """Generate and persist a checkpoint for a contiguous old-history prefix."""
     candidate = select_checkpoint_candidate(
@@ -527,6 +629,9 @@ async def create_context_checkpoint(
         recent_raw_turns=recent_raw_turns,
         recent_tool_turns=recent_tool_turns,
         min_new_turns=min_new_turns,
+        keep_recent_tokens=keep_recent_tokens,
+        model_id=tokenizer_model_id,
+        provider=provider,
     )
     if not candidate or not candidate.source_message_id:
         return ContextCheckpointResult()

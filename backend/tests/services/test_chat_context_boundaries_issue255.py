@@ -28,8 +28,15 @@ def _conversation():
 
 
 @pytest.mark.anyio
-async def test_history_override_preserves_protected_round_and_valid_tool_results():
+async def test_history_override_preserves_protected_round_and_valid_tool_results(
+    monkeypatch,
+):
     protected_round_id = uuid4()
+
+    async def no_history(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(chat_context, "get_visible_conversation_messages", no_history)
 
     messages, protected = await chat_context._build_messages_with_file_content(
         agent=_agent(),

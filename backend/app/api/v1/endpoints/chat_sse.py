@@ -182,6 +182,13 @@ def build_compression_events(
         "reasoning_dropped": compression.reasoning_trimmed,
         "tool_results_trimmed": compression.tool_results_trimmed,
         "file_content_trimmed": compression.file_content_trimmed,
+        "context_limit": getattr(compression, "context_limit", None),
+        "output_reserve": getattr(compression, "output_reserve", None),
+        "safety_margin": getattr(compression, "safety_margin", None),
+        "target_budget": getattr(compression, "target_budget", None),
+        "keep_recent_budget": getattr(compression, "keep_recent_budget", None),
+        "active_tool_tokens": getattr(compression, "active_tool_tokens", None),
+        "segment_tokens": getattr(compression, "segment_tokens", None),
         "retry_index": retry_index,
         "note": "; ".join(note_parts),
     }

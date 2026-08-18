@@ -162,6 +162,46 @@ class ContextCompressionConfig(BaseModel):
         le=16000,
         description="Only compact older tool results at or above this estimated token size",
     )
+    active_tool_compaction_enabled: bool = Field(
+        default=True,
+        description="Compact completed active tool iterations before the next model call",
+    )
+    active_tool_target_ratio: float = Field(
+        default=0.8,
+        ge=0.5,
+        le=0.95,
+        description="Target utilization ratio for the request-local active tool window",
+    )
+    active_tool_result_max_tokens: int = Field(
+        default=1500,
+        ge=64,
+        le=32000,
+        description="Per-result token cap applied before active tool compaction",
+    )
+    active_tool_summary_max_tokens: int = Field(
+        default=512,
+        ge=64,
+        le=8000,
+        description="Maximum token budget for deterministic active-tool progress summaries",
+    )
+    file_content_max_tokens: int = Field(
+        default=6000,
+        ge=128,
+        le=32000,
+        description="Per-request token cap for uploaded file text",
+    )
+    reasoning_max_tokens: int = Field(
+        default=1500,
+        ge=64,
+        le=16000,
+        description="Token cap for replayed assistant reasoning content",
+    )
+    checkpoint_keep_recent_ratio: float = Field(
+        default=0.35,
+        ge=0.05,
+        le=0.8,
+        description="Raw active-branch suffix ratio retained after checkpoint compaction",
+    )
     checkpoint_summary_enabled: bool = Field(
         default=True,
         description="Enable model-generated active-branch context checkpoints",

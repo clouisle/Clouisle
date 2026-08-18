@@ -8,7 +8,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -18,6 +18,16 @@ from PIL import Image, UnidentifiedImageError
 from app.llm.errors import ContextLengthError
 from app.llm.adapters.media_utils import parse_image_data_url
 from app.llm.token_counter import count_message_tokens
+from app.services.context_compaction import (
+    DEFAULT_ACTIVE_TOOL_RESULT_MAX_TOKENS,
+    DEFAULT_ACTIVE_TOOL_SUMMARY_MAX_TOKENS,
+    DEFAULT_ACTIVE_TOOL_TARGET_RATIO,
+    DEFAULT_REASONING_MAX_TOKENS,
+    compact_active_tool_messages,
+    fit_tool_results_to_budget,
+    normalize_message_content,
+    truncate_text_to_tokens,
+)
 from app.llm.types import (
     ContentPart,
     ContentType,
@@ -83,16 +93,17 @@ DEFAULT_RECENT_TOOL_TURNS = 2
 DEFAULT_SUMMARY_MAX_TOKENS = 1000
 DEFAULT_SUMMARY_MAX_CHARS = DEFAULT_SUMMARY_MAX_TOKENS * 4
 DEFAULT_BLOCK_SUMMARY_CHARS = 320
-DEFAULT_WARNING_RATIO = 0.7
+DEFAULT_CHECKPOINT_TARGET_RATIO = 0.6
+DEFAULT_CHECKPOINT_KEEP_RECENT_RATIO = 0.35
+DEFAULT_CHECKPOINT_MIN_NEW_TURNS = 2
 DEFAULT_AUTO_COMPACT_TRIGGER_RATIO = 0.8
 DEFAULT_BLOCKING_RATIO = 0.92
+DEFAULT_WARNING_RATIO = 0.7
 DEFAULT_COMPACTION_POLICY = "staged"
 DEFAULT_RETENTION_STRATEGY = "recent_raw_and_tool_first"
 DEFAULT_KEEP_RECENT_TOOL_RESULTS = 2
 DEFAULT_KEEP_RECENT_TOOL_RESULT_MINUTES = 20
 DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS = 256
-DEFAULT_CHECKPOINT_TARGET_RATIO = 0.6
-DEFAULT_CHECKPOINT_MIN_NEW_TURNS = 2
 DEFAULT_SESSION_MEMORY_MAX_TOKENS = 400
 DEFAULT_SESSION_MEMORY_MIN_TURNS = 4
 DEFAULT_SESSION_MEMORY_FAILURE_THRESHOLD = 3
@@ -101,6 +112,7 @@ AGGRESSIVE_RECENT_REASONING_MESSAGES = 0
 AGGRESSIVE_RECENT_RAW_TURNS = 2
 AGGRESSIVE_RECENT_TOOL_TURNS = 1
 AGGRESSIVE_SUMMARY_MAX_CHARS = 2400
+DEFAULT_FILE_CONTENT_MAX_TOKENS = 6_000
 AGGRESSIVE_BLOCK_SUMMARY_CHARS = 220
 DEFAULT_FILE_CONTENT_HEAD_CHARS = 12000
 DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
@@ -125,6 +137,13 @@ DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "keep_recent_tool_results": DEFAULT_KEEP_RECENT_TOOL_RESULTS,
     "keep_recent_tool_result_minutes": DEFAULT_KEEP_RECENT_TOOL_RESULT_MINUTES,
     "tool_result_compact_min_tokens": DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
+    "active_tool_compaction_enabled": True,
+    "file_content_max_tokens": DEFAULT_FILE_CONTENT_MAX_TOKENS,
+    "checkpoint_keep_recent_ratio": DEFAULT_CHECKPOINT_KEEP_RECENT_RATIO,
+    "reasoning_max_tokens": DEFAULT_REASONING_MAX_TOKENS,
+    "active_tool_target_ratio": DEFAULT_ACTIVE_TOOL_TARGET_RATIO,
+    "active_tool_result_max_tokens": DEFAULT_ACTIVE_TOOL_RESULT_MAX_TOKENS,
+    "active_tool_summary_max_tokens": DEFAULT_ACTIVE_TOOL_SUMMARY_MAX_TOKENS,
     "checkpoint_summary_enabled": True,
     "checkpoint_target_ratio": DEFAULT_CHECKPOINT_TARGET_RATIO,
     "checkpoint_min_new_turns": DEFAULT_CHECKPOINT_MIN_NEW_TURNS,
@@ -178,6 +197,66 @@ class CompressionMeta:
     retained_tool_turns: int = 0
     compacted_blocks: int = 0
     session_memory_compacted: bool = False
+    context_limit: int = 0
+    output_reserve: int = 0
+    safety_margin: int = 0
+    active_tool_tokens: int = 0
+    target_budget: int = 0
+    keep_recent_budget: int = 0
+    segment_tokens: dict[str, int] = field(default_factory=dict)
+
+
+def _merge_compression_meta(
+    baseline: CompressionMeta,
+    current: CompressionMeta,
+) -> CompressionMeta:
+    actions = list(dict.fromkeys([*(baseline.actions or []), *(current.actions or [])]))
+    return replace(
+        current,
+        stage=(baseline.stage if current.stage == "none" else current.stage),
+        before_tokens=max(baseline.before_tokens, current.before_tokens),
+        reasoning_trimmed=baseline.reasoning_trimmed or current.reasoning_trimmed,
+        tool_results_trimmed=(
+            baseline.tool_results_trimmed or current.tool_results_trimmed
+        ),
+        file_content_trimmed=(
+            baseline.file_content_trimmed or current.file_content_trimmed
+        ),
+        summary_turns=baseline.summary_turns + current.summary_turns,
+        utilization_before=baseline.utilization_before,
+        policy_used=current.policy_used or baseline.policy_used,
+        actions=actions,
+        context_limit=current.context_limit or baseline.context_limit,
+        output_reserve=current.output_reserve or baseline.output_reserve,
+        safety_margin=current.safety_margin or baseline.safety_margin,
+        active_tool_tokens=max(baseline.active_tool_tokens, current.active_tool_tokens),
+        target_budget=current.target_budget or baseline.target_budget,
+        keep_recent_budget=current.keep_recent_budget or baseline.keep_recent_budget,
+        segment_tokens=current.segment_tokens or baseline.segment_tokens,
+        session_memory_compacted=(
+            baseline.session_memory_compacted or current.session_memory_compacted
+        ),
+    )
+
+
+def _history_override_is_active_delta(
+    history_override: Sequence[Any] | None,
+    protected_round_id: UUID | str | None,
+) -> bool:
+    return bool(
+        history_override
+        and protected_round_id is not None
+        and not any(
+            _normalize_override_role(_get_override_value(item, "role")) == "user"
+            for item in history_override
+        )
+        and any(
+            _matches_protected_round(
+                _get_override_value(item, "round_id"), protected_round_id
+            )
+            for item in history_override
+        )
+    )
 
 
 @dataclass(slots=True)
@@ -392,6 +471,25 @@ def _trim_file_content(
     return trimmed, True
 
 
+def _normalize_file_content_for_budget(
+    file_content: str | None,
+    *,
+    max_tokens: int,
+    model_id: str | None,
+    provider: str | None,
+) -> tuple[str | None, bool]:
+    if not file_content:
+        return file_content, False
+    normalized, changed = truncate_text_to_tokens(
+        file_content,
+        max_tokens=max_tokens,
+        model_id=model_id or "",
+        provider=provider,
+        marker="\n\n[... file content truncated for context budget ...]\n\n",
+    )
+    return normalized, changed
+
+
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
@@ -562,6 +660,58 @@ def _estimate_message_tokens(
 ) -> int:
     payload = [_message_to_token_payload(message) for message in messages]
     return count_message_tokens(payload, model_id=model_id, provider=provider)
+
+
+def _context_segment_tokens(
+    messages: Sequence[Message],
+    *,
+    model_id: str,
+    provider: str | None,
+) -> dict[str, int]:
+    """Return non-overlapping message token totals for budget diagnostics."""
+    segments = {
+        "system": 0,
+        "checkpoint": 0,
+        "historical": 0,
+        "current_user": 0,
+        "active_tool": 0,
+        "other": 0,
+        "total": _estimate_message_tokens(
+            messages, model_id=model_id, provider=provider
+        ),
+    }
+    last_user_index = max(
+        (
+            index
+            for index, message in enumerate(messages)
+            if message.role == MessageRole.USER
+        ),
+        default=-1,
+    )
+    for index, message in enumerate(messages):
+        message_tokens = _estimate_message_tokens(
+            [message], model_id=model_id, provider=provider
+        )
+        content = message.content if isinstance(message.content, str) else ""
+        if message.role == MessageRole.SYSTEM:
+            segment = "system"
+        elif index == last_user_index and message.role == MessageRole.USER:
+            segment = "current_user"
+        elif index > last_user_index and message.role in {
+            MessageRole.ASSISTANT,
+            MessageRole.TOOL,
+        }:
+            segment = "active_tool"
+        elif content.startswith(
+            ("Context checkpoint summary:", "Compressed earlier conversation summary:")
+        ):
+            segment = "checkpoint"
+        elif index < last_user_index:
+            segment = "historical"
+        else:
+            segment = "other"
+        segments[segment] += message_tokens
+    return segments
 
 
 def get_context_compression_config(agent: Agent) -> dict[str, Any]:
@@ -978,6 +1128,9 @@ async def _build_messages_with_file_content(
     protected_round_id: UUID | str | None = None,
     context_checkpoint: ConversationContextCheckpoint | None = None,
 ) -> tuple[list[Message], set[int]]:
+    active_round_delta = _history_override_is_active_delta(
+        history_override, protected_round_id
+    )
     messages: list[Message] = []
     protected_indexes: set[int] = set()
     valid_tool_call_ids: set[str] = set()
@@ -995,7 +1148,7 @@ async def _build_messages_with_file_content(
         ),
     )
     if (
-        history_override is None
+        (history_override is None or active_round_delta)
         and context_checkpoint
         and context_checkpoint.summary_text
     ):
@@ -1018,7 +1171,7 @@ async def _build_messages_with_file_content(
         file_content,
     )
 
-    if history_override is not None:
+    if history_override is not None and not active_round_delta:
         has_current_round_user_in_override = any(
             _normalize_override_role(_get_override_value(hist_msg, "role")) == "user"
             and _matches_protected_round(
@@ -1135,6 +1288,12 @@ async def _build_messages_with_file_content(
             before_created_at=history_before_message_created_at,
             exclude_message_ids=exclude_message_ids,
         )
+    if active_round_delta:
+        history = [
+            message
+            for message in history
+            if not _matches_protected_round(message.round_id, protected_round_id)
+        ]
     historical_file_content_tasks = {
         msg.id: asyncio.create_task(
             _build_file_content_for_user_message(
@@ -1151,6 +1310,7 @@ async def _build_messages_with_file_content(
         and not (current_user_message_id and msg.id == current_user_message_id)
     }
 
+    current_user_inserted = False
     for msg in history:
         protect = _matches_protected_round(msg.round_id, protected_round_id)
         if msg.role == ConversationMessageRole.USER:
@@ -1162,6 +1322,7 @@ async def _build_messages_with_file_content(
                         Message(role=MessageRole.USER, content=current_content),
                         protect=protect or protected_round_id is not None,
                     )
+                    current_user_inserted = True
                 continue
             historical_file_content = await historical_file_content_tasks[msg.id]
             _append_message(
@@ -1209,6 +1370,17 @@ async def _build_messages_with_file_content(
                 ),
                 protect=protect,
             )
+    if (
+        active_round_delta
+        and include_current_user_message
+        and not current_user_inserted
+    ):
+        _append_message(
+            messages,
+            protected_indexes,
+            Message(role=MessageRole.USER, content=current_content),
+            protect=True,
+        )
 
     if not include_current_user_message:
         _append_message(
@@ -1217,6 +1389,49 @@ async def _build_messages_with_file_content(
             Message(role=MessageRole.USER, content=current_content),
             protect=protected_round_id is not None,
         )
+    if active_round_delta:
+        for hist_msg in history_override or ():
+            role = _normalize_override_role(_get_override_value(hist_msg, "role"))
+            if role == "user":
+                continue
+            protect = _matches_protected_round(
+                _get_override_value(hist_msg, "round_id"), protected_round_id
+            )
+            content = _get_override_value(hist_msg, "content") or ""
+            if role == "assistant":
+                tool_calls, new_tool_call_ids = _build_assistant_tool_calls(
+                    _get_override_value(hist_msg, "tool_calls")
+                )
+                valid_tool_call_ids.update(new_tool_call_ids)
+                _append_message(
+                    messages,
+                    protected_indexes,
+                    Message(
+                        role=MessageRole.ASSISTANT,
+                        content=content,
+                        reasoning_content=_get_override_value(
+                            hist_msg, "reasoning_content"
+                        ),
+                        tool_calls=tool_calls,
+                    ),
+                    protect=protect,
+                )
+            elif role == "tool":
+                tool_call_id = _get_override_value(hist_msg, "tool_call_id")
+                if tool_call_id and tool_call_id in valid_tool_call_ids:
+                    _append_message(
+                        messages,
+                        protected_indexes,
+                        Message(
+                            role=MessageRole.TOOL,
+                            content=summarize_tool_result_for_llm(
+                                _get_override_value(hist_msg, "tool_name"),
+                                content,
+                            ),
+                            tool_call_id=tool_call_id,
+                        ),
+                        protect=protect,
+                    )
 
     return messages, protected_indexes
 
@@ -1725,9 +1940,10 @@ async def build_model_messages(
 ) -> list[Message]:
     """Build model-ready messages for agent chat flows."""
     context_checkpoint = None
-    if history_override is None and get_context_compression_config(agent).get(
-        "checkpoint_summary_enabled", True
-    ):
+    if (
+        history_override is None
+        or _history_override_is_active_delta(history_override, protected_round_id)
+    ) and get_context_compression_config(agent).get("checkpoint_summary_enabled", True):
         from app.services.context_checkpoint import get_valid_context_checkpoint
 
         context_checkpoint = await get_valid_context_checkpoint(
@@ -1785,6 +2001,9 @@ async def prepare_model_context(
     checkpoint_summary_enabled = bool(
         compression_config.get("checkpoint_summary_enabled", True)
     )
+    active_round_delta = _history_override_is_active_delta(
+        history_override, protected_round_id
+    )
     token_budget = _build_token_budget(
         context_limit=model_context_limit,
         model_max_output_tokens=model_max_output_tokens,
@@ -1810,6 +2029,11 @@ async def prepare_model_context(
     checkpoint_target_ratio = float(
         compression_config.get(
             "checkpoint_target_ratio", DEFAULT_CHECKPOINT_TARGET_RATIO
+        )
+    )
+    checkpoint_keep_recent_ratio = float(
+        compression_config.get(
+            "checkpoint_keep_recent_ratio", DEFAULT_CHECKPOINT_KEEP_RECENT_RATIO
         )
     )
     if checkpoint_target_ratio >= trigger_ratio:
@@ -1846,14 +2070,53 @@ async def prepare_model_context(
             DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
         )
     )
+    active_tool_compaction_enabled = bool(
+        compression_config.get("active_tool_compaction_enabled", True)
+    )
+    active_tool_target_ratio = float(
+        compression_config.get(
+            "active_tool_target_ratio", DEFAULT_ACTIVE_TOOL_TARGET_RATIO
+        )
+    )
+    active_tool_result_max_tokens = int(
+        compression_config.get(
+            "active_tool_result_max_tokens", DEFAULT_ACTIVE_TOOL_RESULT_MAX_TOKENS
+        )
+    )
+    active_tool_summary_max_tokens = int(
+        compression_config.get(
+            "active_tool_summary_max_tokens", DEFAULT_ACTIVE_TOOL_SUMMARY_MAX_TOKENS
+        )
+    )
+    normalized_file_max_tokens = min(
+        int(
+            compression_config.get(
+                "file_content_max_tokens", DEFAULT_FILE_CONTENT_MAX_TOKENS
+            )
+        ),
+        max(token_budget.input_budget // 3, 128),
+    )
+    reasoning_max_tokens = int(
+        compression_config.get("reasoning_max_tokens", DEFAULT_REASONING_MAX_TOKENS)
+    )
     thresholds = _build_compression_thresholds(
         token_budget=token_budget,
         warning_ratio=warning_ratio,
         trigger_ratio=trigger_ratio,
         blocking_ratio=blocking_ratio,
     )
+    file_content, file_content_bounded = _normalize_file_content_for_budget(
+        file_content,
+        max_tokens=normalized_file_max_tokens,
+        model_id=tokenizer_model_id or model_id,
+        provider=provider,
+    )
     context_checkpoint = None
-    if compression_enabled and checkpoint_summary_enabled and history_override is None:
+    if (
+        compression_enabled
+        and checkpoint_summary_enabled
+        and (history_override is None or active_round_delta)
+    ):
         from app.services.context_checkpoint import get_valid_context_checkpoint
 
         context_checkpoint = await get_valid_context_checkpoint(
@@ -1887,11 +2150,84 @@ async def prepare_model_context(
         model_id=tokenizer_model_id,
         provider=provider,
     )
+    if not compression_enabled:
+        source_pressure = _assess_context_pressure(
+            before_tokens=source_tokens,
+            token_budget=token_budget,
+            thresholds=thresholds,
+        )
+        disabled_segments = {
+            "system": 0,
+            "checkpoint": 0,
+            "historical": 0,
+            "current_user": 0,
+            "active_tool": 0,
+            "other": 0,
+            "total": source_tokens,
+        }
+        return PreparedModelContext(
+            messages=untrimmed_messages,
+            token_budget=token_budget,
+            compression=CompressionMeta(
+                stage="none",
+                before_tokens=source_tokens,
+                after_tokens=source_tokens,
+                input_budget=token_budget.input_budget,
+                file_content_trimmed=file_content_bounded,
+                pressure_level=source_pressure,
+                trigger_ratio=trigger_ratio,
+                warning_ratio=warning_ratio,
+                blocking_ratio=blocking_ratio,
+                trigger_budget=thresholds.trigger_input_budget,
+                hard_budget=token_budget.input_budget,
+                utilization_before=(
+                    source_tokens / token_budget.input_budget
+                    if token_budget.input_budget
+                    else 0.0
+                ),
+                utilization_after=(
+                    source_tokens / token_budget.input_budget
+                    if token_budget.input_budget
+                    else 0.0
+                ),
+                policy_used=policy_used,
+                actions=["bound_file_content"] if file_content_bounded else [],
+                context_limit=token_budget.context_limit,
+                output_reserve=token_budget.output_reserve,
+                safety_margin=token_budget.safety_margin,
+                target_budget=thresholds.trigger_input_budget,
+                keep_recent_budget=max(
+                    int(token_budget.input_budget * checkpoint_target_ratio), 1
+                ),
+                segment_tokens=disabled_segments,
+            ),
+            protected_indexes=untrimmed_protected_indexes,
+        )
+    normalized_content = normalize_message_content(
+        untrimmed_messages,
+        protected_indexes=untrimmed_protected_indexes,
+        model_id=tokenizer_model_id or model_id,
+        provider=provider,
+        max_tool_result_tokens=active_tool_result_max_tokens,
+        max_reasoning_tokens=reasoning_max_tokens,
+    )
+    untrimmed_messages = normalized_content.messages
+    untrimmed_protected_indexes = normalized_content.protected_indexes
+    normalized_source_tokens = _estimate_message_tokens(
+        untrimmed_messages,
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
     source_pressure = _assess_context_pressure(
-        before_tokens=source_tokens,
+        before_tokens=normalized_source_tokens,
         token_budget=token_budget,
         thresholds=thresholds,
     )
+    normalization_actions = list(normalized_content.actions or [])
+    normalization_tool_results_trimmed = normalized_content.tool_results_trimmed
+    normalization_reasoning_trimmed = normalized_content.reasoning_trimmed
+    if file_content_bounded:
+        normalization_actions.append("bound_file_content")
 
     preflight_guard_enabled = bool(
         compression_config.get("preflight_guard_enabled", True)
@@ -1902,14 +2238,22 @@ async def prepare_model_context(
             if token_budget.input_budget
             else 0.0
         )
+        disabled_segments = _context_segment_tokens(
+            untrimmed_messages,
+            model_id=tokenizer_model_id,
+            provider=provider,
+        )
         return PreparedModelContext(
             messages=untrimmed_messages,
             token_budget=token_budget,
             compression=CompressionMeta(
                 stage="none",
                 before_tokens=source_tokens,
-                after_tokens=source_tokens,
+                after_tokens=normalized_source_tokens,
                 input_budget=token_budget.input_budget,
+                reasoning_trimmed=normalization_reasoning_trimmed,
+                tool_results_trimmed=normalization_tool_results_trimmed,
+                file_content_trimmed=file_content_bounded,
                 pressure_level=source_pressure,
                 trigger_ratio=trigger_ratio,
                 warning_ratio=warning_ratio,
@@ -1917,9 +2261,22 @@ async def prepare_model_context(
                 trigger_budget=thresholds.trigger_input_budget,
                 hard_budget=token_budget.input_budget,
                 utilization_before=utilization_before,
-                utilization_after=utilization_before,
+                utilization_after=(
+                    normalized_source_tokens / token_budget.input_budget
+                    if token_budget.input_budget
+                    else 0.0
+                ),
                 policy_used=policy_used,
-                actions=[],
+                actions=list(dict.fromkeys(normalization_actions)),
+                context_limit=token_budget.context_limit,
+                output_reserve=token_budget.output_reserve,
+                safety_margin=token_budget.safety_margin,
+                active_tool_tokens=disabled_segments["active_tool"],
+                target_budget=thresholds.trigger_input_budget,
+                keep_recent_budget=max(
+                    int(token_budget.input_budget * checkpoint_target_ratio), 1
+                ),
+                segment_tokens=disabled_segments,
             ),
             protected_indexes=untrimmed_protected_indexes,
         )
@@ -1956,14 +2313,15 @@ async def prepare_model_context(
         bool(file_content) and untrimmed_tokens > thresholds.trigger_input_budget
     )
     effective_file_content = file_content
-    file_content_trimmed = False
+    additional_file_trimmed = False
     if needs_file_trim:
-        effective_file_content, file_content_trimmed = _trim_file_content(
+        effective_file_content, additional_file_trimmed = _trim_file_content(
             file_content,
             aggressive=aggressive,
         )
+    file_content_trimmed = file_content_bounded or additional_file_trimmed
 
-    if not file_content_trimmed:
+    if not additional_file_trimmed:
         base_messages = untrimmed_messages
         base_protected_indexes = set(untrimmed_protected_indexes)
     else:
@@ -1999,6 +2357,24 @@ async def prepare_model_context(
             protected_indexes=base_protected_indexes,
             before_created_at=history_before_message_created_at,
         )
+        rebuilt_normalization = normalize_message_content(
+            base_messages,
+            protected_indexes=base_protected_indexes,
+            model_id=tokenizer_model_id or model_id,
+            provider=provider,
+            max_tool_result_tokens=active_tool_result_max_tokens,
+            max_reasoning_tokens=reasoning_max_tokens,
+        )
+        base_messages = rebuilt_normalization.messages
+        base_protected_indexes = rebuilt_normalization.protected_indexes
+        normalization_actions.extend(rebuilt_normalization.actions or [])
+        normalization_tool_results_trimmed = (
+            normalization_tool_results_trimmed
+            or rebuilt_normalization.tool_results_trimmed
+        )
+        normalization_reasoning_trimmed = (
+            normalization_reasoning_trimmed or rebuilt_normalization.reasoning_trimmed
+        )
 
     base_tokens = _estimate_message_tokens(
         base_messages,
@@ -2013,11 +2389,18 @@ async def prepare_model_context(
 
     compacted_messages = base_messages
     compacted_protected_indexes = set(base_protected_indexes)
+    base_segments = _context_segment_tokens(
+        base_messages,
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
     compression = CompressionMeta(
         stage="none",
         before_tokens=untrimmed_tokens,
         after_tokens=base_tokens,
         input_budget=token_budget.input_budget,
+        reasoning_trimmed=normalization_reasoning_trimmed,
+        tool_results_trimmed=normalization_tool_results_trimmed,
         file_content_trimmed=file_content_trimmed,
         pressure_level=pressure_level,
         trigger_ratio=trigger_ratio,
@@ -2030,8 +2413,23 @@ async def prepare_model_context(
         if token_budget.input_budget
         else 0.0,
         policy_used=policy_used,
-        actions=["trim_file_content"] if file_content_trimmed else [],
+        actions=list(
+            dict.fromkeys(
+                [*normalization_actions]
+                + (["trim_file_content"] if file_content_trimmed else [])
+            )
+        ),
+        context_limit=token_budget.context_limit,
+        output_reserve=token_budget.output_reserve,
+        safety_margin=token_budget.safety_margin,
+        active_tool_tokens=base_segments["active_tool"],
+        target_budget=thresholds.trigger_input_budget,
+        keep_recent_budget=max(
+            int(token_budget.input_budget * checkpoint_target_ratio), 1
+        ),
+        segment_tokens=base_segments,
     )
+    compression_baseline = compression
 
     checkpoint_created = False
     checkpoint_fallback_required = False
@@ -2087,6 +2485,9 @@ async def prepare_model_context(
             recent_tool_turns=configured_recent_tool_turns,
             min_new_turns=checkpoint_min_new_turns,
             input_budget=token_budget.input_budget,
+            keep_recent_tokens=max(
+                int(token_budget.input_budget * checkpoint_keep_recent_ratio), 1
+            ),
         )
         if checkpoint_result.created and checkpoint_result.checkpoint:
             context_checkpoint = checkpoint_result.checkpoint
@@ -2111,6 +2512,25 @@ async def prepare_model_context(
                 protected_round_id=protected_round_id,
                 context_checkpoint=context_checkpoint,
             )
+            checkpoint_normalization = normalize_message_content(
+                base_messages,
+                protected_indexes=base_protected_indexes,
+                model_id=tokenizer_model_id or model_id,
+                provider=provider,
+                max_tool_result_tokens=active_tool_result_max_tokens,
+                max_reasoning_tokens=reasoning_max_tokens,
+            )
+            base_messages = checkpoint_normalization.messages
+            base_protected_indexes = checkpoint_normalization.protected_indexes
+            normalization_actions.extend(checkpoint_normalization.actions or [])
+            normalization_tool_results_trimmed = (
+                normalization_tool_results_trimmed
+                or checkpoint_normalization.tool_results_trimmed
+            )
+            normalization_reasoning_trimmed = (
+                normalization_reasoning_trimmed
+                or checkpoint_normalization.reasoning_trimmed
+            )
             base_tokens = _estimate_message_tokens(
                 base_messages,
                 model_id=tokenizer_model_id,
@@ -2127,11 +2547,18 @@ async def prepare_model_context(
             checkpoint_actions = ["checkpoint_summary"]
             if file_content_trimmed:
                 checkpoint_actions.insert(0, "trim_file_content")
+            checkpoint_segments = _context_segment_tokens(
+                base_messages,
+                model_id=tokenizer_model_id,
+                provider=provider,
+            )
             compression = CompressionMeta(
                 stage="macro",
-                before_tokens=max(source_tokens, untrimmed_tokens),
+                before_tokens=untrimmed_tokens,
                 after_tokens=base_tokens,
                 input_budget=token_budget.input_budget,
+                reasoning_trimmed=normalization_reasoning_trimmed,
+                tool_results_trimmed=normalization_tool_results_trimmed,
                 file_content_trimmed=file_content_trimmed,
                 summary_turns=checkpoint_result.covered_turns,
                 pressure_level=pressure_level,
@@ -2151,13 +2578,22 @@ async def prepare_model_context(
                     else 0.0
                 ),
                 policy_used=policy_used,
-                actions=checkpoint_actions,
+                actions=list(
+                    dict.fromkeys([*normalization_actions, *checkpoint_actions])
+                ),
                 retained_recent_turns=checkpoint_result.retained_turns,
                 compacted_blocks=checkpoint_result.covered_turns,
+                context_limit=token_budget.context_limit,
+                output_reserve=token_budget.output_reserve,
+                safety_margin=token_budget.safety_margin,
+                active_tool_tokens=checkpoint_segments["active_tool"],
+                target_budget=thresholds.trigger_input_budget,
+                keep_recent_budget=checkpoint_target_budget,
+                segment_tokens=checkpoint_segments,
             )
+            compression_baseline = compression
         else:
             checkpoint_fallback_required = True
-
     should_run_micro = not checkpoint_created and pressure_level in {
         "auto_compact",
         "blocking",
@@ -2202,6 +2638,8 @@ async def prepare_model_context(
             compression.actions or []
         ):
             compression.actions = [*(compression.actions or []), "trim_file_content"]
+        compression = _merge_compression_meta(compression_baseline, compression)
+        compression_baseline = compression
 
     should_run_macro = False
     if compression_config.get("macro_compaction_enabled", True):
@@ -2261,7 +2699,95 @@ async def prepare_model_context(
                 ),
             )
         )
+    if should_run_macro:
+        compression = _merge_compression_meta(compression_baseline, compression)
+        compression_baseline = compression
+    if compression_enabled and active_tool_compaction_enabled:
+        active_compaction = compact_active_tool_messages(
+            compacted_messages,
+            protected_indexes=compacted_protected_indexes,
+            model_id=tokenizer_model_id,
+            provider=provider,
+            input_budget=token_budget.input_budget,
+            target_ratio=active_tool_target_ratio,
+            max_tool_result_tokens=active_tool_result_max_tokens,
+            summary_max_tokens=active_tool_summary_max_tokens,
+        )
+        if active_compaction.changed:
+            compacted_messages = active_compaction.messages
+            compacted_protected_indexes = active_compaction.protected_indexes
+            base_messages = compacted_messages
+            base_protected_indexes = set(compacted_protected_indexes)
+            base_tokens = _estimate_message_tokens(
+                base_messages,
+                model_id=tokenizer_model_id,
+                provider=provider,
+            )
+            pressure_level = _assess_context_pressure(
+                before_tokens=base_tokens,
+                token_budget=token_budget,
+                thresholds=thresholds,
+            )
+            compression.after_tokens = base_tokens
+            compression.pressure_level = pressure_level
+            if compression.stage == "none":
+                compression.stage = "micro"
+            compression.tool_results_trimmed = (
+                compression.tool_results_trimmed
+                or active_compaction.tool_results_trimmed
+            )
+            compression.actions = [
+                *(compression.actions or []),
+                *(active_compaction.actions or []),
+            ]
+            compression.active_tool_tokens = sum(
+                _estimate_message_tokens(
+                    [message], model_id=tokenizer_model_id, provider=provider
+                )
+                for message in compacted_messages
+                if message.role == MessageRole.TOOL
+            )
 
+    if compression_enabled and compression.after_tokens > token_budget.input_budget:
+        fit_result = fit_tool_results_to_budget(
+            compacted_messages,
+            protected_indexes=compacted_protected_indexes,
+            model_id=tokenizer_model_id,
+            provider=provider,
+            input_budget=token_budget.input_budget,
+        )
+        if fit_result.changed:
+            compacted_messages = fit_result.messages
+            compacted_protected_indexes = fit_result.protected_indexes
+            compression.tool_results_trimmed = True
+            compression.actions = [
+                *(compression.actions or []),
+                *(fit_result.actions or []),
+            ]
+            compression.after_tokens = _estimate_message_tokens(
+                compacted_messages,
+                model_id=tokenizer_model_id,
+                provider=provider,
+            )
+            compression.stage = "reactive_retry"
+            compression.pressure_level = (
+                "over_budget"
+                if compression.after_tokens > token_budget.input_budget
+                else compression.pressure_level
+            )
+    final_segments = _context_segment_tokens(
+        compacted_messages,
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
+    compression.segment_tokens = final_segments
+    compression.active_tool_tokens = final_segments["active_tool"]
+    compression.context_limit = token_budget.context_limit
+    compression.output_reserve = token_budget.output_reserve
+    compression.safety_margin = token_budget.safety_margin
+    compression.target_budget = thresholds.trigger_input_budget
+    compression.keep_recent_budget = checkpoint_target_budget
+    compression.actions = list(dict.fromkeys(compression.actions or []))
     if file_content_trimmed:
         compression.before_tokens = max(compression.before_tokens, untrimmed_tokens)
         if compression.stage == "none":
@@ -2291,13 +2817,14 @@ async def prepare_model_context(
                 and compacted_messages[index].role == MessageRole.USER
             ),
             None,
+        ) or next(
+            (
+                compacted_messages[index].model_copy(deep=True)
+                for index in range(len(compacted_messages) - 1, -1, -1)
+                if compacted_messages[index].role == MessageRole.USER
+            ),
+            None,
         )
-        protected_round_messages = [
-            compacted_messages[index].model_copy(deep=True)
-            for index in sorted(compacted_protected_indexes)
-            if 0 <= index < len(compacted_messages)
-            and compacted_messages[index].role != MessageRole.USER
-        ]
         if compacted_messages and compacted_messages[0].role == MessageRole.SYSTEM:
             _append_message(
                 emergency_messages,
@@ -2311,28 +2838,33 @@ async def prepare_model_context(
                 current_user_message,
                 protect=True,
             )
-        for message in protected_round_messages:
-            _append_message(
-                emergency_messages,
-                emergency_protected_indexes,
-                message,
-                protect=True,
-            )
 
         emergency_tokens = _estimate_message_tokens(
             emergency_messages,
             model_id=tokenizer_model_id,
             provider=provider,
         )
-
+        emergency_segments = _context_segment_tokens(
+            emergency_messages,
+            model_id=tokenizer_model_id,
+            provider=provider,
+        )
         if emergency_tokens > token_budget.input_budget:
-            # Even system + user is too large - this shouldn't happen but handle it
             raise ContextLengthError(
                 message="Context length exceeded even with emergency fallback (system + user only)",
                 max_tokens=token_budget.input_budget,
                 actual_tokens=emergency_tokens,
                 provider=provider,
                 model=model_id,
+                details={
+                    "retryable": False,
+                    "reason": "system_and_user_exceed_input_budget",
+                    "context_limit": token_budget.context_limit,
+                    "output_reserve": token_budget.output_reserve,
+                    "safety_margin": token_budget.safety_margin,
+                    "segment_tokens": emergency_segments,
+                    "reduction_actions": list(compression.actions or []),
+                },
             )
 
         emergency_actions = list(compression.actions or [])
@@ -2345,12 +2877,12 @@ async def prepare_model_context(
             compression=CompressionMeta(
                 stage="macro",
                 before_tokens=compression.before_tokens,
-                after_tokens=emergency_tokens,
                 input_budget=token_budget.input_budget,
+                after_tokens=emergency_tokens,
                 reasoning_trimmed=compression.reasoning_trimmed,
                 tool_results_trimmed=compression.tool_results_trimmed,
                 file_content_trimmed=compression.file_content_trimmed,
-                summary_turns=len(compacted_messages) - len(emergency_messages),
+                summary_turns=max(len(compacted_messages) - len(emergency_messages), 0),
                 pressure_level="over_budget",
                 trigger_ratio=compression.trigger_ratio,
                 warning_ratio=compression.warning_ratio,
@@ -2367,6 +2899,13 @@ async def prepare_model_context(
                 retained_tool_turns=0,
                 compacted_blocks=compression.compacted_blocks,
                 session_memory_compacted=compression.session_memory_compacted,
+                context_limit=token_budget.context_limit,
+                output_reserve=token_budget.output_reserve,
+                safety_margin=token_budget.safety_margin,
+                active_tool_tokens=emergency_segments["active_tool"],
+                target_budget=thresholds.trigger_input_budget,
+                keep_recent_budget=checkpoint_target_budget,
+                segment_tokens=emergency_segments,
             ),
             protected_indexes=emergency_protected_indexes,
         )

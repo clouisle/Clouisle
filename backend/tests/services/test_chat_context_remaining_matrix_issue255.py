@@ -74,8 +74,15 @@ def test_tool_result_summary_matrix_covers_media_skill_and_fallbacks():
 
 
 @pytest.mark.anyio
-async def test_history_override_inserts_protected_user_before_assistant_and_filters_tools():
+async def test_history_override_inserts_protected_user_before_assistant_and_filters_tools(
+    monkeypatch,
+):
     protected_round_id = uuid4()
+
+    async def no_history(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(chat_context, "get_visible_conversation_messages", no_history)
 
     messages, protected_indexes = await chat_context._build_messages_with_file_content(
         agent=_agent(),
