@@ -519,9 +519,6 @@ describe('OnboardingTour', () => {
       '[data-testid="kb-import-url-dialog"]',
       '[data-testid="kb-import-url-dialog-cancel"]',
       '[data-testid="embed-config-dialog"]',
-      '[data-testid="api-key-dialog"]',
-      '[data-testid="api-key-name-input"]',
-      '[data-testid="show-key-dialog"]',
     ]) {
       config = { id: 'kb', title: 'Knowledge Base', description: '', steps: [{ target, content: 'dialog' }] }
       state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }

@@ -504,10 +504,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     targetSelector.includes('app-create-submit') ||
     targetSelector.includes('kb-upload-dialog') ||
     targetSelector.includes('kb-import-url-dialog') ||
-    targetSelector.includes('embed-config-dialog') ||
-    targetSelector.includes('api-key-dialog') ||
-    targetSelector.includes('api-key-name-input') ||
-    targetSelector.includes('show-key-dialog')
+    targetSelector.includes('embed-config-dialog')
   )
   const isKbDialogContentStep = state.isRunning && state.currentTour === tourId &&
     targetSelector.includes('kb-dialog-') && !targetSelector.includes('kb-dialog-submit')

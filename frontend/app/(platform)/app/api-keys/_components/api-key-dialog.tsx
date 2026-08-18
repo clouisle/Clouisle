@@ -201,7 +201,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="api-key-dialog" className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? t('editKey') : t('createKey')}</DialogTitle>
           <DialogDescription>
@@ -224,7 +224,6 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             <Label htmlFor="name">{t('name')}</Label>
             <Input
               id="name"
-              data-testid="api-key-name-input"
               value={formData.name}
               onChange={(e) => {
                 setFormData({ ...formData, name: e.target.value })

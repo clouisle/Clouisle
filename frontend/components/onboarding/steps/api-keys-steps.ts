@@ -18,34 +18,8 @@ const apiKeysSteps: OnboardingStep[] = [
     title: 'onboarding.step32b.title',
     placement: 'bottom',
     route: '/app/api-keys',
-    advanceOnClick: true,
-    overlayClickAction: false,
-  },
-  {
-    target: '[data-testid="api-key-name-input"]',
-    content: 'onboarding.step32c.description',
-    title: 'onboarding.step32c.title',
-    // Target the required name field instead of the tall dialog root: the
-    // tooltip stays inside the dialog and never overflows the viewport.
-    placement: 'bottom',
-    route: '/app/api-keys',
-    overlayClickAction: false,
-  },
-  // ========== Key Shown Only Once ==========
-  {
-    target: '[data-testid="show-key-dialog"]',
-    content: 'onboarding.step32d.description',
-    title: 'onboarding.step32d.title',
-    placement: 'bottom',
-    route: '/app/api-keys',
-    overlayClickAction: false,
-  },
-  {
-    target: '[data-testid="show-key-copy-button"]',
-    content: 'onboarding.step32e.description',
-    title: 'onboarding.step32e.title',
-    placement: 'left',
-    route: '/app/api-keys',
+    // Clicking create hands off to the real create flow: the full key is
+    // shown only once in the follow-up dialog, which is exactly the teaching.
     advanceOnClick: true,
     overlayClickAction: false,
   },

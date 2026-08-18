@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-18T03:09:56.025Z
+// GENERATED — 2026-08-18T03:49:29.965Z
 // Source: i18n/en/onboarding.json
 export type OnboardingMessages = {
   onboarding: {
@@ -543,18 +543,6 @@ export type OnboardingMessages = {
       description: string
     }
     step32b: {
-      title: string
-      description: string
-    }
-    step32c: {
-      title: string
-      description: string
-    }
-    step32d: {
-      title: string
-      description: string
-    }
-    step32e: {
       title: string
       description: string
     }

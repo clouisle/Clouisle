@@ -190,7 +190,7 @@ export default function APIKeysPage() {
           <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{t('noKeys')}</p>
           <p className="text-sm mt-1">{t('createKeyHint')}</p>
-          <Button onClick={handleCreate} className="mt-4" data-testid="api-keys-empty-create-button">
+          <Button onClick={handleCreate} className="mt-4">
             <Plus className="mr-2 h-4 w-4" />
             {t('createKey')}
           </Button>

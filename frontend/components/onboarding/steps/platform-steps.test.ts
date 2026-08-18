@@ -223,20 +223,14 @@ describe('onboarding tour configurations', () => {
     expect(apiKeys?.steps.map(step => step.target)).toEqual([
       '[data-testid="api-keys-page"]',
       '[data-testid="api-keys-create-button"]',
-      '[data-testid="api-key-name-input"]',
-      '[data-testid="show-key-dialog"]',
-      '[data-testid="show-key-copy-button"]',
     ])
     expect(apiKeys?.steps.every(step => step.route === '/app/api-keys')).toBe(true)
-    expect(apiKeys?.steps[4]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
+    // No data-dependent dialog targets: the create-dialog and show-key-dialog
+    // only exist after user actions, which made earlier steps skip/fail
+    expect(apiKeys?.steps.some(step => step.target.includes('dialog'))).toBe(false)
     expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     // Full-viewport page root keeps the tooltip in view with center placement
     expect(apiKeys?.steps[0]?.placement).toBe('center')
-    // The create-dialog step targets the required name field, not the tall
-    // dialog root, so the tooltip stays inside the dialog and the form stays
-    // usable (the show-key dialog below keeps bottom placement)
-    expect(apiKeys?.steps[2]?.placement).toBe('bottom')
-    expect(apiKeys?.steps[3]?.placement).toBe('bottom')
   })
 
   test('selects the configured auto-start tour', () => {

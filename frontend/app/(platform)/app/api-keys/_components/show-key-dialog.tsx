@@ -50,7 +50,7 @@ export function ShowKeyDialog({ open, onOpenChange, apiKey }: ShowKeyDialogProps
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="show-key-dialog" className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{t('keyCreatedTitle')}</DialogTitle>
           <DialogDescription>
@@ -76,7 +76,6 @@ export function ShowKeyDialog({ open, onOpenChange, apiKey }: ShowKeyDialogProps
               variant="outline"
               size="icon"
               onClick={handleCopy}
-              data-testid="show-key-copy-button"
             >
               {copied ? (
                 <Check className="h-4 w-4 text-green-500" />

@@ -542,19 +542,7 @@
     },
     "step32b": {
       "title": "Create a Key",
-      "description": "Click to create a new API key. You can name it, set a rate limit, and restrict it to specific Agents and Workflows."
-    },
-    "step32c": {
-      "title": "Create the Key",
-      "description": "Fill in the details and create the key. After creation, the full key is shown in a dialog — this is the only time it is ever displayed."
-    },
-    "step32d": {
-      "title": "Key Shown Only Once",
-      "description": "This is the only moment the full key is visible. Copy it now and store it somewhere safe — the platform never shows it again."
-    },
-    "step32e": {
-      "title": "Copy the Key",
-      "description": "Click the copy button to save the key to your clipboard. If you lose it, you will need to create a new key."
+      "description": "Click to create a new API key. You can name it, set a rate limit, and restrict it to specific Agents and Workflows. After creation, the full key is shown in a dialog — this is the only time it is ever displayed, so copy it right away."
     }
   }
 }
