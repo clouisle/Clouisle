@@ -127,6 +127,11 @@ export function AppCreateDialog({
         toast.success(t('appCreated'))
         onSuccess?.()
         router.push(agentEditHref(agent.id))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', {
+            detail: { type: 'agent-created' },
+          }))
+        }
         if (shouldStartConfigTour) {
           setTimeout(() => {
             onboarding?.startTour('appConfig', 1)

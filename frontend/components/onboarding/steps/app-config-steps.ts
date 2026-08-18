@@ -3,7 +3,7 @@ import type { OnboardingStep, OnboardingTourConfig } from './types'
 const appConfigSteps: OnboardingStep[] = [
   // ========== Enter Config Page via Agent Card ==========
   {
-    target: '[data-testid^="app-card-"]:first-of-type',
+    target: '[data-testid="app-card-first"]',
     content: 'onboarding.step18.description',
     title: 'onboarding.step18.title',
     placement: 'right',
@@ -127,6 +127,22 @@ const appConfigSteps: OnboardingStep[] = [
     content: 'onboarding.step14g.description',
     title: 'onboarding.step14g.title',
     placement: 'bottom',
+    advanceOnClick: true,
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="embed-config-dialog"]',
+    content: 'onboarding.step14g2.description',
+    title: 'onboarding.step14g2.title',
+    placement: 'center',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-slot="dialog-close"]',
+    content: 'onboarding.step14g3.description',
+    title: 'onboarding.step14g3.title',
+    placement: 'left',
+    advanceOnClick: true,
     overlayClickAction: false,
   },
   {
@@ -264,4 +280,5 @@ export const appConfigTourConfig: OnboardingTourConfig = {
   description: 'onboarding.tourAppConfigDescription',
   steps: appConfigSteps,
   autoStart: false,
+  prerequisites: ['appCreate'],
 }

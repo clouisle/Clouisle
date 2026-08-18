@@ -26,4 +26,5 @@ export const modelsTourConfig: OnboardingTourConfig = {
   description: 'onboarding.tourModelsDescription',
   steps: modelsSteps,
   autoStart: false,
+  prerequisites: ['overview'],
 }

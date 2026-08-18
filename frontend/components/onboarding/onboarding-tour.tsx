@@ -14,7 +14,7 @@ import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { useTeam } from '@/contexts/team-context'
 import { useOnboarding, type OnboardingTourId } from './onboarding-provider'
-import { getTourConfigById, allTourConfigs } from './steps/platform-steps'
+import { getTourConfigById, allTourConfigs, getNextTourInChain } from './steps/platform-steps'
 import type { OnboardingStep } from './steps/types'
 
 interface OnboardingTourProps {
@@ -98,6 +98,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const hasAutoStarted = React.useRef(false)
   const urlTriggeredRef = React.useRef(false)
   const advanceTriggeredRef = React.useRef(false)
+  const deferredChainRef = React.useRef<OnboardingTourId | null>(null)
 
   // Keep pathnameRef in sync with latest pathname
   React.useEffect(() => {
@@ -155,6 +156,39 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     startTour(tourId, initialStep)
   }, [config, searchParams, startTour, tourId])
 
+  // Contextual chaining: when the first KB or Agent is created, hand off to
+  // the next tour in the prerequisite chain. Create dialogs dispatch
+  // 'clouisle:onboarding-context' after a successful create.
+  React.useEffect(() => {
+    const handleContextEvent = (event: Event) => {
+      const type = (event as CustomEvent<{ type?: string }>).detail?.type
+      if (type !== 'kb-created' && type !== 'agent-created') return
+
+      const prerequisite: OnboardingTourId = type === 'kb-created' ? 'kb' : 'appCreate'
+      const chainTarget = getNextTourInChain(prerequisite)
+      // Only the prerequisite tour's component owns the handoff so a single
+      // listener reacts to each event.
+      if (!chainTarget || tourId !== prerequisite) return
+
+      // Mid-tour: agent creation already hands off to appConfig from the
+      // create dialog, so only defer KB creation until the kb tour ends.
+      if (state.isRunning) {
+        if (type === 'kb-created' && state.currentTour === 'kb') {
+          deferredChainRef.current = chainTarget
+        }
+        return
+      }
+
+      const completed = state.completedTours
+      if (completed.includes(prerequisite) && !completed.includes(chainTarget)) {
+        window.setTimeout(() => startTour(chainTarget), 400)
+      }
+    }
+
+    window.addEventListener('clouisle:onboarding-context', handleContextEvent)
+    return () => window.removeEventListener('clouisle:onboarding-context', handleContextEvent)
+  }, [state.isRunning, state.currentTour, state.completedTours, startTour, tourId])
+
   // Detect the best starting step when a tour starts, then jump to it
   const startingStepDetectedRef = React.useRef<OnboardingTourId | null>(null)
   React.useEffect(() => {
@@ -186,6 +220,17 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
   // Get current step data
   const currentStep = steps[currentStepIndex]
+
+  // Complete the current tour, then start any deferred next tour in the
+  // prerequisite chain (set when a KB was created while the kb tour ran).
+  const finishTour = React.useCallback(() => {
+    const deferred = deferredChainRef.current
+    deferredChainRef.current = null
+    completeTour(tourId)
+    if (deferred && deferred !== tourId) {
+      window.setTimeout(() => startTour(deferred), 600)
+    }
+  }, [completeTour, startTour, tourId])
 
   const handleJoyrideEvent = React.useCallback(
     (data: EventData, controls: Controls) => {
@@ -249,17 +294,17 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
             } else if (nextStepIndex < steps.length - 1) {
               nextStep()
             } else {
-              completeTour(tourId)
+              finishTour()
             }
           }
         }, 500)
       }
 
       if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
-        completeTour(tourId)
+        finishTour()
       }
     },
-    [steps, currentStepIndex, pathname, router, nextStep, completeTour, tourId]
+    [steps, currentStepIndex, pathname, router, nextStep, finishTour]
   )
 
   // Handle navigation when step changes and requires a different route
@@ -281,9 +326,9 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     if (currentStepIndex < steps.length - 1) {
       nextStep()
     } else {
-      completeTour(tourId)
+      finishTour()
     }
-  }, [currentStepIndex, steps.length, nextStep, completeTour, tourId])
+  }, [currentStepIndex, steps.length, nextStep, finishTour])
 
   // Keyboard shortcut: Ctrl+Enter to advance (only when Next button is visible)
   React.useEffect(() => {
@@ -445,8 +490,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   }, [state.isRunning, state.currentTour, tourId, currentStep, handleNext, currentStepIndex])
 
   const handleSkip = React.useCallback(() => {
-    completeTour(tourId)
-  }, [completeTour, tourId])
+    finishTour()
+  }, [finishTour])
 
   // Add body class when on dialog steps to make overlay pass-through clicks
   // This effect must be before early returns to maintain hook order
@@ -458,7 +503,10 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     targetSelector.includes('app-create-description-input') ||
     targetSelector.includes('app-create-submit') ||
     targetSelector.includes('kb-upload-dialog') ||
-    targetSelector.includes('kb-import-url-dialog')
+    targetSelector.includes('kb-import-url-dialog') ||
+    targetSelector.includes('embed-config-dialog') ||
+    targetSelector.includes('api-key-dialog') ||
+    targetSelector.includes('show-key-dialog')
   )
   const isKbDialogContentStep = state.isRunning && state.currentTour === tourId &&
     targetSelector.includes('kb-dialog-') && !targetSelector.includes('kb-dialog-submit')

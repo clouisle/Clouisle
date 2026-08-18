@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   allTourConfigs,
   getAutoStartTour,
+  getNextTourInChain,
   getTourConfigById,
 } from './platform-steps'
 
@@ -14,6 +15,7 @@ describe('onboarding tour configurations', () => {
       'kb',
       'appCreate',
       'appConfig',
+      'apiKeys',
       'workflowConfig',
       'capabilities',
       'adminModelSetup',
@@ -48,6 +50,8 @@ describe('onboarding tour configurations', () => {
     expect(appConfigTargets).toContain('[data-testid="agent-attachments-section"]')
     expect(appConfigTargets).not.toContain('[data-testid="agent-vision-section"]')
     expect(appConfigTargets).not.toContain('[data-testid="agent-file-upload-section"]')
+    expect(appConfigTargets).toContain('[data-testid="embed-config-dialog"]')
+    expect(appConfigTargets).toContain('[data-slot="dialog-close"]')
     expect(knowledgeBaseTargets).not.toContain('[data-testid="kb-dialog-rerank-fail-open"]')
     expect(knowledgeBaseTargets).toEqual([
       '[data-testid="nav-kb"]',
@@ -189,8 +193,39 @@ describe('onboarding tour configurations', () => {
 
   test('looks up known tours and returns undefined for unknown IDs', () => {
     expect(getTourConfigById('kb')).toBe(allTourConfigs[2])
-    expect(getTourConfigById('adminModelSetup')).toBe(allTourConfigs[7])
+    expect(getTourConfigById('adminModelSetup')).toBe(allTourConfigs[8])
     expect(getTourConfigById('unknown')).toBeUndefined()
+  })
+
+  test('wires the prerequisite chain and resolves the next tour in it', () => {
+    expect(getTourConfigById('overview')?.prerequisites).toBeUndefined()
+    expect(getTourConfigById('models')?.prerequisites).toEqual(['overview'])
+    expect(getTourConfigById('kb')?.prerequisites).toEqual(['models'])
+    expect(getTourConfigById('appCreate')?.prerequisites).toEqual(['kb'])
+    expect(getTourConfigById('appConfig')?.prerequisites).toEqual(['appCreate'])
+    expect(getTourConfigById('capabilities')?.prerequisites).toEqual(['appConfig'])
+    expect(getTourConfigById('apiKeys')?.prerequisites).toBeUndefined()
+
+    expect(getNextTourInChain('overview')).toBe('models')
+    expect(getNextTourInChain('models')).toBe('kb')
+    expect(getNextTourInChain('kb')).toBe('appCreate')
+    expect(getNextTourInChain('appCreate')).toBe('appConfig')
+    expect(getNextTourInChain('appConfig')).toBe('capabilities')
+    expect(getNextTourInChain('capabilities')).toBeNull()
+  })
+
+  test('registers the apiKeys tour against the api-keys page surfaces', () => {
+    const apiKeys = getTourConfigById('apiKeys')
+    expect(apiKeys?.steps.map(step => step.target)).toEqual([
+      '[data-testid="api-keys-page"]',
+      '[data-testid="api-keys-create-button"]',
+      '[data-testid="api-key-dialog"]',
+      '[data-testid="show-key-dialog"]',
+      '[data-testid="show-key-copy-button"]',
+    ])
+    expect(apiKeys?.steps.every(step => step.route === '/app/api-keys')).toBe(true)
+    expect(apiKeys?.steps[4]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
+    expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
   })
 
   test('selects the configured auto-start tour', () => {

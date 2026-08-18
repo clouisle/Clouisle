@@ -201,7 +201,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent data-testid="api-key-dialog" className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? t('editKey') : t('createKey')}</DialogTitle>
           <DialogDescription>

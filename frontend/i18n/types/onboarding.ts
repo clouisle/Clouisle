@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-17T23:07:20.843Z
+// GENERATED — 2026-08-18T03:09:56.025Z
 // Source: i18n/en/onboarding.json
 export type OnboardingMessages = {
   onboarding: {
@@ -20,8 +20,12 @@ export type OnboardingMessages = {
     tourCapabilitiesDescription: string
     tourAdminModelSetupTitle: string
     tourAdminModelSetupDescription: string
+    tourApiKeysTitle: string
+    tourApiKeysDescription: string
     startTour: string
     restartTour: string
+    replayAllTours: string
+    tourPrerequisiteHint: string
     back: string
     next: string
     skip: string
@@ -259,6 +263,14 @@ export type OnboardingMessages = {
       description: string
     }
     step14g: {
+      title: string
+      description: string
+    }
+    step14g2: {
+      title: string
+      description: string
+    }
+    step14g3: {
       title: string
       description: string
     }
@@ -523,6 +535,26 @@ export type OnboardingMessages = {
       description: string
     }
     step31p: {
+      title: string
+      description: string
+    }
+    step32a: {
+      title: string
+      description: string
+    }
+    step32b: {
+      title: string
+      description: string
+    }
+    step32c: {
+      title: string
+      description: string
+    }
+    step32d: {
+      title: string
+      description: string
+    }
+    step32e: {
       title: string
       description: string
     }

@@ -518,6 +518,9 @@ describe('OnboardingTour', () => {
       '[data-testid="kb-upload-dialog-cancel"]',
       '[data-testid="kb-import-url-dialog"]',
       '[data-testid="kb-import-url-dialog-cancel"]',
+      '[data-testid="embed-config-dialog"]',
+      '[data-testid="api-key-dialog"]',
+      '[data-testid="show-key-dialog"]',
     ]) {
       config = { id: 'kb', title: 'Knowledge Base', description: '', steps: [{ target, content: 'dialog' }] }
       state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
@@ -529,5 +532,105 @@ describe('OnboardingTour', () => {
       expect(document.body.classList.contains('joyride-dialog-active')).toBe(false)
       kbRestore()
     }
+  })
+
+  it('starts appCreate after the first KB is created when the kb tour is done', async () => {
+    config = {
+      id: 'kb', title: 'Knowledge Base', description: '',
+      steps: [{ target: 'body', content: 'one' }],
+    }
+    state = { completedTours: ['kb'], currentTour: null, currentStep: 0, isRunning: false }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'kb-created' } }))
+    await waitFor(() => expect(startTour).toHaveBeenCalledWith('appCreate'), { timeout: 800 })
+    restore()
+  })
+
+  it('defers the appCreate handoff until the running kb tour finishes', async () => {
+    config = {
+      id: 'kb', title: 'Knowledge Base', description: '',
+      steps: [{ target: 'body', content: 'one' }],
+    }
+    state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'kb-created' } }))
+    await act(() => new Promise(resolve => setTimeout(resolve, 550)))
+    expect(startTour).not.toHaveBeenCalled()
+
+    const Tooltip = joyrideProps?.tooltipComponent
+    expect(Tooltip).toBeDefined()
+    render(<Tooltip index={0} isLastStep step={config.steps[0]} size={1} />)
+      .getByText('onboarding.finish').click()
+    await waitFor(() => expect(startTour).toHaveBeenCalledWith('appCreate'), { timeout: 800 })
+    expect(completeTour).toHaveBeenCalledWith('kb')
+    restore()
+  })
+
+  it('starts appConfig after the first agent is created when the appCreate tour is done', async () => {
+    config = {
+      id: 'appCreate', title: 'Create App', description: '',
+      steps: [{ target: 'body', content: 'one' }],
+    }
+    state = { completedTours: ['appCreate'], currentTour: null, currentStep: 0, isRunning: false }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="appCreate" />)
+
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'agent-created' } }))
+    await waitFor(() => expect(startTour).toHaveBeenCalledWith('appConfig'), { timeout: 800 })
+    restore()
+  })
+
+  it('does not chain when the prerequisite tour is incomplete or the target is completed', async () => {
+    config = {
+      id: 'kb', title: 'Knowledge Base', description: '',
+      steps: [{ target: 'body', content: 'one' }],
+    }
+    state = { completedTours: [], currentTour: null, currentStep: 0, isRunning: false }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="kb" />)
+
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'kb-created' } }))
+    await act(() => new Promise(resolve => setTimeout(resolve, 550)))
+    expect(startTour).not.toHaveBeenCalled()
+    restore()
+
+    config = {
+      id: 'appCreate', title: 'Create App', description: '',
+      steps: [{ target: 'body', content: 'one' }],
+    }
+    state = { completedTours: ['appCreate', 'appConfig'], currentTour: null, currentStep: 0, isRunning: false }
+    const restoreDone = installSpies()
+    render(<OnboardingTour tourId="appCreate" />)
+
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'agent-created' } }))
+    await act(() => new Promise(resolve => setTimeout(resolve, 550)))
+    expect(startTour).not.toHaveBeenCalled()
+    restoreDone()
+  })
+
+  it('does not defer agent creation while the appCreate tour runs', async () => {
+    config = {
+      id: 'appCreate', title: 'Create App', description: '',
+      steps: [{ target: 'body', content: 'one' }],
+    }
+    state = { completedTours: [], currentTour: 'appCreate', currentStep: 0, isRunning: true }
+    const restore = installSpies()
+    render(<OnboardingTour tourId="appCreate" />)
+
+    window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', { detail: { type: 'agent-created' } }))
+    await act(() => new Promise(resolve => setTimeout(resolve, 550)))
+    expect(startTour).not.toHaveBeenCalled()
+
+    const Tooltip = joyrideProps?.tooltipComponent
+    expect(Tooltip).toBeDefined()
+    render(<Tooltip index={0} isLastStep step={config.steps[0]} size={1} />)
+      .getByText('onboarding.finish').click()
+    await act(() => new Promise(resolve => setTimeout(resolve, 750)))
+    expect(startTour).not.toHaveBeenCalled()
+    restore()
   })
 })

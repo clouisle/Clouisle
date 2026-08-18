@@ -9,6 +9,7 @@ export type OnboardingTourId =
   | 'workflowConfig'
   | 'capabilities'
   | 'adminModelSetup'
+  | 'apiKeys'
 
 export interface OnboardingStep extends Step {
   /** Route path for cross-page navigation */

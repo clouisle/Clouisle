@@ -160,14 +160,14 @@ export default function APIKeysPage() {
   }
 
   return (
-    <div className="py-6 px-8 h-full overflow-y-auto">
+    <div className="py-6 px-8 h-full overflow-y-auto" data-testid="api-keys-page">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground mt-1">{t('description')}</p>
         </div>
-        <Button onClick={handleCreate}>
+        <Button onClick={handleCreate} data-testid="api-keys-create-button">
           <Plus className="mr-2 h-4 w-4" />
           {t('createKey')}
         </Button>
@@ -190,7 +190,7 @@ export default function APIKeysPage() {
           <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{t('noKeys')}</p>
           <p className="text-sm mt-1">{t('createKeyHint')}</p>
-          <Button onClick={handleCreate} className="mt-4">
+          <Button onClick={handleCreate} className="mt-4" data-testid="api-keys-empty-create-button">
             <Plus className="mr-2 h-4 w-4" />
             {t('createKey')}
           </Button>

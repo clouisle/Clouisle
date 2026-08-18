@@ -23,6 +23,8 @@ import {
   X,
   Key,
   GraduationCap,
+  RotateCcw,
+  Lock,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
@@ -235,6 +237,17 @@ export function PlatformHeader() {
     }, 300)
   }
 
+  // 重播所有引导：重置完成状态后从概览引导重新开始
+  const handleReplayAllTours = () => {
+    setUserMenuOpen(false)
+    setTimeout(() => {
+      if (onboarding) {
+        onboarding.resetAllTours()
+        onboarding.startTour('overview')
+      }
+    }, 300)
+  }
+
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
@@ -443,11 +456,16 @@ export function PlatformHeader() {
                       .filter(tourConfig => tourConfig.showInPlatformMenu !== false)
                       .map((tourConfig) => {
                       const isCompleted = onboarding.isTourCompleted(tourConfig.id)
+                      const isLocked = (tourConfig.prerequisites ?? []).some(
+                        prereq => !onboarding.isTourCompleted(prereq)
+                      )
                       // tourConfig.title is like 'onboarding.tourOverviewTitle', we need 'tourOverviewTitle'
                       const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
                       return (
                         <DropdownMenuItem
                           key={tourConfig.id}
+                          disabled={isLocked}
+                          title={isLocked ? tOnboarding('tourPrerequisiteHint') : undefined}
                           onClick={(e) => {
                             e.stopPropagation()
                             handleStartTour(tourConfig.id)
@@ -456,10 +474,24 @@ export function PlatformHeader() {
                           {isCompleted && (
                             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
                           )}
+                          {isLocked && (
+                            <Lock className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                          )}
                           {tOnboarding(titleKey)}
                         </DropdownMenuItem>
                       )
                     })}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      data-testid="user-menu-replay-tours"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleReplayAllTours()
+                      }}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      {tOnboarding('replayAllTours')}
+                    </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               )}

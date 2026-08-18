@@ -18,8 +18,12 @@
     "tourCapabilitiesDescription": "了解如何管理工具和技能",
     "tourAdminModelSetupTitle": "管理端模型配置",
     "tourAdminModelSetupDescription": "在团队创建 Agent 和知识库前，连接、测试、启用模型并授权给团队。",
+    "tourApiKeysTitle": "API 密钥",
+    "tourApiKeysDescription": "了解如何创建 API 密钥，以及为什么完整密钥只显示一次。",
     "startTour": "开始引导",
     "restartTour": "重新引导",
+    "replayAllTours": "重播所有引导",
+    "tourPrerequisiteHint": "请先完成前置引导",
     "back": "上一步",
     "next": "下一步",
     "skip": "跳过",
@@ -259,6 +263,14 @@
     "step14g": {
       "title": "嵌入配置",
       "description": "点击此按钮打开嵌入配置对话框。在这里您可以生成嵌入代码，将 Agent 集成到您的网站或应用中。您可以选择三种嵌入模式：气泡模式（浮动对话按钮）、全屏模式（完整页面嵌入）或移动模式（移动端优化）。您还可以自定义主题、颜色和气泡位置。配置完成后，只需复制生成的代码并粘贴到您网站的 HTML 中即可嵌入您的 Agent。"
+    },
+    "step14g2": {
+      "title": "嵌入模式",
+      "description": "选择访客与您的 Agent 交互的方式：气泡模式添加浮动对话按钮，全屏模式铺满整个页面，移动模式则提供针对手机优化的固定全屏视图。先开启「启用嵌入」，再选择适合您网站的标签页。"
+    },
+    "step14g3": {
+      "title": "关闭嵌入对话框",
+      "description": "完成后关闭对话框。生成的嵌入代码随时都可以再次从对话框中复制。"
     },
     "step14l": {
       "title": "Agent 设置",
@@ -523,6 +535,26 @@
     "step31p": {
       "title": "查看结果",
       "description": "查看返回的分块和排序详情，验证检索效果。"
+    },
+    "step32a": {
+      "title": "API 密钥",
+      "description": "管理用于以编程方式调用 Agent 和工作流的 API 密钥。完整的密钥只在创建完成后显示一次，因此请立即复制保存。"
+    },
+    "step32b": {
+      "title": "创建密钥",
+      "description": "点击创建新的 API 密钥。您可以为其命名、设置速率限制，并限制其可访问的 Agent 和工作流。"
+    },
+    "step32c": {
+      "title": "创建密钥",
+      "description": "填写信息并创建密钥。创建完成后，完整密钥会显示在对话框中——这是它唯一一次被展示。"
+    },
+    "step32d": {
+      "title": "密钥仅显示一次",
+      "description": "这是完整密钥唯一可见的时刻。请立即复制并妥善保存——平台之后不会再显示它。"
+    },
+    "step32e": {
+      "title": "复制密钥",
+      "description": "点击复制按钮将密钥保存到剪贴板。如果丢失，您将需要创建新的密钥。"
     }
   }
 }

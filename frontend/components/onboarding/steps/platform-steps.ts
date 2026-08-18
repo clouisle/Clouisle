@@ -1,4 +1,4 @@
-import type { OnboardingTourConfig } from './types'
+import type { OnboardingTourConfig, OnboardingTourId } from './types'
 import { overviewTourConfig } from './overview-steps'
 import { modelsTourConfig } from './models-steps'
 import { kbTourConfig } from './kb-steps'
@@ -7,6 +7,7 @@ import { appConfigTourConfig } from './app-config-steps'
 import { workflowConfigTourConfig } from './workflow-steps'
 import { capabilitiesTourConfig } from './capabilities-steps'
 import { adminModelSetupTourConfig } from './admin-models-steps'
+import { apiKeysTourConfig } from './api-keys-steps'
 
 // Export individual tour configs
 export {
@@ -18,6 +19,7 @@ export {
   workflowConfigTourConfig,
   capabilitiesTourConfig,
   adminModelSetupTourConfig,
+  apiKeysTourConfig,
 }
 
 // Array of all tour configs for easy iteration
@@ -27,6 +29,7 @@ export const allTourConfigs: OnboardingTourConfig[] = [
   kbTourConfig,
   appCreateTourConfig,
   appConfigTourConfig,
+  apiKeysTourConfig,
   workflowConfigTourConfig,
   capabilitiesTourConfig,
   adminModelSetupTourConfig,
@@ -35,6 +38,11 @@ export const allTourConfigs: OnboardingTourConfig[] = [
 // Get tour config by ID
 export function getTourConfigById(id: string): OnboardingTourConfig | undefined {
   return allTourConfigs.find(config => config.id === id)
+}
+
+// The tour that follows the given tour in the prerequisite chain
+export function getNextTourInChain(tourId: OnboardingTourId): OnboardingTourId | null {
+  return allTourConfigs.find(config => config.prerequisites?.includes(tourId))?.id ?? null
 }
 
 // Get the first auto-start tour
