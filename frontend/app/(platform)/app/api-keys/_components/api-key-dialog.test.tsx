@@ -110,6 +110,10 @@ afterEach(() => {
 test("blocks API-key creation until a name is provided", async () => {
   const renderer = await render();
 
+  expect(renderer.root.findByProps({ "data-testid": "api-key-dialog" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-name-input" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-submit" })).toBeDefined();
+
   await act(async () =>
     renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }),
   );

@@ -488,7 +488,7 @@ describe('OnboardingTour', () => {
     restore()
   })
 
-  it('adds the dialog overlay class only while dialog steps are mounted', () => {
+  it('adds the dialog overlay class for API key dialog targets too', () => {
     config = {
       id: 'appCreate', title: 'Create app', description: '',
       steps: [{ target: '.app-create-name-input', content: 'name' }],
@@ -519,6 +519,9 @@ describe('OnboardingTour', () => {
       '[data-testid="kb-import-url-dialog"]',
       '[data-testid="kb-import-url-dialog-cancel"]',
       '[data-testid="embed-config-dialog"]',
+      '[data-testid="api-key-dialog"]',
+      '[data-testid="api-key-name-input"]',
+      '[data-testid="api-key-submit"]',
     ]) {
       config = { id: 'kb', title: 'Knowledge Base', description: '', steps: [{ target, content: 'dialog' }] }
       state = { completedTours: [], currentTour: 'kb', currentStep: 0, isRunning: true }

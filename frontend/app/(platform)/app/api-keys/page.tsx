@@ -141,7 +141,7 @@ export default function APIKeysPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="py-6 px-8 h-full overflow-y-auto">
+      <div className="py-6 px-8 h-full overflow-y-auto" data-testid="api-keys-page">
         <div className="flex items-center justify-between mb-6">
           <div>
             <Skeleton className="h-9 w-32" />

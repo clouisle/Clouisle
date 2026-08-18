@@ -6,22 +6,40 @@ const apiKeysSteps: OnboardingStep[] = [
     target: '[data-testid="api-keys-page"]',
     content: 'onboarding.step32a.description',
     title: 'onboarding.step32a.title',
-    // Full-viewport target: center keeps the tooltip in view, like the
-    // kb-detail-page step.
     placement: 'center',
     route: '/app/api-keys',
+    targetWaitTimeout: 5000,
   },
-  // ========== Create a Key ==========
+  // ========== Open the Create Dialog ==========
   {
     target: '[data-testid="api-keys-create-button"]',
     content: 'onboarding.step32b.description',
     title: 'onboarding.step32b.title',
     placement: 'bottom',
     route: '/app/api-keys',
-    // Clicking create hands off to the real create flow: the full key is
-    // shown only once in the follow-up dialog, which is exactly the teaching.
     advanceOnClick: true,
     overlayClickAction: false,
+    targetWaitTimeout: 5000,
+  },
+  // ========== Complete the Create Dialog ==========
+  {
+    target: '[data-testid="api-key-name-input"]',
+    content: 'onboarding.step32c.description',
+    title: 'onboarding.step32c.title',
+    placement: 'bottom',
+    route: '/app/api-keys',
+    overlayClickAction: false,
+    targetWaitTimeout: 5000,
+  },
+  {
+    target: '[data-testid="api-key-submit"]',
+    content: 'onboarding.step32d.description',
+    title: 'onboarding.step32d.title',
+    placement: 'top',
+    route: '/app/api-keys',
+    advanceOnClick: true,
+    overlayClickAction: false,
+    targetWaitTimeout: 5000,
   },
 ]
 

@@ -218,19 +218,23 @@ describe('onboarding tour configurations', () => {
     expect(getNextTourInChain('capabilities')).toBeNull()
   })
 
-  test('registers the apiKeys tour against the api-keys page surfaces', () => {
+  test('registers the apiKeys tour against the page and dialog surfaces', () => {
     const apiKeys = getTourConfigById('apiKeys')
     expect(apiKeys?.steps.map(step => step.target)).toEqual([
       '[data-testid="api-keys-page"]',
       '[data-testid="api-keys-create-button"]',
+      '[data-testid="api-key-name-input"]',
+      '[data-testid="api-key-submit"]',
     ])
     expect(apiKeys?.steps.every(step => step.route === '/app/api-keys')).toBe(true)
-    // No data-dependent dialog targets: the create-dialog and show-key-dialog
-    // only exist after user actions, which made earlier steps skip/fail
-    expect(apiKeys?.steps.some(step => step.target.includes('dialog'))).toBe(false)
-    expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
-    // Full-viewport page root keeps the tooltip in view with center placement
+    expect(apiKeys?.steps.map(step => step.targetWaitTimeout)).toEqual([5000, 5000, 5000, 5000])
     expect(apiKeys?.steps[0]?.placement).toBe('center')
+    expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
+    expect(apiKeys?.steps[3]).toMatchObject({
+      advanceOnClick: true,
+      overlayClickAction: false,
+      placement: 'top',
+    })
   })
 
   test('selects the configured auto-start tour', () => {
