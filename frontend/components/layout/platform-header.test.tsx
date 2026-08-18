@@ -323,5 +323,6 @@ describe('PlatformHeader', () => {
     expect(modelsItem.props.disabled).toBe(false)
     const appCreateItem = items.find(node => node.children.some(child => child === 'tourAppCreateTitle'))!
     expect(appCreateItem.props.disabled).toBe(true)
+    expect(renderer.root.findAllByType('span').some(node => node.children.includes('tourPrerequisiteHint'))).toBe(true)
   })
 })

@@ -376,11 +376,10 @@ export function PlatformHeader() {
                       prereq => !onboarding.isTourCompleted(prereq)
                     )
                     const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
-                    return (
+                    const tourItem = (
                       <DropdownMenuItem
                         key={tourConfig.id}
                         disabled={isLocked}
-                        title={isLocked ? tOnboarding('tourPrerequisiteHint') : undefined}
                         onClick={(e) => {
                           e.stopPropagation()
                           handleStartTour(tourConfig.id)
@@ -394,6 +393,15 @@ export function PlatformHeader() {
                         )}
                         {tOnboarding(titleKey)}
                       </DropdownMenuItem>
+                    )
+
+                    if (!isLocked) return tourItem
+
+                    return (
+                      <Tooltip key={tourConfig.id}>
+                        <TooltipTrigger render={<span className="block cursor-not-allowed">{tourItem}</span>} />
+                        <TooltipContent>{tOnboarding('tourPrerequisiteHint')}</TooltipContent>
+                      </Tooltip>
                     )
                   })}
                 <DropdownMenuSeparator />
