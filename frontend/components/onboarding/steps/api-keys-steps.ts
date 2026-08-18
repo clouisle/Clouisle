@@ -6,7 +6,9 @@ const apiKeysSteps: OnboardingStep[] = [
     target: '[data-testid="api-keys-page"]',
     content: 'onboarding.step32a.description',
     title: 'onboarding.step32a.title',
-    placement: 'auto',
+    // Full-viewport target: center keeps the tooltip in view, like the
+    // kb-detail-page step.
+    placement: 'center',
     route: '/app/api-keys',
   },
   // ========== Create a Key ==========

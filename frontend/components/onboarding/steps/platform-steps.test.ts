@@ -226,6 +226,8 @@ describe('onboarding tour configurations', () => {
     expect(apiKeys?.steps.every(step => step.route === '/app/api-keys')).toBe(true)
     expect(apiKeys?.steps[4]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
     expect(apiKeys?.steps[1]).toMatchObject({ advanceOnClick: true, overlayClickAction: false })
+    // Full-viewport page root keeps the tooltip in view with center placement
+    expect(apiKeys?.steps[0]?.placement).toBe('center')
   })
 
   test('selects the configured auto-start tour', () => {
