@@ -78,7 +78,7 @@
     },
     "step1h": {
       "title": "User Menu",
-      "description": "Click your avatar to open the user menu. Here you can access account settings, API keys, notifications, memories, view tutorials, and log out."
+      "description": "Click your avatar to open the user menu. Here you can access account settings, API keys, notifications, memories, and account actions. Start tutorials from the onboarding button in the platform header."
     },
     "step1h2": {
       "title": "Account Settings",
