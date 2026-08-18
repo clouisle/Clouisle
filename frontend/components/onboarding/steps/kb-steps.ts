@@ -214,4 +214,5 @@ export const kbTourConfig: OnboardingTourConfig = {
   description: 'onboarding.tourKBDescription',
   steps: kbSteps,
   autoStart: false,
+  prerequisites: ['models'],
 }

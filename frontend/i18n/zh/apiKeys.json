@@ -53,13 +53,13 @@
     "keyWarning": "请务必立即复制您的 API 密钥，之后将无法再次查看！",
     "copied": "已复制到剪贴板",
     "copyFailed": "复制失败",
-    "allowedAgents": "允许访问的应用",
-    "allowedAgentsHint": "选择此 API 密钥可以访问的应用。留空则允许访问所有应用。",
-    "noAgentsAvailable": "没有已发布的应用可用。",
+    "allowedAgents": "允许访问的智能体",
+    "allowedAgentsHint": "选择此 API 密钥可以访问的智能体。留空则允许访问所有智能体。",
+    "noAgentsAvailable": "没有已发布的智能体可用。",
     "allowedWorkflows": "允许访问的工作流",
     "allowedWorkflowsHint": "选择此 API 密钥可以访问的工作流。留空则允许访问所有工作流。",
     "noWorkflowsAvailable": "没有已发布的工作流可用。",
-    "agents": "应用",
-    "allAgents": "所有应用"
+    "agents": "智能体",
+    "allAgents": "所有智能体"
   }
 }

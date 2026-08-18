@@ -81,4 +81,5 @@ export const capabilitiesTourConfig: OnboardingTourConfig = {
   description: 'onboarding.tourCapabilitiesDescription',
   steps: capabilitiesTourSteps,
   autoStart: false,
+  prerequisites: ['appConfig'],
 }

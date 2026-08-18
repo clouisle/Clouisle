@@ -110,6 +110,12 @@ afterEach(() => {
 test("blocks API-key creation until a name is provided", async () => {
   const renderer = await render();
 
+  expect(renderer.root.findByProps({ "data-testid": "api-key-dialog" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-name-input" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-allowed-agents" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-allowed-workflows" })).toBeDefined();
+  expect(renderer.root.findByProps({ "data-testid": "api-key-submit" })).toBeDefined();
+
   await act(async () =>
     renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }),
   );
@@ -165,6 +171,48 @@ test("creates an API key with selected agents and workflows", async () => {
   expect(onOpenChange).toHaveBeenCalledWith(false);
   act(() => renderer.unmount());
 });
+
+test("dispatches the onboarding success event after creating a key", async () => {
+  const dispatchEvent = mock();
+  const previousWindow = globalThis.window;
+  globalThis.window = { dispatchEvent } as unknown as Window & typeof globalThis;
+  try {
+    const renderer = await render();
+    act(() => {
+      renderer.root.findByProps({ id: "name" }).props.onChange({ target: { value: "Release key" } });
+    });
+    await act(async () =>
+      renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+    );
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchEvent.mock.calls[0][0].type).toBe("clouisle:onboarding-context");
+    expect(dispatchEvent.mock.calls[0][0].detail).toEqual({ type: "api-key-created" });
+    act(() => renderer.unmount());
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("does not dispatch the onboarding success event when creation fails", async () => {
+  const dispatchEvent = mock();
+  const previousWindow = globalThis.window;
+  globalThis.window = { dispatchEvent } as unknown as Window & typeof globalThis;
+  createAPIKey.mockImplementationOnce(() => Promise.reject(new Error("failed")));
+  try {
+    const renderer = await render();
+    act(() => {
+      renderer.root.findByProps({ id: "name" }).props.onChange({ target: { value: "Release key" } });
+    });
+    await act(async () =>
+      renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+    );
+    expect(dispatchEvent).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    act(() => renderer.unmount());
+  } finally {
+    globalThis.window = previousWindow;
+  }
+})
 
 test("updates an existing API key and clears selected resources", async () => {
   getAgents.mockImplementationOnce(() =>

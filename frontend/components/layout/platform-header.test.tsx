@@ -14,13 +14,14 @@ const removeItem = mock(() => {})
 const toastSuccess = mock(() => {})
 const requestPermission = mock(async () => 'granted')
 const startTour = mock(() => {})
+const resetAllTours = mock(() => {})
 
 let canAccessDashboard = false
 let canAccessCapabilities = false
 let currentTeam: { id: string } | null = { id: 'team-1' }
 let headerVariant: 'default' | 'centered' | 'minimal' = 'centered'
-let onboarding: { isTourCompleted: (tourId: string) => boolean; startTour: (tourId: string) => void } | null = null
-const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boolean }> = []
+let onboarding: { isTourCompleted: (tourId: string) => boolean; startTour: (tourId: string) => void; resetAllTours: () => void } | null = null
+const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boolean; prerequisites?: string[] }> = []
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
@@ -159,6 +160,7 @@ beforeEach(() => {
   onboarding = null
   tourConfigs.splice(0)
   startTour.mockClear()
+  resetAllTours.mockClear()
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: { removeItem },
@@ -279,7 +281,7 @@ describe('PlatformHeader', () => {
   })
 
   test('excludes dashboard-scoped tours from the platform menu', async () => {
-    onboarding = { isTourCompleted: () => false, startTour }
+    onboarding = { isTourCompleted: () => false, startTour, resetAllTours }
     tourConfigs.push(
       { id: 'models', title: 'onboarding.tourModelsTitle' },
       { id: 'adminModelSetup', title: 'onboarding.tourAdminModelSetupTitle', showInPlatformMenu: false },
@@ -290,5 +292,31 @@ describe('PlatformHeader', () => {
     const tourLabels = renderer.root.findAllByType('button').flatMap(button => button.children)
     expect(tourLabels).toContain('tourModelsTitle')
     expect(tourLabels).not.toContain('tourAdminModelSetupTitle')
+  })
+
+  test('replays all tours from the Tours submenu', async () => {
+    onboarding = { isTourCompleted: () => false, startTour, resetAllTours }
+    const renderer = await renderHeader()
+
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-replay-tours' }).props.onClick({ stopPropagation: () => {} }))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 400)))
+
+    expect(resetAllTours).toHaveBeenCalledTimes(1)
+    expect(startTour).toHaveBeenCalledWith('overview')
+  })
+
+  test('locks tours whose prerequisites are not completed', async () => {
+    onboarding = { isTourCompleted: (tourId) => tourId === 'overview', startTour, resetAllTours }
+    tourConfigs.push(
+      { id: 'models', title: 'onboarding.tourModelsTitle', prerequisites: ['overview'] },
+      { id: 'appCreate', title: 'onboarding.tourAppCreateTitle', prerequisites: ['kb'] },
+    )
+    const renderer = await renderHeader()
+    const items = renderer.root.findAllByType('button')
+
+    const modelsItem = items.find(node => node.children.some(child => child === 'tourModelsTitle'))!
+    expect(modelsItem.props.disabled).toBe(false)
+    const appCreateItem = items.find(node => node.children.some(child => child === 'tourAppCreateTitle'))!
+    expect(appCreateItem.props.disabled).toBe(true)
   })
 })

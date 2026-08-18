@@ -186,6 +186,11 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         const result = await apiKeysApi.createAPIKey(createData)
         toast.success(t('keyCreated'))
         onSuccess?.(result.key) // 传递新创建的 key
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', {
+            detail: { type: 'api-key-created' },
+          }))
+        }
       }
       
       onOpenChange(false)
@@ -201,7 +206,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent data-testid="api-key-dialog" className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? t('editKey') : t('createKey')}</DialogTitle>
           <DialogDescription>
@@ -224,6 +229,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             <Label htmlFor="name">{t('name')}</Label>
             <Input
               id="name"
+              data-testid="api-key-name-input"
               value={formData.name}
               onChange={(e) => {
                 setFormData({ ...formData, name: e.target.value })
@@ -273,7 +279,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
           {/* Agent 和 Workflow 选择 - 横向布局 */}
           <div className="grid grid-cols-2 gap-4">
             {/* Agent 选择 */}
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-testid="api-key-allowed-agents">
               <Label>{t('allowedAgents')}</Label>
               <p className="text-xs text-muted-foreground">{t('allowedAgentsHint')}</p>
               <div className="h-[150px] rounded-md border p-2">
@@ -320,7 +326,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             </div>
 
             {/* Workflow 选择 */}
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-testid="api-key-allowed-workflows">
               <Label>{t('allowedWorkflows')}</Label>
               <p className="text-xs text-muted-foreground">{t('allowedWorkflowsHint')}</p>
               <div className="h-[150px] rounded-md border p-2">
@@ -387,7 +393,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             >
               {commonT('cancel')}
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" data-testid="api-key-submit" disabled={isSubmitting}>
               {isSubmitting
                 ? commonT('loading')
                 : isEditing

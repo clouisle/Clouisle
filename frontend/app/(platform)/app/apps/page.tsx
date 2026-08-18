@@ -200,6 +200,7 @@ export default function AppsPage() {
     if (activeTab === 'all') return apps
     return apps.filter(app => app.type === activeTab)
   }, [apps, activeTab])
+  const firstAgentId = filteredApps.find(app => app.type === 'agent')?.id
 
   // Handle delete
   const handleDelete = async () => {
@@ -370,8 +371,9 @@ export default function AppsPage() {
             const AppIcon = getAppIcon(app.type)
             // Check if icon is a URL or emoji
             const isIconUrl = app.icon && (app.icon.startsWith('http') || app.icon.startsWith('/'))
+            const isFirstAgent = app.type === 'agent' && app.id === firstAgentId
             return (
-              <Card key={app.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36" data-testid={`app-card-${app.id}`}>
+              <Card key={app.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36" data-testid={isFirstAgent ? 'app-card-first' : `app-card-${app.id}`}>
                 <Link href={getAppLink(app)} className="flex flex-col justify-between px-2.5 py-3 h-full">
                   {/* Header */}
                   <div className="flex items-center gap-2">
@@ -454,7 +456,7 @@ export default function AppsPage() {
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={(props) => (
-                        <Button {...props} variant="ghost" size="icon" className="h-7 w-7" data-testid={`app-actions-button-${app.id}`}>
+                        <Button {...props} variant="ghost" size="icon" className="h-7 w-7" data-testid={isFirstAgent ? 'app-actions-button-first' : `app-actions-button-${app.id}`}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       )}
@@ -470,7 +472,7 @@ export default function AppsPage() {
                       )}
                       {app.type === 'agent' && (
                         <Link href={`/chat/${app.id}`} target="_blank">
-                          <DropdownMenuItem data-testid={`app-chat-button-${app.id}`}>
+                          <DropdownMenuItem data-testid={isFirstAgent ? 'app-chat-button-first' : `app-chat-button-${app.id}`}>
                             <MessageSquare className="mr-2 h-4 w-4" />
                             {t('chat')}
                           </DropdownMenuItem>

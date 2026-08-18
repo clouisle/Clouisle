@@ -221,6 +221,11 @@ export function KnowledgeBaseDialog({
         toast.success(t('kbCreated'))
         onSuccess()
         router.push(`/app/kb/${createdKnowledgeBase.id}`)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('clouisle:onboarding-context', {
+            detail: { type: 'kb-created' },
+          }))
+        }
       }
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), KB_ERROR_PATH_MAP)

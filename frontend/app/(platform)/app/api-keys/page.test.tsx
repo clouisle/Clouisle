@@ -107,6 +107,8 @@ test("loads API keys and presents the empty creation state", async () => {
   });
 
   expect(getAPIKeys).toHaveBeenCalledWith({ pageSize: 100 });
+  expect(renderer!.root.findByProps({ "data-testid": "api-keys-page" })).toBeDefined();
+  expect(renderer!.root.findByProps({ "data-testid": "api-keys-create-button" })).toBeDefined();
   expect(
     renderer!.root.findAllByType("p").map((node) => node.children.join("")),
   ).toContain("noKeys");

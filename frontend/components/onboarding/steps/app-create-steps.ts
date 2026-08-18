@@ -58,7 +58,7 @@ const appCreateSteps: OnboardingStep[] = [
   },
   // ========== Agent Card Introduction ==========
   {
-    target: '[data-testid^="app-card-"]:first-of-type',
+    target: '[data-testid="app-card-first"]',
     content: 'onboarding.step17.description',
     title: 'onboarding.step17.title',
     placement: 'right',
@@ -66,7 +66,7 @@ const appCreateSteps: OnboardingStep[] = [
     overlayClickAction: false,
   },
   {
-    target: '[data-testid^="app-actions-button-"]:first-of-type',
+    target: '[data-testid="app-actions-button-first"]',
     content: 'onboarding.step17a.description',
     title: 'onboarding.step17a.title',
     placement: 'left',
@@ -74,7 +74,7 @@ const appCreateSteps: OnboardingStep[] = [
     overlayClickAction: false,
   },
   {
-    target: '[data-testid^="app-chat-button-"]:first-of-type',
+    target: '[data-testid="app-chat-button-first"]',
     content: 'onboarding.step17b.description',
     title: 'onboarding.step17b.title',
     placement: 'left',
@@ -89,4 +89,5 @@ export const appCreateTourConfig: OnboardingTourConfig = {
   description: 'onboarding.tourAppCreateDescription',
   steps: appCreateSteps,
   autoStart: false,
+  prerequisites: ['kb'],
 }

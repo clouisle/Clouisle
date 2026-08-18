@@ -47,7 +47,7 @@ mock.module('@/components/ui/card', () => ({
 mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, ...props }: { children: ReactNode; [key: string]: unknown }) => <div {...props}>{children}</div>,
   DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({ render }: { render: (props: Record<string, unknown>) => ReactNode }) => <>{render({})}</>,
 }))
@@ -114,6 +114,32 @@ describe('AppsPage', () => {
     expect(html).toContain('Billing flow')
     expect(html).toContain('4 runs')
     expect(html).toContain('1 failed')
+  })
+
+  it('assigns first onboarding selectors to the first Agent in a mixed list', () => {
+    stateValues = ['all', '', [
+      { id: 'workflow-1', name: 'Billing flow', description: 'B', icon: null, status: 'draft', type: 'workflow', run_count: 4, success_count: 3, fail_count: 1, created_at: '2025-01-01', updated_at: '2025-01-03', created_by_id: 'user-2', created_by_name: 'other' },
+      { id: 'agent-1', name: 'Sales agent', description: 'A', icon: null, status: 'published', type: 'agent', conversation_count: 2, message_count: 3, created_at: '2025-01-01', updated_at: '2025-01-02', created_by_id: 'user-1', created_by_name: 'me' },
+    ], false]
+
+    const html = renderPage()
+    const workflowStart = html.indexOf('data-testid="app-card-workflow-1"')
+    const agentStart = html.indexOf('data-testid="app-card-first"')
+    const dialogStart = html.indexOf('data-testid="create-dialog"')
+    expect(workflowStart).toBeGreaterThanOrEqual(0)
+    expect(agentStart).toBeGreaterThan(workflowStart)
+    expect(dialogStart).toBeGreaterThan(agentStart)
+
+    const workflowCard = html.slice(workflowStart, agentStart)
+    const agentCard = html.slice(agentStart, dialogStart)
+    expect(workflowCard).toContain('data-testid="app-actions-button-workflow-1"')
+    expect(workflowCard).not.toContain('data-testid="app-card-first"')
+    expect(workflowCard).not.toContain('data-testid="app-actions-button-first"')
+    expect(workflowCard).not.toContain('data-testid="app-chat-button-first"')
+
+    expect(agentCard).toContain('data-testid="app-card-first"')
+    expect(agentCard).toContain('data-testid="app-actions-button-first"')
+    expect(agentCard).toContain('data-testid="app-chat-button-first"')
   })
 
   it('opens create dialog from query params and preserves remaining tab query', () => {

@@ -9,6 +9,7 @@ export type OnboardingTourId =
   | 'workflowConfig'
   | 'capabilities'
   | 'adminModelSetup'
+  | 'apiKeys'
 
 export interface OnboardingStep extends Step {
   /** Route path for cross-page navigation */
@@ -23,6 +24,8 @@ export interface OnboardingStep extends Step {
   advanceOnClick?: boolean
   /** When true, typing in the input field advances to the next step */
   advanceOnInput?: boolean
+  /** When true, the step advances only after its flow dispatches a success event */
+  advanceOnSuccess?: boolean
   /** When true with advanceOnClick, waits for route change before advancing */
   waitForRouteChange?: boolean
 }
