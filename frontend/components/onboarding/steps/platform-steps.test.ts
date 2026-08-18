@@ -37,6 +37,25 @@ describe('onboarding tour configurations', () => {
     const appConfigTargets = getTourConfigById('appConfig')?.steps.map(step => step.target) ?? []
     const knowledgeBaseTargets = getTourConfigById('kb')?.steps.map(step => step.target) ?? []
     const workflowTargets = getTourConfigById('workflowConfig')?.steps.map(step => step.target) ?? []
+    const overviewTargets = getTourConfigById('overview')?.steps.map(step => step.target) ?? []
+    expect(overviewTargets).toEqual([
+      '[data-testid="platform-logo"]',
+      '[data-testid="platform-team-switcher"]',
+      '[data-testid="platform-header-nav"]',
+      '[data-testid="nav-home"]',
+      '[data-testid="nav-apps"]',
+      '[data-testid="nav-kb"]',
+      '[data-testid="nav-capabilities"]',
+      '[data-testid="nav-models"]',
+      '[data-testid="platform-home-header"]',
+      '[data-testid="platform-home-stat-cards"]',
+      '[data-testid="platform-home-usage-trend"]',
+      '[data-testid="platform-home-resource-overview"]',
+      '[data-testid="platform-home-quick-actions"]',
+      '[data-testid="platform-home-recent-items"]',
+      '[data-testid="platform-theme-button"]',
+      '[data-testid="platform-user-menu"]',
+    ])
     const kbConfig = getTourConfigById('kb')
     const knowledgeBaseSubmit = kbConfig?.steps[12]
     expect(knowledgeBaseSubmit).toMatchObject({
