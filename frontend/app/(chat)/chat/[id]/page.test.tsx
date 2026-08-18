@@ -32,7 +32,10 @@ let chatState = {
   isStreaming: false,
   conversationId: null as string | null,
 }
-let chatOptions: { onConversationChange?: () => void } = {}
+let chatOptions: {
+  onConversationChange?: () => void
+  onStreamEnd?: () => void
+} = {}
 let variableValues: Record<string, unknown> = {}
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
@@ -338,6 +341,8 @@ describe('PublicChatPage', () => {
     expect(deleteConversation).toHaveBeenCalledWith('conv-2')
 
     await act(async () => (chatOptions.onConversationChange?.()))
+    expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
+    await act(async () => chatOptions.onStreamEnd?.())
     expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
 
     const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]

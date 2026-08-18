@@ -60,6 +60,12 @@ from app.schemas.response import (
 from app.llm.errors import ContextLengthError, InsufficientQuotaError
 from app.llm.tools import tool_registry
 from app.llm.types import ChatStreamChunk, Message as LLMChatMessage, ToolCall
+from app.llm.token_counter import (
+    count_message_tokens,
+    count_tokens,
+    count_tool_definition_tokens,
+    serialize_tool_calls,
+)
 from app.core.timezone import now_utc
 from app.services.chat_context import (
     build_model_messages,
@@ -117,6 +123,38 @@ logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_KEY = "unknown_error"
 AUTO_RAG_HISTORY_LIMIT = 6
 AUDIT_MESSAGE_CONTENT_PREVIEW_LENGTH = 500
+
+
+def _calculate_model_usage(
+    *,
+    messages: list[dict[str, Any]],
+    content: str | None,
+    reasoning_content: str | None,
+    tool_calls: list[Any] | None,
+    tools: list[Any] | None,
+    usage: Any | None,
+    model_id: str | None,
+    provider: str | None,
+) -> tuple[int, int]:
+    """Prefer provider totals and estimate only when they are unavailable."""
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    if prompt_tokens or completion_tokens:
+        return prompt_tokens, completion_tokens
+
+    estimated_completion_tokens = count_tokens(
+        content or "", model_id, provider
+    ) + count_tokens(reasoning_content or "", model_id, provider)
+    if tool_calls:
+        estimated_completion_tokens += count_tokens(
+            serialize_tool_calls(tool_calls), model_id, provider
+        )
+
+    return (
+        count_message_tokens(messages, model_id, provider, include_tool_calls=True)
+        + count_tool_definition_tokens(tools, model_id, provider),
+        estimated_completion_tokens,
+    )
 
 
 async def _append_asset_manifest(
@@ -1428,10 +1466,14 @@ async def chat(
                     protected_round_id=round_id,
                 )
                 context_retry_used = True
+            messages_for_llm = [
+                message.model_dump(exclude_none=True)
+                for message in prepared_context.messages
+            ]
             try:
                 response = await model_manager.team_chat(
                     team_id=str(agent.team_id),
-                    messages=[m.model_dump() for m in prepared_context.messages],
+                    messages=messages_for_llm,
                     model_id=model_id,
                     tools=tools,
                 )
@@ -1462,16 +1504,29 @@ async def chat(
                     protected_round_id=round_id,
                 )
                 context_retry_used = True
+                messages_for_llm = [
+                    message.model_dump(exclude_none=True)
+                    for message in prepared_context.messages
+                ]
                 response = await model_manager.team_chat(
                     team_id=str(agent.team_id),
-                    messages=[m.model_dump() for m in prepared_context.messages],
+                    messages=messages_for_llm,
                     model_id=model_id,
                     tools=tools,
                 )
 
-            if response.usage:
-                total_prompt_tokens += response.usage.prompt_tokens or 0
-                total_completion_tokens += response.usage.completion_tokens or 0
+            prompt_tokens, completion_tokens = _calculate_model_usage(
+                tools=tools,
+                messages=messages_for_llm,
+                content=response.content,
+                reasoning_content=response.reasoning_content,
+                tool_calls=response.tool_calls,
+                usage=response.usage,
+                model_id=tokenizer_model_id,
+                provider=model_provider,
+            )
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
 
             if response.tool_calls:
 
@@ -1681,11 +1736,9 @@ async def chat(
         await Conversation.filter(id=conversation.id).update(
             message_count=F("message_count") + 2,
             token_usage=F("token_usage") + (prompt_tokens + completion_tokens),
+            updated_at=now_utc(),
             **title_update,
         )
-
-        # Update agent stats atomically
-        await Agent.filter(id=agent.id).update(message_count=F("message_count") + 2)
 
         branch_prefix = await get_prefix_path_before(user_msg)
         await activate_conversation_branch(
@@ -1997,6 +2050,8 @@ async def chat_stream(
                     max_iterations = agent.max_iterations or 5
                     iteration = 0
                     max_iterations_reached = False
+                    aggregate_input_tokens = 0
+                    aggregate_output_tokens = 0
 
                     while iteration < max_iterations:
                         iteration += 1
@@ -2041,6 +2096,8 @@ async def chat_stream(
                         iteration_content = ""
                         iteration_reasoning = ""
                         collected_tool_calls = []  # For collecting tool calls from stream
+                        stream_usage = None
+                        used_nonstream_fallback = False
 
                         prepare_context = prepare_model_context
                         context_retry_used = False
@@ -2128,13 +2185,8 @@ async def chat_stream(
                             for message in prepared_context.messages
                         ]
 
-                        # Calculate input chars for this iteration
-                        iteration_input_chars = sum(
-                            len(m.get("content") or "")
-                            if isinstance(m.get("content"), str)
-                            else 0
-                            for m in messages_for_llm
-                        )
+                        # Provider usage is captured from the terminal chunk;
+                        # exact local counting remains the fallback.
 
                         # Use streaming call - works for both with and without tools
                         emitted_any = False
@@ -2151,6 +2203,8 @@ async def chat_stream(
                                 timeout_seconds=idle_timeout,
                                 activity_predicate=_is_model_stream_activity,
                             ):
+                                if chunk.usage:
+                                    stream_usage = chunk.usage
                                 # Check if client disconnected - stop LLM generation to save tokens
                                 if await request.is_disconnected():
                                     client_disconnected = True
@@ -2254,12 +2308,8 @@ async def chat_stream(
                                 message.model_dump(exclude_none=True)
                                 for message in prepared_context.messages
                             ]
-                            iteration_input_chars = sum(
-                                len(m.get("content") or "")
-                                if isinstance(m.get("content"), str)
-                                else 0
-                                for m in messages_for_llm
-                            )
+                            # The retry uses a distinct, freshly prepared prompt.
+                            stream_usage = None
                             emitted_any = False
                             client_disconnected = False
                             stream = model_manager.team_chat_stream(
@@ -2273,6 +2323,8 @@ async def chat_stream(
                                 timeout_seconds=idle_timeout,
                                 activity_predicate=_is_model_stream_activity,
                             ):
+                                if chunk.usage:
+                                    stream_usage = chunk.usage
                                 if await request.is_disconnected():
                                     client_disconnected = True
                                     logger.info(
@@ -2335,7 +2387,12 @@ async def chat_stream(
                                 model_id=model_id,
                                 tools=tools,
                             )
-                            if response.reasoning_content:
+                            used_nonstream_fallback = True
+                            stream_usage = getattr(response, "usage", None)
+                            collected_tool_calls = (
+                                getattr(response, "tool_calls", None) or []
+                            )
+                            if getattr(response, "reasoning_content", None):
                                 yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += response.reasoning_content
                                 iteration_reasoning += response.reasoning_content
@@ -2343,26 +2400,37 @@ async def chat_stream(
                                     first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': response.reasoning_content})}\n\n"
                                 yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                            if response.content:
+                            if getattr(response, "content", None):
                                 full_content += response.content
                                 iteration_content += response.content
                                 if first_token_time is None:
                                     first_token_time = time.time()
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
 
-                        # If client disconnected, save partial content and exit
-                        if client_disconnected:
-                            # Record usage for partial generation
-                            iteration_output_chars = len(iteration_content) + len(
-                                iteration_reasoning
+                        iteration_input_tokens, iteration_output_tokens = (
+                            _calculate_model_usage(
+                                tools=tools,
+                                messages=messages_for_llm,
+                                content=iteration_content,
+                                reasoning_content=iteration_reasoning,
+                                tool_calls=collected_tool_calls,
+                                usage=stream_usage,
+                                model_id=tokenizer_model_id,
+                                provider=model_provider,
                             )
-                            if iteration_output_chars > 0:
-                                await model_manager.record_stream_usage(
-                                    team_id=str(agent.team_id),
-                                    model_id=model_id,
-                                    input_text_length=iteration_input_chars,
-                                    output_text_length=iteration_output_chars,
-                                )
+                        )
+                        aggregate_input_tokens += iteration_input_tokens
+                        aggregate_output_tokens += iteration_output_tokens
+                        if not used_nonstream_fallback:
+                            await model_manager.record_stream_usage(
+                                team_id=str(agent.team_id),
+                                model_id=model_id,
+                                input_tokens=iteration_input_tokens,
+                                output_tokens=iteration_output_tokens,
+                            )
+
+                        # If client disconnected, save partial content and exit.
+                        if client_disconnected:
                             assistant_msg.content = full_content
                             assistant_msg.reasoning_content = (
                                 full_reasoning if full_reasoning else None
@@ -2380,18 +2448,7 @@ async def chat_stream(
                             )
                             assistant_msg.created_at = now_utc()
                             await assistant_msg.save()
-                            return  # Exit generator - client is gone
-
-                        # Record usage for this iteration (important: do this after each stream ends)
-                        iteration_output_chars = len(iteration_content) + len(
-                            iteration_reasoning
-                        )
-                        await model_manager.record_stream_usage(
-                            team_id=str(agent.team_id),
-                            model_id=model_id,
-                            input_text_length=iteration_input_chars,
-                            output_text_length=iteration_output_chars,
-                        )
+                            return
 
                         # Check if there are tool calls to execute
                         if collected_tool_calls:
@@ -2631,42 +2688,8 @@ async def chat_stream(
                     assistant_msg.round_status = terminal_round_status
                     # Ensure assistant message appears after tool calls/results in history
                     assistant_msg.created_at = now_utc()
-                    # Estimate token usage
-                    final_prepared_context = await prepare_model_context(
-                        agent=agent,
-                        conversation=conversation,
-                        user_message=model_message,
-                        model_id=model_id,
-                        tokenizer_model_id=tokenizer_model_id,
-                        model_context_limit=model_context_limit,
-                        model_max_output_tokens=model_max_output_tokens,
-                        provider=model_provider,
-                        file_content=file_content_str,
-                        user_locale=current_user.locale,
-                        history_override=working_history_override,
-                        current_images=image_pool,
-                        model_supports_vision=model_supports_vision,
-                        current_user_message_id=user_msg.id,
-                        include_current_user_message=True,
-                        exclude_message_ids=[assistant_msg.id],
-                        tool_timeouts=tool_timeouts,
-                        user=current_user,
-                        protected_round_id=round_id,
-                    )
-                    input_tokens = sum(
-                        len(message_content or "") // 4
-                        for message_content in (
-                            message.get("content")
-                            if isinstance(message, dict)
-                            else None
-                            for message in [
-                                item.model_dump(exclude_none=True)
-                                for item in final_prepared_context.messages
-                            ]
-                        )
-                        if isinstance(message_content, str)
-                    )
-                    output_tokens = len(terminal_content) // 4
+                    input_tokens = aggregate_input_tokens
+                    output_tokens = aggregate_output_tokens
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
@@ -2691,6 +2714,7 @@ async def chat_stream(
                     await Conversation.filter(id=conversation.id).update(
                         message_count=F("message_count") + 2,
                         token_usage=F("token_usage") + (input_tokens + output_tokens),
+                        updated_at=now_utc(),
                         **title_update,
                     )
 
@@ -3420,7 +3444,6 @@ async def edit_user_message_stream(
                     working_history_override: list[dict[str, Any]] | None = None
                     aggregate_input_tokens = 0
                     aggregate_output_tokens = 0
-                    terminal_input_tokens = 0
                     created_message_count = 2
 
                     while iteration < max_iterations:
@@ -3536,14 +3559,7 @@ async def edit_user_message_stream(
                             item.model_dump(exclude_none=True)
                             for item in prepared_context.messages
                         ]
-                        iteration_input_tokens = sum(
-                            len(message_content or "") // 4
-                            for message_content in (
-                                item.get("content") if isinstance(item, dict) else None
-                                for item in messages_for_llm
-                            )
-                            if isinstance(message_content, str)
-                        )
+                        stream_usage = None
 
                         try:
                             stream = model_manager.team_chat_stream(
@@ -3557,6 +3573,8 @@ async def edit_user_message_stream(
                                 timeout_seconds=idle_timeout,
                                 activity_predicate=_is_model_stream_activity,
                             ):
+                                if chunk.usage:
+                                    stream_usage = chunk.usage
                                 if await request.is_disconnected():
                                     client_disconnected = True
                                     break
@@ -3637,16 +3655,7 @@ async def edit_user_message_stream(
                                 item.model_dump(exclude_none=True)
                                 for item in prepared_context.messages
                             ]
-                            iteration_input_tokens = sum(
-                                len(message_content or "") // 4
-                                for message_content in (
-                                    item.get("content")
-                                    if isinstance(item, dict)
-                                    else None
-                                    for item in messages_for_llm
-                                )
-                                if isinstance(message_content, str)
-                            )
+                            stream_usage = None
                             stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
@@ -3658,6 +3667,8 @@ async def edit_user_message_stream(
                                 timeout_seconds=idle_timeout,
                                 activity_predicate=_is_model_stream_activity,
                             ):
+                                if chunk.usage:
+                                    stream_usage = chunk.usage
                                 if await request.is_disconnected():
                                     client_disconnected = True
                                     break
@@ -3695,6 +3706,21 @@ async def edit_user_message_stream(
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
 
+                        iteration_input_tokens, iteration_output_tokens = (
+                            _calculate_model_usage(
+                                tools=tools,
+                                messages=messages_for_llm,
+                                content=full_content,
+                                reasoning_content=full_reasoning,
+                                tool_calls=collected_tool_calls,
+                                usage=stream_usage,
+                                model_id=tokenizer_model_id,
+                                provider=model_provider,
+                            )
+                        )
+                        aggregate_input_tokens += iteration_input_tokens
+                        aggregate_output_tokens += iteration_output_tokens
+
                         if client_disconnected:
                             assistant_msg.content = full_content
                             assistant_msg.reasoning_content = full_reasoning or None
@@ -3715,8 +3741,6 @@ async def edit_user_message_stream(
                             return
 
                         if collected_tool_calls:
-                            aggregate_input_tokens += iteration_input_tokens
-                            aggregate_output_tokens += len(full_content) // 4
                             for tc in collected_tool_calls:
                                 if await request.is_disconnected():
                                     assistant_msg.content = full_content
@@ -3767,7 +3791,6 @@ async def edit_user_message_stream(
                                 model_message = append_conversation_image_inventory(
                                     final_message, image_inventory
                                 )
-                                aggregate_output_tokens += len(llm_result) // 4
                                 pending_tool_calls.append(
                                     {
                                         "id": tc.id,
@@ -3916,11 +3939,8 @@ async def edit_user_message_stream(
                     assistant_msg.is_manually_stopped = False
                     assistant_msg.round_status = terminal_round_status
                     assistant_msg.created_at = now_utc()
-                    terminal_input_tokens = (
-                        0 if max_iterations_reached else iteration_input_tokens
-                    )
-                    input_tokens = aggregate_input_tokens + terminal_input_tokens
-                    output_tokens = aggregate_output_tokens + len(terminal_content) // 4
+                    input_tokens = aggregate_input_tokens
+                    output_tokens = aggregate_output_tokens
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
@@ -3943,6 +3963,7 @@ async def edit_user_message_stream(
                     await Conversation.filter(id=conversation.id).update(
                         message_count=F("message_count") + created_message_count,
                         token_usage=F("token_usage") + total_tokens,
+                        updated_at=now_utc(),
                     )
                     tokens_per_second = (
                         round(output_tokens / (duration_ms / 1000), 1)
@@ -4449,6 +4470,8 @@ async def regenerate_message(
                     max_iterations = agent.max_iterations or 5
                     iteration = 0
                     max_iterations_reached = False
+                    aggregate_input_tokens = 0
+                    aggregate_output_tokens = 0
 
                     while iteration < max_iterations:
                         iteration += 1
@@ -4495,6 +4518,7 @@ async def regenerate_message(
                         collected_tool_calls = []
                         client_disconnected = False
                         context_retry_used = False
+                        stream_usage = None
                         try:
                             prepared_context = await prepare_model_context(
                                 agent=agent,
@@ -4585,6 +4609,8 @@ async def regenerate_message(
                                 timeout_seconds=idle_timeout,
                                 activity_predicate=_is_model_stream_activity,
                             ):
+                                if chunk.usage:
+                                    stream_usage = chunk.usage
                                 # Check if client disconnected - stop LLM generation to save tokens
                                 if await request.is_disconnected():
                                     client_disconnected = True
@@ -4676,6 +4702,7 @@ async def regenerate_message(
                                 item.model_dump(exclude_none=True)
                                 for item in prepared_context.messages
                             ]
+                            stream_usage = None
                             stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
@@ -4687,6 +4714,8 @@ async def regenerate_message(
                                 timeout_seconds=idle_timeout,
                                 activity_predicate=_is_model_stream_activity,
                             ):
+                                if chunk.usage:
+                                    stream_usage = chunk.usage
                                 if await request.is_disconnected():
                                     client_disconnected = True
                                     logger.info(
@@ -4731,6 +4760,21 @@ async def regenerate_message(
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
+
+                        iteration_input_tokens, iteration_output_tokens = (
+                            _calculate_model_usage(
+                                tools=tools,
+                                messages=messages_for_llm,
+                                content=full_content,
+                                reasoning_content=full_reasoning,
+                                tool_calls=collected_tool_calls,
+                                usage=stream_usage,
+                                model_id=tokenizer_model_id,
+                                provider=model_provider,
+                            )
+                        )
+                        aggregate_input_tokens += iteration_input_tokens
+                        aggregate_output_tokens += iteration_output_tokens
 
                         # If client disconnected, save current stopped state and exit
                         if client_disconnected:
@@ -4971,38 +5015,8 @@ async def regenerate_message(
                     new_message.round_status = terminal_round_status
                     # Ensure regenerated message appears after tool calls/results in history
                     new_message.created_at = now_utc()
-                    final_prepared_context = await prepare_model_context(
-                        agent=agent,
-                        conversation=conversation,
-                        user_message=model_message,
-                        model_id=model_id,
-                        tokenizer_model_id=tokenizer_model_id,
-                        model_context_limit=model_context_limit,
-                        model_max_output_tokens=model_max_output_tokens,
-                        provider=model_provider,
-                        user_locale=current_user.locale,
-                        history_override=working_history_override,
-                        current_user_message_id=user_message.id,
-                        include_current_user_message=False,
-                        history_before_message_created_at=user_message.created_at,
-                        tool_timeouts=tool_timeouts,
-                        user=current_user,
-                        protected_round_id=round_id,
-                    )
-                    input_tokens = sum(
-                        len(message_content or "") // 4
-                        for message_content in (
-                            message.get("content")
-                            if isinstance(message, dict)
-                            else None
-                            for message in [
-                                item.model_dump(exclude_none=True)
-                                for item in final_prepared_context.messages
-                            ]
-                        )
-                        if isinstance(message_content, str)
-                    )
-                    output_tokens = len(terminal_content) // 4
+                    input_tokens = aggregate_input_tokens
+                    output_tokens = aggregate_output_tokens
                     new_message.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
@@ -5027,6 +5041,11 @@ async def regenerate_message(
                     await Team.filter(id=agent.team.id).update(
                         total_messages=F("total_messages") + 1,
                         total_tokens=F("total_tokens") + total_tokens,
+                    )
+                    await Conversation.filter(id=conversation.id).update(
+                        message_count=F("message_count") + 1,
+                        token_usage=F("token_usage") + total_tokens,
+                        updated_at=now_utc(),
                     )
 
                     first_token_ms = new_message.first_token_ms

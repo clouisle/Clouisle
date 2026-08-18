@@ -217,6 +217,7 @@ export default function PublicChatPage({
       refreshConversations()
       onExternalConversationChange?.(id)
     },
+    onStreamEnd: refreshConversations,
     api: adapter,
     initialMessages: greetingMessages,
   })

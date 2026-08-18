@@ -14,9 +14,9 @@
 
 import logging
 import uuid
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Sequence
 from uuid import UUID
+from typing import Any
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -782,7 +782,7 @@ class ModelManager:
     async def team_chat(
         self,
         team_id: str,
-        messages: list[Message | dict],
+        messages: Sequence[Message | dict[str, Any]],
         model_id: str | None = None,
         tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
@@ -830,11 +830,58 @@ class ModelManager:
         try:
             result = await adapter.chat(converted_messages, tools=tools, **kwargs)
 
-            # 记录用量
+            reported_tokens = int(
+                getattr(getattr(result, "usage", None), "total_tokens", 0) or 0
+            )
+            if reported_tokens:
+                tokens_used = reported_tokens
+            else:
+                from app.llm.token_counter import (
+                    count_message_tokens,
+                    count_tokens,
+                    count_tool_definition_tokens,
+                    serialize_tool_calls,
+                )
+
+                messages_for_counting = [
+                    message.model_dump(exclude_none=True)
+                    for message in converted_messages
+                ]
+                completion_tokens = count_tokens(
+                    getattr(result, "content", None) or "",
+                    model_config.model_id,
+                    model_config.provider,
+                ) + count_tokens(
+                    getattr(result, "reasoning_content", None) or "",
+                    model_config.model_id,
+                    model_config.provider,
+                )
+                tool_calls = getattr(result, "tool_calls", None)
+                if tool_calls:
+                    completion_tokens += count_tokens(
+                        serialize_tool_calls(tool_calls),
+                        model_config.model_id,
+                        model_config.provider,
+                    )
+                tokens_used = (
+                    count_message_tokens(
+                        messages_for_counting,
+                        model_config.model_id,
+                        model_config.provider,
+                        include_tool_calls=True,
+                    )
+                    + count_tool_definition_tokens(
+                        tools,
+                        model_config.model_id,
+                        model_config.provider,
+                    )
+                    + completion_tokens
+                )
+
             await self._check_and_record_usage(
                 team_id=team_id,
                 model_id=str(model_config.id),
-                tokens_used=result.usage.total_tokens if result.usage else 0,
+                tokens_used=tokens_used,
             )
 
             return result
@@ -845,7 +892,7 @@ class ModelManager:
     async def team_chat_stream(
         self,
         team_id: str,
-        messages: list[Message | dict],
+        messages: Sequence[Message | dict[str, Any]],
         model_id: str | None = None,
         tools: list[ToolDefinition] | None = None,
         record_usage: bool = True,
@@ -907,34 +954,31 @@ class ModelManager:
         self,
         team_id: str,
         model_id: str | None,
-        input_text_length: int,
-        output_text_length: int,
+        input_text_length: int | None = None,
+        output_text_length: int | None = None,
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
     ) -> None:
-        """
-        记录流式调用的用量（供调用方在流结束后调用）
-
-        Args:
-            team_id: 团队 ID
-            model_id: 模型 ID
-            input_text_length: 输入文本字符数
-            output_text_length: 输出文本字符数（包括 content 和 reasoning）
-        """
+        """Record stream usage from provider totals or a character fallback."""
         from app.llm.token_counter import count_tokens
 
-        # 获取模型配置以获取正确的 model UUID
+        # Resolve the team model for its internal ID even when the caller
+        # already has provider-reported token totals.
         model_config, _ = await self._get_team_model(team_id, model_id, ModelType.CHAT)
 
-        # 使用 tiktoken 进行准确的 token 计数
-        # 构造临时文本用于计数（实际使用时应该传入完整文本）
-        # 这里使用字符数作为文本近似
-        dummy_input = "x" * input_text_length
-        dummy_output = "x" * output_text_length
-        input_tokens = count_tokens(
-            dummy_input, model_config.model_id, model_config.provider
-        )
-        output_tokens = count_tokens(
-            dummy_output, model_config.model_id, model_config.provider
-        )
+        if input_tokens is None or output_tokens is None:
+            dummy_input = "x" * (input_text_length or 0)
+            dummy_output = "x" * (output_text_length or 0)
+            input_tokens = count_tokens(
+                dummy_input, model_config.model_id, model_config.provider
+            )
+            output_tokens = count_tokens(
+                dummy_output, model_config.model_id, model_config.provider
+            )
+        assert input_tokens is not None
+        assert output_tokens is not None
+
         total_tokens = input_tokens + output_tokens
 
         await self._check_and_record_usage(
@@ -943,7 +987,10 @@ class ModelManager:
             tokens_used=total_tokens,
         )
         logger.debug(
-            f"Recorded stream usage: {total_tokens} tokens (input={input_tokens}, output={output_tokens})"
+            "Recorded stream usage: %s tokens (input=%s, output=%s)",
+            total_tokens,
+            input_tokens,
+            output_tokens,
         )
 
     async def team_embed(

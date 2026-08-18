@@ -52,6 +52,7 @@ from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.models.notification import AutoNotificationType
 from app.core.i18n import t
+from app.core.timezone import now_utc
 from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.services.message_branching import get_visible_conversation_messages
 
@@ -1270,6 +1271,7 @@ async def delete_message(
     await Conversation.filter(id=conversation.id).update(
         message_count=F("message_count") - 1,
         token_usage=F("token_usage") - tokens_to_remove,
+        updated_at=now_utc(),
     )
 
     # Delete message

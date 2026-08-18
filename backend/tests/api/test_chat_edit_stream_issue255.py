@@ -8,7 +8,7 @@ import pytest
 
 from app.api.v1.endpoints import chat
 from app.llm.errors import LLMError
-from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message
+from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message, Usage
 from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import EditMessageRequest
 from app.schemas.response import BusinessError, ResponseCode
@@ -237,6 +237,7 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
             id="content",
             model="stub/unit-model",
             delta=ChatStreamDelta(content="new answer"),
+            usage=Usage(prompt_tokens=31, completion_tokens=17, total_tokens=48),
             finish_reason=FinishReason.LENGTH,
         ),
     ]
@@ -272,7 +273,7 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
     assert state.assistant.model_used == state.model_id
     assert state.assistant.round_status == MessageRoundStatus.COMPLETED
     assert state.assistant.created_at == "completed-at"
-    assert state.assistant.token_usage == {"prompt": 3, "completion": 2}
+    assert state.assistant.token_usage == {"prompt": 31, "completion": 17}
     state.assistant.save.assert_awaited_once()
     assert chat.activate_conversation_branch.await_count == 2
     chat.stale_session_memory_if_source_outside_active_branch.assert_awaited_once_with(
@@ -284,9 +285,9 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
     )
     chat.AuditLogService.log.assert_awaited_once()
     assert end["usage"] == {
-        "prompt_tokens": 3,
-        "completion_tokens": 2,
-        "total_tokens": 5,
+        "prompt_tokens": 31,
+        "completion_tokens": 17,
+        "total_tokens": 48,
     }
     state.agent_stats.update.assert_awaited_once()
     state.team_stats.update.assert_awaited_once()

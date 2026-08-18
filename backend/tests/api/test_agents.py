@@ -611,6 +611,7 @@ async def test_delete_message_updates_token_totals(monkeypatch):
     assert result["data"]["id"] == str(message.id)
     update = next(call for call in conv_query.calls if call[0] == "update")
     assert "token_usage" in update[2]
+    assert "updated_at" in update[2]
     message.delete.assert_awaited_once()
 
     message_query.value = None

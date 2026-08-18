@@ -1291,6 +1291,7 @@ export const publicAgentsApi = {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` }),
       },
+      cache: 'no-store',
     })
     
     if (!response.ok) {
@@ -1313,6 +1314,7 @@ export const publicAgentsApi = {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` }),
       },
+      cache: 'no-store',
     })
     
     if (!response.ok) {
