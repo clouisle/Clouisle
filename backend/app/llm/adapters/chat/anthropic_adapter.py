@@ -222,10 +222,15 @@ class AnthropicAdapter(BaseChatAdapter):
             for tool in tools
         ]
 
-    # Anthropic prompt caching 写入要求缓存前缀至少 1024 tokens；
-    # 本地用 cl100k_base 近似估算可能高估，留 256 token 余量避免 API 400。
-    _MIN_CACHE_PREFIX_TOKENS = 1024 + 256
+    # Anthropic prompt caching requires 1024 tokens for most models and 2048
+    # tokens for Claude 3 Haiku; leave 256 tokens of local estimation margin.
+    _CACHE_TOKEN_MARGIN = 256
     _CACHE_CONTROL = {"type": "ephemeral"}
+
+    def _min_cache_prefix_tokens(self) -> int:
+        """Return the model-specific cache prefix floor with safety margin."""
+        minimum = 2048 if "claude-3-haiku" in self.model_id.lower() else 1024
+        return minimum + self._CACHE_TOKEN_MARGIN
 
     @property
     def cache_control_enabled(self) -> bool:
@@ -254,7 +259,12 @@ class AnthropicAdapter(BaseChatAdapter):
                     if block.get("type") == "text":
                         texts.append(block.get("text", ""))
                     elif block.get("type") == "tool_result":
-                        texts.append(block.get("content", ""))
+                        result_content = block.get("content", "")
+                        if not isinstance(result_content, str):
+                            result_content = json.dumps(
+                                result_content, ensure_ascii=False, default=str
+                            )
+                        texts.append(result_content)
             return "\n".join(texts)
         return ""
 
@@ -317,7 +327,7 @@ class AnthropicAdapter(BaseChatAdapter):
             tools_tokens = self._count_tokens(
                 json.dumps(anthropic_tools, ensure_ascii=False)
             )
-            if system_tokens + tools_tokens >= self._MIN_CACHE_PREFIX_TOKENS:
+            if system_tokens + tools_tokens >= self._min_cache_prefix_tokens():
                 anthropic_tools[-1] = {
                     **anthropic_tools[-1],
                     "cache_control": self._CACHE_CONTROL,
@@ -325,7 +335,7 @@ class AnthropicAdapter(BaseChatAdapter):
 
         # system 断点
         new_system: str | list[dict[str, Any]] | None = system_prompt
-        if system_prompt and system_tokens >= self._MIN_CACHE_PREFIX_TOKENS:
+        if system_prompt and system_tokens >= self._min_cache_prefix_tokens():
             new_system = [
                 {
                     "type": "text",
@@ -352,7 +362,7 @@ class AnthropicAdapter(BaseChatAdapter):
                 targets.append(user_breakpoints[-2])
 
         for index, prefix_tokens in targets:
-            if prefix_tokens >= self._MIN_CACHE_PREFIX_TOKENS:
+            if prefix_tokens >= self._min_cache_prefix_tokens():
                 self._mark_message_cache_breakpoint(anthropic_messages[index])
 
         return new_system, anthropic_messages, anthropic_tools
@@ -655,6 +665,25 @@ class AnthropicAdapter(BaseChatAdapter):
             # 用于累积工具调用
             current_tool_use: dict[str, Any] | None = None
             tool_calls: list[ToolCall] = []
+            stream_usage_values = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            }
+            stream_usage_seen = False
+
+            def merge_stream_usage(usage_data: Any) -> None:
+                nonlocal stream_usage_seen
+                if not usage_data:
+                    return
+                stream_usage_seen = True
+                for field in stream_usage_values:
+                    value = getattr(usage_data, field, None)
+                    if value is not None:
+                        stream_usage_values[field] = max(
+                            stream_usage_values[field], int(value or 0)
+                        )
 
             async with client.messages.stream(
                 **request_params,
@@ -662,6 +691,11 @@ class AnthropicAdapter(BaseChatAdapter):
             ) as stream:
                 async for event in stream:
                     event_type = getattr(event, "type", None)
+
+                    if event_type == "message_start":
+                        message = getattr(event, "message", None)
+                        merge_stream_usage(getattr(message, "usage", None))
+                        continue
 
                     # 处理 content_block_start
                     if event_type == "content_block_start":
@@ -759,46 +793,28 @@ class AnthropicAdapter(BaseChatAdapter):
                     # 处理 message_delta (包含 stop_reason 和 usage)
                     if event_type == "message_delta":
                         delta = getattr(event, "delta", None)
+                        merge_stream_usage(getattr(event, "usage", None))
 
-                        # Anthropic 流式的 usage 在 message_delta 事件上返回
                         usage = None
-                        event_usage = getattr(event, "usage", None)
-                        if event_usage:
-                            input_tokens = getattr(event_usage, "input_tokens", 0) or 0
-                            output_tokens = (
-                                getattr(event_usage, "output_tokens", 0) or 0
+                        if stream_usage_seen:
+                            input_tokens = stream_usage_values["input_tokens"]
+                            output_tokens = stream_usage_values["output_tokens"]
+                            cache_read_tokens = stream_usage_values[
+                                "cache_read_input_tokens"
+                            ]
+                            cache_creation_tokens = stream_usage_values[
+                                "cache_creation_input_tokens"
+                            ]
+                            total_input_tokens = (
+                                input_tokens + cache_read_tokens + cache_creation_tokens
                             )
                             usage = Usage(
                                 prompt_tokens=input_tokens,
                                 completion_tokens=output_tokens,
-                                total_tokens=input_tokens + output_tokens,
-                                cache_read_tokens=getattr(
-                                    event_usage, "cache_read_input_tokens", 0
-                                )
-                                or 0,
-                                cache_creation_tokens=getattr(
-                                    event_usage, "cache_creation_input_tokens", 0
-                                )
-                                or 0,
-                                total_input_tokens=(
-                                    input_tokens
-                                    + (
-                                        getattr(
-                                            event_usage,
-                                            "cache_read_input_tokens",
-                                            0,
-                                        )
-                                        or 0
-                                    )
-                                    + (
-                                        getattr(
-                                            event_usage,
-                                            "cache_creation_input_tokens",
-                                            0,
-                                        )
-                                        or 0
-                                    )
-                                ),
+                                total_tokens=total_input_tokens + output_tokens,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
+                                total_input_tokens=total_input_tokens,
                             )
 
                         if delta:
@@ -817,5 +833,7 @@ class AnthropicAdapter(BaseChatAdapter):
                                 usage=usage,
                                 response_id=response_id,
                             )
+                        continue
+
         finally:
             await client.close()

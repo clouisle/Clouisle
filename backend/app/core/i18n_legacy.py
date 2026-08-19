@@ -195,6 +195,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_delete_tool": {"en": "Delete tool", "zh": "删除工具"},
     "audit_log_delete_user": {"en": "Delete user", "zh": "删除用户"},
     "audit_log_delete_workflow": {"en": "Delete workflow", "zh": "删除工作流"},
+    "audit_log_delete_message": {"en": "Delete message", "zh": "删除消息"},
     "audit_log_disable_totp": {
         "en": "Disable two-factor authentication",
         "zh": "禁用双因素认证",

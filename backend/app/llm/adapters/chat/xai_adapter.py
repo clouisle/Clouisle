@@ -19,7 +19,7 @@ from app.llm.types import (
     Usage,
 )
 
-from .base import BaseChatAdapter, extract_cached_tokens
+from .base import BaseChatAdapter, extract_cached_tokens, usage_from_openai_usage
 from .thinking import ThinkingExtractor
 from .tool_call_accumulator import ToolCallAccumulator
 
@@ -277,13 +277,7 @@ class XAIAdapter(BaseChatAdapter):
                     if getattr(chunk, "usage", None):
                         yield self.create_stream_chunk(
                             response_id=response_id,
-                            usage=Usage(
-                                prompt_tokens=chunk.usage.prompt_tokens,
-                                completion_tokens=chunk.usage.completion_tokens,
-                                total_tokens=chunk.usage.total_tokens,
-                                cache_read_tokens=extract_cached_tokens(chunk.usage),
-                                total_input_tokens=chunk.usage.prompt_tokens,
-                            ),
+                            usage=usage_from_openai_usage(chunk.usage),
                         )
                     else:
                         yield self.create_stream_chunk(

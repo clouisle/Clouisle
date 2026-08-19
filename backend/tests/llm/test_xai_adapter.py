@@ -262,6 +262,41 @@ async def test_chat_stream_normalizes_reasoning_tool_activity_and_completion():
 
 
 @pytest.mark.anyio
+async def test_chat_stream_tolerates_incomplete_terminal_usage():
+    stream = AsyncChunks(
+        [
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=None,
+                    completion_tokens=None,
+                    total_tokens=None,
+                ),
+            )
+        ]
+    )
+    client = build_client(stream)
+
+    with patch("openai.AsyncOpenAI", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert chunks[-1].usage.model_dump() == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 0,
+    }
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
 async def test_chat_closes_client_when_request_fails():
     client = build_client(None)
     client.chat.completions.create.side_effect = RuntimeError("provider failed")

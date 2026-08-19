@@ -429,6 +429,9 @@ msgstr "Deactivate user"
 msgid "audit_log_delete_agent"
 msgstr "Delete agent"
 
+msgid "audit_log_delete_message"
+msgstr "Delete message"
+
 msgid "audit_log_delete_api_key"
 msgstr "Delete API key"
 

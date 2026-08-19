@@ -961,20 +961,23 @@ class ModelManager:
         output_tokens: int | None = None,
     ) -> None:
         """Record stream usage from provider totals or a character fallback."""
-        from app.llm.token_counter import count_tokens
+        from app.llm.token_counter import estimate_tokens_from_chars
 
         # Resolve the team model for its internal ID even when the caller
         # already has provider-reported token totals.
         model_config, _ = await self._get_team_model(team_id, model_id, ModelType.CHAT)
 
-        if input_tokens is None or output_tokens is None:
-            dummy_input = "x" * (input_text_length or 0)
-            dummy_output = "x" * (output_text_length or 0)
-            input_tokens = count_tokens(
-                dummy_input, model_config.model_id, model_config.provider
+        if input_tokens is None:
+            input_tokens = (
+                estimate_tokens_from_chars(input_text_length)
+                if input_text_length
+                else 0
             )
-            output_tokens = count_tokens(
-                dummy_output, model_config.model_id, model_config.provider
+        if output_tokens is None:
+            output_tokens = (
+                estimate_tokens_from_chars(output_text_length)
+                if output_text_length
+                else 0
             )
         assert input_tokens is not None
         assert output_tokens is not None

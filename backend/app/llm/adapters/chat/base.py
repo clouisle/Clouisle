@@ -55,6 +55,21 @@ def extract_total_input_tokens(usage: Any) -> int:
     return int(getattr(usage, "prompt_tokens", 0) or 0)
 
 
+def usage_from_openai_usage(usage: Any) -> Usage:
+    """Build Usage from an OpenAI-compatible object with missing fields tolerated."""
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
+    return Usage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens or (prompt_tokens + completion_tokens),
+        cache_read_tokens=extract_cached_tokens(usage),
+        cache_creation_tokens=int(getattr(usage, "cache_creation_tokens", 0) or 0),
+        total_input_tokens=extract_total_input_tokens(usage),
+    )
+
+
 class BaseChatAdapter(ABC):
     """
     Chat 适配器基类

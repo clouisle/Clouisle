@@ -139,6 +139,7 @@ async def setup_regeneration(monkeypatch):
     )
 
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "now_utc", lambda: "completed-at")
 
     response = await chat.regenerate_message(

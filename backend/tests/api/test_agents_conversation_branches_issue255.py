@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import agents
+from starlette.requests import Request
 
 
 class Query:
@@ -77,8 +78,18 @@ async def test_delete_message_defaults_missing_token_usage_counters(
         agents.Conversation, "filter", lambda **_kwargs: conversation_query
     )
     monkeypatch.setattr(agents.Message, "filter", lambda **_kwargs: Query(message))
+    monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
 
-    await agents.delete_message(conversation.id, message.id, SimpleNamespace())
+    request = Request(
+        {
+            "type": "http",
+            "method": "DELETE",
+            "path": "/conversations",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+    await agents.delete_message(conversation.id, message.id, request, SimpleNamespace())
 
     update = next(call for call in conversation_query.calls if call[0] == "update")
     assert update[2]["token_usage"].right.value == expected_tokens

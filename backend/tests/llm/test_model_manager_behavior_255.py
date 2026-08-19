@@ -596,11 +596,16 @@ async def test_team_stream_and_usage_recording_use_selected_model(
     )
     record = AsyncMock()
     monkeypatch.setattr(manager, "_check_and_record_usage", record)
-    monkeypatch.setattr("app.llm.token_counter.count_tokens", Mock(side_effect=[2, 3]))
+    monkeypatch.setattr(
+        "app.llm.token_counter.estimate_tokens_from_chars",
+        Mock(side_effect=[2, 3, 3]),
+    )
 
     assert [chunk async for chunk in manager.team_chat_stream("team", [])] == ["chunk"]
     await manager.record_stream_usage("team", None, 8, 12)
     await manager.record_stream_usage("team", None, input_tokens=11, output_tokens=13)
+    await manager.record_stream_usage("team", None, 80, 12, input_tokens=11)
+    await manager.record_stream_usage("team", None, 0, 0, output_tokens=0)
     assert record.await_args_list[0].kwargs == {
         "team_id": "team",
         "model_id": str(model.id),
@@ -610,6 +615,16 @@ async def test_team_stream_and_usage_recording_use_selected_model(
         "team_id": "team",
         "model_id": str(model.id),
         "tokens_used": 24,
+    }
+    assert record.await_args_list[2].kwargs == {
+        "team_id": "team",
+        "model_id": str(model.id),
+        "tokens_used": 14,
+    }
+    assert record.await_args_list[3].kwargs == {
+        "team_id": "team",
+        "model_id": str(model.id),
+        "tokens_used": 0,
     }
 
 

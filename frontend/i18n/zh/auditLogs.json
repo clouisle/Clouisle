@@ -180,6 +180,7 @@
     "actionduplicate_agent": "复制 智能体",
     "actionedit_message": "编辑消息",
     "actiondelete_conversation": "删除对话",
+    "actiondelete_message": "删除消息",
     "actionbatch_delete_conversations": "批量删除对话",
     "actionrun_workflow_embed": "运行工作流（嵌入）",
     "actionupload_document": "上传文档",

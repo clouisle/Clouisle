@@ -595,6 +595,8 @@ async def test_conversation_crud_and_missing_paths(monkeypatch):
 @pytest.mark.anyio
 async def test_delete_message_updates_token_totals(monkeypatch):
     current_user = user()
+    fixed_updated_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(agents, "now_utc", lambda: fixed_updated_at)
     conv = conversation(user_id=current_user.id)
     message = SimpleNamespace(
         id=uuid4(),
@@ -603,20 +605,35 @@ async def test_delete_message_updates_token_totals(monkeypatch):
     )
     conv_query = Query(conv)
     message_query = Query(message)
+    audit_log = AsyncMock()
     monkeypatch.setattr(agents.Conversation, "filter", lambda **_kwargs: conv_query)
     monkeypatch.setattr(agents.Message, "filter", lambda **_kwargs: message_query)
+    monkeypatch.setattr(agents.AuditLogService, "log", audit_log)
 
-    result = await agents.delete_message(conv.id, message.id, current_user)
+    result = await agents.delete_message(conv.id, message.id, request(), current_user)
 
     assert result["data"]["id"] == str(message.id)
     update = next(call for call in conv_query.calls if call[0] == "update")
     assert "token_usage" in update[2]
+    assert update[2]["updated_at"] == fixed_updated_at
     assert "updated_at" in update[2]
+    audit_log.assert_awaited_once()
+    assert audit_log.call_args.kwargs["action"] == "delete_message"
+    assert audit_log.call_args.kwargs["changes"]["before"] == {
+        "message_count": 2,
+        "token_usage": 5,
+        "updated_at": conv.updated_at.isoformat(),
+    }
+    assert audit_log.call_args.kwargs["changes"]["after"] == {
+        "message_count": 1,
+        "token_usage": -2,
+        "updated_at": fixed_updated_at.isoformat(),
+    }
     message.delete.assert_awaited_once()
 
     message_query.value = None
     with pytest.raises(BusinessError) as error:
-        await agents.delete_message(conv.id, uuid4(), current_user)
+        await agents.delete_message(conv.id, uuid4(), request(), current_user)
     assert error.value.msg_key == "message_not_found"
 
 
@@ -900,7 +917,7 @@ async def test_conversation_optional_and_not_found_branches(monkeypatch):
     assert error.value.msg_key == "conversation_not_found"
 
     with pytest.raises(BusinessError) as error:
-        await agents.delete_message(uuid4(), uuid4(), current_user)
+        await agents.delete_message(uuid4(), uuid4(), request(), current_user)
     assert error.value.msg_key == "conversation_not_found"
 
 
@@ -912,8 +929,9 @@ async def test_delete_message_without_usage_updates_count(monkeypatch):
     conv_query = Query(conv)
     monkeypatch.setattr(agents.Conversation, "filter", lambda **_kwargs: conv_query)
     monkeypatch.setattr(agents.Message, "filter", lambda **_kwargs: Query(message))
+    monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
 
-    await agents.delete_message(conv.id, message.id, current_user)
+    await agents.delete_message(conv.id, message.id, request(), current_user)
 
     assert any(call[0] == "update" for call in conv_query.calls)
     message.delete.assert_awaited_once()

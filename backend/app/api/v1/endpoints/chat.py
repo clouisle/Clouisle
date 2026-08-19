@@ -3798,6 +3798,12 @@ async def edit_user_message_stream(
                             iteration_cache_creation_tokens
                         )
                         aggregate_total_input_tokens += iteration_total_input_tokens
+                        await model_manager.record_stream_usage(
+                            team_id=str(agent.team_id),
+                            model_id=model_id,
+                            input_tokens=iteration_input_tokens,
+                            output_tokens=iteration_output_tokens,
+                        )
 
                         if client_disconnected:
                             assistant_msg.content = full_content
@@ -4874,6 +4880,12 @@ async def regenerate_message(
                             iteration_cache_creation_tokens
                         )
                         aggregate_total_input_tokens += iteration_total_input_tokens
+                        await model_manager.record_stream_usage(
+                            team_id=str(agent.team_id),
+                            model_id=model_id,
+                            input_tokens=iteration_input_tokens,
+                            output_tokens=iteration_output_tokens,
+                        )
 
                         # If client disconnected, save current stopped state and exit
                         if client_disconnected:

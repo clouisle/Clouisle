@@ -1234,6 +1234,7 @@ async def delete_conversation(
 async def delete_message(
     conversation_id: UUID,
     message_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """Delete a message from a conversation."""
@@ -1268,13 +1269,43 @@ async def delete_message(
             "prompt", 0
         ) + message.token_usage.get("completion", 0)
 
+    conversation_message_count = getattr(conversation, "message_count", 0) or 0
+    conversation_token_usage = getattr(conversation, "token_usage", 0) or 0
+    conversation_updated_at = getattr(conversation, "updated_at", None)
+    audit_before = {
+        "message_count": conversation_message_count,
+        "token_usage": conversation_token_usage,
+        "updated_at": (
+            conversation_updated_at.isoformat() if conversation_updated_at else None
+        ),
+    }
+    updated_at = now_utc()
+    audit_after = {
+        "message_count": conversation_message_count - 1,
+        "token_usage": conversation_token_usage - tokens_to_remove,
+        "updated_at": updated_at.isoformat(),
+    }
+
     await Conversation.filter(id=conversation.id).update(
         message_count=F("message_count") - 1,
         token_usage=F("token_usage") - tokens_to_remove,
-        updated_at=now_utc(),
+        updated_at=updated_at,
     )
 
     # Delete message
     await message.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_message",
+        resource_type="message",
+        resource_id=message_id,
+        resource_name=getattr(conversation, "title", None) or str(conversation_id),
+        operation="delete",
+        status="success",
+        request=request,
+        changes={"before": audit_before, "after": audit_after},
+        metadata={"conversation_id": str(conversation_id)},
+    )
 
     return success(data={"id": str(message_id)}, msg_key="message_deleted")

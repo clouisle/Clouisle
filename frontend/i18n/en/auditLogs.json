@@ -180,6 +180,7 @@
     "actionduplicate_agent": "Duplicate Agent",
     "actionedit_message": "Edit Message",
     "actiondelete_conversation": "Delete Conversation",
+    "actiondelete_message": "Delete Message",
     "actionbatch_delete_conversations": "Batch Delete Conversations",
     "actionrun_workflow_embed": "Run Workflow (Embed)",
     "actionupload_document": "Upload Document",

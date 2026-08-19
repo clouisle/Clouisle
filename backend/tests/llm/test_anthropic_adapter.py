@@ -283,7 +283,48 @@ async def test_chat_stream_captures_usage_from_message_delta():
     assert chunks[-1].usage.model_dump() == {
         "prompt_tokens": 9,
         "completion_tokens": 4,
-        "total_tokens": 13,
+        "total_tokens": 22,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 3,
+        "total_input_tokens": 18,
+    }
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_stream_captures_usage_from_message_start_and_delta():
+    events = [
+        SimpleNamespace(
+            type="message_start",
+            message=SimpleNamespace(
+                usage=SimpleNamespace(
+                    input_tokens=9,
+                    cache_read_input_tokens=6,
+                    cache_creation_input_tokens=3,
+                )
+            ),
+        ),
+        SimpleNamespace(
+            type="message_delta",
+            delta=SimpleNamespace(stop_reason="end_turn"),
+            usage=SimpleNamespace(output_tokens=4),
+        ),
+    ]
+    stream = AsyncStream(events)
+    client = build_client(stream=stream)
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert chunks[-1].usage.model_dump() == {
+        "prompt_tokens": 9,
+        "completion_tokens": 4,
+        "total_tokens": 22,
         "cache_read_tokens": 6,
         "cache_creation_tokens": 3,
         "total_input_tokens": 18,
@@ -292,6 +333,35 @@ async def test_chat_stream_captures_usage_from_message_delta():
 
 
 LONG_TEXT = "cache me " * 2000  # cl100k 估算远超 1024 token 缓存门槛
+
+
+def test_cache_prefix_floor_uses_model_specific_minimum():
+    adapter = build_adapter()
+    assert adapter._min_cache_prefix_tokens() == 1280
+
+    adapter.model_config.model_id = "claude-3-haiku-20240307"
+    assert adapter._min_cache_prefix_tokens() == 2304
+
+    adapter.model_config.model_id = "claude-3-5-haiku-20241022"
+    assert adapter._min_cache_prefix_tokens() == 1280
+
+
+def test_message_text_serializes_tool_result_content_blocks():
+    adapter = build_adapter()
+
+    assert (
+        adapter._message_text(
+            {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "content": [{"type": "text", "text": "done"}],
+                    }
+                ]
+            }
+        )
+        == '[{"type": "text", "text": "done"}]'
+    )
 
 
 def _tool_def():
@@ -389,7 +459,13 @@ async def test_chat_stream_adds_cache_breakpoints():
             async for chunk in build_adapter().chat_stream(
                 [
                     Message(role=MessageRole.SYSTEM, content=LONG_TEXT),
-                    Message(role=MessageRole.USER, content="question " + LONG_TEXT),
+                    Message(
+                        role=MessageRole.USER,
+                        content="historical question " + LONG_TEXT,
+                    ),
+                    Message(
+                        role=MessageRole.USER, content="current question " + LONG_TEXT
+                    ),
                 ],
                 tools=[_tool_def()],
             )
@@ -403,6 +479,7 @@ async def test_chat_stream_adds_cache_breakpoints():
     assert request["messages"][0]["content"][0]["cache_control"] == {
         "type": "ephemeral"
     }
+    assert "cache_control" not in request["messages"][1]["content"][0]
     assert chunks[-1].finish_reason is FinishReason.STOP
     client.close.assert_awaited_once()
 
