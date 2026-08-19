@@ -443,6 +443,7 @@ async def setup_regenerate(monkeypatch, *, rag_mode=RAGMode.OFF, branch_parent_i
         "app.services.sandbox.gateway.sandbox_gateway.create_session",
         AsyncMock(return_value="session"),
     )
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "collect_conversation_images", lambda *_a: ([], []))
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
@@ -667,6 +668,7 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     monkeypatch.setattr(
         "app.llm.model_manager.team_chat_stream", lambda **_kwargs: object()
     )
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()

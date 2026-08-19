@@ -332,6 +332,75 @@ async def test_chat_stream_captures_usage_from_message_start_and_delta():
     client.close.assert_awaited_once()
 
 
+@pytest.mark.anyio
+async def test_chat_stream_emits_usage_without_terminal_delta():
+    events = [
+        SimpleNamespace(
+            type="message_start",
+            message=SimpleNamespace(
+                usage=SimpleNamespace(
+                    input_tokens=9,
+                    cache_read_input_tokens=6,
+                    cache_creation_input_tokens=3,
+                )
+            ),
+        ),
+        SimpleNamespace(
+            type="message_delta",
+            delta=None,
+            usage=SimpleNamespace(output_tokens=4),
+        ),
+    ]
+    stream = AsyncStream(events)
+    client = build_client(stream=stream)
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert len(chunks) == 1
+    assert chunks[0].finish_reason is None
+    assert chunks[0].usage.model_dump() == {
+        "prompt_tokens": 9,
+        "completion_tokens": 4,
+        "total_tokens": 22,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 3,
+        "total_input_tokens": 18,
+    }
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_stream_treats_unnamed_tool_start_as_activity():
+    stream = AsyncStream(
+        [
+            SimpleNamespace(
+                type="content_block_start",
+                content_block=SimpleNamespace(type="tool_use", id="call-1", name=""),
+            )
+        ]
+    )
+    client = build_client(stream=stream)
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert len(chunks) == 1
+    assert chunks[0].delta.stream_activity is True
+    assert chunks[0].delta.tool_calls is None
+    client.close.assert_awaited_once()
+
+
 LONG_TEXT = "cache me " * 2000  # cl100k 估算远超 1024 token 缓存门槛
 
 
@@ -362,6 +431,59 @@ def test_message_text_serializes_tool_result_content_blocks():
         )
         == '[{"type": "text", "text": "done"}]'
     )
+
+
+def test_message_helpers_ignore_nontext_content_and_tool_result_wrappers():
+    adapter = build_adapter()
+
+    assert adapter._message_text({"content": {"type": "text"}}) == ""
+    assert (
+        adapter._message_text(
+            {
+                "content": [
+                    None,
+                    {"type": "image"},
+                    {"type": "tool_result", "content": "done"},
+                ]
+            }
+        )
+        == "done"
+    )
+    assert not adapter._is_real_user_message(
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "content": "done"}],
+        }
+    )
+
+
+def test_message_cache_breakpoint_skips_nontext_blocks_before_marking_text():
+    adapter = build_adapter()
+    message = {
+        "content": [
+            None,
+            {"type": "image"},
+            {"type": "text", "text": "history"},
+        ]
+    }
+
+    adapter._mark_message_cache_breakpoint(message)
+
+    assert "cache_control" not in message["content"][1]
+    assert message["content"][2]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_cache_breakpoints_mark_system_without_real_user_messages():
+    system, messages, _ = build_adapter()._apply_cache_breakpoints(
+        LONG_TEXT,
+        [{"role": "assistant", "content": "assistant reply"}],
+        None,
+    )
+
+    assert system == [
+        {"type": "text", "text": LONG_TEXT, "cache_control": {"type": "ephemeral"}}
+    ]
+    assert messages == [{"role": "assistant", "content": "assistant reply"}]
 
 
 def _tool_def():

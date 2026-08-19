@@ -151,6 +151,7 @@ async def setup_edit(monkeypatch, *, max_iterations=2, active=True):
         "app.services.sandbox.gateway.sandbox_gateway.create_session",
         AsyncMock(return_value="session"),
     )
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "collect_conversation_images", lambda *_args: ([], []))
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _inventory: text
