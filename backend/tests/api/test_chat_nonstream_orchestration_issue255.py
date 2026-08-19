@@ -220,12 +220,21 @@ async def test_chat_persists_rag_attachments_and_completed_round(monkeypatch):
     user_message.save.assert_awaited_once_with(update_fields=["file_urls"])
     assert assistant.content == "answer"
     assert assistant.model_used == state.model_id
-    assert assistant.token_usage == {"prompt": 3, "completion": 2}
+    assert assistant.token_usage == {
+        "prompt": 3,
+        "completion": 2,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 3,
+    }
     assert assistant.round_status == MessageRoundStatus.COMPLETED
     assert result["data"].usage == {
         "prompt_tokens": 3,
         "completion_tokens": 2,
         "total_tokens": 5,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 3,
     }
     chat.activate_conversation_branch.assert_awaited_once_with(
         state.conversation.id, [user_message, assistant]
@@ -325,7 +334,13 @@ async def test_chat_executes_tool_round_and_aggregates_usage(monkeypatch):
     assert tool_result.content == {"answer": 42}
     assert tool_result.tool_call_id == "call-1"
     assert assistant.content == "final answer"
-    assert assistant.token_usage == {"prompt": 6, "completion": 4}
+    assert assistant.token_usage == {
+        "prompt": 6,
+        "completion": 4,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 6,
+    }
     assert result["data"].usage["total_tokens"] == 10
     execute.assert_awaited_once_with(
         "lookup",

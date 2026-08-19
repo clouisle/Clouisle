@@ -225,6 +225,9 @@ async def test_chat_tool_loop_terminal_message_when_max_iterations_reached(monke
         "prompt_tokens": 3,
         "completion_tokens": 4,
         "total_tokens": 7,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 3,
     }
 
 

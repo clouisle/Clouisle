@@ -19,7 +19,7 @@ from app.llm.types import (
     Usage,
 )
 
-from .base import BaseChatAdapter
+from .base import BaseChatAdapter, extract_cached_tokens
 from .thinking import ThinkingExtractor
 from .tool_call_accumulator import ToolCallAccumulator
 
@@ -205,6 +205,8 @@ class MoonshotAdapter(BaseChatAdapter):
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
+                    cache_read_tokens=extract_cached_tokens(response.usage),
+                    total_input_tokens=response.usage.prompt_tokens,
                 )
 
             return self.create_response(
@@ -271,10 +273,23 @@ class MoonshotAdapter(BaseChatAdapter):
 
             async for chunk in stream:
                 if not chunk.choices:
-                    yield self.create_stream_chunk(
-                        response_id=response_id,
-                        stream_activity=True,
-                    )
+                    # 兼容端点在流式最后 chunk 返回 usage（choices 为空）
+                    if getattr(chunk, "usage", None):
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            usage=Usage(
+                                prompt_tokens=chunk.usage.prompt_tokens,
+                                completion_tokens=chunk.usage.completion_tokens,
+                                total_tokens=chunk.usage.total_tokens,
+                                cache_read_tokens=extract_cached_tokens(chunk.usage),
+                                total_input_tokens=chunk.usage.prompt_tokens,
+                            ),
+                        )
+                    else:
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            stream_activity=True,
+                        )
                     continue
 
                 delta = chunk.choices[0].delta

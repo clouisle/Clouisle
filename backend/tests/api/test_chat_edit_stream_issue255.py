@@ -273,7 +273,13 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
     assert state.assistant.model_used == state.model_id
     assert state.assistant.round_status == MessageRoundStatus.COMPLETED
     assert state.assistant.created_at == "completed-at"
-    assert state.assistant.token_usage == {"prompt": 31, "completion": 17}
+    assert state.assistant.token_usage == {
+        "prompt": 31,
+        "completion": 17,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 31,
+    }
     state.assistant.save.assert_awaited_once()
     assert chat.activate_conversation_branch.await_count == 2
     chat.stale_session_memory_if_source_outside_active_branch.assert_awaited_once_with(
@@ -288,6 +294,9 @@ async def test_edit_stream_creates_version_and_persists_regenerated_reply(monkey
         "prompt_tokens": 31,
         "completion_tokens": 17,
         "total_tokens": 48,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 31,
     }
     state.agent_stats.update.assert_awaited_once()
     state.team_stats.update.assert_awaited_once()

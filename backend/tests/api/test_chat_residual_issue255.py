@@ -238,6 +238,9 @@ async def test_chat_retries_context_length_from_initial_prepare(chat_harness):
         "prompt_tokens": 3,
         "completion_tokens": 4,
         "total_tokens": 7,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 3,
     }
 
 

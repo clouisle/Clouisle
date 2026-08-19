@@ -330,7 +330,13 @@ async def test_chat_caps_tool_iterations_with_invalid_arguments_and_display_fall
     final_msg = ctx.created_messages[-1]
     assert final_msg.reasoning_content is None
     assert final_msg.tool_calls is None
-    assert final_msg.token_usage == {"prompt": 2, "completion": 5}
+    assert final_msg.token_usage == {
+        "prompt": 2,
+        "completion": 5,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 2,
+    }
 
 
 @pytest.mark.asyncio

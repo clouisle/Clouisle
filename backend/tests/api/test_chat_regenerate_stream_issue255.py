@@ -213,7 +213,13 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
     assert state.created.version_number == 3
     assert state.created.round_status == MessageRoundStatus.COMPLETED
     assert state.created.created_at == "completed-at"
-    assert state.created.token_usage == {"prompt": 23, "completion": 13}
+    assert state.created.token_usage == {
+        "prompt": 23,
+        "completion": 13,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 23,
+    }
     state.created.save.assert_awaited_once()
     chat.activate_conversation_branch.assert_awaited_once_with(
         state.conversation.id, [state.user_message, state.created]
@@ -229,6 +235,9 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
         "prompt_tokens": 23,
         "completion_tokens": 13,
         "total_tokens": 36,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 23,
     }
     assert prepare.await_count == 1
     for call in prepare.call_args_list:

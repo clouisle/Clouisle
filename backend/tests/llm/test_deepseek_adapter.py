@@ -71,7 +71,13 @@ async def test_chat_builds_request_and_normalizes_reasoning_tool_response():
                 ),
             )
         ],
-        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=4, total_tokens=14),
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=4,
+            total_tokens=14,
+            prompt_cache_hit_tokens=8,
+            prompt_cache_miss_tokens=2,
+        ),
     )
     client = build_client(response)
     tools = [
@@ -115,6 +121,8 @@ async def test_chat_builds_request_and_normalizes_reasoning_tool_response():
     assert result.finish_reason is FinishReason.TOOL_CALLS
     assert result.tool_calls[0].function.name == "lookup"
     assert result.usage.total_tokens == 14
+    assert result.usage.cache_read_tokens == 8
+    assert result.usage.total_input_tokens == 10
     client.close.assert_awaited_once()
 
 
@@ -224,4 +232,43 @@ async def test_chat_stream_closes_client_when_iteration_fails():
         ):
             pass
 
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_stream_captures_cache_usage_and_total_input():
+    stream = AsyncChunks(
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="answer", tool_calls=None),
+                        finish_reason="stop",
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=10,
+                    completion_tokens=4,
+                    total_tokens=14,
+                    prompt_cache_hit_tokens=8,
+                    prompt_cache_miss_tokens=2,
+                ),
+            ),
+        ]
+    )
+    client = build_client(stream)
+
+    with patch("openai.AsyncOpenAI", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert chunks[-1].usage.cache_read_tokens == 8
+    assert chunks[-1].usage.total_input_tokens == 10
     client.close.assert_awaited_once()

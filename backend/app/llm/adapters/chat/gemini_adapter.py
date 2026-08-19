@@ -386,6 +386,10 @@ class GeminiAdapter(BaseChatAdapter):
                 prompt_tokens=getattr(usage_metadata, "prompt_token_count", 0),
                 completion_tokens=getattr(usage_metadata, "candidates_token_count", 0),
                 total_tokens=getattr(usage_metadata, "total_token_count", 0),
+                cache_read_tokens=getattr(
+                    usage_metadata, "cached_content_token_count", 0
+                ),
+                total_input_tokens=getattr(usage_metadata, "prompt_token_count", 0),
             )
 
         return self.create_response(
@@ -492,6 +496,29 @@ class GeminiAdapter(BaseChatAdapter):
         stream = await client.aio.models.generate_content_stream(**request_kwargs)
         async for chunk in stream:
             if not chunk.candidates:
+                # Gemini 流式的 usage 在最后一个 chunk 返回（candidates 可能为空）
+                usage_metadata = getattr(chunk, "usage_metadata", None)
+                if usage_metadata:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        usage=Usage(
+                            prompt_tokens=getattr(
+                                usage_metadata, "prompt_token_count", 0
+                            ),
+                            completion_tokens=getattr(
+                                usage_metadata, "candidates_token_count", 0
+                            ),
+                            total_tokens=getattr(
+                                usage_metadata, "total_token_count", 0
+                            ),
+                            cache_read_tokens=getattr(
+                                usage_metadata, "cached_content_token_count", 0
+                            ),
+                            total_input_tokens=getattr(
+                                usage_metadata, "prompt_token_count", 0
+                            ),
+                        ),
+                    )
                 continue
 
             candidate = chunk.candidates[0]
@@ -541,6 +568,23 @@ class GeminiAdapter(BaseChatAdapter):
 
             # 检查是否完成
             finish_reason_raw = getattr(candidate, "finish_reason", None)
+
+            # Gemini 流式的 usage_metadata 在带 finish_reason 的最终 chunk 上
+            usage = None
+            usage_metadata = getattr(chunk, "usage_metadata", None)
+            if usage_metadata:
+                usage = Usage(
+                    prompt_tokens=getattr(usage_metadata, "prompt_token_count", 0),
+                    completion_tokens=getattr(
+                        usage_metadata, "candidates_token_count", 0
+                    ),
+                    total_tokens=getattr(usage_metadata, "total_token_count", 0),
+                    cache_read_tokens=getattr(
+                        usage_metadata, "cached_content_token_count", 0
+                    ),
+                    total_input_tokens=getattr(usage_metadata, "prompt_token_count", 0),
+                )
+
             if finish_reason_raw:
                 finish_reason = self._map_finish_reason(finish_reason_raw)
                 if accumulated_tool_calls:
@@ -551,5 +595,6 @@ class GeminiAdapter(BaseChatAdapter):
                     if accumulated_tool_calls
                     else None,
                     finish_reason=finish_reason,
+                    usage=usage,
                     response_id=response_id,
                 )

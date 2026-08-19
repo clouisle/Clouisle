@@ -372,7 +372,13 @@ export interface MessageRoundStep {
   tool_name?: string | null
   reasoning_content?: string | null
   model_used?: string | null
-  token_usage?: { prompt: number; completion: number } | null
+  token_usage?: {
+    prompt: number
+    completion: number
+    cache_read?: number
+    cache_creation?: number
+    total_input?: number
+  } | null
   duration_ms?: number | null
   is_manually_stopped?: boolean
   rag_context?: Record<string, unknown>[] | null
@@ -401,7 +407,13 @@ export interface Message {
   reasoning_content?: string | null
   // Metadata
   model_used?: string | null
-  token_usage?: { prompt: number; completion: number } | null
+  token_usage?: {
+    prompt: number
+    completion: number
+    cache_read?: number
+    cache_creation?: number
+    total_input?: number
+  } | null
   duration_ms?: number | null
   is_manually_stopped?: boolean
   rag_context?: Record<string, unknown>[] | null
@@ -579,6 +591,9 @@ export interface SSEMessageEnd {
     prompt_tokens: number
     completion_tokens: number
     total_tokens: number
+    cache_read_tokens?: number
+    cache_creation_tokens?: number
+    total_input_tokens?: number
   }
   timing?: {
     first_token_ms: number | null

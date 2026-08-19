@@ -86,6 +86,9 @@ export interface BackendMessage {
   token_usage?: {
     prompt: number
     completion: number
+    cache_read?: number
+    cache_creation?: number
+    total_input?: number
   } | null
   duration_ms?: number | null
   first_token_ms?: number | null
@@ -419,6 +422,9 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
           prompt_tokens: message.token_usage.prompt ?? 0,
           completion_tokens: message.token_usage.completion ?? 0,
           total_tokens: (message.token_usage.prompt ?? 0) + (message.token_usage.completion ?? 0),
+          cache_read_tokens: message.token_usage.cache_read ?? 0,
+          cache_creation_tokens: message.token_usage.cache_creation ?? 0,
+          total_input_tokens: message.token_usage.total_input ?? message.token_usage.prompt ?? 0,
         }
       : undefined
     if (usage) {

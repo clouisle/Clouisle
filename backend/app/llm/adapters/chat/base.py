@@ -29,6 +29,32 @@ from app.llm.types import (
 logger = logging.getLogger(__name__)
 
 
+def extract_cached_tokens(usage: Any) -> int:
+    """
+    从 OpenAI 兼容 usage 对象提取缓存命中 token 数。
+
+    优先读取 prompt_tokens_details.cached_tokens（OpenAI/OpenAI 兼容/Moonshot），
+    回退读取 prompt_cache_hit_tokens（DeepSeek）、cached_prompt_text_tokens（xAI 原生）。
+    """
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details:
+        return int(getattr(details, "cached_tokens", 0) or 0)
+    deepseek_hit = getattr(usage, "prompt_cache_hit_tokens", None)
+    if deepseek_hit:
+        return int(deepseek_hit)
+    return int(getattr(usage, "cached_prompt_text_tokens", 0) or 0)
+
+
+def extract_total_input_tokens(usage: Any) -> int:
+    """返回供应商报告的完整输入 token 数，优先 DeepSeek hit + miss。"""
+    cache_miss = getattr(usage, "prompt_cache_miss_tokens", None)
+    if cache_miss is not None:
+        return int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0) + int(
+            cache_miss or 0
+        )
+    return int(getattr(usage, "prompt_tokens", 0) or 0)
+
+
 class BaseChatAdapter(ABC):
     """
     Chat 适配器基类

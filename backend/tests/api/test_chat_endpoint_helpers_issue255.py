@@ -43,10 +43,15 @@ def test_calculate_model_usage_prefers_provider_totals(monkeypatch):
         reasoning_content=None,
         tool_calls=None,
         tools=None,
-        usage=SimpleNamespace(prompt_tokens=13, completion_tokens=5),
+        usage=SimpleNamespace(
+            prompt_tokens=13,
+            completion_tokens=5,
+            cache_read_tokens=4,
+            cache_creation_tokens=2,
+        ),
         model_id="unit-model",
         provider="stub",
-    ) == (13, 5)
+    ) == (13, 5, 4, 2, 13)
 
 
 def test_calculate_model_usage_counts_messages_and_output_without_provider_totals(
@@ -64,7 +69,7 @@ def test_calculate_model_usage_counts_messages_and_output_without_provider_total
         usage=None,
         model_id="unit-model",
         provider="stub",
-    ) == (11, 11)
+    ) == (11, 11, 0, 0, 11)
 
 
 def test_calculate_model_usage_counts_tool_request_payloads(monkeypatch):
@@ -84,7 +89,7 @@ def test_calculate_model_usage_counts_tool_request_payloads(monkeypatch):
         usage=None,
         model_id="unit-model",
         provider="stub",
-    ) == (18, 6)
+    ) == (18, 6, 0, 0, 18)
     message_tokens.assert_called_once_with(
         [{"role": "user", "content": "question"}],
         "unit-model",

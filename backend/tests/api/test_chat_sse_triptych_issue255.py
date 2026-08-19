@@ -362,7 +362,13 @@ async def test_chat_stream_persists_reasoning_content_and_usage(monkeypatch):
     assert assistant.content == "answer"
     assert assistant.reasoning_content == "thinking"
     assert assistant.round_status == MessageRoundStatus.COMPLETED
-    assert assistant.token_usage == {"prompt": 29, "completion": 11}
+    assert assistant.token_usage == {
+        "prompt": 29,
+        "completion": 11,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 29,
+    }
     assistant.save.assert_awaited_once()
     chat.activate_conversation_branch.assert_awaited_once()
     record_usage.assert_awaited_once_with(
@@ -690,6 +696,12 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     assert assistant.content == "answer"
     assert assistant.reasoning_content == "thinking"
     assert assistant.round_status == MessageRoundStatus.COMPLETED
-    assert assistant.token_usage == {"prompt": 8, "completion": 2}
+    assert assistant.token_usage == {
+        "prompt": 8,
+        "completion": 2,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 8,
+    }
     assistant.save.assert_awaited_once()
     assert chat.activate_conversation_branch.await_count == 2

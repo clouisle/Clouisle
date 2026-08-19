@@ -252,7 +252,13 @@ async def test_stream_finish_length_emits_truncation_and_records_zero_usage(
     assert "event: output_truncated" in body
     assert "event: message_end" in body
     assert record_usage.await_count == 0
-    assert chat_env.created[1].token_usage == {"prompt": 8, "completion": 0}
+    assert chat_env.created[1].token_usage == {
+        "prompt": 8,
+        "completion": 0,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 8,
+    }
     assert chat_env.created[1].is_manually_stopped is False
 
 

@@ -136,6 +136,8 @@
       "firstTokenTime": "首 Token 耗时",
       "totalTime": "总耗时",
       "speed": "生成速度",
+      "cachedTokens": "缓存命中",
+      "cacheCreationTokens": "缓存写入",
       "mermaidDiagram": "图表",
       "mermaidCode": "代码",
       "mermaidZoomIn": "放大",

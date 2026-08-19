@@ -1,14 +1,16 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from app.llm.adapters.chat.anthropic_adapter import AnthropicAdapter
 from app.llm.types import (
     FinishReason,
+    FunctionCall,
     FunctionDefinition,
     Message,
     MessageRole,
+    ToolCall,
     ToolDefinition,
 )
 
@@ -71,7 +73,12 @@ async def test_chat_builds_request_and_normalizes_mixed_response():
                 type="tool_use", id="call-1", name="lookup", input={"q": "docs"}
             ),
         ],
-        usage=SimpleNamespace(input_tokens=9, output_tokens=4),
+        usage=SimpleNamespace(
+            input_tokens=9,
+            output_tokens=4,
+            cache_read_input_tokens=6,
+            cache_creation_input_tokens=3,
+        ),
     )
     client = build_client(response=response)
     adapter = build_adapter(
@@ -123,6 +130,9 @@ async def test_chat_builds_request_and_normalizes_mixed_response():
         "prompt_tokens": 9,
         "completion_tokens": 4,
         "total_tokens": 13,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 3,
+        "total_input_tokens": 18,
     }
     client.close.assert_awaited_once()
 
@@ -237,4 +247,200 @@ async def test_chat_stream_closes_client_when_iteration_fails():
         ):
             pass
 
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_stream_captures_usage_from_message_delta():
+    events = [
+        SimpleNamespace(
+            type="content_block_delta",
+            delta=SimpleNamespace(type="text_delta", text="answer"),
+        ),
+        SimpleNamespace(
+            type="message_delta",
+            delta=SimpleNamespace(stop_reason="end_turn"),
+            usage=SimpleNamespace(
+                input_tokens=9,
+                output_tokens=4,
+                cache_read_input_tokens=6,
+                cache_creation_input_tokens=3,
+            ),
+        ),
+    ]
+    stream = AsyncStream(events)
+    client = build_client(stream=stream)
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert chunks[-1].finish_reason is FinishReason.STOP
+    assert chunks[-1].usage.model_dump() == {
+        "prompt_tokens": 9,
+        "completion_tokens": 4,
+        "total_tokens": 13,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 3,
+        "total_input_tokens": 18,
+    }
+    client.close.assert_awaited_once()
+
+
+LONG_TEXT = "cache me " * 2000  # cl100k 估算远超 1024 token 缓存门槛
+
+
+def _tool_def():
+    return ToolDefinition(
+        type="function",
+        function=FunctionDefinition(
+            name="lookup",
+            description="lookup",
+            parameters={"type": "object", "properties": {"q": {"type": "string"}}},
+        ),
+    )
+
+
+def _tool_use_message():
+    return Message(
+        role=MessageRole.ASSISTANT,
+        content="first answer",
+        tool_calls=[
+            ToolCall(
+                id="call-1",
+                type="function",
+                function=FunctionCall(name="lookup", arguments='{"q":"x"}'),
+            )
+        ],
+    )
+
+
+def _tool_result_message():
+    return Message(role=MessageRole.TOOL, tool_call_id="call-1", content="tool result")
+
+
+@pytest.mark.anyio
+async def test_chat_adds_cache_breakpoints_to_system_tools_and_history():
+    messages = [
+        Message(role=MessageRole.SYSTEM, content=LONG_TEXT),
+        Message(role=MessageRole.USER, content="first question " + LONG_TEXT),
+        _tool_use_message(),
+        _tool_result_message(),
+        Message(role=MessageRole.USER, content="second question " + LONG_TEXT),
+        _tool_use_message(),
+        _tool_result_message(),
+        Message(role=MessageRole.USER, content="third question " + LONG_TEXT),
+    ]
+    response = SimpleNamespace(
+        id="response-1",
+        content=[SimpleNamespace(type="text", text="done")],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=9, output_tokens=4),
+    )
+    client = build_client(response=response)
+    adapter = build_adapter()
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        await adapter.chat(messages, tools=[_tool_def()])
+
+    request = client.messages.create.await_args.kwargs
+    # system → 块数组 + cache_control
+    assert request["system"] == [
+        {"type": "text", "text": LONG_TEXT, "cache_control": {"type": "ephemeral"}}
+    ]
+    # tools → 最后一个工具带 cache_control
+    assert request["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+    # 第一条 + 倒数第二条真 user 消息打点，当前请求的最后一条 user 不打点
+    user_contents = [
+        msg["content"] for msg in request["messages"] if msg["role"] == "user"
+    ]
+    assert len(user_contents) == 5  # 3 真 user + 2 tool_result
+    assert user_contents[0][0]["cache_control"] == {"type": "ephemeral"}
+    assert user_contents[2][0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in user_contents[3][0]  # tool_result 不打点
+    assert "cache_control" not in user_contents[4][0]  # 当前请求 user 不打点
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_stream_adds_cache_breakpoints():
+    events = [
+        SimpleNamespace(
+            type="content_block_delta",
+            delta=SimpleNamespace(type="text_delta", text="answer"),
+        ),
+        SimpleNamespace(
+            type="message_delta",
+            delta=SimpleNamespace(stop_reason="end_turn"),
+            usage=SimpleNamespace(input_tokens=9, output_tokens=4),
+        ),
+    ]
+    stream = AsyncStream(events)
+    client = build_client(stream=stream)
+    client.messages.stream = Mock(return_value=stream)
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [
+                    Message(role=MessageRole.SYSTEM, content=LONG_TEXT),
+                    Message(role=MessageRole.USER, content="question " + LONG_TEXT),
+                ],
+                tools=[_tool_def()],
+            )
+        ]
+
+    request = client.messages.stream.call_args.kwargs
+    assert request["system"] == [
+        {"type": "text", "text": LONG_TEXT, "cache_control": {"type": "ephemeral"}}
+    ]
+    assert request["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert request["messages"][0]["content"][0]["cache_control"] == {
+        "type": "ephemeral"
+    }
+    assert chunks[-1].finish_reason is FinishReason.STOP
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_skips_cache_breakpoints_when_disabled_or_too_short():
+    # 开关关闭：即使长前缀也不打点
+    adapter = build_adapter()
+    adapter.model_config.config = {"cache_control": False}
+    response = SimpleNamespace(
+        id="response-1",
+        content=[SimpleNamespace(type="text", text="done")],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=9, output_tokens=4),
+    )
+    client = build_client(response=response)
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        await adapter.chat(
+            [
+                Message(role=MessageRole.SYSTEM, content=LONG_TEXT),
+                Message(role=MessageRole.USER, content="question"),
+            ]
+        )
+    request = client.messages.create.await_args.kwargs
+    assert request["system"] == LONG_TEXT
+    assert "cache_control" not in request["messages"][0]["content"]
+    client.close.assert_awaited_once()
+
+    # 前缀过短：即使开关开启也不打点
+    client = build_client(response=response)
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        await build_adapter().chat(
+            [
+                Message(role=MessageRole.SYSTEM, content="short"),
+                Message(role=MessageRole.USER, content="hi"),
+            ]
+        )
+    request = client.messages.create.await_args.kwargs
+    assert request["system"] == "short"
+    assert request["messages"][0]["content"] == "hi"
     client.close.assert_awaited_once()

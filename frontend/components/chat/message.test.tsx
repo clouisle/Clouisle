@@ -153,7 +153,14 @@ describe('message rendering', () => {
           preservedPartialProgress: true,
           errorMessage: 'Network fell over',
           isManuallyStopped: true,
-          usage: { prompt_tokens: 1200, completion_tokens: 34, total_tokens: 1234 },
+          usage: {
+            prompt_tokens: 1200,
+            completion_tokens: 34,
+            total_tokens: 1234,
+            cache_read_tokens: 900,
+            cache_creation_tokens: 100,
+            total_input_tokens: 1200,
+          },
           timing: { first_token_ms: 250, duration_ms: 1234, tokens_per_second: 12.5 },
         },
         parts: [{ type: 'text', text: 'Partial answer [[cite:1]]' }],
@@ -167,6 +174,10 @@ describe('message rendering', () => {
     expect(html).toContain('chat.message.manuallyStopped')
     expect(html).toContain('1,200')
     expect(html).toContain('1.2s')
+    expect(html).toContain('chat.message.cachedTokens')
+    expect(html).toContain('chat.message.cacheCreationTokens')
+    expect(html).toContain('900')
+    expect(html).toContain('100')
     expect(html).toContain('chat.message.helpful')
     expect(html).toContain('chat.message.regenerate')
   })

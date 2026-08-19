@@ -178,11 +178,24 @@ describe('useChat', () => {
     expect(result.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
     expect(result.messages[0].parts[0]).toMatchObject({ type: 'text', text: 'Hello' })
 
+    const terminalData = {
+      version_number: 2,
+      version_count: 3,
+      usage: {
+        prompt_tokens: 1200,
+        completion_tokens: 34,
+        total_tokens: 1234,
+        cache_read_tokens: 900,
+        cache_creation_tokens: 100,
+      },
+      timing: { first_token_ms: 250, duration_ms: 1234, tokens_per_second: 12.5 },
+    }
+
     streamEvents = [
       { event: 'message_start', data: { conversation_id: 'conversation-1', message_id: 'message-1', user_message_id: 'user-message-1' } },
       { event: 'content_delta', data: { delta: 'Hi there' } },
       releaseStream.promise,
-      { event: 'message_end', data: { version_number: 2, version_count: 3 } },
+      { event: 'message_end', data: terminalData },
     ]
     response.resolve(new Response())
     await flush()
@@ -191,7 +204,7 @@ describe('useChat', () => {
     expect(result.isStreaming).toBe(true)
     expect(onStreamStart).toHaveBeenCalledTimes(1)
 
-    releaseStream.resolve({ event: 'message_end', data: { version_number: 2, version_count: 3 } })
+    releaseStream.resolve({ event: 'message_end', data: terminalData })
     await sending
 
     expect(result.status).toBe('idle')
@@ -203,7 +216,12 @@ describe('useChat', () => {
       id: 'message-1',
       versionNumber: 2,
       versionCount: 3,
-      metadata: { isLoading: false, isError: false },
+      metadata: {
+        isLoading: false,
+        isError: false,
+        usage: terminalData.usage,
+        timing: terminalData.timing,
+      },
     })
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'Hi there', state: 'done' })
   })

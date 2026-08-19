@@ -257,7 +257,12 @@ async def test_chat_builds_structured_output_without_thinking(
     assert request["top_p"] == 0.8
     assert request["extra_body"] == {"service_tier": "standard"}
     assert result.content == '{"ok": true}'
-    assert result.usage == Usage(prompt_tokens=3, completion_tokens=2, total_tokens=5)
+    assert result.usage == Usage(
+        prompt_tokens=3,
+        completion_tokens=2,
+        total_tokens=5,
+        total_input_tokens=3,
+    )
     client.close.assert_awaited_once()
 
 

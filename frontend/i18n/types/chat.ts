@@ -138,6 +138,8 @@ export type ChatMessages = {
       firstTokenTime: string
       totalTime: string
       speed: string
+      cachedTokens: string
+      cacheCreationTokens: string
       mermaidDiagram: string
       mermaidCode: string
       mermaidZoomIn: string

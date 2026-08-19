@@ -135,13 +135,28 @@ def _calculate_model_usage(
     usage: Any | None,
     model_id: str | None,
     provider: str | None,
-) -> tuple[int, int]:
-    """Prefer provider totals and estimate only when they are unavailable."""
+) -> tuple[int, int, int, int, int]:
+    """Prefer provider totals and estimate only when they are unavailable.
+
+    Returns (prompt, completion, cache_read, cache_creation, total_input).
+    """
     prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
     completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    cache_read_tokens = int(getattr(usage, "cache_read_tokens", 0) or 0)
+    cache_creation_tokens = int(getattr(usage, "cache_creation_tokens", 0) or 0)
+    total_input_tokens = int(getattr(usage, "total_input_tokens", 0) or prompt_tokens)
     if prompt_tokens or completion_tokens:
-        return prompt_tokens, completion_tokens
+        return (
+            prompt_tokens,
+            completion_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            total_input_tokens,
+        )
 
+    estimated_prompt_tokens = count_message_tokens(
+        messages, model_id, provider, include_tool_calls=True
+    ) + count_tool_definition_tokens(tools, model_id, provider)
     estimated_completion_tokens = count_tokens(
         content or "", model_id, provider
     ) + count_tokens(reasoning_content or "", model_id, provider)
@@ -151,9 +166,11 @@ def _calculate_model_usage(
         )
 
     return (
-        count_message_tokens(messages, model_id, provider, include_tool_calls=True)
-        + count_tool_definition_tokens(tools, model_id, provider),
+        estimated_prompt_tokens,
         estimated_completion_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        estimated_prompt_tokens,
     )
 
 
@@ -1415,6 +1432,9 @@ async def chat(
         final_response = None
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        total_cache_read_tokens = 0
+        total_cache_creation_tokens = 0
+        total_usage_input_tokens = 0
         max_iterations_reached = False
 
         while iteration < max_iterations:
@@ -1515,7 +1535,13 @@ async def chat(
                     tools=tools,
                 )
 
-            prompt_tokens, completion_tokens = _calculate_model_usage(
+            (
+                prompt_tokens,
+                completion_tokens,
+                cache_read_tokens,
+                cache_creation_tokens,
+                iteration_total_input_tokens,
+            ) = _calculate_model_usage(
                 tools=tools,
                 messages=messages_for_llm,
                 content=response.content,
@@ -1527,6 +1553,9 @@ async def chat(
             )
             total_prompt_tokens += prompt_tokens
             total_completion_tokens += completion_tokens
+            total_cache_read_tokens += cache_read_tokens
+            total_cache_creation_tokens += cache_creation_tokens
+            total_usage_input_tokens += iteration_total_input_tokens
 
             if response.tool_calls:
 
@@ -1705,6 +1734,9 @@ async def chat(
             token_usage={
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
+                "cache_read": total_cache_read_tokens,
+                "cache_creation": total_cache_creation_tokens,
+                "total_input": total_usage_input_tokens,
             },
             duration_ms=duration_ms,
             tool_calls=final_tool_calls,
@@ -1722,6 +1754,8 @@ async def chat(
             token_usage={
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
+                "cache_read": total_cache_read_tokens,
+                "cache_creation": total_cache_creation_tokens,
             },
         )
 
@@ -1755,6 +1789,9 @@ async def chat(
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "total_tokens": prompt_tokens + completion_tokens,
+                    "cache_read_tokens": total_cache_read_tokens,
+                    "cache_creation_tokens": total_cache_creation_tokens,
+                    "total_input_tokens": total_usage_input_tokens,
                 },
             ),
             msg_key="chat_success",
@@ -2052,6 +2089,9 @@ async def chat_stream(
                     max_iterations_reached = False
                     aggregate_input_tokens = 0
                     aggregate_output_tokens = 0
+                    aggregate_cache_read_tokens = 0
+                    aggregate_cache_creation_tokens = 0
+                    aggregate_total_input_tokens = 0
 
                     while iteration < max_iterations:
                         iteration += 1
@@ -2259,6 +2299,10 @@ async def chat_stream(
                                         yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                    if stream_usage is None:
+                                        continue
                                     break
                         except ContextLengthError as context_error:
                             if (
@@ -2373,6 +2417,10 @@ async def chat_stream(
                                         yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                    if stream_usage is None:
+                                        continue
                                     break
 
                         # Fallback: if stream yields nothing and no tool calls, do a non-stream call
@@ -2407,20 +2455,29 @@ async def chat_stream(
                                     first_token_time = time.time()
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
 
-                        iteration_input_tokens, iteration_output_tokens = (
-                            _calculate_model_usage(
-                                tools=tools,
-                                messages=messages_for_llm,
-                                content=iteration_content,
-                                reasoning_content=iteration_reasoning,
-                                tool_calls=collected_tool_calls,
-                                usage=stream_usage,
-                                model_id=tokenizer_model_id,
-                                provider=model_provider,
-                            )
+                        (
+                            iteration_input_tokens,
+                            iteration_output_tokens,
+                            iteration_cache_read_tokens,
+                            iteration_cache_creation_tokens,
+                            iteration_total_input_tokens,
+                        ) = _calculate_model_usage(
+                            tools=tools,
+                            messages=messages_for_llm,
+                            content=iteration_content,
+                            reasoning_content=iteration_reasoning,
+                            tool_calls=collected_tool_calls,
+                            usage=stream_usage,
+                            model_id=tokenizer_model_id,
+                            provider=model_provider,
                         )
                         aggregate_input_tokens += iteration_input_tokens
                         aggregate_output_tokens += iteration_output_tokens
+                        aggregate_cache_read_tokens += iteration_cache_read_tokens
+                        aggregate_cache_creation_tokens += (
+                            iteration_cache_creation_tokens
+                        )
+                        aggregate_total_input_tokens += iteration_total_input_tokens
                         if not used_nonstream_fallback:
                             await model_manager.record_stream_usage(
                                 team_id=str(agent.team_id),
@@ -2693,6 +2750,9 @@ async def chat_stream(
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
+                        "cache_read": aggregate_cache_read_tokens,
+                        "cache_creation": aggregate_cache_creation_tokens,
+                        "total_input": aggregate_total_input_tokens,
                     }
                     await assistant_msg.save()
                     branch_prefix = await get_prefix_path_before(user_msg)
@@ -2737,7 +2797,7 @@ async def chat_stream(
                         if duration_ms > 0 and output_tokens > 0
                         else None
                     )
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens, 'cache_read_tokens': aggregate_cache_read_tokens, 'cache_creation_tokens': aggregate_cache_creation_tokens, 'total_input_tokens': aggregate_total_input_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
 
                 except (QuotaExceededError, InsufficientQuotaError) as e:
                     await persist_partial_round_error(
@@ -3444,6 +3504,9 @@ async def edit_user_message_stream(
                     working_history_override: list[dict[str, Any]] | None = None
                     aggregate_input_tokens = 0
                     aggregate_output_tokens = 0
+                    aggregate_cache_read_tokens = 0
+                    aggregate_cache_creation_tokens = 0
+                    aggregate_total_input_tokens = 0
                     created_message_count = 2
 
                     while iteration < max_iterations:
@@ -3610,6 +3673,10 @@ async def edit_user_message_stream(
                                         yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                    if stream_usage is None:
+                                        continue
                                     break
                         except ContextLengthError as context_error:
                             if (
@@ -3704,22 +3771,33 @@ async def edit_user_message_stream(
                                         yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    break
-
-                        iteration_input_tokens, iteration_output_tokens = (
-                            _calculate_model_usage(
-                                tools=tools,
-                                messages=messages_for_llm,
-                                content=full_content,
-                                reasoning_content=full_reasoning,
-                                tool_calls=collected_tool_calls,
-                                usage=stream_usage,
-                                model_id=tokenizer_model_id,
-                                provider=model_provider,
-                            )
+                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                    if stream_usage is None:
+                                        continue
+                        (
+                            iteration_input_tokens,
+                            iteration_output_tokens,
+                            iteration_cache_read_tokens,
+                            iteration_cache_creation_tokens,
+                            iteration_total_input_tokens,
+                        ) = _calculate_model_usage(
+                            tools=tools,
+                            messages=messages_for_llm,
+                            content=full_content,
+                            reasoning_content=full_reasoning,
+                            tool_calls=collected_tool_calls,
+                            usage=stream_usage,
+                            model_id=tokenizer_model_id,
+                            provider=model_provider,
                         )
                         aggregate_input_tokens += iteration_input_tokens
                         aggregate_output_tokens += iteration_output_tokens
+                        aggregate_cache_read_tokens += iteration_cache_read_tokens
+                        aggregate_cache_creation_tokens += (
+                            iteration_cache_creation_tokens
+                        )
+                        aggregate_total_input_tokens += iteration_total_input_tokens
 
                         if client_disconnected:
                             assistant_msg.content = full_content
@@ -3944,6 +4022,9 @@ async def edit_user_message_stream(
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
+                        "cache_read": aggregate_cache_read_tokens,
+                        "cache_creation": aggregate_cache_creation_tokens,
+                        "total_input": aggregate_total_input_tokens,
                     }
                     await assistant_msg.save()
                     await activate_edited_path()
@@ -3996,7 +4077,7 @@ async def edit_user_message_stream(
                         )
                     except Exception:
                         logger.exception("Failed to write message edit audit log")
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': total_tokens}, 'timing': {'first_token_ms': assistant_msg.first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number})}\n\n"
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': total_tokens, 'cache_read_tokens': aggregate_cache_read_tokens, 'cache_creation_tokens': aggregate_cache_creation_tokens, 'total_input_tokens': aggregate_total_input_tokens}, 'timing': {'first_token_ms': assistant_msg.first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number})}\n\n"
                 except (QuotaExceededError, InsufficientQuotaError) as e:
                     logger.warning(
                         "Quota exceeded during message edit: conversation=%s agent=%s error=%s",
@@ -4472,6 +4553,9 @@ async def regenerate_message(
                     max_iterations_reached = False
                     aggregate_input_tokens = 0
                     aggregate_output_tokens = 0
+                    aggregate_cache_read_tokens = 0
+                    aggregate_cache_creation_tokens = 0
+                    aggregate_total_input_tokens = 0
 
                     while iteration < max_iterations:
                         iteration += 1
@@ -4656,6 +4740,10 @@ async def regenerate_message(
                                         yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                    if stream_usage is None:
+                                        continue
                                     break
                         except ContextLengthError as context_error:
                             if (
@@ -4759,22 +4847,33 @@ async def regenerate_message(
                                         yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                     if chunk.finish_reason == FinishReason.LENGTH:
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    break
-
-                        iteration_input_tokens, iteration_output_tokens = (
-                            _calculate_model_usage(
-                                tools=tools,
-                                messages=messages_for_llm,
-                                content=full_content,
-                                reasoning_content=full_reasoning,
-                                tool_calls=collected_tool_calls,
-                                usage=stream_usage,
-                                model_id=tokenizer_model_id,
-                                provider=model_provider,
-                            )
+                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                    if stream_usage is None:
+                                        continue
+                        (
+                            iteration_input_tokens,
+                            iteration_output_tokens,
+                            iteration_cache_read_tokens,
+                            iteration_cache_creation_tokens,
+                            iteration_total_input_tokens,
+                        ) = _calculate_model_usage(
+                            tools=tools,
+                            messages=messages_for_llm,
+                            content=full_content,
+                            reasoning_content=full_reasoning,
+                            tool_calls=collected_tool_calls,
+                            usage=stream_usage,
+                            model_id=tokenizer_model_id,
+                            provider=model_provider,
                         )
                         aggregate_input_tokens += iteration_input_tokens
                         aggregate_output_tokens += iteration_output_tokens
+                        aggregate_cache_read_tokens += iteration_cache_read_tokens
+                        aggregate_cache_creation_tokens += (
+                            iteration_cache_creation_tokens
+                        )
+                        aggregate_total_input_tokens += iteration_total_input_tokens
 
                         # If client disconnected, save current stopped state and exit
                         if client_disconnected:
@@ -5020,6 +5119,9 @@ async def regenerate_message(
                     new_message.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
+                        "cache_read": aggregate_cache_read_tokens,
+                        "cache_creation": aggregate_cache_creation_tokens,
+                        "total_input": aggregate_total_input_tokens,
                     }
                     await new_message.save()
                     prefix = await get_prefix_path_before(new_message)
@@ -5054,7 +5156,7 @@ async def regenerate_message(
                         if duration_ms > 0 and output_tokens > 0
                         else None
                     )
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': effective_version_number, 'version_count': effective_version_count})}\n\n"
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens, 'cache_read_tokens': aggregate_cache_read_tokens, 'cache_creation_tokens': aggregate_cache_creation_tokens, 'total_input_tokens': aggregate_total_input_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': effective_version_number, 'version_count': effective_version_count})}\n\n"
 
                 except (QuotaExceededError, InsufficientQuotaError) as e:
                     logger.warning(

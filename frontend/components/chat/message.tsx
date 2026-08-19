@@ -502,7 +502,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
 
     // Token usage and timing stats from message_end
-    const usage = message.metadata?.usage as { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined
+    const usage = message.metadata?.usage as { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_read_tokens?: number; cache_creation_tokens?: number } | undefined
     const timing = message.metadata?.timing as { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null } | undefined
 
     // Group sources together (only document sources for citations)
@@ -1664,7 +1664,7 @@ function TokenStatsContent({
   timing,
   t,
 }: {
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_read_tokens?: number; cache_creation_tokens?: number }
   timing?: { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null }
   t: (key: string) => string
 }) {
@@ -1672,6 +1672,8 @@ function TokenStatsContent({
     if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
     return `${ms}ms`
   }
+  const cacheReadTokens = usage.cache_read_tokens ?? 0
+  const cacheCreationTokens = usage.cache_creation_tokens ?? 0
 
   return (
     <div className="space-y-1.5">
@@ -1683,6 +1685,18 @@ function TokenStatsContent({
         <span className="text-muted-foreground">{t('outputTokens')}</span>
         <span className="font-mono tabular-nums">{usage.completion_tokens.toLocaleString()}</span>
       </div>
+      {cacheReadTokens > 0 && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('cachedTokens')}</span>
+          <span className="font-mono tabular-nums">{cacheReadTokens.toLocaleString()}</span>
+        </div>
+      )}
+      {cacheCreationTokens > 0 && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('cacheCreationTokens')}</span>
+          <span className="font-mono tabular-nums">{cacheCreationTokens.toLocaleString()}</span>
+        </div>
+      )}
       {timing?.first_token_ms != null && (
         <div className="flex justify-between gap-8">
           <span className="text-muted-foreground">{t('firstTokenTime')}</span>
