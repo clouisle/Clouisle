@@ -1251,25 +1251,6 @@ async def delete_message(
             status_code=404,
         )
 
-    message = await Message.filter(
-        id=message_id,
-        conversation_id=conversation_id,
-    ).first()
-
-    if not message:
-        raise BusinessError(
-            code=ResponseCode.MESSAGE_NOT_FOUND,
-            msg_key="message_not_found",
-            status_code=404,
-        )
-
-    # Update stats atomically to prevent race conditions
-    tokens_to_remove = 0
-    if message.token_usage:
-        tokens_to_remove = message.token_usage.get(
-            "prompt", 0
-        ) + message.token_usage.get("completion", 0)
-
     async with in_transaction() as conn:
         locked_conversation = await (
             Conversation.filter(id=conversation.id)
@@ -1284,6 +1265,28 @@ async def delete_message(
                 status_code=404,
             )
 
+        locked_message = await (
+            Message.filter(
+                id=message_id,
+                conversation_id=locked_conversation.id,
+            )
+            .using_db(conn)
+            .select_for_update()
+            .first()
+        )
+        if not locked_message:
+            raise BusinessError(
+                code=ResponseCode.MESSAGE_NOT_FOUND,
+                msg_key="message_not_found",
+                status_code=404,
+            )
+
+        tokens_to_remove = 0
+        if locked_message.token_usage:
+            tokens_to_remove = locked_message.token_usage.get(
+                "prompt", 0
+            ) + locked_message.token_usage.get("completion", 0)
+
         audit_before = AuditLogService.snapshot(locked_conversation, "conversation")
         updated_at = now_utc()
         await (
@@ -1297,9 +1300,7 @@ async def delete_message(
         )
         await locked_conversation.refresh_from_db(using_db=conn)
         audit_after = AuditLogService.snapshot(locked_conversation, "conversation")
-
-    # Delete message
-    await message.delete()
+        await locked_message.delete(using_db=conn)
 
     await AuditLogService.log(
         user=current_user,

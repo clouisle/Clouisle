@@ -34,6 +34,9 @@ class Query:
     def using_db(self, *_args):
         return self
 
+    def prefetch_related(self, *args, **kwargs):
+        return self._chain("prefetch_related", *args, **kwargs)
+
     def select_for_update(self):
         return self
 
@@ -109,3 +112,4 @@ async def test_delete_message_defaults_missing_token_usage_counters(
     update = next(call for call in conversation_query.calls if call[0] == "update")
     assert update[2]["token_usage"].right.value == expected_tokens
     message.delete.assert_awaited_once()
+    assert "using_db" in message.delete.await_args.kwargs

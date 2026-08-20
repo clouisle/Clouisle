@@ -655,6 +655,7 @@ async def test_delete_message_updates_token_totals(monkeypatch):
         },
     }
     message.delete.assert_awaited_once()
+    assert "using_db" in message.delete.await_args.kwargs
 
     message_query.value = None
     with pytest.raises(BusinessError) as error:
