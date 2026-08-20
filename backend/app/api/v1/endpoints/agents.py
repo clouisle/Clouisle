@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from tortoise.expressions import F, Q
 from tortoise.functions import Count
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.api.team_access import check_team_access
@@ -1269,28 +1270,33 @@ async def delete_message(
             "prompt", 0
         ) + message.token_usage.get("completion", 0)
 
-    conversation_message_count = getattr(conversation, "message_count", 0) or 0
-    conversation_token_usage = getattr(conversation, "token_usage", 0) or 0
-    conversation_updated_at = getattr(conversation, "updated_at", None)
-    audit_before = {
-        "message_count": conversation_message_count,
-        "token_usage": conversation_token_usage,
-        "updated_at": (
-            conversation_updated_at.isoformat() if conversation_updated_at else None
-        ),
-    }
-    updated_at = now_utc()
-    audit_after = {
-        "message_count": conversation_message_count - 1,
-        "token_usage": conversation_token_usage - tokens_to_remove,
-        "updated_at": updated_at.isoformat(),
-    }
+    async with in_transaction() as conn:
+        locked_conversation = await (
+            Conversation.filter(id=conversation.id)
+            .using_db(conn)
+            .select_for_update()
+            .first()
+        )
+        if not locked_conversation:
+            raise BusinessError(
+                code=ResponseCode.CONVERSATION_NOT_FOUND,
+                msg_key="conversation_not_found",
+                status_code=404,
+            )
 
-    await Conversation.filter(id=conversation.id).update(
-        message_count=F("message_count") - 1,
-        token_usage=F("token_usage") - tokens_to_remove,
-        updated_at=updated_at,
-    )
+        audit_before = AuditLogService.snapshot(locked_conversation, "conversation")
+        updated_at = now_utc()
+        await (
+            Conversation.filter(id=locked_conversation.id)
+            .using_db(conn)
+            .update(
+                message_count=F("message_count") - 1,
+                token_usage=F("token_usage") - tokens_to_remove,
+                updated_at=updated_at,
+            )
+        )
+        await locked_conversation.refresh_from_db(using_db=conn)
+        audit_after = AuditLogService.snapshot(locked_conversation, "conversation")
 
     # Delete message
     await message.delete()
@@ -1300,11 +1306,12 @@ async def delete_message(
         action="delete_message",
         resource_type="message",
         resource_id=message_id,
-        resource_name=getattr(conversation, "title", None) or str(conversation_id),
+        resource_name=getattr(locked_conversation, "title", None)
+        or str(conversation_id),
         operation="delete",
         status="success",
         request=request,
-        changes={"before": audit_before, "after": audit_after},
+        changes=AuditLogService.build_changes(audit_before, audit_after),
         metadata={"conversation_id": str(conversation_id)},
     )
 

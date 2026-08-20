@@ -99,6 +99,12 @@ class AuditLogService:
             "embedding_dimension",
             "settings",
         ),
+        "conversation": (
+            "title",
+            "message_count",
+            "token_usage",
+            "updated_at",
+        ),
         "document": (
             "name",
             "doc_type",
@@ -168,7 +174,6 @@ class AuditLogService:
             "is_enabled",
             "priority",
         ),
-        "conversation": ("title",),
         "skill": ("name", "display_name", "is_enabled", "version"),
         "team_member": ("team_id", "user_id", "role"),
         "tool_share": ("tool_id", "shared_with_team_id", "permission"),
