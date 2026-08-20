@@ -248,6 +248,9 @@ async def test_nonstream_retries_prepare_context_and_cleans_user_input_request(
         "prompt_tokens": 8,
         "completion_tokens": 4,
         "total_tokens": 12,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 8,
     }
     assert created[0].file_urls == [{"url": "updated"}]
     assert created[-1].content == "clean answer"
@@ -320,4 +323,4 @@ async def test_stream_empty_upstream_falls_back_to_nonstream_reasoning_and_conte
     assert created[-1].content == "fallback content"
     assert created[-1].reasoning_content == "fallback reasoning"
     assert created[-1].round_status == MessageRoundStatus.COMPLETED
-    record_usage.assert_awaited_once()
+    record_usage.assert_not_awaited()

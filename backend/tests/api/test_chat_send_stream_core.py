@@ -193,7 +193,13 @@ async def test_chat_success_persists_round_and_usage(core_chat, monkeypatch):
     assert result["data"].usage["total_tokens"] == 10
     assert user_message.role == MessageRole.USER
     assert assistant_message.branch_parent_id == user_message.id
-    assert assistant_message.token_usage == {"prompt": 7, "completion": 3}
+    assert assistant_message.token_usage == {
+        "prompt": 7,
+        "completion": 3,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 7,
+    }
     assert assistant_message.round_status == MessageRoundStatus.COMPLETED
     chat_api.activate_conversation_branch.assert_awaited_once()
 

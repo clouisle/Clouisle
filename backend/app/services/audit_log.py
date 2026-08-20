@@ -99,6 +99,12 @@ class AuditLogService:
             "embedding_dimension",
             "settings",
         ),
+        "conversation": (
+            "title",
+            "message_count",
+            "token_usage",
+            "updated_at",
+        ),
         "document": (
             "name",
             "doc_type",
@@ -168,7 +174,6 @@ class AuditLogService:
             "is_enabled",
             "priority",
         ),
-        "conversation": ("title",),
         "skill": ("name", "display_name", "is_enabled", "version"),
         "team_member": ("team_id", "user_id", "role"),
         "tool_share": ("tool_id", "shared_with_team_id", "permission"),
@@ -313,22 +318,28 @@ class AuditLogService:
         sanitized: dict[str, Any] = {}
 
         for key, value in data.items():
-            # 检查是否是敏感字段
-            if any(
+            # Conversation token counters are safe numeric metrics, not secrets.
+            if (
+                key == "token_usage"
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            ):
+                sanitized[key] = value
+            # Check whether this is a sensitive field.
+            elif any(
                 sensitive in key.lower()
                 for sensitive in AuditLogService.SENSITIVE_FIELDS
             ):
-                # 脱敏处理
+                # Mask sensitive values while preserving a short preview for strings.
                 if isinstance(value, str) and len(value) > 8:
-                    # 只显示前8位
                     sanitized[key] = value[:8] + "***"
                 else:
                     sanitized[key] = "***"
             elif isinstance(value, dict):
-                # 递归处理嵌套字典
+                # Recursively sanitize nested dictionaries.
                 sanitized[key] = AuditLogService._sanitize_dict(value)
             elif key == "email" and isinstance(value, str):
-                # 邮箱部分隐藏
+                # Mask the email local part.
                 sanitized[key] = AuditLogService._mask_email(value)
             else:
                 sanitized[key] = value

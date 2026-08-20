@@ -1,8 +1,8 @@
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-
 import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
@@ -47,6 +47,12 @@ class Query:
     def group_by(self, *args):
         return self._chain("group_by", *args)
 
+    def using_db(self, *_args):
+        return self
+
+    def select_for_update(self):
+        return self
+
     def values(self, *args):
         return self._chain("values", *args)
 
@@ -64,11 +70,19 @@ class Query:
         self.calls.append(("update", (), kwargs))
         return 1
 
+    async def refresh_from_db(self, **_kwargs):
+        return self.value
+
     def __await__(self):
         async def resolve():
             return self.value
 
         return resolve().__await__()
+
+
+@asynccontextmanager
+async def transaction():
+    yield object()
 
 
 def request() -> Request:
@@ -595,7 +609,17 @@ async def test_conversation_crud_and_missing_paths(monkeypatch):
 @pytest.mark.anyio
 async def test_delete_message_updates_token_totals(monkeypatch):
     current_user = user()
+    fixed_updated_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(agents, "now_utc", lambda: fixed_updated_at)
     conv = conversation(user_id=current_user.id)
+    original_updated_at = conv.updated_at
+
+    async def refresh_from_db(**_kwargs):
+        conv.message_count = 1
+        conv.token_usage = -2
+        conv.updated_at = fixed_updated_at
+
+    conv.refresh_from_db = AsyncMock(side_effect=refresh_from_db)
     message = SimpleNamespace(
         id=uuid4(),
         token_usage={"prompt": 3, "completion": 4},
@@ -603,19 +627,39 @@ async def test_delete_message_updates_token_totals(monkeypatch):
     )
     conv_query = Query(conv)
     message_query = Query(message)
+    audit_log = AsyncMock()
+    monkeypatch.setattr(agents, "in_transaction", transaction)
     monkeypatch.setattr(agents.Conversation, "filter", lambda **_kwargs: conv_query)
     monkeypatch.setattr(agents.Message, "filter", lambda **_kwargs: message_query)
+    monkeypatch.setattr(agents.AuditLogService, "log", audit_log)
 
-    result = await agents.delete_message(conv.id, message.id, current_user)
+    result = await agents.delete_message(conv.id, message.id, request(), current_user)
 
     assert result["data"]["id"] == str(message.id)
     update = next(call for call in conv_query.calls if call[0] == "update")
     assert "token_usage" in update[2]
+    assert update[2]["updated_at"] == fixed_updated_at
+    conv.refresh_from_db.assert_awaited_once()
+    audit_log.assert_awaited_once()
+    assert audit_log.call_args.kwargs["action"] == "delete_message"
+    assert audit_log.call_args.kwargs["changes"] == {
+        "before": {
+            "message_count": 2,
+            "token_usage": 5,
+            "updated_at": original_updated_at.isoformat(),
+        },
+        "after": {
+            "message_count": 1,
+            "token_usage": -2,
+            "updated_at": fixed_updated_at.isoformat(),
+        },
+    }
     message.delete.assert_awaited_once()
+    assert "using_db" in message.delete.await_args.kwargs
 
     message_query.value = None
     with pytest.raises(BusinessError) as error:
-        await agents.delete_message(conv.id, uuid4(), current_user)
+        await agents.delete_message(conv.id, uuid4(), request(), current_user)
     assert error.value.msg_key == "message_not_found"
 
 
@@ -899,7 +943,7 @@ async def test_conversation_optional_and_not_found_branches(monkeypatch):
     assert error.value.msg_key == "conversation_not_found"
 
     with pytest.raises(BusinessError) as error:
-        await agents.delete_message(uuid4(), uuid4(), current_user)
+        await agents.delete_message(uuid4(), uuid4(), request(), current_user)
     assert error.value.msg_key == "conversation_not_found"
 
 
@@ -907,12 +951,15 @@ async def test_conversation_optional_and_not_found_branches(monkeypatch):
 async def test_delete_message_without_usage_updates_count(monkeypatch):
     current_user = user()
     conv = conversation(user_id=current_user.id)
+    monkeypatch.setattr(agents, "in_transaction", transaction)
     message = SimpleNamespace(id=uuid4(), token_usage=None, delete=AsyncMock())
+    conv.refresh_from_db = AsyncMock()
     conv_query = Query(conv)
     monkeypatch.setattr(agents.Conversation, "filter", lambda **_kwargs: conv_query)
     monkeypatch.setattr(agents.Message, "filter", lambda **_kwargs: Query(message))
+    monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
 
-    await agents.delete_message(conv.id, message.id, current_user)
+    await agents.delete_message(conv.id, message.id, request(), current_user)
 
     assert any(call[0] == "update" for call in conv_query.calls)
     message.delete.assert_awaited_once()

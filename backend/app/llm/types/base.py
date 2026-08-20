@@ -3,6 +3,7 @@
 """
 
 from enum import Enum
+
 from pydantic import BaseModel, Field
 
 
@@ -68,6 +69,15 @@ class Usage(BaseModel):
     prompt_tokens: int = Field(default=0, description="输入 token 数")
     completion_tokens: int = Field(default=0, description="输出 token 数")
     total_tokens: int = Field(default=0, description="总 token 数")
+    cache_read_tokens: int = Field(
+        default=0, description="缓存命中 token 数（按折扣价计费）"
+    )
+    cache_creation_tokens: int = Field(
+        default=0, description="缓存写入 token 数（Claude cache_creation）"
+    )
+    total_input_tokens: int = Field(
+        default=0, description="缓存命中率分母：请求的全部输入 token 数"
+    )
 
 
 class TaskStatus(str, Enum):

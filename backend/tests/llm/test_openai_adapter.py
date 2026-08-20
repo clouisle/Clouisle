@@ -71,7 +71,12 @@ async def test_chat_builds_request_and_normalizes_tool_response():
                 ),
             )
         ],
-        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=4, total_tokens=14),
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=4,
+            total_tokens=14,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=6),
+        ),
     )
     client = build_client(response)
     tools = [
@@ -84,7 +89,7 @@ async def test_chat_builds_request_and_normalizes_tool_response():
         )
     ]
 
-    with patch("openai.AsyncOpenAI", return_value=client) as client_class:
+    with patch("openai.AsyncOpenAI", return_value=client):
         result = await adapter.chat(
             [Message(role=MessageRole.USER, content="Find docs")],
             tools=tools,
@@ -121,8 +126,10 @@ async def test_chat_builds_request_and_normalizes_tool_response():
         "prompt_tokens": 10,
         "completion_tokens": 4,
         "total_tokens": 14,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 10,
     }
-    client_class.assert_called_once()
     client.close.assert_awaited_once()
 
 
@@ -246,3 +253,50 @@ async def test_chat_stream_builds_request_and_normalizes_activity_content_and_to
     assert result[3].delta.tool_calls[0].function.arguments == '{"query":"docs"}'
     assert len({chunk.id for chunk in result}) == 1
     client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_chat_stream_captures_usage_from_terminal_chunk():
+    chunks = AsyncChunks(
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="answer", tool_calls=None),
+                        finish_reason="stop",
+                    )
+                ]
+            ),
+            # OpenAI 流式：usage 在 finish 之后的独立 chunk（choices 为空）
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=10,
+                    completion_tokens=4,
+                    total_tokens=14,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=6),
+                ),
+            ),
+        ]
+    )
+    client = build_client(chunks)
+    adapter = build_adapter()
+
+    with patch("openai.AsyncOpenAI", return_value=client):
+        result = [
+            chunk
+            async for chunk in adapter.chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    request = client.chat.completions.create.await_args.kwargs
+    assert request["stream_options"] == {"include_usage": True}
+    assert result[-1].usage.model_dump() == {
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 10,
+    }

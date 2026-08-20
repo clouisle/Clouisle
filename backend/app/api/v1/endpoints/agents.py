@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from tortoise.expressions import F, Q
 from tortoise.functions import Count
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.api.team_access import check_team_access
@@ -52,6 +53,7 @@ from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.models.notification import AutoNotificationType
 from app.core.i18n import t
+from app.core.timezone import now_utc
 from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.services.message_branching import get_visible_conversation_messages
 
@@ -1233,6 +1235,7 @@ async def delete_conversation(
 async def delete_message(
     conversation_id: UUID,
     message_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """Delete a message from a conversation."""
@@ -1248,31 +1251,69 @@ async def delete_message(
             status_code=404,
         )
 
-    message = await Message.filter(
-        id=message_id,
-        conversation_id=conversation_id,
-    ).first()
-
-    if not message:
-        raise BusinessError(
-            code=ResponseCode.MESSAGE_NOT_FOUND,
-            msg_key="message_not_found",
-            status_code=404,
+    async with in_transaction() as conn:
+        locked_conversation = await (
+            Conversation.filter(id=conversation.id)
+            .using_db(conn)
+            .select_for_update()
+            .first()
         )
+        if not locked_conversation:
+            raise BusinessError(
+                code=ResponseCode.CONVERSATION_NOT_FOUND,
+                msg_key="conversation_not_found",
+                status_code=404,
+            )
 
-    # Update stats atomically to prevent race conditions
-    tokens_to_remove = 0
-    if message.token_usage:
-        tokens_to_remove = message.token_usage.get(
-            "prompt", 0
-        ) + message.token_usage.get("completion", 0)
+        locked_message = await (
+            Message.filter(
+                id=message_id,
+                conversation_id=locked_conversation.id,
+            )
+            .using_db(conn)
+            .select_for_update()
+            .first()
+        )
+        if not locked_message:
+            raise BusinessError(
+                code=ResponseCode.MESSAGE_NOT_FOUND,
+                msg_key="message_not_found",
+                status_code=404,
+            )
 
-    await Conversation.filter(id=conversation.id).update(
-        message_count=F("message_count") - 1,
-        token_usage=F("token_usage") - tokens_to_remove,
+        tokens_to_remove = 0
+        if locked_message.token_usage:
+            tokens_to_remove = locked_message.token_usage.get(
+                "prompt", 0
+            ) + locked_message.token_usage.get("completion", 0)
+
+        audit_before = AuditLogService.snapshot(locked_conversation, "conversation")
+        updated_at = now_utc()
+        await (
+            Conversation.filter(id=locked_conversation.id)
+            .using_db(conn)
+            .update(
+                message_count=F("message_count") - 1,
+                token_usage=F("token_usage") - tokens_to_remove,
+                updated_at=updated_at,
+            )
+        )
+        await locked_conversation.refresh_from_db(using_db=conn)
+        audit_after = AuditLogService.snapshot(locked_conversation, "conversation")
+        await locked_message.delete(using_db=conn)
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_message",
+        resource_type="message",
+        resource_id=message_id,
+        resource_name=getattr(locked_conversation, "title", None)
+        or str(conversation_id),
+        operation="delete",
+        status="success",
+        request=request,
+        changes=AuditLogService.build_changes(audit_before, audit_after),
+        metadata={"conversation_id": str(conversation_id)},
     )
-
-    # Delete message
-    await message.delete()
 
     return success(data={"id": str(message_id)}, msg_key="message_deleted")

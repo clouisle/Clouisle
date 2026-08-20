@@ -135,6 +135,20 @@ def test_json_safe_masks_sensitive_keys_inside_lists() -> None:
     assert result == [{"api_key": "sk-very-***", "name": "x"}]
 
 
+def test_sanitize_changes_preserves_numeric_token_usage_counters() -> None:
+    svc = audit_log.AuditLogService
+    result = svc.sanitize_changes(
+        {
+            "before": {"token_usage": 5, "access_token": "secret-value"},
+            "after": {"token_usage": 3, "access_token": "new-secret"},
+        }
+    )
+    assert result == {
+        "before": {"token_usage": 5, "access_token": "secret-v***"},
+        "after": {"token_usage": 3, "access_token": "new-secr***"},
+    }
+
+
 def test_json_safe_masks_nested_email_in_small_values() -> None:
     svc = audit_log.AuditLogService
     result = svc._json_safe({"profile": {"email": "alice@example.com"}})

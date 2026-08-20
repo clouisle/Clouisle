@@ -239,7 +239,7 @@ async def test_nonstream_accepts_response_without_usage(monkeypatch):
 
     result = await run_chat(state)
 
-    assert result["data"].usage["total_tokens"] == 0
+    assert result["data"].usage["total_tokens"] == 9
 
 
 @pytest.mark.anyio

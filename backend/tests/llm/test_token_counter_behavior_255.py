@@ -4,10 +4,20 @@ import pytest
 import tiktoken
 
 from app.llm import token_counter
+from app.llm.types.chat import FunctionDefinition, ToolDefinition
 
 
 def encoded_length(encoding: tiktoken.Encoding, *values: str) -> int:
     return sum(len(encoding.encode(value)) for value in values)
+
+
+def test_serialize_tool_calls_accepts_mapping_values() -> None:
+    assert (
+        token_counter.serialize_tool_calls(
+            [{"id": "call-1", "function": {"name": "lookup", "arguments": "{}"}}]
+        )
+        == '[{"id":"call-1","function":{"name":"lookup","arguments":"{}"}}]'
+    )
 
 
 def test_count_tokens_uses_real_model_encoding() -> None:
@@ -90,10 +100,14 @@ def test_message_count_covers_text_media_names_and_tool_structures() -> None:
             "metadata": {"ignored": True},
         },
     ]
+    tool_call_tokens = encoded_length(
+        encoding, token_counter.serialize_tool_calls(messages[2]["tool_calls"])
+    )
     expected = (
         3 * len(messages)
         + 3
         + 1
+        + tool_call_tokens
         + encoded_length(
             encoding,
             "system",
@@ -109,7 +123,27 @@ def test_message_count_covers_text_media_names_and_tool_structures() -> None:
         )
     )
 
-    assert token_counter.count_message_tokens(messages) == expected
+    assert (
+        token_counter.count_message_tokens(messages, include_tool_calls=True)
+        == expected
+    )
+    assert token_counter.count_message_tokens(messages) == expected - tool_call_tokens
+
+
+def test_tool_definition_count_serializes_pydantic_schema() -> None:
+    tool = ToolDefinition(
+        function=FunctionDefinition(
+            name="lookup",
+            description="Find information",
+            parameters={"type": "object"},
+        )
+    )
+    serialized = token_counter.serialize_tool_calls([tool])
+
+    assert token_counter.count_tool_definition_tokens(
+        [tool]
+    ) == token_counter.count_tokens(serialized)
+    assert token_counter.count_tool_definition_tokens([]) == 0
 
 
 def test_message_count_handles_empty_and_sparse_messages() -> None:
@@ -133,6 +167,28 @@ def test_count_tokens_logs_and_estimates_when_tokenizer_fails(caplog) -> None:
         "Token counting failed, using fallback: bad encoding",
         "Token counting failed, using fallback: bad encoding",
     ]
+
+
+def test_message_fallback_counts_tool_calls_when_requested() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "function": {"name": "lookup", "arguments": "{}"},
+                }
+            ],
+        }
+    ]
+    serialized = token_counter.serialize_tool_calls(messages[0]["tool_calls"])
+
+    with patch.object(
+        token_counter, "get_encoding_for_model", side_effect=RuntimeError("offline")
+    ):
+        assert token_counter.count_message_tokens(
+            messages, include_tool_calls=True
+        ) == max(len(serialized) // 4, 1)
 
 
 def test_message_fallback_extracts_only_text_content(caplog) -> None:

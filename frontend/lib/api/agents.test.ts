@@ -235,9 +235,18 @@ describe('public agents API requests', () => {
 
     const headers = { 'Content-Type': 'application/json' }
     expect(fetch).toHaveBeenNthCalledWith(1, `${API_BASE_URL}/agents/agent-1/public`, { headers })
-    expect(fetch).toHaveBeenNthCalledWith(2, `${API_BASE_URL}/agents/agent-1/conversations?page=1&page_size=50`, { headers })
-    expect(fetch).toHaveBeenNthCalledWith(3, `${API_BASE_URL}/agents/agent-1/conversations?page=3&page_size=5`, { headers })
-    expect(fetch).toHaveBeenNthCalledWith(4, `${API_BASE_URL}/agents/conversations/conversation-1`, { headers })
+    expect(fetch).toHaveBeenNthCalledWith(2, `${API_BASE_URL}/agents/agent-1/conversations?page=1&page_size=50`, {
+      headers,
+      cache: 'no-store',
+    })
+    expect(fetch).toHaveBeenNthCalledWith(3, `${API_BASE_URL}/agents/agent-1/conversations?page=3&page_size=5`, {
+      headers,
+      cache: 'no-store',
+    })
+    expect(fetch).toHaveBeenNthCalledWith(4, `${API_BASE_URL}/agents/conversations/conversation-1`, {
+      headers,
+      cache: 'no-store',
+    })
   })
 
   it('uses exact public mutation routes and payloads', async () => {

@@ -136,6 +136,8 @@
       "firstTokenTime": "First Token",
       "totalTime": "Total Time",
       "speed": "Speed",
+      "cachedTokens": "Cache Read",
+      "cacheCreationTokens": "Cache Write",
       "mermaidDiagram": "Diagram",
       "mermaidCode": "Code",
       "mermaidZoomIn": "Zoom in",

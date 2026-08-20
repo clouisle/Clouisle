@@ -272,6 +272,38 @@ async def test_chat_stream_normalizes_activity_reasoning_and_tool_calls():
 
 
 @pytest.mark.anyio
+async def test_chat_stream_tolerates_incomplete_terminal_usage():
+    async def stream():
+        yield SimpleNamespace(
+            choices=[],
+            usage=SimpleNamespace(
+                prompt_tokens=None,
+                completion_tokens=None,
+                total_tokens=None,
+            ),
+        )
+
+    client = FakeAsyncOpenAI(stream())
+    with patch("openai.AsyncOpenAI", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in OpenAICompatibleAdapter(build_model()).chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert chunks[-1].usage.model_dump() == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 0,
+    }
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("provider_reason", "expected"),
     [

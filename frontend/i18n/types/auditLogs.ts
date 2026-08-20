@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-17T05:37:33.233Z
+// GENERATED — 2026-08-19T13:12:45.578Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {
@@ -182,6 +182,7 @@ export type AuditLogsMessages = {
     actionduplicate_agent: string
     actionedit_message: string
     actiondelete_conversation: string
+    actiondelete_message: string
     actionbatch_delete_conversations: string
     actionrun_workflow_embed: string
     actionupload_document: string

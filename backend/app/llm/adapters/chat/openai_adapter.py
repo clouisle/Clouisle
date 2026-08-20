@@ -17,7 +17,7 @@ from app.llm.types import (
     Usage,
 )
 
-from .base import BaseChatAdapter
+from .base import BaseChatAdapter, extract_cached_tokens
 from .thinking import ThinkingExtractor
 from .tool_call_accumulator import ToolCallAccumulator
 
@@ -195,6 +195,8 @@ class OpenAIAdapter(BaseChatAdapter):
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
+                    cache_read_tokens=extract_cached_tokens(response.usage),
+                    total_input_tokens=response.usage.prompt_tokens,
                 )
 
             return self.create_response(
@@ -249,6 +251,10 @@ class OpenAIAdapter(BaseChatAdapter):
             if "response_format" in kwargs and kwargs["response_format"] is not None:
                 request_params["response_format"] = kwargs["response_format"]
 
+            # Streaming responses omit usage unless explicitly requested;
+            # it arrives on the terminal chunk as an accumulated snapshot.
+            request_params["stream_options"] = {"include_usage": True}
+
             stream = await client.chat.completions.create(
                 **request_params,
                 extra_body=self.get_passthrough_body() or None,
@@ -259,10 +265,23 @@ class OpenAIAdapter(BaseChatAdapter):
 
             async for chunk in stream:
                 if not chunk.choices:
-                    yield self.create_stream_chunk(
-                        response_id=response_id,
-                        stream_activity=True,
-                    )
+                    # OpenAI 流式的 usage 在最后一个 chunk 返回（choices 为空）
+                    if getattr(chunk, "usage", None):
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            usage=Usage(
+                                prompt_tokens=chunk.usage.prompt_tokens,
+                                completion_tokens=chunk.usage.completion_tokens,
+                                total_tokens=chunk.usage.total_tokens,
+                                cache_read_tokens=extract_cached_tokens(chunk.usage),
+                                total_input_tokens=chunk.usage.prompt_tokens,
+                            ),
+                        )
+                    else:
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            stream_activity=True,
+                        )
                     continue
 
                 delta = chunk.choices[0].delta

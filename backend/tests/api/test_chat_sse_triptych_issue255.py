@@ -327,6 +327,7 @@ async def test_chat_stream_persists_reasoning_content_and_usage(monkeypatch):
             id="answer",
             model="stub",
             delta=ChatStreamDelta(content="answer"),
+            usage=Usage(prompt_tokens=29, completion_tokens=11, total_tokens=40),
             finish_reason=FinishReason.STOP,
         )
 
@@ -361,14 +362,28 @@ async def test_chat_stream_persists_reasoning_content_and_usage(monkeypatch):
     assert assistant.content == "answer"
     assert assistant.reasoning_content == "thinking"
     assert assistant.round_status == MessageRoundStatus.COMPLETED
+    assert assistant.token_usage == {
+        "prompt": 29,
+        "completion": 11,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 29,
+    }
     assistant.save.assert_awaited_once()
     chat.activate_conversation_branch.assert_awaited_once()
     record_usage.assert_awaited_once_with(
         team_id=str(agent.team_id),
         model_id=ANY,
-        input_text_length=5,
-        output_text_length=14,
+        input_tokens=29,
+        output_tokens=11,
     )
+    conversation_update = next(
+        call.kwargs
+        for call in update_query.update.await_args_list
+        if "token_usage" in call.kwargs
+    )
+    assert "updated_at" in conversation_update
+    assert chat.prepare_model_context.await_count == 1
 
 
 async def setup_regenerate(monkeypatch, *, rag_mode=RAGMode.OFF, branch_parent_id=None):
@@ -428,6 +443,7 @@ async def setup_regenerate(monkeypatch, *, rag_mode=RAGMode.OFF, branch_parent_i
         "app.services.sandbox.gateway.sandbox_gateway.create_session",
         AsyncMock(return_value="session"),
     )
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "collect_conversation_images", lambda *_a: ([], []))
     monkeypatch.setattr(
         chat, "append_conversation_image_inventory", lambda text, _images: text
@@ -652,6 +668,7 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     monkeypatch.setattr(
         "app.llm.model_manager.team_chat_stream", lambda **_kwargs: object()
     )
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
     monkeypatch.setattr(
         chat, "stale_session_memory_if_source_outside_active_branch", AsyncMock()
@@ -681,6 +698,12 @@ async def test_edit_generator_persists_rag_reasoning_and_truncation(monkeypatch)
     assert assistant.content == "answer"
     assert assistant.reasoning_content == "thinking"
     assert assistant.round_status == MessageRoundStatus.COMPLETED
-    assert assistant.token_usage == {"prompt": 2, "completion": 1}
+    assert assistant.token_usage == {
+        "prompt": 8,
+        "completion": 2,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 8,
+    }
     assistant.save.assert_awaited_once()
     assert chat.activate_conversation_branch.await_count == 2

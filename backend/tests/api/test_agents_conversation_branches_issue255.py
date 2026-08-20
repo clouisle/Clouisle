@@ -5,6 +5,15 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import agents
+from starlette.requests import Request
+
+
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def transaction():
+    yield object()
 
 
 class Query:
@@ -16,14 +25,23 @@ class Query:
         self.calls.append((name, args, kwargs))
         return self
 
-    def prefetch_related(self, *args):
-        return self._chain("prefetch_related", *args)
+    async def update(self, **kwargs):
+        return self._chain("update", **kwargs)
+
+    async def refresh_from_db(self, **_kwargs):
+        return self.value
+
+    def using_db(self, *_args):
+        return self
+
+    def prefetch_related(self, *args, **kwargs):
+        return self._chain("prefetch_related", *args, **kwargs)
+
+    def select_for_update(self):
+        return self
 
     async def first(self):
         return self.value
-
-    async def update(self, **kwargs):
-        return self._chain("update", **kwargs)
 
 
 @pytest.mark.anyio
@@ -70,16 +88,28 @@ async def test_get_conversation_without_messages_skips_version_query(monkeypatch
 async def test_delete_message_defaults_missing_token_usage_counters(
     monkeypatch, token_usage, expected_tokens
 ):
-    conversation = SimpleNamespace(id=uuid4())
+    conversation = SimpleNamespace(id=uuid4(), refresh_from_db=AsyncMock())
     message = SimpleNamespace(id=uuid4(), token_usage=token_usage, delete=AsyncMock())
     conversation_query = Query(conversation)
     monkeypatch.setattr(
         agents.Conversation, "filter", lambda **_kwargs: conversation_query
     )
+    monkeypatch.setattr(agents, "in_transaction", lambda: transaction())
     monkeypatch.setattr(agents.Message, "filter", lambda **_kwargs: Query(message))
+    monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
 
-    await agents.delete_message(conversation.id, message.id, SimpleNamespace())
+    request = Request(
+        {
+            "type": "http",
+            "method": "DELETE",
+            "path": "/conversations",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
+    await agents.delete_message(conversation.id, message.id, request, SimpleNamespace())
 
     update = next(call for call in conversation_query.calls if call[0] == "update")
     assert update[2]["token_usage"].right.value == expected_tokens
     message.delete.assert_awaited_once()
+    assert "using_db" in message.delete.await_args.kwargs

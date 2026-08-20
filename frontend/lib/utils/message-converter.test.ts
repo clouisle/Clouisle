@@ -70,7 +70,7 @@ describe('message converter', () => {
 
   it('reconstructs usage and timing metadata from persisted token fields', () => {
     const converted = convertBackendMessage(message({
-      token_usage: { prompt: 120, completion: 45 },
+      token_usage: { prompt: 120, completion: 45, cache_read: 30, cache_creation: 10, total_input: 40 },
       duration_ms: 2000,
       first_token_ms: 300,
     }))
@@ -79,7 +79,14 @@ describe('message converter', () => {
       isManuallyStopped: false,
       isError: false,
       preservedPartialProgress: false,
-      usage: { prompt_tokens: 120, completion_tokens: 45, total_tokens: 165 },
+      usage: {
+        prompt_tokens: 120,
+        completion_tokens: 45,
+        total_tokens: 165,
+        cache_read_tokens: 30,
+        cache_creation_tokens: 10,
+        total_input_tokens: 40,
+      },
       timing: {
         first_token_ms: 300,
         duration_ms: 2000,
@@ -108,7 +115,14 @@ describe('message converter', () => {
       isManuallyStopped: false,
       isError: false,
       preservedPartialProgress: false,
-      usage: { prompt_tokens: 120, completion_tokens: 45, total_tokens: 165 },
+      usage: {
+        prompt_tokens: 120,
+        completion_tokens: 45,
+        total_tokens: 165,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        total_input_tokens: 120,
+      },
       timing: {
         first_token_ms: 300,
         tokens_per_second: null,

@@ -19,7 +19,7 @@ from app.llm.types import (
     Usage,
 )
 
-from .base import BaseChatAdapter
+from .base import BaseChatAdapter, extract_cached_tokens, usage_from_openai_usage
 from .thinking import ThinkingExtractor
 from .tool_call_accumulator import ToolCallAccumulator
 
@@ -273,6 +273,8 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
+                    cache_read_tokens=extract_cached_tokens(response.usage),
+                    total_input_tokens=response.usage.prompt_tokens,
                 )
 
             return self.create_response(
@@ -356,10 +358,18 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
 
             async for chunk in stream:
                 if not chunk.choices:
-                    yield self.create_stream_chunk(
-                        response_id=response_id,
-                        stream_activity=True,
-                    )
+                    # 兼容端点在流式最后 chunk 返回 usage（choices 为空）。
+                    # 不主动请求 include_usage：部分端点不支持该参数。
+                    if getattr(chunk, "usage", None):
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            usage=usage_from_openai_usage(chunk.usage),
+                        )
+                    else:
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            stream_activity=True,
+                        )
                     continue
 
                 delta = chunk.choices[0].delta

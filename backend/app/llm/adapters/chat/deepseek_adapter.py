@@ -19,7 +19,7 @@ from app.llm.types import (
     Usage,
 )
 
-from .base import BaseChatAdapter
+from .base import BaseChatAdapter, extract_cached_tokens, extract_total_input_tokens
 from .tool_call_accumulator import ToolCallAccumulator
 
 logger = logging.getLogger(__name__)
@@ -233,6 +233,8 @@ class DeepSeekAdapter(BaseChatAdapter):
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
+                    cache_read_tokens=extract_cached_tokens(response.usage),
+                    total_input_tokens=extract_total_input_tokens(response.usage),
                 )
 
             return self.create_response(
@@ -283,6 +285,9 @@ class DeepSeekAdapter(BaseChatAdapter):
             if self.thinking_enabled and self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
+            # 流式默认不返回 usage，需显式请求；在终末 chunk 上返回累计快照
+            request_params["stream_options"] = {"include_usage": True}
+
             logger.info(
                 "DeepSeek request params: %s",
                 request_params,
@@ -303,10 +308,25 @@ class DeepSeekAdapter(BaseChatAdapter):
 
             async for chunk in stream:
                 if not chunk.choices:
-                    yield self.create_stream_chunk(
-                        response_id=response_id,
-                        stream_activity=True,
-                    )
+                    # DeepSeek 流式的 usage 在最后一个 chunk 返回（choices 为空）
+                    if getattr(chunk, "usage", None):
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            usage=Usage(
+                                prompt_tokens=chunk.usage.prompt_tokens,
+                                completion_tokens=chunk.usage.completion_tokens,
+                                total_tokens=chunk.usage.total_tokens,
+                                cache_read_tokens=extract_cached_tokens(chunk.usage),
+                                total_input_tokens=extract_total_input_tokens(
+                                    chunk.usage
+                                ),
+                            ),
+                        )
+                    else:
+                        yield self.create_stream_chunk(
+                            response_id=response_id,
+                            stream_activity=True,
+                        )
                     continue
 
                 delta = chunk.choices[0].delta

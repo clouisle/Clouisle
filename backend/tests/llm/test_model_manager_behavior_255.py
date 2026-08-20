@@ -525,6 +525,54 @@ async def test_team_chat_checks_quota_records_usage_and_maps_quota(
 
 
 @pytest.mark.anyio
+async def test_team_chat_estimates_usage_when_provider_omits_totals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = SimpleNamespace(id=uuid4(), provider="openai", model_id="gpt-4o")
+    team_model = SimpleNamespace(is_enabled=True)
+    result = SimpleNamespace(
+        usage=None,
+        content="answer",
+        reasoning_content=None,
+        tool_calls=None,
+    )
+    adapter = SimpleNamespace(chat=AsyncMock(return_value=result))
+    manager = ModelManager()
+    monkeypatch.setattr(
+        manager, "_get_team_model", AsyncMock(return_value=(model, team_model))
+    )
+    monkeypatch.setattr(manager, "_get_chat_adapter", lambda _config: adapter)
+    monkeypatch.setattr(
+        manager_module.usage_tracker, "check_quota_with_model", AsyncMock()
+    )
+    monkeypatch.setattr(
+        "app.llm.token_counter.count_message_tokens", Mock(return_value=7)
+    )
+    monkeypatch.setattr("app.llm.token_counter.count_tokens", Mock(side_effect=[3, 0]))
+    count_tool_definition_tokens = Mock(return_value=4)
+    monkeypatch.setattr(
+        "app.llm.token_counter.count_tool_definition_tokens",
+        count_tool_definition_tokens,
+    )
+    record = AsyncMock()
+    monkeypatch.setattr(manager, "_check_and_record_usage", record)
+    tools = [SimpleNamespace()]
+
+    assert (
+        await manager.team_chat(
+            "team", [{"role": "user", "content": "question"}], tools=tools
+        )
+        is result
+    )
+    count_tool_definition_tokens.assert_called_once_with(
+        tools, model.model_id, model.provider
+    )
+    record.assert_awaited_once_with(
+        team_id="team", model_id=str(model.id), tokens_used=14
+    )
+
+
+@pytest.mark.anyio
 async def test_team_stream_and_usage_recording_use_selected_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -548,13 +596,36 @@ async def test_team_stream_and_usage_recording_use_selected_model(
     )
     record = AsyncMock()
     monkeypatch.setattr(manager, "_check_and_record_usage", record)
-    monkeypatch.setattr("app.llm.token_counter.count_tokens", Mock(side_effect=[2, 3]))
+    monkeypatch.setattr(
+        "app.llm.token_counter.estimate_tokens_from_chars",
+        Mock(side_effect=[2, 3, 3]),
+    )
 
     assert [chunk async for chunk in manager.team_chat_stream("team", [])] == ["chunk"]
     await manager.record_stream_usage("team", None, 8, 12)
-    record.assert_awaited_once_with(
-        team_id="team", model_id=str(model.id), tokens_used=5
-    )
+    await manager.record_stream_usage("team", None, input_tokens=11, output_tokens=13)
+    await manager.record_stream_usage("team", None, 80, 12, input_tokens=11)
+    await manager.record_stream_usage("team", None, 0, 0, output_tokens=0)
+    assert record.await_args_list[0].kwargs == {
+        "team_id": "team",
+        "model_id": str(model.id),
+        "tokens_used": 5,
+    }
+    assert record.await_args_list[1].kwargs == {
+        "team_id": "team",
+        "model_id": str(model.id),
+        "tokens_used": 24,
+    }
+    assert record.await_args_list[2].kwargs == {
+        "team_id": "team",
+        "model_id": str(model.id),
+        "tokens_used": 14,
+    }
+    assert record.await_args_list[3].kwargs == {
+        "team_id": "team",
+        "model_id": str(model.id),
+        "tokens_used": 0,
+    }
 
 
 @pytest.mark.anyio

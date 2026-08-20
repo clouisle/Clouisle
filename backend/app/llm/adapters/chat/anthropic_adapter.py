@@ -21,6 +21,7 @@ from app.llm.types import (
     ToolCall,
     FunctionCall,
 )
+from app.llm.token_counter import count_tokens
 
 from .base import BaseChatAdapter
 
@@ -221,6 +222,151 @@ class AnthropicAdapter(BaseChatAdapter):
             for tool in tools
         ]
 
+    # Anthropic prompt caching requires 1024 tokens for most models and 2048
+    # tokens for Claude 3 Haiku; leave 256 tokens of local estimation margin.
+    _CACHE_TOKEN_MARGIN = 256
+    _CACHE_CONTROL = {"type": "ephemeral"}
+
+    def _min_cache_prefix_tokens(self) -> int:
+        """Return the model-specific cache prefix floor with safety margin."""
+        minimum = 2048 if "claude-3-haiku" in self.model_id.lower() else 1024
+        return minimum + self._CACHE_TOKEN_MARGIN
+
+    @property
+    def cache_control_enabled(self) -> bool:
+        """是否启用 prompt caching（默认开启，可通过模型 config 的 cache_control 关闭）"""
+        return bool(self.config.get("cache_control", True))
+
+    def _count_tokens(self, text: str) -> int:
+        """按模型/provider 估算文本 token 数"""
+        if not text:
+            return 0
+        return count_tokens(
+            text,
+            model_id=self.model_id,
+            provider=getattr(self.model_config, "provider", None),
+        )
+
+    def _message_text(self, msg: dict[str, Any]) -> str:
+        """提取 Anthropic 消息的可计数文本"""
+        content = msg.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts: list[str] = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        texts.append(block.get("text", ""))
+                    elif block.get("type") == "tool_result":
+                        result_content = block.get("content", "")
+                        if not isinstance(result_content, str):
+                            result_content = json.dumps(
+                                result_content, ensure_ascii=False, default=str
+                            )
+                        texts.append(result_content)
+            return "\n".join(texts)
+        return ""
+
+    def _is_real_user_message(self, msg: dict[str, Any]) -> bool:
+        """真用户消息：role=user 且不是 tool_result 包裹，且非空"""
+        if msg.get("role") != "user":
+            return False
+        content = msg.get("content")
+        if isinstance(content, list) and content and isinstance(content[0], dict):
+            if content[0].get("type") == "tool_result":
+                return False
+        return bool(content)
+
+    def _mark_message_cache_breakpoint(self, msg: dict[str, Any]) -> None:
+        """在消息第一个文本块上打缓存断点"""
+        content = msg.get("content")
+        if isinstance(content, str):
+            msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": self._CACHE_CONTROL,
+                }
+            ]
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    block["cache_control"] = self._CACHE_CONTROL
+                    break
+
+    def _apply_cache_breakpoints(
+        self,
+        system_prompt: str | None,
+        anthropic_messages: list[dict[str, Any]],
+        anthropic_tools: list[dict] | None,
+    ) -> tuple[
+        str | list[dict[str, Any]] | None,
+        list[dict[str, Any]],
+        list[dict] | None,
+    ]:
+        """
+        为 system / tools / 历史消息添加 Anthropic prompt caching 断点。
+
+        策略（Anthropic 官方多轮对话模式）：
+        - system prompt：整个缓存（稳定前缀）
+        - tools：最后一个工具打点（system+tools 前缀）
+        - 第一条真 user 消息：工具循环期间前缀稳定，可复用
+        - 倒数第二条真 user 消息：缓存几乎全部历史，跨轮次命中
+
+        每个断点前缀估算 token 不足最小要求时跳过（避免 API 400）。
+        """
+        if not self.cache_control_enabled:
+            return system_prompt, anthropic_messages, anthropic_tools
+
+        system_tokens = self._count_tokens(system_prompt or "")
+
+        # tools 断点：缓存 system + tools 前缀
+        tools_tokens = 0
+        if anthropic_tools:
+            tools_tokens = self._count_tokens(
+                json.dumps(anthropic_tools, ensure_ascii=False)
+            )
+            if system_tokens + tools_tokens >= self._min_cache_prefix_tokens():
+                anthropic_tools[-1] = {
+                    **anthropic_tools[-1],
+                    "cache_control": self._CACHE_CONTROL,
+                }
+
+        # system 断点
+        new_system: str | list[dict[str, Any]] | None = system_prompt
+        if system_prompt and system_tokens >= self._min_cache_prefix_tokens():
+            new_system = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": self._CACHE_CONTROL,
+                }
+            ]
+
+        # 消息断点：第一条 + 倒数第二条真 user 消息
+        cumulative = system_tokens + tools_tokens
+        user_breakpoints: list[tuple[int, int]] = []
+        for index, msg in enumerate(anthropic_messages):
+            cumulative += self._count_tokens(self._message_text(msg))
+            if self._is_real_user_message(msg):
+                user_breakpoints.append((index, cumulative))
+
+        targets: list[tuple[int, int]] = []
+        if user_breakpoints:
+            targets.append(user_breakpoints[0])
+            if (
+                len(user_breakpoints) >= 2
+                and user_breakpoints[-2][0] != user_breakpoints[0][0]
+            ):
+                targets.append(user_breakpoints[-2])
+
+        for index, prefix_tokens in targets:
+            if prefix_tokens >= self._min_cache_prefix_tokens():
+                self._mark_message_cache_breakpoint(anthropic_messages[index])
+
+        return new_system, anthropic_messages, anthropic_tools
+
     def _extract_response(
         self, response: Any
     ) -> tuple[str | None, str | None, list[ToolCall] | None]:
@@ -305,6 +451,11 @@ class AnthropicAdapter(BaseChatAdapter):
         try:
             system_prompt, anthropic_messages = self._convert_messages(messages)
             anthropic_tools = self.convert_tools(tools)
+            system_prompt, anthropic_messages, anthropic_tools = (
+                self._apply_cache_breakpoints(
+                    system_prompt, anthropic_messages, anthropic_tools
+                )
+            )
 
             request_params: dict[str, Any] = {
                 "model": self.model_id,
@@ -396,6 +547,22 @@ class AnthropicAdapter(BaseChatAdapter):
                     completion_tokens=response.usage.output_tokens,
                     total_tokens=response.usage.input_tokens
                     + response.usage.output_tokens,
+                    cache_read_tokens=getattr(
+                        response.usage, "cache_read_input_tokens", 0
+                    )
+                    or 0,
+                    cache_creation_tokens=getattr(
+                        response.usage, "cache_creation_input_tokens", 0
+                    )
+                    or 0,
+                    total_input_tokens=(
+                        response.usage.input_tokens
+                        + (getattr(response.usage, "cache_read_input_tokens", 0) or 0)
+                        + (
+                            getattr(response.usage, "cache_creation_input_tokens", 0)
+                            or 0
+                        )
+                    ),
                 )
 
             return self.create_response(
@@ -462,6 +629,11 @@ class AnthropicAdapter(BaseChatAdapter):
         try:
             system_prompt, anthropic_messages = self._convert_messages(messages)
             anthropic_tools = self.convert_tools(tools)
+            system_prompt, anthropic_messages, anthropic_tools = (
+                self._apply_cache_breakpoints(
+                    system_prompt, anthropic_messages, anthropic_tools
+                )
+            )
 
             request_params: dict[str, Any] = {
                 "model": self.model_id,
@@ -493,6 +665,25 @@ class AnthropicAdapter(BaseChatAdapter):
             # 用于累积工具调用
             current_tool_use: dict[str, Any] | None = None
             tool_calls: list[ToolCall] = []
+            stream_usage_values = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            }
+            stream_usage_seen = False
+
+            def merge_stream_usage(usage_data: Any) -> None:
+                nonlocal stream_usage_seen
+                if not usage_data:
+                    return
+                stream_usage_seen = True
+                for field in stream_usage_values:
+                    value = getattr(usage_data, field, None)
+                    if value is not None:
+                        stream_usage_values[field] = max(
+                            stream_usage_values[field], int(value or 0)
+                        )
 
             async with client.messages.stream(
                 **request_params,
@@ -500,6 +691,11 @@ class AnthropicAdapter(BaseChatAdapter):
             ) as stream:
                 async for event in stream:
                     event_type = getattr(event, "type", None)
+
+                    if event_type == "message_start":
+                        message = getattr(event, "message", None)
+                        merge_stream_usage(getattr(message, "usage", None))
+                        continue
 
                     # 处理 content_block_start
                     if event_type == "content_block_start":
@@ -594,9 +790,33 @@ class AnthropicAdapter(BaseChatAdapter):
                     if event_type == "message_stop":
                         continue
 
-                    # 处理 message_delta (包含 stop_reason)
+                    # 处理 message_delta (包含 stop_reason 和 usage)
                     if event_type == "message_delta":
                         delta = getattr(event, "delta", None)
+                        merge_stream_usage(getattr(event, "usage", None))
+
+                        usage = None
+                        if stream_usage_seen:
+                            input_tokens = stream_usage_values["input_tokens"]
+                            output_tokens = stream_usage_values["output_tokens"]
+                            cache_read_tokens = stream_usage_values[
+                                "cache_read_input_tokens"
+                            ]
+                            cache_creation_tokens = stream_usage_values[
+                                "cache_creation_input_tokens"
+                            ]
+                            total_input_tokens = (
+                                input_tokens + cache_read_tokens + cache_creation_tokens
+                            )
+                            usage = Usage(
+                                prompt_tokens=input_tokens,
+                                completion_tokens=output_tokens,
+                                total_tokens=total_input_tokens + output_tokens,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
+                                total_input_tokens=total_input_tokens,
+                            )
+
                         if delta:
                             stop_reason = getattr(delta, "stop_reason", None)
                             finish_reason = self._map_finish_reason(stop_reason)
@@ -605,7 +825,15 @@ class AnthropicAdapter(BaseChatAdapter):
                             yield self.create_stream_chunk(
                                 tool_calls=tool_calls if tool_calls else None,
                                 finish_reason=finish_reason,
+                                usage=usage,
                                 response_id=response_id,
                             )
+                        elif usage:
+                            yield self.create_stream_chunk(
+                                usage=usage,
+                                response_id=response_id,
+                            )
+                        continue
+
         finally:
             await client.close()

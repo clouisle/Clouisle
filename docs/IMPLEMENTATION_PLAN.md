@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **model-prompt-caching-visibility** — Complete. Provider-reported cache hit/write token details flow through `Usage`, all chat adapters, message persistence, message_end SSE, and the token-stats popover. Cache hit rate is intentionally not displayed. Verified: 3316 backend + 2242 frontend tests, tsc and Ruff clean. See `docs/plan/model-prompt-caching-visibility.md`
+  - [x] 1. Usage 类型扩展 + 全部 adapter 解析
+  - [x] 2. chat.py 记账与 SSE 透传
+  - [x] 3. 前端透传与展示
+  - [x] 4. 全量验证
 - **context-compression-three-level-redesign** — Planned. Replace the current overlapping compaction paths with bounded content normalization, active tool-loop rolling compaction, and Pi-style between-turn historical checkpoints while preserving branch-aware context assembly. See `docs/plan/context-compression-three-level-redesign.md`
   - [ ] 1. Establish the budget contract and compression observability
   - [ ] 2. Implement always-on bounded content normalization

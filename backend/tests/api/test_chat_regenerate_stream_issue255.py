@@ -8,7 +8,7 @@ import pytest
 
 from app.api.v1.endpoints import chat
 from app.llm.errors import LLMError
-from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message
+from app.llm.types import ChatStreamChunk, ChatStreamDelta, FinishReason, Message, Usage
 from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
 from app.schemas.agent import RegenerateRequest
 from app.schemas.response import BusinessError, ResponseCode
@@ -139,6 +139,7 @@ async def setup_regeneration(monkeypatch):
     )
 
     monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
+    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
     monkeypatch.setattr(chat, "now_utc", lambda: "completed-at")
 
     response = await chat.regenerate_message(
@@ -187,6 +188,7 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
             id="content",
             model="stub/unit-model",
             delta=ChatStreamDelta(content="new answer"),
+            usage=Usage(prompt_tokens=23, completion_tokens=13, total_tokens=36),
             finish_reason=FinishReason.STOP,
         ),
     ]
@@ -212,7 +214,13 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
     assert state.created.version_number == 3
     assert state.created.round_status == MessageRoundStatus.COMPLETED
     assert state.created.created_at == "completed-at"
-    assert state.created.token_usage == {"prompt": 3, "completion": 2}
+    assert state.created.token_usage == {
+        "prompt": 23,
+        "completion": 13,
+        "cache_read": 0,
+        "cache_creation": 0,
+        "total_input": 23,
+    }
     state.created.save.assert_awaited_once()
     chat.activate_conversation_branch.assert_awaited_once_with(
         state.conversation.id, [state.user_message, state.created]
@@ -225,11 +233,14 @@ async def test_regenerate_stream_persists_and_activates_new_version(monkeypatch)
         state.agent, state.conversation, state.created
     )
     assert end["usage"] == {
-        "prompt_tokens": 3,
-        "completion_tokens": 2,
-        "total_tokens": 5,
+        "prompt_tokens": 23,
+        "completion_tokens": 13,
+        "total_tokens": 36,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 23,
     }
-    assert prepare.await_count == 2
+    assert prepare.await_count == 1
     for call in prepare.call_args_list:
         # Regenerate must not leak the old round's tool-call chain into history:
         # the cutoff is the triggering user message, not the old assistant reply.

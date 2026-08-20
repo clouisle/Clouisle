@@ -4,8 +4,11 @@ Token counting utilities using tiktoken.
 Provides accurate token counting for various model families.
 """
 
+import json
 import logging
+from collections.abc import Iterable, Mapping
 from functools import lru_cache
+from typing import Any
 
 import tiktoken
 
@@ -89,10 +92,46 @@ def count_tokens(
         return max(len(text) // 4, 1)
 
 
+def _serialize_token_payload(values: Iterable[Any]) -> str:
+    def to_jsonable(value: Any) -> Any:
+        if hasattr(value, "model_dump"):
+            return to_jsonable(value.model_dump(mode="json"))
+        if isinstance(value, Mapping):
+            return {str(key): to_jsonable(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [to_jsonable(item) for item in value]
+        return value
+
+    return json.dumps(
+        [to_jsonable(value) for value in values],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
+def serialize_tool_calls(tool_calls: Iterable[Any]) -> str:
+    """Serialize provider or model tool-call objects for token counting."""
+    return _serialize_token_payload(tool_calls)
+
+
+def count_tool_definition_tokens(
+    tools: list[Any] | None,
+    model_id: str | None = None,
+    provider: str | None = None,
+) -> int:
+    """Estimate tokens consumed by the tool schemas sent with a request."""
+    if not tools:
+        return 0
+    return count_tokens(_serialize_token_payload(tools), model_id, provider)
+
+
 def count_message_tokens(
     messages: list[dict],
     model_id: str | None = None,
     provider: str | None = None,
+    *,
+    include_tool_calls: bool = False,
 ) -> int:
     """Count chat-message tokens without fabricating a model identifier.
 
@@ -114,6 +153,14 @@ def count_message_tokens(
                     continue
                 if isinstance(value, str):
                     total_tokens += len(encoding.encode(value))
+                elif (
+                    key == "tool_calls"
+                    and include_tool_calls
+                    and isinstance(value, list)
+                ):
+                    total_tokens += len(
+                        encoding.encode(_serialize_token_payload(value))
+                    )
                 elif isinstance(value, list):
                     # Handle content arrays (for vision)
                     for item in value:
@@ -142,6 +189,8 @@ def count_message_tokens(
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "text":
                         total_content += item.get("text", "")
+            if include_tool_calls and isinstance(msg.get("tool_calls"), list):
+                total_content += _serialize_token_payload(msg["tool_calls"])
         return max(len(total_content) // 4, 1)
 
 

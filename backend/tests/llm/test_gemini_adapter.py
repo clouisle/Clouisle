@@ -53,6 +53,7 @@ def response(parts=None, *, finish_reason="STOP", usage=True):
             prompt_token_count=7,
             candidates_token_count=3,
             total_token_count=10,
+            cached_content_token_count=5,
         )
         if usage
         else None
@@ -260,6 +261,9 @@ async def test_chat_builds_request_and_normalizes_reasoning_tool_and_usage():
         "prompt_tokens": 7,
         "completion_tokens": 3,
         "total_tokens": 10,
+        "cache_read_tokens": 5,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 7,
     }
 
 
@@ -366,3 +370,31 @@ async def test_chat_stream_can_be_closed_after_first_chunk():
 
     assert first.delta.content == "first"
     assert stream.requested == 1
+
+
+@pytest.mark.anyio
+async def test_chat_stream_captures_usage_metadata_from_terminal_chunk():
+    stream = AsyncChunks(
+        [
+            response([part(thought=False, text="answer")], finish_reason="STOP"),
+        ]
+    )
+    client = build_client(stream=stream)
+
+    with patch("google.genai.Client", return_value=client):
+        chunks = [
+            chunk
+            async for chunk in build_adapter().chat_stream(
+                [Message(role=MessageRole.USER, content="Hi")]
+            )
+        ]
+
+    assert chunks[-1].finish_reason is FinishReason.STOP
+    assert chunks[-1].usage.model_dump() == {
+        "prompt_tokens": 7,
+        "completion_tokens": 3,
+        "total_tokens": 10,
+        "cache_read_tokens": 5,
+        "cache_creation_tokens": 0,
+        "total_input_tokens": 7,
+    }

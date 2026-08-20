@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
@@ -422,3 +423,64 @@ async def test_stream_tool_emits_media_result(monkeypatch):
     assert "event: tool_result" in events
     assert "media" in events
     assert "event: iteration_cap_reached" in events
+
+
+@pytest.mark.anyio
+async def test_stream_uses_provider_usage_from_terminal_chunk(monkeypatch):
+    state = await setup_stream(monkeypatch)
+    # OpenAI/DeepSeek 风格：usage 在 finish 之后的独立 chunk（choices 为空）
+    monkeypatch.setattr(
+        "app.llm.model_manager.team_chat_stream",
+        lambda **_kwargs: chunks(
+            ChatStreamChunk(
+                id="content",
+                model="stub",
+                delta=ChatStreamDelta(content="answer"),
+            ),
+            ChatStreamChunk(
+                id="done",
+                model="stub",
+                delta=ChatStreamDelta(),
+                finish_reason=FinishReason.STOP,
+            ),
+            ChatStreamChunk(
+                id="usage",
+                model="stub",
+                delta=ChatStreamDelta(),
+                usage=Usage(
+                    prompt_tokens=10,
+                    completion_tokens=4,
+                    total_tokens=14,
+                    cache_read_tokens=6,
+                    cache_creation_tokens=2,
+                ),
+            ),
+        ),
+    )
+
+    events = await collect(state.response)
+
+    assert "event: content_delta" in events
+    assert "event: message_end" in events
+    data_line = next(
+        line
+        for line in events.split("\n")
+        if line.startswith("data:") and '"usage"' in line
+    )
+    payload = json.loads(data_line[len("data:") :])
+    assert payload["usage"] == {
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "cache_read_tokens": 6,
+        "cache_creation_tokens": 2,
+        "total_input_tokens": 10,
+    }
+    # 接口返回的 usage 优先于本地 tiktoken 估算被持久化
+    assert state.created[1].token_usage == {
+        "prompt": 10,
+        "completion": 4,
+        "cache_read": 6,
+        "cache_creation": 2,
+        "total_input": 10,
+    }
