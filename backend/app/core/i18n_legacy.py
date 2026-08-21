@@ -650,6 +650,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "summarized {count} older turns",
         "zh": "已摘要 {count} 个较早轮次",
     },
+    "context_summarization_failed": {
+        "en": "Please clear or shorten the conversation history, then try again.",
+        "zh": "请清理或缩短会话历史后重试。",
+    },
     "chat_context_compaction_tool_results_trimmed": {
         "en": "compacted older tool results",
         "zh": "已压缩较早的工具结果",

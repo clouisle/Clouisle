@@ -510,11 +510,16 @@
   - [x] 4. Frontend provider-specific image controls and i18n
   - [x] 5. Targeted regression tests and validation
 
-- **agent-context-compression-ratio-thresholds** — In progress. Upgrade agent context compression from hard-budget-only behavior to staged context governance with ~80% proactive compaction, selective micro compaction, richer compression observability, and a Phase 2 Session Memory / SM Compact roadmap. See `docs/plan/agent-context-compression.md`
-  - [x] 1. Ratio-based thresholds and pressure states
-  - [x] 2. Selective micro compaction
-  - [x] 3. Compression observability and frontend messaging
-  - [x] 4. Phase 2 Session Memory / SM Compact design hooks
+- **agent-context-loop-fix** — Complete. 修复长工具循环下的上下文失忆死循环：确定性工具步骤压缩（`tool_step_compaction.py`）、保留区 token 上限、emergency fallback 保底持久化摘要、两阶段 prepare（`build_context_plan`/`finalize`）让 compression_start 先于长时间摘要发出。真实会话重放：194k tokens → 24 条消息 / 15.7k tokens，预算内且保留任务原文与进度摘要。根因与证据见 `docs/plan/agent-context-loop-fix.md`
+  - [x] 1. 确定性工具步骤压缩模块
+  - [x] 2. prepare 接入压缩链与保留区上限、emergency 保底
+  - [x] 3. 配置面（summary_keep_budget_ratio / summary_keep_recent_steps）
+  - [x] 4. 两阶段 prepare 与 compression SSE 前置
+  - [x] 5. 聚焦测试与真实会话验证
+
+- **agent-simple-context-summary** — Complete. Preflight now budgets the full provider payload (messages, reasoning, serialized tool calls, images, and tool definitions) against the usable input budget. Retention is token-first (`summary_keep_budget_ratio=0.15`) rather than blindly preserving long turns; oversized active tool rounds compact deterministically and bound tool-result content before the hard fallback. See `docs/plan/agent-simple-context-summary.md`
+
+- **agent-context-compression-ratio-thresholds** — Superseded by `agent-simple-context-summary`; the staged warning/auto-compact/blocking governance and its config fields were removed. See `docs/plan/agent-context-compression.md`
 
 - **workflow-duplicate-input-params** — Complete. Prevented duplicate input parameter names in workflow code nodes via runtime executor validation, config-time validation, and frontend dialog guards. Tracked as GitHub issue #99. See `docs/plan/fix-duplicate-input-params.md`
   - [x] 1. Add runtime validation in base executor

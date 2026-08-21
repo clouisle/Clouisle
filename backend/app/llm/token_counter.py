@@ -14,6 +14,10 @@ import tiktoken
 
 logger = logging.getLogger(__name__)
 
+# Conservative multimodal input estimate. Providers count image patches/tokens
+# differently, but omitting images makes the preflight budget unsafe.
+IMAGE_TOKEN_ESTIMATE = 1024
+
 # Mapping of model providers/families to tiktoken encodings
 MODEL_ENCODING_MAP = {
     # OpenAI models
@@ -162,14 +166,16 @@ def count_message_tokens(
                         encoding.encode(_serialize_token_payload(value))
                     )
                 elif isinstance(value, list):
-                    # Handle content arrays (for vision)
+                    # Handle content arrays (for vision). Image URLs/data URIs
+                    # are not text tokens, but they still consume provider
+                    # context budget and must not be silently omitted.
                     for item in value:
-                        if isinstance(item, dict):
-                            if item.get("type") == "text":
-                                total_tokens += len(
-                                    encoding.encode(item.get("text", ""))
-                                )
-                            # Image tokens are handled separately by the model
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("type") in {"image", "image_url", "input_image"}:
+                            total_tokens += IMAGE_TOKEN_ESTIMATE
+                        elif item.get("type") == "text":
+                            total_tokens += len(encoding.encode(item.get("text", "")))
                 if key == "name":
                     total_tokens += tokens_per_name
 
@@ -187,8 +193,12 @@ def count_message_tokens(
                 total_content += content
             elif isinstance(content, list):
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "text":
                         total_content += item.get("text", "")
+                    elif item.get("type") in {"image", "image_url", "input_image"}:
+                        total_content += " " * (IMAGE_TOKEN_ESTIMATE * 4)
             if include_tool_calls and isinstance(msg.get("tool_calls"), list):
                 total_content += _serialize_token_payload(msg["tool_calls"])
         return max(len(total_content) // 4, 1)

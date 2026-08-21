@@ -9,8 +9,6 @@ from tortoise.transactions import in_transaction
 
 from app.models.agent import (
     Conversation,
-    ConversationSessionMemory,
-    ConversationSessionMemoryStatus,
     Message,
     MessageRole,
     MessageRoundRole,
@@ -427,18 +425,3 @@ async def is_message_on_active_branch(
     if before_created_at is not None:
         query = query.filter(created_at__lt=before_created_at)
     return await query.exists()
-
-
-async def stale_session_memory_if_source_outside_active_branch(
-    conversation_id: UUID,
-) -> None:
-    snapshot = await ConversationSessionMemory.filter(
-        conversation_id=conversation_id,
-        status=ConversationSessionMemoryStatus.READY,
-    ).first()
-    if not snapshot or not snapshot.source_message_id:
-        return
-    if await is_message_on_active_branch(conversation_id, snapshot.source_message_id):
-        return
-    snapshot.status = ConversationSessionMemoryStatus.STALE
-    await snapshot.save(update_fields=["status", "updated_at"])

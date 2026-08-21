@@ -939,6 +939,9 @@ msgstr "summarized {count} older turns"
 msgid "chat_context_compaction_tool_results_trimmed"
 msgstr "compacted older tool results"
 
+msgid "context_summarization_failed"
+msgstr "Please clear or shorten the conversation history, then try again."
+
 msgid "chunk_created"
 msgstr "Chunk created successfully"
 
