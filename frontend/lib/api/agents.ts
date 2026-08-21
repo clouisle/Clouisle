@@ -134,34 +134,13 @@ export interface MemoryConfig {
 
 export interface ContextCompressionConfig {
   enabled: boolean
-  micro_compaction_enabled: boolean
-  macro_compaction_enabled: boolean
-  preflight_guard_enabled: boolean
-  reactive_retry_enabled: boolean
-  recent_raw_turns: number
-  recent_tool_turns: number
-  warning_ratio: number
-  auto_compact_trigger_ratio: number
-  blocking_ratio: number
-  compaction_policy: 'staged' | 'hard_budget_only'
-  macro_on_trigger: boolean
-  retention_strategy: 'recent_raw_and_tool_first'
-  keep_recent_tool_results: number
-  keep_recent_tool_result_minutes: number
-  tool_result_compact_min_tokens: number
-  session_memory_enabled: boolean
-  session_memory_async_extract: boolean
-  session_memory_max_tokens: number
-  session_memory_min_turns: number
-  session_memory_failure_threshold: number
-  session_memory_cooldown_seconds: number
-  legacy_compact_enabled: boolean
-  legacy_compact_failure_threshold: number
-  legacy_compact_cooldown_seconds: number
+  summary_trigger_ratio: number
+  summary_max_tokens: number
+  summary_keep_recent_turns: number
+  summary_keep_recent_steps: number
+  summary_keep_budget_ratio: number
   output_token_reserve: number
   safety_margin_tokens: number
-  summary_max_tokens: number
-  drop_historical_reasoning_first: boolean
   emit_sse_events: boolean
 }
 
@@ -549,29 +528,21 @@ export interface SSEUserInputRequest {
 }
 
 export interface SSECompression {
-  stage: 'micro' | 'macro' | 'reactive_retry'
+  stage: 'none' | 'macro'
   trigger: 'proactive_threshold' | 'blocking_threshold' | 'context_length_error' | string
   pressure_level?: 'normal' | 'warning' | 'auto_compact' | 'blocking' | 'over_budget'
   before_tokens: number
   after_tokens: number
   input_budget: number
   trigger_ratio?: number
-  warning_ratio?: number
-  blocking_ratio?: number
-  trigger_budget?: number
-  hard_budget?: number
   utilization_before?: number
   utilization_after?: number
   policy_used?: string
   actions?: string[]
-  retained_recent_turns?: number
-  retained_tool_turns?: number
-  compacted_blocks?: number
   summary_turns?: number
-  reasoning_dropped?: boolean
-  tool_results_trimmed?: boolean
-  file_content_trimmed?: boolean
-  retry_index?: number
+  context_limit?: number
+  output_reserve?: number
+  safety_margin?: number
   note?: string
 }
 

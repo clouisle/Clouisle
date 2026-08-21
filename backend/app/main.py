@@ -89,8 +89,7 @@ async def lifespan(app: FastAPI):
         init_message_round_fields,
         init_message_branch_parent_field,
         init_message_history_index,
-        init_conversation_session_memory_table,
-        init_conversation_context_checkpoint_table,
+        init_conversation_context_summary_columns,
         init_assets_tables,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
@@ -187,14 +186,9 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Message history index migration failed: {e}")
 
     try:
-        await init_conversation_session_memory_table()
+        await init_conversation_context_summary_columns()
     except Exception as e:
-        logger.warning(f"Conversation session memory migration failed: {e}")
-
-    try:
-        await init_conversation_context_checkpoint_table()
-    except Exception as e:
-        logger.warning(f"Conversation context checkpoint migration failed: {e}")
+        logger.warning(f"Conversation context summary migration failed: {e}")
 
     try:
         await init_agent_user_input_request()

@@ -940,6 +940,9 @@ msgstr "已摘要 {count} 个较早轮次"
 msgid "chat_context_compaction_tool_results_trimmed"
 msgstr "已压缩较早的工具结果"
 
+msgid "context_summarization_failed"
+msgstr "请清理或缩短会话历史后重试。"
+
 msgid "chunk_created"
 msgstr "分块创建成功"
 

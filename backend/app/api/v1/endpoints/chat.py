@@ -57,7 +57,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.llm.errors import ContextLengthError, InsufficientQuotaError
+from app.llm.errors import InsufficientQuotaError
 from app.llm.tools import tool_registry
 from app.llm.types import ChatStreamChunk, Message as LLMChatMessage, ToolCall
 from app.llm.token_counter import (
@@ -68,10 +68,9 @@ from app.llm.token_counter import (
 )
 from app.core.timezone import now_utc
 from app.services.chat_context import (
+    build_context_plan,
     build_model_messages,
-    get_context_compression_config,
     prepare_model_context,
-    retry_prepare_model_context,
 )
 from app.services.message_branching import (
     activate_conversation_branch,
@@ -81,7 +80,6 @@ from app.services.message_branching import (
     get_visible_conversation_messages,
     get_version_count as get_branch_version_count,
     get_version_root_id,
-    stale_session_memory_if_source_outside_active_branch,
 )
 from app.services.asset import asset_service
 from app.services.audit_log import AuditLogService
@@ -91,7 +89,6 @@ from app.api.v1.endpoints.chat_helpers import (
     get_streaming_config,
     parse_user_input_request,
     resolve_agent_chat_model,
-    should_retry_context_length,
     get_compression_trigger,
     get_tool_execution_payloads,
     append_generated_images,
@@ -112,6 +109,7 @@ from app.api.v1.endpoints.chat_rag import (
 )
 from app.api.v1.endpoints.chat_sse import (
     build_compression_events,
+    build_compression_start_event,
     build_tool_call_sse_event,
     build_tool_result_sse_event,
     build_media_result_sse_event,
@@ -657,35 +655,6 @@ async def get_agent_chat_model(agent: Agent) -> TeamModel | None:
         return None
 
     return await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
-
-
-def enqueue_session_memory_extraction(
-    agent: Agent,
-    conversation: Conversation,
-    assistant_message: Message,
-) -> None:
-    """Best-effort enqueue for async session memory extraction."""
-    compression_config = get_context_compression_config(agent)
-    if not compression_config.get("session_memory_enabled", True):
-        return
-    if not compression_config.get("session_memory_async_extract", True):
-        return
-
-    try:
-        from app.tasks.session_memory import extract_session_memory_task
-
-        extract_session_memory_task.delay(
-            str(conversation.id),
-            str(assistant_message.id),
-        )
-    except Exception as e:
-        logger.warning(
-            "Failed to enqueue session memory extraction for conversation %s "
-            "message %s: %s",
-            conversation.id,
-            assistant_message.id,
-            e,
-        )
 
 
 def get_round_terminal_status(
@@ -1406,7 +1375,7 @@ async def chat(
     try:
         # Import here to avoid circular import
         from app.llm import model_manager
-        from app.llm.errors import ContextLengthError, QuotaExceededError, LLMError
+        from app.llm.errors import QuotaExceededError, LLMError
         from app.llm.types import ToolDefinition, FunctionDefinition
 
         # Build tool definitions
@@ -1440,100 +1409,41 @@ async def chat(
         while iteration < max_iterations:
             iteration += 1
             prepare_context = prepare_model_context
-            context_retry_used = False
-            try:
-                prepared_context = await prepare_context(
-                    agent=agent,
-                    conversation=conversation,
-                    user_message=model_message,
-                    model_id=model_id,
-                    tokenizer_model_id=tokenizer_model_id,
-                    model_context_limit=model_context_limit,
-                    model_max_output_tokens=model_max_output_tokens,
-                    provider=model_provider,
-                    file_content=file_content_str,
-                    user_locale=current_user.locale,
-                    history_override=working_history_override,
-                    current_images=chat_in.images,
-                    model_supports_vision=model_supports_vision,
-                    current_user_message_id=user_msg.id,
-                    tool_timeouts=tool_timeouts,
-                    user=current_user,
-                    protected_round_id=round_id,
-                )
-            except ContextLengthError as context_error:
-                if context_error.details.get(
-                    "retryable"
-                ) is False or not should_retry_context_length(agent):
-                    raise
-                prepared_context = await retry_prepare_model_context(
-                    agent=agent,
-                    conversation=conversation,
-                    user_message=model_message,
-                    model_id=model_id,
-                    tokenizer_model_id=tokenizer_model_id,
-                    model_context_limit=model_context_limit,
-                    model_max_output_tokens=model_max_output_tokens,
-                    provider=model_provider,
-                    file_content=file_content_str,
-                    user_locale=current_user.locale,
-                    history_override=working_history_override,
-                    current_images=chat_in.images,
-                    model_supports_vision=model_supports_vision,
-                    current_user_message_id=user_msg.id,
-                    tool_timeouts=tool_timeouts,
-                    user=current_user,
-                    protected_round_id=round_id,
-                )
-                context_retry_used = True
+            tool_definition_tokens = (
+                count_tool_definition_tokens(tools, tokenizer_model_id, model_provider)
+                if tools
+                else 0
+            )
+            prepared_context = await prepare_context(
+                agent=agent,
+                conversation=conversation,
+                user_message=model_message,
+                model_id=model_id,
+                tokenizer_model_id=tokenizer_model_id,
+                model_context_limit=model_context_limit,
+                model_max_output_tokens=model_max_output_tokens,
+                provider=model_provider,
+                file_content=file_content_str,
+                user_locale=current_user.locale,
+                history_override=working_history_override,
+                current_images=chat_in.images,
+                model_supports_vision=model_supports_vision,
+                current_user_message_id=user_msg.id,
+                tool_timeouts=tool_timeouts,
+                user=current_user,
+                protected_round_id=round_id,
+                tool_definition_tokens=tool_definition_tokens,
+            )
             messages_for_llm = [
                 message.model_dump(exclude_none=True)
                 for message in prepared_context.messages
             ]
-            try:
-                response = await model_manager.team_chat(
-                    team_id=str(agent.team_id),
-                    messages=messages_for_llm,
-                    model_id=model_id,
-                    tools=tools,
-                )
-            except ContextLengthError as context_error:
-                if (
-                    context_retry_used
-                    or context_error.details.get("retryable") is False
-                    or not should_retry_context_length(agent)
-                ):
-                    raise
-                prepared_context = await retry_prepare_model_context(
-                    agent=agent,
-                    conversation=conversation,
-                    user_message=model_message,
-                    model_id=model_id,
-                    tokenizer_model_id=tokenizer_model_id,
-                    model_context_limit=model_context_limit,
-                    model_max_output_tokens=model_max_output_tokens,
-                    provider=model_provider,
-                    file_content=file_content_str,
-                    user_locale=current_user.locale,
-                    history_override=working_history_override,
-                    current_images=chat_in.images,
-                    model_supports_vision=model_supports_vision,
-                    current_user_message_id=user_msg.id,
-                    tool_timeouts=tool_timeouts,
-                    user=current_user,
-                    protected_round_id=round_id,
-                )
-                context_retry_used = True
-                messages_for_llm = [
-                    message.model_dump(exclude_none=True)
-                    for message in prepared_context.messages
-                ]
-                response = await model_manager.team_chat(
-                    team_id=str(agent.team_id),
-                    messages=messages_for_llm,
-                    model_id=model_id,
-                    tools=tools,
-                )
+            response = await model_manager.team_chat(
+                team_id=str(agent.team_id),
+                messages=messages_for_llm,
+                model_id=model_id,
+                tools=tools,
+            )
 
             (
                 prompt_tokens,
@@ -1779,7 +1689,6 @@ async def chat(
             conversation.id,
             [*branch_prefix, user_msg, assistant_msg],
         )
-        enqueue_session_memory_extraction(agent, conversation, assistant_msg)
 
         return success(
             data=ChatResponse(
@@ -2139,87 +2048,54 @@ async def chat_stream(
                         stream_usage = None
                         used_nonstream_fallback = False
 
-                        prepare_context = prepare_model_context
-                        context_retry_used = False
-                        try:
-                            prepared_context = await prepare_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                file_content=file_content_str,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_images=chat_in.images,
-                                model_supports_vision=model_supports_vision,
-                                current_user_message_id=user_msg.id,
-                                include_current_user_message=True,
-                                exclude_message_ids=[assistant_msg.id],
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
+                        tool_definition_tokens = (
+                            count_tool_definition_tokens(
+                                tools, tokenizer_model_id, model_provider
                             )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger=get_compression_trigger(
-                                        prepared_context.compression
-                                    ),
-                                )
+                            if tools
+                            else 0
+                        )
+                        context_plan = await build_context_plan(
+                            agent=agent,
+                            conversation=conversation,
+                            user_message=model_message,
+                            model_id=model_id,
+                            tokenizer_model_id=tokenizer_model_id,
+                            model_context_limit=model_context_limit,
+                            model_max_output_tokens=model_max_output_tokens,
+                            provider=model_provider,
+                            file_content=file_content_str,
+                            user_locale=current_user.locale,
+                            history_override=working_history_override,
+                            current_images=chat_in.images,
+                            model_supports_vision=model_supports_vision,
+                            current_user_message_id=user_msg.id,
+                            include_current_user_message=True,
+                            exclude_message_ids=[assistant_msg.id],
+                            tool_timeouts=tool_timeouts,
+                            user=current_user,
+                            protected_round_id=round_id,
+                            tool_definition_tokens=tool_definition_tokens,
+                        )
+                        if context_plan.will_summarize:
+                            yield build_compression_start_event(
+                                stage="macro",
+                                trigger=get_compression_trigger(
+                                    context_plan.compression
+                                ),
                             )
-                            if compression_start:
-                                yield compression_start
-                                last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
-                                last_event_time = time.time()
-                        except ContextLengthError as context_error:
-                            if context_error.details.get(
-                                "retryable"
-                            ) is False or not should_retry_context_length(agent):
-                                raise
-                            prepared_context = await retry_prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                file_content=file_content_str,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_images=chat_in.images,
-                                model_supports_vision=model_supports_vision,
-                                current_user_message_id=user_msg.id,
-                                include_current_user_message=True,
-                                exclude_message_ids=[assistant_msg.id],
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
-                            )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger="context_length_error",
-                                    retry_index=1,
-                                    stage_override="reactive_retry",
-                                )
-                            )
-                            if compression_start:
-                                yield compression_start
-                                last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
-                                last_event_time = time.time()
-                            context_retry_used = True
+                            last_event_time = time.time()
+                        prepared_context = await context_plan.finalize()
+                        _, compression_end = build_compression_events(
+                            agent=agent,
+                            compression=prepared_context.compression,
+                            trigger=get_compression_trigger(
+                                prepared_context.compression
+                            ),
+                        )
+                        if compression_end:
+                            yield compression_end
+                            last_event_time = time.time()
                         messages_for_llm = [
                             message.model_dump(exclude_none=True)
                             for message in prepared_context.messages
@@ -2231,197 +2107,76 @@ async def chat_stream(
                         # Use streaming call - works for both with and without tools
                         emitted_any = False
                         client_disconnected = False
-                        try:
-                            stream = model_manager.team_chat_stream(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            async for chunk in iter_with_idle_timeout(
-                                stream,
-                                timeout_seconds=idle_timeout,
-                                activity_predicate=_is_model_stream_activity,
-                            ):
-                                if chunk.usage:
-                                    stream_usage = chunk.usage
-                                # Check if client disconnected - stop LLM generation to save tokens
-                                if await request.is_disconnected():
-                                    client_disconnected = True
-                                    logger.info(
-                                        f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
-                                    )
-                                    break
-
-                                # Handle reasoning content (思维链)
-                                if chunk.delta.reasoning_content:
-                                    if not reasoning_started:
-                                        reasoning_started = True
-                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                    full_reasoning += chunk.delta.reasoning_content
-                                    iteration_reasoning += chunk.delta.reasoning_content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                    last_event_time = time.time()
-                                    emitted_any = True
-
-                                # Handle content - stream it immediately
-                                if chunk.delta.content:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    full_content += chunk.delta.content
-                                    iteration_content += chunk.delta.content
-
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                    last_event_time = time.time()
-                                    emitted_any = True
-
-                                for (
-                                    tool_call_event
-                                ) in _build_tool_call_start_sse_events(
-                                    chunk.delta.tool_call_starts, tool_display_names
-                                ):
-                                    yield tool_call_event
-                                    last_event_time = time.time()
-                                    emitted_any = True
-
-                                # Collect tool calls when they arrive
-                                if chunk.delta.tool_calls:
-                                    collected_tool_calls = chunk.delta.tool_calls
-                                    emitted_any = True
-
-                                # Handle finish
-                                if chunk.finish_reason:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    if chunk.finish_reason == FinishReason.LENGTH:
-                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                    if stream_usage is None:
-                                        continue
-                                    break
-                        except ContextLengthError as context_error:
-                            if (
-                                context_retry_used
-                                or context_error.details.get("retryable") is False
-                                or not should_retry_context_length(agent)
-                            ):
-                                raise
-                            prepared_context = await retry_prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                file_content=file_content_str,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_images=chat_in.images,
-                                model_supports_vision=model_supports_vision,
-                                current_user_message_id=user_msg.id,
-                                include_current_user_message=True,
-                                exclude_message_ids=[assistant_msg.id],
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
-                            )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger="context_length_error",
-                                    retry_index=1,
-                                    stage_override="reactive_retry",
+                        stream = model_manager.team_chat_stream(
+                            team_id=str(agent.team_id),
+                            messages=messages_for_llm,
+                            model_id=model_id,
+                            tools=tools,
+                        )
+                        async for chunk in iter_with_idle_timeout(
+                            stream,
+                            timeout_seconds=idle_timeout,
+                            activity_predicate=_is_model_stream_activity,
+                        ):
+                            if chunk.usage:
+                                stream_usage = chunk.usage
+                            # Check if client disconnected - stop LLM generation to save tokens
+                            if await request.is_disconnected():
+                                client_disconnected = True
+                                logger.info(
+                                    f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
                                 )
-                            )
-                            if compression_start:
-                                yield compression_start
+                                break
+
+                            # Handle reasoning content (思维链)
+                            if chunk.delta.reasoning_content:
+                                if not reasoning_started:
+                                    reasoning_started = True
+                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                full_reasoning += chunk.delta.reasoning_content
+                                iteration_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
+                                emitted_any = True
+
+                            # Handle content - stream it immediately
+                            if chunk.delta.content:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                full_content += chunk.delta.content
+                                iteration_content += chunk.delta.content
+
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
-                            context_retry_used = True
-                            messages_for_llm = [
-                                message.model_dump(exclude_none=True)
-                                for message in prepared_context.messages
-                            ]
-                            # The retry uses a distinct, freshly prepared prompt.
-                            stream_usage = None
-                            emitted_any = False
-                            client_disconnected = False
-                            stream = model_manager.team_chat_stream(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            async for chunk in iter_with_idle_timeout(
-                                stream,
-                                timeout_seconds=idle_timeout,
-                                activity_predicate=_is_model_stream_activity,
+                                emitted_any = True
+
+                            for tool_call_event in _build_tool_call_start_sse_events(
+                                chunk.delta.tool_call_starts, tool_display_names
                             ):
-                                if chunk.usage:
-                                    stream_usage = chunk.usage
-                                if await request.is_disconnected():
-                                    client_disconnected = True
-                                    logger.info(
-                                        f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
-                                    )
-                                    break
+                                yield tool_call_event
+                                last_event_time = time.time()
+                                emitted_any = True
 
-                                if chunk.delta.reasoning_content:
-                                    if not reasoning_started:
-                                        reasoning_started = True
-                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                    full_reasoning += chunk.delta.reasoning_content
-                                    iteration_reasoning += chunk.delta.reasoning_content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                    last_event_time = time.time()
-                                    emitted_any = True
+                            # Collect tool calls when they arrive
+                            if chunk.delta.tool_calls:
+                                collected_tool_calls = chunk.delta.tool_calls
+                                emitted_any = True
 
-                                if chunk.delta.content:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    full_content += chunk.delta.content
-                                    iteration_content += chunk.delta.content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                    last_event_time = time.time()
-                                    emitted_any = True
-
-                                for (
-                                    tool_call_event
-                                ) in _build_tool_call_start_sse_events(
-                                    chunk.delta.tool_call_starts, tool_display_names
-                                ):
-                                    yield tool_call_event
-                                    last_event_time = time.time()
-                                    emitted_any = True
-
-                                if chunk.delta.tool_calls:
-                                    collected_tool_calls = chunk.delta.tool_calls
-                                    emitted_any = True
-
-                                if chunk.finish_reason:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    if chunk.finish_reason == FinishReason.LENGTH:
-                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                    if stream_usage is None:
-                                        continue
-                                    break
+                            # Handle finish
+                            if chunk.finish_reason:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                if stream_usage is None:
+                                    continue
+                                break
 
                         # Fallback: if stream yields nothing and no tool calls, do a non-stream call
                         if (
@@ -2759,9 +2514,6 @@ async def chat_stream(
                     await activate_conversation_branch(
                         conversation.id,
                         [*branch_prefix, user_msg, assistant_msg],
-                    )
-                    enqueue_session_memory_extraction(
-                        agent, conversation, assistant_msg
                     )
 
                     # Update conversation stats atomically
@@ -3212,7 +2964,6 @@ async def switch_message_version(
         message.conversation_id,
         [*prefix, *descendant_branch],
     )
-    await stale_session_memory_if_source_outside_active_branch(message.conversation_id)
 
     return success(
         data=await build_message_out_with_versions(
@@ -3339,7 +3090,6 @@ async def edit_user_message_stream(
                 if not edited_is_active:
                     return
                 await activate_conversation_branch(conversation.id, path, using_db=conn)
-            await stale_session_memory_if_source_outside_active_branch(conversation.id)
 
         try:
             from app.llm import model_manager
@@ -3545,236 +3295,106 @@ async def edit_user_message_stream(
                         full_reasoning = ""
                         collected_tool_calls = []
                         client_disconnected = False
-                        context_retry_used = False
-                        try:
-                            prepared_context = await prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_user_message_id=edited_user_msg.id,
-                                include_current_user_message=True,
-                                exclude_message_ids=[assistant_msg.id],
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
+                        tool_definition_tokens = (
+                            count_tool_definition_tokens(
+                                tools, tokenizer_model_id, model_provider
                             )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger=get_compression_trigger(
-                                        prepared_context.compression
-                                    ),
-                                )
+                            if tools
+                            else 0
+                        )
+                        edit_plan = await build_context_plan(
+                            agent=agent,
+                            conversation=conversation,
+                            user_message=model_message,
+                            model_id=model_id,
+                            tokenizer_model_id=tokenizer_model_id,
+                            model_context_limit=model_context_limit,
+                            model_max_output_tokens=model_max_output_tokens,
+                            provider=model_provider,
+                            user_locale=current_user.locale,
+                            history_override=working_history_override,
+                            current_user_message_id=edited_user_msg.id,
+                            include_current_user_message=True,
+                            exclude_message_ids=[assistant_msg.id],
+                            tool_timeouts=tool_timeouts,
+                            user=current_user,
+                            protected_round_id=round_id,
+                            tool_definition_tokens=tool_definition_tokens,
+                        )
+                        if edit_plan.will_summarize:
+                            yield build_compression_start_event(
+                                stage="macro",
+                                trigger=get_compression_trigger(edit_plan.compression),
                             )
-                            if compression_start:
-                                yield compression_start
-                                last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
-                                last_event_time = time.time()
-                        except ContextLengthError as context_error:
-                            if context_error.details.get(
-                                "retryable"
-                            ) is False or not should_retry_context_length(agent):
-                                raise
-                            prepared_context = await retry_prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_user_message_id=edited_user_msg.id,
-                                include_current_user_message=True,
-                                exclude_message_ids=[assistant_msg.id],
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
-                            )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger="context_length_error",
-                                    retry_index=1,
-                                    stage_override="reactive_retry",
-                                )
-                            )
-                            if compression_start:
-                                yield compression_start
-                                last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
-                                last_event_time = time.time()
+                            last_event_time = time.time()
+                        prepared_context = await edit_plan.finalize()
+                        _, compression_end = build_compression_events(
+                            agent=agent,
+                            compression=prepared_context.compression,
+                            trigger=get_compression_trigger(
+                                prepared_context.compression
+                            ),
+                        )
+                        if compression_end:
+                            yield compression_end
+                            last_event_time = time.time()
                         messages_for_llm = [
                             item.model_dump(exclude_none=True)
                             for item in prepared_context.messages
                         ]
                         stream_usage = None
 
-                        try:
-                            stream = model_manager.team_chat_stream(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            async for chunk in iter_with_idle_timeout(
-                                stream,
-                                timeout_seconds=idle_timeout,
-                                activity_predicate=_is_model_stream_activity,
-                            ):
-                                if chunk.usage:
-                                    stream_usage = chunk.usage
-                                if await request.is_disconnected():
-                                    client_disconnected = True
-                                    break
-                                if chunk.delta.reasoning_content:
-                                    if not reasoning_started:
-                                        reasoning_started = True
-                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                    full_reasoning += chunk.delta.reasoning_content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                    last_event_time = time.time()
-                                if chunk.delta.content:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    full_content += chunk.delta.content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                    last_event_time = time.time()
-                                for (
-                                    tool_call_event
-                                ) in _build_tool_call_start_sse_events(
-                                    chunk.delta.tool_call_starts, tool_display_names
-                                ):
-                                    yield tool_call_event
-                                    last_event_time = time.time()
-
-                                if chunk.delta.tool_calls:
-                                    collected_tool_calls = chunk.delta.tool_calls
-                                if chunk.finish_reason:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    if chunk.finish_reason == FinishReason.LENGTH:
-                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                    if stream_usage is None:
-                                        continue
-                                    break
-                        except ContextLengthError as context_error:
-                            if (
-                                context_retry_used
-                                or context_error.details.get("retryable") is False
-                                or not should_retry_context_length(agent)
-                            ):
-                                raise
-                            prepared_context = await retry_prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_user_message_id=edited_user_msg.id,
-                                include_current_user_message=True,
-                                exclude_message_ids=[assistant_msg.id],
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
-                            )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger="context_length_error",
-                                    retry_index=1,
-                                    stage_override="reactive_retry",
-                                )
-                            )
-                            if compression_start:
-                                yield compression_start
+                        stream = model_manager.team_chat_stream(
+                            team_id=str(agent.team_id),
+                            messages=messages_for_llm,
+                            model_id=model_id,
+                            tools=tools,
+                        )
+                        async for chunk in iter_with_idle_timeout(
+                            stream,
+                            timeout_seconds=idle_timeout,
+                            activity_predicate=_is_model_stream_activity,
+                        ):
+                            if chunk.usage:
+                                stream_usage = chunk.usage
+                            if await request.is_disconnected():
+                                client_disconnected = True
+                                break
+                            if chunk.delta.reasoning_content:
+                                if not reasoning_started:
+                                    reasoning_started = True
+                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                full_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
+                            if chunk.delta.content:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                full_content += chunk.delta.content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
-                            messages_for_llm = [
-                                item.model_dump(exclude_none=True)
-                                for item in prepared_context.messages
-                            ]
-                            stream_usage = None
-                            stream = model_manager.team_chat_stream(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            async for chunk in iter_with_idle_timeout(
-                                stream,
-                                timeout_seconds=idle_timeout,
-                                activity_predicate=_is_model_stream_activity,
+                            for tool_call_event in _build_tool_call_start_sse_events(
+                                chunk.delta.tool_call_starts, tool_display_names
                             ):
-                                if chunk.usage:
-                                    stream_usage = chunk.usage
-                                if await request.is_disconnected():
-                                    client_disconnected = True
-                                    break
-                                if chunk.delta.reasoning_content:
-                                    if not reasoning_started:
-                                        reasoning_started = True
-                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                    full_reasoning += chunk.delta.reasoning_content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                    last_event_time = time.time()
-                                if chunk.delta.content:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    full_content += chunk.delta.content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                    last_event_time = time.time()
-                                for (
-                                    tool_call_event
-                                ) in _build_tool_call_start_sse_events(
-                                    chunk.delta.tool_call_starts, tool_display_names
-                                ):
-                                    yield tool_call_event
-                                    last_event_time = time.time()
+                                yield tool_call_event
+                                last_event_time = time.time()
 
-                                if chunk.delta.tool_calls:
-                                    collected_tool_calls = chunk.delta.tool_calls
-                                if chunk.finish_reason:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    if chunk.finish_reason == FinishReason.LENGTH:
-                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                    if stream_usage is None:
-                                        continue
+                            if chunk.delta.tool_calls:
+                                collected_tool_calls = chunk.delta.tool_calls
+                            if chunk.finish_reason:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                if stream_usage is None:
+                                    continue
+                                break
                         (
                             iteration_input_tokens,
                             iteration_output_tokens,
@@ -4034,9 +3654,6 @@ async def edit_user_message_stream(
                     }
                     await assistant_msg.save()
                     await activate_edited_path()
-                    enqueue_session_memory_extraction(
-                        agent, conversation, assistant_msg
-                    )
                     total_tokens = input_tokens + output_tokens
                     await Agent.filter(id=agent.id).update(
                         message_count=F("message_count") + created_message_count,
@@ -4380,9 +3997,6 @@ async def regenerate_message(
                     conversation.id,
                     [*prefix, new_message],
                 )
-                await stale_session_memory_if_source_outside_active_branch(
-                    conversation.id
-                )
 
             async def restore_original_path() -> None:
                 prefix = await get_prefix_path_before(message)
@@ -4607,256 +4221,116 @@ async def regenerate_message(
                         full_reasoning = ""
                         collected_tool_calls = []
                         client_disconnected = False
-                        context_retry_used = False
                         stream_usage = None
-                        try:
-                            prepared_context = await prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_user_message_id=user_message.id,
-                                include_current_user_message=False,
-                                history_before_message_created_at=user_message.created_at,
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
+                        tool_definition_tokens = (
+                            count_tool_definition_tokens(
+                                tools, tokenizer_model_id, model_provider
                             )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger=get_compression_trigger(
-                                        prepared_context.compression
-                                    ),
-                                )
+                            if tools
+                            else 0
+                        )
+                        regen_plan = await build_context_plan(
+                            agent=agent,
+                            conversation=conversation,
+                            user_message=model_message,
+                            model_id=model_id,
+                            tokenizer_model_id=tokenizer_model_id,
+                            model_context_limit=model_context_limit,
+                            model_max_output_tokens=model_max_output_tokens,
+                            provider=model_provider,
+                            user_locale=current_user.locale,
+                            history_override=working_history_override,
+                            current_user_message_id=user_message.id,
+                            include_current_user_message=False,
+                            history_before_message_created_at=user_message.created_at,
+                            tool_timeouts=tool_timeouts,
+                            user=current_user,
+                            protected_round_id=round_id,
+                            tool_definition_tokens=tool_definition_tokens,
+                        )
+                        if regen_plan.will_summarize:
+                            yield build_compression_start_event(
+                                stage="macro",
+                                trigger=get_compression_trigger(regen_plan.compression),
                             )
-                            if compression_start:
-                                yield compression_start
-                                last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
-                                last_event_time = time.time()
-                        except ContextLengthError as context_error:
-                            if context_error.details.get(
-                                "retryable"
-                            ) is False or not should_retry_context_length(agent):
-                                raise
-                            prepared_context = await retry_prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_user_message_id=user_message.id,
-                                include_current_user_message=False,
-                                history_before_message_created_at=user_message.created_at,
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
-                            )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger="context_length_error",
-                                    retry_index=1,
-                                    stage_override="reactive_retry",
-                                )
-                            )
-                            if compression_start:
-                                yield compression_start
-                                last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
-                                last_event_time = time.time()
-                            context_retry_used = True
+                            last_event_time = time.time()
+                        prepared_context = await regen_plan.finalize()
+                        _, compression_end = build_compression_events(
+                            agent=agent,
+                            compression=prepared_context.compression,
+                            trigger=get_compression_trigger(
+                                prepared_context.compression
+                            ),
+                        )
+                        if compression_end:
+                            yield compression_end
+                            last_event_time = time.time()
                         messages_for_llm = [
                             item.model_dump(exclude_none=True)
                             for item in prepared_context.messages
                         ]
 
-                        try:
-                            stream = model_manager.team_chat_stream(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            async for chunk in iter_with_idle_timeout(
-                                stream,
-                                timeout_seconds=idle_timeout,
-                                activity_predicate=_is_model_stream_activity,
-                            ):
-                                if chunk.usage:
-                                    stream_usage = chunk.usage
-                                # Check if client disconnected - stop LLM generation to save tokens
-                                if await request.is_disconnected():
-                                    client_disconnected = True
-                                    logger.info(
-                                        f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
-                                    )
-                                    break
-
-                                if chunk.delta.reasoning_content:
-                                    if not reasoning_started:
-                                        reasoning_started = True
-                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                    full_reasoning += chunk.delta.reasoning_content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                    last_event_time = time.time()
-
-                                if chunk.delta.content:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    full_content += chunk.delta.content
-
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    # Stream content normally
-                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                    last_event_time = time.time()
-
-                                for (
-                                    tool_call_event
-                                ) in _build_tool_call_start_sse_events(
-                                    chunk.delta.tool_call_starts, tool_display_names
-                                ):
-                                    yield tool_call_event
-                                    last_event_time = time.time()
-
-                                if chunk.delta.tool_calls:
-                                    collected_tool_calls = chunk.delta.tool_calls
-
-                                if chunk.finish_reason:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    if chunk.finish_reason == FinishReason.LENGTH:
-                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                    if stream_usage is None:
-                                        continue
-                                    break
-                        except ContextLengthError as context_error:
-                            if (
-                                context_retry_used
-                                or context_error.details.get("retryable") is False
-                                or not should_retry_context_length(agent)
-                            ):
-                                raise
-                            prepared_context = await retry_prepare_model_context(
-                                agent=agent,
-                                conversation=conversation,
-                                user_message=model_message,
-                                model_id=model_id,
-                                tokenizer_model_id=tokenizer_model_id,
-                                model_context_limit=model_context_limit,
-                                model_max_output_tokens=model_max_output_tokens,
-                                provider=model_provider,
-                                user_locale=current_user.locale,
-                                history_override=working_history_override,
-                                current_user_message_id=user_message.id,
-                                include_current_user_message=False,
-                                history_before_message_created_at=user_message.created_at,
-                                tool_timeouts=tool_timeouts,
-                                user=current_user,
-                                protected_round_id=round_id,
-                            )
-                            compression_start, compression_end = (
-                                build_compression_events(
-                                    agent=agent,
-                                    compression=prepared_context.compression,
-                                    trigger="context_length_error",
-                                    retry_index=1,
-                                    stage_override="reactive_retry",
+                        stream = model_manager.team_chat_stream(
+                            team_id=str(agent.team_id),
+                            messages=messages_for_llm,
+                            model_id=model_id,
+                            tools=tools,
+                        )
+                        async for chunk in iter_with_idle_timeout(
+                            stream,
+                            timeout_seconds=idle_timeout,
+                            activity_predicate=_is_model_stream_activity,
+                        ):
+                            if chunk.usage:
+                                stream_usage = chunk.usage
+                            # Check if client disconnected - stop LLM generation to save tokens
+                            if await request.is_disconnected():
+                                client_disconnected = True
+                                logger.info(
+                                    f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
                                 )
-                            )
-                            if compression_start:
-                                yield compression_start
+                                break
+
+                            if chunk.delta.reasoning_content:
+                                if not reasoning_started:
+                                    reasoning_started = True
+                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                full_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
-                            if compression_end:
-                                yield compression_end
+
+                            if chunk.delta.content:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                full_content += chunk.delta.content
+
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                # Stream content normally
+                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
-                            context_retry_used = True
-                            messages_for_llm = [
-                                item.model_dump(exclude_none=True)
-                                for item in prepared_context.messages
-                            ]
-                            stream_usage = None
-                            stream = model_manager.team_chat_stream(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            async for chunk in iter_with_idle_timeout(
-                                stream,
-                                timeout_seconds=idle_timeout,
-                                activity_predicate=_is_model_stream_activity,
+
+                            for tool_call_event in _build_tool_call_start_sse_events(
+                                chunk.delta.tool_call_starts, tool_display_names
                             ):
-                                if chunk.usage:
-                                    stream_usage = chunk.usage
-                                if await request.is_disconnected():
-                                    client_disconnected = True
-                                    logger.info(
-                                        f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
-                                    )
-                                    break
+                                yield tool_call_event
+                                last_event_time = time.time()
 
-                                if chunk.delta.reasoning_content:
-                                    if not reasoning_started:
-                                        reasoning_started = True
-                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                    full_reasoning += chunk.delta.reasoning_content
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                    last_event_time = time.time()
+                            if chunk.delta.tool_calls:
+                                collected_tool_calls = chunk.delta.tool_calls
 
-                                if chunk.delta.content:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    full_content += chunk.delta.content
-
-                                    if first_token_time is None:
-                                        first_token_time = time.time()
-                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                    last_event_time = time.time()
-
-                                for (
-                                    tool_call_event
-                                ) in _build_tool_call_start_sse_events(
-                                    chunk.delta.tool_call_starts, tool_display_names
-                                ):
-                                    yield tool_call_event
-                                    last_event_time = time.time()
-
-                                if chunk.delta.tool_calls:
-                                    collected_tool_calls = chunk.delta.tool_calls
-
-                                if chunk.finish_reason:
-                                    if reasoning_started and not full_content:
-                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                    if chunk.finish_reason == FinishReason.LENGTH:
-                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                    # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                    # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                    if stream_usage is None:
-                                        continue
+                            if chunk.finish_reason:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
+                                # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
+                                if stream_usage is None:
+                                    continue
+                                break
                         (
                             iteration_input_tokens,
                             iteration_output_tokens,
@@ -5141,10 +4615,6 @@ async def regenerate_message(
                         conversation.id,
                         [*prefix, new_message],
                     )
-                    await stale_session_memory_if_source_outside_active_branch(
-                        conversation.id
-                    )
-                    enqueue_session_memory_extraction(agent, conversation, new_message)
 
                     # Update agent and team stats for regenerated message
                     total_tokens = input_tokens + output_tokens
