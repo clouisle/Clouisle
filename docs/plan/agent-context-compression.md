@@ -1,5 +1,7 @@
 # Agent Context Compression Design Document
 
+> Status: Superseded by `docs/plan/agent-simple-context-summary.md`; this document records the retired multi-layer pipeline.
+
 ## Background & Goals
 
 当前项目已经完成了第一代 agent 上下文压缩能力：

@@ -90,58 +90,11 @@ class ContextCompressionConfig(BaseModel):
         default=True,
         description="Enable request-time context compression before model calls",
     )
-    summary_trigger_ratio: float = Field(
-        default=0.9,
-        ge=0.5,
-        le=1.0,
-        description=(
-            "Utilization ratio of the model context length that triggers "
-            "model summarization"
-        ),
-    )
     summary_max_tokens: int = Field(
         default=1000,
         ge=128,
         le=8000,
         description="Target token budget for the generated context summary",
-    )
-    summary_keep_recent_turns: int = Field(
-        default=3,
-        ge=0,
-        le=20,
-        description=(
-            "Preferred number of recent turns kept verbatim; the token budget "
-            "ratio remains the hard upper bound and may retain fewer turns"
-        ),
-    )
-    summary_keep_recent_steps: int = Field(
-        default=12,
-        ge=0,
-        le=200,
-        description=(
-            "Number of in-round tool steps kept verbatim before deterministic "
-            "step compaction applies"
-        ),
-    )
-    summary_keep_budget_ratio: float = Field(
-        default=0.15,
-        ge=0.1,
-        le=0.8,
-        description=(
-            "Maximum share of the input budget the verbatim retention zone may consume"
-        ),
-    )
-    output_token_reserve: int = Field(
-        default=4000,
-        ge=256,
-        le=32000,
-        description="Reserved output tokens when computing prompt budget",
-    )
-    safety_margin_tokens: int = Field(
-        default=1000,
-        ge=0,
-        le=16000,
-        description="Extra input safety margin kept below the model context window",
     )
     emit_sse_events: bool = Field(
         default=True,

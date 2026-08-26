@@ -2078,13 +2078,16 @@ async def chat_stream(
                             tool_definition_tokens=tool_definition_tokens,
                         )
                         if context_plan.will_summarize:
-                            yield build_compression_start_event(
+                            start_event = build_compression_start_event(
+                                agent=agent,
                                 stage="macro",
                                 trigger=get_compression_trigger(
                                     context_plan.compression
                                 ),
                             )
-                            last_event_time = time.time()
+                            if start_event:
+                                yield start_event
+                                last_event_time = time.time()
                         prepared_context = await context_plan.finalize()
                         _, compression_end = build_compression_events(
                             agent=agent,
@@ -3322,11 +3325,14 @@ async def edit_user_message_stream(
                             tool_definition_tokens=tool_definition_tokens,
                         )
                         if edit_plan.will_summarize:
-                            yield build_compression_start_event(
+                            start_event = build_compression_start_event(
+                                agent=agent,
                                 stage="macro",
                                 trigger=get_compression_trigger(edit_plan.compression),
                             )
-                            last_event_time = time.time()
+                            if start_event:
+                                yield start_event
+                                last_event_time = time.time()
                         prepared_context = await edit_plan.finalize()
                         _, compression_end = build_compression_events(
                             agent=agent,
@@ -4249,11 +4255,14 @@ async def regenerate_message(
                             tool_definition_tokens=tool_definition_tokens,
                         )
                         if regen_plan.will_summarize:
-                            yield build_compression_start_event(
+                            start_event = build_compression_start_event(
+                                agent=agent,
                                 stage="macro",
                                 trigger=get_compression_trigger(regen_plan.compression),
                             )
-                            last_event_time = time.time()
+                            if start_event:
+                                yield start_event
+                                last_event_time = time.time()
                         prepared_context = await regen_plan.finalize()
                         _, compression_end = build_compression_events(
                             agent=agent,

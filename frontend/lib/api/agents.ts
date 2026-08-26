@@ -134,13 +134,7 @@ export interface MemoryConfig {
 
 export interface ContextCompressionConfig {
   enabled: boolean
-  summary_trigger_ratio: number
   summary_max_tokens: number
-  summary_keep_recent_turns: number
-  summary_keep_recent_steps: number
-  summary_keep_budget_ratio: number
-  output_token_reserve: number
-  safety_margin_tokens: number
   emit_sse_events: boolean
 }
 
@@ -540,6 +534,10 @@ export interface SSECompression {
   policy_used?: string
   actions?: string[]
   summary_turns?: number
+  /** Token counts for the exact historical segment replaced by this summary. */
+  summary_source_tokens?: number
+  summary_result_tokens?: number
+  summary_saved_tokens?: number
   context_limit?: number
   output_reserve?: number
   safety_margin?: number

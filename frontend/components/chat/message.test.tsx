@@ -28,7 +28,13 @@ let rendersCodeActions = true
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en-US',
-  useTranslations: (namespace?: string) => (key: string) => (namespace ? `${namespace}.${key}` : key),
+  useTranslations: (namespace?: string) => (key: string, values?: Record<string, unknown>) => {
+    const prefix = namespace ? `${namespace}.` : ''
+    const suffix = values
+      ? ` ${Object.entries(values).map(([name, value]) => `${name}=${String(value)}`).join(' ')}`
+      : ''
+    return `${prefix}${key}${suffix}`
+  },
 }))
 mock.module('lucide-react', () => ({
   AlertTriangle: Icon,
@@ -491,6 +497,39 @@ describe('message behavior', () => {
 
     act(() => button(container, 'toggle reasoning').click())
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('renders compression at its original reasoning timeline position', () => {
+    const container = render(<Message
+      message={{
+        id: 'timeline-order',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'before compression', state: 'done', duration: 1000 },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              before_tokens: 100,
+              after_tokens: 50,
+              summary_turns: 1,
+              summary_source_tokens: 90000,
+              summary_result_tokens: 1000,
+              summary_saved_tokens: 89000,
+            },
+          },
+          { type: 'reasoning', text: 'after compression', state: 'done', duration: 1000 },
+        ],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect([...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent)).toEqual([
+      expect.stringContaining('before compression'),
+      expect.stringContaining('chat.task.compressionCompletedProactiveSummary before=90000 after=1000 saved=89000 count=1'),
+      expect.stringContaining('after compression'),
+    ])
   })
 
   test('renders completed compression variants and completed reasoning tools', () => {

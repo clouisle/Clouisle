@@ -6,13 +6,7 @@
   - [x] 2. chat.py 记账与 SSE 透传
   - [x] 3. 前端透传与展示
   - [x] 4. 全量验证
-- **context-compression-three-level-redesign** — Planned. Replace the current overlapping compaction paths with bounded content normalization, active tool-loop rolling compaction, and Pi-style between-turn historical checkpoints while preserving branch-aware context assembly. See `docs/plan/context-compression-three-level-redesign.md`
-  - [ ] 1. Establish the budget contract and compression observability
-  - [ ] 2. Implement always-on bounded content normalization
-  - [ ] 3. Implement active tool-loop rolling compaction
-  - [ ] 4. Implement valid-cutpoint historical checkpoint compaction
-  - [ ] 5. Rebuild context assembly and retire overlapping fallback paths
-  - [ ] 6. Validate rollout across all Chat execution paths
+- **context-compression-three-level-redesign** — Superseded by `agent-simple-context-summary`. Its planned bounded-normalization, active-tool rolling compaction, and historical-checkpoint layers were not adopted. See `docs/plan/context-compression-three-level-redesign.md`
 - **yun-135-extend-knowledge-base-tour-to-document-ingestion-flow** — Complete. Extend the platform knowledge-base onboarding tour through detail-page ingestion, document processing states, and Retrieval Lab validation while preserving the existing tour state and route semantics. See `docs/plan/yun-135-extend-knowledge-base-tour-to-document-ingestion-flow.md`
   - [x] 1. Preserve create navigation and nested-tour continuity
   - [x] 2. Add ingestion and Retrieval Lab anchors
@@ -510,14 +504,14 @@
   - [x] 4. Frontend provider-specific image controls and i18n
   - [x] 5. Targeted regression tests and validation
 
-- **agent-context-loop-fix** — Complete. 修复长工具循环下的上下文失忆死循环：确定性工具步骤压缩（`tool_step_compaction.py`）、保留区 token 上限、emergency fallback 保底持久化摘要、两阶段 prepare（`build_context_plan`/`finalize`）让 compression_start 先于长时间摘要发出。真实会话重放：194k tokens → 24 条消息 / 15.7k tokens，预算内且保留任务原文与进度摘要。根因与证据见 `docs/plan/agent-context-loop-fix.md`
-  - [x] 1. 确定性工具步骤压缩模块
-  - [x] 2. prepare 接入压缩链与保留区上限、emergency 保底
-  - [x] 3. 配置面（summary_keep_budget_ratio / summary_keep_recent_steps）
-  - [x] 4. 两阶段 prepare 与 compression SSE 前置
-  - [x] 5. 聚焦测试与真实会话验证
+- **agent-context-loop-fix** — Superseded by `agent-simple-context-summary`. The deterministic tool-step compaction, retention-budget, emergency-fallback, and staged-prepare design is no longer current. See `docs/plan/agent-context-loop-fix.md`
 
-- **agent-simple-context-summary** — Complete. Preflight now budgets the full provider payload (messages, reasoning, serialized tool calls, images, and tool definitions) against the usable input budget. Retention is token-first (`summary_keep_budget_ratio=0.15`) rather than blindly preserving long turns; oversized active tool rounds compact deterministically and bound tool-result content before the hard fallback. See `docs/plan/agent-simple-context-summary.md`
+- **agent-simple-context-summary** — Complete. Before every provider call, the full request payload is estimated. At more than 90% of the model context limit, one model-generated summary replaces the old history; the new context is system prompt + structured summary + current user request, with a persisted conversation watermark.
+  - [x] 1. Replace staged compression with 90% preflight summary
+  - [x] 2. Cut over non-streaming, streaming, edit, and regenerate paths
+  - [x] 3. Remove checkpoint, session-memory, and tool-step compaction paths
+  - [x] 4. Keep summary persistence and align configuration surface
+  - [x] 5. Verify the real summary replacement smoke path
 
 - **agent-context-compression-ratio-thresholds** — Superseded by `agent-simple-context-summary`; the staged warning/auto-compact/blocking governance and its config fields were removed. See `docs/plan/agent-context-compression.md`
 
@@ -534,7 +528,7 @@
 
 ## History
 
-- **agent-context-compression** — Complete. Added shared agent context compression for non-stream, stream, and regenerate flows, with agent-level compression config and frontend-visible compression SSE events.
+- **agent-context-compression** — Complete (superseded by `agent-simple-context-summary`). The original shared compression pipeline and SSE integration were replaced by the 90% preflight summary flow.
 
 - **agent-chat-parity** — Aligned non-streaming agent chat request semantics with the streaming path for file parsing, vision inputs, history overrides, user-input-request prompting, and tool metadata/timeouts.
 

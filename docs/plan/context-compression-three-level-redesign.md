@@ -1,5 +1,7 @@
 # Three-Level Agent Context Compression Redesign Design Document
 
+> Status: Superseded by `docs/plan/agent-simple-context-summary.md`; the proposed three-layer redesign was not adopted.
+
 ## Background & Goals
 
 Clouisle currently combines request-time file trimming, session-memory compaction, selective tool-result compaction, deterministic macro summaries, model-generated context checkpoints, emergency fallback, and reactive retry. The mechanisms operate on different representations of history and have mutually exclusive gates. In particular:

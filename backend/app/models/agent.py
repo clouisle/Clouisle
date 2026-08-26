@@ -152,7 +152,7 @@ class Agent(models.Model):
     # Context compression configuration
     context_compression_config: dict = fields.JSONField(
         default=dict,
-        description="Context compression configuration (budget guard, compaction, retry, SSE emission)",
+        description="Context compression configuration (request-time summary and SSE emission)",
     )  # type: ignore[assignment]
 
     # Embed configuration

@@ -373,6 +373,11 @@ describe('useChat', () => {
     expect(parts.map((part) => part.type)).toContain('reasoning')
     expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc-1' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'task', taskType: 'compression', state: 'completed' }))
+    const reasoningIndex = parts.findIndex((part) => part.type === 'reasoning')
+    const compressionIndex = parts.findIndex((part) => part.type === 'task' && part.taskType === 'compression')
+    const toolIndex = parts.findIndex((part) => part.type === 'tool-call')
+    expect(reasoningIndex).toBeLessThan(compressionIndex)
+    expect(compressionIndex).toBeLessThan(toolIndex)
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-1', state: 'done' }))
     expect(parts.filter((part) => part.type === 'tool-call' && part.toolCallId === 'tool-1')).toHaveLength(1)
     expect(parts).toContainEqual(expect.objectContaining({

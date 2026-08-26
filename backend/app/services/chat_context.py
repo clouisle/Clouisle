@@ -53,7 +53,6 @@ from app.services.system_prompt import (
     get_user_input_request_instruction,
     has_sandbox_tools as _has_sandbox_tools,
 )
-from app.services.tool_step_compaction import compact_round_tool_steps
 
 # Re-exported from ``system_prompt`` so existing imports
 # ``from app.services.chat_context import ...`` keep working.
@@ -80,10 +79,6 @@ DEFAULT_OUTPUT_TOKEN_RESERVE = 4000
 DEFAULT_SAFETY_MARGIN_TOKENS = 1000
 DEFAULT_SUMMARY_MAX_TOKENS = 1000
 DEFAULT_SUMMARY_TRIGGER_RATIO = 0.9
-DEFAULT_SUMMARY_KEEP_RECENT_TURNS = 3
-DEFAULT_SUMMARY_KEEP_BUDGET_RATIO = 0.15
-DEFAULT_SUMMARY_KEEP_RECENT_STEPS = 12
-DEFAULT_FILE_CONTENT_MAX_TOKENS = 6_000
 CONTEXT_SUMMARY_TIMEOUT_SECONDS = 180.0
 CONTEXT_SUMMARY_MAX_ATTEMPTS = 3
 CONTEXT_SUMMARY_RETRY_DELAY_SECONDS = 2.0
@@ -92,14 +87,7 @@ CONTEXT_SUMMARY_PREFIX = (
 )
 DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "enabled": True,
-    "summary_trigger_ratio": DEFAULT_SUMMARY_TRIGGER_RATIO,
     "summary_max_tokens": DEFAULT_SUMMARY_MAX_TOKENS,
-    "summary_keep_recent_turns": DEFAULT_SUMMARY_KEEP_RECENT_TURNS,
-    "summary_keep_budget_ratio": DEFAULT_SUMMARY_KEEP_BUDGET_RATIO,
-    "summary_keep_recent_steps": DEFAULT_SUMMARY_KEEP_RECENT_STEPS,
-    "output_token_reserve": DEFAULT_OUTPUT_TOKEN_RESERVE,
-    "safety_margin_tokens": DEFAULT_SAFETY_MARGIN_TOKENS,
-    "file_content_max_tokens": DEFAULT_FILE_CONTENT_MAX_TOKENS,
     "emit_sse_events": True,
 }
 
@@ -130,6 +118,9 @@ class CompressionMeta:
     context_limit: int = 0
     output_reserve: int = 0
     safety_margin: int = 0
+    summary_source_tokens: int = 0
+    summary_result_tokens: int = 0
+    summary_saved_tokens: int = 0
 
 
 def _history_override_is_active_delta(
@@ -160,15 +151,6 @@ class PreparedModelContext:
     protected_indexes: set[int] = field(default_factory=set)
 
 
-def _clone_messages(
-    messages: Sequence[Message],
-    protected_indexes: set[int] | None = None,
-) -> tuple[list[Message], set[int]]:
-    return [message.model_copy(deep=True) for message in messages], {
-        index for index in (protected_indexes or set()) if 0 <= index < len(messages)
-    }
-
-
 def _matches_protected_round(
     round_id: Any,
     protected_round_id: UUID | str | None,
@@ -190,23 +172,6 @@ def _append_message(
     messages.append(message)
     if protect:
         protected_indexes.add(len(messages) - 1)
-
-
-def _extend_with_original_indexes(
-    target_messages: list[Message],
-    target_protected_indexes: set[int],
-    source_messages: Sequence[Message],
-    original_indexes: Sequence[int],
-    protected_indexes: set[int] | None = None,
-) -> None:
-    protected_indexes = protected_indexes or set()
-    for message, original_index in zip(source_messages, original_indexes, strict=False):
-        _append_message(
-            target_messages,
-            target_protected_indexes,
-            message.model_copy(deep=True),
-            protect=original_index in protected_indexes,
-        )
 
 
 def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, str]:
@@ -339,25 +304,6 @@ def summarize_tool_result_for_llm(
         or _build_skill_llm_summary(payload)
         or stored_content
     )
-
-
-def _normalize_file_content_for_budget(
-    file_content: str | None,
-    *,
-    max_tokens: int,
-    model_id: str | None,
-    provider: str | None,
-) -> tuple[str | None, bool]:
-    if not file_content:
-        return file_content, False
-    normalized, changed = truncate_text_to_tokens(
-        file_content,
-        max_tokens=max_tokens,
-        model_id=model_id or "",
-        provider=provider,
-        marker="\n\n[... file content truncated for context budget ...]\n\n",
-    )
-    return normalized, changed
 
 
 def _normalize_text(value: str | None) -> str:
@@ -540,7 +486,7 @@ def _estimate_message_tokens(
 def get_context_compression_config(agent: Agent) -> dict[str, Any]:
     """Get agent context compression config merged with defaults."""
     config = dict(DEFAULT_CONTEXT_COMPRESSION_CONFIG)
-    raw_config = agent.context_compression_config or {}
+    raw_config = getattr(agent, "context_compression_config", None) or {}
     if isinstance(raw_config, dict):
         config.update(raw_config)
     return config
@@ -707,6 +653,7 @@ async def _build_messages_with_file_content(
                         protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
+                            name=_get_override_value(hist_msg, "tool_name"),
                             content=summarize_tool_result_for_llm(
                                 _get_override_value(hist_msg, "tool_name"),
                                 content or "",
@@ -823,6 +770,7 @@ async def _build_messages_with_file_content(
                 protected_indexes,
                 Message(
                     role=MessageRole.TOOL,
+                    name=msg.tool_name,
                     content=summarize_tool_result_for_llm(msg.tool_name, msg.content),
                     tool_call_id=msg.tool_call_id,
                 ),
@@ -882,6 +830,7 @@ async def _build_messages_with_file_content(
                         protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
+                            name=_get_override_value(hist_msg, "tool_name"),
                             content=summarize_tool_result_for_llm(
                                 _get_override_value(hist_msg, "tool_name"),
                                 content,
@@ -955,80 +904,6 @@ def truncate_text_to_tokens(
     return f"{text[:head_chars]}{marker}{text[len(text) - tail_chars :]}", True
 
 
-def _fit_message_contents_to_budget(
-    messages: Sequence[Message],
-    *,
-    input_budget: int,
-    tool_definition_tokens: int,
-    model_id: str | None,
-    provider: str | None,
-    protected_indexes: set[int] | None = None,
-) -> tuple[list[Message], bool]:
-    """Trim eligible text payloads without breaking tool-call protocol.
-
-    Deterministic round compaction removes completed groups, but the newest
-    tool result may itself be larger than the remaining input budget. Shrink
-    tool-result content and only unprotected assistant prose; never alter
-    protected assistant messages, tool-call arguments, roles, IDs, system
-    prompts, or user requests.
-    """
-    total = _estimate_message_tokens(messages, model_id, provider) + max(
-        tool_definition_tokens, 0
-    )
-    if total <= input_budget:
-        return list(messages), False
-
-    fitted = [message.model_copy(deep=True) for message in messages]
-    changed = False
-    for _ in range(max(len(fitted) * 8, 8)):
-        total = _estimate_message_tokens(fitted, model_id, provider) + max(
-            tool_definition_tokens, 0
-        )
-        candidates = [
-            index
-            for index, message in enumerate(fitted)
-            if (
-                message.role == MessageRole.TOOL
-                or (
-                    message.role == MessageRole.ASSISTANT
-                    and index not in (protected_indexes or set())
-                )
-            )
-            and isinstance(message.content, str)
-            and message.content
-        ]
-        candidates.sort(
-            key=lambda index: count_tokens(
-                fitted[index].content or "", model_id=model_id, provider=provider
-            ),
-            reverse=True,
-        )
-        reduced = False
-        for index in candidates:
-            message = fitted[index]
-            current_tokens = count_tokens(
-                message.content or "", model_id=model_id, provider=provider
-            )
-            if current_tokens <= 128:
-                continue
-            target_tokens = max(128, int(current_tokens * 0.65))
-            content, content_changed = truncate_text_to_tokens(
-                message.content or "",
-                max_tokens=target_tokens,
-                model_id=model_id,
-                provider=provider,
-                marker="\n...[message content truncated for context budget]...\n",
-            )
-            if content_changed and len(content) < len(message.content or ""):
-                fitted[index] = message.model_copy(update={"content": content})
-                changed = True
-                reduced = True
-                break
-        if not reduced:
-            break
-    return fitted, changed
-
-
 def _assess_pressure(
     tokens: int,
     *,
@@ -1051,7 +926,9 @@ def _render_summary_transcript(messages: Sequence[Message]) -> str:
         text = _stringify_content(message.content)
         if role == "tool":
             header = "TOOL result"
-            tool_name = getattr(message, "tool_name", None)
+            tool_name = getattr(message, "tool_name", None) or getattr(
+                message, "name", None
+            )
             if tool_name:
                 header += f" for {tool_name}"
             lines.append(f"{header}:\n{text or '(empty)'}")
@@ -1071,10 +948,18 @@ def _render_summary_transcript(messages: Sequence[Message]) -> str:
     return "\n\n".join(lines)
 
 
+def _is_context_summary_message(message: Message) -> bool:
+    return isinstance(message.content, str) and message.content.startswith(
+        CONTEXT_SUMMARY_PREFIX
+    )
+
+
 SUMMARY_SYSTEM_INSTRUCTION = (
     "You compress an agent conversation history into a durable summary so the "
     "conversation can continue seamlessly with the summary replacing the older "
-    "history. Return ONLY the summary text. Include, in this order:\n"
+    "history. Always write the summary in concise English, regardless of the "
+    "transcript language or the user's locale. Return ONLY the summary text. "
+    "Include, in this order:\n"
     "1. Task: the user's overall goal and the latest request.\n"
     "2. Completed actions and results: what was already done, key outcomes, and "
     "exact identifiers, file paths, names, and numbers.\n"
@@ -1083,27 +968,6 @@ SUMMARY_SYSTEM_INSTRUCTION = (
     "later work.\n"
     "Be concise and factual. Never invent information. Omit small talk and filler."
 )
-
-
-def _turn_user_starts(
-    messages: Sequence[Message],
-    *,
-    current_user_index: int,
-) -> list[int]:
-    """Return the start indexes of conversation turns before the current one.
-
-    Turns are delimited by user messages; an injected persistent-summary
-    message never starts a turn. The system prompt (index 0) is excluded.
-    """
-    return [
-        index
-        for index in range(1, current_user_index)
-        if messages[index].role == MessageRole.USER
-        and not (
-            isinstance(messages[index].content, str)
-            and messages[index].content.startswith(CONTEXT_SUMMARY_PREFIX)
-        )
-    ]
 
 
 async def _summarize_context(
@@ -1167,20 +1031,32 @@ async def _summarize_context(
             response = None
             last_error = exc
             logger.warning(
-                "Context summarization attempt %d/%d failed for conversation %s: %s",
+                "Context summarization attempt %d/%d failed for conversation %s "
+                "(%s: %r)",
                 attempt,
                 CONTEXT_SUMMARY_MAX_ATTEMPTS,
                 conversation.id,
+                type(exc).__name__,
                 exc,
+                exc_info=True,
             )
         if attempt < CONTEXT_SUMMARY_MAX_ATTEMPTS:
             await asyncio.sleep(CONTEXT_SUMMARY_RETRY_DELAY_SECONDS)
     if response is None:
         logger.error(
-            "Context summarization failed after %d attempts for conversation %s: %s",
+            "Context summarization failed after %d attempts for conversation %s "
+            "(%s: %r)",
             CONTEXT_SUMMARY_MAX_ATTEMPTS,
             conversation.id,
+            type(last_error).__name__ if last_error else "unknown",
             last_error,
+            exc_info=(
+                type(last_error),
+                last_error,
+                last_error.__traceback__,
+            )
+            if last_error
+            else None,
         )
         raise BusinessError(msg_key="context_summarization_failed")
     fitted, _ = truncate_text_to_tokens(
@@ -1199,14 +1075,8 @@ async def _persist_context_summary(
     current_user_message_id: UUID | None,
     exclude_message_ids: Sequence[UUID] | None,
     history_before_message_created_at: datetime | None,
-    keep_recent_turns: int,
 ) -> None:
-    """Persist the summary and advance its watermark past covered turns.
-
-    Turns are delimited by user messages. The watermark stops before the
-    most recent ``keep_recent_turns`` turns so they remain raw history in
-    later requests until they eventually roll into a future summary.
-    """
+    """Persist a summary and mark all visible history before the request covered."""
     try:
         excludes = [*(exclude_message_ids or [])]
         if current_user_message_id:
@@ -1218,21 +1088,15 @@ async def _persist_context_summary(
         )
         if not history:
             return
-        blocks: list[list] = []
-        for message in history:
-            if not blocks or message.role == ConversationMessageRole.USER:
-                blocks.append([message])
-            else:
-                blocks[-1].append(message)
-        if len(blocks) <= max(keep_recent_turns, 0):
-            return
-        covered_blocks = (
-            blocks[:-keep_recent_turns] if keep_recent_turns > 0 else blocks
-        )
         await Conversation.filter(id=conversation.id).update(
             context_summary_text=summary_text,
-            context_summary_watermark_id=covered_blocks[-1][-1].id,
+            context_summary_watermark_id=history[-1].id,
         )
+        # The next tool iteration reuses this loaded Conversation instance.
+        # Keep it in sync with the persisted watermark so that the same
+        # request does not rebuild and summarize the covered history again.
+        conversation.context_summary_text = summary_text
+        conversation.context_summary_watermark_id = history[-1].id
     except Exception:
         logger.warning(
             "Failed to persist context summary for conversation %s",
@@ -1243,12 +1107,7 @@ async def _persist_context_summary(
 
 @dataclass(slots=True)
 class ContextPlan:
-    """First-phase result: the built context plus the summarization decision.
-
-    ``build_context_plan`` never performs a model call, so streaming
-    endpoints can emit a compression-start event before awaiting
-    :meth:`finalize` (which may run the summarizer).
-    """
+    """Built context plus the single preflight summary decision."""
 
     agent: Agent
     conversation: Conversation
@@ -1259,7 +1118,6 @@ class ContextPlan:
     compression_config: dict[str, Any]
     compression_enabled: bool
     trigger_budget: int
-    keep_start: int
     current_user_index: int
     summarized: list[Message]
     will_summarize: bool
@@ -1267,25 +1125,57 @@ class ContextPlan:
     tokenizer_model_id: str | None
     provider: str | None
     tool_definition_tokens: int
-    keep_recent_turns: int
-    keep_recent_steps: int
     history_override_is_none: bool
     current_user_message_id: UUID | None
     exclude_message_ids: Sequence[UUID] | None
     history_before_message_created_at: datetime | None
-    persisted_summary_text: str | None
 
     async def finalize(self) -> PreparedModelContext:
-        """Run the summarizer (if planned), bound in-loop growth, and return."""
+        """Summarize old history when needed and return the provider context."""
         messages = self.messages
         protected_indexes = self.protected_indexes
         compression = self.compression
         token_budget = self.token_budget
-        summary_max_tokens = int(
-            self.compression_config.get(
-                "summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS
-            )
+        preserved_suffix = (
+            self.messages[self.current_user_index :]
+            if self.current_user_index > 0
+            else []
         )
+        fixed_messages = [self.messages[0], *preserved_suffix]
+        fixed_context_tokens = _estimate_message_tokens(
+            fixed_messages,
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        )
+        configured_summary_tokens = max(
+            int(
+                self.compression_config.get(
+                    "summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS
+                )
+            ),
+            1,
+        )
+        summary_message_overhead = _estimate_message_tokens(
+            [
+                Message(
+                    role=MessageRole.USER,
+                    content=f"{CONTEXT_SUMMARY_PREFIX}\n\n",
+                )
+            ],
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        )
+        summary_max_tokens = min(
+            configured_summary_tokens,
+            max(
+                token_budget.input_budget
+                - self.tool_definition_tokens
+                - fixed_context_tokens
+                - summary_message_overhead,
+                1,
+            ),
+        )
+
         summary_prompt_overhead = _estimate_message_tokens(
             [
                 Message(
@@ -1301,13 +1191,7 @@ class ContextPlan:
             provider=self.provider,
         )
         max_transcript_tokens = max(
-            min(
-                int(token_budget.input_budget * 0.8),
-                token_budget.input_budget
-                - token_budget.safety_margin
-                - summary_max_tokens
-                - summary_prompt_overhead,
-            ),
+            token_budget.input_budget - summary_prompt_overhead - summary_max_tokens,
             1,
         )
 
@@ -1323,38 +1207,36 @@ class ContextPlan:
                 max_transcript_tokens=max_transcript_tokens,
             )
             if summary_text:
-                keep_start = self.keep_start
-                kept_messages = messages[keep_start:]
-                messages = [
-                    messages[0],
-                    Message(
-                        role=MessageRole.USER,
-                        content=f"{CONTEXT_SUMMARY_PREFIX}\n\n{summary_text}",
-                    ),
-                    *kept_messages,
-                ]
-                protected_indexes = {0, 1} | {
-                    2 + (index - keep_start)
-                    for index in protected_indexes
-                    if index >= keep_start
-                }
+                summary_message = Message(
+                    role=MessageRole.USER,
+                    content=f"{CONTEXT_SUMMARY_PREFIX}\n\n{summary_text}",
+                )
+                source_tokens = _estimate_message_tokens(
+                    self.summarized,
+                    model_id=self.tokenizer_model_id,
+                    provider=self.provider,
+                )
+                result_tokens = _estimate_message_tokens(
+                    [summary_message],
+                    model_id=self.tokenizer_model_id,
+                    provider=self.provider,
+                )
+                compression.summary_source_tokens = source_tokens
+                compression.summary_result_tokens = result_tokens
+                compression.summary_saved_tokens = max(source_tokens - result_tokens, 0)
+                messages = [self.messages[0], summary_message, *preserved_suffix]
+                protected_indexes = set(range(len(messages)))
                 compression.stage = "macro"
-                compression.summary_turns = len(self.summarized)
+                compression.summary_turns = sum(
+                    1
+                    for message in self.summarized
+                    if message.role == MessageRole.USER
+                    and not _is_context_summary_message(message)
+                )
                 compression.actions = list(
                     dict.fromkeys([*(compression.actions or []), "context_summary"])
                 )
                 if self.history_override_is_none:
-                    retained_turns = sum(
-                        1
-                        for message in self.messages[
-                            self.keep_start : self.current_user_index
-                        ]
-                        if message.role == MessageRole.USER
-                        and not (
-                            isinstance(message.content, str)
-                            and message.content.startswith(CONTEXT_SUMMARY_PREFIX)
-                        )
-                    )
                     await _persist_context_summary(
                         conversation=self.conversation,
                         summary_text=summary_text,
@@ -1363,104 +1245,12 @@ class ContextPlan:
                         history_before_message_created_at=(
                             self.history_before_message_created_at
                         ),
-                        keep_recent_turns=retained_turns,
                     )
 
-        if self.compression_enabled and compression.after_tokens > self.trigger_budget:
-            current_user_index = next(
-                (
-                    index
-                    for index in range(len(messages) - 1, -1, -1)
-                    if messages[index].role == MessageRole.USER
-                ),
-                None,
-            )
-            if current_user_index is not None and current_user_index + 1 < len(
-                messages
-            ):
-                region_start = current_user_index + 1
-                region = messages[region_start:]
-                selected_messages: list[Message] | None = None
-                selected_protected: set[int] | None = None
-                selected_tokens = 0
-                selected_compacted = False
-                max_recent_steps = max(self.keep_recent_steps, 0)
-                for keep_steps in range(max_recent_steps, -1, -1):
-                    compaction = compact_round_tool_steps(
-                        region,
-                        keep_recent_steps=keep_steps,
-                    )
-                    candidate_messages = (
-                        [*messages[:region_start], *compaction.messages]
-                        if compaction.changed
-                        else messages
-                    )
-                    candidate_tokens = _estimate_message_tokens(
-                        candidate_messages,
-                        model_id=self.tokenizer_model_id,
-                        provider=self.provider,
-                    ) + max(self.tool_definition_tokens, 0)
-                    if compaction.changed:
-                        candidate_protected = {
-                            index for index in protected_indexes if index < region_start
-                        }
-                        if compaction.summary_rel is not None:
-                            candidate_protected.add(
-                                region_start + compaction.summary_rel
-                            )
-                        if compaction.tail_start_rel is not None:
-                            candidate_protected.update(
-                                region_start + rel
-                                for rel in range(
-                                    compaction.tail_start_rel,
-                                    len(compaction.messages),
-                                )
-                            )
-                    else:
-                        candidate_protected = protected_indexes
-                    selected_messages = candidate_messages
-                    selected_protected = candidate_protected
-                    selected_tokens = candidate_tokens
-                    selected_compacted = bool(compaction.changed)
-                    if candidate_tokens <= token_budget.input_budget or keep_steps == 0:
-                        break
-                if selected_messages is not None:
-                    messages = selected_messages
-                    protected_indexes = selected_protected or set()
-                    compression.after_tokens = selected_tokens
-                    if selected_compacted:
-                        if compression.stage == "none":
-                            compression.stage = "macro"
-                        compression.actions = list(
-                            dict.fromkeys(
-                                [*(compression.actions or []), "compact_round_steps"]
-                            )
-                        )
-
-        if compression.after_tokens > token_budget.input_budget:
-            bounded_messages, content_bounded = _fit_message_contents_to_budget(
-                messages,
-                input_budget=token_budget.input_budget,
-                tool_definition_tokens=self.tool_definition_tokens,
-                model_id=self.tokenizer_model_id,
-                provider=self.provider,
-                protected_indexes=protected_indexes,
-            )
-            if content_bounded:
-                messages = bounded_messages
-                compression.stage = "macro"
-                compression.actions = list(
-                    dict.fromkeys(
-                        [*(compression.actions or []), "bound_message_content"]
-                    )
-                )
-                compression.after_tokens = _estimate_message_tokens(
-                    messages,
-                    model_id=self.tokenizer_model_id,
-                    provider=self.provider,
-                ) + max(self.tool_definition_tokens, 0)
         compression.after_tokens = _estimate_message_tokens(
-            messages, model_id=self.tokenizer_model_id, provider=self.provider
+            messages,
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
         ) + max(self.tool_definition_tokens, 0)
         compression.pressure_level = _assess_pressure(
             compression.after_tokens,
@@ -1474,62 +1264,17 @@ class ContextPlan:
         )
 
         if compression.after_tokens > token_budget.input_budget:
-            # Emergency fallback: system + latest persisted summary + current
-            # request, so the model never restarts from a blank slate.
-            current_user_message = next(
-                (
-                    messages[index]
-                    for index in range(len(messages) - 1, -1, -1)
-                    if messages[index].role == MessageRole.USER
-                ),
-                None,
-            )
-            emergency_messages: list[Message] = []
-            if messages and messages[0].role == MessageRole.SYSTEM:
-                emergency_messages.append(messages[0])
-            if self.persisted_summary_text:
-                emergency_messages.append(
-                    Message(
-                        role=MessageRole.USER,
-                        content=(
-                            f"{CONTEXT_SUMMARY_PREFIX}\n\n{self.persisted_summary_text}"
-                        ),
-                    )
-                )
-            if current_user_message is not None:
-                emergency_messages.append(current_user_message)
-            emergency_tokens = _estimate_message_tokens(
-                emergency_messages,
-                model_id=self.tokenizer_model_id,
+            raise ContextLengthError(
+                message="Context length exceeded after context summary",
+                max_tokens=token_budget.input_budget,
+                actual_tokens=compression.after_tokens,
                 provider=self.provider,
-            ) + max(self.tool_definition_tokens, 0)
-            if emergency_tokens > token_budget.input_budget:
-                raise ContextLengthError(
-                    message="Context length exceeded even with emergency fallback",
-                    max_tokens=token_budget.input_budget,
-                    actual_tokens=emergency_tokens,
-                    provider=self.provider,
-                    model=self.model_id,
-                    details={
-                        "retryable": False,
-                        "reason": "system_and_user_exceed_input_budget",
-                        "context_limit": token_budget.context_limit,
-                        "output_reserve": token_budget.output_reserve,
-                        "safety_margin": token_budget.safety_margin,
-                    },
-                )
-            messages = emergency_messages
-            protected_indexes = set(range(len(emergency_messages)))
-            compression.stage = "macro"
-            compression.after_tokens = emergency_tokens
-            compression.pressure_level = "over_budget"
-            compression.actions = list(
-                dict.fromkeys([*(compression.actions or []), "emergency_fallback"])
-            )
-            compression.utilization_after = (
-                emergency_tokens / token_budget.context_limit
-                if token_budget.context_limit
-                else 0.0
+                model=self.model_id,
+                details={
+                    "retryable": False,
+                    "reason": "context_summary_did_not_fit",
+                    "context_limit": token_budget.context_limit,
+                },
             )
 
         return PreparedModelContext(
@@ -1564,47 +1309,21 @@ async def build_context_plan(
     protected_round_id: UUID | str | None = None,
     tool_definition_tokens: int = 0,
 ) -> ContextPlan:
-    """Build the full context and decide whether summarization is needed.
-
-    Never performs a model call; call :meth:`ContextPlan.finalize` to run
-    the planned summarization and bounding passes.
-    """
+    """Build the request and decide whether the full history needs a summary."""
     compression_config = get_context_compression_config(agent)
     compression_enabled = bool(compression_config.get("enabled", True))
     token_budget = _build_token_budget(
         context_limit=model_context_limit,
         model_max_output_tokens=model_max_output_tokens,
-        output_token_reserve=int(
-            compression_config.get("output_token_reserve", DEFAULT_OUTPUT_TOKEN_RESERVE)
-        ),
-        safety_margin_tokens=int(
-            compression_config.get("safety_margin_tokens", DEFAULT_SAFETY_MARGIN_TOKENS)
-        ),
+        output_token_reserve=DEFAULT_OUTPUT_TOKEN_RESERVE,
+        safety_margin_tokens=DEFAULT_SAFETY_MARGIN_TOKENS,
     )
-    trigger_ratio = float(
-        compression_config.get("summary_trigger_ratio", DEFAULT_SUMMARY_TRIGGER_RATIO)
-    )
-    trigger_budget = max(
-        min(
-            int(token_budget.context_limit * trigger_ratio),
-            token_budget.input_budget,
-        ),
-        1,
+    trigger_ratio = DEFAULT_SUMMARY_TRIGGER_RATIO
+    trigger_budget = min(
+        max(int(token_budget.context_limit * trigger_ratio), 1),
+        token_budget.input_budget,
     )
 
-    file_content, file_content_bounded = _normalize_file_content_for_budget(
-        file_content,
-        max_tokens=min(
-            int(
-                compression_config.get(
-                    "file_content_max_tokens", DEFAULT_FILE_CONTENT_MAX_TOKENS
-                )
-            ),
-            max(token_budget.input_budget // 3, 128),
-        ),
-        model_id=tokenizer_model_id or model_id,
-        provider=provider,
-    )
     context_summary_text: str | None = None
     history_after_message_id: UUID | None = None
     if compression_enabled and (
@@ -1669,79 +1388,33 @@ async def build_context_plan(
             if token_budget.context_limit
             else 0.0
         ),
-        actions=["bound_file_content"] if file_content_bounded else [],
+        actions=[],
         context_limit=token_budget.context_limit,
         output_reserve=token_budget.output_reserve,
         safety_margin=token_budget.safety_margin,
     )
 
-    keep_start = 1
-    current_user_index = -1
-    summarized: list[Message] = []
-    keep_recent_turns = int(
-        compression_config.get(
-            "summary_keep_recent_turns", DEFAULT_SUMMARY_KEEP_RECENT_TURNS
-        )
+    current_user_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if messages[index].role == MessageRole.USER
+            and not _is_context_summary_message(messages[index])
+        ),
+        -1,
     )
-    if compression_enabled and before_tokens > trigger_budget:
-        current_user_index = next(
-            (
-                index
-                for index in range(len(messages) - 1, -1, -1)
-                if messages[index].role == MessageRole.USER
-            ),
-            -1,
-        )
-        if current_user_index > 0:
-            turn_starts = _turn_user_starts(
-                messages, current_user_index=current_user_index
-            )
-            keep_start = (
-                current_user_index
-                if keep_recent_turns <= 0
-                else (
-                    turn_starts[-keep_recent_turns]
-                    if len(turn_starts) > keep_recent_turns
-                    else 1
-                )
-            )
-            # 轮数只是优先级，token 预算是硬约束。单轮可能本身极长；
-            # 若最后一轮也放不进保留区，就把整轮交给摘要，不保留超预算原文。
-            keep_budget = int(
-                token_budget.input_budget
-                * float(
-                    compression_config.get(
-                        "summary_keep_budget_ratio",
-                        DEFAULT_SUMMARY_KEEP_BUDGET_RATIO,
-                    )
-                )
-            )
-            while True:
-                kept_tokens = _estimate_message_tokens(
-                    messages[keep_start:current_user_index],
-                    model_id=tokenizer_model_id,
-                    provider=provider,
-                )
-                if kept_tokens <= keep_budget:
-                    break
-                next_start = next(
-                    (index for index in turn_starts if index > keep_start), None
-                )
-                if next_start is None:
-                    keep_start = current_user_index
-                    break
-                keep_start = next_start
-            summarized = [
-                message
-                for index, message in enumerate(messages)
-                if 0 < index < keep_start and index not in protected_indexes
-            ]
-        else:
-            logger.warning(
-                "Skipping context summarization for conversation %s: "
-                "no separable user message found",
-                conversation.id,
-            )
+    summarized = (
+        [
+            message
+            for index, message in enumerate(messages)
+            if 0 < index < current_user_index
+            and not _is_context_summary_message(message)
+        ]
+        if compression_enabled
+        and before_tokens > trigger_budget
+        and current_user_index > 1
+        else []
+    )
 
     return ContextPlan(
         agent=agent,
@@ -1753,7 +1426,6 @@ async def build_context_plan(
         compression_config=compression_config,
         compression_enabled=compression_enabled,
         trigger_budget=trigger_budget,
-        keep_start=keep_start,
         current_user_index=current_user_index,
         summarized=summarized,
         will_summarize=bool(summarized),
@@ -1761,17 +1433,10 @@ async def build_context_plan(
         tokenizer_model_id=tokenizer_model_id,
         provider=provider,
         tool_definition_tokens=tool_definition_tokens,
-        keep_recent_turns=keep_recent_turns,
-        keep_recent_steps=int(
-            compression_config.get(
-                "summary_keep_recent_steps", DEFAULT_SUMMARY_KEEP_RECENT_STEPS
-            )
-        ),
         history_override_is_none=history_override is None,
         current_user_message_id=current_user_message_id,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
-        persisted_summary_text=context_summary_text,
     )
 
 

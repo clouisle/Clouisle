@@ -98,9 +98,18 @@ def extract_media_display_payload(display_result: str) -> dict[str, Any] | None:
     return payload
 
 
-def build_compression_start_event(*, stage: str, trigger: str) -> str:
-    """Build the compression-start SSE event (emit before long summarization)."""
+def build_compression_start_event(
+    *,
+    agent: "Agent",
+    stage: str,
+    trigger: str,
+) -> str | None:
+    """Build the compression-start SSE event when emission is enabled."""
     from app.schemas.agent import SSEEventType
+    from app.services.chat_context import get_context_compression_config
+
+    if not get_context_compression_config(agent).get("emit_sse_events", True):
+        return None
 
     return (
         f"event: {SSEEventType.COMPRESSION_START}\n"
@@ -130,18 +139,7 @@ def build_compression_events(
     if stage == "none":
         return None, None
 
-    note_parts: list[str] = []
-    if trigger == "blocking_threshold":
-        note_parts.append(t("chat_context_compaction_blocking"))
-    else:
-        note_parts.append(t("chat_context_compaction_proactive"))
-    if compression.summary_turns:
-        note_parts.append(
-            t(
-                "chat_context_compaction_summarized_turns",
-                count=compression.summary_turns,
-            )
-        )
+    note_parts = [t("chat_context_summary_applied")]
 
     # Start event - minimal info
     start_payload = {
@@ -167,6 +165,9 @@ def build_compression_events(
         "policy_used": compression.policy_used,
         "actions": compression.actions,
         "summary_turns": compression.summary_turns,
+        "summary_source_tokens": getattr(compression, "summary_source_tokens", 0),
+        "summary_result_tokens": getattr(compression, "summary_result_tokens", 0),
+        "summary_saved_tokens": getattr(compression, "summary_saved_tokens", 0),
         "context_limit": compression.context_limit,
         "output_reserve": compression.output_reserve,
         "safety_margin": compression.safety_margin,

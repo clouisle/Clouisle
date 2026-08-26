@@ -1065,7 +1065,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isErroredMessage && message.metadata?.preservedPartialProgress
     )
     // Check if we should show ChainOfThought
-    // Only show if there are reasoning parts OR tasks (RAG/generating)
+    // Only show if there are reasoning parts or timeline tasks (RAG/compression/generating)
     // Tool calls should only be in ChainOfThought if there's reasoning
     const hasTasks = taskParts.length > 0
     const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
@@ -1135,29 +1135,52 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
         const beforeTokens = typeof info?.before_tokens === 'number' ? info.before_tokens : null
         const afterTokens = typeof info?.after_tokens === 'number' ? info.after_tokens : null
+        const summarySourceTokens = typeof info?.summary_source_tokens === 'number' && info.summary_source_tokens > 0
+          ? info.summary_source_tokens
+          : null
+        const summaryResultTokens = typeof info?.summary_result_tokens === 'number' && info.summary_result_tokens > 0
+          ? info.summary_result_tokens
+          : null
+        const summarySavedTokens = typeof info?.summary_saved_tokens === 'number'
+          ? info.summary_saved_tokens
+          : null
         const summaryTurns = typeof info?.summary_turns === 'number' ? info.summary_turns : null
         const trigger = typeof info?.trigger === 'string' ? info.trigger : null
         const pressureLevel = typeof info?.pressure_level === 'string' ? info.pressure_level : null
         const compactedBlocks = typeof info?.compacted_blocks === 'number' ? info.compacted_blocks : null
+        const hasSummaryTokenStats = summarySourceTokens !== null && summaryResultTokens !== null
+        const displayBeforeTokens = summarySourceTokens ?? beforeTokens
+        const displayAfterTokens = summaryResultTokens ?? afterTokens
+        const displaySavedTokens = summarySavedTokens ?? (
+          displayBeforeTokens !== null && displayAfterTokens !== null
+            ? Math.max(displayBeforeTokens - displayAfterTokens, 0)
+            : 0
+        )
 
-        if (taskPart.state === 'completed' && beforeTokens && afterTokens) {
+        if (taskPart.state === 'completed' && displayBeforeTokens !== null && displayAfterTokens !== null) {
           if (trigger === 'context_length_error') {
-            return tTask('compressionCompletedReactive', { before: beforeTokens, after: afterTokens })
+            return tTask('compressionCompletedReactive', { before: displayBeforeTokens, after: displayAfterTokens })
           }
           if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
-            if (summaryTurns && summaryTurns > 0) {
-              return tTask('compressionCompletedBlockingSummary', { before: beforeTokens, after: afterTokens, count: summaryTurns })
+            if (hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)) {
+              return tTask('compressionCompletedBlockingSummary', {
+                before: displayBeforeTokens,
+                after: displayAfterTokens,
+                saved: displaySavedTokens,
+                count: summaryTurns ?? 0,
+              })
             }
-            return tTask('compressionCompletedBlocking', { before: beforeTokens, after: afterTokens })
+            return tTask('compressionCompletedBlocking', { before: displayBeforeTokens, after: displayAfterTokens })
           }
-          if (summaryTurns && summaryTurns > 0) {
+          if (hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)) {
             return tTask('compressionCompletedProactiveSummary', {
-              before: beforeTokens,
-              after: afterTokens,
-              count: compactedBlocks ?? summaryTurns,
+              before: displayBeforeTokens,
+              after: displayAfterTokens,
+              saved: displaySavedTokens,
+              count: summaryTurns ?? compactedBlocks ?? 0,
             })
           }
-          return tTask('compressionCompletedProactive', { before: beforeTokens, after: afterTokens })
+          return tTask('compressionCompletedProactive', { before: displayBeforeTokens, after: displayAfterTokens })
         }
         if (trigger === 'context_length_error') {
           return tTask('compressingContextReactive')
@@ -1190,22 +1213,24 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       })
 
-      // 1.5 Compression steps after RAG and before reasoning/tool execution
-      taskParts.filter(t => t.taskType === 'compression').forEach((taskPart, index) => {
-        steps.push(
-          <ChainOfThoughtStep
-            key={`compression-${index}`}
-            icon={Timer}
-            label={getTaskTitle(taskPart)}
-            status={getStepStatus(taskPart.state)}
-          />
-        )
-      })
 
-      // 2. Process other parts in their original order
-      // Only include tool calls and reasoning if there's reasoning content
-      if (hasReasoning) {
-        otherParts.forEach((part, index) => {
+      // 2. Process task, tool, and reasoning parts in their original order
+      // Compression is emitted from the same ordered parts list as reasoning and tools.
+      otherParts.forEach((part, index) => {
+        if (isTaskPart(part)) {
+          if (part.taskType === 'compression') {
+            steps.push(
+              <ChainOfThoughtStep
+                key={`compression-${index}`}
+                icon={Timer}
+                label={getTaskTitle(part)}
+                status={getStepStatus(part.state)}
+              />
+            )
+          }
+          return
+        }
+        if (hasReasoning) {
           if (isToolCallPart(part)) {
             if (hideToolCalls) return
             const toolPart = part as ToolCallPart
@@ -1294,8 +1319,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               </ChainOfThoughtStep>
             )
           }
+        }
         })
-      }
 
       // 3. Generating steps last
       taskParts.filter(t => t.taskType === 'generating').forEach((taskPart, index) => {

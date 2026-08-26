@@ -669,6 +669,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'compression_start': {
               taskState.compression = 'running'
+              appendTimelineTask(segments, 'compression')
               streamingStateRef.current.taskState = taskState
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -685,6 +686,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'compression_end': {
               const data = event.data as SSECompression
+              ensureTimelineTask(
+                segments,
+                'compression',
+                'completed',
+                data as unknown as Record<string, unknown>
+              )
               taskState.compression = 'completed'
               taskState.compressionInfo = data as unknown as Record<string, unknown>
               streamingStateRef.current.taskState = taskState
@@ -912,6 +919,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               cancelScheduledStreamingFlush()
               if (taskState.compression === 'running') {
                 taskState.compression = 'error'
+                updateLatestTimelineTask(segments, 'compression', 'error')
                 streamingStateRef.current.taskState = taskState
               }
               const data = event.data as SSEError
@@ -1789,6 +1797,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'compression_start': {
               taskState.compression = 'running'
+              appendTimelineTask(segments, 'compression')
               streamingStateRef.current.taskState = taskState
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -1805,6 +1814,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'compression_end': {
               const data = event.data as SSECompression
+              ensureTimelineTask(
+                segments,
+                'compression',
+                'completed',
+                data as unknown as Record<string, unknown>
+              )
               taskState.compression = 'completed'
               taskState.compressionInfo = data as unknown as Record<string, unknown>
               streamingStateRef.current.taskState = taskState
@@ -2026,6 +2041,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             case 'error': {
               if (taskState.compression === 'running') {
                 taskState.compression = 'error'
+                updateLatestTimelineTask(segments, 'compression', 'error')
                 streamingStateRef.current.taskState = taskState
               }
               const data = event.data as SSEError
@@ -2172,11 +2188,12 @@ interface TaskState {
 }
 
 /**
- * A segment represents either text content, a tool call group, or a reasoning block
- * This allows all content to appear in the order they were triggered
+ * A segment represents a stream event in the order it was received.
+ * Keeping task events here prevents progress steps from being rendered as a
+ * fixed prelude to the rest of the thinking timeline.
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'media-result' | 'truncated' | 'iteration-cap-reached'
+  type: 'text' | 'tool-group' | 'reasoning' | 'task' | 'user-input-request' | 'media-result' | 'truncated' | 'iteration-cap-reached'
   // For text type
   text?: string
   // For tool-group type
@@ -2187,10 +2204,62 @@ interface ContentSegment {
   reasoningState?: 'streaming' | 'done'
   reasoningStartTime?: number
   reasoningDuration?: number
+  // For task type
+  task?: TaskPart
   // For user-input-request type
   userInputRequest?: UserInputRequestPart
   // For media-result type
   mediaResult?: MediaResultPart
+}
+
+function appendTimelineTask(segments: ContentSegment[], taskType: TaskPart['taskType']) {
+  segments.push({
+    type: 'task',
+    task: {
+      type: 'task',
+      taskType,
+      state: 'running',
+    },
+  })
+}
+
+function updateLatestTimelineTask(
+  segments: ContentSegment[],
+  taskType: TaskPart['taskType'],
+  state: TaskPart['state'],
+  info?: TaskPart['info']
+) {
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index]
+    if (segment.type !== 'task' || segment.task?.taskType !== taskType) continue
+
+    segment.task = {
+      ...segment.task,
+      state,
+      ...(info === undefined ? {} : { info }),
+    }
+    return true
+  }
+  return false
+}
+
+function ensureTimelineTask(
+  segments: ContentSegment[],
+  taskType: TaskPart['taskType'],
+  state: TaskPart['state'],
+  info?: TaskPart['info']
+) {
+  if (!updateLatestTimelineTask(segments, taskType, state, info)) {
+    segments.push({
+      type: 'task',
+      task: {
+        type: 'task',
+        taskType,
+        state,
+        ...(info === undefined ? {} : { info }),
+      },
+    })
+  }
 }
 
 interface AssistantStreamState {
@@ -2341,10 +2410,17 @@ function applyAssistantStreamEvent(
 
     case 'compression_start':
       state.taskState.compression = 'running'
+      appendTimelineTask(state.segments, 'compression')
       return true
 
     case 'compression_end':
       state.taskState.compression = 'completed'
+      ensureTimelineTask(
+        state.segments,
+        'compression',
+        'completed',
+        event.data as SSECompression as unknown as Record<string, unknown>
+      )
       state.taskState.compressionInfo = event.data as SSECompression as unknown as Record<string, unknown>
       return true
 
@@ -2438,48 +2514,32 @@ function buildMessageParts(
 ): MessagePart[] {
   const parts: MessagePart[] = []
 
-  // Add task parts for RAG and generating steps (not tool calling - we show individual tool calls instead)
-  // Keep showing them even after streaming ends so they're visible when collapsed
+  // Keep the aggregate RAG and generating steps for their existing positions.
+  // Compression tasks are emitted from their event segments below.
   if (taskState) {
-    // RAG task - show if it ran (not pending)
     if (taskState.rag !== 'pending') {
       const ragTask: TaskPart = {
         type: 'task',
         taskType: 'rag',
-        // Mark as completed when streaming ends
         state: isStreaming ? taskState.rag : 'completed',
         info: taskState.ragSourceCount,
       }
       parts.push(ragTask)
     }
 
-    // Note: We no longer add aggregated tool calling task here
-    // Individual tool calls are shown in the segments below
+    // Individual tool calls are shown in the segments below.
 
-    // Compression task - show if it ran (not pending)
-    if (taskState.compression !== 'pending') {
-      const compressionTask: TaskPart = {
-        type: 'task',
-        taskType: 'compression',
-        state: isStreaming ? taskState.compression : 'completed',
-        info: taskState.compressionInfo,
-      }
-      parts.push(compressionTask)
-    }
-
-    // Generating task - show if it ran (not pending)
     if (taskState.generating !== 'pending') {
       const generatingTask: TaskPart = {
         type: 'task',
         taskType: 'generating',
-        // Mark as completed when streaming ends
         state: isStreaming ? taskState.generating : 'completed',
       }
       parts.push(generatingTask)
     }
   }
 
-  // Add content segments in order (text, reasoning, and tool calls interleaved)
+  // Add content segments in order (text, reasoning, task, and tool calls).
   for (const segment of segments) {
     if (segment.type === 'text' && segment.text && segment.text.length > 0) {
       const textPart: TextPart = {
@@ -2496,30 +2556,32 @@ function buildMessageParts(
         duration: segment.reasoningDuration,
       }
       parts.push(reasoningPart)
+    } else if (segment.type === 'task' && segment.task) {
+      parts.push({
+        ...segment.task,
+        state: !isStreaming && segment.task.state !== 'error' ? 'completed' : segment.task.state,
+      })
     } else if (segment.type === 'tool-group' && segment.toolCalls && segment.toolCalls.length > 0) {
-      // Add tool calls and their results
+      // Add tool calls and their results.
       for (const toolCall of segment.toolCalls) {
         parts.push(toolCall)
-        // Find matching result
         const result = segment.toolResults?.find(r => r.toolCallId === toolCall.toolCallId)
         if (result) {
           parts.push(result)
         }
       }
     } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
-      // Add user input request
       parts.push(segment.userInputRequest)
     } else if (segment.type === 'media-result' && segment.mediaResult) {
       parts.push(segment.mediaResult)
     } else if (segment.type === 'truncated') {
-      // Add truncated warning
       parts.push({ type: 'truncated' })
     } else if (segment.type === 'iteration-cap-reached') {
       parts.push({ type: 'iteration-cap-reached' })
     }
   }
 
-  // Add sources at the end
+  // Add sources at the end.
   if (sources.length > 0 && !isStreaming) {
     parts.push(...sources)
   }

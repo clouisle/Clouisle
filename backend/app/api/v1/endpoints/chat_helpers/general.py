@@ -193,8 +193,5 @@ def append_conversation_image_inventory(
 
 
 def get_compression_trigger(compression: Any) -> str:
-    """Determine compression trigger type based on compression state."""
-    actions = getattr(compression, "actions", None) or []
-    if "emergency_fallback" in actions:
-        return "blocking_threshold"
+    """Return the stable SSE trigger for model-generated context summaries."""
     return "proactive_threshold"
