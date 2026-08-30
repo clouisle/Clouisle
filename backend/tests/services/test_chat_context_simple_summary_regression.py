@@ -73,24 +73,32 @@ async def test_summary_watermark_is_reused_across_tool_iterations(monkeypatch):
 
     async def build_messages(**_kwargs):
         if conversation.context_summary_text:
-            return [
-                Message(role=MessageRole.SYSTEM, content="system"),
-                Message(
-                    role=MessageRole.USER,
-                    content=(
-                        f"{chat_context.CONTEXT_SUMMARY_PREFIX}\n\n"
-                        f"{conversation.context_summary_text}"
+            return (
+                [
+                    Message(role=MessageRole.SYSTEM, content="system"),
+                    Message(
+                        role=MessageRole.USER,
+                        content=(
+                            f"{chat_context.CONTEXT_SUMMARY_PREFIX}\n\n"
+                            f"{conversation.context_summary_text}"
+                        ),
                     ),
-                ),
+                    current_user,
+                    Message(role=MessageRole.ASSISTANT, content="active tool step"),
+                ],
+                [],
+                set(),
+            )
+        return (
+            [
+                Message(role=MessageRole.SYSTEM, content="system"),
+                Message(role=MessageRole.USER, content="old history"),
+                Message(role=MessageRole.ASSISTANT, content="old answer"),
                 current_user,
-                Message(role=MessageRole.ASSISTANT, content="active tool step"),
-            ], set()
-        return [
-            Message(role=MessageRole.SYSTEM, content="system"),
-            Message(role=MessageRole.USER, content="old history"),
-            Message(role=MessageRole.ASSISTANT, content="old answer"),
-            current_user,
-        ], set()
+            ],
+            [],
+            set(),
+        )
 
     async def summarize(**_kwargs):
         nonlocal summarize_calls
@@ -178,7 +186,7 @@ async def test_over_input_budget_summarizes_before_hard_error(monkeypatch):
     summarize_calls = 0
 
     async def build_messages(**_kwargs):
-        return messages, set()
+        return messages, set(), []
 
     async def summarize(**_kwargs):
         nonlocal summarize_calls

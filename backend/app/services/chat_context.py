@@ -79,6 +79,10 @@ DEFAULT_OUTPUT_TOKEN_RESERVE = 4000
 DEFAULT_SAFETY_MARGIN_TOKENS = 1000
 DEFAULT_SUMMARY_MAX_TOKENS = 1000
 DEFAULT_SUMMARY_TRIGGER_RATIO = 0.9
+DEFAULT_SUMMARY_RESERVE_RATIO = 0.15
+DEFAULT_RECENT_TAIL_TOKENS = 20000
+# Minimum tokens kept verbatim after the summary when the window is small.
+MIN_RECENT_TAIL_TOKENS = 0
 CONTEXT_SUMMARY_TIMEOUT_SECONDS = 180.0
 CONTEXT_SUMMARY_MAX_ATTEMPTS = 3
 CONTEXT_SUMMARY_RETRY_DELAY_SECONDS = 2.0
@@ -98,6 +102,14 @@ class TokenBudget:
     output_reserve: int
     safety_margin: int
     input_budget: int
+
+
+@dataclass(slots=True)
+class PreparedModelContext:
+    messages: list[Message]
+    token_budget: TokenBudget
+    compression: CompressionMeta
+    protected_indexes: set[int] = field(default_factory=set)
 
 
 @dataclass(slots=True)
@@ -143,14 +155,6 @@ def _history_override_is_active_delta(
     )
 
 
-@dataclass(slots=True)
-class PreparedModelContext:
-    messages: list[Message]
-    token_budget: TokenBudget
-    compression: CompressionMeta
-    protected_indexes: set[int] = field(default_factory=set)
-
-
 def _matches_protected_round(
     round_id: Any,
     protected_round_id: UUID | str | None,
@@ -168,10 +172,41 @@ def _append_message(
     message: Message,
     *,
     protect: bool = False,
+    meta: list[dict[str, Any]] | None = None,
+    round_id: UUID | str | None = None,
+    round_role: str | None = None,
+    is_round_canonical: bool | None = None,
+    tool_call_id: str | None = None,
+    tool_calls: Any = None,
+    source_role: str | None = None,
+    source_message_id: Any = None,
+    **extra: Any,
 ) -> None:
+    """Append a flattened message.
+
+    When ``meta`` is provided it records round/protocol metadata (parallel to
+    ``messages``) that turn-aware compaction uses to select safe cut points.
+    """
     messages.append(message)
+    index = len(messages) - 1
     if protect:
-        protected_indexes.add(len(messages) - 1)
+        protected_indexes.add(index)
+    if meta is not None:
+        entry: dict[str, Any] = {
+            "index": index,
+            "role": message.role.value
+            if hasattr(message.role, "value")
+            else str(message.role),
+            "round_id": round_id,
+            "round_role": round_role,
+            "is_round_canonical": is_round_canonical,
+            "tool_call_id": tool_call_id,
+            "tool_calls": tool_calls,
+            "source_role": source_role,
+            "source_message_id": source_message_id,
+        }
+        entry.update(extra)
+        meta.append(entry)
 
 
 def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, str]:
@@ -536,12 +571,20 @@ async def _build_messages_with_file_content(
     protected_round_id: UUID | str | None = None,
     context_summary_text: str | None = None,
     history_after_message_id: UUID | None = None,
-) -> tuple[list[Message], set[int]]:
+) -> tuple[list[Message], set[int], list[dict[str, Any]]]:
+    """Build the model-ready message list plus parallel round metadata.
+
+    The third return value is a ``meta`` list aligned with ``messages``; each
+    entry records the source round/protocol fields (round_id, round_role,
+    canonical flag, tool_call_id, source message id) needed by turn-aware
+    compaction to select cut points at complete round boundaries.
+    """
     active_round_delta = _history_override_is_active_delta(
         history_override, protected_round_id
     )
     messages: list[Message] = []
     protected_indexes: set[int] = set()
+    meta: list[dict[str, Any]] = []
     valid_tool_call_ids: set[str] = set()
     _append_message(
         messages,
@@ -555,6 +598,7 @@ async def _build_messages_with_file_content(
                 user_locale=user_locale,
             ),
         ),
+        meta=meta,
     )
     if context_summary_text:
         _append_message(
@@ -564,6 +608,8 @@ async def _build_messages_with_file_content(
                 role=MessageRole.USER,
                 content=f"{CONTEXT_SUMMARY_PREFIX}\n\n{context_summary_text}",
             ),
+            meta=meta,
+            source_role="summary",
         )
 
     current_content = _append_file_content_to_user_content(
@@ -574,6 +620,20 @@ async def _build_messages_with_file_content(
         ),
         file_content,
     )
+
+    def _override_meta(hist_msg: Any, *, tool_calls: Any = None) -> dict[str, Any]:
+        return {
+            "round_id": _get_override_value(hist_msg, "round_id"),
+            "round_role": _get_override_value(hist_msg, "round_role"),
+            "is_round_canonical": _get_override_value(hist_msg, "is_round_canonical"),
+            "tool_call_id": _get_override_value(hist_msg, "tool_call_id")
+            or (_get_override_value(hist_msg, "id") if False else None),
+            "tool_calls": tool_calls,
+            "source_role": _normalize_override_role(
+                _get_override_value(hist_msg, "role")
+            ),
+            "source_message_id": None,
+        }
 
     if history_override is not None and not active_round_delta:
         has_current_round_user_in_override = any(
@@ -603,6 +663,14 @@ async def _build_messages_with_file_content(
                     protected_indexes,
                     Message(role=MessageRole.USER, content=current_content),
                     protect=True,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": "user_input",
+                        "is_round_canonical": True,
+                        "source_role": "user",
+                        "source_message_id": None,
+                    },
                 )
                 current_user_inserted = True
             if role == "user":
@@ -625,6 +693,16 @@ async def _build_messages_with_file_content(
                         ),
                     ),
                     protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": _get_override_value(hist_msg, "round_role"),
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "source_role": "user",
+                        "source_message_id": None,
+                    },
                 )
             elif role == "assistant":
                 tool_calls, new_tool_call_ids = _build_assistant_tool_calls(
@@ -644,6 +722,17 @@ async def _build_messages_with_file_content(
                         tool_calls=tool_calls,
                     ),
                     protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": _get_override_value(hist_msg, "round_role"),
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "tool_calls": tool_calls,
+                        "source_role": "assistant",
+                        "source_message_id": None,
+                    },
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
@@ -661,6 +750,17 @@ async def _build_messages_with_file_content(
                             tool_call_id=tool_call_id,
                         ),
                         protect=protect,
+                        meta=meta,
+                        **{
+                            "round_id": _get_override_value(hist_msg, "round_id"),
+                            "round_role": _get_override_value(hist_msg, "round_role"),
+                            "is_round_canonical": _get_override_value(
+                                hist_msg, "is_round_canonical"
+                            ),
+                            "tool_call_id": tool_call_id,
+                            "source_role": "tool",
+                            "source_message_id": None,
+                        },
                     )
         if not current_user_inserted and not has_current_round_user_in_override:
             _append_message(
@@ -668,8 +768,12 @@ async def _build_messages_with_file_content(
                 protected_indexes,
                 Message(role=MessageRole.USER, content=current_content),
                 protect=protected_round_id is not None,
+                meta=meta,
+                round_role="user_input",
+                is_round_canonical=True,
+                source_role="user",
             )
-        return messages, protected_indexes
+        return messages, protected_indexes, meta
 
     if history_after_message_id:
         after_history = await get_visible_conversation_messages_after(
@@ -726,6 +830,14 @@ async def _build_messages_with_file_content(
                         protected_indexes,
                         Message(role=MessageRole.USER, content=current_content),
                         protect=protect or protected_round_id is not None,
+                        meta=meta,
+                        round_id=msg.round_id,
+                        round_role=(
+                            msg.round_role.value if msg.round_role else "user_input"
+                        ),
+                        is_round_canonical=True,
+                        source_role="user",
+                        source_message_id=msg.id,
                     )
                     current_user_inserted = True
                 continue
@@ -741,6 +853,12 @@ async def _build_messages_with_file_content(
                     ),
                 ),
                 protect=protect,
+                meta=meta,
+                round_id=msg.round_id,
+                round_role=(msg.round_role.value if msg.round_role else "user_input"),
+                is_round_canonical=True,
+                source_role="user",
+                source_message_id=msg.id,
             )
             continue
 
@@ -757,6 +875,13 @@ async def _build_messages_with_file_content(
                     tool_calls=tool_calls,
                 ),
                 protect=protect,
+                meta=meta,
+                round_id=msg.round_id,
+                round_role=(msg.round_role.value if msg.round_role else None),
+                is_round_canonical=msg.is_round_canonical,
+                tool_calls=tool_calls,
+                source_role="assistant",
+                source_message_id=msg.id,
             )
             continue
 
@@ -775,6 +900,13 @@ async def _build_messages_with_file_content(
                     tool_call_id=msg.tool_call_id,
                 ),
                 protect=protect,
+                meta=meta,
+                round_id=msg.round_id,
+                round_role=(msg.round_role.value if msg.round_role else "tool_result"),
+                is_round_canonical=msg.is_round_canonical,
+                tool_call_id=msg.tool_call_id,
+                source_role="tool",
+                source_message_id=msg.id,
             )
     if (
         active_round_delta
@@ -786,6 +918,10 @@ async def _build_messages_with_file_content(
             protected_indexes,
             Message(role=MessageRole.USER, content=current_content),
             protect=True,
+            meta=meta,
+            round_role="user_input",
+            is_round_canonical=True,
+            source_role="user",
         )
 
     if not include_current_user_message:
@@ -794,6 +930,10 @@ async def _build_messages_with_file_content(
             protected_indexes,
             Message(role=MessageRole.USER, content=current_content),
             protect=protected_round_id is not None,
+            meta=meta,
+            round_role="user_input",
+            is_round_canonical=True,
+            source_role="user",
         )
     if active_round_delta:
         for hist_msg in history_override or ():
@@ -821,6 +961,17 @@ async def _build_messages_with_file_content(
                         tool_calls=tool_calls,
                     ),
                     protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": _get_override_value(hist_msg, "round_role"),
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "tool_calls": tool_calls,
+                        "source_role": "assistant",
+                        "source_message_id": None,
+                    },
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
@@ -838,9 +989,20 @@ async def _build_messages_with_file_content(
                             tool_call_id=tool_call_id,
                         ),
                         protect=protect,
+                        meta=meta,
+                        **{
+                            "round_id": _get_override_value(hist_msg, "round_id"),
+                            "round_role": _get_override_value(hist_msg, "round_role"),
+                            "is_round_canonical": _get_override_value(
+                                hist_msg, "is_round_canonical"
+                            ),
+                            "tool_call_id": tool_call_id,
+                            "source_role": "tool",
+                            "source_message_id": None,
+                        },
                     )
 
-    return messages, protected_indexes
+    return messages, protected_indexes, meta
 
 
 async def build_model_messages(
@@ -862,7 +1024,7 @@ async def build_model_messages(
     protected_round_id: UUID | str | None = None,
 ) -> list[Message]:
     """Build model-ready messages for agent chat flows."""
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _meta = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -970,6 +1132,93 @@ SUMMARY_SYSTEM_INSTRUCTION = (
 )
 
 
+def _select_summary_cut_index(
+    messages: Sequence[Message],
+    meta: Sequence[dict[str, Any]] | None,
+    current_user_index: int,
+    tail_tokens: int,
+    *,
+    tokenizer_model_id: str | None,
+    provider: str | None,
+) -> int:
+    """Pick the first index of the recent verbatim tail.
+
+    History (indices ``[1, current_user_index)``) is grouped into consecutive
+    round blocks via the parallel ``meta`` sidecar. Blocks are kept verbatim
+    from the newest backward while they fit the tail budget; the first block
+    that does not fit (and everything older) is eligible for summarization.
+    Incomplete rounds (assistant tool calls without matching tool results) are
+    never cut; the newest block is always retained even when oversized so a
+    recent single turn is preserved intact. Returns the index where the
+    retained tail starts; ``current_user_index`` means nothing old is kept raw
+    (and nothing old is summarized by the caller).
+    """
+    if current_user_index <= 1:
+        return current_user_index
+    metas = list(meta or [])
+    # consecutive round blocks over history only: [1, current_user_index)
+    blocks: list[tuple[int, int]] = []
+    block_start = 1
+    for idx in range(2, current_user_index + 1):
+        prev_rid = metas[idx - 1].get("round_id") if idx - 1 < len(metas) else None
+        cur_rid = metas[idx].get("round_id") if idx < len(metas) else None
+        if prev_rid is not None and cur_rid != prev_rid:
+            blocks.append((block_start, idx))
+            block_start = idx
+    if block_start < current_user_index:
+        blocks.append((block_start, current_user_index))
+    if not blocks:
+        return current_user_index
+
+    retained_start = current_user_index
+    budget = tail_tokens
+    for start, end in reversed(blocks):
+        block_tokens = _estimate_message_tokens(
+            messages[start:end],
+            model_id=tokenizer_model_id,
+            provider=provider,
+        )
+        if not _round_is_complete(metas[start:end]):
+            # active/incomplete protocol: never cut into it
+            retained_start = start
+            break
+        if budget >= block_tokens:
+            retained_start = start
+            budget -= block_tokens
+            continue
+        # The newest block that does not fit is summarized (with everything
+        # older); an oversized single completed turn is prefix-compacted by
+        # the summarizer transcript bound rather than preserved whole.
+        break
+    return retained_start
+
+
+def _round_is_complete(block_meta: Sequence[dict[str, Any]]) -> bool:
+    """A retained round block is complete when every assistant tool call has a
+    matching tool result inside the block, or the assistant made no calls."""
+    assistant_call_ids: set[str] = set()
+    tool_result_ids: set[str] = set()
+    for entry in block_meta:
+        role = entry.get("role") or entry.get("source_role")
+        if role == "assistant":
+            calls = entry.get("tool_calls") or ()
+            for call in calls:
+                call_id = (
+                    call.get("id")
+                    if isinstance(call, dict)
+                    else getattr(call, "id", None)
+                )
+                if call_id:
+                    assistant_call_ids.add(str(call_id))
+        elif role == "tool":
+            call_id = entry.get("tool_call_id")
+            if call_id:
+                tool_result_ids.add(str(call_id))
+    if not assistant_call_ids:
+        return True
+    return bool(tool_result_ids) and assistant_call_ids.issubset(tool_result_ids)
+
+
 async def _summarize_context(
     *,
     agent: Agent,
@@ -980,6 +1229,7 @@ async def _summarize_context(
     provider: str | None,
     max_tokens: int,
     max_transcript_tokens: int,
+    previous_summary: str | None = None,
 ) -> str | None:
     transcript = _render_summary_transcript(messages_to_summarize)
     transcript, _ = truncate_text_to_tokens(
@@ -988,8 +1238,15 @@ async def _summarize_context(
         model_id=tokenizer_model_id or model_id,
         provider=provider,
     )
-    if not transcript.strip():
+    if not transcript.strip() and not previous_summary:
         return None
+    if previous_summary:
+        transcript = (
+            "Previous summary:\n"
+            f"{previous_summary}\n\n"
+            "New conversation transcript:\n"
+            f"{transcript}"
+        )
     response = None
     last_error: Exception | None = None
     for attempt in range(1, CONTEXT_SUMMARY_MAX_ATTEMPTS + 1):
@@ -1075,9 +1332,24 @@ async def _persist_context_summary(
     current_user_message_id: UUID | None,
     exclude_message_ids: Sequence[UUID] | None,
     history_before_message_created_at: datetime | None,
+    watermark_message_id: UUID | None = None,
 ) -> None:
-    """Persist a summary and mark all visible history before the request covered."""
+    """Persist a summary and advance the watermark to the last message it
+    covers.
+
+    With turn-aware compaction the summary covers only the newly summarized
+    old turns; the recent verbatim tail stays raw, so the watermark must point
+    at the last summarized message (not the last visible history message).
+    """
     try:
+        if watermark_message_id is not None:
+            await Conversation.filter(id=conversation.id).update(
+                context_summary_text=summary_text,
+                context_summary_watermark_id=watermark_message_id,
+            )
+            conversation.context_summary_text = summary_text
+            conversation.context_summary_watermark_id = watermark_message_id
+            return
         excludes = [*(exclude_message_ids or [])]
         if current_user_message_id:
             excludes.append(current_user_message_id)
@@ -1119,7 +1391,10 @@ class ContextPlan:
     compression_enabled: bool
     trigger_budget: int
     current_user_index: int
+    tail_start_index: int
     summarized: list[Message]
+    previous_summary_text: str | None
+    meta: list[dict[str, Any]]
     will_summarize: bool
     model_id: str
     tokenizer_model_id: str | None
@@ -1130,6 +1405,18 @@ class ContextPlan:
     exclude_message_ids: Sequence[UUID] | None
     history_before_message_created_at: datetime | None
 
+    @property
+    def _new_watermark_id(self) -> UUID | None:
+        """Last newly covered source message id (advances the watermark past
+        only the summarized old turns; the retained tail stays raw)."""
+        if not self.summarized:
+            return None
+        for entry in reversed(self.meta[: self.tail_start_index]):
+            source_id = entry.get("source_message_id")
+            if source_id is not None:
+                return source_id
+        return None
+
     async def finalize(self) -> PreparedModelContext:
         """Summarize old history when needed and return the provider context."""
         messages = self.messages
@@ -1137,10 +1424,30 @@ class ContextPlan:
         compression = self.compression
         token_budget = self.token_budget
         preserved_suffix = (
-            self.messages[self.current_user_index :]
-            if self.current_user_index > 0
-            else []
+            self.messages[self.tail_start_index :]
+            if self.tail_start_index > 0
+            else self.messages[self.current_user_index :]
         )
+        protected_payload_tokens = _estimate_message_tokens(
+            [self.messages[0], *preserved_suffix],
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        ) + max(self.tool_definition_tokens, 0)
+        if protected_payload_tokens > token_budget.input_budget:
+            # The protected content alone (system + retained tail + current
+            # turn + tool definitions) cannot fit; no summary can help.
+            raise ContextLengthError(
+                message="Context length exceeded: protected payload over budget",
+                max_tokens=token_budget.input_budget,
+                actual_tokens=protected_payload_tokens,
+                provider=self.provider,
+                model=self.model_id,
+                details={
+                    "retryable": False,
+                    "reason": "protected_payload_over_budget",
+                    "context_limit": token_budget.context_limit,
+                },
+            )
         fixed_messages = [self.messages[0], *preserved_suffix]
         fixed_context_tokens = _estimate_message_tokens(
             fixed_messages,
@@ -1205,6 +1512,7 @@ class ContextPlan:
                 provider=self.provider,
                 max_tokens=summary_max_tokens,
                 max_transcript_tokens=max_transcript_tokens,
+                previous_summary=self.previous_summary_text,
             )
             if summary_text:
                 summary_message = Message(
@@ -1245,6 +1553,7 @@ class ContextPlan:
                         history_before_message_created_at=(
                             self.history_before_message_created_at
                         ),
+                        watermark_message_id=self._new_watermark_id,
                     )
 
         compression.after_tokens = _estimate_message_tokens(
@@ -1319,8 +1628,15 @@ async def build_context_plan(
         safety_margin_tokens=DEFAULT_SAFETY_MARGIN_TOKENS,
     )
     trigger_ratio = DEFAULT_SUMMARY_TRIGGER_RATIO
+    # Reserve-aware trigger: compress before the payload reaches
+    # context - max(15% of context, model output reserve) so a summary + recent
+    # tail + current turn can always fit above the false-90% boundary.
+    effective_reserve = max(
+        int(token_budget.context_limit * DEFAULT_SUMMARY_RESERVE_RATIO),
+        token_budget.output_reserve,
+    )
     trigger_budget = min(
-        max(int(token_budget.context_limit * trigger_ratio), 1),
+        max(token_budget.context_limit - effective_reserve, 1),
         token_budget.input_budget,
     )
 
@@ -1350,7 +1666,7 @@ async def build_context_plan(
                 context_summary_text = stored_summary
                 history_after_message_id = watermark_id
 
-    messages, protected_indexes = await _build_messages_with_file_content(
+    messages, protected_indexes, _meta = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -1403,31 +1719,101 @@ async def build_context_plan(
         ),
         -1,
     )
-    summarized = (
-        [
-            message
-            for index, message in enumerate(messages)
-            if 0 < index < current_user_index
-            and not _is_context_summary_message(message)
-        ]
-        if compression_enabled
-        and before_tokens > trigger_budget
-        and current_user_index > 1
-        else []
+
+    # Recent verbatim tail: mirror Oh My Pi's ~20k-token raw retention target,
+    # clamped so system + summary + current/active turn + output reserve fit.
+    system_tokens = _estimate_message_tokens(
+        messages[:1], model_id=tokenizer_model_id, provider=provider
     )
+    current_tokens = _estimate_message_tokens(
+        messages[current_user_index:],
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
+    configured_summary_tokens = max(
+        int(compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)),
+        1,
+    )
+    summary_overhead = _estimate_message_tokens(
+        [
+            Message(
+                role=MessageRole.USER,
+                content=f"{CONTEXT_SUMMARY_PREFIX}\n\n",
+            )
+        ],
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
+    tail_tokens = min(
+        DEFAULT_RECENT_TAIL_TOKENS,
+        max(
+            token_budget.input_budget
+            - system_tokens
+            - current_tokens
+            - max(tool_definition_tokens, 0)
+            - configured_summary_tokens
+            - summary_overhead,
+            MIN_RECENT_TAIL_TOKENS,
+        ),
+    )
+
+    previous_summary_text: str | None = context_summary_text
+    _meta = list(_meta or [])
+    # Summarizable range starts right after the previous summary (index 1).
+    summarize_from = 2 if previous_summary_text else 1
+    if not _meta:
+        # No round metadata (e.g. mocked builds): fall back to summarizing all
+        # old turns between the previous summary and the current user.
+        tail_start_index = current_user_index
+        summarized = (
+            [
+                message
+                for index, message in enumerate(messages)
+                if summarize_from <= index < current_user_index
+                and not _is_context_summary_message(message)
+            ]
+            if compression_enabled
+            and before_tokens > trigger_budget
+            and current_user_index > summarize_from
+            else []
+        )
+    else:
+        tail_start_index = _select_summary_cut_index(
+            messages,
+            _meta,
+            current_user_index,
+            tail_tokens,
+            tokenizer_model_id=tokenizer_model_id,
+            provider=provider,
+        )
+        summarized = (
+            [
+                message
+                for index, message in enumerate(messages)
+                if summarize_from <= index < tail_start_index
+                and not _is_context_summary_message(message)
+            ]
+            if compression_enabled
+            and before_tokens > trigger_budget
+            and tail_start_index > summarize_from
+            else []
+        )
 
     return ContextPlan(
         agent=agent,
         conversation=conversation,
         messages=messages,
         protected_indexes=protected_indexes,
+        meta=_meta,
         token_budget=token_budget,
         compression=compression,
         compression_config=compression_config,
         compression_enabled=compression_enabled,
         trigger_budget=trigger_budget,
         current_user_index=current_user_index,
+        tail_start_index=tail_start_index,
         summarized=summarized,
+        previous_summary_text=previous_summary_text,
         will_summarize=bool(summarized),
         model_id=model_id,
         tokenizer_model_id=tokenizer_model_id,
