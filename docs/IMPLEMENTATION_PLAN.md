@@ -504,7 +504,17 @@
   - [x] 4. Frontend provider-specific image controls and i18n
   - [x] 5. Targeted regression tests and validation
 
-- **agent-context-loop-fix** — Superseded by `agent-simple-context-summary`. The deterministic tool-step compaction, retention-budget, emergency-fallback, and staged-prepare design is no longer current. See `docs/plan/agent-context-loop-fix.md`
+-
+- **oh-my-pi-agent-loop-parity** — In progress. Extract the four duplicated chat tool-loops into a single event-driven `AgentLoop` state machine, add durable `AgentRun` worker execution with replayable SSE and cooperative stop, support mid-run steering/follow-up, turn-aware reserve-based compaction, provider stop-detail continuation, and shared/exclusive tool batch scheduling. See `docs/plan/oh-my-pi-agent-loop-parity.md`
+  - [ ] 1. Freeze behavioral contracts and register work
+  - [ ] 2. Extract one event-driven Agent Loop without changing transport
+  - [ ] 3. Implement turn-aware iterative compaction
+  - [ ] 4. Add durable AgentRun execution and replayable events
+  - [ ] 5. Add steering, follow-up and cooperative stop
+  - [ ] 6. Preserve provider stop semantics and termination guards
+  - [ ] 7. Add safe shared/exclusive tool batch scheduling
+  - [ ] 8. Frontend run state machine and ongoing-input UX
+  - [ ] 9. End-to-end verification, cleanup and documentation finalization
 
 - **agent-simple-context-summary** — Complete. Before every provider call, the full request payload is estimated. At more than 90% of the model context limit, one model-generated summary replaces the old history; the new context is system prompt + structured summary + current user request, with a persisted conversation watermark.
   - [x] 1. Replace staged compression with 90% preflight summary
