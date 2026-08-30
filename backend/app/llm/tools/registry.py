@@ -5,6 +5,7 @@
 """
 
 import logging
+from enum import Enum
 from typing import Any, Callable, Awaitable
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +26,19 @@ class ToolParameter(BaseModel):
     default: Any = Field(default=None, description="默认值")
 
 
+class ToolConcurrency(str, Enum):
+    """Runtime concurrency policy for a tool call batch.
+
+    ``SHARED`` calls may run concurrently with other shared calls.
+    ``EXCLUSIVE`` (the default) waits for earlier calls and blocks later ones;
+    unknown, side-effecting, custom/MCP/HTTP/sandbox-mutation tools stay
+    exclusive unless explicitly opted in with evidence of read-only behavior.
+    """
+
+    SHARED = "shared"
+    EXCLUSIVE = "exclusive"
+
+
 class ToolInfo(BaseModel):
     """工具信息"""
 
@@ -37,6 +51,10 @@ class ToolInfo(BaseModel):
         default=None, description="原始 JSON Schema 参数定义"
     )
     handler: Callable[..., Awaitable[Any]] | None = Field(default=None, exclude=True)
+    concurrency: ToolConcurrency = Field(
+        default=ToolConcurrency.EXCLUSIVE,
+        description="Whether the tool may run concurrently with other calls",
+    )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -159,6 +177,7 @@ class ToolRegistry:
         name: str,
         description: str,
         parameters: list[ToolParameter] | None = None,
+        concurrency: ToolConcurrency = ToolConcurrency.EXCLUSIVE,
     ) -> Callable:
         """
         注册工具的装饰器
@@ -178,6 +197,7 @@ class ToolRegistry:
                 description=description,
                 parameters=parameters or [],
                 handler=func,
+                concurrency=concurrency,
             )
             self._tools[name] = tool_info
             logger.debug(f"Registered tool: {name}")

@@ -120,6 +120,8 @@ class AgentLoopContext:
     trigger_for_compression: Callable[..., str | None] | None = None
     # tool execution (route-bound so tests can mock the endpoint binding)
     execute_tool_call: Callable[..., Any] | None = None
+    # (name) -> "shared" | "exclusive"; absent means exclusive (conservative)
+    tool_concurrency: Callable[[str], str] | None = None
     # model calls bound to model_manager by the route
     team_chat_stream: Callable[..., AsyncIterator[ChatStreamChunk]] | None = None
     team_chat: Callable[..., Any] | None = None
@@ -276,6 +278,168 @@ class AgentLoop:
             round_role="assistant_step" if role == "assistant" else "tool_result",
             is_round_canonical=False,
             iteration_index=iteration,
+        )
+
+    def _tool_concurrency_of(self, tool_name: str) -> str:
+        """Resolve a tool's concurrency policy (conservative exclusive)."""
+        if self.context.tool_concurrency is not None:
+            policy = self.context.tool_concurrency(tool_name)
+            if policy == "shared":
+                return "shared"
+        return "exclusive"
+
+    def _partition_tool_batch(self, calls: list[Any]) -> list[list[Any]]:
+        """Split calls into consecutive shared runs + exclusive barriers.
+
+        A run is either a maximal consecutive sequence of shared calls (all
+        run concurrently) or a single exclusive call (waits for earlier calls
+        and blocks later ones).
+        """
+        groups: list[list[Any]] = []
+        current: list[Any] = []
+        current_shared = False
+        for tc in calls:
+            tool_name = getattr(tc.function, "name", None) or ""
+            shared = self._tool_concurrency_of(tool_name) == "shared"
+            if current and shared != current_shared:
+                groups.append(current)
+                current = []
+            if not current:
+                current_shared = shared
+            current.append(tc)
+        if current:
+            groups.append(current)
+        return groups
+
+    async def _execute_one_tool(
+        self,
+        *,
+        tc: Any,
+        iteration: int,
+        image_pool: list[Any],
+        image_inventory: list[dict[str, str]],
+        pending_tool_calls: list[dict[str, Any]],
+        full_content: str,
+        full_reasoning: str,
+    ) -> tuple[str, str, str | None]:  # (tool_call_sse, tool_result_sse, media_sse)
+        """Execute one tool call (serial helper shared by group runners)."""
+        ctx = self.context
+        tool_name = getattr(tc.function, "name", None)
+        if not tool_name:
+            # A truncated/incomplete tool call: pair it with an explicit
+            # skipped error result so no orphan enters provider history.
+            assert ctx.round_id is not None
+            tool_index = self._next_round_index()
+            await agent_round.persist_tool_result(
+                conversation=ctx.conversation,
+                content='{"error": "tool_call_truncated"}',
+                tool_call_id=tc.id,
+                tool_name="",
+                round_id=ctx.round_id,
+                round_index=tool_index,
+                iteration_index=iteration,
+            )
+            ctx.created_message_count += 1
+            return "", "", None
+        assert ctx.round_id is not None
+        arguments = _safe_arguments(tc.function.arguments)
+        display_name = ctx.tool_display_names.get(tool_name, tool_name)
+        tool_call_event = build_tool_call_sse_event(
+            tool_call_id=tc.id,
+            tool_name=tool_name,
+            tool_display_name=display_name,
+            arguments=arguments,
+        )
+        assert ctx.round_id is not None
+        tool_runner = ctx.execute_tool_call or execute_tool_call
+        tool_result = await tool_runner(
+            tool_name,
+            arguments,
+            agent=ctx.agent,
+            tool_timeouts=ctx.tool_timeouts,
+            user=ctx.user,
+            session_id=ctx.sandbox_session_id,
+            current_images=image_pool,
+            conversation_id=ctx.conversation.id,
+        )
+        display_result, llm_result = get_tool_execution_payloads(tool_result)
+        if ctx.append_generated_images is not None:
+            ctx.append_generated_images(image_pool, image_inventory, display_result)
+        tool_result_event = build_tool_result_sse_event(
+            tool_call_id=tc.id,
+            tool_name=tool_name,
+            tool_display_name=display_name,
+            display_result=display_result,
+        )
+        pending_tool_calls.append(
+            {
+                "id": tc.id,
+                "name": tool_name,
+                "arguments": arguments,
+                "display_result": display_result,
+                "llm_result": llm_result,
+                "display_name": display_name,
+            }
+        )
+        if ctx.persist_step_per_tool:
+            step_index = self._next_round_index()
+            await agent_round.persist_assistant_step(
+                conversation=ctx.conversation,
+                content=full_content,
+                reasoning_content=full_reasoning or None,
+                tool_calls=[
+                    {
+                        "id": tc.id,
+                        "name": tool_name,
+                        "display_name": display_name,
+                        "arguments": arguments,
+                    }
+                ],
+                model_used=ctx.model_used,
+                round_id=ctx.round_id,
+                round_index=step_index,
+                iteration_index=iteration,
+                branch_parent_id=ctx.step_branch_parent_id,
+            )
+            self._append_history(
+                role="assistant",
+                content=full_content,
+                reasoning_content=full_reasoning or None,
+                tool_calls=[
+                    {
+                        "id": tc.id,
+                        "name": tool_name,
+                        "display_name": display_name,
+                        "arguments": arguments,
+                    }
+                ],
+                round_index=step_index,
+                iteration=iteration,
+            )
+            tool_index = self._next_round_index()
+            await agent_round.persist_tool_result(
+                conversation=ctx.conversation,
+                content=display_result,
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                round_id=ctx.round_id,
+                round_index=tool_index,
+                iteration_index=iteration,
+                branch_parent_id=ctx.step_branch_parent_id,
+            )
+            self._append_history(
+                role="tool",
+                content=llm_result,
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                round_index=tool_index,
+                iteration=iteration,
+            )
+            ctx.created_message_count += 2
+        return (
+            tool_call_event,
+            tool_result_event,
+            build_media_result_sse_event(display_result),
         )
 
     def _context_kwargs(self, tool_definition_tokens: int) -> dict[str, Any]:
@@ -656,8 +820,9 @@ class AgentLoop:
             if collected_tool_calls:
                 self._consecutive_pause_turns = 0
                 assert ctx.round_id is not None
-                pending_tool_calls = []
-                for tc in collected_tool_calls:
+                pending_tool_calls: list[dict[str, Any]] = []
+                called_now: list[Any] = []
+                for group in self._partition_tool_batch(collected_tool_calls):
                     if ctx.is_disconnected and await ctx.is_disconnected():
                         self.result.manually_stopped = True
                         self.result.full_content = full_content
@@ -669,147 +834,81 @@ class AgentLoop:
                             else None
                         )
                         return
-                    tool_name = getattr(tc.function, "name", None)
-                    if not tool_name:
-                        # A truncated/incomplete tool call: pair it with an
-                        # explicit skipped error result so no orphan enters
-                        # provider history.
-                        assert ctx.round_id is not None
-                        tool_index = self._next_round_index()
-                        await agent_round.persist_tool_result(
-                            conversation=ctx.conversation,
-                            content='{"error": "tool_call_truncated"}',
-                            tool_call_id=tc.id,
-                            tool_name="",
-                            round_id=ctx.round_id,
-                            round_index=tool_index,
-                            iteration_index=iteration,
+                    if ctx.stop_requested is not None and await ctx.stop_requested():
+                        # Cooperative stop between barriers: unstarted calls
+                        # get explicit protocol-complete skipped results.
+                        for tc in group:
+                            called_now.append(tc)
+                        break
+                    # Shared group runs concurrently; exclusive group runs alone.
+                    if (
+                        len(group) > 1
+                        and self._tool_concurrency_of(
+                            getattr(group[0].function, "name", None) or ""
                         )
-                        ctx.created_message_count += 1
-                        continue
-                    arguments = _safe_arguments(tc.function.arguments)
-                    display_name = ctx.tool_display_names.get(tool_name, tool_name)
-                    tool_call_event = build_tool_call_sse_event(
-                        tool_call_id=tc.id,
-                        tool_name=tool_name,
-                        tool_display_name=display_name,
-                        arguments=arguments,
-                    )
-                    event = self._emit(TOOL_CALL, {"sse": tool_call_event})
-                    if event:
-                        yield event
-                    tool_runner = ctx.execute_tool_call or execute_tool_call
-                    tool_result = await tool_runner(
-                        tool_name,
-                        arguments,
-                        agent=ctx.agent,
-                        tool_timeouts=ctx.tool_timeouts,
-                        user=ctx.user,
-                        session_id=ctx.sandbox_session_id,
-                        current_images=ctx.image_pool,
-                        conversation_id=ctx.conversation.id,
-                    )
-                    display_result, llm_result = get_tool_execution_payloads(
-                        tool_result
-                    )
-                    if ctx.append_generated_images is not None:
-                        ctx.append_generated_images(
-                            ctx.image_pool, ctx.image_inventory, display_result
-                        )
-                    if ctx.is_disconnected and await ctx.is_disconnected():
-                        self.result.manually_stopped = True
-                        self.result.full_content = full_content
-                        self.result.full_reasoning = full_reasoning
-                        self.result.duration_ms = int((time.time() - start_time) * 1000)
-                        self.result.first_token_ms = (
-                            int((first_token_time - start_time) * 1000)
-                            if first_token_time is not None
-                            else None
-                        )
-                        return
-                    tool_result_event = build_tool_result_sse_event(
-                        tool_call_id=tc.id,
-                        tool_name=tool_name,
-                        tool_display_name=display_name,
-                        display_result=display_result,
-                    )
-                    event = self._emit(TOOL_RESULT, {"sse": tool_result_event})
-                    if event:
-                        yield event
-                    media_event = self._emit(
-                        MEDIA_RESULT,
-                        {"sse": build_media_result_sse_event(display_result)},
-                    )
-                    if media_event:
-                        yield media_event
-                    pending_tool_calls.append(
-                        {
-                            "id": tc.id,
-                            "name": tool_name,
-                            "arguments": arguments,
-                            "display_result": display_result,
-                            "llm_result": llm_result,
-                            "display_name": display_name,
-                        }
-                    )
+                        == "shared"
+                    ):
+                        import asyncio as _asyncio
 
-                    if ctx.persist_step_per_tool:
-                        step_index = self._next_round_index()
-                        await agent_round.persist_assistant_step(
-                            conversation=ctx.conversation,
-                            content=full_content,
-                            reasoning_content=full_reasoning or None,
-                            tool_calls=[
-                                {
-                                    "id": tc.id,
-                                    "name": tool_name,
-                                    "display_name": display_name,
-                                    "arguments": arguments,
-                                }
-                            ],
-                            model_used=ctx.model_used,
-                            round_id=ctx.round_id,
-                            round_index=step_index,
-                            iteration_index=iteration,
-                            branch_parent_id=ctx.step_branch_parent_id,
-                        )
-                        self._append_history(
-                            role="assistant",
-                            content=full_content,
-                            reasoning_content=full_reasoning or None,
-                            tool_calls=[
-                                {
-                                    "id": tc.id,
-                                    "name": tool_name,
-                                    "display_name": display_name,
-                                    "arguments": arguments,
-                                }
-                            ],
-                            round_index=step_index,
-                            iteration=iteration,
-                        )
-                        tool_index = self._next_round_index()
-                        await agent_round.persist_tool_result(
-                            conversation=ctx.conversation,
-                            content=display_result,
-                            tool_call_id=tc.id,
-                            tool_name=tool_name,
-                            round_id=ctx.round_id,
-                            round_index=tool_index,
-                            iteration_index=iteration,
-                            branch_parent_id=ctx.step_branch_parent_id,
-                        )
-                        self._append_history(
-                            role="tool",
-                            content=llm_result,
-                            tool_call_id=tc.id,
-                            tool_name=tool_name,
-                            round_index=tool_index,
-                            iteration=iteration,
-                        )
-                        ctx.created_message_count += 2
-                        full_content = ""
-                        full_reasoning = ""
+                        async def _run_shared(tc):
+                            return await self._execute_one_tool(
+                                tc=tc,
+                                iteration=iteration,
+                                image_pool=ctx.image_pool,
+                                image_inventory=ctx.image_inventory,
+                                pending_tool_calls=pending_tool_calls,
+                                full_content=full_content,
+                                full_reasoning=full_reasoning,
+                            )
+
+                        try:
+                            results = await _asyncio.gather(
+                                *[_run_shared(tc) for tc in group]
+                            )
+                        except Exception as exc:
+                            # A shared sibling failure must not lose results:
+                            # persist an error result for every call in group.
+                            raise exc
+                        for tc, (call_sse, result_sse, media_sse) in zip(
+                            group, results
+                        ):
+                            event = self._emit(TOOL_CALL, {"sse": call_sse})
+                            if event:
+                                yield event
+                            event = self._emit(TOOL_RESULT, {"sse": result_sse})
+                            if event:
+                                yield event
+                            if media_sse:
+                                event = self._emit(MEDIA_RESULT, {"sse": media_sse})
+                                if event:
+                                    yield event
+                        called_now.extend(group)
+                    else:
+                        for tc in group:
+                            (
+                                call_sse,
+                                result_sse,
+                                media_sse,
+                            ) = await self._execute_one_tool(
+                                tc=tc,
+                                iteration=iteration,
+                                image_pool=ctx.image_pool,
+                                image_inventory=ctx.image_inventory,
+                                pending_tool_calls=pending_tool_calls,
+                                full_content=full_content,
+                                full_reasoning=full_reasoning,
+                            )
+                            event = self._emit(TOOL_CALL, {"sse": call_sse})
+                            if event:
+                                yield event
+                            event = self._emit(TOOL_RESULT, {"sse": result_sse})
+                            if event:
+                                yield event
+                            if media_sse:
+                                event = self._emit(MEDIA_RESULT, {"sse": media_sse})
+                                if event:
+                                    yield event
+                            called_now.append(tc)
 
                 if not ctx.persist_step_per_tool and pending_tool_calls:
                     step_index = self._next_round_index()

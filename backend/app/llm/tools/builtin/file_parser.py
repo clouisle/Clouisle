@@ -9,6 +9,7 @@
 """
 
 import logging
+from app.llm.tools.registry import ToolConcurrency
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -173,6 +174,7 @@ def register_file_parser_tools() -> None:
 
     tool_registry.register(
         name="markitdown",
+        concurrency=ToolConcurrency.SHARED,
         description=(
             "解析文件内容。将 PDF、Word、Excel、PPT 等文档转换为文本。"
             "当用户上传文件并希望你分析其内容时使用此工具。"
