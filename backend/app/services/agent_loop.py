@@ -43,7 +43,7 @@ from app.api.v1.endpoints.chat_sse import (
     build_tool_result_sse_event,
 )
 from app.api.v1.endpoints.chat_tools import execute_tool_call
-from app.llm.types import ChatStreamChunk, FinishReason
+from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,9 @@ class AgentLoopContext:
     global_timeout: float = 1800.0
     idle_timeout: float = 300.0
     heartbeat_interval: float = 300.0
+    # primary guard: hard wall-clock deadline for the whole round (worker
+    # path); when set, the loop stops at it instead of the iteration cap.
+    deadline_seconds: float | None = None
     # request prep outputs
     sandbox_session_id: str | None = None
     file_content: str | None = None
@@ -149,6 +152,7 @@ class AgentLoopResult:
     full_content: str = ""
     full_reasoning: str = ""
     max_iterations_reached: bool = False
+    deadline_exceeded: bool = False
     manually_stopped: bool = False
     aggregate_input_tokens: int = 0
     aggregate_output_tokens: int = 0
@@ -191,6 +195,25 @@ class ContextTurn:
     compression: Any = None
 
 
+class _IncompleteToolCall:
+    """Synthetic tool call for a started-but-truncated provider call.
+
+    Carries only the id; the execution block pairs it with an explicit error
+    result so no orphan tool call enters provider history.
+    """
+
+    __slots__ = ("id",)
+
+    def __init__(self, call_id: str) -> None:
+        self.id = call_id
+
+    class function:
+        name = ""
+        arguments = "{}"
+
+    compression: Any = None
+
+
 class AgentLoop:
     """One round of model turns + tool execution.
 
@@ -200,10 +223,13 @@ class AgentLoop:
     persisting intermediate steps. Read ``self.result`` after ``run()``.
     """
 
+    PAUSE_TURN_LIMIT = 8
+
     def __init__(self, context: AgentLoopContext) -> None:
         self.context = context
         self.result = AgentLoopResult()
         self._round_index = context.first_round_index
+        self._consecutive_pause_turns = 0
         self._last_event_time = (
             context.initial_last_event_time
             if context.initial_last_event_time is not None
@@ -303,6 +329,21 @@ class AgentLoop:
         full_reasoning = ""
 
         for iteration in range(1, ctx.max_iterations + 1):
+            # ---- deadline guard (primary normal guard) ------------------------
+            if ctx.deadline_seconds is not None and (
+                time.time() - start_time > ctx.deadline_seconds
+            ):
+                self.result.deadline_exceeded = True
+                self.result.full_content = full_content
+                self.result.full_reasoning = full_reasoning
+                self.result.duration_ms = int((time.time() - start_time) * 1000)
+                self.result.first_token_ms = (
+                    int((first_token_time - start_time) * 1000)
+                    if first_token_time is not None
+                    else None
+                )
+                return
+
             # ---- heartbeat / disconnect (stream paths only) ------------------
             if ctx.send_heartbeat_if_needed is not None:
                 (
@@ -398,9 +439,12 @@ class AgentLoop:
             full_content = ""
             full_reasoning = ""
             collected_tool_calls: list[Any] = []
+            started_tool_call_ids: set[str] = set()
+            emitted_any = False
             stream_usage = None
             used_fallback = False
             client_disconnected = False
+            pause_turn_pending = False
 
             # ---- one model turn ---------------------------------------------
             if ctx.streaming and ctx.team_chat_stream is not None:
@@ -421,6 +465,7 @@ class AgentLoop:
                         client_disconnected = True
                         break
                     if chunk.delta.reasoning_content:
+                        emitted_any = True
                         if not reasoning_started:
                             reasoning_started = True
                             event = self._emit(REASONING_START, {})
@@ -453,7 +498,18 @@ class AgentLoop:
                         if event:
                             yield event
                     if chunk.delta.tool_calls:
+                        emitted_any = True
                         collected_tool_calls = chunk.delta.tool_calls
+                    if chunk.delta.tool_call_starts:
+                        emitted_any = True
+                        started_tool_call_ids.update(
+                            tc.id for tc in chunk.delta.tool_call_starts if tc.id
+                        )
+                    if (
+                        chunk.stop_details
+                        and chunk.stop_details.reason == StopReason.PAUSE_TURN
+                    ):
+                        pause_turn_pending = True
                     if chunk.finish_reason:
                         if reasoning_started and not full_content:
                             event = self._emit(REASONING_END, {})
@@ -467,7 +523,7 @@ class AgentLoop:
                             continue
                         break
                 if (
-                    not reasoning_started
+                    not emitted_any
                     and not full_content
                     and not collected_tool_calls
                     and not client_disconnected
@@ -512,11 +568,45 @@ class AgentLoop:
                     tools=ctx.tools,
                 )
                 stream_usage = getattr(response, "usage", None)
+                if (
+                    getattr(response, "stop_details", None)
+                    and response.stop_details.reason == StopReason.PAUSE_TURN
+                ):
+                    pause_turn_pending = True
                 collected_tool_calls = getattr(response, "tool_calls", None) or []
                 iteration_content = getattr(response, "content", "") or ""
                 iteration_reasoning = getattr(response, "reasoning_content", "") or ""
                 full_content += iteration_content
                 full_reasoning += iteration_reasoning
+
+            # ---- deadline guard after the turn ------------------------------
+            if ctx.deadline_seconds is not None and (
+                time.time() - start_time > ctx.deadline_seconds
+            ):
+                self.result.deadline_exceeded = True
+                self.result.full_content = full_content
+                self.result.full_reasoning = full_reasoning
+                self.result.duration_ms = int((time.time() - start_time) * 1000)
+                self.result.first_token_ms = (
+                    int((first_token_time - start_time) * 1000)
+                    if first_token_time is not None
+                    else None
+                )
+                return
+
+            # ---- truncated tool-call pairing --------------------------------
+            # When the provider truncates (finish == LENGTH) after announcing
+            # tool calls, every started-but-uncompleted call must still get a
+            # protocol result (skipped/error) so no orphan tool call enters
+            # provider history or a later compaction cut.
+            if started_tool_call_ids:
+                missing_ids = started_tool_call_ids - {
+                    tc.id for tc in collected_tool_calls if tc.id
+                }
+                # Append synthetic incomplete calls so the tool-execution block
+                # below pairs them with error results.
+                for call_id in missing_ids:
+                    collected_tool_calls.append(_IncompleteToolCall(call_id))
 
             # ---- usage aggregation -------------------------------------------
             if ctx.calculate_usage is not None:
@@ -564,6 +654,7 @@ class AgentLoop:
 
             # ---- tool execution ---------------------------------------------
             if collected_tool_calls:
+                self._consecutive_pause_turns = 0
                 assert ctx.round_id is not None
                 pending_tool_calls = []
                 for tc in collected_tool_calls:
@@ -580,6 +671,21 @@ class AgentLoop:
                         return
                     tool_name = getattr(tc.function, "name", None)
                     if not tool_name:
+                        # A truncated/incomplete tool call: pair it with an
+                        # explicit skipped error result so no orphan enters
+                        # provider history.
+                        assert ctx.round_id is not None
+                        tool_index = self._next_round_index()
+                        await agent_round.persist_tool_result(
+                            conversation=ctx.conversation,
+                            content='{"error": "tool_call_truncated"}',
+                            tool_call_id=tc.id,
+                            tool_name="",
+                            round_id=ctx.round_id,
+                            round_index=tool_index,
+                            iteration_index=iteration,
+                        )
+                        ctx.created_message_count += 1
                         continue
                     arguments = _safe_arguments(tc.function.arguments)
                     display_name = ctx.tool_display_names.get(tool_name, tool_name)
@@ -774,6 +880,27 @@ class AgentLoop:
                     break
                 continue
 
+            # Pause-turn continuation: a provider-requested pause (e.g. cache
+            # warm-up) with no tool calls is non-terminal. Replay the partial
+            # assistant turn into history and resample, capped at 8 consecutive
+            # continuations; a fresh tool-call turn resets the counter.
+            if pause_turn_pending and not collected_tool_calls:
+                if self._consecutive_pause_turns < self.PAUSE_TURN_LIMIT:
+                    self._consecutive_pause_turns += 1
+                    if full_content:
+                        if ctx.working_history_override is None:
+                            ctx.working_history_override = []
+                        self._append_history(
+                            role="assistant",
+                            content=full_content,
+                            reasoning_content=full_reasoning or None,
+                            round_index=self._next_round_index(),
+                            iteration=iteration,
+                        )
+                    full_content = ""
+                    full_reasoning = ""
+                    continue
+                # cap reached: terminate normally with the current content
             if ctx.stop_requested is not None and await ctx.stop_requested():
                 self.result.manually_stopped = True
                 self.result.full_content = full_content

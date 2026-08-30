@@ -206,6 +206,7 @@ async def _rebuild_context(
         tool_display_names=tool_display_names,
         tool_timeouts=streaming_config["tool_timeouts"],
         global_timeout=streaming_config["global_timeout"],
+        deadline_seconds=streaming_config["global_timeout"],
         idle_timeout=streaming_config["idle_timeout"],
         heartbeat_interval=streaming_config["heartbeat_interval"],
         sandbox_session_id=sandbox_session_id,
@@ -399,6 +400,18 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         async for _chunk in loop.run():
             pass
         result = loop.result
+
+        if result.deadline_exceeded:
+            await agent_run_store.drop_pending_inputs(run.id)
+            await _finalize_stopped(canonical, result, stream)
+            await agent_run_store.transition_run(run, AgentRunStatus.STOPPED)
+            await stream.publish(
+                "run_end", {"status": "stopped", "reason": "deadline_exceeded"}
+            )
+            return {
+                "status": AgentRunStatus.STOPPED.value,
+                "reason": "deadline_exceeded",
+            }
 
         if result.manually_stopped:
             await agent_run_store.drop_pending_inputs(run.id)
