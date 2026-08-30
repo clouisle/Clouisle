@@ -2,6 +2,7 @@
 Agent schemas for API request/response.
 """
 
+from enum import Enum
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -880,3 +881,69 @@ class SSEEventType:
     ITERATION_CAP_REACHED = "iteration_cap_reached"
     MESSAGE_END = "message_end"
     ERROR = "error"
+
+
+# ==================== AgentRun Schemas ====================
+
+
+class AgentRunStatusEnum(str, Enum):
+    """Run lifecycle status (mirrors the backend model)."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+
+
+class AgentRunInputKindEnum(str, Enum):
+    """Queued control input kinds."""
+
+    STEER = "steer"
+    FOLLOW_UP = "follow_up"
+    STOP = "stop"
+
+
+class RunOut(BaseModel):
+    """Run status summary for the UI."""
+
+    id: UUID
+    agent_id: UUID
+    conversation_id: UUID
+    mode: str
+    status: str
+    source_message_id: UUID | None = None
+    canonical_message_id: UUID | None = None
+    active_round_id: UUID | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class RunEventOut(BaseModel):
+    """One replayable run event envelope."""
+
+    run_id: str
+    sequence: int
+    timestamp: str
+    round_id: str | None = None
+    message_id: str | None = None
+    type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunInputCreate(BaseModel):
+    """Queued steering / follow-up / stop command."""
+
+    delivery: str = Field(
+        default="auto",
+        description="steer | follow_up | auto; auto is resolved by the worker",
+    )
+    content: str | None = Field(default=None, description="Steer/follow-up text")
+    attachments: list[dict[str, Any]] = Field(
+        default_factory=list, description="Supported attachment metadata"
+    )
+    request_id: str | None = Field(default=None, description="Idempotency key")

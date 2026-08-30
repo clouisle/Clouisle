@@ -50,7 +50,12 @@ from app.schemas.agent import (
     SSEEventType,
     AgentPublicOut,
     CreatorInfo,
+    RunOut,
+    RunEventOut,
+    RunInputCreate,
 )
+from app.models.agent_run import AgentRun as _AgentRunModel
+
 from app.schemas.response import (
     Response,
     ResponseCode,
@@ -3242,6 +3247,147 @@ async def edit_user_message_stream(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+# ============ AgentRun Endpoints ============
+
+
+@router.get(
+    "/{agent_id}/chat/runs/{run_id}",
+    response_model=Response[RunOut],
+)
+async def get_run_status(
+    agent_id: UUID,
+    run_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Get durable run status; owner-scoped."""
+    run = await _load_owned_run(agent_id, run_id, current_user)
+    return success(data=_run_to_out(run))
+
+
+@router.get(
+    "/{agent_id}/chat/runs/{run_id}/events",
+    response_model=Response[list[RunEventOut]],
+)
+async def get_run_events(
+    agent_id: UUID,
+    run_id: UUID,
+    after_sequence: int = 0,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Replay buffered run events after ``after_sequence`` (authorized scope)."""
+    await _load_owned_run(agent_id, run_id, current_user)
+    from app.services.agent_run_stream import AgentRunStream
+
+    stream = AgentRunStream(run_id)
+    events = await stream.get_all_events()
+    filtered = [e for e in events if e.get("sequence", 0) > after_sequence]
+    return success(data=[RunEventOut(**e) for e in filtered])
+
+
+@router.post(
+    "/{agent_id}/chat/runs/{run_id}/inputs",
+    response_model=Response[RunOut],
+)
+async def post_run_input(
+    agent_id: UUID,
+    run_id: UUID,
+    body: RunInputCreate,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Queue steering / follow-up / stop for a running agent."""
+    run = await _load_owned_run(agent_id, run_id, current_user)
+    from app.models.agent_run import AgentRunInputKind
+
+    kind = {
+        "steer": AgentRunInputKind.STEER,
+        "follow_up": AgentRunInputKind.FOLLOW_UP,
+        "stop": AgentRunInputKind.STOP,
+    }.get(body.delivery, AgentRunInputKind.STEER)
+    from app.services.agent_run_store import enqueue_input
+
+    await enqueue_input(
+        run_id=run_id,
+        kind=kind,
+        content=body.content,
+        attachment_meta={"attachments": body.attachments},
+        request_id=body.request_id,
+    )
+    return success(data=_run_to_out(run))
+
+
+@router.post(
+    "/{agent_id}/chat/runs/{run_id}/stop",
+    response_model=Response[RunOut],
+)
+async def stop_run(
+    agent_id: UUID,
+    run_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Cooperative stop: persist ``stopping`` and wake the worker."""
+    run = await _load_owned_run(agent_id, run_id, current_user)
+    from app.models.agent_run import (
+        AgentRunInputKind,
+        AgentRunStatus,
+    )
+    from app.services.agent_run_store import enqueue_input, transition_run
+
+    if run.status not in (
+        AgentRunStatus.RUNNING,
+        AgentRunStatus.STOPPING,
+        AgentRunStatus.QUEUED,
+    ):
+        # terminal: idempotent no-op
+        return success(data=_run_to_out(run))
+    if run.status != AgentRunStatus.STOPPING:
+        await transition_run(run, AgentRunStatus.STOPPING)
+    await enqueue_input(run_id=run_id, kind=AgentRunInputKind.STOP)
+    return success(data=_run_to_out(run))
+
+
+async def _load_owned_run(
+    agent_id: UUID,
+    run_id: UUID,
+    current_user: User,
+) -> _AgentRunModel:
+    """Owner/agent scoped run lookup used by all run endpoints."""
+    from app.models.agent_run import AgentRun
+    from app.models.agent import Conversation as _Conv
+
+    run = await AgentRun.get_or_none(id=run_id, agent_id=agent_id)
+    if not run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="run_not_found",
+            status_code=404,
+        )
+    conversation = await _Conv.get_or_none(id=run.conversation_id, user=current_user)
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="access_denied",
+            status_code=403,
+        )
+    return run
+
+
+def _run_to_out(run: _AgentRunModel) -> RunOut:
+    return RunOut(
+        id=run.id,
+        agent_id=run.agent_id,
+        conversation_id=run.conversation_id,
+        mode=run.mode.value if hasattr(run.mode, "value") else str(run.mode),
+        status=run.status.value if hasattr(run.status, "value") else str(run.status),
+        source_message_id=run.source_message_id,
+        canonical_message_id=run.canonical_message_id,
+        active_round_id=run.active_round_id,
+        error_code=run.error_code,
+        error_message=run.error_message,
+        started_at=run.started_at.isoformat() if run.started_at else None,
+        finished_at=run.finished_at.isoformat() if run.finished_at else None,
     )
 
 
