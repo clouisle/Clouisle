@@ -127,6 +127,10 @@ class AgentLoopContext:
     is_disconnected: Callable[[], Any] | None = None
     request: Any = None
     initial_last_event_time: float | None = None
+    # durable-run steering/stop (worker paths; called at safe boundaries)
+    consume_inputs: Callable[[], Any] | None = None
+    stop_requested: Callable[[], Any] | None = None
+    input_consumed: Callable[[Any], Any] | None = None
     # formatter: (event_name, payload) -> SSE string or None to drop
     formatter: Callable[[str, dict[str, Any]], str | None] | None = None
     # persistence granularity
@@ -323,6 +327,28 @@ class AgentLoop:
                     if heartbeat_event:
                         yield heartbeat_event
                     self._last_event_time = new_last_event_time
+
+            # ---- durable-run steering/stop (worker paths) --------------------
+            # Consume queued inputs at a safe boundary before building the next
+            # provider context. Steering/follow-up are injected into the
+            # working history; a stop flips a flag the loop honors between
+            # model turns (already-running tool calls are not force-killed).
+            if ctx.consume_inputs is not None:
+                consumed = await ctx.consume_inputs()
+                for item in consumed or []:
+                    if ctx.input_consumed is not None:
+                        await ctx.input_consumed(item)
+            if ctx.stop_requested is not None and await ctx.stop_requested():
+                self.result.manually_stopped = True
+                self.result.full_content = full_content
+                self.result.full_reasoning = full_reasoning
+                self.result.duration_ms = int((time.time() - start_time) * 1000)
+                self.result.first_token_ms = (
+                    int((first_token_time - start_time) * 1000)
+                    if first_token_time is not None
+                    else None
+                )
+                return
 
             # ---- provider context -------------------------------------------
             tool_definition_tokens = (
@@ -748,6 +774,17 @@ class AgentLoop:
                     break
                 continue
 
+            if ctx.stop_requested is not None and await ctx.stop_requested():
+                self.result.manually_stopped = True
+                self.result.full_content = full_content
+                self.result.full_reasoning = full_reasoning
+                self.result.duration_ms = int((time.time() - start_time) * 1000)
+                self.result.first_token_ms = (
+                    int((first_token_time - start_time) * 1000)
+                    if first_token_time is not None
+                    else None
+                )
+                return
             break  # no tool calls: round done
 
         self.result.full_content = full_content

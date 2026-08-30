@@ -332,6 +332,45 @@ export interface ConversationUpdateInput {
 
 // ============ Message Types ============
 
+// ============ AgentRun Types ============
+
+export type AgentRunStatus =
+  | 'queued'
+  | 'running'
+  | 'stopping'
+  | 'completing'
+  | 'completed'
+  | 'stopped'
+  | 'failed'
+  | 'interrupted'
+
+export type AgentRunMode = 'send' | 'edit' | 'regenerate' | 'non_stream'
+
+export interface AgentRunStatusOut {
+  id: string
+  agent_id: string
+  conversation_id: string
+  mode: AgentRunMode
+  status: AgentRunStatus
+  source_message_id?: string | null
+  canonical_message_id?: string | null
+  active_round_id?: string | null
+  error_code?: string | null
+  error_message?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+}
+
+export interface AgentRunEventOut {
+  run_id: string
+  sequence: number
+  timestamp: string
+  round_id?: string | null
+  message_id?: string | null
+  type: string
+  payload: Record<string, unknown>
+}
+
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 export type MessageRoundRole = 'user_input' | 'assistant_final' | 'assistant_step' | 'tool_result'
 export type MessageRoundStatus = 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error'
@@ -1378,5 +1417,49 @@ export const publicAgentsApi = {
       stream,
       abort: () => controller.abort(),
     }
+  },
+
+
+  // ============ AgentRun API ============
+
+  /**
+   * Get durable run status.
+   */
+  getRunStatus: async (agentId: string, runId: string): Promise<AgentRunStatusOut> => {
+    return api.get<AgentRunStatusOut>(`/agents/${agentId}/chat/runs/${runId}`)
+  },
+
+  /**
+   * Replay buffered run events after a sequence.
+   */
+  getRunEvents: async (
+    agentId: string,
+    runId: string,
+    afterSequence = 0
+  ): Promise<AgentRunEventOut[]> => {
+    return api.get<AgentRunEventOut[]>(
+      `/agents/${agentId}/chat/runs/${runId}/events?after_sequence=${afterSequence}`
+    )
+  },
+
+  /**
+   * Queue steering / follow-up for a running agent.
+   */
+  postRunInput: async (
+    agentId: string,
+    runId: string,
+    body: { delivery: 'steer' | 'follow_up' | 'auto'; content?: string; request_id?: string }
+  ): Promise<AgentRunStatusOut> => {
+    return api.post<AgentRunStatusOut>(
+      `/agents/${agentId}/chat/runs/${runId}/inputs`,
+      body
+    )
+  },
+
+  /**
+   * Cooperative stop: server marks the run stopping and the worker cancels.
+   */
+  stopRun: async (agentId: string, runId: string): Promise<AgentRunStatusOut> => {
+    return api.post<AgentRunStatusOut>(`/agents/${agentId}/chat/runs/${runId}/stop`)
   },
 }

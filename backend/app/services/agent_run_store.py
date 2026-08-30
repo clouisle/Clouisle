@@ -304,3 +304,13 @@ async def _wake_run_worker(run_id: UUID) -> None:
 
 def run_input_wakeup_channel(run_id: UUID) -> str:
     return RUN_INPUT_WAKEUP_PREFIX.format(run_id=run_id)
+
+
+async def has_pending_inputs(
+    run_id: UUID, kind: AgentRunInputKind | None = None
+) -> bool:
+    """Whether the run has queued inputs (optionally of one kind)."""
+    qs = AgentRunInput.filter(run_id=run_id, status=AgentRunInputStatus.QUEUED)
+    if kind is not None:
+        qs = qs.filter(kind=kind)
+    return await qs.exists()

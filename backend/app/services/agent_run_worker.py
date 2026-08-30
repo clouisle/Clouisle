@@ -340,11 +340,68 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             },
         )
 
+        # Close the terminal race: consume inputs accepted before we flip to
+        # ``completing``; inputs enqueued after terminal start a new run.
+        async def _consume_inputs():
+
+            collected = []
+            while run.status in (
+                AgentRunStatus.RUNNING,
+                AgentRunStatus.STOPPING,
+                AgentRunStatus.COMPLETING,
+            ):
+                item = await agent_run_store.consume_next_input(run.id)
+                if item is None:
+                    break
+                collected.append(item)
+            return collected
+
+        async def _input_consumed(item) -> None:
+            from app.models.agent_run import AgentRunInputKind
+
+            payload = {
+                "kind": item.kind.value
+                if hasattr(item.kind, "value")
+                else str(item.kind),
+                "content": item.content,
+                "sequence": item.sequence,
+            }
+            await stream.publish("input_accepted", payload)
+            if item.kind == AgentRunInputKind.STEER:
+                if loop_context.working_history_override is None:
+                    loop_context.working_history_override = []
+
+                loop_context.working_history_override.append(
+                    {
+                        "role": "user",
+                        "content": item.content or "",
+                        "round_id": str(run.active_round_id or user_msg.round_id),
+                        "round_index": 10_000 + item.sequence,
+                        "round_role": "user_input",
+                        "is_round_canonical": True,
+                        "round_status": "completed",
+                    }
+                )
+
+        async def _stop_requested() -> bool:
+            if run.status == AgentRunStatus.STOPPING:
+                return True
+            from app.models.agent_run import AgentRunInputKind
+
+            return await agent_run_store.has_pending_inputs(
+                run.id, kind=AgentRunInputKind.STOP
+            )
+
+        loop_context.consume_inputs = _consume_inputs
+        loop_context.input_consumed = _input_consumed
+        loop_context.stop_requested = _stop_requested
+
         async for _chunk in loop.run():
             pass
         result = loop.result
 
         if result.manually_stopped:
+            await agent_run_store.drop_pending_inputs(run.id)
             await _finalize_stopped(canonical, result, stream)
             await agent_run_store.transition_run(run, AgentRunStatus.STOPPED)
             await stream.publish(
@@ -355,6 +412,12 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 "message_id": str(canonical.id),
             }
 
+        # Atomic completing transition: only the worker flips running ->
+        # completing. Inputs accepted before this point were consumed above;
+        # enqueue after terminal starts a fresh run.
+        if run.status == AgentRunStatus.RUNNING:
+            await agent_run_store.transition_run(run, AgentRunStatus.COMPLETING)
+        await agent_run_store.drop_pending_inputs(run.id)
         await _finalize_completed(canonical, result, conversation, agent, stream)
         await agent_run_store.transition_run(run, AgentRunStatus.COMPLETED)
         await stream.publish(

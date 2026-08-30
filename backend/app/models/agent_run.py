@@ -27,6 +27,7 @@ class AgentRunStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
     STOPPING = "stopping"
+    COMPLETING = "completing"
     COMPLETED = "completed"
     STOPPED = "stopped"
     FAILED = "failed"
