@@ -90,12 +90,10 @@ from app.api.v1.endpoints.chat_helpers import (
     parse_user_input_request,
     resolve_agent_chat_model,
     get_compression_trigger,
-    get_tool_execution_payloads,
     append_generated_images,
     collect_conversation_images,
     append_conversation_image_inventory,
     StreamIdleTimeoutError,
-    iter_with_idle_timeout,
     send_heartbeat_if_needed,
 )
 from app.api.v1.endpoints.chat_tools import (
@@ -111,8 +109,6 @@ from app.api.v1.endpoints.chat_sse import (
     build_compression_events,
     build_compression_start_event,
     build_tool_call_sse_event,
-    build_tool_result_sse_event,
-    build_media_result_sse_event,
 )
 
 
@@ -1256,8 +1252,6 @@ async def chat(
     # 如果使用 API Key，检查是否有权访问该 Agent
     await deps.check_api_key_agent_access(api_key, agent_id)
 
-    start_time = time.time()
-
     agent = await check_agent_chat_access(agent_id, current_user)
     conversation = await get_or_create_conversation(
         agent, current_user, chat_in.conversation_id, chat_in.variables
@@ -1288,7 +1282,7 @@ async def chat(
         conversation_id=conversation.id,
     )
     round_id = uuid4()
-    next_round_index = 1
+
     user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
 
     # Save user message with images and file_urls.
@@ -1395,203 +1389,74 @@ async def chat(
                 for t in tools_openai
             ]
 
-        # Tool call loop (non-streaming)
-        max_iterations = agent.max_iterations or 5
-        iteration = 0
-        final_response = None
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        total_cache_read_tokens = 0
-        total_cache_creation_tokens = 0
-        total_usage_input_tokens = 0
-        max_iterations_reached = False
+        from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
 
-        while iteration < max_iterations:
-            iteration += 1
-            prepare_context = prepare_model_context
-            tool_definition_tokens = (
-                count_tool_definition_tokens(tools, tokenizer_model_id, model_provider)
-                if tools
-                else 0
+        max_iterations = agent.max_iterations or 5
+
+        async def build_turn(
+            **kwargs,
+        ):
+            """Non-stream turns summarize silently via prepare_model_context."""
+            prepared = await prepare_model_context(**kwargs)
+            return ContextTurn(
+                prepared=prepared,
+                will_summarize=False,
+                compression=prepared.compression,
             )
-            prepared_context = await prepare_context(
+
+        loop = AgentLoop(
+            AgentLoopContext(
                 agent=agent,
                 conversation=conversation,
+                user=current_user,
                 user_message=model_message,
                 model_id=model_id,
                 tokenizer_model_id=tokenizer_model_id,
+                model_provider=model_provider,
                 model_context_limit=model_context_limit,
                 model_max_output_tokens=model_max_output_tokens,
-                provider=model_provider,
-                file_content=file_content_str,
-                user_locale=current_user.locale,
-                history_override=working_history_override,
-                current_images=chat_in.images,
+                model_used=model_used,
                 model_supports_vision=model_supports_vision,
-                current_user_message_id=user_msg.id,
+                tools=tools,
+                tool_display_names=tool_display_names,
                 tool_timeouts=tool_timeouts,
-                user=current_user,
+                sandbox_session_id=sandbox_session_id,
+                file_content=file_content_str,
+                current_images=chat_in.images,
+                working_history_override=working_history_override,
+                image_pool=image_pool,
+                image_inventory=image_inventory,
+                append_generated_images=append_generated_images,
+                current_user_message_id=user_msg.id,
+                round_id=round_id,
                 protected_round_id=round_id,
-                tool_definition_tokens=tool_definition_tokens,
+                user_locale=current_user.locale,
+                max_iterations=max_iterations,
+                enable_user_input_request=agent.enable_user_input_request,
+                streaming=False,
+                build_turn=build_turn,
+                execute_tool_call=execute_tool_call,
+                team_chat=model_manager.team_chat,
+                calculate_usage=_calculate_model_usage,
+                first_round_index=1,
             )
-            messages_for_llm = [
-                message.model_dump(exclude_none=True)
-                for message in prepared_context.messages
-            ]
-            response = await model_manager.team_chat(
-                team_id=str(agent.team_id),
-                messages=messages_for_llm,
-                model_id=model_id,
-                tools=tools,
-            )
-
-            (
-                prompt_tokens,
-                completion_tokens,
-                cache_read_tokens,
-                cache_creation_tokens,
-                iteration_total_input_tokens,
-            ) = _calculate_model_usage(
-                tools=tools,
-                messages=messages_for_llm,
-                content=response.content,
-                reasoning_content=response.reasoning_content,
-                tool_calls=response.tool_calls,
-                usage=response.usage,
-                model_id=tokenizer_model_id,
-                provider=model_provider,
-            )
-            total_prompt_tokens += prompt_tokens
-            total_completion_tokens += completion_tokens
-            total_cache_read_tokens += cache_read_tokens
-            total_cache_creation_tokens += cache_creation_tokens
-            total_usage_input_tokens += iteration_total_input_tokens
-
-            if response.tool_calls:
-
-                def safe_parse_arguments(args):
-                    if not args:
-                        return {}
-                    if isinstance(args, dict):
-                        return args
-                    try:
-                        return json.loads(args)
-                    except (json.JSONDecodeError, TypeError):
-                        return {}
-
-                intermediate_tool_calls = [
-                    {
-                        "id": tc.id,
-                        "name": tc.function.name,
-                        "display_name": tool_display_names.get(
-                            tc.function.name, tc.function.name
-                        ),
-                        "arguments": safe_parse_arguments(tc.function.arguments),
-                    }
-                    for tc in response.tool_calls
-                ]
-
-                # Save intermediate assistant message with tool calls
-                assistant_step_index = next_round_index
-                await Message.create(
-                    conversation=conversation,
-                    role=MessageRole.ASSISTANT,
-                    content=response.content or "",
-                    reasoning_content=response.reasoning_content or None,
-                    model_used=model_used,
-                    tool_calls=intermediate_tool_calls,
-                    round_id=round_id,
-                    round_index=assistant_step_index,
-                    round_role=MessageRoundRole.ASSISTANT_STEP,
-                    is_round_canonical=False,
-                    iteration_index=iteration,
-                )
-                next_round_index += 1
-
-                if working_history_override is None:
-                    working_history_override = []
-                append_round_history_entry(
-                    working_history_override,
-                    role="assistant",
-                    content=response.content or "",
-                    reasoning_content=response.reasoning_content or None,
-                    tool_calls=intermediate_tool_calls,
-                    round_id=round_id,
-                    round_index=assistant_step_index,
-                    round_role=MessageRoundRole.ASSISTANT_STEP.value,
-                    is_round_canonical=False,
-                    iteration_index=iteration,
-                )
-
-                # Execute tools and add tool results to message history
-                for tc in response.tool_calls:
-                    tool_name = tc.function.name
-                    try:
-                        arguments = json.loads(tc.function.arguments)
-                    except json.JSONDecodeError:
-                        arguments = {}
-
-                    result = await execute_tool_call(
-                        tool_name,
-                        arguments,
-                        agent=agent,
-                        tool_timeouts=tool_timeouts,
-                        user=current_user,
-                        session_id=sandbox_session_id,
-                        current_images=image_pool,
-                        conversation_id=conversation.id,
-                    )
-                    display_result, llm_result = get_tool_execution_payloads(result)
-                    append_generated_images(image_pool, image_inventory, display_result)
-                    model_message = append_conversation_image_inventory(
-                        final_message, image_inventory
-                    )
-
-                    tool_step_index = next_round_index
-                    await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.TOOL,
-                        content=display_result,
-                        tool_call_id=tc.id,
-                        tool_name=tool_name,
-                        round_id=round_id,
-                        round_index=tool_step_index,
-                        round_role=MessageRoundRole.TOOL_RESULT,
-                        is_round_canonical=False,
-                        iteration_index=iteration,
-                    )
-                    next_round_index += 1
-                    if working_history_override is None:
-                        working_history_override = []
-                    append_round_history_entry(
-                        working_history_override,
-                        role="tool",
-                        content=llm_result,
-                        tool_call_id=tc.id,
-                        tool_name=tool_name,
-                        round_id=round_id,
-                        round_index=tool_step_index,
-                        round_role=MessageRoundRole.TOOL_RESULT.value,
-                        is_round_canonical=False,
-                        iteration_index=iteration,
-                    )
-                if iteration >= max_iterations:
-                    max_iterations_reached = True
-                    break
-                continue
-
-            final_response = response
-            break
-
-        if final_response is None and not max_iterations_reached:
-            final_response = response
-
-        duration_ms = int((time.time() - start_time) * 1000)
+        )
+        async for _event in loop.run():
+            pass  # no SSE in the non-stream API
+        loop_result = loop.result
+        max_iterations_reached = loop_result.max_iterations_reached
+        total_prompt_tokens = loop_result.aggregate_input_tokens
+        total_completion_tokens = loop_result.aggregate_output_tokens
+        total_cache_read_tokens = loop_result.aggregate_cache_read_tokens
+        total_cache_creation_tokens = loop_result.aggregate_cache_creation_tokens
+        total_usage_input_tokens = loop_result.aggregate_total_input_tokens
+        duration_ms = loop_result.duration_ms
+        duration_ms = loop_result.duration_ms
 
         clean_final_content = (
             build_max_iterations_terminal_content(current_user.locale)
             if max_iterations_reached
-            else (final_response.content if final_response else "")
+            else (loop_result.full_content or "")
         )
         if (
             not max_iterations_reached
@@ -1601,30 +1466,9 @@ async def chat(
             _, clean_final_content = parse_user_input_request(clean_final_content)
 
         final_tool_calls = None
-        if final_response and final_response.tool_calls:
-            final_tool_calls = []
-            for tc in final_response.tool_calls:
-                final_tool_calls.append(
-                    {
-                        "id": tc.id,
-                        "name": tc.function.name,
-                        "display_name": tool_display_names.get(
-                            tc.function.name, tc.function.name
-                        ),
-                        "arguments": safe_parse_arguments(tc.function.arguments),
-                    }
-                )
 
-        prompt_tokens = total_prompt_tokens or (
-            final_response.usage.prompt_tokens
-            if final_response and final_response.usage
-            else 0
-        )
-        completion_tokens = total_completion_tokens or (
-            final_response.usage.completion_tokens
-            if final_response and final_response.usage
-            else 0
-        )
+        prompt_tokens = total_prompt_tokens
+        completion_tokens = total_completion_tokens
         round_status = get_round_terminal_status(
             completed=not max_iterations_reached,
             max_iterations_reached=max_iterations_reached,
@@ -1636,9 +1480,7 @@ async def chat(
             role=MessageRole.ASSISTANT,
             content=clean_final_content,
             reasoning_content=(
-                None
-                if max_iterations_reached
-                else (final_response.reasoning_content if final_response else None)
+                None if max_iterations_reached else (loop_result.full_reasoning or None)
             ),
             model_used=model_used,
             token_usage={
@@ -1652,7 +1494,7 @@ async def chat(
             tool_calls=final_tool_calls,
             branch_parent_id=user_msg.id,
             round_id=round_id,
-            round_index=next_round_index,
+            round_index=loop_result.final_round_index,
             round_role=MessageRoundRole.ASSISTANT_FINAL,
             is_round_canonical=True,
             round_status=round_status,
@@ -1803,7 +1645,6 @@ async def chat_stream(
             from app.llm.types import (
                 ToolDefinition,
                 FunctionDefinition,
-                FinishReason,
             )
 
             # Get streaming configuration
@@ -1870,7 +1711,6 @@ async def chat_stream(
                         conversation_id=conversation.id,
                     )
                     round_id = uuid4()
-                    next_round_index = 1
                     user_branch_parent_id = await get_next_user_branch_parent_id(
                         conversation
                     )
@@ -1992,489 +1832,181 @@ async def chat_stream(
                             for t in tools_openai
                         ]
 
-                    # Tool call loop
+                    from app.services.agent_loop import (
+                        AgentLoop,
+                        AgentLoopContext,
+                        ContextTurn,
+                    )
+
                     max_iterations = agent.max_iterations or 5
-                    iteration = 0
-                    max_iterations_reached = False
-                    aggregate_input_tokens = 0
-                    aggregate_output_tokens = 0
-                    aggregate_cache_read_tokens = 0
-                    aggregate_cache_creation_tokens = 0
-                    aggregate_total_input_tokens = 0
 
-                    while iteration < max_iterations:
-                        iteration += 1
+                    def sse_formatter(event_name: str, payload: dict) -> str | None:
+                        """Build SSE strings and mirror deltas into generator
+                        scope so error handlers keep seeing partial state."""
+                        nonlocal full_content, full_reasoning, first_token_time
+                        nonlocal last_event_time
+                        if event_name == "heartbeat":
+                            return ": heartbeat\n\n"
+                        if event_name == "content_delta":
+                            delta = payload.get("delta", "")
+                            full_content += delta
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            last_event_time = time.time()
+                            return (
+                                f"event: {SSEEventType.CONTENT_DELTA}\n"
+                                f"data: {json.dumps({'delta': delta})}\n\n"
+                            )
+                        if event_name == "reasoning_start":
+                            last_event_time = time.time()
+                            return f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "reasoning_delta":
+                            delta = payload.get("delta", "")
+                            full_reasoning += delta
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            last_event_time = time.time()
+                            return (
+                                f"event: {SSEEventType.REASONING_DELTA}\n"
+                                f"data: {json.dumps({'delta': delta})}\n\n"
+                            )
+                        if event_name == "reasoning_end":
+                            return f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "tool_call":
+                            return payload.get("sse")
+                        if event_name == "tool_result":
+                            return payload.get("sse")
+                        if event_name == "media_result":
+                            return payload.get("sse")
+                        if event_name == "compression_start":
+                            event_str = build_compression_start_event(
+                                agent=agent,
+                                stage=payload.get("stage", "macro"),
+                                trigger=payload.get("trigger"),
+                            )
+                            if event_str:
+                                last_event_time = time.time()
+                            return event_str
+                        if event_name == "compression_end":
+                            _, end_str = build_compression_events(
+                                agent=agent,
+                                compression=payload.get("compression"),
+                                trigger=payload.get("trigger"),
+                            )
+                            if end_str:
+                                last_event_time = time.time()
+                            return end_str
+                        if event_name == "output_truncated":
+                            return f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "iteration_cap_reached":
+                            return (
+                                f"event: {SSEEventType.ITERATION_CAP_REACHED}\n"
+                                f"data: {json.dumps({'content': payload.get('content', '')})}\n\n"
+                            )
+                        return None
 
-                        # Heartbeat check and send
-                        (
-                            should_continue,
-                            new_last_event_time,
-                        ) = await send_heartbeat_if_needed(
-                            last_event_time, heartbeat_interval, request
+                    async def build_turn(**kwargs):
+                        plan = await build_context_plan(**kwargs)
+                        return ContextTurn(
+                            prepared=None,
+                            will_summarize=plan.will_summarize,
+                            compression=plan.compression,
+                            plan=plan,
                         )
-                        if not should_continue:
-                            # Client disconnected, save current stopped state and exit
-                            assistant_msg.content = full_content
-                            assistant_msg.reasoning_content = (
-                                full_reasoning if full_reasoning else None
-                            )
-                            assistant_msg.model_used = model_used
-                            assistant_msg.duration_ms = int(
-                                (time.time() - start_time) * 1000
-                            )
-                            assistant_msg.first_token_ms = _first_token_ms(
-                                start_time, first_token_time
-                            )
-                            assistant_msg.is_manually_stopped = True
-                            assistant_msg.round_status = (
-                                MessageRoundStatus.MANUALLY_STOPPED
-                            )
-                            assistant_msg.created_at = now_utc()
-                            await assistant_msg.save()
-                            return
 
-                        # If we need to send heartbeat
-                        if new_last_event_time > last_event_time:
-                            yield ": heartbeat\n\n"
-                            last_event_time = new_last_event_time
-
-                        # Track state for this iteration
-                        reasoning_started = False
-                        full_content = ""
-                        full_reasoning = ""
-                        iteration_content = ""
-                        iteration_reasoning = ""
-                        collected_tool_calls = []  # For collecting tool calls from stream
-                        stream_usage = None
-                        used_nonstream_fallback = False
-
-                        tool_definition_tokens = (
-                            count_tool_definition_tokens(
-                                tools, tokenizer_model_id, model_provider
-                            )
-                            if tools
-                            else 0
-                        )
-                        context_plan = await build_context_plan(
+                    loop = AgentLoop(
+                        AgentLoopContext(
                             agent=agent,
                             conversation=conversation,
+                            user=current_user,
                             user_message=model_message,
                             model_id=model_id,
                             tokenizer_model_id=tokenizer_model_id,
+                            model_provider=model_provider,
                             model_context_limit=model_context_limit,
                             model_max_output_tokens=model_max_output_tokens,
-                            provider=model_provider,
-                            file_content=file_content_str,
-                            user_locale=current_user.locale,
-                            history_override=working_history_override,
-                            current_images=chat_in.images,
+                            model_used=model_used,
                             model_supports_vision=model_supports_vision,
-                            current_user_message_id=user_msg.id,
-                            include_current_user_message=True,
-                            exclude_message_ids=[assistant_msg.id],
+                            tools=tools,
+                            tool_display_names=tool_display_names,
                             tool_timeouts=tool_timeouts,
-                            user=current_user,
+                            global_timeout=global_timeout,
+                            idle_timeout=idle_timeout,
+                            heartbeat_interval=heartbeat_interval,
+                            sandbox_session_id=sandbox_session_id,
+                            file_content=file_content_str,
+                            current_images=chat_in.images,
+                            working_history_override=working_history_override,
+                            image_pool=image_pool,
+                            image_inventory=image_inventory,
+                            append_generated_images=append_generated_images,
+                            current_user_message_id=user_msg.id,
+                            exclude_message_ids=[assistant_msg.id],
+                            include_current_user_message=True,
+                            round_id=round_id,
                             protected_round_id=round_id,
-                            tool_definition_tokens=tool_definition_tokens,
-                        )
-                        if context_plan.will_summarize:
-                            start_event = build_compression_start_event(
-                                agent=agent,
-                                stage="macro",
-                                trigger=get_compression_trigger(
-                                    context_plan.compression
-                                ),
-                            )
-                            if start_event:
-                                yield start_event
-                                last_event_time = time.time()
-                        prepared_context = await context_plan.finalize()
-                        _, compression_end = build_compression_events(
-                            agent=agent,
-                            compression=prepared_context.compression,
-                            trigger=get_compression_trigger(
-                                prepared_context.compression
+                            user_locale=current_user.locale,
+                            max_iterations=max_iterations,
+                            streaming=True,
+                            build_turn=build_turn,
+                            execute_tool_call=execute_tool_call,
+                            count_tool_definition_tokens=count_tool_definition_tokens,
+                            trigger_for_compression=get_compression_trigger,
+                            team_chat_stream=model_manager.team_chat_stream,
+                            team_chat=model_manager.team_chat,
+                            record_stream_usage=model_manager.record_stream_usage,
+                            calculate_usage=_calculate_model_usage,
+                            send_heartbeat_if_needed=send_heartbeat_if_needed,
+                            is_disconnected=request.is_disconnected,
+                            request=request,
+                            initial_last_event_time=last_event_time,
+                            formatter=sse_formatter,
+                            first_round_index=1,
+                            cap_content=lambda: build_max_iterations_terminal_content(
+                                current_user.locale
                             ),
                         )
-                        if compression_end:
-                            yield compression_end
+                    )
+                    async for sse_chunk in loop.run():
+                        if sse_chunk:
+                            yield sse_chunk
                             last_event_time = time.time()
-                        messages_for_llm = [
-                            message.model_dump(exclude_none=True)
-                            for message in prepared_context.messages
-                        ]
+                    loop_result = loop.result
+                    max_iterations_reached = loop_result.max_iterations_reached
+                    full_content = loop_result.full_content
+                    full_reasoning = loop_result.full_reasoning
+                    aggregate_input_tokens = loop_result.aggregate_input_tokens
+                    aggregate_output_tokens = loop_result.aggregate_output_tokens
+                    aggregate_cache_read_tokens = (
+                        loop_result.aggregate_cache_read_tokens
+                    )
+                    aggregate_cache_creation_tokens = (
+                        loop_result.aggregate_cache_creation_tokens
+                    )
+                    aggregate_total_input_tokens = (
+                        loop_result.aggregate_total_input_tokens
+                    )
 
-                        # Provider usage is captured from the terminal chunk;
-                        # exact local counting remains the fallback.
-
-                        # Use streaming call - works for both with and without tools
-                        emitted_any = False
-                        client_disconnected = False
-                        stream = model_manager.team_chat_stream(
-                            team_id=str(agent.team_id),
-                            messages=messages_for_llm,
-                            model_id=model_id,
-                            tools=tools,
+                    if loop_result.manually_stopped:
+                        # Client disconnected: persist the stopped assistant
+                        # (partial content/reasoning) and end the round without
+                        # finalizing the branch or emitting message_end.
+                        assistant_msg.content = full_content
+                        assistant_msg.reasoning_content = (
+                            full_reasoning if full_reasoning else None
                         )
-                        async for chunk in iter_with_idle_timeout(
-                            stream,
-                            timeout_seconds=idle_timeout,
-                            activity_predicate=_is_model_stream_activity,
-                        ):
-                            if chunk.usage:
-                                stream_usage = chunk.usage
-                            # Check if client disconnected - stop LLM generation to save tokens
-                            if await request.is_disconnected():
-                                client_disconnected = True
-                                logger.info(
-                                    f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
-                                )
-                                break
-
-                            # Handle reasoning content (思维链)
-                            if chunk.delta.reasoning_content:
-                                if not reasoning_started:
-                                    reasoning_started = True
-                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                full_reasoning += chunk.delta.reasoning_content
-                                iteration_reasoning += chunk.delta.reasoning_content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                last_event_time = time.time()
-                                emitted_any = True
-
-                            # Handle content - stream it immediately
-                            if chunk.delta.content:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                full_content += chunk.delta.content
-                                iteration_content += chunk.delta.content
-
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                last_event_time = time.time()
-                                emitted_any = True
-
-                            for tool_call_event in _build_tool_call_start_sse_events(
-                                chunk.delta.tool_call_starts, tool_display_names
-                            ):
-                                yield tool_call_event
-                                last_event_time = time.time()
-                                emitted_any = True
-
-                            # Collect tool calls when they arrive
-                            if chunk.delta.tool_calls:
-                                collected_tool_calls = chunk.delta.tool_calls
-                                emitted_any = True
-
-                            # Handle finish
-                            if chunk.finish_reason:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                if chunk.finish_reason == FinishReason.LENGTH:
-                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                if stream_usage is None:
-                                    continue
-                                break
-
-                        # Fallback: if stream yields nothing and no tool calls, do a non-stream call
-                        if (
-                            not emitted_any
-                            and not collected_tool_calls
-                            and not client_disconnected
-                        ):
-                            response = await model_manager.team_chat(
-                                team_id=str(agent.team_id),
-                                messages=messages_for_llm,
-                                model_id=model_id,
-                                tools=tools,
-                            )
-                            used_nonstream_fallback = True
-                            stream_usage = getattr(response, "usage", None)
-                            collected_tool_calls = (
-                                getattr(response, "tool_calls", None) or []
-                            )
-                            if getattr(response, "reasoning_content", None):
-                                yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                full_reasoning += response.reasoning_content
-                                iteration_reasoning += response.reasoning_content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': response.reasoning_content})}\n\n"
-                                yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                            if getattr(response, "content", None):
-                                full_content += response.content
-                                iteration_content += response.content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
-
-                        (
-                            iteration_input_tokens,
-                            iteration_output_tokens,
-                            iteration_cache_read_tokens,
-                            iteration_cache_creation_tokens,
-                            iteration_total_input_tokens,
-                        ) = _calculate_model_usage(
-                            tools=tools,
-                            messages=messages_for_llm,
-                            content=iteration_content,
-                            reasoning_content=iteration_reasoning,
-                            tool_calls=collected_tool_calls,
-                            usage=stream_usage,
-                            model_id=tokenizer_model_id,
-                            provider=model_provider,
+                        assistant_msg.model_used = model_used
+                        assistant_msg.duration_ms = int(
+                            (time.time() - start_time) * 1000
                         )
-                        aggregate_input_tokens += iteration_input_tokens
-                        aggregate_output_tokens += iteration_output_tokens
-                        aggregate_cache_read_tokens += iteration_cache_read_tokens
-                        aggregate_cache_creation_tokens += (
-                            iteration_cache_creation_tokens
+                        assistant_msg.first_token_ms = _first_token_ms(
+                            start_time, first_token_time
                         )
-                        aggregate_total_input_tokens += iteration_total_input_tokens
-                        if not used_nonstream_fallback:
-                            await model_manager.record_stream_usage(
-                                team_id=str(agent.team_id),
-                                model_id=model_id,
-                                input_tokens=iteration_input_tokens,
-                                output_tokens=iteration_output_tokens,
-                            )
-
-                        # If client disconnected, save partial content and exit.
-                        if client_disconnected:
-                            assistant_msg.content = full_content
-                            assistant_msg.reasoning_content = (
-                                full_reasoning if full_reasoning else None
-                            )
-                            assistant_msg.model_used = model_used
-                            assistant_msg.duration_ms = int(
-                                (time.time() - start_time) * 1000
-                            )
-                            assistant_msg.first_token_ms = _first_token_ms(
-                                start_time, first_token_time
-                            )
-                            assistant_msg.is_manually_stopped = True
-                            assistant_msg.round_status = (
-                                MessageRoundStatus.MANUALLY_STOPPED
-                            )
-                            assistant_msg.created_at = now_utc()
-                            await assistant_msg.save()
-                            return
-
-                        # Check if there are tool calls to execute
-                        if collected_tool_calls:
-                            pending_tool_calls = []
-                            # Process each tool call
-                            for tc in collected_tool_calls:
-                                # Check if client disconnected before tool execution
-                                if await request.is_disconnected():
-                                    logger.info(
-                                        "Client disconnected before tool execution"
-                                    )
-                                    assistant_msg.content = full_content
-                                    assistant_msg.reasoning_content = (
-                                        full_reasoning if full_reasoning else None
-                                    )
-                                    assistant_msg.model_used = model_used
-                                    assistant_msg.duration_ms = int(
-                                        (time.time() - start_time) * 1000
-                                    )
-                                    assistant_msg.first_token_ms = _first_token_ms(
-                                        start_time, first_token_time
-                                    )
-                                    assistant_msg.is_manually_stopped = True
-                                    assistant_msg.round_status = (
-                                        MessageRoundStatus.MANUALLY_STOPPED
-                                    )
-                                    assistant_msg.created_at = now_utc()
-                                    await assistant_msg.save()
-                                    return
-
-                                tool_name = tc.function.name
-                                if not tool_name:
-                                    logger.warning("Skipping tool call with empty name")
-                                    continue
-                                try:
-                                    arguments = json.loads(tc.function.arguments)
-                                except json.JSONDecodeError:
-                                    arguments = {}
-
-                                # Send tool_call event
-                                tool_display_name = tool_display_names.get(
-                                    tool_name, tool_name
-                                )
-                                yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
-                                last_event_time = time.time()
-
-                                # Execute the tool (pass agent, tool_timeouts, and current uploaded images)
-                                result = await execute_tool_call(
-                                    tool_name,
-                                    arguments,
-                                    agent=agent,
-                                    tool_timeouts=tool_timeouts,
-                                    user=current_user,
-                                    session_id=sandbox_session_id,
-                                    current_images=image_pool,
-                                    conversation_id=conversation.id,
-                                )
-                                display_result, llm_result = (
-                                    get_tool_execution_payloads(result)
-                                )
-                                append_generated_images(
-                                    image_pool, image_inventory, display_result
-                                )
-                                model_message = append_conversation_image_inventory(
-                                    final_message, image_inventory
-                                )
-                                pending_tool_calls.append(
-                                    {
-                                        "id": tc.id,
-                                        "name": tool_name,
-                                        "arguments": arguments,
-                                        "display_result": display_result,
-                                        "llm_result": llm_result,
-                                        "display_name": tool_display_name,
-                                    }
-                                )
-
-                                # Check if client disconnected after tool execution
-                                if await request.is_disconnected():
-                                    logger.info(
-                                        "Client disconnected after tool execution"
-                                    )
-                                    assistant_msg.content = full_content
-                                    assistant_msg.reasoning_content = (
-                                        full_reasoning if full_reasoning else None
-                                    )
-                                    assistant_msg.model_used = model_used
-                                    assistant_msg.duration_ms = int(
-                                        (time.time() - start_time) * 1000
-                                    )
-                                    assistant_msg.first_token_ms = _first_token_ms(
-                                        start_time, first_token_time
-                                    )
-                                    assistant_msg.is_manually_stopped = True
-                                    assistant_msg.round_status = (
-                                        MessageRoundStatus.MANUALLY_STOPPED
-                                    )
-                                    assistant_msg.created_at = now_utc()
-                                    await assistant_msg.save()
-                                    return
-
-                                # Send tool_result event
-                                yield build_tool_result_sse_event(
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    tool_display_name=tool_display_name,
-                                    display_result=display_result,
-                                )
-                                media_result_event = build_media_result_sse_event(
-                                    display_result
-                                )
-                                if media_result_event:
-                                    yield media_result_event
-                                last_event_time = time.time()
-
-                            # Helper to safely parse arguments
-                            def safe_parse_arguments(args):
-                                if not args:
-                                    return {}
-                                if isinstance(args, dict):
-                                    return args
-                                try:
-                                    return json.loads(args)
-                                except (json.JSONDecodeError, TypeError):
-                                    return {}
-
-                            # Save intermediate assistant message with tool_calls to database
-                            intermediate_tool_calls = [
-                                {
-                                    "id": tc_data["id"],
-                                    "name": tc_data["name"],
-                                    "display_name": tc_data["display_name"],
-                                    "arguments": tc_data["arguments"],
-                                }
-                                for tc_data in pending_tool_calls
-                            ]
-                            assistant_step_index = next_round_index
-                            await Message.create(
-                                conversation=conversation,
-                                role=MessageRole.ASSISTANT,
-                                content=iteration_content,
-                                reasoning_content=iteration_reasoning or None,
-                                tool_calls=intermediate_tool_calls,
-                                round_id=round_id,
-                                round_index=assistant_step_index,
-                                round_role=MessageRoundRole.ASSISTANT_STEP,
-                                is_round_canonical=False,
-                                iteration_index=iteration,
-                            )
-                            next_round_index += 1
-                            if working_history_override is None:
-                                working_history_override = []
-                            append_round_history_entry(
-                                working_history_override,
-                                role="assistant",
-                                content=iteration_content,
-                                reasoning_content=iteration_reasoning or None,
-                                tool_calls=intermediate_tool_calls,
-                                round_id=round_id,
-                                round_index=assistant_step_index,
-                                round_role=MessageRoundRole.ASSISTANT_STEP.value,
-                                is_round_canonical=False,
-                                iteration_index=iteration,
-                            )
-
-                            # Save tool response messages to database
-                            for tc_data in pending_tool_calls:
-                                tool_step_index = next_round_index
-                                await Message.create(
-                                    conversation=conversation,
-                                    role=MessageRole.TOOL,
-                                    content=tc_data["display_result"],
-                                    tool_call_id=tc_data["id"],
-                                    tool_name=tc_data["name"],
-                                    round_id=round_id,
-                                    round_index=tool_step_index,
-                                    round_role=MessageRoundRole.TOOL_RESULT,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                next_round_index += 1
-                                append_round_history_entry(
-                                    working_history_override,
-                                    role="tool",
-                                    content=tc_data["llm_result"],
-                                    tool_call_id=tc_data["id"],
-                                    tool_name=tc_data["name"],
-                                    round_id=round_id,
-                                    round_index=tool_step_index,
-                                    round_role=MessageRoundRole.TOOL_RESULT.value,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-
-                            if iteration >= max_iterations:
-                                max_iterations_reached = True
-                                yield f"event: {SSEEventType.ITERATION_CAP_REACHED}\ndata: {json.dumps({'content': build_max_iterations_terminal_content(current_user.locale)})}\n\n"
-                                last_event_time = time.time()
-                                full_content = ""
-                                full_reasoning = ""
-                                break
-
-                            # Continue the loop to get the final response
-                            pending_tool_calls = []
-                            collected_tool_calls = []
-                            full_content = ""
-                            full_reasoning = ""
-                            continue
-                        else:
-                            # No tool calls, we're done
-                            break
+                        assistant_msg.is_manually_stopped = True
+                        assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                        assistant_msg.created_at = now_utc()
+                        await assistant_msg.save()
+                        return
 
                     duration_ms = int((time.time() - start_time) * 1000)
                     terminal_content = (
@@ -3097,7 +2629,7 @@ async def edit_user_message_stream(
         try:
             from app.llm import model_manager
             from app.llm.errors import QuotaExceededError, LLMError
-            from app.llm.types import ToolDefinition, FunctionDefinition, FinishReason
+            from app.llm.types import ToolDefinition, FunctionDefinition
             from app.models.agent import RAGMode
             import asyncio
 
@@ -3250,9 +2782,14 @@ async def edit_user_message_stream(
                             for t in tools_openai
                         ]
 
+                    from app.services.agent_loop import (
+                        AgentLoop,
+                        AgentLoopContext,
+                        ContextTurn,
+                    )
+
                     max_iterations = agent.max_iterations or 5
-                    iteration = 0
-                    next_round_index = 2
+
                     max_iterations_reached = False
                     working_history_override: list[dict[str, Any]] | None = None
                     aggregate_input_tokens = 0
@@ -3262,368 +2799,173 @@ async def edit_user_message_stream(
                     aggregate_total_input_tokens = 0
                     created_message_count = 2
 
-                    while iteration < max_iterations:
-                        iteration += 1
-                        pending_tool_calls = []
-                        (
-                            should_continue,
-                            new_last_event_time,
-                        ) = await send_heartbeat_if_needed(
-                            last_event_time, heartbeat_interval, request
-                        )
-                        if not should_continue:
-                            assistant_msg.content = full_content
-                            assistant_msg.reasoning_content = full_reasoning or None
-                            assistant_msg.model_used = model_used
-                            assistant_msg.duration_ms = int(
-                                (time.time() - start_time) * 1000
+                    def sse_formatter(event_name: str, payload: dict) -> str | None:
+                        """Build SSE strings and mirror deltas into generator
+                        scope so error handlers keep seeing partial state."""
+                        nonlocal full_content, full_reasoning, first_token_time
+                        nonlocal last_event_time
+                        if event_name == "heartbeat":
+                            return ": heartbeat\n\n"
+                        if event_name == "content_delta":
+                            delta = payload.get("delta", "")
+                            full_content += delta
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            last_event_time = time.time()
+                            return (
+                                f"event: {SSEEventType.CONTENT_DELTA}\n"
+                                f"data: {json.dumps({'delta': delta})}\n\n"
                             )
-                            assistant_msg.first_token_ms = _first_token_ms(
-                                start_time, first_token_time
+                        if event_name == "reasoning_start":
+                            last_event_time = time.time()
+                            return f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "reasoning_delta":
+                            delta = payload.get("delta", "")
+                            full_reasoning += delta
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            last_event_time = time.time()
+                            return (
+                                f"event: {SSEEventType.REASONING_DELTA}\n"
+                                f"data: {json.dumps({'delta': delta})}\n\n"
                             )
-                            assistant_msg.is_manually_stopped = True
-                            assistant_msg.round_status = (
-                                MessageRoundStatus.MANUALLY_STOPPED
+                        if event_name == "reasoning_end":
+                            return f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "tool_call":
+                            return payload.get("sse")
+                        if event_name == "tool_result":
+                            return payload.get("sse")
+                        if event_name == "media_result":
+                            return payload.get("sse")
+                        if event_name == "compression_start":
+                            event_str = build_compression_start_event(
+                                agent=agent,
+                                stage=payload.get("stage", "macro"),
+                                trigger=payload.get("trigger"),
                             )
-                            assistant_msg.created_at = now_utc()
-                            await assistant_msg.save()
-                            await activate_edited_path()
-                            return
-                        if new_last_event_time > last_event_time:
-                            yield ": heartbeat\n\n"
-                            last_event_time = new_last_event_time
+                            if event_str:
+                                last_event_time = time.time()
+                            return event_str
+                        if event_name == "compression_end":
+                            _, end_str = build_compression_events(
+                                agent=agent,
+                                compression=payload.get("compression"),
+                                trigger=payload.get("trigger"),
+                            )
+                            if end_str:
+                                last_event_time = time.time()
+                            return end_str
+                        if event_name == "output_truncated":
+                            return f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "iteration_cap_reached":
+                            return (
+                                f"event: {SSEEventType.ITERATION_CAP_REACHED}\n"
+                                f"data: {json.dumps({'content': payload.get('content', '')})}\n\n"
+                            )
+                        return None
 
-                        reasoning_started = False
-                        full_content = ""
-                        full_reasoning = ""
-                        collected_tool_calls = []
-                        client_disconnected = False
-                        tool_definition_tokens = (
-                            count_tool_definition_tokens(
-                                tools, tokenizer_model_id, model_provider
-                            )
-                            if tools
-                            else 0
+                    async def build_turn(**kwargs):
+                        plan = await build_context_plan(**kwargs)
+                        return ContextTurn(
+                            prepared=None,
+                            will_summarize=plan.will_summarize,
+                            compression=plan.compression,
+                            plan=plan,
                         )
-                        edit_plan = await build_context_plan(
+
+                    loop = AgentLoop(
+                        AgentLoopContext(
                             agent=agent,
                             conversation=conversation,
+                            user=current_user,
                             user_message=model_message,
                             model_id=model_id,
                             tokenizer_model_id=tokenizer_model_id,
+                            model_provider=model_provider,
                             model_context_limit=model_context_limit,
                             model_max_output_tokens=model_max_output_tokens,
-                            provider=model_provider,
-                            user_locale=current_user.locale,
-                            history_override=working_history_override,
-                            current_user_message_id=edited_user_msg.id,
-                            include_current_user_message=True,
-                            exclude_message_ids=[assistant_msg.id],
+                            model_used=model_used,
+                            model_supports_vision=False,
+                            tools=tools,
+                            tool_display_names=tool_display_names,
                             tool_timeouts=tool_timeouts,
-                            user=current_user,
+                            global_timeout=global_timeout,
+                            idle_timeout=idle_timeout,
+                            heartbeat_interval=heartbeat_interval,
+                            sandbox_session_id=sandbox_session_id,
+                            file_content=None,
+                            current_images=None,
+                            working_history_override=working_history_override,
+                            image_pool=image_pool,
+                            image_inventory=image_inventory,
+                            append_generated_images=append_generated_images,
+                            current_user_message_id=edited_user_msg.id,
+                            exclude_message_ids=[assistant_msg.id],
+                            include_current_user_message=True,
+                            round_id=round_id,
                             protected_round_id=round_id,
-                            tool_definition_tokens=tool_definition_tokens,
-                        )
-                        if edit_plan.will_summarize:
-                            start_event = build_compression_start_event(
-                                agent=agent,
-                                stage="macro",
-                                trigger=get_compression_trigger(edit_plan.compression),
-                            )
-                            if start_event:
-                                yield start_event
-                                last_event_time = time.time()
-                        prepared_context = await edit_plan.finalize()
-                        _, compression_end = build_compression_events(
-                            agent=agent,
-                            compression=prepared_context.compression,
-                            trigger=get_compression_trigger(
-                                prepared_context.compression
+                            user_locale=current_user.locale,
+                            max_iterations=max_iterations,
+                            streaming=True,
+                            build_turn=build_turn,
+                            execute_tool_call=execute_tool_call,
+                            count_tool_definition_tokens=count_tool_definition_tokens,
+                            trigger_for_compression=get_compression_trigger,
+                            team_chat_stream=model_manager.team_chat_stream,
+                            team_chat=model_manager.team_chat,
+                            record_stream_usage=model_manager.record_stream_usage,
+                            calculate_usage=_calculate_model_usage,
+                            send_heartbeat_if_needed=send_heartbeat_if_needed,
+                            is_disconnected=request.is_disconnected,
+                            request=request,
+                            initial_last_event_time=last_event_time,
+                            formatter=sse_formatter,
+                            persist_step_per_tool=True,
+                            step_branch_parent_id=assistant_msg.id,
+                            first_round_index=2,
+                            created_message_count=2,
+                            cap_content=lambda: build_max_iterations_terminal_content(
+                                current_user.locale
                             ),
                         )
-                        if compression_end:
-                            yield compression_end
+                    )
+                    async for sse_chunk in loop.run():
+                        if sse_chunk:
+                            yield sse_chunk
                             last_event_time = time.time()
-                        messages_for_llm = [
-                            item.model_dump(exclude_none=True)
-                            for item in prepared_context.messages
-                        ]
-                        stream_usage = None
+                    loop_result = loop.result
+                    max_iterations_reached = loop_result.max_iterations_reached
+                    full_content = loop_result.full_content
+                    full_reasoning = loop_result.full_reasoning
+                    aggregate_input_tokens = loop_result.aggregate_input_tokens
+                    aggregate_output_tokens = loop_result.aggregate_output_tokens
+                    aggregate_cache_read_tokens = (
+                        loop_result.aggregate_cache_read_tokens
+                    )
+                    aggregate_cache_creation_tokens = (
+                        loop_result.aggregate_cache_creation_tokens
+                    )
+                    aggregate_total_input_tokens = (
+                        loop_result.aggregate_total_input_tokens
+                    )
+                    created_message_count = loop_result.created_message_count
 
-                        stream = model_manager.team_chat_stream(
-                            team_id=str(agent.team_id),
-                            messages=messages_for_llm,
-                            model_id=model_id,
-                            tools=tools,
+                    if loop_result.manually_stopped:
+                        assistant_msg.content = full_content
+                        assistant_msg.reasoning_content = full_reasoning or None
+                        assistant_msg.model_used = model_used
+                        assistant_msg.duration_ms = int(
+                            (time.time() - start_time) * 1000
                         )
-                        async for chunk in iter_with_idle_timeout(
-                            stream,
-                            timeout_seconds=idle_timeout,
-                            activity_predicate=_is_model_stream_activity,
-                        ):
-                            if chunk.usage:
-                                stream_usage = chunk.usage
-                            if await request.is_disconnected():
-                                client_disconnected = True
-                                break
-                            if chunk.delta.reasoning_content:
-                                if not reasoning_started:
-                                    reasoning_started = True
-                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                full_reasoning += chunk.delta.reasoning_content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                last_event_time = time.time()
-                            if chunk.delta.content:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                full_content += chunk.delta.content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                last_event_time = time.time()
-                            for tool_call_event in _build_tool_call_start_sse_events(
-                                chunk.delta.tool_call_starts, tool_display_names
-                            ):
-                                yield tool_call_event
-                                last_event_time = time.time()
-
-                            if chunk.delta.tool_calls:
-                                collected_tool_calls = chunk.delta.tool_calls
-                            if chunk.finish_reason:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                if chunk.finish_reason == FinishReason.LENGTH:
-                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                if stream_usage is None:
-                                    continue
-                                break
-                        (
-                            iteration_input_tokens,
-                            iteration_output_tokens,
-                            iteration_cache_read_tokens,
-                            iteration_cache_creation_tokens,
-                            iteration_total_input_tokens,
-                        ) = _calculate_model_usage(
-                            tools=tools,
-                            messages=messages_for_llm,
-                            content=full_content,
-                            reasoning_content=full_reasoning,
-                            tool_calls=collected_tool_calls,
-                            usage=stream_usage,
-                            model_id=tokenizer_model_id,
-                            provider=model_provider,
+                        assistant_msg.first_token_ms = _first_token_ms(
+                            start_time, first_token_time
                         )
-                        aggregate_input_tokens += iteration_input_tokens
-                        aggregate_output_tokens += iteration_output_tokens
-                        aggregate_cache_read_tokens += iteration_cache_read_tokens
-                        aggregate_cache_creation_tokens += (
-                            iteration_cache_creation_tokens
-                        )
-                        aggregate_total_input_tokens += iteration_total_input_tokens
-                        await model_manager.record_stream_usage(
-                            team_id=str(agent.team_id),
-                            model_id=model_id,
-                            input_tokens=iteration_input_tokens,
-                            output_tokens=iteration_output_tokens,
-                        )
-
-                        if client_disconnected:
-                            assistant_msg.content = full_content
-                            assistant_msg.reasoning_content = full_reasoning or None
-                            assistant_msg.model_used = model_used
-                            assistant_msg.duration_ms = int(
-                                (time.time() - start_time) * 1000
-                            )
-                            assistant_msg.first_token_ms = _first_token_ms(
-                                start_time, first_token_time
-                            )
-                            assistant_msg.is_manually_stopped = True
-                            assistant_msg.round_status = (
-                                MessageRoundStatus.MANUALLY_STOPPED
-                            )
-                            assistant_msg.created_at = now_utc()
-                            await assistant_msg.save()
-                            await activate_edited_path()
-                            return
-
-                        if collected_tool_calls:
-                            for tc in collected_tool_calls:
-                                if await request.is_disconnected():
-                                    assistant_msg.content = full_content
-                                    assistant_msg.reasoning_content = (
-                                        full_reasoning or None
-                                    )
-                                    assistant_msg.model_used = model_used
-                                    assistant_msg.duration_ms = int(
-                                        (time.time() - start_time) * 1000
-                                    )
-                                    assistant_msg.first_token_ms = _first_token_ms(
-                                        start_time, first_token_time
-                                    )
-                                    assistant_msg.is_manually_stopped = True
-                                    assistant_msg.round_status = (
-                                        MessageRoundStatus.MANUALLY_STOPPED
-                                    )
-                                    assistant_msg.created_at = now_utc()
-                                    await assistant_msg.save()
-                                    await activate_edited_path()
-                                    return
-                                tool_name = tc.function.name
-                                try:
-                                    arguments = json.loads(tc.function.arguments)
-                                except json.JSONDecodeError:
-                                    arguments = {}
-                                tool_display_name = tool_display_names.get(
-                                    tool_name, tool_name
-                                )
-                                yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
-                                last_event_time = time.time()
-                                result = await execute_tool_call(
-                                    tool_name,
-                                    arguments,
-                                    agent=agent,
-                                    tool_timeouts=tool_timeouts,
-                                    user=current_user,
-                                    session_id=sandbox_session_id,
-                                    current_images=image_pool,
-                                    conversation_id=conversation.id,
-                                )
-                                display_result, llm_result = (
-                                    get_tool_execution_payloads(result)
-                                )
-                                append_generated_images(
-                                    image_pool, image_inventory, display_result
-                                )
-                                model_message = append_conversation_image_inventory(
-                                    final_message, image_inventory
-                                )
-                                pending_tool_calls.append(
-                                    {
-                                        "id": tc.id,
-                                        "name": tool_name,
-                                        "arguments": arguments,
-                                        "display_result": display_result,
-                                        "llm_result": llm_result,
-                                        "display_name": tool_display_name,
-                                    }
-                                )
-                                if await request.is_disconnected():
-                                    assistant_msg.content = full_content
-                                    assistant_msg.reasoning_content = (
-                                        full_reasoning or None
-                                    )
-                                    assistant_msg.model_used = model_used
-                                    assistant_msg.duration_ms = int(
-                                        (time.time() - start_time) * 1000
-                                    )
-                                    assistant_msg.first_token_ms = _first_token_ms(
-                                        start_time, first_token_time
-                                    )
-                                    assistant_msg.is_manually_stopped = True
-                                    assistant_msg.round_status = (
-                                        MessageRoundStatus.MANUALLY_STOPPED
-                                    )
-                                    assistant_msg.created_at = now_utc()
-                                    await assistant_msg.save()
-                                    await activate_edited_path()
-                                    return
-                                yield build_tool_result_sse_event(
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    tool_display_name=tool_display_name,
-                                    display_result=display_result,
-                                )
-                                media_result_event = build_media_result_sse_event(
-                                    display_result
-                                )
-                                if media_result_event:
-                                    yield media_result_event
-                                last_event_time = time.time()
-                                assistant_step_index = next_round_index
-                                await Message.create(
-                                    conversation=conversation,
-                                    role=MessageRole.ASSISTANT,
-                                    content=full_content,
-                                    reasoning_content=full_reasoning or None,
-                                    tool_calls=[
-                                        {
-                                            "id": tc.id,
-                                            "name": tool_name,
-                                            "display_name": tool_display_name,
-                                            "arguments": arguments,
-                                        }
-                                    ],
-                                    branch_parent_id=assistant_msg.id,
-                                    round_id=round_id,
-                                    round_index=assistant_step_index,
-                                    round_role=MessageRoundRole.ASSISTANT_STEP,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                next_round_index += 1
-                                tool_step_index = next_round_index
-                                await Message.create(
-                                    conversation=conversation,
-                                    role=MessageRole.TOOL,
-                                    content=display_result,
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    branch_parent_id=assistant_msg.id,
-                                    round_id=round_id,
-                                    round_index=tool_step_index,
-                                    round_role=MessageRoundRole.TOOL_RESULT,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                next_round_index += 1
-                                created_message_count += 2
-                                if working_history_override is None:
-                                    working_history_override = []
-                                append_round_history_entry(
-                                    working_history_override,
-                                    role="assistant",
-                                    content=full_content,
-                                    reasoning_content=full_reasoning or None,
-                                    tool_calls=[
-                                        {
-                                            "id": tc.id,
-                                            "name": tool_name,
-                                            "display_name": tool_display_name,
-                                            "arguments": arguments,
-                                        }
-                                    ],
-                                    round_id=round_id,
-                                    round_index=assistant_step_index,
-                                    round_role=MessageRoundRole.ASSISTANT_STEP.value,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                append_round_history_entry(
-                                    working_history_override,
-                                    role="tool",
-                                    content=llm_result,
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    round_id=round_id,
-                                    round_index=tool_step_index,
-                                    round_role=MessageRoundRole.TOOL_RESULT.value,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                full_content = ""
-                                full_reasoning = ""
-                            if iteration >= max_iterations:
-                                max_iterations_reached = True
-                                yield f"event: {SSEEventType.ITERATION_CAP_REACHED}\ndata: {json.dumps({'content': build_max_iterations_terminal_content(current_user.locale)})}\n\n"
-                                full_content = ""
-                                full_reasoning = ""
-                                break
-                            continue
-                        break
+                        assistant_msg.is_manually_stopped = True
+                        assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                        assistant_msg.created_at = now_utc()
+                        await assistant_msg.save()
+                        await activate_edited_path()
+                        return
 
                     duration_ms = int((time.time() - start_time) * 1000)
                     terminal_content = (
@@ -3992,7 +3334,6 @@ async def regenerate_message(
             from app.llm.types import (
                 ToolDefinition,
                 FunctionDefinition,
-                FinishReason,
             )
 
             async def activate_regenerated_path() -> None:
@@ -4057,7 +3398,6 @@ async def regenerate_message(
                         branch_parent_id = prefix[-1].id if prefix else None
 
                     round_id = uuid4()
-                    next_round_index = 1
 
                     if in_place_retry:
                         # Reuse the existing row: clear the failed attempt,
@@ -4174,8 +3514,13 @@ async def regenerate_message(
                         ]
 
                     # Streaming generation (simplified - same as main chat)
+                    from app.services.agent_loop import (
+                        AgentLoop,
+                        AgentLoopContext,
+                        ContextTurn,
+                    )
+
                     max_iterations = agent.max_iterations or 5
-                    iteration = 0
                     max_iterations_reached = False
                     aggregate_input_tokens = 0
                     aggregate_output_tokens = 0
@@ -4183,404 +3528,172 @@ async def regenerate_message(
                     aggregate_cache_creation_tokens = 0
                     aggregate_total_input_tokens = 0
 
-                    while iteration < max_iterations:
-                        iteration += 1
+                    def sse_formatter(event_name: str, payload: dict) -> str | None:
+                        """Build SSE strings and mirror deltas into generator
+                        scope so error handlers keep seeing partial state."""
+                        nonlocal full_content, full_reasoning, first_token_time
+                        nonlocal last_event_time
+                        if event_name == "heartbeat":
+                            return ": heartbeat\n\n"
+                        if event_name == "content_delta":
+                            delta = payload.get("delta", "")
+                            full_content += delta
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            last_event_time = time.time()
+                            return (
+                                f"event: {SSEEventType.CONTENT_DELTA}\n"
+                                f"data: {json.dumps({'delta': delta})}\n\n"
+                            )
+                        if event_name == "reasoning_start":
+                            last_event_time = time.time()
+                            return f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "reasoning_delta":
+                            delta = payload.get("delta", "")
+                            full_reasoning += delta
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            last_event_time = time.time()
+                            return (
+                                f"event: {SSEEventType.REASONING_DELTA}\n"
+                                f"data: {json.dumps({'delta': delta})}\n\n"
+                            )
+                        if event_name == "reasoning_end":
+                            return f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "tool_call":
+                            return payload.get("sse")
+                        if event_name == "tool_result":
+                            return payload.get("sse")
+                        if event_name == "media_result":
+                            return payload.get("sse")
+                        if event_name == "compression_start":
+                            event_str = build_compression_start_event(
+                                agent=agent,
+                                stage=payload.get("stage", "macro"),
+                                trigger=payload.get("trigger"),
+                            )
+                            if event_str:
+                                last_event_time = time.time()
+                            return event_str
+                        if event_name == "compression_end":
+                            _, end_str = build_compression_events(
+                                agent=agent,
+                                compression=payload.get("compression"),
+                                trigger=payload.get("trigger"),
+                            )
+                            if end_str:
+                                last_event_time = time.time()
+                            return end_str
+                        if event_name == "output_truncated":
+                            return f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                        if event_name == "iteration_cap_reached":
+                            return (
+                                f"event: {SSEEventType.ITERATION_CAP_REACHED}\n"
+                                f"data: {json.dumps({'content': payload.get('content', '')})}\n\n"
+                            )
+                        return None
 
-                        pending_tool_calls = []
-
-                        # Heartbeat check and send
-                        (
-                            should_continue,
-                            new_last_event_time,
-                        ) = await send_heartbeat_if_needed(
-                            last_event_time, heartbeat_interval, request
+                    async def build_turn(**kwargs):
+                        plan = await build_context_plan(**kwargs)
+                        return ContextTurn(
+                            prepared=None,
+                            will_summarize=plan.will_summarize,
+                            compression=plan.compression,
+                            plan=plan,
                         )
-                        if not should_continue:
-                            # Client disconnected, save current stopped state and exit
-                            new_message.content = full_content
-                            new_message.reasoning_content = (
-                                full_reasoning if full_reasoning else None
-                            )
-                            new_message.model_used = model_used
-                            new_message.duration_ms = int(
-                                (time.time() - start_time) * 1000
-                            )
-                            new_message.first_token_ms = _first_token_ms(
-                                start_time, first_token_time
-                            )
-                            new_message.is_manually_stopped = True
-                            new_message.round_status = (
-                                MessageRoundStatus.MANUALLY_STOPPED
-                            )
-                            new_message.created_at = now_utc()
-                            await new_message.save()
-                            await activate_regenerated_path()
-                            return
 
-                        # If we need to send heartbeat
-                        if new_last_event_time > last_event_time:
-                            yield ": heartbeat\n\n"
-                            last_event_time = new_last_event_time
-
-                        reasoning_started = False
-                        full_content = ""
-                        full_reasoning = ""
-                        collected_tool_calls = []
-                        client_disconnected = False
-                        stream_usage = None
-                        tool_definition_tokens = (
-                            count_tool_definition_tokens(
-                                tools, tokenizer_model_id, model_provider
-                            )
-                            if tools
-                            else 0
-                        )
-                        regen_plan = await build_context_plan(
+                    loop = AgentLoop(
+                        AgentLoopContext(
                             agent=agent,
                             conversation=conversation,
+                            user=current_user,
                             user_message=model_message,
                             model_id=model_id,
                             tokenizer_model_id=tokenizer_model_id,
+                            model_provider=model_provider,
                             model_context_limit=model_context_limit,
                             model_max_output_tokens=model_max_output_tokens,
-                            provider=model_provider,
-                            user_locale=current_user.locale,
-                            history_override=working_history_override,
+                            model_used=model_used,
+                            model_supports_vision=False,
+                            tools=tools,
+                            tool_display_names=tool_display_names,
+                            tool_timeouts=tool_timeouts,
+                            global_timeout=global_timeout,
+                            idle_timeout=idle_timeout,
+                            heartbeat_interval=heartbeat_interval,
+                            sandbox_session_id=sandbox_session_id,
+                            file_content=None,
+                            current_images=None,
+                            working_history_override=working_history_override,
+                            image_pool=image_pool,
+                            image_inventory=image_inventory,
+                            append_generated_images=append_generated_images,
                             current_user_message_id=user_message.id,
                             include_current_user_message=False,
                             history_before_message_created_at=user_message.created_at,
-                            tool_timeouts=tool_timeouts,
-                            user=current_user,
+                            round_id=round_id,
                             protected_round_id=round_id,
-                            tool_definition_tokens=tool_definition_tokens,
-                        )
-                        if regen_plan.will_summarize:
-                            start_event = build_compression_start_event(
-                                agent=agent,
-                                stage="macro",
-                                trigger=get_compression_trigger(regen_plan.compression),
-                            )
-                            if start_event:
-                                yield start_event
-                                last_event_time = time.time()
-                        prepared_context = await regen_plan.finalize()
-                        _, compression_end = build_compression_events(
-                            agent=agent,
-                            compression=prepared_context.compression,
-                            trigger=get_compression_trigger(
-                                prepared_context.compression
+                            user_locale=current_user.locale,
+                            max_iterations=max_iterations,
+                            streaming=True,
+                            build_turn=build_turn,
+                            execute_tool_call=execute_tool_call,
+                            count_tool_definition_tokens=count_tool_definition_tokens,
+                            trigger_for_compression=get_compression_trigger,
+                            team_chat_stream=model_manager.team_chat_stream,
+                            team_chat=model_manager.team_chat,
+                            record_stream_usage=model_manager.record_stream_usage,
+                            calculate_usage=_calculate_model_usage,
+                            send_heartbeat_if_needed=send_heartbeat_if_needed,
+                            is_disconnected=request.is_disconnected,
+                            request=request,
+                            initial_last_event_time=last_event_time,
+                            formatter=sse_formatter,
+                            persist_step_per_tool=True,
+                            step_branch_parent_id=new_message.id,
+                            first_round_index=1,
+                            created_message_count=1,
+                            cap_content=lambda: build_max_iterations_terminal_content(
+                                current_user.locale
                             ),
                         )
-                        if compression_end:
-                            yield compression_end
+                    )
+                    async for sse_chunk in loop.run():
+                        if sse_chunk:
+                            yield sse_chunk
                             last_event_time = time.time()
-                        messages_for_llm = [
-                            item.model_dump(exclude_none=True)
-                            for item in prepared_context.messages
-                        ]
+                    loop_result = loop.result
+                    max_iterations_reached = loop_result.max_iterations_reached
+                    full_content = loop_result.full_content
+                    full_reasoning = loop_result.full_reasoning
+                    aggregate_input_tokens = loop_result.aggregate_input_tokens
+                    aggregate_output_tokens = loop_result.aggregate_output_tokens
+                    aggregate_cache_read_tokens = (
+                        loop_result.aggregate_cache_read_tokens
+                    )
+                    aggregate_cache_creation_tokens = (
+                        loop_result.aggregate_cache_creation_tokens
+                    )
+                    aggregate_total_input_tokens = (
+                        loop_result.aggregate_total_input_tokens
+                    )
 
-                        stream = model_manager.team_chat_stream(
-                            team_id=str(agent.team_id),
-                            messages=messages_for_llm,
-                            model_id=model_id,
-                            tools=tools,
+                    if loop_result.manually_stopped:
+                        new_message.content = full_content
+                        new_message.reasoning_content = (
+                            full_reasoning if full_reasoning else None
                         )
-                        async for chunk in iter_with_idle_timeout(
-                            stream,
-                            timeout_seconds=idle_timeout,
-                            activity_predicate=_is_model_stream_activity,
-                        ):
-                            if chunk.usage:
-                                stream_usage = chunk.usage
-                            # Check if client disconnected - stop LLM generation to save tokens
-                            if await request.is_disconnected():
-                                client_disconnected = True
-                                logger.info(
-                                    f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
-                                )
-                                break
-
-                            if chunk.delta.reasoning_content:
-                                if not reasoning_started:
-                                    reasoning_started = True
-                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                full_reasoning += chunk.delta.reasoning_content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                                last_event_time = time.time()
-
-                            if chunk.delta.content:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                full_content += chunk.delta.content
-
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                # Stream content normally
-                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                last_event_time = time.time()
-
-                            for tool_call_event in _build_tool_call_start_sse_events(
-                                chunk.delta.tool_call_starts, tool_display_names
-                            ):
-                                yield tool_call_event
-                                last_event_time = time.time()
-
-                            if chunk.delta.tool_calls:
-                                collected_tool_calls = chunk.delta.tool_calls
-
-                            if chunk.finish_reason:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                if chunk.finish_reason == FinishReason.LENGTH:
-                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                # OpenAI/DeepSeek 等端点的 usage 在 finish 之后的独立 chunk 上；
-                                # finish chunk 未携带 usage 时继续消费以捕获终末 usage（流随后自然结束）
-                                if stream_usage is None:
-                                    continue
-                                break
-                        (
-                            iteration_input_tokens,
-                            iteration_output_tokens,
-                            iteration_cache_read_tokens,
-                            iteration_cache_creation_tokens,
-                            iteration_total_input_tokens,
-                        ) = _calculate_model_usage(
-                            tools=tools,
-                            messages=messages_for_llm,
-                            content=full_content,
-                            reasoning_content=full_reasoning,
-                            tool_calls=collected_tool_calls,
-                            usage=stream_usage,
-                            model_id=tokenizer_model_id,
-                            provider=model_provider,
+                        new_message.model_used = model_used
+                        new_message.duration_ms = int((time.time() - start_time) * 1000)
+                        new_message.first_token_ms = _first_token_ms(
+                            start_time, first_token_time
                         )
-                        aggregate_input_tokens += iteration_input_tokens
-                        aggregate_output_tokens += iteration_output_tokens
-                        aggregate_cache_read_tokens += iteration_cache_read_tokens
-                        aggregate_cache_creation_tokens += (
-                            iteration_cache_creation_tokens
-                        )
-                        aggregate_total_input_tokens += iteration_total_input_tokens
-                        await model_manager.record_stream_usage(
-                            team_id=str(agent.team_id),
-                            model_id=model_id,
-                            input_tokens=iteration_input_tokens,
-                            output_tokens=iteration_output_tokens,
-                        )
-
-                        # If client disconnected, save current stopped state and exit
-                        if client_disconnected:
-                            new_message.content = full_content
-                            new_message.reasoning_content = (
-                                full_reasoning if full_reasoning else None
-                            )
-                            new_message.model_used = model_used
-                            new_message.duration_ms = int(
-                                (time.time() - start_time) * 1000
-                            )
-                            new_message.first_token_ms = _first_token_ms(
-                                start_time, first_token_time
-                            )
-                            new_message.is_manually_stopped = True
-                            new_message.round_status = (
-                                MessageRoundStatus.MANUALLY_STOPPED
-                            )
-                            new_message.created_at = now_utc()
-                            await new_message.save()
-                            return  # Exit generator - client is gone
-
-                        if collected_tool_calls:
-                            # Handle tool calls (simplified)
-                            for tc in collected_tool_calls:
-                                # Check if client disconnected before tool execution
-                                if await request.is_disconnected():
-                                    logger.info(
-                                        "Client disconnected before tool execution in regenerate"
-                                    )
-                                    new_message.content = full_content
-                                    new_message.reasoning_content = (
-                                        full_reasoning if full_reasoning else None
-                                    )
-                                    new_message.model_used = model_used
-                                    new_message.duration_ms = int(
-                                        (time.time() - start_time) * 1000
-                                    )
-                                    new_message.first_token_ms = _first_token_ms(
-                                        start_time, first_token_time
-                                    )
-                                    new_message.is_manually_stopped = True
-                                    new_message.round_status = (
-                                        MessageRoundStatus.MANUALLY_STOPPED
-                                    )
-                                    new_message.created_at = now_utc()
-                                    await new_message.save()
-                                    return
-
-                                tool_name = tc.function.name
-                                try:
-                                    arguments = json.loads(tc.function.arguments)
-                                except json.JSONDecodeError:
-                                    arguments = {}
-
-                                tool_display_name = tool_display_names.get(
-                                    tool_name, tool_name
-                                )
-                                yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
-                                last_event_time = time.time()
-
-                                result = await execute_tool_call(
-                                    tool_name,
-                                    arguments,
-                                    agent=agent,
-                                    tool_timeouts=tool_timeouts,
-                                    user=current_user,
-                                    session_id=sandbox_session_id,
-                                    current_images=image_pool,
-                                    conversation_id=conversation.id,
-                                )
-                                display_result, llm_result = (
-                                    get_tool_execution_payloads(result)
-                                )
-                                append_generated_images(
-                                    image_pool, image_inventory, display_result
-                                )
-                                model_message = append_conversation_image_inventory(
-                                    final_message, image_inventory
-                                )
-                                pending_tool_calls.append(
-                                    {
-                                        "id": tc.id,
-                                        "name": tool_name,
-                                        "arguments": arguments,
-                                        "display_result": display_result,
-                                        "llm_result": llm_result,
-                                        "display_name": tool_display_name,
-                                    }
-                                )
-
-                                # Check if client disconnected after tool execution
-                                if await request.is_disconnected():
-                                    logger.info(
-                                        "Client disconnected after tool execution in regenerate"
-                                    )
-                                    new_message.content = full_content
-                                    new_message.reasoning_content = (
-                                        full_reasoning if full_reasoning else None
-                                    )
-                                    new_message.model_used = model_used
-                                    new_message.duration_ms = int(
-                                        (time.time() - start_time) * 1000
-                                    )
-                                    new_message.first_token_ms = _first_token_ms(
-                                        start_time, first_token_time
-                                    )
-                                    new_message.is_manually_stopped = True
-                                    new_message.round_status = (
-                                        MessageRoundStatus.MANUALLY_STOPPED
-                                    )
-                                    new_message.created_at = now_utc()
-                                    await new_message.save()
-                                    return
-
-                                yield build_tool_result_sse_event(
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    tool_display_name=tool_display_name,
-                                    display_result=display_result,
-                                )
-                                media_result_event = build_media_result_sse_event(
-                                    display_result
-                                )
-                                if media_result_event:
-                                    yield media_result_event
-                                last_event_time = time.time()
-
-                                assistant_step_index = next_round_index
-                                await Message.create(
-                                    conversation=conversation,
-                                    role=MessageRole.ASSISTANT,
-                                    content=full_content,
-                                    reasoning_content=full_reasoning or None,
-                                    tool_calls=[
-                                        {
-                                            "id": tc.id,
-                                            "name": tool_name,
-                                            "display_name": tool_display_name,
-                                            "arguments": arguments,
-                                        }
-                                    ],
-                                    branch_parent_id=new_message.id,
-                                    round_id=round_id,
-                                    round_index=assistant_step_index,
-                                    round_role=MessageRoundRole.ASSISTANT_STEP,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                next_round_index += 1
-                                tool_step_index = next_round_index
-                                await Message.create(
-                                    conversation=conversation,
-                                    role=MessageRole.TOOL,
-                                    content=display_result,
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    branch_parent_id=new_message.id,
-                                    round_id=round_id,
-                                    round_index=tool_step_index,
-                                    round_role=MessageRoundRole.TOOL_RESULT,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                next_round_index += 1
-                                if working_history_override is None:
-                                    working_history_override = []
-                                append_round_history_entry(
-                                    working_history_override,
-                                    role="assistant",
-                                    content=full_content,
-                                    reasoning_content=full_reasoning or None,
-                                    tool_calls=[
-                                        {
-                                            "id": tc.id,
-                                            "name": tool_name,
-                                            "display_name": tool_display_name,
-                                            "arguments": arguments,
-                                        }
-                                    ],
-                                    round_id=round_id,
-                                    round_index=assistant_step_index,
-                                    round_role=MessageRoundRole.ASSISTANT_STEP.value,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                append_round_history_entry(
-                                    working_history_override,
-                                    role="tool",
-                                    content=llm_result,
-                                    tool_call_id=tc.id,
-                                    tool_name=tool_name,
-                                    round_id=round_id,
-                                    round_index=tool_step_index,
-                                    round_role=MessageRoundRole.TOOL_RESULT.value,
-                                    is_round_canonical=False,
-                                    iteration_index=iteration,
-                                )
-                                full_content = ""
-                                full_reasoning = ""
-
-                            if iteration >= max_iterations:
-                                max_iterations_reached = True
-                                yield f"event: {SSEEventType.ITERATION_CAP_REACHED}\ndata: {json.dumps({'content': build_max_iterations_terminal_content(current_user.locale)})}\n\n"
-                                last_event_time = time.time()
-                                full_content = ""
-                                full_reasoning = ""
-                                break
-
-                            continue
-                        else:
-                            break
+                        new_message.is_manually_stopped = True
+                        new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                        new_message.created_at = now_utc()
+                        await new_message.save()
+                        await activate_regenerated_path()
+                        return
 
                     duration_ms = int((time.time() - start_time) * 1000)
                     terminal_content = (
