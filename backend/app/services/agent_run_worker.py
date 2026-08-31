@@ -617,6 +617,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             conversation,
             agent,
             stream,
+            user_message=user_msg,
             model_used=loop_context.model_used,
             locale=payload.get("locale"),
         )
@@ -681,6 +682,7 @@ async def _finalize_completed(
     agent: Agent,
     stream: AgentRunStream,
     *,
+    user_message: Message,
     model_used: str | None,
     locale: str | None,
 ) -> None:
@@ -732,10 +734,17 @@ async def _finalize_completed(
 
     created_message_count = max(result.created_message_count, 2)
     total_tokens = result.aggregate_input_tokens + result.aggregate_output_tokens
+    title_update = {}
+    if not conversation.title:
+        title_source = user_message.content or ""
+        title_update["title"] = title_source[:50] + (
+            "..." if len(title_source) > 50 else ""
+        )
     await Conversation.filter(id=conversation.id).update(
         message_count=conversation.message_count + created_message_count,
         token_usage=conversation.token_usage + total_tokens,
         updated_at=now_utc(),
+        **title_update,
     )
     await Agent.filter(id=agent.id).update(
         message_count=agent.message_count + created_message_count,

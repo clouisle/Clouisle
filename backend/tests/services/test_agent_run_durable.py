@@ -404,3 +404,82 @@ def test_worker_formatter_queues_structured_sse_payload():
     event_type, payload = queue.get_nowait()
     assert event_type == "tool_call"
     assert payload == {"tool_call_id": "call-1", "tool_name": "clock"}
+
+
+@pytest.mark.asyncio
+async def test_finalize_completed_sets_initial_conversation_title(monkeypatch):
+    from app.services import agent_run_worker
+
+    conversation = SimpleNamespace(
+        id=uuid4(),
+        title=None,
+        message_count=0,
+        token_usage=0,
+    )
+    agent = SimpleNamespace(
+        id=uuid4(),
+        message_count=0,
+        total_tokens=0,
+    )
+    canonical = SimpleNamespace(
+        id=uuid4(),
+        branch_parent_id=None,
+        content="",
+        reasoning_content=None,
+        model_used=None,
+        duration_ms=10,
+        first_token_ms=2,
+        is_manually_stopped=False,
+        round_status=None,
+        round_index=0,
+        token_usage=None,
+        save=AsyncMock(),
+    )
+    result = SimpleNamespace(
+        full_content="answer",
+        full_reasoning="",
+        max_iterations_reached=False,
+        aggregate_input_tokens=3,
+        aggregate_output_tokens=4,
+        aggregate_cache_read_tokens=0,
+        aggregate_cache_creation_tokens=0,
+        aggregate_total_input_tokens=3,
+        duration_ms=10,
+        first_token_ms=2,
+        created_message_count=2,
+        final_round_index=1,
+    )
+    conversation_update = AsyncMock()
+    agent_update = AsyncMock()
+    monkeypatch.setattr(
+        agent_run_worker.Conversation,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(update=conversation_update),
+    )
+    monkeypatch.setattr(
+        agent_run_worker.Agent,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(update=agent_update),
+    )
+    monkeypatch.setattr(
+        agent_run_worker.Message,
+        "get_or_none",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.message_branching.activate_conversation_branch",
+        AsyncMock(),
+    )
+
+    await agent_run_worker._finalize_completed(
+        canonical,
+        result,
+        conversation,
+        agent,
+        SimpleNamespace(publish=AsyncMock()),
+        user_message=SimpleNamespace(content="x" * 51),
+        model_used="model",
+        locale="en",
+    )
+
+    assert conversation_update.await_args.kwargs["title"] == ("x" * 50) + "..."
