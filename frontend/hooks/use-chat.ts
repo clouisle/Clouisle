@@ -33,6 +33,8 @@ import type {
   TaskPart,
   ToolCallPart,
   ToolResultPart,
+  McpToolCallPart,
+  McpToolResultPart,
   UserInputRequestPart,
   MediaResultPart,
 } from '@/components/chat'
@@ -94,6 +96,7 @@ export interface ChatStreamApi {
   ): Promise<AgentRunStatusOut>
   stopRun?(agentId: string, runId: string): Promise<AgentRunStatusOut>
 }
+
 
 const defaultChatApi: ChatStreamApi = {
   chatStream: (agentId, request) => agentsApi.chatStream(agentId, request),
@@ -332,10 +335,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     if (!messageId) return
     const parts = buildMessageParts(
       session.state.segments,
-      session.state.reasoningBlocks,
       session.state.ragSources,
-      streaming,
-      session.state.taskState
+      streaming
     )
     setMessages((previous) => previous.map((message) => (
       message.id === messageId
@@ -456,10 +457,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     session.versionCount = endData.version_count ?? session.versionCount
     const parts = buildMessageParts(
       session.state.segments,
-      session.state.reasoningBlocks,
       session.state.ragSources,
-      false,
-      session.state.taskState
+      false
     )
     setMessages((previous) => previous.map((message) => (
       message.id === previousMessageId
@@ -495,10 +494,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     if (!messageId) return
     const stoppedParts = appendStoppedPart(buildMessageParts(
       session.state.segments,
-      session.state.reasoningBlocks,
       session.state.ragSources,
-      false,
-      session.state.taskState
+      false
     ))
     setMessages((previous) => previous.map((message) => (
       message.id === messageId
@@ -1408,19 +1405,24 @@ interface TaskState {
   compressionInfo?: Record<string, unknown>
 }
 
+/** A single tool invocation and its optional result at one timeline position. */
+type StreamToolCallPart = ToolCallPart | McpToolCallPart
+type StreamToolResultPart = ToolResultPart | McpToolResultPart
+
 /**
  * A segment represents a stream event in the order it was received.
  * Keeping task events here prevents progress steps from being rendered as a
  * fixed prelude to the rest of the thinking timeline.
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning' | 'task' | 'user-input-request' | 'media-result' | 'truncated' | 'iteration-cap-reached'
+  type: 'text' | 'tool' | 'reasoning' | 'task' | 'user-input-request' | 'media-result' | 'truncated' | 'iteration-cap-reached'
   // For text type
   text?: string
-  // For tool-group type
-  toolCalls?: ToolCallPart[]
-  toolResults?: ToolResultPart[]
+  // For tool type
+  toolCall?: StreamToolCallPart
+  toolResult?: StreamToolResultPart
   // For reasoning type
+  reasoningIndex?: number
   reasoningText?: string
   reasoningState?: 'streaming' | 'done'
   reasoningStartTime?: number
@@ -1613,10 +1615,11 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
           duration: part.duration,
           state: part.state === 'streaming' ? 'streaming' as const : 'done' as const,
         }
-        state.reasoningBlocks.push(block)
-        state.currentReasoningIndex = state.reasoningBlocks.length - 1
+        const reasoningIndex = state.reasoningBlocks.push(block) - 1
+        state.currentReasoningIndex = block.state === 'streaming' ? reasoningIndex : -1
         state.segments.push({
           type: 'reasoning',
+          reasoningIndex,
           reasoningText: part.text,
           reasoningState: block.state,
           reasoningStartTime: block.startTime,
@@ -1625,6 +1628,7 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
         break
       }
       case 'task':
+        state.segments.push({ type: 'task', task: { ...part } })
         if (part.taskType === 'rag') {
           state.taskState.rag = part.state
           state.taskState.ragSourceCount = typeof part.info === 'number' ? part.info : undefined
@@ -1632,30 +1636,56 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
           state.taskState.generating = part.state
         } else if (part.taskType === 'compression') {
           state.taskState.compression = part.state
-          state.segments.push({ type: 'task', task: { ...part } })
+          state.taskState.compressionInfo = typeof part.info === 'object' && part.info !== null
+            ? part.info as Record<string, unknown>
+            : undefined
         }
         break
       case 'tool-call': {
-        const last = state.segments.at(-1)
-        if (last?.type === 'tool-group') {
-          last.toolCalls = [...(last.toolCalls ?? []), { ...part }]
+        const existingSegment = findToolSegment(state.segments, part.toolCallId)
+        if (existingSegment) {
+          existingSegment.toolCall = existingSegment.toolCall
+            ? mergeStreamToolCall(existingSegment.toolCall, part)
+            : setToolCallState(part, existingSegment.toolResult)
         } else {
-          state.segments.push({ type: 'tool-group', toolCalls: [{ ...part }], toolResults: [] })
+          state.segments.push({ type: 'tool', toolCall: { ...part } })
+        }
+        state.taskState.toolCalling = part.state === 'running' ? 'running' : 'completed'
+        break
+      }
+      case 'mcp-tool-call': {
+        const existingSegment = findToolSegment(state.segments, part.toolCallId)
+        if (existingSegment) {
+          existingSegment.toolCall = existingSegment.toolCall
+            ? mergeStreamToolCall(existingSegment.toolCall, part)
+            : setToolCallState(part, existingSegment.toolResult)
+        } else {
+          state.segments.push({ type: 'tool', toolCall: { ...part } })
         }
         state.taskState.toolCalling = part.state === 'running' ? 'running' : 'completed'
         break
       }
       case 'tool-result': {
-        const group = state.segments.find((segment) => (
-          segment.type === 'tool-group' && segment.toolCalls?.some((call) => call.toolCallId === part.toolCallId)
-        ))
-        if (group) {
-          group.toolResults = [...(group.toolResults ?? []), { ...part }]
-          group.toolCalls = group.toolCalls?.map((call) => (
-            call.toolCallId === part.toolCallId
-              ? { ...call, state: part.isError ? 'error' as const : 'done' as const }
-              : call
-          ))
+        const existingSegment = findToolSegment(state.segments, part.toolCallId)
+        if (existingSegment) {
+          existingSegment.toolResult = { ...part }
+          if (existingSegment.toolCall) {
+            existingSegment.toolCall = setToolCallState(existingSegment.toolCall, part)
+          }
+        } else {
+          state.segments.push({ type: 'tool', toolResult: { ...part } })
+        }
+        break
+      }
+      case 'mcp-tool-result': {
+        const existingSegment = findToolSegment(state.segments, part.toolCallId)
+        if (existingSegment) {
+          existingSegment.toolResult = { ...part }
+          if (existingSegment.toolCall) {
+            existingSegment.toolCall = setToolCallState(existingSegment.toolCall, part)
+          }
+        } else {
+          state.segments.push({ type: 'tool', toolResult: { ...part } })
         }
         break
       }
@@ -1676,7 +1706,7 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
         break
     }
   }
-  const toolCalls = state.segments.flatMap((segment) => segment.toolCalls ?? [])
+  const toolCalls = state.segments.flatMap((segment) => segment.toolCall ? [segment.toolCall] : [])
   if (toolCalls.length > 0 && toolCalls.every((call) => call.state === 'done' || call.state === 'error')) {
     state.taskState.toolCalling = 'completed'
   }
@@ -1750,6 +1780,44 @@ function createAssistantStreamState(): AssistantStreamState {
     taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   }
 }
+function findToolSegment(segments: ContentSegment[], toolCallId: string): ContentSegment | undefined {
+  return segments.find((segment) => (
+    segment.type === 'tool'
+    && (segment.toolCall?.toolCallId === toolCallId || segment.toolResult?.toolCallId === toolCallId)
+  ))
+}
+
+function mergeMcpToolCall(existing: McpToolCallPart, incoming: McpToolCallPart): McpToolCallPart {
+  const merged: McpToolCallPart = {
+    ...existing,
+    ...(incoming.serverName !== undefined ? { serverName: incoming.serverName } : {}),
+    ...(incoming.toolName !== undefined ? { toolName: incoming.toolName } : {}),
+    ...(incoming.input !== undefined ? { input: incoming.input } : {}),
+    ...(incoming.state !== undefined ? { state: incoming.state } : {}),
+  }
+  if (existing.state === 'done' || existing.state === 'error') {
+    merged.state = existing.state
+  }
+  return merged
+}
+
+function mergeStreamToolCall(existing: StreamToolCallPart, incoming: StreamToolCallPart): StreamToolCallPart {
+  if (existing.type === 'tool-call' && incoming.type === 'tool-call') {
+    return mergeToolCall(existing, incoming)
+  }
+  if (existing.type === 'mcp-tool-call' && incoming.type === 'mcp-tool-call') {
+    return mergeMcpToolCall(existing, incoming)
+  }
+  return incoming
+}
+
+function setToolCallState(
+  toolCall: StreamToolCallPart,
+  result: StreamToolResultPart | undefined,
+): StreamToolCallPart {
+  if (!result) return toolCall
+  return { ...toolCall, state: result.isError ? 'error' : 'done' }
+}
 
 function applyAssistantStreamEvent(
   state: AssistantStreamState,
@@ -1764,47 +1832,44 @@ function applyAssistantStreamEvent(
   }
 
   const addToolCall = (toolCall: ToolCallPart) => {
-    const existingGroup = state.segments.find(segment => (
-      segment.type === 'tool-group'
-      && segment.toolCalls?.some(existing => existing.toolCallId === toolCall.toolCallId)
-    ))
-    if (existingGroup) {
-      existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
-        existing.toolCallId === toolCall.toolCallId ? mergeToolCall(existing, toolCall) : existing
-      ))
+    const existingSegment = findToolSegment(state.segments, toolCall.toolCallId)
+    if (existingSegment) {
+      existingSegment.toolCall = existingSegment.toolCall
+        ? mergeStreamToolCall(existingSegment.toolCall, toolCall)
+        : setToolCallState(toolCall, existingSegment.toolResult)
       return
     }
-
-    const lastSegment = state.segments[state.segments.length - 1]
-    if (lastSegment?.type === 'tool-group') {
-      lastSegment.toolCalls = [...(lastSegment.toolCalls || []), toolCall]
-      return
-    }
-    state.segments.push({ type: 'tool-group', toolCalls: [toolCall], toolResults: [] })
+    state.segments.push({ type: 'tool', toolCall })
   }
 
   switch (event.event as SSEEventType) {
     case 'rag_start':
       state.taskState.rag = 'running'
+      appendTimelineTask(state.segments, 'rag')
       return true
 
-    case 'reasoning_start':
-      state.reasoningBlocks.push({ text: '', startTime: Date.now(), state: 'streaming' })
-      state.currentReasoningIndex = state.reasoningBlocks.length - 1
+    case 'reasoning_start': {
+      const startTime = Date.now()
+      const reasoningIndex = state.reasoningBlocks.push({ text: '', startTime, state: 'streaming' }) - 1
+      state.currentReasoningIndex = reasoningIndex
       state.segments.push({
         type: 'reasoning',
+        reasoningIndex,
         reasoningText: '',
         reasoningState: 'streaming',
-        reasoningStartTime: Date.now(),
+        reasoningStartTime: startTime,
       })
-      return false
+      return true
+    }
 
     case 'reasoning_delta': {
       const data = event.data as { delta: string }
       const block = state.reasoningBlocks[state.currentReasoningIndex]
       if (!block) return false
       block.text += data.delta
-      const reasoningSegment = state.segments.findLast(segment => segment.type === 'reasoning')
+      const reasoningSegment = state.segments.find(
+        segment => segment.type === 'reasoning' && segment.reasoningIndex === state.currentReasoningIndex
+      )
       if (reasoningSegment) reasoningSegment.reasoningText = block.text
       return true
     }
@@ -1814,24 +1879,32 @@ function applyAssistantStreamEvent(
       if (!block) return false
       block.duration = Date.now() - block.startTime
       block.state = 'done'
-      const reasoningSegment = state.segments.findLast(segment => segment.type === 'reasoning')
+      const reasoningSegment = state.segments.find(
+        segment => segment.type === 'reasoning' && segment.reasoningIndex === state.currentReasoningIndex
+      )
       if (reasoningSegment) {
         reasoningSegment.reasoningState = 'done'
         reasoningSegment.reasoningDuration = block.duration
+        reasoningSegment.reasoningText = block.text
       }
       return true
     }
 
     case 'content_delta': {
       const data = event.data as SSEContentDelta
+      if (state.taskState.generating === 'pending') {
+        if (state.taskState.rag === 'running') {
+          state.taskState.rag = 'completed'
+          updateLatestTimelineTask(state.segments, 'rag', 'completed')
+        }
+        state.taskState.generating = 'running'
+        appendTimelineTask(state.segments, 'generating')
+      }
+
       const textSegment = getCurrentTextSegment()
       textSegment.text = (textSegment.text || '') + data.delta
-
-      const allText = state.segments
-        .filter(segment => segment.type === 'text')
-        .map(segment => segment.text || '')
-        .join('')
-      const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
+      const text = textSegment.text
+      const xmlMatch = text.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
       if (xmlMatch) {
         const question = xmlMatch[1].match(/<question>([\s\S]*?)<\/question>/)?.[1].trim()
         const options = Array.from(
@@ -1839,23 +1912,15 @@ function applyAssistantStreamEvent(
           match => match[1].trim()
         )
         if (question && options.length >= 2) {
-          const start = allText.indexOf('<user_input_request>')
-          const end = allText.indexOf('</user_input_request>') + '</user_input_request>'.length
-          const cleanedText = `${allText.slice(0, start)}${allText.slice(end)}`.trim()
-          state.segments = state.segments.filter(segment => (
-            segment.type !== 'text' && segment.type !== 'user-input-request'
-          ))
-          if (cleanedText) state.segments.push({ type: 'text', text: cleanedText })
-          state.segments.push({
+          const start = text.indexOf('<user_input_request>')
+          const end = text.indexOf('</user_input_request>') + '</user_input_request>'.length
+          textSegment.text = `${text.slice(0, start)}${text.slice(end)}`.trim()
+          const segmentIndex = state.segments.indexOf(textSegment)
+          state.segments.splice(segmentIndex + 1, 0, {
             type: 'user-input-request',
             userInputRequest: { type: 'user-input-request', question, options, state: 'pending' },
           })
         }
-      }
-
-      if (state.taskState.generating === 'pending') {
-        if (state.taskState.rag === 'running') state.taskState.rag = 'completed'
-        state.taskState.generating = 'running'
       }
       return true
     }
@@ -1876,6 +1941,7 @@ function applyAssistantStreamEvent(
       }))
       state.taskState.rag = 'completed'
       state.taskState.ragSourceCount = state.ragSources.length
+      ensureTimelineTask(state.segments, 'rag', 'completed', state.ragSources.length)
       return true
     }
 
@@ -1906,37 +1972,32 @@ function applyAssistantStreamEvent(
         state: 'running',
       })
       state.taskState.toolCalling = 'running'
-      state.taskState.toolCallCount = state.segments
-        .filter(segment => segment.type === 'tool-group')
-        .reduce((count, segment) => count + (segment.toolCalls?.length || 0), 0)
+      state.taskState.toolCallCount = state.segments.filter(
+        segment => segment.type === 'tool' && Boolean(segment.toolCall)
+      ).length
       return true
     }
 
     case 'tool_result': {
       const data = event.data as SSEToolResult
-      const toolGroup = state.segments.find(segment => (
-        segment.type === 'tool-group'
-        && segment.toolCalls?.some(toolCall => toolCall.toolCallId === data.tool_call_id)
-      ))
-      if (toolGroup) {
-        toolGroup.toolResults = [
-          ...(toolGroup.toolResults || []),
-          {
-            type: 'tool-result',
-            toolCallId: data.tool_call_id,
-            toolName: data.tool_name,
-            toolDisplayName: data.tool_display_name,
-            output: parseToolResultOutput(data.result),
-            isError: data.is_error,
-          },
-        ]
-        toolGroup.toolCalls = toolGroup.toolCalls?.map(toolCall => (
-          toolCall.toolCallId === data.tool_call_id
-            ? { ...toolCall, state: data.is_error ? 'error' as const : 'done' as const }
-            : toolCall
-        ))
+      const result: ToolResultPart = {
+        type: 'tool-result',
+        toolCallId: data.tool_call_id,
+        toolName: data.tool_name,
+        toolDisplayName: data.tool_display_name,
+        output: parseToolResultOutput(data.result),
+        isError: data.is_error,
       }
-      const toolCalls = state.segments.flatMap(segment => segment.toolCalls || [])
+      const existingSegment = findToolSegment(state.segments, data.tool_call_id)
+      if (existingSegment) {
+        existingSegment.toolResult = result
+        if (existingSegment.toolCall) {
+          existingSegment.toolCall = setToolCallState(existingSegment.toolCall, result)
+        }
+      } else {
+        state.segments.push({ type: 'tool', toolResult: result })
+      }
+      const toolCalls = state.segments.flatMap(segment => segment.toolCall ? [segment.toolCall] : [])
       if (
         toolCalls.every(toolCall => toolCall.state === 'done' || toolCall.state === 'error')
         && state.taskState.toolCalling === 'running'
@@ -1973,44 +2034,16 @@ function applyAssistantStreamEvent(
 }
 
 /**
- * Build message parts from text segments, reasoning blocks, sources, and task state
- * Text and tool calls are interleaved based on when they appear in the stream
+ * Build message parts from the stream segments in their received order.
+ * Citation sources remain a non-streaming footer rather than timeline items.
  */
 function buildMessageParts(
   segments: ContentSegment[],
-  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
   sources: SourceDocumentPart[],
-  isStreaming: boolean,
-  taskState?: TaskState
+  isStreaming: boolean
 ): MessagePart[] {
   const parts: MessagePart[] = []
 
-  // Keep the aggregate RAG and generating steps for their existing positions.
-  // Compression tasks are emitted from their event segments below.
-  if (taskState) {
-    if (taskState.rag !== 'pending') {
-      const ragTask: TaskPart = {
-        type: 'task',
-        taskType: 'rag',
-        state: isStreaming ? taskState.rag : 'completed',
-        info: taskState.ragSourceCount,
-      }
-      parts.push(ragTask)
-    }
-
-    // Individual tool calls are shown in the segments below.
-
-    if (taskState.generating !== 'pending') {
-      const generatingTask: TaskPart = {
-        type: 'task',
-        taskType: 'generating',
-        state: isStreaming ? taskState.generating : 'completed',
-      }
-      parts.push(generatingTask)
-    }
-  }
-
-  // Add content segments in order (text, reasoning, task, and tool calls).
   for (const segment of segments) {
     if (segment.type === 'text' && segment.text && segment.text.length > 0) {
       const textPart: TextPart = {
@@ -2019,10 +2052,10 @@ function buildMessageParts(
         state: isStreaming ? 'streaming' : 'done',
       }
       parts.push(textPart)
-    } else if (segment.type === 'reasoning' && segment.reasoningText) {
+    } else if (segment.type === 'reasoning') {
       const reasoningPart: ReasoningPart = {
         type: 'reasoning',
-        text: segment.reasoningText,
+        text: segment.reasoningText || '',
         state: segment.reasoningState || 'streaming',
         duration: segment.reasoningDuration,
       }
@@ -2032,15 +2065,9 @@ function buildMessageParts(
         ...segment.task,
         state: !isStreaming && segment.task.state !== 'error' ? 'completed' : segment.task.state,
       })
-    } else if (segment.type === 'tool-group' && segment.toolCalls && segment.toolCalls.length > 0) {
-      // Add tool calls and their results.
-      for (const toolCall of segment.toolCalls) {
-        parts.push(toolCall)
-        const result = segment.toolResults?.find(r => r.toolCallId === toolCall.toolCallId)
-        if (result) {
-          parts.push(result)
-        }
-      }
+    } else if (segment.type === 'tool') {
+      if (segment.toolCall) parts.push(segment.toolCall)
+      if (segment.toolResult) parts.push(segment.toolResult)
     } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
       parts.push(segment.userInputRequest)
     } else if (segment.type === 'media-result' && segment.mediaResult) {
@@ -2052,7 +2079,6 @@ function buildMessageParts(
     }
   }
 
-  // Add sources at the end.
   if (sources.length > 0 && !isStreaming) {
     parts.push(...sources)
   }
@@ -2062,22 +2088,19 @@ function buildMessageParts(
 
 function hasRenderableStreamingProgress(
   segments: ContentSegment[],
-  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
   ragSources: SourceDocumentPart[],
   taskState: TaskState
 ): boolean {
   return (
     segments.some((segment) => {
       if (segment.type === 'text') return Boolean(segment.text?.trim())
-      if (segment.type === 'reasoning') return Boolean(segment.reasoningText?.trim())
-      if (segment.type === 'tool-group') {
-        return Boolean((segment.toolCalls?.length || 0) > 0 || (segment.toolResults?.length || 0) > 0)
-      }
+      if (segment.type === 'reasoning') return true
+      if (segment.type === 'tool') return Boolean(segment.toolCall || segment.toolResult)
+      if (segment.type === 'task') return Boolean(segment.task)
       if (segment.type === 'user-input-request') return Boolean(segment.userInputRequest)
       if (segment.type === 'media-result') return Boolean(segment.mediaResult)
       return segment.type === 'truncated' || segment.type === 'iteration-cap-reached'
     })
-    || reasoningBlocks.some((block) => block.text.trim().length > 0)
     || ragSources.length > 0
     || taskState.rag !== 'pending'
     || taskState.generating !== 'pending'
@@ -2089,32 +2112,26 @@ function hasRenderableStreamingProgress(
 function buildErroredMessageParts(state: {
   segments: ContentSegment[]
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
+  currentReasoningIndex?: number
   ragSources: SourceDocumentPart[]
   taskState: TaskState
   errorText: string
 }): { parts: MessagePart[]; preservedProgress: boolean } {
   if (!hasRenderableStreamingProgress(
     state.segments,
-    state.reasoningBlocks,
     state.ragSources,
     state.taskState
   )) {
     const errorSegment: ContentSegment = { type: 'text', text: state.errorText }
     return {
-      parts: buildMessageParts([errorSegment], [], [], false, undefined),
+      parts: buildMessageParts([errorSegment], [], false),
       preservedProgress: false,
     }
   }
 
   finalizeStreamingState(state)
   return {
-    parts: buildMessageParts(
-      state.segments,
-      state.reasoningBlocks,
-      state.ragSources,
-      false,
-      state.taskState
-    ),
+    parts: buildMessageParts(state.segments, state.ragSources, false),
     preservedProgress: true,
   }
 }
@@ -2131,19 +2148,22 @@ function finalizeStreamingState(state: {
       block.state = 'done'
     }
 
-    const reasoningSegments = state.segments.filter(s => s.type === 'reasoning')
-    if (reasoningSegments[index]) {
-      reasoningSegments[index].reasoningState = 'done'
-      reasoningSegments[index].reasoningDuration = block.duration
-      reasoningSegments[index].reasoningText = block.text
+    const reasoningSegment = state.segments.find(
+      segment => segment.type === 'reasoning' && segment.reasoningIndex === index
+    )
+    if (reasoningSegment) {
+      reasoningSegment.reasoningState = 'done'
+      reasoningSegment.reasoningDuration = block.duration
+      reasoningSegment.reasoningText = block.text
     }
   })
 
   for (const segment of state.segments) {
-    if (segment.type === 'tool-group' && segment.toolCalls) {
-      segment.toolCalls = segment.toolCalls.map(tc =>
-        tc.state === 'running' ? { ...tc, state: 'done' as const } : tc
-      )
+    if (segment.type === 'tool' && segment.toolCall?.state === 'running') {
+      segment.toolCall = { ...segment.toolCall, state: 'done' }
+    }
+    if (segment.type === 'task' && segment.task?.state === 'running') {
+      segment.task = { ...segment.task, state: 'completed' }
     }
   }
 

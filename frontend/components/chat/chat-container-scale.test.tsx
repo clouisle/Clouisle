@@ -26,7 +26,21 @@ globalThis.ResizeObserver = class {
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => `${key}:${values?.ordinal ?? ''}`,
 }))
-mock.module('lucide-react', () => ({ ArrowDown: () => <svg data-icon="arrow-down" /> }))
+mock.module('lucide-react', () => ({
+  ArrowDown: () => <svg data-icon="arrow-down" />,
+  ChevronDown: () => <svg data-icon="chevron-down" />,
+  ChevronUp: () => <svg data-icon="chevron-up" />,
+  Download: () => <svg data-icon="download" />,
+  Eye: () => <svg data-icon="eye" />,
+  FileAudio: () => <svg data-icon="file-audio" />,
+  FileCode: () => <svg data-icon="file-code" />,
+  FileIcon: () => <svg data-icon="file-icon" />,
+  FileImage: () => <svg data-icon="file-image" />,
+  FileText: () => <svg data-icon="file-text" />,
+  FileType: () => <svg data-icon="file-type" />,
+  FileVideo: () => <svg data-icon="file-video" />,
+  Link: () => <svg data-icon="link" />,
+}))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button>,

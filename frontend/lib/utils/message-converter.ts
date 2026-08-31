@@ -305,14 +305,41 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     // Note: RAG context is stored with user messages and attached in convertBackendMessages()
 
     if (message.steps && Array.isArray(message.steps) && message.steps.length > 0) {
-      const sortedSteps = [...message.steps].sort(
-        (a, b) => (a.round_index ?? 0) - (b.round_index ?? 0)
-      )
-      const toolResultMap = new Map<string, BackendMessageStep>()
-      for (const step of sortedSteps) {
-        if (step.role === 'tool' && step.tool_call_id) {
-          toolResultMap.set(step.tool_call_id, step)
-        }
+      const sortedSteps = message.steps
+        .map((step, index) => ({ step, index }))
+        .sort((a, b) => {
+          const roundDelta = (a.step.round_index ?? Number.MAX_SAFE_INTEGER)
+            - (b.step.round_index ?? Number.MAX_SAFE_INTEGER)
+          if (roundDelta !== 0) return roundDelta
+
+          const aCreatedAt = Date.parse(a.step.created_at)
+          const bCreatedAt = Date.parse(b.step.created_at)
+          if (Number.isFinite(aCreatedAt) && Number.isFinite(bCreatedAt) && aCreatedAt !== bCreatedAt) {
+            return aCreatedAt - bCreatedAt
+          }
+          if (Number.isFinite(aCreatedAt) !== Number.isFinite(bCreatedAt)) {
+            return Number.isFinite(aCreatedAt) ? -1 : 1
+          }
+          return a.index - b.index
+        })
+        .map(({ step }) => step)
+
+      const toolResultEntries = sortedSteps.flatMap((step, index) => (
+        step.role === 'tool' && step.tool_call_id
+          ? [{ step, index, consumed: false }]
+          : []
+      ))
+      const takeToolResult = (toolCallId: string, assistantStepIndex: number) => {
+        const entry = toolResultEntries.find((candidate) => (
+          !candidate.consumed
+          && candidate.step.tool_call_id === toolCallId
+          && candidate.index > assistantStepIndex
+        )) ?? toolResultEntries.find((candidate) => (
+          !candidate.consumed && candidate.step.tool_call_id === toolCallId
+        ))
+        if (!entry) return undefined
+        entry.consumed = true
+        return entry.step
       }
 
       for (let i = 0; i < sortedSteps.length; i++) {
@@ -325,7 +352,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
         for (const part of stepParts) {
           parts.push(part)
           if (part.type === 'tool-call') {
-            const toolResultMsg = toolResultMap.get(part.toolCallId)
+            const toolResultMsg = takeToolResult(part.toolCallId, i)
             if (toolResultMsg) {
               const parsedOutput = parseToolResultOutput(toolResultMsg.content)
               const isError = inferToolResultIsError(parsedOutput)
@@ -466,12 +493,20 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
 export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[] {
   const result: ChatMessage[] = []
 
-  // Create a map for tool results by tool_call_id
-  const toolResults = new Map<string, BackendMessage>()
+  // Keep every legacy result so repeated call IDs are consumed by occurrence.
+  const toolResults = new Map<string, BackendMessage[]>()
   for (const msg of messages) {
     if (msg.role === 'tool' && msg.tool_call_id) {
-      toolResults.set(msg.tool_call_id, msg)
+      const results = toolResults.get(msg.tool_call_id) ?? []
+      results.push(msg)
+      toolResults.set(msg.tool_call_id, results)
     }
+  }
+  const takeLegacyToolResult = (toolCallId: string): BackendMessage | undefined => {
+    const results = toolResults.get(toolCallId)
+    const result = results?.shift()
+    if (results && results.length === 0) toolResults.delete(toolCallId)
+    return result
   }
 
   // Track RAG context from user messages to attach to the following assistant message
@@ -542,7 +577,7 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
 
           if (part.type === 'tool-call') {
             const toolCallPart = part as ToolCallPart
-            const toolResultMsg = toolResults.get(toolCallPart.toolCallId)
+            const toolResultMsg = takeLegacyToolResult(toolCallPart.toolCallId)
             if (toolResultMsg) {
               const parsedOutput = parseToolResultOutput(toolResultMsg.content)
               const isError = inferToolResultIsError(parsedOutput)

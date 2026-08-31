@@ -25,6 +25,16 @@ mock.module('lucide-react', () => ({
   Copy: Icon,
   Eye: Icon,
   FileIcon: Icon,
+  FileAudio: Icon,
+  FileCode: Icon,
+  FileImage: Icon,
+  FileText: Icon,
+  FileType: Icon,
+  FileVideo: Icon,
+  Link: Icon,
+  ChevronDown: Icon,
+  ChevronUp: Icon,
+  Download: Icon,
   ImageIcon: Icon,
   Loader2: Icon,
   Pencil: Icon,
@@ -223,7 +233,23 @@ describe('chat container rendering', () => {
       role: index === 24 ? 'assistant' : 'user',
       parts: [{ type: 'text', text: `message ${index}` }],
     }))
-    const html = renderToStaticMarkup(<ChatContainer
+    const idleHtml = renderToStaticMarkup(<ChatContainer
+      messages={messages}
+      onRegenerate={() => {}}
+      onEditMessage={async () => {}}
+      onSwitchVersion={() => {}}
+      hideToolCalls
+    />)
+
+    expect(idleHtml).toContain('load 5')
+    expect(idleHtml).not.toContain('message 0')
+    expect(idleHtml).toContain('message 24')
+    expect(idleHtml).toContain('data-regenerable="true"')
+    expect(idleHtml).toContain('data-editable="true"')
+    expect(idleHtml).toContain('data-streaming="false"')
+    expect(idleHtml).toContain('data-hide-tools="true"')
+
+    const streamingHtml = renderToStaticMarkup(<ChatContainer
       messages={messages}
       isStreaming
       onRegenerate={() => {}}
@@ -231,14 +257,8 @@ describe('chat container rendering', () => {
       onSwitchVersion={() => {}}
       hideToolCalls
     />)
-
-    expect(html).toContain('load 5')
-    expect(html).not.toContain('message 0')
-    expect(html).toContain('message 24')
-    expect(html).toContain('data-regenerable="true"')
-    expect(html).toContain('data-editable="true"')
-    expect(html).toContain('data-streaming="true"')
-    expect(html).toContain('data-hide-tools="true"')
+    expect(streamingHtml).toContain('data-streaming="true"')
+    expect(streamingHtml).toContain('data-editable="false"')
   })
 })
 

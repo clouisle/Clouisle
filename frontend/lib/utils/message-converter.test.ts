@@ -174,6 +174,80 @@ describe('message converter', () => {
     ])
   })
 
+  it('reconstructs multiple persisted iterations and keeps the final answer last', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Final answer',
+      reasoning_content: 'Final reasoning',
+      steps: [
+        {
+          id: 'assistant-step-1',
+          role: 'assistant',
+          content: 'Answer A',
+          reasoning_content: 'Reasoning A',
+          tool_calls: [{ id: 'call-a', name: 'lookup', arguments: { q: 'a' } }],
+          duration_ms: 100,
+          created_at: '2026-07-19T00:00:01.000Z',
+          round_index: 1,
+        },
+        {
+          id: 'tool-step-1',
+          role: 'tool',
+          content: JSON.stringify({ result: 'A' }),
+          tool_call_id: 'call-a',
+          tool_name: 'lookup',
+          created_at: '2026-07-19T00:00:02.000Z',
+          round_index: 2,
+        },
+        {
+          id: 'assistant-step-2',
+          role: 'assistant',
+          content: 'Answer B',
+          reasoning_content: 'Reasoning B',
+          tool_calls: [{ id: 'call-b', name: 'lookup', arguments: { q: 'b' } }],
+          duration_ms: 200,
+          created_at: '2026-07-19T00:00:03.000Z',
+          round_index: 3,
+        },
+        {
+          id: 'tool-step-2',
+          role: 'tool',
+          content: JSON.stringify({ result: 'B' }),
+          tool_call_id: 'call-b',
+          tool_name: 'lookup',
+          created_at: '2026-07-19T00:00:04.000Z',
+          round_index: 4,
+        },
+      ],
+    }))
+
+    expect(converted?.parts.map((part) => part.type)).toEqual([
+      'reasoning',
+      'text',
+      'tool-call',
+      'tool-result',
+      'reasoning',
+      'text',
+      'tool-call',
+      'tool-result',
+      'reasoning',
+      'text',
+    ])
+    expect(converted?.parts.filter((part) => part.type === 'reasoning').map((part) => part.text)).toEqual([
+      'Reasoning A',
+      'Reasoning B',
+      'Final reasoning',
+    ])
+    expect(converted?.parts.filter((part) => part.type === 'tool-call').map((part) => part.toolCallId)).toEqual([
+      'call-a',
+      'call-b',
+    ])
+    expect(converted?.parts.filter((part) => part.type === 'text').map((part) => part.text)).toEqual([
+      'Answer A',
+      'Answer B',
+      'Final answer',
+    ])
+  })
+
   it('maps per-step duration_ms onto step reasoning parts', () => {
     const converted = convertBackendMessage(message({
       content: 'Final answer',

@@ -512,6 +512,86 @@ describe('useChat', () => {
     }))
   })
 
+  it('keeps alternating reasoning, text, and tool occurrences in stream order', async () => {
+    const releaseAfterFirstTool = deferred<StreamEvent>()
+    streamEvents = [
+      { event: 'reasoning_start', data: {} },
+      { event: 'reasoning_delta', data: { delta: 'Reasoning A' } },
+      { event: 'reasoning_end', data: {} },
+      { event: 'content_delta', data: { delta: 'Answer A' } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-a', tool_name: 'lookup', tool_display_name: 'Lookup A', arguments: { q: 'a' } } },
+      releaseAfterFirstTool.promise,
+      { event: 'tool_result', data: { tool_call_id: 'tool-a', tool_name: 'lookup', tool_display_name: 'Lookup A', result: 'Result A', is_error: false } },
+      { event: 'reasoning_start', data: {} },
+      { event: 'reasoning_delta', data: { delta: 'Reasoning B' } },
+      { event: 'reasoning_end', data: {} },
+      { event: 'content_delta', data: { delta: 'Answer B' } },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    const sending = result.sendMessage('question')
+    await waitForParts((parts) => parts.map((part) => part.type).join(',') === 'reasoning,task,text,tool-call')
+
+    expect(result.messages[1].parts.map((part) => part.type)).toEqual([
+      'reasoning',
+      'task',
+      'text',
+      'tool-call',
+    ])
+    expect(result.messages[1].parts[0]).toMatchObject({ type: 'reasoning', text: 'Reasoning A' })
+    expect(result.messages[1].parts[2]).toMatchObject({ type: 'text', text: 'Answer A' })
+
+    releaseAfterFirstTool.resolve({ event: 'stream_pause', data: {} })
+    await sending
+
+    const parts = result.messages[1].parts
+    expect(parts.map((part) => part.type)).toEqual([
+      'reasoning',
+      'task',
+      'text',
+      'tool-call',
+      'tool-result',
+      'reasoning',
+      'text',
+    ])
+    expect(parts.filter((part) => part.type === 'reasoning').map((part) => part.text)).toEqual([
+      'Reasoning A',
+      'Reasoning B',
+    ])
+    expect(parts.filter((part) => part.type === 'text').map((part) => part.text)).toEqual([
+      'Answer A',
+      'Answer B',
+    ])
+    expect(parts.filter((part) => part.type === 'tool-call').map((part) => part.toolCallId)).toEqual(['tool-a'])
+    expect(parts.find((part) => part.type === 'tool-call')).toMatchObject({ state: 'done' })
+  })
+  it('keeps late and orphan tool results without dropping their occurrences', async () => {
+    streamEvents = [
+      { event: 'tool_call', data: { tool_call_id: 'late-tool', tool_name: 'lookup', arguments: {} } },
+      { event: 'content_delta', data: { delta: 'Text between call and result' } },
+      { event: 'tool_result', data: { tool_call_id: 'late-tool', tool_name: 'lookup', result: 'late result', is_error: false } },
+      { event: 'tool_result', data: { tool_call_id: 'orphan-tool', tool_name: 'lookup', result: 'orphan result', is_error: true } },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    const parts = result.messages[1].parts
+    expect(parts.map((part) => part.type)).toEqual([
+      'tool-call',
+      'tool-result',
+      'task',
+      'text',
+      'tool-result',
+    ])
+    expect(parts[0]).toMatchObject({ type: 'tool-call', toolCallId: 'late-tool', state: 'done' })
+    expect(parts[1]).toMatchObject({ type: 'tool-result', toolCallId: 'late-tool', output: 'late result' })
+    expect(parts[4]).toMatchObject({ type: 'tool-result', toolCallId: 'orphan-tool', isError: true })
+  })
+
+
   it('renders reasoning, RAG, compression, tools, media, truncation, and iteration markers', async () => {
     streamEvents = [
       { event: 'rag_start', data: {} },

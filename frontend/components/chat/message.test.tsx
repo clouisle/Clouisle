@@ -81,13 +81,13 @@ mock.module('@/components/ai-elements/message', () => ({
   MessageContent: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
 }))
 mock.module('@/components/ai-elements/chain-of-thought', () => ({
-  ChainOfThought: ({ children, isStreaming, open, onOpenChange }: { children: React.ReactNode; isStreaming?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) => <div data-streaming={String(Boolean(isStreaming))} data-open={String(Boolean(open))}><button type="button" onClick={() => onOpenChange?.(!open)}>toggle reasoning</button>{children}</div>,
+  ChainOfThought: ({ children, isStreaming, open, onOpenChange }: { children: React.ReactNode; isStreaming?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) => <div data-chat-thought-process="true" data-streaming={String(Boolean(isStreaming))} data-open={String(Boolean(open))}><button type="button" onClick={() => onOpenChange?.(!open)}>toggle reasoning</button>{children}</div>,
   ChainOfThoughtContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ChainOfThoughtHeader: ({ title }: { title: string }) => <h3>{title}</h3>,
   ChainOfThoughtStep: ({ children, label, status }: { children?: React.ReactNode; label: React.ReactNode; status?: string }) => <div data-step-status={status}>{label}{children}</div>,
 }))
 mock.module('@/components/ai-elements/tool', () => ({
-  Tool: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Tool: ({ children, defaultOpen }: { children: React.ReactNode; defaultOpen?: boolean }) => <div data-chat-tool-node="true" data-tool-default-open={String(Boolean(defaultOpen))}>{children}</div>,
   ToolContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ToolHeader: ({ title, state }: { title: string; state?: string }) => <h4 data-tool-state={state}>{title}</h4>,
   ToolInput: ({ input }: { input: unknown }) => <pre>{JSON.stringify(input)}</pre>,
@@ -471,7 +471,7 @@ describe('message behavior', () => {
     expect(markup).toContain('conv-123')
   })
 
-  test('groups reasoning tools and maps task and tool states', () => {
+  test('renders thought process nodes and maps task and tool states', () => {
     const onOpenChange = mock(() => {})
     const container = render(<Message
       message={{
@@ -495,11 +495,11 @@ describe('message behavior', () => {
 
     expect(container.textContent).toContain('chat.task.foundSources')
     expect(container.textContent).toContain('chat.task.compressingContextReactive')
-    expect(container.textContent).toContain('chat.message.toolRunning')
-    expect(container.textContent).toContain('chat.message.toolFailed')
+    expect(container.textContent).toContain('Web search')
+    expect(container.textContent).toContain('broken')
     expect(container.textContent).toContain('repo/read')
     expect(container.textContent).toContain('chat.task.generating')
-    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
+    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'error'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['input-available', 'output-error', 'input-streaming'])
 
@@ -539,6 +539,80 @@ describe('message behavior', () => {
       expect.stringContaining('after compression'),
     ])
   })
+  test('renders repeated reasoning blocks at their original timeline positions', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'alternating-timeline',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'Repeated thought', state: 'done', duration: 1000 },
+          { type: 'text', text: 'Answer A', state: 'done' },
+          { type: 'tool-call', toolCallId: 'timeline-tool', toolName: 'lookup', toolDisplayName: 'Lookup', input: {}, state: 'done' },
+          { type: 'tool-result', toolCallId: 'timeline-tool', toolName: 'lookup', output: { answer: 'A' } },
+          { type: 'reasoning', text: 'Repeated thought', state: 'done', duration: 2000 },
+          { type: 'text', text: 'Answer B', state: 'done' },
+        ],
+      }}
+    />)
+
+    const firstReasoning = html.indexOf('Repeated thought')
+    const tool = html.indexOf('Lookup')
+    const secondReasoning = html.lastIndexOf('Repeated thought')
+    expect(firstReasoning).toBeGreaterThanOrEqual(0)
+    expect(secondReasoning).toBeGreaterThan(firstReasoning)
+    expect(html.indexOf('Answer A')).toBeGreaterThan(firstReasoning)
+    expect(tool).toBeGreaterThan(html.indexOf('Answer A'))
+    expect(secondReasoning).toBeGreaterThan(tool)
+    expect(html.indexOf('Answer B')).toBeGreaterThan(secondReasoning)
+    expect(html.match(/Repeated thought/g)).toHaveLength(2)
+    expect(html.match(/data-chat-thought-process="true"/g)).toHaveLength(2)
+  })
+
+  test('keeps each tool execution inside its thought process', () => {
+    const container = render(<Message
+      message={{
+        id: 'nested-tool-process',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'Inspecting evidence', state: 'done', duration: 1000 },
+          { type: 'tool-call', toolCallId: 'nested-tool', toolName: 'lookup', toolDisplayName: 'Lookup', input: { query: 'docs' }, state: 'done' },
+          { type: 'tool-result', toolCallId: 'nested-tool', toolName: 'lookup', output: { ok: true } },
+          { type: 'text', text: 'Final answer', state: 'done' },
+        ],
+      }}
+    />)
+
+    const thought = container.querySelector('[data-chat-thought-process="true"]')
+    const tool = thought?.querySelector('[data-chat-tool-node="true"]')
+    expect(thought).not.toBeNull()
+    expect(tool).not.toBeNull()
+    expect(tool?.getAttribute('data-tool-default-open')).toBe('false')
+    expect(thought?.textContent).toContain('Lookup')
+    expect(thought?.textContent).not.toContain('Final answer')
+    expect(container.textContent).toContain('Final answer')
+  })
+
+  test('hides reasoning independently while keeping tools in the timeline', () => {
+    const html = renderToStaticMarkup(<Message
+      hideReasoning
+      message={{
+        id: 'hidden-reasoning-tool',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'Do not show this', state: 'done' },
+          { type: 'text', text: 'Visible answer', state: 'done' },
+          { type: 'tool-call', toolCallId: 'visible-tool', toolName: 'lookup', toolDisplayName: 'Visible tool', input: {}, state: 'done' },
+          { type: 'tool-result', toolCallId: 'visible-tool', toolName: 'lookup', output: 'done' },
+        ],
+      }}
+    />)
+
+    expect(html).not.toContain('Do not show this')
+    expect(html).toContain('Visible answer')
+    expect(html).toContain('Visible tool')
+    expect(html).toContain('done')
+  })
+
 
   test('renders completed compression variants and completed reasoning tools', () => {
     const html = renderToStaticMarkup(<Message message={{
@@ -561,7 +635,7 @@ describe('message behavior', () => {
     expect(html).toContain('chat.task.compressionCompletedBlocking')
     expect(html).toContain('chat.task.compressionCompletedProactiveSummary')
     expect(html).toContain('chat.task.compressionCompletedProactive')
-    expect(html).toContain('chat.message.toolCompleted')
+    expect(html).toContain('lookup')
     expect(html).toContain('data-tool-state="output-available"')
     expect(html).toContain('Done thinking')
   })
