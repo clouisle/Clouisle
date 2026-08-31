@@ -22,10 +22,10 @@ Tool call plus its result remains one execution card, anchored at the call posit
 ## High-Level Design
 
 - Treat the stream segment list as the canonical presentation order. A tool occurrence owns exactly one tool call and, when available, its matching result; duplicate `tool_call` updates merge into that occurrence in place and never create a second occurrence.
-- Add RAG and generating task transitions to the same ordered segment list at the event that starts them. Compression already follows this pattern. Aggregate `taskState` remains for lifecycle/fallback checks, but is no longer used to prepend/append visual tasks.
+- Add RAG and compression task transitions to the same ordered segment list at the event that starts them. Keep generating-task transitions in stream state for lifecycle handling, but never render response generation as a thought-process step. Aggregate `taskState` remains for lifecycle/fallback checks, but is no longer used to prepend/append visual tasks.
 - Keep each reasoning start as a new segment and update it by its recorded reasoning index. Do not use a message-global reasoning bucket for rendering.
 - Build `Message.parts` by one ordered segment walk, retaining source documents as the existing citation footer. Reconnect seeding and terminal finalization must use the same segment representation.
-- Render assistant parts with one chronological walk. Each reasoning iteration owns one collapsible `ChainOfThought` whose content keeps its task and tool nodes together; ordinary/final text remains in the normal message surface. Use existing `ChainOfThoughtStep` and `Tool` primitives plus `TextWithCitations` and the current media/user-input/error renderers. Do not adopt the legacy `message-parts/ReasoningContent` or `ToolContent` components in this change because the current message renderer owns richer media/artifact result handling.
+- Render assistant parts with one chronological walk. Each reasoning iteration owns one collapsible `ChainOfThought` whose content keeps its task and tool nodes together; response generation is not a thought node, and ordinary/final text remains in the normal message surface. Use existing `ChainOfThoughtStep` and `Tool` primitives plus `TextWithCitations` and the current media/user-input/error renderers. Do not adopt the legacy `message-parts/ReasoningContent` or `ToolContent` components in this change because the current message renderer owns richer media/artifact result handling.
 - Keep `hideReasoning` independent from `hideToolCalls`; hiding the reasoning panels must not accidentally hide visible tools.
 
 ## Implementation Plan
@@ -65,7 +65,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
 - **Specific logic**:
   1. Retain source collection, attachment handling, copy/speech/actions, and error/stopped boundaries, but stop partitioning reasoning/tasks/tool calls into a separate global chain for display. Preserve each part's original index while walking non-source parts.
   2. Render every reasoning part at its original index in its own `ChainOfThought` instance with per-part streaming state, duration label, and only that part's text in its content. Forward the existing optional message-level open/callback props consistently to all instances; use stable occurrence/index keys, never text or labels.
-  3. Render task parts at their original locations (RAG, compression, generating) as the existing status-step presentation, skipping only the intentionally unsupported `thinking` task as before. Do not force RAG to the front or generating to the end.
+  3. Render RAG and compression task parts at their original locations as the existing status-step presentation, skipping the intentionally unsupported `thinking` task and response-generation task. Do not force RAG to the front or generating to the end.
   4. Render each normal/MCP tool call at its original location with the current rich `Tool`/`ToolInput`/`ToolOutput` and media/artifact handling. Pair only that call's result; do not search in a way that lets another occurrence's result replace it. Keep call/result as one execution card anchored at the call.
   5. Keep ordinary text, media, user-input requests, truncation, and other visible parts in the same walk using existing renderers. Continue placing citation sources in the existing footer and stopped/error/action controls at message-level positions.
   6. Make `hideReasoning` suppress reasoning/task timeline items only and make `hideToolCalls` suppress tool calls/results only. A message with reasoning plus `hideReasoning` must still show tools unless `hideToolCalls` is true. Preserve custom `renderPart` behavior for ordinary parts and original indexes.
@@ -123,15 +123,15 @@ Tool call plus its result remains one execution card, anchored at the call posit
 
 ### Stage 9: Keep activity nested and label the current operation
 
-- **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, and the implementation-plan documents.
+- **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, `frontend/i18n/en/chat.json`, `frontend/i18n/zh/chat.json`, `frontend/i18n/types/chat.ts`, and the implementation-plan documents.
 - **Specific logic**:
-  1. Keep task status rows and normal/MCP tool execution cards inside the surrounding collapsible `ChainOfThought`; do not expose them as sibling surfaces.
+  1. Keep RAG/compression task status rows and normal/MCP tool execution cards inside the surrounding collapsible `ChainOfThought`; response-generation markers do not count as thought steps or affect the container header.
   2. Preserve one thought container per reasoning iteration and the existing chronological grouping, tool/result pairing, rich output handling, hide flags, and controlled open-state behavior.
-  3. Derive the `ChainOfThought` header from the latest task or tool action, using localized task text and the tool display name/server path, while retaining the duration fallback for reasoning-only groups.
-- **Validation**: Message tests assert task/tool descendants, independent tool disclosure, chronological grouping, and action-specific thought headers such as the active tool name and compression task text.
-- **Observed**: The corrected message renderer passed 41 focused tests; the full frontend suite passed (2277 tests across 515 files), frontend coverage and LCOV completeness passed for 489 eligible files, TypeScript, ESLint, translation lint, and diff checks passed, and the backend stream/durable smoke suite passed (17 tests). No application service or browser was started.
+  3. Derive the `ChainOfThought` header from the last rendered thought entry: tool calls use operation-specific executing/completed/failed labels, tasks use localized task text, and reasoning uses thinking/duration labels. Response-generation entries are ignored for this decision.
+- **Validation**: Message tests assert task/tool descendants, independent tool disclosure, chronological grouping, operation-specific active/completed/failed headers, final-step precedence, and that response generation is absent from thought steps.
+- **Observed**: The revised message renderer passed 42 focused tests; the full frontend suite passed (2278 tests across 515 files), frontend coverage and LCOV completeness passed for 489 eligible files, TypeScript, ESLint, translation lint, and diff checks passed. No application service or browser was started.
 
-- **Acceptance**: Tool and task details remain inside the collapsible thought process, while its header text tells users which operation the Agent is performing.
+- **Acceptance**: Tool and task details remain inside the collapsible thought process; response generation is not counted as a thought step; and the header identifies the last rendered operation with localized status text.
 
 ## Testing Strategy
 

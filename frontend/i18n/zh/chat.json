@@ -25,7 +25,13 @@
       "thought": "思考过程",
       "processing": "推理中...",
       "thinkingDefault": "思考中...",
-      "thoughtDefault": "思考过程"
+      "thoughtDefault": "思考过程",
+      "thinkingActive": "思考（思考中）",
+      "thinkingCompleted": "思考（思考了 {seconds} 秒）",
+      "toolCallExecuting": "工具调用（执行 {tool}）",
+      "toolCallCompleted": "工具调用（已执行 {tool}）",
+      "toolCallFailed": "工具调用（执行失败：{tool}）",
+      "taskAction": "任务（{task}）"
     },
     "tool": {
       "running": "执行中...",

@@ -25,7 +25,13 @@
       "thought": "Thought process",
       "processing": "Reasoning...",
       "thinkingDefault": "Thinking...",
-      "thoughtDefault": "Thought process"
+      "thoughtDefault": "Thought process",
+      "thinkingActive": "Thinking (in progress)",
+      "thinkingCompleted": "Thinking (thought for {seconds}s)",
+      "toolCallExecuting": "Tool call (Executing {tool})",
+      "toolCallCompleted": "Tool call (Executed {tool})",
+      "toolCallFailed": "Tool call (Failed: {tool})",
+      "taskAction": "Task ({task})"
     },
     "tool": {
       "running": "Running...",

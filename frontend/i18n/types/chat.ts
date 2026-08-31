@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-31T02:51:53.464Z
+// GENERATED — 2026-08-31T19:29:06.612Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -28,6 +28,12 @@ export type ChatMessages = {
       processing: string
       thinkingDefault: string
       thoughtDefault: string
+      thinkingActive: string
+      thinkingCompleted: string
+      toolCallExecuting: string
+      toolCallCompleted: string
+      toolCallFailed: string
+      taskAction: string
     }
     tool: {
       running: string

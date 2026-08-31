@@ -496,18 +496,78 @@ describe('message behavior', () => {
     const thought = container.querySelector('[data-chat-thought-process="true"]')
     expect(container.textContent).toContain('chat.task.foundSources')
     expect(container.textContent).toContain('chat.task.compressingContextReactive')
-    expect(container.textContent).toContain('chat.task.generating')
+    expect(container.textContent).not.toContain('chat.task.generating')
     expect(thought).not.toBeNull()
     expect(thought?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
     expect(thought?.textContent).toContain('Inspecting evidence')
-    expect(thought?.querySelector('h3')?.textContent).toContain('chat.task.generating')
-    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'error'])
+    expect(thought?.querySelector('h3')?.textContent).toContain('chat.reasoning.toolCallExecuting tool=repo/read')
+    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['input-available', 'output-error', 'input-streaming'])
 
     act(() => button(container, 'toggle reasoning').click())
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
+
+  test('changes the thought header with the active operation', () => {
+    const thinking = renderToStaticMarkup(<Message
+      message={{
+        id: 'active-thinking',
+        role: 'assistant',
+        parts: [{ type: 'reasoning', text: 'Still thinking', state: 'streaming' }],
+      }}
+    />)
+    expect(thinking).toContain('chat.reasoning.thinkingActive')
+
+    const executing = renderToStaticMarkup(<Message
+      message={{
+        id: 'executing-tool',
+        role: 'assistant',
+        parts: [{ type: 'tool-call', toolCallId: 'executing', toolName: 'inspect', toolDisplayName: 'Inspect repository', input: {}, state: 'running' }],
+      }}
+    />)
+    expect(executing).toContain('chat.reasoning.toolCallExecuting tool=Inspect repository')
+
+    const completed = renderToStaticMarkup(<Message
+      message={{
+        id: 'completed-tool',
+        role: 'assistant',
+        parts: [
+          { type: 'tool-call', toolCallId: 'completed', toolName: 'inspect', toolDisplayName: 'Inspect repository', input: {}, state: 'done' },
+          { type: 'tool-result', toolCallId: 'completed', toolName: 'inspect', output: 'clean' },
+          { type: 'task', taskType: 'generating', state: 'completed' },
+        ],
+      }}
+    />)
+    expect(completed).toContain('chat.reasoning.toolCallCompleted tool=Inspect repository')
+    expect(completed).not.toContain('chat.task.generating')
+
+    const failed = renderToStaticMarkup(<Message
+      message={{
+        id: 'failed-tool',
+        role: 'assistant',
+        parts: [
+          { type: 'tool-call', toolCallId: 'failed', toolName: 'inspect', toolDisplayName: 'Inspect repository', input: {}, state: 'error' },
+          { type: 'tool-result', toolCallId: 'failed', toolName: 'inspect', output: 'permission denied', isError: true },
+        ],
+      }}
+    />)
+    expect(failed).toContain('chat.reasoning.toolCallFailed tool=Inspect repository')
+
+    const finalStep = renderToStaticMarkup(<Message
+      message={{
+        id: 'final-reasoning-step',
+        role: 'assistant',
+        parts: [
+          { type: 'task', taskType: 'rag', state: 'completed', info: 2 },
+          { type: 'reasoning', text: 'Final thought', state: 'done', duration: 2000 },
+        ],
+      }}
+    />)
+    expect(finalStep).toContain('chat.reasoning.thinkingCompleted seconds=2')
+    expect(finalStep).not.toContain('chat.reasoning.taskAction')
+  })
+
 
   test('renders compression at its original reasoning timeline position', () => {
     const container = render(<Message
@@ -597,6 +657,7 @@ describe('message behavior', () => {
     expect(thought?.textContent).toContain('Lookup')
     expect(thought?.textContent).not.toContain('Final answer')
     expect(thought?.querySelector('h3')?.textContent).toContain('Lookup')
+    expect(thought?.querySelector('h3')?.textContent).toContain('chat.reasoning.toolCallCompleted tool=Lookup')
     expect(container.textContent).toContain('Final answer')
   })
 
@@ -995,7 +1056,7 @@ describe('message behavior', () => {
     expect(html).toContain('chat.task.searchingKnowledge')
     expect(html).toContain('chat.task.compressingContextBlocking')
     expect(html).toContain('chat.task.compressingContextProactive')
-    expect(html).toContain('chat.task.generating')
+    expect(html).not.toContain('chat.task.generating')
     expect(html).toContain('image failed')
     expect(html).toContain('video failed')
     expect(html).toContain('$')

@@ -1030,7 +1030,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasVisibleTimelineContent = visibleContentEntries.some(({ part }) => {
       if (isStoppedPart(part)) return false
       if (isReasoningPart(part)) return !hideReasoning
-      if (isTaskPart(part)) return !hideReasoning && part.taskType !== 'thinking'
+      if (isTaskPart(part)) return !hideReasoning && part.taskType !== 'thinking' && part.taskType !== 'generating'
       if (isToolCallPart(part) || isMcpToolCallPart(part)) return !hideToolCalls
       if (isToolResultPart(part) || isMcpToolResultPart(part)) return !hideToolCalls
       if (isTextPart(part)) return Boolean(part.text.trim())
@@ -1040,7 +1040,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasMessageContent = hasTextContent
       || otherParts.some(part => (
         isReasoningPart(part)
-        || isTaskPart(part)
+        || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
         || isToolCallPart(part)
         || isMcpToolCallPart(part)
         || isToolResultPart(part)
@@ -1132,36 +1132,54 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         }
         return tTask('compressingContextProactive')
       }
-      if (taskPart.taskType === 'generating') {
-        return tTask('generating')
-      }
-      // Skip 'thinking' type - we now show individual tool calls instead
+      // Thinking and response generation are not rendered as thought steps.
       return ''
     }, [tTask])
 
     const getThoughtAction = React.useCallback((entries: Array<{ part: MessagePart; index: number }>) => {
       for (let entryIndex = entries.length - 1; entryIndex >= 0; entryIndex -= 1) {
         const part = entries[entryIndex].part
-        if (isToolCallPart(part)) return part.toolDisplayName || part.toolName
-        if (isMcpToolCallPart(part)) return `${part.serverName}/${part.toolName}`
-        if (isTaskPart(part) && part.taskType !== 'thinking') return getTaskTitle(part)
+        if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+          return {
+            type: 'tool' as const,
+            label: isToolCallPart(part)
+              ? part.toolDisplayName || part.toolName
+              : `${part.serverName}/${part.toolName}`,
+            state: part.state,
+          }
+        }
+        if (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating') {
+          return { type: 'task' as const, label: getTaskTitle(part) }
+        }
+        if (isReasoningPart(part)) {
+          return {
+            type: 'reasoning' as const,
+            state: part.state,
+            duration: part.duration,
+          }
+        }
       }
-
 
       return null
     }, [getTaskTitle])
 
     const getThoughtTitle = React.useCallback((entries: Array<{ part: MessagePart; index: number }>, isStreaming: boolean) => {
       const action = getThoughtAction(entries)
-      if (action) {
-        return `${isStreaming ? tReasoning('thinking') : tReasoning('thought')}: ${action}`
+      if (action?.type === 'tool') {
+        if (action.state === 'error') return tReasoning('toolCallFailed', { tool: action.label })
+        if (action.state === 'done') return tReasoning('toolCallCompleted', { tool: action.label })
+        return tReasoning('toolCallExecuting', { tool: action.label })
       }
-
-      const reasoningPart = entries.find(({ part }) => isReasoningPart(part))?.part
-      if (reasoningPart && isReasoningPart(reasoningPart) && !isStreaming) {
-        return tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
+      if (action?.type === 'task') return tReasoning('taskAction', { task: action.label })
+      if (action?.type === 'reasoning') {
+        if (action.state === 'streaming' || (action.state === undefined && isStreaming)) {
+          return tReasoning('thinkingActive')
+        }
+        return tReasoning('thinkingCompleted', { seconds: action.duration ? Math.ceil(action.duration / 1000) : 0 })
       }
-      return isStreaming ? tReasoning('thinking') : tReasoning('thoughtDefault')
+      return isStreaming
+        ? tReasoning('thinkingActive')
+        : tReasoning('thinkingCompleted', { seconds: 0 })
     }, [getThoughtAction, tReasoning])
     const renderOrdinaryPart = React.useCallback((part: MessagePart, index: number) => {
       if (
@@ -1230,7 +1248,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const isThoughtEntry = React.useCallback((entry: { part: MessagePart; index: number }) => {
       const { part, index } = entry
       if (isReasoningPart(part)) return !hideReasoning
-      if (isTaskPart(part)) return !hideReasoning && part.taskType !== 'thinking'
+      if (isTaskPart(part)) return !hideReasoning && part.taskType !== 'thinking' && part.taskType !== 'generating'
       if (isToolCallPart(part) || isMcpToolCallPart(part)) return !hideToolCalls
       if (isToolResultPart(part) || isMcpToolResultPart(part)) {
         return !hideToolCalls && !pairedToolResultIndexes.has(index)
