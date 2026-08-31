@@ -1,4 +1,4 @@
-# Oh My Pi Agent Loop Parity Design Document
+# Agent Loop Runtime Design Document
 
 ## Background & Goals
 
@@ -6,27 +6,20 @@ Clouisle 当前 Agent Chat 已具备模型流式输出、工具调用、轮次�
 
 - `backend/app/api/v1/endpoints/chat.py` 在非流式、普通流式、编辑、重生成四条路径分别维护工具循环；同一行为已经出现四份实现。
 - 每个工具调用串行执行；同一模型回合返回多个独立工具调用时无法并发。
-- 前端 `useChat.sendMessage()` 在 `isLoading` 时直接返回，`ChatInput` 也在运行中禁用提交；用户只能停止，不能像 Oh My Pi 那样在运行中追加 steering/follow-up。
+- 前端 `useChat.sendMessage()` 在 `isLoading` 时直接返回，`ChatInput` 也在运行中禁用提交；用户只能停止，无法在运行中追加 steering/follow-up。
 - `stop()` 只中止浏览器 SSE；服务端依靠连接断开推断“手动停止”。连接丢失、主动停止、切换页面被混为一类，且无法可靠重连。
 - SSE 无 `run_id`、无单调 sequence、无事件回放；执行生命周期依赖原始请求连接。
-- 上下文压缩在固定 90% 触发后把历史整体替换成 summary + 当前用户消息；不保留 Oh My Pi 的近期原文尾部，也没有按完整 turn/tool protocol 选取 cut point 的迭代压缩。
+- 上下文压缩在固定 90% 触发后把历史整体替换成 summary + 当前用户消息；默认不保留近期原文尾部，也没有按完整 turn/tool protocol 选取 cut point 的迭代压缩。
 - LLM 类型只保留 `FinishReason`；provider 的非终止 `pause_turn` 等细节无法进入循环。
-- 当前默认 `max_iterations=5` 很容易把正常长任务变成 `max_iterations_reached`，而 Oh My Pi 主要依赖 deadline/abort 和 provider stop 语义。
+- 当前默认 `max_iterations=5` 很容易把正常长任务变成 `max_iterations_reached`；正常长任务应主要依赖 deadline/abort 和 provider stop 语义。
 
-参考基线固定为 Oh My Pi commit `969062200754ea02cfac922e5ebb8c608c079e15`，重点参考：
-
-- `packages/agent/src/agent-loop.ts`
-- `packages/agent/src/compaction/compaction.ts`
-- `packages/agent/src/compaction/prompts.ts`
-- `packages/agent/src/compaction/types.ts`
-- `packages/coding-agent/src/core/agent-session.ts`
 
 ### 目标
 
 1. 单一 Agent Loop 驱动普通发送、非流式 API、编辑和重生成，四条入口不再各自实现循环。
 2. Agent run 脱离浏览器连接运行；断线可回放/重连，停止是显式服务端命令。
 3. 运行中可提交 steering；当前 turn 自然结束后可消费 follow-up，不丢消息、不额外创建竞争 run。
-4. 工具批次支持 Oh My Pi 风格 `shared`/`exclusive` 调度；未知或有副作用工具默认保守串行。
+4. 工具批次支持 `shared`/`exclusive` 调度；未知或有副作用工具默认保守串行。
 5. 上下文压缩改为 reserve-aware、turn-aware、可迭代 summary，并保留最近原文；任何 provider 请求都不得超预算。
 6. 正确处理 `pause_turn`、截断 tool call、deadline、stop、工具异常和 worker 丢失；每条终止路径都有明确持久化状态。
 7. 前端保持 compression/reasoning/tool/content 的真实到达顺序，并显示运行中输入、停止、重连和队列状态。
@@ -42,22 +35,22 @@ Clouisle 当前 Agent Chat 已具备模型流式输出、工具调用、轮次�
 
 ## Scope Decisions
 
-### 本次复刻
+### Implementation scope
 
 - Agent turn loop、工具调度、run 生命周期、steering/follow-up、显式 stop、事件回放。
 - 上下文预算、自动 compaction、previous-summary 增量更新、近期原文保留、协议边界保护。
 - provider stop details 和 `pause_turn` continuation。
 - Web Chat 所需的 API、前端状态机、双语文案、部署 worker wiring。
 
-### 不盲目移植
+### Implementation boundaries
 
-- Oh My Pi 的 CLI/TUI、subagent hub、skills、LSP/browser 集成、session JSONL、git/worktree、模型目录和遥测系统。
-- 不复制 TypeScript 实现到 Python；只复刻可观察语义，并沿用 Clouisle 的 Tortoise、Celery、Redis、SSE 和 Message branch 模型。
+- 仅覆盖 Web Chat 所需的 agent turn loop、运行控制、事件回放、上下文压缩和工具调度。
+- 沿用 Clouisle 现有的 Tortoise、Celery、Redis、SSE 和 Message branch 模型。
 - 不恢复旧的多层 checkpoint/session-memory/tool-step compaction。只保留一个 turn-aware compaction pipeline，避免并存两套压缩策略。
 
 ## Current-to-Target Gap Matrix
 
-| Area | Current Clouisle | Target parity |
+| Area | Current Clouisle | Target behavior |
 |---|---|---|
 | Loop ownership | `chat.py` 四份 while-loop | `AgentLoop` 单一状态机；入口只准备 round/branch |
 | Execution lifetime | SSE request generator 内运行 | Celery agent task；SSE 只是订阅者 |
@@ -182,7 +175,7 @@ Add run control/subscription:
 2. Trigger when input exceeds `context_limit - effective_reserve`, with `effective_reserve = max(floor(context_limit × 0.15), model output reserve)`.
 3. Select a cut point at complete `round_id`/assistant-tool protocol boundaries.
 4. Carry `Conversation.context_summary_text`; summarize only newly covered old turns, then move `context_summary_watermark_id` to the last newly covered message.
-5. Keep a recent verbatim tail. Default target mirrors Oh My Pi’s 20k tokens but is clamped for small windows so system + summary + current/active turn + output reserve always fit.
+5. Keep a recent verbatim tail. Default target retains roughly 20k tokens of raw history, clamped for small windows so system + summary + current/active turn + output reserve always fit.
 6. If a single old completed turn is too large, split only on complete assistant/tool groups and summarize the prefix. Never split an unfinished current tool protocol.
 7. Re-estimate after summary. One bounded retry may shorten summary/reduce retained old tail at safe boundaries. If protected content alone cannot fit, raise `ContextLengthError` before the provider call.
 8. Persist summary only after successful generation and branch/watermark validation. A watermark outside the active branch is ignored and full active history is replanned.
@@ -206,7 +199,7 @@ Runtime metadata (not sent to the model) declares `concurrency: shared | exclusi
 **Files modified**
 
 - `docs/IMPLEMENTATION_PLAN.md`
-- `docs/plan/oh-my-pi-agent-loop-parity.md`
+- `docs/plan/agent-loop-runtime.md`
 - focused backend/frontend contract test files
 
 **Specific logic**
@@ -245,7 +238,7 @@ Runtime metadata (not sent to the model) declares `concurrency: shared | exclusi
 - Verify model → tool → result → final with actual production loop code and a fake adapter.
 - Ruff/format/type diagnostics for touched backend modules.
 
-### Stage 3: Implement Oh My Pi-style turn-aware compaction
+### Stage 3: Implement turn-aware compaction
 
 **Files modified**
 
@@ -427,7 +420,7 @@ Runtime metadata (not sent to the model) declares `concurrency: shared | exclusi
 
 - touched focused tests and docs only as failures/contract gaps require
 - `docs/IMPLEMENTATION_PLAN.md`
-- `docs/plan/oh-my-pi-agent-loop-parity.md`
+- `docs/plan/agent-loop-runtime.md`
 
 **Specific logic**
 
@@ -527,7 +520,7 @@ Stages are intentionally separable:
 
 ## Implementation Order and Commit Boundaries
 
-1. `docs/tests: register parity contract and characterization`
+1. `docs/tests: register agent-loop contracts and characterization`
 2. `refactor(agent): centralize chat execution in AgentLoop`
 3. `feat(context): add turn-aware iterative compaction`
 4. `feat(agent-run): add durable worker execution and event replay`
@@ -535,7 +528,7 @@ Stages are intentionally separable:
 6. `feat(llm): preserve provider stop details and continuation semantics`
 7. `feat(tools): schedule shared and exclusive tool batches`
 8. `feat(chat): add reconnectable run UX and ongoing input`
-9. `test/docs: complete parity regression and cleanup`
+9. `test/docs: complete regression and cleanup`
 
 Each commit must pass its focused validation and contain no dormant alternate implementation.
 ## Verification Record (2026-08-31 worktree)
@@ -549,7 +542,7 @@ Each commit must pass its focused validation and contain no dormant alternate im
 - Production gaps found and fixed during migration: `main.py start_worker` default queues now include `agent`; `admin_observability.WORKER_QUEUES` includes `agent` (catalog + queue-length observability); `SANDBOX_WORKER_ENV_KEYS` includes `INTERNAL_API_TOKEN` (sandbox container needs it); sandbox env test made hermetic against `app.main` import-time `dotenv` pollution.
 
 ### Frontend
-- Focused parity suites (use-chat ×3, use-run ×2, chat-input, message, agent-run-page, chat-behavior) pass with `--isolate`: 54/54 across 7 files.
+- Focused agent-run suites (use-chat ×3, use-run ×2, chat-input, message, agent-run-page, chat-behavior) pass with `--isolate`: 54/54 across 7 files.
 - Run-status chip + reconnect button covered by the `agent-run-page` test; `use-run` delegates `runId`/`runStatus`/`reconnect` to `useChat`.
 - ChatInput streaming contract test updated: submit stays enabled while streaming (steering), disabled while uploading/disabled; loading keeps submit enabled.
 - `bun run tsc --noEmit`, changed-file ESLint (0 errors), `i18n:lint`, `git diff --check` all clean.

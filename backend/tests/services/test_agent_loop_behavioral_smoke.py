@@ -6,7 +6,7 @@ fake provider and fake tools — no services, no browser. The scripted provider
 performs: two tool turns, a turn-aware compaction, an injected steering, the
 final completion turn, and (in a second scenario) a cooperative stop.
 
-Exercise order matches Oh My Pi parity success criteria:
+Exercise order matches the canonical agent-run success criteria:
 
 1. model -> multi-tool -> steering -> model -> final, persisted as one
    canonical assistant message,

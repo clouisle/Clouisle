@@ -1720,7 +1720,7 @@ async def build_context_plan(
         -1,
     )
 
-    # Recent verbatim tail: mirror Oh My Pi's ~20k-token raw retention target,
+    # Recent verbatim tail: retain a bounded raw-history target,
     # clamped so system + summary + current/active turn + output reserve fit.
     system_tokens = _estimate_message_tokens(
         messages[:1], model_id=tokenizer_model_id, provider=provider
