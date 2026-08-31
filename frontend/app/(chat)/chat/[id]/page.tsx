@@ -949,7 +949,12 @@ export default function PublicChatPage({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Loading Skeleton */}
           {loadingConversation ? (
-            <div className={cn('flex-1 min-h-0 overflow-y-auto space-y-4', showHeader ? 'px-4 pb-4 pt-[76px]' : 'p-4')}>
+            <div
+              data-testid="chat-history-loading-skeleton"
+              className={cn('flex-1 min-h-0 overflow-y-auto', showHeader ? 'pt-[76px]' : 'pt-4')}
+            >
+              <div data-testid="chat-history-loading-content" className="mx-auto max-w-3xl px-4 pb-4">
+                <div className="space-y-4">
               {/* Skeleton for user message */}
               <div className="flex justify-end">
                 <div className="max-w-[80%] space-y-2">
@@ -993,6 +998,8 @@ export default function PublicChatPage({
                     <div className="h-4 w-11/12 bg-muted-foreground/20 rounded animate-pulse" />
                     <div className="h-4 w-3/4 bg-muted-foreground/20 rounded animate-pulse" />
                   </div>
+                </div>
+              </div>
                 </div>
               </div>
             </div>
