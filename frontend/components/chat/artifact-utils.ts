@@ -91,30 +91,27 @@ function getArtifactKey(file: FilePart) {
   return file.path || `${file.filename}:${file.url ?? ''}`
 }
 
-/** Collect only results produced by the built-in artifact tool. */
-export function getConversationArtifacts(messages: readonly ChatMessage[]): FilePart[] {
+/** Collect only results produced by the built-in artifact tool in one assistant message. */
+export function getMessageArtifacts(message: ChatMessage): FilePart[] {
+  if (message.role !== 'assistant') return []
+
+  const artifactCallIds = new Set(
+    message.parts
+      .filter((part): part is ToolCallPart => (
+        part.type === 'tool-call' && isArtifactToolName(part.toolName)
+      ))
+      .map((part) => part.toolCallId),
+  )
   const latestFiles = new Map<string, FilePart>()
 
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue
+  for (const part of message.parts) {
+    if (part.type !== 'tool-result') continue
+    if (!isArtifactToolName(part.toolName) && !artifactCallIds.has(part.toolCallId)) continue
 
-    const artifactCallIds = new Set(
-      message.parts
-        .filter((part): part is ToolCallPart => (
-          part.type === 'tool-call' && isArtifactToolName(part.toolName)
-        ))
-        .map((part) => part.toolCallId),
-    )
-
-    for (const part of message.parts) {
-      if (part.type !== 'tool-result') continue
-      if (!isArtifactToolName(part.toolName) && !artifactCallIds.has(part.toolCallId)) continue
-
-      for (const file of getToolArtifacts(part.output)) {
-        const key = getArtifactKey(file)
-        latestFiles.delete(key)
-        latestFiles.set(key, file)
-      }
+    for (const file of getToolArtifacts(part.output)) {
+      const key = getArtifactKey(file)
+      latestFiles.delete(key)
+      latestFiles.set(key, file)
     }
   }
 

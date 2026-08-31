@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Message } from './message';
 import { ArtifactFileList } from './artifact-file-list';
-import { getConversationArtifacts } from './artifact-utils';
+import { getMessageArtifacts } from './artifact-utils';
 import type { ChatMessage, ChatPreviewPayload, FilePart, MessagePart } from './types';
 
 interface ChatContainerProps {
@@ -301,13 +301,6 @@ export function ChatContainer({
   );
 
   const hiddenMessageCount = messages.length - visibleMessages.length;
-  const conversationArtifacts = useMemo(() => getConversationArtifacts(messages), [messages]);
-  const lastAssistantMessageId = useMemo(() => {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index].role === 'assistant') return messages[index].id
-    }
-    return null
-  }, [messages])
 
   const handleOpenArtifactPreview = useCallback((file: FilePart) => {
     if (!onOpenCodePreview) return;
@@ -630,6 +623,7 @@ export function ChatContainer({
           {visibleMessages.map((message, index) => {
             const messageIndex = hiddenMessageCount + index;
             const isCurrentStreaming = isStreaming && messageIndex === messages.length - 1;
+            const messageArtifacts = getMessageArtifacts(message);
             return (
               <ChatMessageRow
                 key={message.id}
@@ -637,10 +631,10 @@ export function ChatContainer({
                 loadingLabel={loadingLabel}
                 isCurrentStreaming={isCurrentStreaming}
                 renderPart={renderPart}
-                afterContent={message.id === lastAssistantMessageId && conversationArtifacts.length > 0 ? (
+                afterContent={messageArtifacts.length > 0 ? (
                   <ArtifactFileList
                     key={`artifacts-${message.id}`}
-                    files={conversationArtifacts}
+                    files={messageArtifacts}
                     className="mt-3 w-full"
                     onOpenPreview={onOpenCodePreview ? handleOpenArtifactPreview : undefined}
                   />

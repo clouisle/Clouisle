@@ -116,7 +116,7 @@ describe('ChatContainer', () => {
     expect(messageProps.some((props) => (props.message as ChatMessage).id === 'm1')).toBe(false)
     expect(html).toContain('message 25')
   })
-  test('renders artifacts inside the latest assistant message and wires preview payloads', () => {
+  test('renders each artifact list inside its owning assistant message', () => {
     const onOpenCodePreview = mock(() => {})
     const messages: ChatMessage[] = [
       {
@@ -155,14 +155,15 @@ describe('ChatContainer', () => {
     ]
 
     const html = renderContainer(<ChatContainer messages={messages} onOpenCodePreview={onOpenCodePreview} />)
-    expect(html.indexOf('report.csv')).toBeGreaterThan(html.indexOf('Final answer'))
-    expect(html).toContain('summary.md')
-    expect(messageProps[0].afterContent).toBeUndefined()
+    expect(html.indexOf('report.csv')).toBeGreaterThan(html.indexOf('Earlier answer'))
+    expect(html.indexOf('Final answer')).toBeGreaterThan(html.indexOf('report.csv'))
+    expect(html.indexOf('summary.md')).toBeGreaterThan(html.indexOf('Final answer'))
+    expect(messageProps[0].afterContent).toBeDefined()
     expect(messageProps[1].afterContent).toBeDefined()
-    expect(artifactListProps).toHaveLength(1)
-    expect(artifactListProps[0].files).toEqual([
-      { type: 'file', path: '/workspace/report.csv', filename: 'report.csv', url: '/api/new-report.csv', size: 18, mimeType: 'text/csv' },
-      { type: 'file', path: '/workspace/summary.md', filename: 'summary.md', url: '/api/summary.md', mimeType: 'text/markdown' },
+    expect(artifactListProps).toHaveLength(2)
+    expect(artifactListProps.map((props) => props.files.map((file) => file.url))).toEqual([
+      ['/api/old-report.csv'],
+      ['/api/new-report.csv', '/api/summary.md'],
     ])
 
     artifactListProps[0].onOpenPreview?.(artifactListProps[0].files[0])
