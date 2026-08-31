@@ -147,7 +147,7 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(findAll(render({ messages }), 'message')).toHaveLength(45)
   })
 
-  test('delegates message actions and blocks edits while streaming', async () => {
+  test('delegates message actions and blocks edits while streaming without sharing thought-panel state', async () => {
     const onRegenerate = mock()
     const onEditMessage = mock(async () => {})
     const onSwitchVersion = mock()
@@ -170,7 +170,9 @@ describe('ChatContainer issue #255 coverage', () => {
     const [user, assistant] = findAll(tree, 'message')
 
     expect(user.props).toMatchObject({ isStreaming: false, hideToolCalls: true, onRegenerate: undefined, onEditMessage: undefined })
-    expect(assistant.props).toMatchObject({ isStreaming: true, onEditMessage: undefined, chainOfThoughtOpen: true })
+    expect(assistant.props).toMatchObject({ isStreaming: true, onEditMessage: undefined })
+    expect(assistant.props.chainOfThoughtOpen).toBeUndefined()
+    expect(assistant.props.onChainOfThoughtOpenChange).toBeUndefined()
 
     const idleTree = render({ messages, onRegenerate, onEditMessage, onSwitchVersion, onSelectOption, onOpenCodePreview, renderPart, hideToolCalls: true })
     const idleUser = findAll(idleTree, 'message')[0]
@@ -179,14 +181,12 @@ describe('ChatContainer issue #255 coverage', () => {
     ;(assistant.props.onSwitchVersion as (index: number) => void)(2)
     ;(assistant.props.onSelectOption as (option: string) => void)('Yes')
     ;(assistant.props.onOpenCodePreview as (payload: unknown) => void)({ code: 'x' })
-    ;(assistant.props.onChainOfThoughtOpenChange as (open: boolean) => void)(false)
 
     expect(onEditMessage).toHaveBeenCalledWith('user-1', 'edited')
     expect(onRegenerate).toHaveBeenCalledWith('assistant-1')
     expect(onSwitchVersion).toHaveBeenCalledWith('assistant-1', 2)
     expect(onSelectOption).toHaveBeenCalledWith('Yes')
     expect(onOpenCodePreview).toHaveBeenCalledWith({ code: 'x' })
-    expect(findAll(render({ messages }), 'message')[1].props.chainOfThoughtOpen).toBe(false)
   })
 
   test('does not open previews automatically when streaming finishes', () => {
@@ -388,7 +388,7 @@ describe('ChatContainer issue #255 coverage', () => {
     const shared = {
       message: message('a'), isCurrentStreaming: false, renderPart: mock(), onRegenerate: mock(),
       onEditMessage: mock(), onSwitchVersion: mock(), onSelectOption: mock(), onOpenCodePreview: mock(),
-      hideToolCalls: false, chainOfThoughtOpen: false, onChainOfThoughtOpenChange: mock(),
+      hideToolCalls: false,
       onRequestScrollIntoView: mock(), setMessageElement: mock(),
     }
     expect(memoCompare?.(shared, shared)).toBe(true)

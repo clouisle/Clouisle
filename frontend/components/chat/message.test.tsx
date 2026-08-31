@@ -87,7 +87,7 @@ mock.module('@/components/ai-elements/chain-of-thought', () => ({
   ChainOfThoughtStep: ({ children, label, status }: { children?: React.ReactNode; label: React.ReactNode; status?: string }) => <div data-step-status={status}>{label}{children}</div>,
 }))
 mock.module('@/components/ai-elements/tool', () => ({
-  Tool: ({ children, defaultOpen }: { children: React.ReactNode; defaultOpen?: boolean }) => <div data-chat-tool-node="true" data-tool-default-open={String(Boolean(defaultOpen))}>{children}</div>,
+  Tool: ({ children, defaultOpen, className }: { children: React.ReactNode; defaultOpen?: boolean; className?: string }) => <div data-chat-tool-node="true" data-tool-default-open={String(Boolean(defaultOpen))} className={className}>{children}</div>,
   ToolContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ToolHeader: ({ title, state }: { title: string; state?: string }) => <h4 data-tool-state={state}>{title}</h4>,
   ToolInput: ({ input }: { input: unknown }) => <pre>{JSON.stringify(input)}</pre>,
@@ -587,6 +587,8 @@ describe('message behavior', () => {
     expect(thought).not.toBeNull()
     expect(tool).not.toBeNull()
     expect(tool?.getAttribute('data-tool-default-open')).toBe('false')
+    expect(tool?.className).toContain('mb-2')
+    expect(tool?.className).not.toContain('my-0')
     expect(thought?.textContent).toContain('Lookup')
     expect(thought?.textContent).not.toContain('Final answer')
     expect(container.textContent).toContain('Final answer')

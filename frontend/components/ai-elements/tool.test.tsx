@@ -92,6 +92,36 @@ describe("Tool", () => {
     expect(container.textContent).toContain("Forecast");
   });
 
+  it("keeps sibling tool disclosures independent", () => {
+    const container = render(
+      <div>
+        <Tool>
+          <ToolHeader type="tool-weather" state="output-available" />
+          <ToolContent>First details</ToolContent>
+        </Tool>
+        <Tool>
+          <ToolHeader type="tool-search" state="output-available" />
+          <ToolContent>Second details</ToolContent>
+        </Tool>
+      </div>
+    );
+
+    const triggers = container.querySelectorAll("button");
+    expect(triggers).toHaveLength(2);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+    expect(triggers[1].getAttribute("aria-expanded")).toBe("false");
+
+    act(() => triggers[0].click());
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("true");
+    expect(triggers[1].getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).toContain("First details");
+    expect(container.textContent).not.toContain("Second details");
+
+    act(() => triggers[1].click());
+    expect(triggers[1].getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Second details");
+  });
+
   it("renders error text and serialized output", () => {
     const container = render(<ToolOutput errorText="Request failed" output={{ retry: false }} />);
 

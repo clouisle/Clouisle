@@ -861,7 +861,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           <Tool
             key={index}
             defaultOpen={false}
-            className="my-0 rounded-md border bg-muted/30"
+            className="mb-2 rounded-md border bg-muted/30"
             data-chat-timeline-index={index}
             data-chat-tool-node="true"
             data-tool-call-id={part.toolCallId}
@@ -889,7 +889,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           <Tool
             key={index}
             defaultOpen={false}
-            className="my-0 rounded-md border bg-muted/30"
+            className="mb-2 rounded-md border bg-muted/30"
             data-chat-timeline-index={index}
             data-chat-tool-node="true"
             data-tool-call-id={part.toolCallId}

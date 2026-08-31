@@ -147,8 +147,6 @@ interface ChatMessageRowProps {
   hideMessageActions: boolean;
   hideReasoning: boolean;
   conversationId?: string | null;
-  chainOfThoughtOpen?: boolean;
-  onChainOfThoughtOpenChange: (messageId: string, open: boolean) => void;
   onRequestScrollIntoView: (messageId: string) => void;
   setMessageElement: (messageId: string, element: HTMLDivElement | null) => void;
 }
@@ -169,8 +167,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   hideMessageActions,
   hideReasoning,
   conversationId,
-  chainOfThoughtOpen,
-  onChainOfThoughtOpenChange,
   onRequestScrollIntoView,
   setMessageElement,
 }: ChatMessageRowProps) {
@@ -185,10 +181,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   const handleSwitchVersion = useCallback((versionIndex: number) => {
     onSwitchVersion?.(message.id, versionIndex);
   }, [message.id, onSwitchVersion]);
-
-  const handleChainOfThoughtOpenChange = useCallback((open: boolean) => {
-    onChainOfThoughtOpenChange(message.id, open);
-  }, [message.id, onChainOfThoughtOpenChange]);
 
   const handleRequestScrollIntoView = useCallback(() => {
     onRequestScrollIntoView(message.id);
@@ -209,8 +201,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
         onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
         onEditMessage={message.role === 'user' && onEditMessage && message.metadata?.pendingPersistence !== true ? handleEditMessage : undefined}
         onSwitchVersion={onSwitchVersion ? handleSwitchVersion : undefined}
-        chainOfThoughtOpen={chainOfThoughtOpen}
-        onChainOfThoughtOpenChange={handleChainOfThoughtOpenChange}
         onSelectOption={onSelectOption}
         onSelectImageReference={onSelectImageReference}
         onOpenCodePreview={onOpenCodePreview}
@@ -237,8 +227,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.hideMessageActions === next.hideMessageActions
   && prev.hideReasoning === next.hideReasoning
   && prev.conversationId === next.conversationId
-  && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
-  && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
   && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
   && prev.setMessageElement === next.setMessageElement
 ));
@@ -280,21 +268,12 @@ export function ChatContainer({
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
   const previousConversationIdRef = useRef(conversationId);
-  const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
   const [userMessageTicks, setUserMessageTicks] = useState<UserMessageTick[]>([]);
   const t = useTranslations('chat');
 
-  const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
-    setChainOfThoughtOpenByMessageId((current) => ({
-      ...current,
-      [messageId]: open,
-    }));
-  }, []);
-
   const lastMessage = messages[messages.length - 1];
   const lastMessageId = lastMessage?.id;
-  const lastMessageRole = lastMessage?.role;
   const visibleMessages = useMemo(
     () => messages.slice(Math.max(0, messages.length - renderedMessageCount)),
     [messages, renderedMessageCount]
@@ -329,15 +308,6 @@ export function ChatContainer({
   useEffect(() => {
     setRenderedMessageCount((count) => Math.max(Math.min(count, messages.length), INITIAL_RENDERED_MESSAGE_COUNT));
   }, [messages.length]);
-  useEffect(() => {
-    if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
-      return;
-    }
-
-    setChainOfThoughtOpenByMessageId((current) => (
-      lastMessageId in current ? current : { ...current, [lastMessageId]: true }
-    ));
-  }, [isStreaming, lastMessageId, lastMessageRole]);
 
   // Last text content for "do not snap during open code fence" rule
   const lastMessageText = useMemo(() => {
@@ -649,8 +619,6 @@ export function ChatContainer({
                 hideMessageActions={hideMessageActions}
                 hideReasoning={hideReasoning}
                 conversationId={conversationId}
-                chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
-                onChainOfThoughtOpenChange={setChainOfThoughtOpen}
                 onRequestScrollIntoView={requestMessageScrollIntoView}
                 setMessageElement={setMessageElement}
               />
