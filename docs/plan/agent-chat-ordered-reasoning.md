@@ -105,7 +105,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
   3. Keep tool status, MCP naming, rich outputs, media/artifact handling, independent hide flags, and controlled message-level thought state unchanged.
 - **Validation**: Mounted/static message tests prove tool nodes are descendants of the thought process, tool details remain independently collapsible, final text is outside the thought container, and chronological order plus existing rich-output/state assertions remain intact.
 
-- **Observed**: Focused isolated frontend suite passed (102 tests across 5 files), the full frontend coverage suite passed (2276 tests across 515 files), LCOV completeness passed for 489 eligible files, TypeScript passed, ESLint passed with two pre-existing warnings, translation lint passed, diff whitespace checks passed, and the backend stream/durable smoke suite passed (17 tests). The repository pre-commit executable is unavailable in the environment.
+- **Observed**: Focused isolated frontend suite passed (102 tests across 5 files), the full frontend coverage suite passed (2276 tests across 515 files), LCOV completeness passed for 489 eligible files, TypeScript passed, ESLint passed with two pre-existing warnings, translation lint passed, diff whitespace checks passed, and the backend stream/durable smoke suite passed (17 tests). The standalone `pre-commit` executable is unavailable, but the repository commit hook passed.
 
 - **Acceptance**: Live and historical Agent messages display each reasoning iteration and tool execution in chronological order; no distinct reasoning/tool occurrences are collapsed; hide flags and rich tool results retain their existing contracts; all focused and required gates pass.
 
