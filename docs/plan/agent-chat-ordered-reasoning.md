@@ -1,5 +1,5 @@
 # Ordered Agent Reasoning Timeline
-**Status: Complete — nested tool-call nodes are grouped under collapsible thought processes.**
+**Status: Complete — Stage 8 separates reasoning, tasks, tools, and final answers into distinct chronological surfaces.**
 
 ## Background & Goals
 
@@ -96,7 +96,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
   - `cd backend && uv run pytest tests/api/test_chat_sse_triptych_issue255.py tests/api/test_chat_stream_loop_arcs_issue255_companion.py tests/services/test_agent_run_durable.py tests/services/test_agent_loop_behavioral_smoke.py -q`
   - Run the repository's normal pre-commit/diff checks only after focused behavior is green.
 - **Observed**: Focused isolated frontend tests passed (101 tests across 5 files), full frontend coverage passed (2275 tests across 515 files), LCOV coverage completeness passed for 489 eligible files, TypeScript and translation lint passed, ESLint passed with two pre-existing warnings, diff check passed, and the backend stream/durable smoke suite passed (17 tests). The repository pre-commit command was unavailable in the environment (`pre-commit` was not installed; `uv run pre-commit` also could not spawn it).
-### Stage 6: Nest tool-call nodes inside the collapsible thought process
+### Stage 6: Nest tool-call nodes inside the collapsible thought process (superseded)
 
 - **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, and only the related test mocks if required.
 - **Specific logic**:
@@ -106,6 +106,18 @@ Tool call plus its result remains one execution card, anchored at the call posit
 - **Validation**: Mounted/static message tests prove tool nodes are descendants of the thought process, tool details remain independently collapsible, final text is outside the thought container, and chronological order plus existing rich-output/state assertions remain intact.
 
 - **Observed**: Focused isolated frontend suite passed (102 tests across 5 files), the full frontend coverage suite passed (2276 tests across 515 files), LCOV completeness passed for 489 eligible files, TypeScript passed, ESLint passed with two pre-existing warnings, translation lint passed, diff whitespace checks passed, and the backend stream/durable smoke suite passed (17 tests). The standalone `pre-commit` executable is unavailable, but the repository commit hook passed.
+
+### Stage 8: Separate reasoning, execution, and answer surfaces
+
+- **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, and only the related test mocks if required.
+- **Specific logic**:
+  1. Keep one `ChainOfThought` container per reasoning part only. Its content contains only that reasoning text; task and tool entries must never be placed inside it.
+  2. Render RAG, compression, and generating entries as standalone task status rows using the existing task primitive, preserving their timeline index and state.
+  3. Render each normal/MCP tool call and its matching result as a standalone execution card at the call position. Keep tool input/result disclosure independent from reasoning disclosure.
+  4. Leave ordinary and final answer text in the regular message content surface so users can immediately distinguish model output from internal activity.
+  5. Preserve chronological order, controlled reasoning open-state semantics, independent hide flags, rich tool output/media/artifact handling, and existing loading/error/action behavior.
+- **Validation**: Mounted/static message tests assert that reasoning containers contain no task/tool nodes, task and tool nodes are siblings at their original positions, final text remains outside reasoning containers, and hide flags plus rich tool states continue to work.
+- **Observed**: Focused message/task/chat-container regressions passed; the isolated frontend suite passed (2277 tests across 515 files); frontend coverage and LCOV completeness passed; TypeScript, ESLint, translation lint, and diff checks passed; the backend stream/durable smoke suite passed (17 tests). No application service or browser was started.
 
 - **Acceptance**: Live and historical Agent messages display each reasoning iteration and tool execution in chronological order; no distinct reasoning/tool occurrences are collapsed; hide flags and rich tool results retain their existing contracts; all focused and required gates pass.
 

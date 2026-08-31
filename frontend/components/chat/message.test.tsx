@@ -84,7 +84,10 @@ mock.module('@/components/ai-elements/chain-of-thought', () => ({
   ChainOfThought: ({ children, isStreaming, open, onOpenChange }: { children: React.ReactNode; isStreaming?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) => <div data-chat-thought-process="true" data-streaming={String(Boolean(isStreaming))} data-open={String(Boolean(open))}><button type="button" onClick={() => onOpenChange?.(!open)}>toggle reasoning</button>{children}</div>,
   ChainOfThoughtContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ChainOfThoughtHeader: ({ title }: { title: string }) => <h3>{title}</h3>,
-  ChainOfThoughtStep: ({ children, label, status }: { children?: React.ReactNode; label: React.ReactNode; status?: string }) => <div data-step-status={status}>{label}{children}</div>,
+}))
+mock.module('@/components/ai-elements/task', () => ({
+  Task: ({ children, className, state, ...props }: { children: React.ReactNode; className?: string; state?: string } & React.ComponentProps<'div'>) => <div {...props} className={className} data-chat-task-node="true" data-chat-task-state={state}>{children}</div>,
+  TaskTrigger: ({ title, icon: Icon }: { title: string; icon?: React.ComponentType<{ className?: string }> }) => <div data-chat-task-trigger="true">{Icon && <Icon />}{title}</div>,
 }))
 mock.module('@/components/ai-elements/tool', () => ({
   Tool: ({ children, defaultOpen, className }: { children: React.ReactNode; defaultOpen?: boolean; className?: string }) => <div data-chat-tool-node="true" data-tool-default-open={String(Boolean(defaultOpen))} className={className}>{children}</div>,
@@ -471,7 +474,7 @@ describe('message behavior', () => {
     expect(markup).toContain('conv-123')
   })
 
-  test('renders thought process nodes and maps task and tool states', () => {
+  test('renders distinct task, reasoning, and tool surfaces', () => {
     const onOpenChange = mock(() => {})
     const container = render(<Message
       message={{
@@ -487,20 +490,25 @@ describe('message behavior', () => {
           { type: 'mcp-tool-call', toolCallId: 'pending', serverName: 'repo', toolName: 'read', input: {}, state: 'pending' },
           { type: 'mcp-tool-result', toolCallId: 'pending', serverName: 'repo', toolName: 'read', output: 'waiting' },
           { type: 'task', taskType: 'generating', state: 'error' },
+          { type: 'text', text: 'Actual answer', state: 'done' },
         ],
       }}
       chainOfThoughtOpen
       onChainOfThoughtOpenChange={onOpenChange}
     />)
 
-    expect(container.textContent).toContain('chat.task.foundSources')
-    expect(container.textContent).toContain('chat.task.compressingContextReactive')
+    const thought = container.querySelector('[data-chat-thought-process="true"]')
+    expect(container.querySelectorAll('[data-chat-task-node="true"]')).toHaveLength(3)
+    expect([...container.querySelectorAll('[data-chat-task-state]')].map((item) => item.getAttribute('data-chat-task-state'))).toEqual(['completed', 'running', 'error'])
+    expect(thought).not.toBeNull()
+    expect(thought?.querySelector('[data-chat-task-node="true"]')).toBeNull()
+    expect(thought?.querySelector('[data-chat-tool-node="true"]')).toBeNull()
+    expect(thought?.textContent).toContain('Inspecting evidence')
+    expect(thought?.textContent).not.toContain('Actual answer')
+    expect(container.textContent).toContain('Actual answer')
     expect(container.textContent).toContain('Web search')
     expect(container.textContent).toContain('broken')
     expect(container.textContent).toContain('repo/read')
-    expect(container.textContent).toContain('chat.task.generating')
-    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'error'])
-    expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['input-available', 'output-error', 'input-streaming'])
 
     act(() => button(container, 'toggle reasoning').click())
@@ -533,11 +541,12 @@ describe('message behavior', () => {
       chainOfThoughtOpen
     />)
 
-    expect([...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent)).toEqual([
-      expect.stringContaining('before compression'),
-      expect.stringContaining('chat.task.compressionCompletedProactiveSummary before=90000 after=1000 saved=89000 count=1'),
-      expect.stringContaining('after compression'),
-    ])
+    const markup = container.innerHTML
+    expect(container.querySelectorAll('[data-chat-task-node="true"]')).toHaveLength(1)
+    expect(markup.indexOf('before compression')).toBeGreaterThanOrEqual(0)
+    expect(markup.indexOf('chat.task.compressionCompletedProactiveSummary before=90000 after=1000 saved=89000 count=1')).toBeGreaterThan(markup.indexOf('before compression'))
+    expect(markup.indexOf('after compression')).toBeGreaterThan(markup.indexOf('chat.task.compressionCompletedProactiveSummary'))
+    expect(container.querySelectorAll('[data-chat-thought-process="true"]')).toHaveLength(2)
   })
   test('renders repeated reasoning blocks at their original timeline positions', () => {
     const html = renderToStaticMarkup(<Message
@@ -568,29 +577,32 @@ describe('message behavior', () => {
     expect(html.match(/data-chat-thought-process="true"/g)).toHaveLength(2)
   })
 
-  test('keeps each tool execution inside its thought process', () => {
+  test('keeps tool execution visible outside the thought process', () => {
     const container = render(<Message
       message={{
-        id: 'nested-tool-process',
+        id: 'standalone-tool-process',
         role: 'assistant',
         parts: [
           { type: 'reasoning', text: 'Inspecting evidence', state: 'done', duration: 1000 },
-          { type: 'tool-call', toolCallId: 'nested-tool', toolName: 'lookup', toolDisplayName: 'Lookup', input: { query: 'docs' }, state: 'done' },
-          { type: 'tool-result', toolCallId: 'nested-tool', toolName: 'lookup', output: { ok: true } },
+          { type: 'tool-call', toolCallId: 'standalone-tool', toolName: 'lookup', toolDisplayName: 'Lookup', input: { query: 'docs' }, state: 'done' },
+          { type: 'tool-result', toolCallId: 'standalone-tool', toolName: 'lookup', output: { ok: true } },
           { type: 'text', text: 'Final answer', state: 'done' },
         ],
       }}
     />)
 
     const thought = container.querySelector('[data-chat-thought-process="true"]')
-    const tool = thought?.querySelector('[data-chat-tool-node="true"]')
+    const tool = container.querySelector('[data-chat-tool-node="true"]')
     expect(thought).not.toBeNull()
     expect(tool).not.toBeNull()
+    expect(thought?.querySelector('[data-chat-tool-node="true"]')).toBeNull()
+    expect(tool?.parentElement).toBe(thought?.parentElement)
     expect(tool?.getAttribute('data-tool-default-open')).toBe('false')
     expect(tool?.className).toContain('mb-2')
     expect(tool?.className).not.toContain('my-0')
-    expect(thought?.textContent).toContain('Lookup')
+    expect(thought?.textContent).not.toContain('Lookup')
     expect(thought?.textContent).not.toContain('Final answer')
+    expect(container.textContent).toContain('Lookup')
     expect(container.textContent).toContain('Final answer')
   })
 
