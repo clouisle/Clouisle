@@ -418,6 +418,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   message: ChatMessage
   /** Whether the message is currently streaming */
   isStreaming?: boolean
+  /** Optional label for an assistant loading placeholder. */
+  loadingLabel?: string
   /** Custom part renderer */
   renderPart?: (part: MessagePart, index: number) => React.ReactNode
   /** Whether to show copy button for assistant messages */
@@ -459,6 +461,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     {
       message,
       isStreaming = false,
+      loadingLabel,
       renderPart,
       showCopy = true,
       showFeedback = false,
@@ -1448,7 +1451,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           ) : isLoadingMessage ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">{t('thinking')}</span>
+              <span className="text-sm">{loadingLabel ?? t('thinking')}</span>
             </div>
           ) : (
             visibleContentParts.map((part, index) =>
@@ -1500,6 +1503,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isEditing,
       isErroredMessage,
       isLoadingMessage,
+      loadingLabel,
       message.metadata?.errorCode,
       isManuallyStoppedMessage,
       isSavingEdit,
@@ -1670,6 +1674,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<MessageProps>) {
   return prev.message === next.message
     && prev.isStreaming === next.isStreaming
+    && prev.loadingLabel === next.loadingLabel
     && prev.renderPart === next.renderPart
     && prev.showCopy === next.showCopy
     && prev.showFeedback === next.showFeedback

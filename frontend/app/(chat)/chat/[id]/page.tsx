@@ -642,23 +642,6 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
-  const runStatusLabel = runStatus === 'queued'
-    ? tChatMessage('runStatusQueued')
-    : runStatus === 'running'
-      ? tChatMessage('runStatusRunning')
-      : runStatus === 'stopping'
-        ? tChatMessage('runStatusStopping')
-        : runStatus === 'completing'
-          ? tChatMessage('runStatusCompleting')
-          : runStatus === 'completed'
-            ? tChatMessage('runStatusCompleted')
-            : runStatus === 'stopped'
-              ? tChatMessage('runStatusStopped')
-              : runStatus === 'failed'
-                ? tChatMessage('runStatusFailed')
-                : runStatus === 'interrupted'
-                  ? tChatMessage('runStatusInterrupted')
-                  : null
   // Variable panel (collapsible form shown when the agent declares input
   // variables) and the composer itself. They are kept separate so the
   // composer can act as the vertical-center anchor of the welcome column;
@@ -742,11 +725,6 @@ export default function PublicChatPage({
         onFilesChange={setFiles}
         isUploading={isUploading}
       />
-      {runStatusLabel && (
-        <p className="mx-auto max-w-3xl px-4 pt-1 text-xs text-muted-foreground" aria-live="polite">
-          {runStatusLabel}
-        </p>
-      )}
     </>
   )
 
@@ -1025,6 +1003,7 @@ export default function PublicChatPage({
               messages={messages}
               isStreaming={isStreaming}
               isLoading={chatLoading}
+              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : undefined}
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}

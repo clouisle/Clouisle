@@ -14,6 +14,8 @@ interface ChatContainerProps {
   className?: string;
   isStreaming?: boolean;
   isLoading?: boolean;
+  /** Text shown in an assistant loading placeholder. */
+  loadingLabel?: string;
   autoScroll?: boolean;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
   emptyState?: React.ReactNode;
@@ -130,6 +132,7 @@ function hasOpenCodeFence(content: string) {
 interface ChatMessageRowProps {
   message: ChatMessage;
   isCurrentStreaming: boolean;
+  loadingLabel?: string;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
   onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
@@ -150,6 +153,7 @@ interface ChatMessageRowProps {
 const ChatMessageRow = memo(function ChatMessageRow({
   message,
   isCurrentStreaming,
+  loadingLabel,
   renderPart,
   onRegenerate,
   onEditMessage,
@@ -195,6 +199,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
       <Message
         message={message}
         isStreaming={isCurrentStreaming}
+        loadingLabel={loadingLabel}
         renderPart={renderPart}
         onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
         onEditMessage={message.role === 'user' && onEditMessage && message.metadata?.pendingPersistence !== true ? handleEditMessage : undefined}
@@ -215,6 +220,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
 }, (prev, next) => (
   prev.message === next.message
   && prev.isCurrentStreaming === next.isCurrentStreaming
+  && prev.loadingLabel === next.loadingLabel
   && prev.renderPart === next.renderPart
   && prev.onRegenerate === next.onRegenerate
   && prev.onEditMessage === next.onEditMessage
@@ -237,6 +243,7 @@ export function ChatContainer({
   className,
   isStreaming = false,
   isLoading = false,
+  loadingLabel,
   autoScroll = true,
   renderPart,
   emptyState,
@@ -606,6 +613,7 @@ export function ChatContainer({
               <ChatMessageRow
                 key={message.id}
                 message={message}
+                loadingLabel={loadingLabel}
                 isCurrentStreaming={isCurrentStreaming}
                 renderPart={renderPart}
                 onRegenerate={onRegenerate}

@@ -449,6 +449,16 @@ describe('message behavior', () => {
     expect(streaming).not.toContain('chat.message.regenerate')
     expect(streaming).not.toContain('chat.message.copy')
   })
+  test('uses a custom label for a loading placeholder', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{ id: 'queued', role: 'assistant', metadata: { isLoading: true }, parts: [] }}
+      loadingLabel="chat.message.runStatusQueued"
+    />)
+
+    expect(html).toContain('chat.message.runStatusQueued')
+    expect(html).not.toContain('chat.message.thinking')
+  })
+
 
   test('renders the error code badge with the conversation id for diagnosability', () => {
     const markup = renderToStaticMarkup(<Message

@@ -84,6 +84,13 @@ describe('ChatContainer', () => {
     expect(html).toContain('ANSWER')
     expect(messageProps.map((props) => props.isStreaming)).toEqual([false, true])
   })
+  test('forwards a custom loading label to the assistant placeholder', () => {
+    const message: ChatMessage = { id: 'assistant-loading', role: 'assistant', parts: [], metadata: { isLoading: true } }
+    renderContainer(<ChatContainer messages={[message]} isLoading loadingLabel="Queued" />)
+
+    expect(messageProps[0].loadingLabel).toBe('Queued')
+  })
+
 
   test('initially renders the newest batch and offers to load older messages', () => {
     const messages = Array.from({ length: 25 }, (_, index) => textMessage(`m${index + 1}`, 'assistant', `message ${index + 1}`))
