@@ -294,6 +294,17 @@ describe('message rendering', () => {
   })
 })
 
+  test('renders inserted content before message actions', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{ id: 'artifact-order', role: 'assistant', parts: [{ type: 'text', text: 'Answer' }] }}
+      afterContent={<div data-artifact-marker>files</div>}
+      onRegenerate={() => {}}
+    />)
+
+    expect(html.indexOf('data-artifact-marker')).toBeGreaterThan(-1)
+    expect(html.indexOf('data-artifact-marker')).toBeLessThan(html.indexOf('chat.message.regenerate'))
+  })
+
 describe('message behavior', () => {
   test('switches versions and forwards assistant actions', () => {
     const onSwitchVersion = mock(() => {})

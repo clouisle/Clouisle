@@ -12,13 +12,14 @@ mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => {
     if (key === 'preview') return 'Preview'
     if (key === 'download') return 'Download'
-    if (key === 'generatedFiles') return 'Generated files'
     if (key === 'showMore') return `Show ${values?.count ?? ''} more`
     if (key === 'showLess') return 'Show less'
     return 'Files'
   },
 }))
 mock.module('lucide-react', () => ({
+  ChevronDown: (props: { className?: string }) => icon({ ...props, name: 'ChevronDown' }),
+  ChevronUp: (props: { className?: string }) => icon({ ...props, name: 'ChevronUp' }),
   FileIcon: (props: { className?: string }) => icon({ ...props, name: 'FileIcon' }),
   FileImage: (props: { className?: string }) => icon({ ...props, name: 'FileImage' }),
   FileVideo: (props: { className?: string }) => icon({ ...props, name: 'FileVideo' }),
@@ -47,7 +48,7 @@ test('renders localized artifact file actions and a browser download link', () =
   const html = renderToStaticMarkup(<ArtifactFileList files={[report]} onOpenPreview={() => {}} />)
 
   expect(html).toContain('data-artifact-file-list')
-  expect(html).toContain('Generated files')
+  expect(html).not.toContain('Generated files')
   expect(html).toContain('data-icon="FileType"')
   expect(html).toContain('text-green-500')
   expect(html).toContain('report.csv')
@@ -74,11 +75,11 @@ test('shows three artifacts by default and expands the remaining files', () => {
   try {
     const renderedFiles = () => renderer.root.findAllByType(ArtifactFile).map((node) => node.props.file.filename)
     expect(renderedFiles()).toEqual(['file-1.txt', 'file-2.txt', 'file-3.txt'])
-    expect(renderer.root.findByProps({ 'aria-expanded': false }).children.join('')).toBe('Show 2 more')
+    expect(renderer.root.findByProps({ 'aria-expanded': false }).findByType('span').children.join('')).toBe('Show 2 more')
 
     rendererAct(() => renderer.root.findByProps({ 'aria-expanded': false }).props.onClick())
     expect(renderedFiles()).toEqual(['file-1.txt', 'file-2.txt', 'file-3.txt', 'file-4.txt', 'file-5.txt'])
-    expect(renderer.root.findByProps({ 'aria-expanded': true }).children.join('')).toBe('Show less')
+    expect(renderer.root.findByProps({ 'aria-expanded': true }).findByType('span').children.join('')).toBe('Show less')
 
     rendererAct(() => renderer.root.findByProps({ 'aria-expanded': true }).props.onClick())
     expect(renderedFiles()).toEqual(['file-1.txt', 'file-2.txt', 'file-3.txt'])

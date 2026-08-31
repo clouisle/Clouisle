@@ -65,13 +65,14 @@ export function getToolArtifacts(output: unknown): FilePart[] {
       const explicitFilename = typeof artifactRecord.filename === 'string'
         ? artifactRecord.filename.trim()
         : ''
+      const pathFilename = path?.split(/[\\/]/).pop() || ''
       const url = typeof artifactRecord.url === 'string' ? artifactRecord.url.trim() : undefined
       if (!url) return null
 
       return {
         type: 'file',
         path,
-        filename: explicitFilename || path?.split(/[\\/]/).pop() || path || 'artifact',
+        filename: pathFilename || explicitFilename || path || 'artifact',
         url,
         size: typeof artifactRecord.size === 'number' ? artifactRecord.size : undefined,
         mimeType: typeof artifactRecord.content_type === 'string'

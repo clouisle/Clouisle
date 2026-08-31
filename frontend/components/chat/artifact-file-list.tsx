@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
+  ChevronDown,
+  ChevronUp,
   FileIcon,
   FileImage,
   FileVideo,
@@ -18,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { getArtifactPreviewMode, isArtifactPreviewable } from './artifact-utils';
 import type { FilePart } from './types';
 const MAX_VISIBLE_FILES = 3
+
 function renderArtifactIcon(file: FilePart) {
   const className = 'h-5 w-5 text-muted-foreground'
   const extension = file.filename.toLowerCase().split('.').pop()
@@ -75,25 +78,27 @@ export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFi
   const visibleFiles = expanded ? files : files.slice(0, MAX_VISIBLE_FILES)
 
   return (
-    <div className={cn('space-y-2', className)} data-artifact-file-list>
-      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        {t('generatedFiles')}
+    <div className={cn('overflow-hidden rounded-xl border border-border/60 bg-card/30', className)} data-artifact-file-list>
+      <div className="divide-y divide-border/60">
+        {visibleFiles.map((file) => (
+          <ArtifactFile
+            key={file.path ?? file.url ?? file.filename}
+            file={file}
+            className="rounded-none border-0 bg-transparent px-3 py-2"
+            onOpenPreview={onOpenPreview}
+          />
+        ))}
       </div>
-      {visibleFiles.map((file) => (
-        <ArtifactFile
-          key={file.path ?? file.url ?? file.filename}
-          file={file}
-          onOpenPreview={onOpenPreview}
-        />
-      ))}
       {hiddenFileCount > 0 && (
         <button
           type="button"
+          data-artifact-file-toggle
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
-          className="w-full rounded-md border border-dashed py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="flex w-full items-center justify-center gap-1.5 border-t border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
         >
-          {expanded ? t('showLess') : t('showMore', { count: hiddenFileCount })}
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          <span>{expanded ? t('showLess') : t('showMore', { count: hiddenFileCount })}</span>
         </button>
       )}
     </div>
@@ -132,15 +137,15 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
   const previewable = Boolean(file.url && isArtifactPreviewable(file))
 
   return (
-    <div className={cn('flex items-center gap-3 rounded-lg border bg-card p-3', className)}>
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
+    <div className={cn('flex items-center gap-2.5 rounded-lg border bg-card p-2.5', className)}>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/70">
         {renderArtifactIcon(file)}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{file.filename}</div>
         {file.size !== undefined && (
-          <div className="text-xs text-muted-foreground">{formatFileSize(file.size)}</div>
+          <div className="text-[11px] text-muted-foreground">{formatFileSize(file.size)}</div>
         )}
       </div>
 
@@ -148,7 +153,7 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
         <button
           type="button"
           onClick={() => onOpenPreview(file)}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={`${t('preview')}: ${file.filename}`}
         >
           <Eye className="h-4 w-4" />
@@ -159,7 +164,7 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
         <a
           href={file.url}
           download={file.filename}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={`${t('download')}: ${file.filename}`}
         >
           <Download className="h-4 w-4" />

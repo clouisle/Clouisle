@@ -391,7 +391,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   loadingLabel?: string
   /** Custom part renderer */
   renderPart?: (part: MessagePart, index: number) => React.ReactNode
-  /** Whether to show copy button for assistant messages */
+  /** Content rendered between the message body and action controls */
+  afterContent?: React.ReactNode
   showCopy?: boolean
   /** Whether to show feedback buttons */
   showFeedback?: boolean
@@ -432,6 +433,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isStreaming = false,
       loadingLabel,
       renderPart,
+      afterContent,
       showCopy = true,
       showFeedback = false,
       onRegenerate,
@@ -1478,6 +1480,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         <div className="mx-auto max-w-3xl px-4">
           <AIMessage from={message.role}>
             {messageBody}
+            {afterContent}
 
             {/* Actions for user messages */}
             {isUser && !isStreaming && !isEditing && textContent && !hideMessageActions && (showCopy || onEditMessage || onSwitchVersion) && (
@@ -1620,6 +1623,7 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.isStreaming === next.isStreaming
     && prev.loadingLabel === next.loadingLabel
     && prev.renderPart === next.renderPart
+    && prev.afterContent === next.afterContent
     && prev.showCopy === next.showCopy
     && prev.showFeedback === next.showFeedback
     && prev.onRegenerate === next.onRegenerate

@@ -136,6 +136,7 @@ interface ChatMessageRowProps {
   isCurrentStreaming: boolean;
   loadingLabel?: string;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
+  afterContent?: React.ReactNode;
   onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
@@ -157,6 +158,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   isCurrentStreaming,
   loadingLabel,
   renderPart,
+  afterContent,
   onRegenerate,
   onEditMessage,
   onSwitchVersion,
@@ -203,6 +205,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
         isStreaming={isCurrentStreaming}
         loadingLabel={loadingLabel}
         renderPart={renderPart}
+        afterContent={afterContent}
         onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
         onEditMessage={message.role === 'user' && onEditMessage && message.metadata?.pendingPersistence !== true ? handleEditMessage : undefined}
         onSwitchVersion={onSwitchVersion ? handleSwitchVersion : undefined}
@@ -222,8 +225,8 @@ const ChatMessageRow = memo(function ChatMessageRow({
 }, (prev, next) => (
   prev.message === next.message
   && prev.isCurrentStreaming === next.isCurrentStreaming
-  && prev.loadingLabel === next.loadingLabel
   && prev.renderPart === next.renderPart
+  && prev.afterContent === next.afterContent
   && prev.onRegenerate === next.onRegenerate
   && prev.onEditMessage === next.onEditMessage
   && prev.onSwitchVersion === next.onSwitchVersion
@@ -299,6 +302,12 @@ export function ChatContainer({
 
   const hiddenMessageCount = messages.length - visibleMessages.length;
   const conversationArtifacts = useMemo(() => getConversationArtifacts(messages), [messages]);
+  const lastAssistantMessageId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'assistant') return messages[index].id
+    }
+    return null
+  }, [messages])
 
   const handleOpenArtifactPreview = useCallback((file: FilePart) => {
     if (!onOpenCodePreview) return;
@@ -628,6 +637,14 @@ export function ChatContainer({
                 loadingLabel={loadingLabel}
                 isCurrentStreaming={isCurrentStreaming}
                 renderPart={renderPart}
+                afterContent={message.id === lastAssistantMessageId && conversationArtifacts.length > 0 ? (
+                  <ArtifactFileList
+                    key={`artifacts-${message.id}`}
+                    files={conversationArtifacts}
+                    className="mt-3 w-full"
+                    onOpenPreview={onOpenCodePreview ? handleOpenArtifactPreview : undefined}
+                  />
+                ) : undefined}
                 onRegenerate={onRegenerate}
                 onEditMessage={isLoading || isStreaming ? undefined : onEditMessage}
                 onSwitchVersion={onSwitchVersion}
@@ -645,13 +662,6 @@ export function ChatContainer({
               />
             );
           })}
-          {conversationArtifacts.length > 0 && (
-            <ArtifactFileList
-              files={conversationArtifacts}
-              className="mx-auto max-w-3xl px-4"
-              onOpenPreview={onOpenCodePreview ? handleOpenArtifactPreview : undefined}
-            />
-          )}
           <div className="h-4" />
         </div>
       </div>

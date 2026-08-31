@@ -20,7 +20,7 @@ describe('artifact utilities', () => {
   test('parses artifact results, preserves paths, and rejects missing URLs', () => {
     expect(getToolArtifacts(JSON.stringify({
       artifacts: [
-        { path: ' /workspace/report.csv ', url: ' /files/report.csv ', size: 12, contentType: 'text/csv' },
+        { path: ' /workspace/report.csv ', filename: 'job-123_report.csv', url: ' /files/report.csv ', size: 12, contentType: 'text/csv' },
         { path: '/workspace/missing.txt' },
       ],
     }))).toEqual([

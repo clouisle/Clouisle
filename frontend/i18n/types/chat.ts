@@ -63,7 +63,6 @@ export type ChatMessages = {
       download: string
       preview: string
       files: string
-      generatedFiles: string
       showMore: string
       showLess: string
       images: string
