@@ -676,7 +676,7 @@ Response:
       "avg_duration_ms": 1200
     },
     {
-      "name": "session_memory",
+      "name": "agent",
       "pending": 5,
       "active": 0,
       "failed": 2,

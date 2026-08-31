@@ -620,7 +620,7 @@ celery_app.conf.task_routes = {
     'app.tasks.audit_log.*': {'queue': 'default'},
     'app.tasks.api_key.*': {'queue': 'default'},
     'app.tasks.password_expiration.*': {'queue': 'default'},
-    'app.tasks.session_memory.*': {'queue': 'default'},
+    'app.tasks.agent.*': {'queue': 'default'},
     # ... (see backend/app/core/celery.py for the complete route table)
 }
 

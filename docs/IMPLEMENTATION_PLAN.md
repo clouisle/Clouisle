@@ -100,7 +100,7 @@
   - [x] 4. Remove dead message_builder and divergent config helpers
   - [x] 5. Tests and coverage gate
 
-- **yun-126-optimize-context-compaction** — Complete. Replace repeated request-local history compaction with model-generated, active-branch-aware Context Checkpoints and a low-watermark budget target. See `docs/plan/yun-126-optimize-context-compaction.md`
+- **yun-126-optimize-context-compaction** — Complete (checkpoint design superseded by `agent-simple-context-summary`). Replace repeated request-local history compaction with model-generated, active-branch-aware Context Checkpoints and a low-watermark budget target. See `docs/plan/yun-126-optimize-context-compaction.md`
   - [x] 1. Repair repeated session-memory compaction semantics and SSE no-op behavior
   - [x] 2. Context Checkpoint model, migration, and service
   - [x] 3. Checkpoint-aware context assembly and target-ratio policy

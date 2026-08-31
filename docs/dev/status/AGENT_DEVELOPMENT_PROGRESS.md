@@ -689,8 +689,8 @@ API 端点：
 | `/frontend/components/chat/` | Chat 组件库目录 |
 | `/frontend/components/ai-elements/` | AI 元素组件库目录 |
 | `/frontend/hooks/use-chat.ts` | Chat 状态管理 Hook |
-| `/frontend/messages/zh.json` | 中文翻译（chat.* 命名空间） |
-| `/frontend/messages/en.json` | 英文翻译（chat.* 命名空间） |
+| `/frontend/i18n/zh/chat.json` | 中文翻译（chat.* 命名空间） |
+| `/frontend/i18n/en/chat.json` | 英文翻译（chat.* 命名空间） |
 | `/frontend/app/(platform)/app/apps/[id]/_components/agent-preview-panel.tsx` | Agent 预览面板 |
 | `/backend/app/api/v1/endpoints/chat.py` | 后端对话 API（SSE 流式） |
 | `/backend/app/schemas/agent.py` | Agent Schema（含 SSE 事件类型） |

@@ -18,8 +18,8 @@
 | `publicAgentsApi.getConversation()` | GET `/agents/conversations/{id}` | 获取对话详情 |
 | `publicAgentsApi.deleteConversation()` | DELETE `/agents/conversations/{id}` | 删除对话 |
 | `publicAgentsApi.updateConversation()` | PATCH `/agents/conversations/{id}` | 更新对话（重命名） |
-| `publicAgentsApi.chatStream()` | POST `/chat/{agentId}/chat` | 发送消息（SSE） |
-| `uploadApi.uploadFileWithProgress()` | POST `/chat/{agentId}/chat/upload` | 上传文件 |
+| `publicAgentsApi.chatStream()` | POST `/agents/{agentId}/chat/stream` | 发送消息（SSE） |
+| `uploadApi.uploadFileWithProgress()` | POST `/upload/file` | 上传文件 |
 
 **主要组件**:
 
