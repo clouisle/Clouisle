@@ -62,6 +62,8 @@
       "preview": "预览",
       "files": "文件",
       "generatedFiles": "生成的文件",
+      "showMore": "展开其余 {count} 个",
+      "showLess": "收起",
       "images": "图片"
     },
     "variables": {

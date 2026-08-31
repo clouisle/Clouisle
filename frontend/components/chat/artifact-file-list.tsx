@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
   FileIcon,
@@ -8,12 +9,96 @@ import {
   FileAudio,
   FileText,
   FileCode,
+  FileType,
+  Link,
   Download,
   Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getArtifactPreviewMode, isArtifactPreviewable } from './artifact-utils';
 import type { FilePart } from './types';
+const MAX_VISIBLE_FILES = 3
+function renderArtifactIcon(file: FilePart) {
+  const className = 'h-5 w-5 text-muted-foreground'
+  const extension = file.filename.toLowerCase().split('.').pop()
+
+  switch (extension) {
+    case 'pdf':
+      return <FileType className="h-5 w-5 text-red-500" />
+    case 'doc':
+    case 'docx':
+      return <FileType className="h-5 w-5 text-blue-500" />
+    case 'txt':
+    case 'md':
+    case 'markdown':
+      return <FileText className="h-5 w-5 text-gray-500" />
+    case 'html':
+      return <FileType className="h-5 w-5 text-orange-500" />
+    case 'csv':
+      return <FileType className="h-5 w-5 text-green-500" />
+    case 'xlsx':
+    case 'xls':
+      return <FileType className="h-5 w-5 text-green-600" />
+    case 'json':
+      return <FileType className="h-5 w-5 text-yellow-500" />
+    case 'url':
+      return <Link className="h-5 w-5 text-purple-500" />
+  }
+
+  switch (getArtifactPreviewMode(file)) {
+    case 'image':
+      return <FileImage className={className} />
+    case 'video':
+      return <FileVideo className={className} />
+    case 'audio':
+      return <FileAudio className={className} />
+    case 'html':
+      return <FileType className="h-5 w-5 text-orange-500" />
+    case 'mermaid':
+      return <FileCode className={className} />
+    case 'pdf':
+      return <FileType className="h-5 w-5 text-red-500" />
+    case 'markdown':
+    case 'text':
+      return <FileText className="h-5 w-5 text-gray-500" />
+    default:
+      return <FileIcon className={className} />
+  }
+}
+/** Compact list of downloadable artifacts collected by the chat agent. */
+export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFileListProps) {
+  const t = useTranslations('chat.file')
+  const [expanded, setExpanded] = useState(false)
+  if (files.length === 0) return null
+
+  const hiddenFileCount = files.length - MAX_VISIBLE_FILES
+  const visibleFiles = expanded ? files : files.slice(0, MAX_VISIBLE_FILES)
+
+  return (
+    <div className={cn('space-y-2', className)} data-artifact-file-list>
+      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {t('generatedFiles')}
+      </div>
+      {visibleFiles.map((file) => (
+        <ArtifactFile
+          key={file.path ?? file.url ?? file.filename}
+          file={file}
+          onOpenPreview={onOpenPreview}
+        />
+      ))}
+      {hiddenFileCount > 0 && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="w-full rounded-md border border-dashed py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          {expanded ? t('showLess') : t('showMore', { count: hiddenFileCount })}
+        </button>
+      )}
+    </div>
+  )
+}
 
 export interface ArtifactFileListProps {
   files: FilePart[];
@@ -28,26 +113,6 @@ interface ArtifactFileProps {
   onOpenPreview?: (file: FilePart) => void;
 }
 
-function renderArtifactIcon(file: FilePart) {
-  const className = 'h-5 w-5 text-muted-foreground'
-  switch (getArtifactPreviewMode(file)) {
-    case 'image':
-      return <FileImage className={className} />
-    case 'video':
-      return <FileVideo className={className} />
-    case 'audio':
-      return <FileAudio className={className} />
-    case 'html':
-    case 'mermaid':
-      return <FileCode className={className} />
-    case 'pdf':
-    case 'markdown':
-    case 'text':
-      return <FileText className={className} />
-    default:
-      return <FileIcon className={className} />
-  }
-}
 
 function formatFileSize(bytes?: number): string {
   if (bytes === undefined) return '';
@@ -100,27 +165,6 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
           <Download className="h-4 w-4" />
         </a>
       )}
-    </div>
-  )
-}
-
-/** Compact list of downloadable artifacts collected by the chat agent. */
-export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFileListProps) {
-  const t = useTranslations('chat.file')
-  if (files.length === 0) return null
-
-  return (
-    <div className={cn('space-y-2', className)} data-artifact-file-list>
-      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        {t('generatedFiles')}
-      </div>
-      {files.map((file) => (
-        <ArtifactFile
-          key={file.path ?? file.url ?? file.filename}
-          file={file}
-          onOpenPreview={onOpenPreview}
-        />
-      ))}
     </div>
   )
 }
