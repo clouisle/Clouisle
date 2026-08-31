@@ -61,6 +61,7 @@
       "download": "下载",
       "preview": "预览",
       "files": "文件",
+      "generatedFiles": "生成的文件",
       "images": "图片"
     },
     "variables": {

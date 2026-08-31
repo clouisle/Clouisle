@@ -7,7 +7,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Message } from './message';
-import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types';
+import { ArtifactFileList } from './artifact-file-list';
+import { getConversationArtifacts } from './artifact-utils';
+import type { ChatMessage, ChatPreviewPayload, FilePart, MessagePart } from './types';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
@@ -296,6 +298,16 @@ export function ChatContainer({
   );
 
   const hiddenMessageCount = messages.length - visibleMessages.length;
+  const conversationArtifacts = useMemo(() => getConversationArtifacts(messages), [messages]);
+
+  const handleOpenArtifactPreview = useCallback((file: FilePart) => {
+    if (!onOpenCodePreview) return;
+    onOpenCodePreview({
+      id: `artifact:${file.path ?? file.url ?? file.filename}`,
+      kind: 'artifact',
+      file,
+    });
+  }, [onOpenCodePreview]);
 
   // 1-based user-message ordinal for every message, used to label scale ticks.
   const userMessageOrdinals = useMemo(() => {
@@ -633,6 +645,13 @@ export function ChatContainer({
               />
             );
           })}
+          {conversationArtifacts.length > 0 && (
+            <ArtifactFileList
+              files={conversationArtifacts}
+              className="mx-auto max-w-3xl px-4"
+              onOpenPreview={onOpenCodePreview ? handleOpenArtifactPreview : undefined}
+            />
+          )}
           <div className="h-4" />
         </div>
       </div>

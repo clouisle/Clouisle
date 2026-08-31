@@ -2,9 +2,13 @@
 import { describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ChatMessage, MessagePart } from './types'
+import type { ChatMessage, FilePart, MessagePart } from './types'
 
 const messageProps: Array<Record<string, unknown>> = []
+const artifactListProps: Array<{
+  files: FilePart[]
+  onOpenPreview?: (file: FilePart) => void
+}> = []
 
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => `${key}:${values?.count ?? ''}`,
@@ -12,6 +16,14 @@ mock.module('next-intl', () => ({
 mock.module('lucide-react', () => ({ ArrowDown: () => <svg data-icon="arrow-down" /> }))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button>,
+}))
+mock.module('./artifact-file-list', () => ({
+  ArtifactFileList: (props: { files: FilePart[]; onOpenPreview?: (file: FilePart) => void }) => {
+    artifactListProps.push(props)
+    return props.files.length > 0
+      ? <aside data-artifact-file-list>{props.files.map((file) => <span key={file.path ?? file.filename}>{file.filename}</span>)}</aside>
+      : null
+  },
 }))
 mock.module('./message', () => ({
   Message: (props: Record<string, unknown>) => {
@@ -29,6 +41,7 @@ mock.module('./message', () => ({
   },
 }))
 
+
 const { ChatContainer, computeUserMessageTicks, userMessagePreview } = await import('./chat-container')
 
 function textMessage(id: string, role: ChatMessage['role'], text: string): ChatMessage {
@@ -37,6 +50,7 @@ function textMessage(id: string, role: ChatMessage['role'], text: string): ChatM
 
 function renderContainer(element: React.ReactElement) {
   messageProps.length = 0
+  artifactListProps.length = 0
   return renderToStaticMarkup(element)
 }
 
@@ -101,6 +115,61 @@ describe('ChatContainer', () => {
     expect(messageProps.some((props) => (props.message as ChatMessage).id === 'm1')).toBe(false)
     expect(html).toContain('message 25')
   })
+  test('renders the latest artifact links after messages and wires preview payloads', () => {
+    const onOpenCodePreview = mock(() => {})
+    const messages: ChatMessage[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Earlier answer' },
+          { type: 'tool-call', toolCallId: 'artifact-1', toolName: 'Artifact', input: {}, state: 'done' },
+          {
+            type: 'tool-result',
+            toolCallId: 'artifact-1',
+            toolName: 'Artifact',
+            output: { artifacts: [{ path: '/workspace/report.csv', url: '/api/old-report.csv', size: 10, content_type: 'text/csv' }] },
+          },
+        ],
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Final answer' },
+          { type: 'tool-call', toolCallId: 'artifact-2', toolName: 'artifact', input: {}, state: 'done' },
+          {
+            type: 'tool-result',
+            toolCallId: 'artifact-2',
+            toolName: 'artifact',
+            output: {
+              artifacts: [
+                { path: '/workspace/report.csv', url: '/api/new-report.csv', size: 18, content_type: 'text/csv' },
+                { path: '/workspace/summary.md', url: '/api/summary.md', contentType: 'text/markdown' },
+              ],
+            },
+          },
+        ],
+      },
+    ]
+
+    const html = renderContainer(<ChatContainer messages={messages} onOpenCodePreview={onOpenCodePreview} />)
+    expect(html.indexOf('report.csv')).toBeGreaterThan(html.indexOf('Final answer'))
+    expect(html).toContain('summary.md')
+    expect(artifactListProps).toHaveLength(1)
+    expect(artifactListProps[0].files).toEqual([
+      { type: 'file', path: '/workspace/report.csv', filename: 'report.csv', url: '/api/new-report.csv', size: 18, mimeType: 'text/csv' },
+      { type: 'file', path: '/workspace/summary.md', filename: 'summary.md', url: '/api/summary.md', mimeType: 'text/markdown' },
+    ])
+
+    artifactListProps[0].onOpenPreview?.(artifactListProps[0].files[0])
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: 'artifact:/workspace/report.csv',
+      kind: 'artifact',
+      file: artifactListProps[0].files[0],
+    })
+  })
+
 
   test('wraps role-specific message callbacks and forwards shared props', async () => {
     const onRegenerate = mock(() => {})

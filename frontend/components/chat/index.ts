@@ -12,6 +12,7 @@ export { ImageLightbox, VideoLightbox, useLightbox } from './image-lightbox';
 export { ExecutionTimeline } from './execution-timeline';
 export { NodeCard } from './node-card';
 export { UserInputRequestCard, type UserInputRequestCardProps } from './user-input-request-card';
+export { ArtifactFile, ArtifactFileList, type ArtifactFileListProps } from './artifact-file-list';
 
 // Message Parts
 export { TextContent } from './message-parts/text-content';
