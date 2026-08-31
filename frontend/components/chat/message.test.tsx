@@ -94,7 +94,7 @@ mock.module('@/components/ai-elements/tool', () => ({
   ToolOutput: ({ output, errorText }: { output?: unknown; errorText?: string }) => <pre>{errorText ?? JSON.stringify(output)}</pre>,
 }))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
-mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside>, FileListContent: ({ files }: { files: Array<{ filename: string }> }) => <div>artifacts:{files.map((file) => file.filename).join(',')}</div> }))
+mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside> }))
 mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
   Block: ({ content }: { content: string }) => (
@@ -126,7 +126,7 @@ mock.module('shiki', () => ({ bundledLanguages: { javascript: {} }, codeToTokens
 mock.module('@streamdown/math', () => ({ createMathPlugin: () => ({}) }))
 
 // Dynamic import is required so Bun module mocks are registered before Message evaluates.
-const { Message, getToolArtifacts } = await import('./message')
+const { Message } = await import('./message')
 
 const roots: Root[] = []
 afterEach(() => {
@@ -379,22 +379,8 @@ describe('message behavior', () => {
     expect(onSelectOption).toHaveBeenCalledWith('Beta')
   })
 
-  test('discovers structured artifacts', () => {
-    expect(getToolArtifacts({
-      artifacts: [
-        { path: '/workspace/report.csv', url: '/files/report.csv', size: 12, content_type: 'text/csv' },
-        { path: '/workspace/missing.csv' },
-      ],
-    })).toEqual([{
-      type: 'file',
-      filename: 'report.csv',
-      url: '/files/report.csv',
-      size: 12,
-      mimeType: 'text/csv',
-    }])
-  })
 
-  test('renders tool errors, artifacts, MCP results, and media failures', () => {
+  test('renders tool errors, artifact metadata without file cards, MCP results, and media failures', () => {
     const html = renderToStaticMarkup(<Message message={{
       id: 'tools',
       role: 'assistant',
@@ -410,7 +396,8 @@ describe('message behavior', () => {
     }} />)
 
     expect(html).toContain('chat.message.toolExecutionFailed')
-    expect(html).toContain('artifacts:report.csv')
+    expect(html).not.toContain('artifacts:report.csv')
+    expect(html).toContain('&quot;/report.csv&quot;')
     expect(html).toContain('docs/lookup')
     expect(html).toContain('&quot;found&quot;:true')
     expect(html).toContain('Generation failed')
@@ -568,7 +555,7 @@ describe('message behavior', () => {
     expect(html).toContain('Done thinking')
   })
 
-  test('renders media URLs, fallbacks, string results, and artifact metadata', () => {
+  test('renders media URLs, fallbacks, string results, and artifact metadata without file cards', () => {
     const html = renderToStaticMarkup(<Message message={{
       id: 'media-variants',
       role: 'assistant',
@@ -592,7 +579,8 @@ describe('message behavior', () => {
     expect(html).toContain('data:image/webp;base64,abc')
     expect(html).toContain('chat.message.generatedImageAlt')
     expect(html).toContain('&quot;answer&quot;:42')
-    expect(html).toContain('artifacts:named.bin')
+    expect(html).not.toContain('artifacts:named.bin')
+    expect(html).toContain('named.bin')
   })
 
   test('supports custom part rendering and user control boundaries', () => {

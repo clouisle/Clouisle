@@ -68,7 +68,7 @@ import {
   isStoppedPart,
   isIterationCapReachedPart,
 } from './types'
-import { SourceContent, FileListContent } from './message-parts'
+import { SourceContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
 import {
   getImageAssetUrl,
@@ -122,9 +122,6 @@ type ParsedCodeFence = {
 }
 
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function getSpeechPreferredLanguages(locale: string) {
   const languages = [locale]
@@ -263,34 +260,6 @@ function findSpeechSentence(sentences: SpeechSentence[], charIndex: number) {
   return sentences.find((sentence) => charIndex >= sentence.start && charIndex < sentence.end) ?? sentences.at(-1) ?? null
 }
 
-export function getToolArtifacts(output: unknown): FilePart[] {
-  if (!isRecord(output) || !Array.isArray(output.artifacts)) {
-    return []
-  }
-
-  return output.artifacts
-    .filter(isRecord)
-    .map((artifact): FilePart | null => {
-      const path = typeof artifact.path === 'string' ? artifact.path : undefined
-      const explicitFilename = typeof artifact.filename === 'string' ? artifact.filename : undefined
-      const url = typeof artifact.url === 'string' ? artifact.url : undefined
-      if (!url) {
-        return null
-      }
-      return {
-        type: 'file',
-        filename: explicitFilename || path?.split('/').pop() || path || 'artifact',
-        url,
-        size: typeof artifact.size === 'number' ? artifact.size : undefined,
-        mimeType: typeof artifact.content_type === 'string'
-          ? artifact.content_type
-          : typeof artifact.contentType === 'string'
-            ? artifact.contentType
-            : undefined,
-      }
-    })
-    .filter((file): file is FilePart => file !== null)
-}
 
 
 function parseCodeFence(content: string): ParsedCodeFence | null {
@@ -744,16 +713,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [isSpeakingThisMessage, onRequestScrollIntoView])
 
-    const handleArtifactPreview = React.useCallback((file: FilePart) => {
-      if (!file.url || !onOpenCodePreview) {
-        return
-      }
-      onOpenCodePreview({
-        id: `${message.id}:artifact:${file.url}`,
-        kind: 'artifact',
-        file,
-      })
-    }, [message.id, onOpenCodePreview])
 
     const renderToolResultContent = React.useCallback((output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
@@ -860,21 +819,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
-      const artifactFiles = getToolArtifacts(parsedOutput)
-      if (artifactFiles.length > 0) {
-        return (
-          <div className="space-y-3">
-            <FileListContent
-              files={artifactFiles}
-              onPreview={onOpenCodePreview ? handleArtifactPreview : undefined}
-            />
-            <ToolOutput
-              output={parsedOutput}
-              errorText={isError ? t('toolExecutionFailed') : undefined}
-            />
-          </div>
-        )
-      }
 
       return (
         <ToolOutput
@@ -882,7 +826,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
-    }, [handleArtifactPreview, onOpenCodePreview, onSelectImageReference, openLightbox, t])
+    }, [onSelectImageReference, openLightbox, t])
 
     // Render a single part
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
