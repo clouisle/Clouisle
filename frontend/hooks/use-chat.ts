@@ -547,6 +547,26 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     syncStreamingState(session)
   }, [cancelScheduledStreamingFlush, syncStreamingState, tAuth, tError])
 
+  const reconcileOptimisticUserMessage = useCallback((
+    session: AssistantStreamSession,
+    persistedUserMessageId: string,
+  ) => {
+    const optimisticUserMessageId = session.optimisticUserMessageId
+    if (!optimisticUserMessageId) return
+
+    session.optimisticUserMessageId = persistedUserMessageId
+    setMessages((previous) => previous.map((message) => {
+      if (message.id !== optimisticUserMessageId) return message
+      const metadata = { ...message.metadata }
+      delete metadata.pendingPersistence
+      return {
+        ...message,
+        id: persistedUserMessageId,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      }
+    }))
+  }, [])
+
   const markRunInputAccepted = useCallback((data: Record<string, unknown>, event: NormalizedStreamEvent) => {
     const kind = data.kind === 'follow_up' ? 'follow_up' : 'steer'
     const content = typeof data.content === 'string' ? data.content : ''
@@ -669,12 +689,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           onConversationChange?.(nextConversationId)
         }
       }
-      if (startData.user_message_id && session.optimisticUserMessageId) {
-        setMessages((previous) => previous.map((message) => (
-          message.id === session.optimisticUserMessageId
-            ? { ...message, id: startData.user_message_id as string }
-            : message
-        )))
+      if (startData.user_message_id) {
+        reconcileOptimisticUserMessage(session, startData.user_message_id)
       }
       if (session.sourceMessageId && startData.edited_message_id) {
         setMessages((previous) => previous.map((message) => (
@@ -794,6 +810,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     notifyStreamEnd,
     onConversationChange,
     onError,
+    reconcileOptimisticUserMessage,
     reloadConversationMessages,
     renderSession,
     resetStreamingState,
@@ -1099,6 +1116,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       role: 'user',
       parts: buildUserMessageParts(content, images, fileUrls),
       createdAt: new Date(),
+      metadata: { pendingPersistence: true },
     }
     const assistantMessageId = `assistant-${Date.now()}`
     const assistantMessage: ChatMessage = {
@@ -1139,6 +1157,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         await consumeStream(session, async () => {
           const started = await api.startRun!(agentId, request)
           session.runId = started.run_id
+          reconcileOptimisticUserMessage(session, started.user_message_id)
           trackRun(started.run_id, started.conversation_id)
           setCurrentRunStatus(started.status)
           if (started.conversation_id && conversationIdRef.current !== started.conversation_id) {
@@ -1160,7 +1179,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     } else {
       await consumeStream(session, () => api.chatStream(agentId, request))
     }
-  }, [agentId, api, consumeStream, onConversationChange, setConversationId, setCurrentRunStatus, setCurrentStatus, submitRunInput, syncStreamingState, trackRun, variables])
+  }, [agentId, api, consumeStream, onConversationChange, reconcileOptimisticUserMessage, setConversationId, setCurrentRunStatus, setCurrentStatus, submitRunInput, syncStreamingState, trackRun, variables])
 
   const stop = useCallback(async () => {
     let activeRunId = runIdRef.current ?? activeSessionRef.current?.runId ?? null
@@ -1258,6 +1277,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [agentId, api, reloadConversationMessages])
 
   const editMessage = useCallback(async (messageId: string, content: string) => {
+    if (statusRef.current !== 'idle' || !isValidUUID(messageId)) return
     const targetIndex = messagesRef.current.findIndex((message) => message.id === messageId)
     if (targetIndex < 0 || messagesRef.current[targetIndex].role !== 'user') return
 

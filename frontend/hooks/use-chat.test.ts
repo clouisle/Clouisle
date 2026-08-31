@@ -10,6 +10,7 @@ type HookOptions = {
   onError?: (error: { code?: number; message: string }) => void
   onStreamStart?: () => void
   onStreamEnd?: () => void
+  api?: import('./use-chat').ChatStreamApi
 }
 
 type HookResult = ReturnType<typeof import('./use-chat').useChat>
@@ -246,6 +247,39 @@ describe('useChat', () => {
     })
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'Hi there', state: 'done' })
   })
+  it('reconciles the optimistic user ID from durable start before message_start', async () => {
+    const userMessageId = '11111111-1111-1111-1111-111111111111'
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
+    })
+    const startRun = mock(async () => ({
+      run_id: 'run-1',
+      conversation_id: 'conversation-1',
+      user_message_id: userMessageId,
+      status: 'queued' as const,
+      stream_url: '/agents/agent-1/chat/runs/run-1/stream',
+    }))
+    const streamRun = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
+    const durableApi = {
+      ...agentsApi,
+      startRun,
+      streamRun,
+    } as unknown as NonNullable<HookOptions['api']>
+    options = { agentId: 'agent-1', api: durableApi }
+    renderHookHarness()
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'run_end', { status: 'completed' }),
+    ]
+
+    await result.sendMessage('question')
+
+    expect(startRun).toHaveBeenCalledWith('agent-1', expect.objectContaining({ message: 'question' }))
+    expect(result.messages[0]).toMatchObject({ id: userMessageId, role: 'user' })
+    expect(result.messages[0].metadata?.pendingPersistence).toBeUndefined()
+  })
+
 
   it('stops an active stream, aborts it, and preserves partial output as stopped', async () => {
     const blocked = deferred<void>()
@@ -596,6 +630,24 @@ describe('useChat', () => {
     await result.editMessage('assistant-2', 'ignored')
     expect(editMessageStream).toHaveBeenCalledTimes(1)
   })
+  it('does not route an unsaved user message to the UUID-only edit endpoint', async () => {
+    result.setMessages([
+      {
+        id: 'user-pending',
+        role: 'user',
+        parts: [{ type: 'text', text: 'original' }],
+        metadata: { pendingPersistence: true },
+      },
+    ] as ChatMessage[])
+    await flush()
+
+    await result.editMessage('user-pending', 'updated')
+
+    expect(editMessageStream).not.toHaveBeenCalled()
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0].parts).toEqual([{ type: 'text', text: 'original' }])
+  })
+
 
   it('renders the complete assistant stream while an edited response is in progress', async () => {
     const userId = '11111111-1111-1111-1111-111111111111'

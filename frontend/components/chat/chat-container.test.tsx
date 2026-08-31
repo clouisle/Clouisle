@@ -132,6 +132,26 @@ describe('ChatContainer', () => {
     expect(messageProps.every((props) => props.hideToolCalls === true)).toBe(true)
     expect(messageProps.every((props) => props.onOpenCodePreview === onOpenCodePreview)).toBe(true)
   })
+  test('withholds editing until a user message is persisted and the run is idle', () => {
+    const onEditMessage = mock(() => Promise.resolve())
+    const pendingMessage = {
+      ...textMessage('user-pending', 'user', 'hello'),
+      metadata: { pendingPersistence: true },
+    }
+
+    renderContainer(<ChatContainer messages={[pendingMessage]} onEditMessage={onEditMessage} />)
+    expect(messageProps[0].onEditMessage).toBeUndefined()
+
+    renderContainer(<ChatContainer messages={[textMessage('user-1', 'user', 'hello')]} isLoading onEditMessage={onEditMessage} />)
+    expect(messageProps[0].onEditMessage).toBeUndefined()
+
+    renderContainer(<ChatContainer messages={[textMessage('user-1', 'user', 'hello')]} isStreaming onEditMessage={onEditMessage} />)
+    expect(messageProps[0].onEditMessage).toBeUndefined()
+
+    renderContainer(<ChatContainer messages={[textMessage('user-1', 'user', 'hello')]} onEditMessage={onEditMessage} />)
+    expect(typeof messageProps[0].onEditMessage).toBe('function')
+  })
+
 
   test('renders the user message scale only when enabled', () => {
     const messages = [textMessage('u1', 'user', 'hello')]

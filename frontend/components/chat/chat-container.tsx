@@ -197,7 +197,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
         isStreaming={isCurrentStreaming}
         renderPart={renderPart}
         onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
-        onEditMessage={message.role === 'user' && onEditMessage ? handleEditMessage : undefined}
+        onEditMessage={message.role === 'user' && onEditMessage && message.metadata?.pendingPersistence !== true ? handleEditMessage : undefined}
         onSwitchVersion={onSwitchVersion ? handleSwitchVersion : undefined}
         chainOfThoughtOpen={chainOfThoughtOpen}
         onChainOfThoughtOpenChange={handleChainOfThoughtOpenChange}
@@ -609,7 +609,7 @@ export function ChatContainer({
                 isCurrentStreaming={isCurrentStreaming}
                 renderPart={renderPart}
                 onRegenerate={onRegenerate}
-                onEditMessage={onEditMessage}
+                onEditMessage={isLoading || isStreaming ? undefined : onEditMessage}
                 onSwitchVersion={onSwitchVersion}
                 onSelectOption={onSelectOption}
                 onSelectImageReference={onSelectImageReference}
