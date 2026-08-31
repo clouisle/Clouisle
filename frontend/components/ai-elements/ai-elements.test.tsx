@@ -537,6 +537,7 @@ describe('ai elements', () => {
     const assistant = renderToStaticMarkup(<Message from="assistant">hello</Message>)
     const image = renderToStaticMarkup(<MessageAttachment data={{ filename: 'photo.png', mediaType: 'image/png', url: '/photo.png' } as never} />)
     const document = renderToStaticMarkup(<MessageAttachment data={{ filename: 'notes.pdf', mediaType: 'application/pdf', url: '/notes.pdf' } as never} />)
+    const spreadsheet = renderToStaticMarkup(<MessageAttachment data={{ filename: 'report.csv', mediaType: 'text/csv', url: '/report.csv' } as never} />)
 
     expect(user).toContain('is-user')
     expect(user).toContain('ml-auto')
@@ -545,5 +546,7 @@ describe('ai elements', () => {
     expect(image).toContain('alt="photo.png"')
     expect(document).toContain('href="/notes.pdf"')
     expect(document).toContain('download="notes.pdf"')
+    expect(document).toContain('text-red-500')
+    expect(spreadsheet).toContain('text-green-500')
   })
 })

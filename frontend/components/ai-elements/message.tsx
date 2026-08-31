@@ -12,15 +12,16 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { FileUIPart, UIMessage } from "ai";
+import { FileTypeIcon } from "@/components/file-type-icon";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
-  PaperclipIcon,
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import { createContext, memo, useContext, useEffect, useState, useMemo, Children, isValidElement } from "react";
 import { Streamdown } from "streamdown";
+
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -404,7 +405,7 @@ export function MessageAttachment({
             )}
             {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
           >
-            <PaperclipIcon className="size-3.5 text-muted-foreground shrink-0" />
+            <FileTypeIcon filename={filename} mimeType={data.mediaType} className="size-3.5 shrink-0" />
             <span className="truncate max-w-32">{filename || "Attachment"}</span>
             {onRemove && (
               <Button

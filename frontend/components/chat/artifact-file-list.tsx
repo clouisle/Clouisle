@@ -5,69 +5,15 @@ import { useTranslations } from 'next-intl';
 import {
   ChevronDown,
   ChevronUp,
-  FileIcon,
-  FileImage,
-  FileVideo,
-  FileAudio,
-  FileText,
-  FileCode,
-  FileType,
-  Link,
   Download,
   Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getArtifactPreviewMode, isArtifactPreviewable } from './artifact-utils';
+import { isArtifactPreviewable } from './artifact-utils';
+import { FileTypeIcon } from '@/components/file-type-icon';
 import type { FilePart } from './types';
 const MAX_VISIBLE_FILES = 3
 
-function renderArtifactIcon(file: FilePart) {
-  const className = 'h-5 w-5 text-muted-foreground'
-  const extension = file.filename.toLowerCase().split('.').pop()
-
-  switch (extension) {
-    case 'pdf':
-      return <FileType className="h-5 w-5 text-red-500" />
-    case 'doc':
-    case 'docx':
-      return <FileType className="h-5 w-5 text-blue-500" />
-    case 'txt':
-    case 'md':
-    case 'markdown':
-      return <FileText className="h-5 w-5 text-gray-500" />
-    case 'html':
-      return <FileType className="h-5 w-5 text-orange-500" />
-    case 'csv':
-      return <FileType className="h-5 w-5 text-green-500" />
-    case 'xlsx':
-    case 'xls':
-      return <FileType className="h-5 w-5 text-green-600" />
-    case 'json':
-      return <FileType className="h-5 w-5 text-yellow-500" />
-    case 'url':
-      return <Link className="h-5 w-5 text-purple-500" />
-  }
-
-  switch (getArtifactPreviewMode(file)) {
-    case 'image':
-      return <FileImage className={className} />
-    case 'video':
-      return <FileVideo className={className} />
-    case 'audio':
-      return <FileAudio className={className} />
-    case 'html':
-      return <FileType className="h-5 w-5 text-orange-500" />
-    case 'mermaid':
-      return <FileCode className={className} />
-    case 'pdf':
-      return <FileType className="h-5 w-5 text-red-500" />
-    case 'markdown':
-    case 'text':
-      return <FileText className="h-5 w-5 text-gray-500" />
-    default:
-      return <FileIcon className={className} />
-  }
-}
 /** Compact list of downloadable artifacts collected by the chat agent. */
 export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFileListProps) {
   const t = useTranslations('chat.file')
@@ -139,7 +85,7 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
   return (
     <div className={cn('flex items-center gap-2.5 rounded-lg border bg-card p-2.5', className)}>
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/70">
-        {renderArtifactIcon(file)}
+        <FileTypeIcon filename={file.filename} mimeType={file.mimeType} />
       </div>
 
       <div className="min-w-0 flex-1">
