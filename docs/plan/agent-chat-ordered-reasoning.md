@@ -1,5 +1,5 @@
 # Ordered Agent Reasoning Timeline
-**Status: Complete — Stage 8 separates reasoning, tasks, tools, and final answers into distinct chronological surfaces.**
+**Status: Complete — Stage 9 keeps tasks and tool executions inside each collapsible ChainOfThought and makes its header identify the current operation.**
 
 ## Background & Goals
 
@@ -25,7 +25,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
 - Add RAG and generating task transitions to the same ordered segment list at the event that starts them. Compression already follows this pattern. Aggregate `taskState` remains for lifecycle/fallback checks, but is no longer used to prepend/append visual tasks.
 - Keep each reasoning start as a new segment and update it by its recorded reasoning index. Do not use a message-global reasoning bucket for rendering.
 - Build `Message.parts` by one ordered segment walk, retaining source documents as the existing citation footer. Reconnect seeding and terminal finalization must use the same segment representation.
-- Render assistant parts with one chronological walk. Use existing `ChainOfThought`/`ChainOfThoughtHeader`/`ChainOfThoughtContent` primitives for each reasoning part, existing `Tool` primitives for each tool execution, `TextWithCitations` for text, and existing media/user-input/error marker renderers for their original positions. Do not adopt the legacy `message-parts/ReasoningContent` or `ToolContent` components in this change because the current message renderer owns richer media/artifact result handling.
+- Render assistant parts with one chronological walk. Each reasoning iteration owns one collapsible `ChainOfThought` whose content keeps its task and tool nodes together; ordinary/final text remains in the normal message surface. Use existing `ChainOfThoughtStep` and `Tool` primitives plus `TextWithCitations` and the current media/user-input/error renderers. Do not adopt the legacy `message-parts/ReasoningContent` or `ToolContent` components in this change because the current message renderer owns richer media/artifact result handling.
 - Keep `hideReasoning` independent from `hideToolCalls`; hiding the reasoning panels must not accidentally hide visible tools.
 
 ## Implementation Plan
@@ -107,7 +107,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
 
 - **Observed**: Focused isolated frontend suite passed (102 tests across 5 files), the full frontend coverage suite passed (2276 tests across 515 files), LCOV completeness passed for 489 eligible files, TypeScript passed, ESLint passed with two pre-existing warnings, translation lint passed, diff whitespace checks passed, and the backend stream/durable smoke suite passed (17 tests). The standalone `pre-commit` executable is unavailable, but the repository commit hook passed.
 
-### Stage 8: Separate reasoning, execution, and answer surfaces
+### Stage 8: Separate reasoning, execution, and answer surfaces (superseded by Stage 9)
 
 - **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, and only the related test mocks if required.
 - **Specific logic**:
@@ -120,6 +120,18 @@ Tool call plus its result remains one execution card, anchored at the call posit
 - **Observed**: Focused message/task/chat-container regressions passed; the isolated frontend suite passed (2277 tests across 515 files); frontend coverage and LCOV completeness passed; TypeScript, ESLint, translation lint, and diff checks passed; the backend stream/durable smoke suite passed (17 tests). No application service or browser was started.
 
 - **Acceptance**: Live and historical Agent messages display each reasoning iteration and tool execution in chronological order; no distinct reasoning/tool occurrences are collapsed; hide flags and rich tool results retain their existing contracts; all focused and required gates pass.
+
+### Stage 9: Keep activity nested and label the current operation
+
+- **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, and the implementation-plan documents.
+- **Specific logic**:
+  1. Keep task status rows and normal/MCP tool execution cards inside the surrounding collapsible `ChainOfThought`; do not expose them as sibling surfaces.
+  2. Preserve one thought container per reasoning iteration and the existing chronological grouping, tool/result pairing, rich output handling, hide flags, and controlled open-state behavior.
+  3. Derive the `ChainOfThought` header from the latest task or tool action, using localized task text and the tool display name/server path, while retaining the duration fallback for reasoning-only groups.
+- **Validation**: Message tests assert task/tool descendants, independent tool disclosure, chronological grouping, and action-specific thought headers such as the active tool name and compression task text.
+- **Observed**: The corrected message renderer passed 41 focused tests; the full frontend suite passed (2277 tests across 515 files), frontend coverage and LCOV completeness passed for 489 eligible files, TypeScript, ESLint, translation lint, and diff checks passed, and the backend stream/durable smoke suite passed (17 tests). No application service or browser was started.
+
+- **Acceptance**: Tool and task details remain inside the collapsible thought process, while its header text tells users which operation the Agent is performing.
 
 ## Testing Strategy
 
