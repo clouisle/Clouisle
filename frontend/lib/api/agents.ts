@@ -360,6 +360,13 @@ export interface AgentRunStatusOut {
   started_at?: string | null
   finished_at?: string | null
 }
+export interface AgentRunStartOut {
+  run_id: string
+  conversation_id: string
+  user_message_id: string
+  status: AgentRunStatus
+  stream_url: string
+}
 
 export interface AgentRunEventOut {
   run_id: string
@@ -920,6 +927,36 @@ export const agentsApi = {
       body: JSON.stringify(data),
       signal: controller.signal,
     })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
+  },
+  /** Queue a durable AgentRun and return its reconnectable identity. */
+  startRun: async (agentId: string, data: ChatRequest): Promise<AgentRunStartOut> => {
+    return api.post<AgentRunStartOut>(`/agents/${agentId}/chat/runs`, data)
+  },
+
+  /** Subscribe to replayed and live events for a durable AgentRun. */
+  streamRun: (
+    agentId: string,
+    runId: string,
+    afterSequence = 0,
+  ): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+    const stream = fetch(
+      `${baseUrl}/agents/${agentId}/chat/runs/${runId}/stream?after_sequence=${afterSequence}`,
+      {
+        headers: {
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: controller.signal,
+      },
+    )
 
     return {
       stream,

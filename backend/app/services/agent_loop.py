@@ -315,34 +315,37 @@ class AgentLoop:
         self,
         *,
         tc: Any,
-        iteration: int,
         image_pool: list[Any],
-        image_inventory: list[dict[str, str]],
-        pending_tool_calls: list[dict[str, Any]],
-        full_content: str,
-        full_reasoning: str,
-    ) -> tuple[str, str, str | None]:  # (tool_call_sse, tool_result_sse, media_sse)
-        """Execute one tool call (serial helper shared by group runners)."""
+        image_inventory: list[dict[str, Any]],
+    ) -> tuple[str, str, str | None, dict[str, Any]]:
+        """Execute one tool and return its protocol record.
+
+        Execution may overlap for shared tools, but persistence and event
+        emission happen in the caller's original tool-call order. A tool
+        failure is represented as an error result so sibling calls and the
+        provider protocol remain intact.
+        """
         ctx = self.context
-        tool_name = getattr(tc.function, "name", None)
+        tool_name = getattr(tc.function, "name", None) or ""
+        arguments = _safe_arguments(getattr(tc.function, "arguments", None))
         if not tool_name:
-            # A truncated/incomplete tool call: pair it with an explicit
-            # skipped error result so no orphan enters provider history.
-            assert ctx.round_id is not None
-            tool_index = self._next_round_index()
-            await agent_round.persist_tool_result(
-                conversation=ctx.conversation,
-                content='{"error": "tool_call_truncated"}',
-                tool_call_id=tc.id,
-                tool_name="",
-                round_id=ctx.round_id,
-                round_index=tool_index,
-                iteration_index=iteration,
+            error_result = json.dumps(
+                {"error": "tool_call_truncated"}, ensure_ascii=False
             )
-            ctx.created_message_count += 1
-            return "", "", None
-        assert ctx.round_id is not None
-        arguments = _safe_arguments(tc.function.arguments)
+            return (
+                "",
+                "",
+                None,
+                {
+                    "id": tc.id,
+                    "name": "",
+                    "arguments": arguments,
+                    "display_result": error_result,
+                    "llm_result": error_result,
+                    "display_name": "",
+                },
+            )
+
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
         tool_call_event = build_tool_call_sse_event(
             tool_call_id=tc.id,
@@ -350,49 +353,122 @@ class AgentLoop:
             tool_display_name=display_name,
             arguments=arguments,
         )
-        assert ctx.round_id is not None
         tool_runner = ctx.execute_tool_call or execute_tool_call
-        tool_result = await tool_runner(
-            tool_name,
-            arguments,
-            agent=ctx.agent,
-            tool_timeouts=ctx.tool_timeouts,
-            user=ctx.user,
-            session_id=ctx.sandbox_session_id,
-            current_images=image_pool,
-            conversation_id=ctx.conversation.id,
+        try:
+            tool_result = await tool_runner(
+                tool_name,
+                arguments,
+                agent=ctx.agent,
+                tool_timeouts=ctx.tool_timeouts,
+                user=ctx.user,
+                session_id=ctx.sandbox_session_id,
+                current_images=image_pool,
+                conversation_id=ctx.conversation.id,
+            )
+            display_result, llm_result = get_tool_execution_payloads(tool_result)
+            if ctx.append_generated_images is not None:
+                ctx.append_generated_images(image_pool, image_inventory, display_result)
+        except Exception as exc:
+            logger.warning(
+                "Tool %s failed in AgentLoop: %s",
+                tool_name,
+                str(exc) or type(exc).__name__,
+                exc_info=True,
+            )
+            display_result = json.dumps(
+                {"error": str(exc) or type(exc).__name__}, ensure_ascii=False
+            )
+            llm_result = display_result
+
+        record = {
+            "id": tc.id,
+            "name": tool_name,
+            "arguments": arguments,
+            "display_result": display_result,
+            "llm_result": llm_result,
+            "display_name": display_name,
+        }
+        return (
+            tool_call_event,
+            build_tool_result_sse_event(
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                tool_display_name=display_name,
+                display_result=display_result,
+            ),
+            build_media_result_sse_event(display_result),
+            record,
         )
-        display_result, llm_result = get_tool_execution_payloads(tool_result)
-        if ctx.append_generated_images is not None:
-            ctx.append_generated_images(image_pool, image_inventory, display_result)
-        tool_result_event = build_tool_result_sse_event(
-            tool_call_id=tc.id,
-            tool_name=tool_name,
-            tool_display_name=display_name,
-            display_result=display_result,
-        )
-        pending_tool_calls.append(
+
+    def _skipped_tool(
+        self, tc: Any, *, reason: str
+    ) -> tuple[str, str, str | None, dict[str, Any]]:
+        """Build a protocol-complete result without executing a tool."""
+        tool_name = getattr(tc.function, "name", None) or ""
+        arguments = _safe_arguments(getattr(tc.function, "arguments", None))
+        display_name = self.context.tool_display_names.get(tool_name, tool_name)
+        error_result = json.dumps({"error": reason}, ensure_ascii=False)
+        if not tool_name:
+            return (
+                "",
+                "",
+                None,
+                {
+                    "id": tc.id,
+                    "name": "",
+                    "arguments": arguments,
+                    "display_result": error_result,
+                    "llm_result": error_result,
+                    "display_name": "",
+                },
+            )
+        return (
+            build_tool_call_sse_event(
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                tool_display_name=display_name,
+                arguments=arguments,
+            ),
+            build_tool_result_sse_event(
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                tool_display_name=display_name,
+                display_result=error_result,
+            ),
+            None,
             {
                 "id": tc.id,
                 "name": tool_name,
                 "arguments": arguments,
-                "display_result": display_result,
-                "llm_result": llm_result,
+                "display_result": error_result,
+                "llm_result": error_result,
                 "display_name": display_name,
-            }
+            },
         )
-        if ctx.persist_step_per_tool:
+
+    async def _persist_tool_record(
+        self,
+        record: dict[str, Any],
+        *,
+        iteration: int,
+        content: str,
+        reasoning: str,
+    ) -> None:
+        """Persist one tool protocol pair in stable round order."""
+        ctx = self.context
+        assert ctx.round_id is not None
+        if record["name"]:
             step_index = self._next_round_index()
             await agent_round.persist_assistant_step(
                 conversation=ctx.conversation,
-                content=full_content,
-                reasoning_content=full_reasoning or None,
+                content=content,
+                reasoning_content=reasoning or None,
                 tool_calls=[
                     {
-                        "id": tc.id,
-                        "name": tool_name,
-                        "display_name": display_name,
-                        "arguments": arguments,
+                        "id": record["id"],
+                        "name": record["name"],
+                        "display_name": record["display_name"],
+                        "arguments": record["arguments"],
                     }
                 ],
                 model_used=ctx.model_used,
@@ -403,44 +479,41 @@ class AgentLoop:
             )
             self._append_history(
                 role="assistant",
-                content=full_content,
-                reasoning_content=full_reasoning or None,
+                content=content,
+                reasoning_content=reasoning or None,
                 tool_calls=[
                     {
-                        "id": tc.id,
-                        "name": tool_name,
-                        "display_name": display_name,
-                        "arguments": arguments,
+                        "id": record["id"],
+                        "name": record["name"],
+                        "display_name": record["display_name"],
+                        "arguments": record["arguments"],
                     }
                 ],
                 round_index=step_index,
                 iteration=iteration,
             )
-            tool_index = self._next_round_index()
-            await agent_round.persist_tool_result(
-                conversation=ctx.conversation,
-                content=display_result,
-                tool_call_id=tc.id,
-                tool_name=tool_name,
-                round_id=ctx.round_id,
-                round_index=tool_index,
-                iteration_index=iteration,
-                branch_parent_id=ctx.step_branch_parent_id,
-            )
-            self._append_history(
-                role="tool",
-                content=llm_result,
-                tool_call_id=tc.id,
-                tool_name=tool_name,
-                round_index=tool_index,
-                iteration=iteration,
-            )
-            ctx.created_message_count += 2
-        return (
-            tool_call_event,
-            tool_result_event,
-            build_media_result_sse_event(display_result),
+            ctx.created_message_count += 1
+
+        tool_index = self._next_round_index()
+        await agent_round.persist_tool_result(
+            conversation=ctx.conversation,
+            content=record["display_result"],
+            tool_call_id=record["id"],
+            tool_name=record["name"],
+            round_id=ctx.round_id,
+            round_index=tool_index,
+            iteration_index=iteration,
+            branch_parent_id=ctx.step_branch_parent_id,
         )
+        self._append_history(
+            role="tool",
+            content=record["llm_result"],
+            tool_call_id=record["id"],
+            tool_name=record["name"],
+            round_index=tool_index,
+            iteration=iteration,
+        )
+        ctx.created_message_count += 1
 
     def _context_kwargs(self, tool_definition_tokens: int) -> dict[str, Any]:
         ctx = self.context
@@ -838,8 +911,32 @@ class AgentLoop:
                         # Cooperative stop between barriers: unstarted calls
                         # get explicit protocol-complete skipped results.
                         for tc in group:
+                            result = self._skipped_tool(
+                                tc, reason="tool_call_skipped_due_to_stop"
+                            )
+                            call_sse, result_sse, media_sse, record = result
+                            event = self._emit(TOOL_CALL, {"sse": call_sse})
+                            if event:
+                                yield event
+                            event = self._emit(TOOL_RESULT, {"sse": result_sse})
+                            if event:
+                                yield event
+                            if media_sse:
+                                event = self._emit(MEDIA_RESULT, {"sse": media_sse})
+                                if event:
+                                    yield event
+                            if ctx.persist_step_per_tool:
+                                await self._persist_tool_record(
+                                    record,
+                                    iteration=iteration,
+                                    content=iteration_content,
+                                    reasoning=iteration_reasoning,
+                                )
+                            else:
+                                pending_tool_calls.append(record)
                             called_now.append(tc)
                         break
+
                     # Shared group runs concurrently; exclusive group runs alone.
                     if (
                         len(group) > 1
@@ -853,25 +950,26 @@ class AgentLoop:
                         async def _run_shared(tc):
                             return await self._execute_one_tool(
                                 tc=tc,
-                                iteration=iteration,
                                 image_pool=ctx.image_pool,
                                 image_inventory=ctx.image_inventory,
-                                pending_tool_calls=pending_tool_calls,
-                                full_content=full_content,
-                                full_reasoning=full_reasoning,
                             )
 
-                        try:
-                            results = await _asyncio.gather(
-                                *[_run_shared(tc) for tc in group]
-                            )
-                        except Exception as exc:
-                            # A shared sibling failure must not lose results:
-                            # persist an error result for every call in group.
-                            raise exc
-                        for tc, (call_sse, result_sse, media_sse) in zip(
-                            group, results
-                        ):
+                        results = await _asyncio.gather(
+                            *[_run_shared(tc) for tc in group],
+                            return_exceptions=True,
+                        )
+                        for tc, result in zip(group, results):
+                            if isinstance(result, BaseException):
+                                if isinstance(result, _asyncio.CancelledError):
+                                    raise result
+                                result = self._skipped_tool(
+                                    tc,
+                                    reason=(
+                                        "tool_execution_failed: "
+                                        f"{type(result).__name__}"
+                                    ),
+                                )
+                            call_sse, result_sse, media_sse, record = result
                             event = self._emit(TOOL_CALL, {"sse": call_sse})
                             if event:
                                 yield event
@@ -882,21 +980,27 @@ class AgentLoop:
                                 event = self._emit(MEDIA_RESULT, {"sse": media_sse})
                                 if event:
                                     yield event
-                        called_now.extend(group)
+                            if ctx.persist_step_per_tool:
+                                await self._persist_tool_record(
+                                    record,
+                                    iteration=iteration,
+                                    content=iteration_content,
+                                    reasoning=iteration_reasoning,
+                                )
+                            else:
+                                pending_tool_calls.append(record)
+                            called_now.append(tc)
                     else:
                         for tc in group:
                             (
                                 call_sse,
                                 result_sse,
                                 media_sse,
+                                record,
                             ) = await self._execute_one_tool(
                                 tc=tc,
-                                iteration=iteration,
                                 image_pool=ctx.image_pool,
                                 image_inventory=ctx.image_inventory,
-                                pending_tool_calls=pending_tool_calls,
-                                full_content=full_content,
-                                full_reasoning=full_reasoning,
                             )
                             event = self._emit(TOOL_CALL, {"sse": call_sse})
                             if event:
@@ -908,44 +1012,57 @@ class AgentLoop:
                                 event = self._emit(MEDIA_RESULT, {"sse": media_sse})
                                 if event:
                                     yield event
+                            if ctx.persist_step_per_tool:
+                                await self._persist_tool_record(
+                                    record,
+                                    iteration=iteration,
+                                    content=iteration_content,
+                                    reasoning=iteration_reasoning,
+                                )
+                            else:
+                                pending_tool_calls.append(record)
                             called_now.append(tc)
 
                 if not ctx.persist_step_per_tool and pending_tool_calls:
-                    step_index = self._next_round_index()
-                    await agent_round.persist_assistant_step(
-                        conversation=ctx.conversation,
-                        content=iteration_content,
-                        reasoning_content=iteration_reasoning or None,
-                        tool_calls=[
-                            {
-                                "id": p["id"],
-                                "name": p["name"],
-                                "display_name": p["display_name"],
-                                "arguments": p["arguments"],
-                            }
-                            for p in pending_tool_calls
-                        ],
-                        model_used=ctx.model_used,
-                        round_id=ctx.round_id,
-                        round_index=step_index,
-                        iteration_index=iteration,
-                    )
-                    self._append_history(
-                        role="assistant",
-                        content=iteration_content,
-                        reasoning_content=iteration_reasoning or None,
-                        tool_calls=[
-                            {
-                                "id": p["id"],
-                                "name": p["name"],
-                                "display_name": p["display_name"],
-                                "arguments": p["arguments"],
-                            }
-                            for p in pending_tool_calls
-                        ],
-                        round_index=step_index,
-                        iteration=iteration,
-                    )
+                    valid_tool_calls = [p for p in pending_tool_calls if p["name"]]
+                    if valid_tool_calls:
+                        step_index = self._next_round_index()
+                        await agent_round.persist_assistant_step(
+                            conversation=ctx.conversation,
+                            content=iteration_content,
+                            reasoning_content=iteration_reasoning or None,
+                            tool_calls=[
+                                {
+                                    "id": p["id"],
+                                    "name": p["name"],
+                                    "display_name": p["display_name"],
+                                    "arguments": p["arguments"],
+                                }
+                                for p in valid_tool_calls
+                            ],
+                            model_used=ctx.model_used,
+                            round_id=ctx.round_id,
+                            round_index=step_index,
+                            iteration_index=iteration,
+                            branch_parent_id=ctx.step_branch_parent_id,
+                        )
+                        self._append_history(
+                            role="assistant",
+                            content=iteration_content,
+                            reasoning_content=iteration_reasoning or None,
+                            tool_calls=[
+                                {
+                                    "id": p["id"],
+                                    "name": p["name"],
+                                    "display_name": p["display_name"],
+                                    "arguments": p["arguments"],
+                                }
+                                for p in valid_tool_calls
+                            ],
+                            round_index=step_index,
+                            iteration=iteration,
+                        )
+                        ctx.created_message_count += 1
                     for p_data in pending_tool_calls:
                         tool_index = self._next_round_index()
                         await agent_round.persist_tool_result(
@@ -956,6 +1073,7 @@ class AgentLoop:
                             round_id=ctx.round_id,
                             round_index=tool_index,
                             iteration_index=iteration,
+                            branch_parent_id=ctx.step_branch_parent_id,
                         )
                         self._append_history(
                             role="tool",
@@ -966,7 +1084,6 @@ class AgentLoop:
                             iteration=iteration,
                         )
                         ctx.created_message_count += 1
-                    ctx.created_message_count += 1  # assistant step
 
                 if iteration >= ctx.max_iterations:
                     max_iterations_reached = True

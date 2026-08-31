@@ -497,6 +497,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const speechSessionRef = React.useRef(0)
     const isUser = message.role === 'user'
     const isAssistant = message.role === 'assistant'
+    const runInputState = typeof message.metadata?.runInputState === 'string'
+      ? message.metadata.runInputState
+      : null
+    const runInputKind = message.metadata?.runInputKind === 'follow_up' ? 'follow_up' : 'steer'
+    const runInputLabel = runInputState === 'queued'
+      ? t(runInputKind === 'follow_up' ? 'queuedFollowUp' : 'queuedSteering')
+      : runInputState === 'committed'
+        ? t(runInputKind === 'follow_up' ? 'committedFollowUp' : 'committedSteering')
+        : null
     
     // Image lightbox state
     const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
@@ -1379,6 +1388,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )}
 
         <MessageContent>
+          {isUser && runInputLabel && (
+            <div className="mb-1 text-xs text-muted-foreground">{runInputLabel}</div>
+          )}
           {isAssistant && hasChainOfThought && (
             <ChainOfThought
               isStreaming={isChainOfThoughtStreaming}
@@ -1493,6 +1505,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isSavingEdit,
       isStandaloneErrorMessage,
       isUser,
+      runInputLabel,
       onChainOfThoughtOpenChange,
       onOpenCodePreview,
       preservedErrorNote,

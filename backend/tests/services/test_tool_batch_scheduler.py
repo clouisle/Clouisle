@@ -257,14 +257,15 @@ async def test_shared_sibling_failure_keeps_other_result(monkeypatch):
             usage=None,
         )
 
-    ctx = _base_ctx({"read_a": "shared", "read_b": "shared"})
+    ctx = _base_ctx({"read_a": "shared", "read_b": "shared"}, max_iterations=1)
     ctx.team_chat = _team_chat
     ctx.execute_tool_call = _runner
     ctx.persist_step_per_tool = True
     loop = AgentLoop(ctx)
-    with pytest.raises(RuntimeError):
-        async for _ in loop.run():
-            pass
+    async for _ in loop.run():
+        pass
+
+    assert persisted == ["read_a", "read_b"]
 
 
 @pytest.mark.asyncio

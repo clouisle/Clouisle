@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ============ Enums ============
@@ -827,8 +827,18 @@ class ChatRequest(BaseModel):
     """Chat request"""
 
     message: str = Field(
-        ..., min_length=1, max_length=32000, description="User message"
+        ...,
+        min_length=0,
+        max_length=32000,
+        description="User message; attachments may be sent without text",
     )
+
+    @model_validator(mode="after")
+    def validate_message_or_attachment(self) -> "ChatRequest":
+        if self.message.strip() or self.images or self.files or self.file_urls:
+            return self
+        raise ValueError("message must not be empty unless an attachment is provided")
+
     images: list[ImageContent] = Field(
         default_factory=list, description="Images for vision"
     )
@@ -922,6 +932,16 @@ class RunOut(BaseModel):
     error_message: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
+
+
+class RunStartOut(BaseModel):
+    """Identifiers and stream location returned when a run is queued."""
+
+    run_id: UUID
+    conversation_id: UUID
+    user_message_id: UUID
+    status: AgentRunStatusEnum
+    stream_url: str
 
 
 class RunEventOut(BaseModel):

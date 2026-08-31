@@ -101,6 +101,7 @@ export default function PublicChatPage({
   const searchParams = useSearchParams()
   const t = useTranslations('publicChat')
   const tCommon = useTranslations('common')
+  const tChatMessage = useTranslations('chat.message')
 
   const [agent, setAgent] = React.useState<PublicAgent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -201,6 +202,7 @@ export default function PublicChatPage({
     isLoading: chatLoading,
     isStreaming,
     conversationId,
+    runStatus,
     sendMessage,
     regenerate,
     editMessage,
@@ -482,14 +484,18 @@ export default function PublicChatPage({
   }
 
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
-    if (!message.trim() || chatLoading) return
+    const filesToProcess = submittedFiles || files
+    if (!message.trim() && filesToProcess.length === 0 && selectedImageRefs.length === 0) return
 
     if (!validateVariables()) {
       setVariablesOpen(true)
       return
     }
 
-    const filesToProcess = submittedFiles || files
+    if (chatLoading && (filesToProcess.length > 0 || selectedImageRefs.length > 0)) {
+      toast.error(tChatMessage('attachmentsDisabledDuringRun'))
+      return
+    }
 
     // Process images and files
     let images: ChatImageContent[] | undefined = agent?.enable_attachments && selectedImageRefs.length > 0
@@ -636,6 +642,23 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
+  const runStatusLabel = runStatus === 'queued'
+    ? tChatMessage('runStatusQueued')
+    : runStatus === 'running'
+      ? tChatMessage('runStatusRunning')
+      : runStatus === 'stopping'
+        ? tChatMessage('runStatusStopping')
+        : runStatus === 'completing'
+          ? tChatMessage('runStatusCompleting')
+          : runStatus === 'completed'
+            ? tChatMessage('runStatusCompleted')
+            : runStatus === 'stopped'
+              ? tChatMessage('runStatusStopped')
+              : runStatus === 'failed'
+                ? tChatMessage('runStatusFailed')
+                : runStatus === 'interrupted'
+                  ? tChatMessage('runStatusInterrupted')
+                  : null
   // Variable panel (collapsible form shown when the agent declares input
   // variables) and the composer itself. They are kept separate so the
   // composer can act as the vertical-center anchor of the welcome column;
@@ -702,22 +725,29 @@ export default function PublicChatPage({
   )
 
   const composer = (
-    <ChatInput
-      value={input}
-      onChange={setInput}
-      onSubmit={handleSubmit}
-      onStop={stop}
-      placeholder={t('typePlaceholder')}
-      disabled={chatLoading && !isStreaming}
-      isLoading={chatLoading}
-      isStreaming={isStreaming}
-      allowAttachments={agent.enable_attachments}
-      enableFileUpload={agent.enable_attachments}
-      fileUploadConfig={agent.attachment_config}
-      files={files}
-      onFilesChange={setFiles}
-      isUploading={isUploading}
-    />
+    <>
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={handleSubmit}
+        onStop={stop}
+        placeholder={t('typePlaceholder')}
+        disabled={false}
+        isLoading={chatLoading}
+        isStreaming={isStreaming}
+        allowAttachments={agent.enable_attachments}
+        enableFileUpload={agent.enable_attachments}
+        fileUploadConfig={agent.attachment_config}
+        files={files}
+        onFilesChange={setFiles}
+        isUploading={isUploading}
+      />
+      {runStatusLabel && (
+        <p className="mx-auto max-w-3xl px-4 pt-1 text-xs text-muted-foreground" aria-live="polite">
+          {runStatusLabel}
+        </p>
+      )}
+    </>
   )
 
   const inputArea = (
@@ -1008,7 +1038,7 @@ export default function PublicChatPage({
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
-              onSelectImageReference={agent.enable_attachments ? ({ asset_ref, url }) => {
+              onSelectImageReference={agent.enable_attachments && !chatLoading ? ({ asset_ref, url }) => {
                 setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
                   ? current
                   : [...current, { asset_ref, type: 'image_url', url }])

@@ -8,6 +8,7 @@ const stopAgent = mock(() => {})
 const resetAgent = mock(() => {})
 const regenerate = mock(async () => {})
 const switchVersion = mock(async () => {})
+const reconnectAgent = mock(() => {})
 const startWorkflow = mock(async () => {})
 const stopWorkflow = mock(() => {})
 const resetWorkflow = mock(() => {})
@@ -30,9 +31,12 @@ mock.module('./use-chat', () => ({
     isStreaming: true,
     isLoading: true,
     conversationId: options.conversationId || 'conv-1',
+    runId: 'run-1',
+    runStatus: 'running',
     sendMessage: sendAgentMessage,
     stop: stopAgent,
     reset: resetAgent,
+    reconnect: reconnectAgent,
     regenerate,
     switchVersion,
   })),
@@ -74,6 +78,7 @@ beforeEach(() => {
   resetAgent.mockClear()
   regenerate.mockClear()
   switchVersion.mockClear()
+  reconnectAgent.mockClear()
   startWorkflow.mockClear()
   stopWorkflow.mockClear()
   resetWorkflow.mockClear()
@@ -96,6 +101,8 @@ describe('useRun', () => {
 
     expect(hook.conversationId).toBe('conv-existing')
     expect(hook.isLoading).toBe(true)
+    expect(hook.runId).toBe('run-1')
+    expect(hook.runStatus).toBe('running')
     expect(hook.executionState?.progress).toEqual({ current: 3, total: 3 })
     expect(Array.from(hook.executionState?.nodes.values() || [])).toEqual([
       expect.objectContaining({ type: 'rag', label: 'chat.task.searchingKnowledge', status: 'running', metadata: { info: 2 } }),
@@ -106,12 +113,14 @@ describe('useRun', () => {
     await hook.sendMessage('hello')
     hook.stop()
     hook.reset()
+    hook.reconnect?.()
     await hook.regenerate?.('assistant-1')
     await hook.switchVersion?.('assistant-1', 1)
 
     expect(sendAgentMessage).toHaveBeenCalledWith('hello')
     expect(stopAgent).toHaveBeenCalledTimes(1)
     expect(resetAgent).toHaveBeenCalledTimes(1)
+    expect(reconnectAgent).toHaveBeenCalledTimes(1)
     expect(regenerate).toHaveBeenCalledWith('assistant-1')
     expect(switchVersion).toHaveBeenCalledWith('assistant-1', 1)
   })

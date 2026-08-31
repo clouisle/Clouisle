@@ -27,9 +27,16 @@ from app.models.agent import Agent, AgentStatus, Conversation
 from app.models.api_key import APIKey
 from app.models.user import User
 from app.models.workflow import Workflow, WorkflowStatus
-from app.schemas.agent import ChatRequest, EmbedAgentInfo
+from app.schemas.agent import (
+    ChatRequest,
+    EmbedAgentInfo,
+    RunEventOut,
+    RunInputCreate,
+    RunOut,
+    RunStartOut,
+)
+from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.api.v1.endpoints.chat import build_message_round_payloads
-from app.schemas.response import BusinessError, ResponseCode, success
 from app.services.message_branching import get_visible_conversation_messages
 from app.services.audit_log import AuditLogService
 
@@ -225,6 +232,139 @@ async def embed_chat_stream(
         request=request,
         auth_result=(user, api_key),
     )
+
+
+@router.post(
+    "/agents/{agent_id}/chat/runs",
+    response_model=Response[RunStartOut],
+    status_code=202,
+)
+async def embed_start_chat_run(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Queue a durable agent run for an API-key-authenticated embed client."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import start_chat_run
+
+    started = await start_chat_run(agent_id, chat_in, (user, api_key))
+    run = RunStartOut.model_validate(started["data"])
+    return success(
+        data=run.model_copy(
+            update={
+                "stream_url": f"/embed/agents/{agent_id}/chat/runs/{run.run_id}/stream",
+            }
+        )
+    )
+
+
+@router.get("/agents/{agent_id}/chat/runs/{run_id}/stream")
+async def embed_stream_chat_run(
+    agent_id: UUID,
+    run_id: UUID,
+    request: Request,
+    after_sequence: int = 0,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+) -> StreamingResponse:
+    """Replay and follow a durable agent run for an embed client."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import stream_chat_run
+
+    return await stream_chat_run(
+        agent_id=agent_id,
+        run_id=run_id,
+        after_sequence=max(after_sequence, 0),
+        auth_result=(user, api_key),
+    )
+
+
+@router.get(
+    "/agents/{agent_id}/chat/runs/{run_id}",
+    response_model=Response[RunOut],
+)
+async def embed_get_run_status(
+    agent_id: UUID,
+    run_id: UUID,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Get an owned durable agent run through the embed API."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import get_run_status
+
+    return await get_run_status(agent_id, run_id, (user, api_key))
+
+
+@router.get(
+    "/agents/{agent_id}/chat/runs/{run_id}/events",
+    response_model=Response[list[RunEventOut]],
+)
+async def embed_get_run_events(
+    agent_id: UUID,
+    run_id: UUID,
+    request: Request,
+    after_sequence: int = 0,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Replay buffered durable agent events through the embed API."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import get_run_events
+
+    return await get_run_events(
+        agent_id,
+        run_id,
+        max(after_sequence, 0),
+        (user, api_key),
+    )
+
+
+@router.post(
+    "/agents/{agent_id}/chat/runs/{run_id}/inputs",
+    response_model=Response[RunOut],
+)
+async def embed_post_run_input(
+    agent_id: UUID,
+    run_id: UUID,
+    body: RunInputCreate,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Queue steering or follow-up input for an embed agent run."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import post_run_input
+
+    return await post_run_input(agent_id, run_id, body, (user, api_key))
+
+
+@router.post(
+    "/agents/{agent_id}/chat/runs/{run_id}/stop",
+    response_model=Response[RunOut],
+)
+async def embed_stop_run(
+    agent_id: UUID,
+    run_id: UUID,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Cooperatively stop an owned embed agent run."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import stop_run
+
+    return await stop_run(agent_id, run_id, (user, api_key))
 
 
 @router.get("/agents/{agent_id}/conversations/{conversation_id}/messages")

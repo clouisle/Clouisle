@@ -23,6 +23,7 @@
     "result": "Result",
     "noResult": "Run the workflow to see its result.",
     "runFailed": "Run failed",
+    "reconnect": "Reconnect",
     "cancel": "Cancel run",
     "cancelling": "Cancelling...",
     "cancelFailed": "Failed to cancel the run. Please try again.",
@@ -42,10 +43,14 @@
     "status": {
       "idle": "Ready to run",
       "pending": "Starting",
+      "queued": "Queued",
       "running": "Running",
+      "stopping": "Stopping",
+      "completing": "Completing",
       "success": "Completed",
       "failed": "Failed",
       "cancelled": "Cancelled",
+      "interrupted": "Interrupted",
       "timeout": "Timed out",
       "waiting": "Awaiting input"
     },

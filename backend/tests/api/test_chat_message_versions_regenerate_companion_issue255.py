@@ -196,11 +196,7 @@ async def test_switch_message_version_activates_target_branch(monkeypatch):
         chat, "find_descendant_branch_from", AsyncMock(return_value=descendant)
     )
     activate = AsyncMock()
-    stale = AsyncMock()
     monkeypatch.setattr(chat, "activate_conversation_branch", activate)
-    monkeypatch.setattr(
-        chat, "stale_session_memory_if_source_outside_active_branch", stale
-    )
     output = message()
     build = AsyncMock(return_value=output)
     monkeypatch.setattr(chat, "build_message_out_with_versions", build)
@@ -211,7 +207,6 @@ async def test_switch_message_version_activates_target_branch(monkeypatch):
 
     assert result["data"] is output
     activate.assert_awaited_once_with(current.conversation_id, [*prefix, *descendant])
-    stale.assert_awaited_once_with(current.conversation_id)
     build.assert_awaited_once_with(target, include_versions=True)
 
 

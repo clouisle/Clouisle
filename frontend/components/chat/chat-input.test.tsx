@@ -110,21 +110,40 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  test('disables send for empty, disabled, loading, and uploading states', () => {
+  test('disables send only for empty, disabled, and uploading states', () => {
     expect(buttons(renderChatInput({ value: '' })).at(-1)?.props.disabled).toBe(true)
     expect(buttons(renderChatInput({ value: 'hello', disabled: true })).at(-1)?.props.disabled).toBe(true)
-    expect(buttons(renderChatInput({ value: 'hello', isLoading: true })).at(-1)?.props.disabled).toBe(true)
+    expect(buttons(renderChatInput({ value: 'hello', isLoading: true })).at(-1)?.props.disabled).toBe(false)
     expect(buttons(renderChatInput({ value: 'hello', isUploading: true })).at(-1)?.props.disabled).toBe(true)
     expect(buttons(renderChatInput({ value: 'hello' })).at(-1)?.props.disabled).toBe(false)
   })
 
-  test('shows stop action instead of send while streaming', () => {
+  test('keeps stop available while sending steering during streaming', () => {
     const onStop = mock(() => undefined)
     const onSubmit = mock(() => undefined)
     const tree = renderChatInput({ value: 'hello', isStreaming: true, onStop, onSubmit })
+    const stopButton = buttons(tree).find((button) => button.props['aria-label'] === 'stop')
+    const sendButton = buttons(tree).find((button) => button.props['aria-label'] === 'send')
 
     act(() => {
-      buttons(tree).at(-1)?.props.onClick()
+      sendButton?.props.onClick()
+    })
+    act(() => {
+      stopButton?.props.onClick()
+    })
+
+    expect(onSubmit).toHaveBeenCalledWith('hello', undefined)
+    expect(onStop).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps stop available while a run is queued', () => {
+    const onStop = mock(() => undefined)
+    const onSubmit = mock(() => undefined)
+    const tree = renderChatInput({ value: 'follow up', isLoading: true, onStop, onSubmit })
+    const stopButton = buttons(tree).find((button) => button.props['aria-label'] === 'stop')
+
+    act(() => {
+      stopButton?.props.onClick()
     })
 
     expect(onStop).toHaveBeenCalledTimes(1)
@@ -144,6 +163,26 @@ describe('ChatInput', () => {
     expect(onSubmit).toHaveBeenCalledWith('', [file])
     expect(onFilesChange).toHaveBeenCalledWith([])
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:old-preview')
+  })
+
+  test('disables attachments during an active run without dropping selected files', () => {
+    const file = fileFixture()
+    const onSubmit = mock(() => undefined)
+    const tree = renderChatInput({
+      value: 'steer',
+      files: [file],
+      isStreaming: true,
+      onFilesChange: mock(() => undefined),
+      onSubmit,
+    })
+
+    expect(fileInput(tree).props.disabled).toBe(true)
+    act(() => {
+      buttons(tree).find((button) => button.props['aria-label'] === 'send')?.props.onClick()
+    })
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(tree.root.findAllByType('p').some((node) => node.children.includes('attachmentsDisabledDuringRun'))).toBe(true)
   })
 
   test('adds only allowed dropped files and respects max file slots', () => {

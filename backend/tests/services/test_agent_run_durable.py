@@ -377,3 +377,30 @@ async def test_run_endpoint_scope_checks(monkeypatch):
     # Right owner -> returns run.
     run = await chat_api._load_owned_run(agent_id, run_id, user)
     assert run.id == run_id
+
+
+def test_worker_formatter_queues_structured_sse_payload():
+    """Loop-generated tool SSE is persisted as a typed payload, not raw text."""
+    from app.services.agent_run_worker import _RunFormatter
+
+    queue: asyncio.Queue = asyncio.Queue()
+    formatter = _RunFormatter(queue, agent=SimpleNamespace())
+
+    assert (
+        formatter(
+            "tool_call",
+            {
+                "sse": (
+                    "event: tool_call"
+                    + chr(10)
+                    + 'data: {"tool_call_id":"call-1","tool_name":"clock"}'
+                    + chr(10)
+                    + chr(10)
+                )
+            },
+        )
+        is None
+    )
+    event_type, payload = queue.get_nowait()
+    assert event_type == "tool_call"
+    assert payload == {"tool_call_id": "call-1", "tool_name": "clock"}

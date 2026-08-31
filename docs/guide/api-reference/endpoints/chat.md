@@ -173,6 +173,32 @@ data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 
 
 See [SSE Streaming](../sse-streaming.md) for details.
 
+### Durable Runs and Control
+
+Chat execution is backed by a durable `AgentRun` so a browser disconnect never
+stops the model loop. The streaming endpoints stream the same SSE events as
+before; additionally, run-scoped events carry an envelope with `run_id`,
+`sequence`, `timestamp`, `round_id`, `message_id` and `type` so reconnects
+resume without duplicates (`after_sequence`).
+
+Additional run events: `run_start` (run identity/status), `run_status`
+(queued/running/stopping transitions), `input_accepted` (a queued
+steering/follow-up was committed), `run_end` (exactly one terminal event with
+`completed | stopped | failed | interrupted`).
+
+**Endpoints:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}` | Run status (owner-scoped) |
+| GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/events?after_sequence=N` | Replay buffered events after N |
+| POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/inputs` | Queue steering/follow-up (`delivery: steer / follow_up / auto`) |
+| POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/stop` | Cooperative stop (idempotent) |
+
+While a run is active, the composer can queue steering (mid-work) or
+follow-up (final boundary) instead of being disabled; stop sends a server
+command and waits for the terminal `run_end` event.
+
 ## List Conversations
 
 Get a list of all conversations.

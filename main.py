@@ -26,6 +26,7 @@ SANDBOX_WORKER_IMAGE_TAG = "clouisle-sandbox-worker:dev"
 SANDBOX_WORKER_ENV_KEYS = (
     "API_BASE_URL",
     "API_INTERNAL_BASE_URL",
+    "INTERNAL_API_TOKEN",
     "DATABASE_URL",
     "POSTGRES_SERVER",
     "POSTGRES_USER",
@@ -119,7 +120,7 @@ def start_server(
 
 def start_worker(
     concurrency: int = 4,
-    queues: str = "default,knowledge,workflow",
+    queues: str = "default,knowledge,workflow,agent",
     *,
     pool: str | None = None,
 ):

@@ -125,6 +125,11 @@ export {
   type AgentToolUsage,
   type RecentConversationItem,
   type PublicAgent,
+  type AgentRunStatus,
+  type AgentRunMode,
+  type AgentRunStatusOut,
+  type AgentRunStartOut,
+  type AgentRunEventOut,
 } from './agents'
 
 export {

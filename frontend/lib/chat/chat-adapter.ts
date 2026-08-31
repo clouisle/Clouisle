@@ -42,6 +42,8 @@ export const defaultChatAdapter: ChatPageAdapter = {
 
   // ChatStreamApi – versioning/edit endpoints live on agentsApi (auth-only)
   chatStream: (agentId, request: ChatRequest) => publicAgentsApi.chatStream(agentId, request),
+  startRun: (agentId, request) => agentsApi.startRun(agentId, request),
+  streamRun: (agentId, runId, afterSequence) => agentsApi.streamRun(agentId, runId, afterSequence),
   editMessageStream: (agentId, messageId, content) => agentsApi.editMessageStream(agentId, messageId, content),
   regenerateStream: (agentId, messageId, variables) => agentsApi.regenerateStream(agentId, messageId, variables),
   getMessageVersions: (agentId, messageId) => agentsApi.getMessageVersions(agentId, messageId),

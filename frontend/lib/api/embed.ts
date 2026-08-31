@@ -5,6 +5,7 @@
 
 import { API_BASE_URL } from '@/lib/constants'
 import { getErrorMessage } from './client'
+import type { AgentRunEventOut, AgentRunStartOut, AgentRunStatusOut } from './agents'
 
 export interface EmbedWorkflowInfo {
   id: string
@@ -43,6 +44,27 @@ export interface EmbedChatRequest {
   file_urls?: Array<{ filename: string; url: string; size: number; mime_type: string }>
   conversation_id?: string | null
   variables?: Record<string, unknown>
+}
+
+type EmbedRunInput = {
+  delivery: 'steer' | 'follow_up' | 'auto'
+  content?: string
+  request_id?: string
+}
+
+async function requestEmbedRun<T>(path: string, apiKey: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...makeHeaders(apiKey),
+      ...(init?.headers ?? {}),
+    },
+  })
+  const data = await response.json().catch(() => ({})) as { data?: T; msg?: unknown }
+  if (!response.ok) {
+    throw new Error(resolveEmbedApiErrorMessage(response.status, data.msg))
+  }
+  return data.data as T
 }
 
 export interface EmbedMessage {
@@ -168,6 +190,64 @@ export const embedApi = {
       abort: () => controller.abort(),
     }
   },
+
+  startRun: (
+    agentId: string,
+    data: EmbedChatRequest,
+    apiKey: string
+  ): Promise<AgentRunStartOut> => requestEmbedRun<AgentRunStartOut>(
+    `/embed/agents/${agentId}/chat/runs`,
+    apiKey,
+    { method: 'POST', body: JSON.stringify(data) },
+  ),
+
+  streamRun: (
+    agentId: string,
+    runId: string,
+    apiKey: string,
+    afterSequence = 0,
+  ): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const stream = fetch(
+      `${API_BASE_URL}/embed/agents/${agentId}/chat/runs/${runId}/stream?after_sequence=${afterSequence}`,
+      {
+        headers: { Accept: 'text/event-stream', Authorization: `Bearer ${apiKey}` },
+        signal: controller.signal,
+      },
+    )
+    return { stream, abort: () => controller.abort() }
+  },
+
+  getRunStatus: (agentId: string, runId: string, apiKey: string): Promise<AgentRunStatusOut> =>
+    requestEmbedRun<AgentRunStatusOut>(`/embed/agents/${agentId}/chat/runs/${runId}`, apiKey),
+
+  getRunEvents: (
+    agentId: string,
+    runId: string,
+    apiKey: string,
+    afterSequence = 0,
+  ): Promise<AgentRunEventOut[]> => requestEmbedRun<AgentRunEventOut[]>(
+    `/embed/agents/${agentId}/chat/runs/${runId}/events?after_sequence=${afterSequence}`,
+    apiKey,
+  ),
+
+  postRunInput: (
+    agentId: string,
+    runId: string,
+    body: EmbedRunInput,
+    apiKey: string,
+  ): Promise<AgentRunStatusOut> => requestEmbedRun<AgentRunStatusOut>(
+    `/embed/agents/${agentId}/chat/runs/${runId}/inputs`,
+    apiKey,
+    { method: 'POST', body: JSON.stringify(body) },
+  ),
+
+  stopRun: (agentId: string, runId: string, apiKey: string): Promise<AgentRunStatusOut> =>
+    requestEmbedRun<AgentRunStatusOut>(
+      `/embed/agents/${agentId}/chat/runs/${runId}/stop`,
+      apiKey,
+      { method: 'POST' },
+    ),
 
   getMessages: async (
     agentId: string,

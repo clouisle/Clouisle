@@ -25,10 +25,10 @@ mock.module('react/jsx-runtime', () => ({
   jsxs: (type: unknown, props: Record<string, unknown> = {}) => ({ type, props }),
   Fragment: Symbol.for('react.fragment'),
 }))
-mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}) }), useSearchParams: () => ({ get: () => null }) }))
+mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}), replace: mock(() => {}) }), useSearchParams: () => ({ get: () => null }) }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('next/image', () => ({ default: () => null }))
-mock.module('lucide-react', () => ({ AlertCircle: () => null, ChevronDown: () => null, ChevronUp: () => null, Loader2: () => null, Sparkles: () => null }))
+mock.module('lucide-react', () => ({ AlertCircle: () => null, ChevronDown: () => null, ChevronUp: () => null, Loader2: () => null, RefreshCw: () => null, Sparkles: () => null }))
 const MockApiError = class extends Error {
   code = 0
 }
@@ -38,7 +38,7 @@ mock.module('@/components/ui/alert', () => ({ Alert: (p: Record<string, unknown>
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleContent: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleTrigger: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
 mock.module('@/components/chat', () => ({ ChatContainer: () => null, ChatInput: () => null, VariableForm: () => null, useVariableForm: () => ({ values: {}, setValues: mock(() => {}), needsInput: false, fieldErrors: {}, validate: () => true }) }))
 const sendMessageMock = mock(async () => {})
-mock.module('@/hooks/use-run', () => ({ useRun: () => ({ messages: [], isLoading: false, isStreaming: false, input: '', setInput: mock(() => {}), sendMessage: sendMessageMock, stop: mock(() => {}), reset: mock(() => {}), chatOptions: {} }) }))
+mock.module('@/hooks/use-run', () => ({ useRun: () => ({ messages: [], isLoading: false, isStreaming: false, input: '', setInput: mock(() => {}), sendMessage: sendMessageMock, stop: mock(() => {}), reset: mock(() => {}), conversationId: null, runId: null, runStatus: null, reconnect: mock(() => {}), chatOptions: {} }) }))
 mock.module('@/lib/utils/extract-variables', () => ({ extractVariables: () => [] }))
 mock.module('@/lib/utils', () => ({ cn: (...v: unknown[]) => v.filter(Boolean).join(' ') }))
 
@@ -136,5 +136,28 @@ describe('AgentRunPage', () => {
     const tree = Reloaded({ id: 'agent-1' })
     effects.forEach((e) => e())
     expect(tree).toBeDefined()
+  })
+  test('shows run status chip and reconnect button for an active run', async () => {
+    mock.module('@/components/chat', () => ({
+      ChatContainer: () => null,
+      ChatInput: (p: Record<string, unknown>) => ({ type: 'chat-input', props: p }),
+      VariableForm: (p: Record<string, unknown>) => ({ type: 'variable-form', props: p }),
+      useVariableForm: () => ({ values: {}, setValues: mock(() => {}), needsInput: false, fieldErrors: {}, validate: () => true }),
+    }))
+    mock.module('@/hooks/use-run', () => ({ useRun: () => ({ messages: [], isLoading: false, isStreaming: false, input: '', setInput: mock(() => {}), sendMessage: sendMessageMock, stop: mock(() => {}), reset: mock(() => {}), conversationId: 'conv-1', runId: 'run-1', runStatus: 'running', reconnect: mock(() => {}), chatOptions: {} }) }))
+    const { AgentRunPage: Reloaded } = await import('./agent-run-page')
+    stateIndex = 0
+    effectIndex = 0
+    states.length = 0
+    states[0] = metadata
+    states[1] = false
+    states[2] = null
+    states[3] = ''
+    states[4] = false
+    const tree = Reloaded({ id: 'agent-1' })
+    effects.forEach((e) => e())
+    const json = JSON.stringify(tree)
+    expect(json).toContain('status.running')
+    expect(json).toContain('reconnect')
   })
 })

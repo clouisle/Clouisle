@@ -91,7 +91,10 @@
       "attachFile": "附加文件",
       "fileTooLarge": "文件大小超过限制 {maxSize}MB",
       "maxFilesReached": "最多只能上传 {max} 个文件",
-      "dropFiles": "拖放文件到此处"
+      "dropFiles": "拖放文件到此处",
+      "steeringQueued": "已发送指令到进行中的任务",
+      "followUpQueued": "追问已排队",
+      "attachmentsDisabledDuringRun": "Agent 运行期间无法上传附件"
     },
     "message": {
       "copy": "复制",
@@ -164,7 +167,21 @@
       "linkSafetyTitle": "要打开链接吗？",
       "linkSafetyDescription": "该链接由聊天内容生成，打开前请先确认。",
       "linkSafetyCancel": "取消",
-      "linkSafetyContinue": "继续"
+      "linkSafetyContinue": "继续",
+      "runStatusQueued": "排队中",
+      "runStatusRunning": "运行中",
+      "runStatusStopping": "正在停止",
+      "runStatusCompleting": "即将完成",
+      "runStatusCompleted": "已完成",
+      "runStatusStopped": "已停止",
+      "runStatusFailed": "失败",
+      "runStatusInterrupted": "已中断",
+      "queuedInputLabel": "已排队的输入",
+      "queuedSteering": "已排队的指令",
+      "queuedFollowUp": "已排队的追问",
+      "committedSteering": "已加入指令",
+      "committedFollowUp": "已加入追问",
+      "attachmentsDisabledDuringRun": "Agent 运行期间无法上传附件"
     },
     "userInputRequest": {
       "pending": "请选择一个选项：",

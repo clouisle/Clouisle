@@ -1159,7 +1159,7 @@ async def test_message_first_token_migration_paths(
 
 
 @pytest.mark.asyncio
-async def test_message_round_and_session_memory_migrations(
+async def test_message_round_migration_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
@@ -1178,47 +1178,6 @@ async def test_message_round_and_session_memory_migrations(
     assert (
         "ADD COLUMN IF NOT EXISTS round_status" in conn.execute_query.await_args.args[0]
     )
-
-    conn.execute_query.reset_mock()
-    conn.execute_query.return_value = (1, ["conversation_session_memories"])
-    await init_data.init_conversation_session_memory_table()
-    conn.execute_query.assert_awaited_once()
-
-    conn.execute_query.reset_mock()
-    conn.execute_query.return_value = (0, [])
-    await init_data.init_conversation_session_memory_table()
-    assert conn.execute_query.await_count == 3
-    assert (
-        "CREATE TABLE IF NOT EXISTS conversation_session_memories"
-        in conn.execute_query.await_args_list[1].args[0]
-    )
-    assert (
-        "idx_conversation_session_memories_status_updated"
-        in conn.execute_query.await_args.args[0]
-    )
-
-
-@pytest.mark.asyncio
-async def test_context_checkpoint_migration_paths(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(1, ["table"])))
-    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
-
-    await init_data.init_conversation_context_checkpoint_table()
-    conn.execute_query.assert_awaited_once()
-
-    conn.execute_query.reset_mock()
-    conn.execute_query.return_value = (0, [])
-    await init_data.init_conversation_context_checkpoint_table()
-
-    assert conn.execute_query.await_count == 3
-    statements = [call.args[0] for call in conn.execute_query.await_args_list]
-    assert (
-        "CREATE TABLE IF NOT EXISTS conversation_context_checkpoints" in statements[1]
-    )
-    assert "covered_through_message_id" in statements[1]
-    assert "idx_conversation_context_checkpoints_status_updated" in statements[2]
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, ChevronDown, ChevronUp, Loader2, Sparkles } from 'lucide-react'
+import { AlertCircle, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 import Image from 'next/image'
 import { ApiError, publicAgentsApi, type PublicAgent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -75,11 +75,18 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     return value !== undefined && value !== null && value !== ''
   }).length
 
-  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId } = useRun({
+  const handleConversationChange = React.useCallback((nextConversationId: string) => {
+    const nextSearchParams = new URLSearchParams(searchParams.toString())
+    nextSearchParams.set('conversation', nextConversationId)
+    router.replace(`/run/${id}?${nextSearchParams.toString()}`)
+  }, [id, router, searchParams])
+
+  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, reconnect } = useRun({
     id,
     type: 'agent',
     conversationId: searchParams.get('conversation') || undefined,
     variables: variableValues,
+    onConversationChange: handleConversationChange,
   })
 
   const handleSendMessage = async (text: string) => {
@@ -111,6 +118,25 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
 
   const displayIcon = metadata.icon || metadata.avatar_url
   const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
+  const runStatusLabel = runStatus
+    ? runStatus === 'queued'
+      ? t('status.queued')
+      : runStatus === 'running'
+        ? t('status.running')
+        : runStatus === 'stopping'
+          ? t('status.stopping')
+          : runStatus === 'completing'
+            ? t('status.completing')
+            : runStatus === 'completed'
+              ? t('status.success')
+              : runStatus === 'stopped'
+                ? t('status.cancelled')
+                : runStatus === 'failed'
+                  ? t('status.failed')
+                  : t('status.interrupted')
+    : null
+  const runActive = runStatus === 'queued' || runStatus === 'running' || runStatus === 'stopping' || runStatus === 'completing'
+  const showReconnect = Boolean(runId && runActive)
 
   return (
     <div className="h-screen flex overflow-hidden bg-background">
@@ -121,6 +147,20 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
               <div className="relative h-6 w-6 rounded overflow-hidden"><Image src={displayIcon} alt={metadata.name} fill unoptimized className="object-cover" /></div>
             ) : <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{displayIcon}</span> : <Sparkles className="h-5 w-5 text-primary" />}
             <div><h1 className="font-medium text-sm">{metadata.name}</h1>{metadata.description && <p className="text-xs text-muted-foreground">{metadata.description}</p>}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {runStatus && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {runActive && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                {runStatusLabel}
+              </span>
+            )}
+            {showReconnect && (
+              <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => reconnect?.()}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t('reconnect')}
+              </Button>
+            )}
           </div>
         </header>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -164,7 +204,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
                 </Collapsible>
               </div>
             )}
-            <ChatInput value={input} onChange={setInput} onSubmit={handleSendMessage} onStop={stop} placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')} disabled={runLoading && !isStreaming} isLoading={runLoading} isStreaming={isStreaming} />
+            <ChatInput value={input} onChange={setInput} onSubmit={handleSendMessage} onStop={stop} placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')} disabled={false} isLoading={runLoading} isStreaming={isStreaming} />
             {metadata.powered_by_text && <p className="text-[11px] text-center text-muted-foreground mt-2">{metadata.powered_by_text}</p>}
           </div>
         </div>

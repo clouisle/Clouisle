@@ -402,7 +402,7 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
         "connected_clients": 2,
         "instantaneous_ops_per_sec": 7,
     }
-    redis.llen.side_effect = [1, 4, None, 3]
+    redis.llen.side_effect = [1, 4, None, 0, 3]
 
     pending_tasks = [
         {"task": "send_notification_email", "queue": "default", "pending": 1}
@@ -432,6 +432,7 @@ async def test_workers_and_health_dependencies_cover_happy_and_failure_states():
             {"queue": "default", "pending": 1},
             {"queue": "knowledge", "pending": 4},
             {"queue": "workflow", "pending": 0},
+            {"queue": "agent", "pending": 0},
             {"queue": "sandbox", "pending": 3},
         ]
 

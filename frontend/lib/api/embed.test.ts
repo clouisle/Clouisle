@@ -97,6 +97,61 @@ describe('embed API', () => {
     expect(fetchSpy.mock.calls[0]?.[1]?.signal).toHaveProperty('aborted', true)
   })
 
+  it('queues, streams, and controls durable agent runs with the API key', async () => {
+    const start = { run_id: 'run-1', conversation_id: 'conversation-1', user_message_id: 'user-1', status: 'queued', stream_url: '/stream' }
+    const fetchSpy = mockFetch(Response.json({ data: start }))
+
+    await expect(embedApi.startRun('agent-1', { message: 'hello' }, 'secret')).resolves.toEqual(start)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+        body: JSON.stringify({ message: 'hello' }),
+      },
+    )
+
+    const streamResponse = new Response()
+    fetchSpy.mockResolvedValueOnce(streamResponse)
+    const stream = embedApi.streamRun('agent-1', 'run-1', 'secret', 4)
+    expect(stream.stream).toBeInstanceOf(Promise)
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/stream?after_sequence=4',
+      expect.objectContaining({
+        headers: { Accept: 'text/event-stream', Authorization: 'Bearer secret' },
+        signal: expect.any(AbortSignal),
+      }),
+    )
+    stream.abort()
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.signal).toHaveProperty('aborted', true)
+
+    const status = { id: 'run-1', agent_id: 'agent-1', conversation_id: 'conversation-1', mode: 'send', status: 'running' }
+    fetchSpy.mockResolvedValueOnce(Response.json({ data: status }))
+    await expect(embedApi.getRunStatus('agent-1', 'run-1', 'secret')).resolves.toEqual(status)
+
+    const events = [{ run_id: 'run-1', sequence: 5, timestamp: 'now', type: 'message_end', payload: {} }]
+    fetchSpy.mockResolvedValueOnce(Response.json({ data: events }))
+    await expect(embedApi.getRunEvents('agent-1', 'run-1', 'secret', 4)).resolves.toEqual(events)
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/events?after_sequence=4',
+      { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' } },
+    )
+
+    fetchSpy.mockResolvedValueOnce(Response.json({ data: status }))
+    await expect(embedApi.postRunInput('agent-1', 'run-1', { delivery: 'steer', content: 'use JSON' }, 'secret')).resolves.toEqual(status)
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/inputs',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+        body: JSON.stringify({ delivery: 'steer', content: 'use JSON' }),
+      },
+    )
+
+    fetchSpy.mockResolvedValueOnce(Response.json({ data: { ...status, status: 'stopping' } }))
+    await expect(embedApi.stopRun('agent-1', 'run-1', 'secret')).resolves.toMatchObject({ status: 'stopping' })
+  })
+
   it('gets messages and workflow info', async () => {
     const messages = [{ id: 'message-1' }]
     const messageFetch = mockFetch(Response.json({ data: messages }))

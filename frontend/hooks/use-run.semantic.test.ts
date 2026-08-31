@@ -7,6 +7,7 @@ const stop = mock(() => {})
 const reset = mock(() => {})
 const regenerate = mock(async () => {})
 const switchVersion = mock(async () => {})
+const reconnect = mock(() => {})
 
 let agentMessages: ChatMessage[] = []
 let agentOptions: Record<string, unknown>
@@ -22,9 +23,12 @@ mock.module('./use-chat', () => ({
       isStreaming: true,
       isLoading: true,
       conversationId: 'conversation-1',
+      runId: 'run-1',
+      runStatus: 'running',
       sendMessage,
       stop,
       reset,
+      reconnect,
       regenerate,
       switchVersion,
     }
@@ -73,6 +77,9 @@ describe('useRun semantic delegation', () => {
     expect(agentOptions.agentId).toBe('agent-1')
     expect(workflowOptions.workflowId).toBe('')
     expect(result.sendMessage).toBe(sendMessage)
+    expect(result.runId).toBe('run-1')
+    expect(result.runStatus).toBe('running')
+    expect(result.reconnect).toBe(reconnect)
     expect([...result.executionState!.nodes.values()]).toMatchObject([
       { type: 'reasoning', status: 'completed', output: 'thinking' },
       { id: 'tool-1', status: 'error', output: 'failed', error: 'failed' },

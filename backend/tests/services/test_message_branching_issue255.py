@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.agent import ConversationSessionMemoryStatus
 from app.services import message_branching as branching
 
 
@@ -264,7 +263,7 @@ async def test_activate_branch_includes_noncanonical_round_steps(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_active_check_and_session_memory_staleness(monkeypatch):
+async def test_active_check_uses_optional_time_bound(monkeypatch):
     active_query = Query(exists=True)
     monkeypatch.setattr(
         branching.Message, "filter", MagicMock(return_value=active_query)
@@ -274,45 +273,3 @@ async def test_active_check_and_session_memory_staleness(monkeypatch):
         uuid4(), uuid4(), before_created_at=before
     )
     assert active_query.filters[-1][1] == {"created_at__lt": before}
-
-    snapshot = SimpleNamespace(
-        source_message_id=uuid4(),
-        status=ConversationSessionMemoryStatus.READY,
-        save=AsyncMock(),
-    )
-    monkeypatch.setattr(
-        branching.ConversationSessionMemory,
-        "filter",
-        MagicMock(return_value=Query(first=snapshot)),
-    )
-    monkeypatch.setattr(
-        branching, "is_message_on_active_branch", AsyncMock(return_value=False)
-    )
-
-    await branching.stale_session_memory_if_source_outside_active_branch(uuid4())
-
-    assert snapshot.status == ConversationSessionMemoryStatus.STALE
-    snapshot.save.assert_awaited_once_with(update_fields=["status", "updated_at"])
-
-    snapshot.save.reset_mock()
-    snapshot.status = ConversationSessionMemoryStatus.READY
-    branching.is_message_on_active_branch.return_value = True
-    await branching.stale_session_memory_if_source_outside_active_branch(uuid4())
-    assert snapshot.status == ConversationSessionMemoryStatus.READY
-    snapshot.save.assert_not_awaited()
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("snapshot", [None, SimpleNamespace(source_message_id=None)])
-async def test_session_memory_staleness_ignores_missing_source(monkeypatch, snapshot):
-    monkeypatch.setattr(
-        branching.ConversationSessionMemory,
-        "filter",
-        MagicMock(return_value=Query(first=snapshot)),
-    )
-    active_check = AsyncMock()
-    monkeypatch.setattr(branching, "is_message_on_active_branch", active_check)
-
-    await branching.stale_session_memory_if_source_outside_active_branch(uuid4())
-
-    active_check.assert_not_awaited()

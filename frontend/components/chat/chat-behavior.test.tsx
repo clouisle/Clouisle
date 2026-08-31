@@ -31,7 +31,7 @@ import { ChatContainer } from './chat-container'
 import { ChatInput, type ChatInputFile } from './chat-input'
 import type { ChatMessage } from './types'
 
-const submitButtonHtml = (markup: string) => markup.match(/<button type="button"[^>]*>.*?(?:send|stop)/s)?.[0] ?? ''
+const submitButtonHtml = (markup: string) => markup.match(/<button type="button"[^>]*aria-label="(?:send|stop)"[^>]*>/)?.[0] ?? ''
 
 function renderInput(props: React.ComponentProps<typeof ChatInput> = {}) {
   return renderToStaticMarkup(<ChatInput {...props} />)
@@ -86,14 +86,14 @@ describe('ChatInput behavior', () => {
     expect(submitButtonHtml(disabledMarkup)).toContain('disabled=""')
 
     const loadingMarkup = renderInput({ value: 'hello', isLoading: true })
-    expect(submitButtonHtml(loadingMarkup)).toContain('disabled=""')
+    expect(submitButtonHtml(loadingMarkup)).not.toContain('disabled=""')
 
     const uploadingMarkup = renderInput({ value: 'hello', isUploading: true })
     expect(submitButtonHtml(uploadingMarkup)).toContain('disabled=""')
 
     const streamingMarkup = renderInput({ value: 'hello', isStreaming: true, onStop: () => {} })
     expect(streamingMarkup).toContain('stop')
-    expect(streamingMarkup).not.toContain('send')
+    expect(submitButtonHtml(streamingMarkup)).not.toContain('disabled=""')
   })
 
   test('submits files without text and omits remove controls while uploading', () => {

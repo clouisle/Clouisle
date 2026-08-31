@@ -91,7 +91,10 @@
       "attachFile": "Attach file",
       "fileTooLarge": "File size exceeds the limit of {maxSize}MB",
       "maxFilesReached": "Maximum {max} files allowed",
-      "dropFiles": "Drop files here"
+      "dropFiles": "Drop files here",
+      "steeringQueued": "Steering sent to the active run",
+      "followUpQueued": "Follow-up queued",
+      "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running"
     },
     "message": {
       "copy": "Copy",
@@ -164,7 +167,21 @@
       "linkSafetyTitle": "Open link?",
       "linkSafetyDescription": "This link was generated in the chat. Please confirm before opening it.",
       "linkSafetyCancel": "Cancel",
-      "linkSafetyContinue": "Continue"
+      "linkSafetyContinue": "Continue",
+      "runStatusQueued": "Queued",
+      "runStatusRunning": "Running",
+      "runStatusStopping": "Stopping",
+      "runStatusCompleting": "Completing",
+      "runStatusCompleted": "Completed",
+      "runStatusStopped": "Stopped",
+      "runStatusFailed": "Failed",
+      "runStatusInterrupted": "Interrupted",
+      "queuedInputLabel": "Queued input",
+      "queuedSteering": "Queued steering",
+      "queuedFollowUp": "Queued follow-up",
+      "committedSteering": "Steering added",
+      "committedFollowUp": "Follow-up added",
+      "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running"
     },
     "userInputRequest": {
       "pending": "Please select an option:",

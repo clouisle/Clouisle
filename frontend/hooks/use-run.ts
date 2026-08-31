@@ -6,6 +6,7 @@ import { useChat } from './use-chat'
 import { useWorkflowRun } from './use-workflow-run'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 import type { ChatImageContent, ChatFileUrl } from '@/lib/api'
+import type { AgentRunStatus } from '@/lib/api/agents'
 
 export type RunType = 'agent' | 'workflow'
 
@@ -28,6 +29,7 @@ export interface UseRunReturn {
   isLoading: boolean
   conversationId?: string | null
   runId?: string | null
+  runStatus?: AgentRunStatus | null
   sendMessage: (
     text: string,
     images?: ChatImageContent[],
@@ -35,6 +37,8 @@ export interface UseRunReturn {
   ) => Promise<void>
   start?: (inputs: Record<string, unknown>) => Promise<void>
   stop: () => void
+  /** Reconnect to the active durable run (replays buffered events). */
+  reconnect?: () => void
   reset: () => void
   regenerate?: (messageId: string) => Promise<void>
   switchVersion?: (messageId: string, versionIndex: number) => Promise<void>
@@ -142,8 +146,11 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       isStreaming: agentChat.isStreaming,
       isLoading: agentChat.isLoading,
       conversationId: agentChat.conversationId,
+      runId: agentChat.runId,
+      runStatus: agentChat.runStatus,
       sendMessage: agentChat.sendMessage,
       stop: agentChat.stop,
+      reconnect: agentChat.reconnect,
       reset: agentChat.reset,
       regenerate: agentChat.regenerate,
       switchVersion: agentChat.switchVersion,

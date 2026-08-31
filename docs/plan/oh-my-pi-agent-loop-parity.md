@@ -538,3 +538,22 @@ Stages are intentionally separable:
 9. `test/docs: complete parity regression and cleanup`
 
 Each commit must pass its focused validation and contain no dormant alternate implementation.
+## Verification Record (2026-08-31 worktree)
+
+### Backend
+- Full suite: `uv run pytest -q` → 6673 passed, 0 failed (started this session at 6616 passed / 149 failed / 19 errors).
+- Ruff (`uv run ruff check app/ tests/`) clean; `compileall` clean.
+- Obsolete session-memory/compression-retry test remnants removed: `should_retry_context_length` and `get_compression_trigger` stage/pressure mapping (retired contract), `stale_session_memory_*` / `ConversationSessionMemoryStatus` suites, `chat.StreamIdleTimeoutError` references re-pointed to `chat_helpers.stream_utils`.
+- ~130 legacy issue255 loop/internal tests migrated or superseded by the durable suites: endpoint files now assert the durable route contract (enqueue + wait + adapter, `start_chat_run` + `sse_events` passthrough, edit/regenerate branch preparation); loop-level tests deleted where `test_agent_run_durable.py`, `test_agent_run_steering_stop.py`, `test_agent_loop_behavioral_smoke.py` and `test_tool_batch_scheduler.py` already assert the same behavior. Superseded files carry a pointer docstring.
+- Token-counter tests updated to the image-budget accounting contract (`IMAGE_TOKEN_ESTIMATE` now counts vision items; required by Stage 3 compaction triggers).
+- Production gaps found and fixed during migration: `main.py start_worker` default queues now include `agent`; `admin_observability.WORKER_QUEUES` includes `agent` (catalog + queue-length observability); `SANDBOX_WORKER_ENV_KEYS` includes `INTERNAL_API_TOKEN` (sandbox container needs it); sandbox env test made hermetic against `app.main` import-time `dotenv` pollution.
+
+### Frontend
+- Focused suites (use-chat ×3, use-run ×2, chat-input, message, agent-run-page, chat-behavior) pass with `--isolate`: 100/100 + chat-behavior 5/5.
+- Run-status chip + reconnect button covered by new `agent-run-page` test; `use-run` delegates `runId`/`runStatus`/`reconnect` to `useChat`.
+- ChatInput streaming contract test updated: submit stays enabled while streaming (steering), disabled while uploading/disabled; loading keeps submit enabled.
+- `bun run tsc --noEmit`, changed-file ESLint (0 errors), `i18n:lint`, `git diff --check` all clean.
+- Full frontend suite: 2212 pass / 38 fail. The 38 failures (DocumentsPreviewClient 20, ChangePasswordPage 7, CapabilitiesPage 6, PromptVariableEditor 5) reproduce with all parity changes stashed — pre-existing on the origin base (React 19.2.8 mock-gap class) and out of this plan's scope.
+
+### Commit state
+- Stages 1–7 were committed incrementally on `fix/simple-context-summary` (7 commits). Stage 8 frontend work and this verification remain in the worktree as one pending commit.

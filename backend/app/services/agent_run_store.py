@@ -150,7 +150,10 @@ async def heartbeat_run_lock(
 ) -> None:
     """Refresh the lease until the worker signals stop/release."""
     while not stop.is_set():
-        await refresh_run_lock(run_id, conversation_id)
+        try:
+            await refresh_run_lock(run_id, conversation_id)
+        except Exception:
+            logger.warning("Failed to refresh run lease for %s", run_id, exc_info=True)
         try:
             await asyncio.wait_for(stop.wait(), timeout=min(RUN_LEASE_SECONDS // 2, 10))
         except asyncio.TimeoutError:

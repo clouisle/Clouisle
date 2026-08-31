@@ -493,11 +493,7 @@ async def test_switch_version_rejects_other_group_and_activates_valid_branch(
         chat_module, "find_descendant_branch_from", AsyncMock(return_value=descendants)
     )
     activate = AsyncMock()
-    stale = AsyncMock()
     monkeypatch.setattr(chat_module, "activate_conversation_branch", activate)
-    monkeypatch.setattr(
-        chat_module, "stale_session_memory_if_source_outside_active_branch", stale
-    )
     output = SimpleNamespace(id=target.id)
     monkeypatch.setattr(
         chat_module,
@@ -509,7 +505,6 @@ async def test_switch_version_rejects_other_group_and_activates_valid_branch(
     )
     assert result["data"] is output
     activate.assert_awaited_once_with(current.conversation_id, [*prefix, *descendants])
-    stale.assert_awaited_once_with(current.conversation_id)
 
 
 @pytest.mark.anyio
@@ -645,95 +640,3 @@ async def test_chat_endpoints_reject_inactive_user_before_access_checks(monkeypa
         )
     assert_business_error(stream, ResponseCode.INACTIVE_USER, 401)
     access.assert_not_awaited()
-
-
-@pytest.mark.anyio
-async def test_chat_stream_client_disconnect_persists_manual_stop(monkeypatch):
-    current_user = user()
-    current_agent = agent(
-        rag_mode=__import__("app.models.agent", fromlist=["RAGMode"]).RAGMode.OFF,
-        max_iterations=1,
-        tools_config=[],
-        enable_memory=False,
-        enable_image_generation=False,
-        enable_video_generation=False,
-    )
-    conversation = SimpleNamespace(id=uuid4(), title=None)
-    user_message = message(role=MessageRole.USER, file_urls=None)
-    assistant_message = message(content="")
-    user_message.save = AsyncMock()
-    assistant_message.save = AsyncMock()
-    created = iter([user_message, assistant_message])
-
-    monkeypatch.setattr(chat_module.deps, "check_api_key_agent_access", AsyncMock())
-    monkeypatch.setattr(
-        chat_module, "check_agent_chat_access", AsyncMock(return_value=current_agent)
-    )
-    monkeypatch.setattr(
-        chat_module,
-        "get_or_create_conversation",
-        AsyncMock(return_value=conversation),
-    )
-    monkeypatch.setattr(
-        chat_module.Message, "create", AsyncMock(side_effect=lambda **kw: next(created))
-    )
-    monkeypatch.setattr(
-        chat_module, "get_next_user_branch_parent_id", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        chat_module,
-        "get_streaming_config",
-        lambda agent: {
-            "global_timeout": 10,
-            "heartbeat_interval": 1,
-            "tool_timeouts": {},
-            "idle_timeout": 5,
-        },
-    )
-    monkeypatch.setattr(
-        "app.services.sandbox.gateway.sandbox_gateway.create_session",
-        AsyncMock(return_value="session"),
-    )
-    monkeypatch.setattr(
-        chat_module,
-        "build_file_content_for_context",
-        AsyncMock(return_value=(None, None)),
-    )
-    monkeypatch.setattr(
-        chat_module,
-        "resolve_agent_chat_model",
-        AsyncMock(return_value=_fake_chat_resolution()),
-    )
-    monkeypatch.setattr(
-        chat_module, "get_visible_conversation_messages", AsyncMock(return_value=[])
-    )
-    monkeypatch.setattr(
-        chat_module, "collect_conversation_images", lambda *a, **k: ([], [])
-    )
-    monkeypatch.setattr(
-        chat_module, "append_conversation_image_inventory", lambda text, inventory: text
-    )
-    monkeypatch.setattr(chat_module, "get_agent_tools", AsyncMock(return_value=[]))
-    monkeypatch.setattr(
-        chat_module, "get_tool_display_names", AsyncMock(return_value={})
-    )
-    monkeypatch.setattr(
-        chat_module, "send_heartbeat_if_needed", AsyncMock(return_value=(False, 0))
-    )
-    monkeypatch.setattr(chat_module, "now_utc", lambda: "stopped-at")
-
-    response = await chat_module.chat_stream(
-        current_agent.id,
-        ChatRequest(message="hello"),
-        SimpleNamespace(is_disconnected=AsyncMock(return_value=True)),
-        (current_user, None),
-    )
-    events = [event async for event in response.body_iterator]
-
-    assert len(events) == 1
-    assert "event: message_start" in events[0]
-    assert assistant_message.content == ""
-    assert assistant_message.is_manually_stopped is True
-    assert assistant_message.round_status == MessageRoundStatus.MANUALLY_STOPPED
-    assert assistant_message.created_at == "stopped-at"
-    assistant_message.save.assert_awaited_once()

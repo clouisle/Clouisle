@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import ast
-import json
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -47,10 +47,10 @@ from app.schemas.agent import (
     SwitchVersionRequest,
     RegenerateRequest,
     EditMessageRequest,
-    SSEEventType,
     AgentPublicOut,
     CreatorInfo,
     RunOut,
+    RunStartOut,
     RunEventOut,
     RunInputCreate,
 )
@@ -62,7 +62,6 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.llm.errors import InsufficientQuotaError
 from app.llm.tools import tool_registry
 from app.llm.types import ChatStreamChunk, Message as LLMChatMessage, ToolCall
 from app.llm.token_counter import (
@@ -73,9 +72,7 @@ from app.llm.token_counter import (
 )
 from app.core.timezone import now_utc
 from app.services.chat_context import (
-    build_context_plan,
     build_model_messages,
-    prepare_model_context,
 )
 from app.services.message_branching import (
     activate_conversation_branch,
@@ -87,32 +84,19 @@ from app.services.message_branching import (
     get_version_root_id,
 )
 from app.services.asset import asset_service
-from app.services.audit_log import AuditLogService
 
 # Import helper functions from modules
 from app.api.v1.endpoints.chat_helpers import (
     get_streaming_config,
-    parse_user_input_request,
-    resolve_agent_chat_model,
-    get_compression_trigger,
-    append_generated_images,
-    collect_conversation_images,
-    append_conversation_image_inventory,
-    StreamIdleTimeoutError,
-    send_heartbeat_if_needed,
 )
 from app.api.v1.endpoints.chat_tools import (
     build_file_content_for_context,
-    execute_tool_call,
 )
 from app.api.v1.endpoints.chat_rag import (
     perform_rag_retrieval,
     aggregate_rag_contexts,
-    build_rag_prompt,
 )
 from app.api.v1.endpoints.chat_sse import (
-    build_compression_events,
-    build_compression_start_event,
     build_tool_call_sse_event,
 )
 
@@ -1230,6 +1214,113 @@ async def get_public_agent_info(
 # ============ Chat Endpoints ============
 
 
+AGENT_RUN_NON_STREAM_TIMEOUT_SECONDS = 3600
+
+
+async def _wait_for_agent_run(run_id: UUID) -> _AgentRunModel:
+    """Wait for a queued non-stream run without owning its execution."""
+    from app.models.agent_run import AgentRunStatus
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + AGENT_RUN_NON_STREAM_TIMEOUT_SECONDS
+    terminal_statuses = {
+        AgentRunStatus.COMPLETED,
+        AgentRunStatus.STOPPED,
+        AgentRunStatus.FAILED,
+        AgentRunStatus.INTERRUPTED,
+    }
+    while True:
+        run = await _AgentRunModel.get_or_none(id=run_id)
+        if run is None:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="run_not_found",
+                status_code=404,
+            )
+        if run.status in terminal_statuses:
+            return run
+        if loop.time() >= deadline:
+            raise BusinessError(
+                code=ResponseCode.UNKNOWN_ERROR,
+                msg_key="llm_processing_failed",
+                status_code=504,
+            )
+        await asyncio.sleep(0.25)
+
+
+def _run_usage(message: Message) -> dict[str, int]:
+    raw_usage = message.token_usage or {}
+
+    def value(*keys: str) -> int:
+        for key in keys:
+            raw_value = raw_usage.get(key)
+            if raw_value is not None:
+                return int(raw_value or 0)
+        return 0
+
+    prompt_tokens = value("prompt", "prompt_tokens")
+    completion_tokens = value("completion", "completion_tokens")
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "cache_read_tokens": value("cache_read", "cache_read_tokens"),
+        "cache_creation_tokens": value("cache_creation", "cache_creation_tokens"),
+        "total_input_tokens": value("total_input", "total_input_tokens"),
+    }
+
+
+async def _build_non_stream_run_response(run: _AgentRunModel) -> dict:
+    """Convert the worker's canonical message into the legacy chat response."""
+    from app.models.agent_run import AgentRunStatus
+
+    if run.status == AgentRunStatus.FAILED:
+        if run.error_code in {
+            "model_quota_exceeded",
+            "QuotaExceededError",
+            "InsufficientQuotaError",
+        }:
+            raise BusinessError(
+                code=ResponseCode.MODEL_QUOTA_EXCEEDED,
+                msg_key="model_quota_exceeded",
+                status_code=429,
+            )
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="llm_processing_failed",
+            status_code=500,
+        )
+    if run.status == AgentRunStatus.INTERRUPTED:
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="llm_processing_failed",
+            status_code=500,
+        )
+    if not run.canonical_message_id:
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg_key="llm_processing_failed",
+            status_code=500,
+        )
+    assistant_message = await Message.get_or_none(id=run.canonical_message_id)
+    if assistant_message is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="message_not_found",
+            status_code=404,
+        )
+    usage = _run_usage(assistant_message)
+    return success(
+        data=ChatResponse(
+            conversation_id=run.conversation_id,
+            message=MessageOut.model_validate(assistant_message),
+            usage=usage,
+        ),
+        msg_key="chat_success",
+    )
+
+
+# ============ Chat Endpoints ============
 @router.post("/{agent_id}/chat", response_model=Response[ChatResponse])
 async def chat(
     agent_id: UUID,
@@ -1238,340 +1329,18 @@ async def chat(
         deps.get_current_user_or_api_key
     ),
 ) -> Any:
-    """
-    Chat with an agent (non-streaming).
-    Supports both JWT Token and API Key authentication.
+    """Queue a durable non-stream run and return its canonical result."""
+    from app.models.agent_run import AgentRunMode
 
-    Creates a new conversation if conversation_id is not provided.
-    """
-    current_user, api_key = auth_result
-
-    # 检查用户是否激活
-    if not current_user.is_active:
-        raise BusinessError(
-            code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
-            status_code=401,
-        )
-
-    # 如果使用 API Key，检查是否有权访问该 Agent
-    await deps.check_api_key_agent_access(api_key, agent_id)
-
-    agent = await check_agent_chat_access(agent_id, current_user)
-    conversation = await get_or_create_conversation(
-        agent, current_user, chat_in.conversation_id, chat_in.variables
+    started = await _enqueue_durable_chat_run(
+        agent_id,
+        chat_in,
+        auth_result,
+        mode=AgentRunMode.NON_STREAM,
     )
-
-    from app.models.agent import RAGMode
-
-    # Handle RAG based on mode
-    rag_contexts: list[dict] = []
-    final_message = chat_in.message
-
-    if agent.rag_mode == RAGMode.AUTO:
-        # Traditional RAG: automatically retrieve on every message
-        rag_contexts = await perform_rag_retrieval(
-            agent,
-            chat_in.message,
-            await get_visible_conversation_messages(
-                conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
-            ),
-        )
-        rag_contexts = aggregate_rag_contexts(rag_contexts)
-        final_message = build_rag_prompt(rag_contexts, chat_in.message)
-
-    message_assets = await _resolve_message_assets(
-        attachments=[*chat_in.images, *chat_in.file_urls],
-        agent=agent,
-        user=current_user,
-        conversation_id=conversation.id,
-    )
-    round_id = uuid4()
-
-    user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
-
-    # Save user message with images and file_urls.
-    async with _message_asset_transaction(bool(message_assets)):
-        user_msg = await Message.create(
-            conversation=conversation,
-            role=MessageRole.USER,
-            content=chat_in.message,
-            images=[img.model_dump() for img in chat_in.images]
-            if chat_in.images
-            else None,
-            file_urls=[f.model_dump() for f in chat_in.file_urls]
-            if chat_in.file_urls
-            else None,
-            rag_context=rag_contexts if rag_contexts else None,
-            branch_parent_id=user_branch_parent_id,
-            round_id=round_id,
-            round_index=0,
-            round_role=MessageRoundRole.USER_INPUT,
-            is_round_canonical=True,
-        )
-        await _attach_message_assets(
-            message_id=user_msg.id,
-            assets=message_assets,
-        )
-    final_message = await _append_asset_manifest(
-        final_message,
-        conversation_id=conversation.id,
-        agent=agent,
-        user=current_user,
-    )
-
-    # Update message stats (user message, no tokens)
-    await update_message_stats(agent, token_usage=None)
-
-    # Resolve the chat model up front so context budgeting uses the same
-    # metadata as the eventual team_chat call (including the global default).
-    chat_model = await resolve_agent_chat_model(agent)
-    model_id = chat_model.model_id
-    model_context_limit = chat_model.context_length
-    model_max_output_tokens = chat_model.max_output_tokens
-    model_provider = chat_model.provider
-    tokenizer_model_id = chat_model.tokenizer_model_id
-    model_used = model_id
-
-    model_supports_vision = bool(
-        chat_in.images and agent.enable_attachments and chat_model.supports_vision
-    )
-
-    streaming_config = get_streaming_config(agent)
-    tool_timeouts = streaming_config["tool_timeouts"]
-    from app.services.sandbox.gateway import sandbox_gateway
-
-    sandbox_session_id = await sandbox_gateway.create_session(
-        agent_id=str(agent.id),
-        team_id=str(agent.team_id) if agent.team_id else None,
-        user_id=str(current_user.id),
-        conversation_id=str(conversation.id),
-    )
-    file_content_str, updated_file_urls = await build_file_content_for_context(
-        agent=agent,
-        file_urls=chat_in.file_urls,
-        legacy_files=chat_in.files,
-        user_locale=current_user.locale,
-        tool_timeouts=tool_timeouts,
-        user=current_user,
-    )
-    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
-        user_msg.file_urls = updated_file_urls
-        await user_msg.save(update_fields=["file_urls"])
-
-    working_history_override = (
-        [message.model_dump(exclude_none=True) for message in chat_in.history_override]
-        if chat_in.history_override
-        else None
-    )
-    image_pool, image_inventory = collect_conversation_images(
-        await get_visible_conversation_messages(conversation.id),
-        current_message_id=user_msg.id,
-        current_images=chat_in.images,
-    )
-    model_message = append_conversation_image_inventory(final_message, image_inventory)
-
-    try:
-        # Import here to avoid circular import
-        from app.llm import model_manager
-        from app.llm.errors import QuotaExceededError, LLMError
-        from app.llm.types import ToolDefinition, FunctionDefinition
-
-        # Build tool definitions
-        tools_openai = await get_agent_tools(agent)
-        tool_display_names = await get_tool_display_names(agent, current_user.locale)
-        tools: list[ToolDefinition] | None = None
-        if tools_openai:
-            tools = [
-                ToolDefinition(
-                    type="function",
-                    function=FunctionDefinition(
-                        name=t["function"]["name"],
-                        description=t["function"]["description"],
-                        parameters=t["function"]["parameters"],
-                    ),
-                )
-                for t in tools_openai
-            ]
-
-        from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
-
-        max_iterations = agent.max_iterations or 5
-
-        async def build_turn(
-            **kwargs,
-        ):
-            """Non-stream turns summarize silently via prepare_model_context."""
-            prepared = await prepare_model_context(**kwargs)
-            return ContextTurn(
-                prepared=prepared,
-                will_summarize=False,
-                compression=prepared.compression,
-            )
-
-        loop = AgentLoop(
-            AgentLoopContext(
-                agent=agent,
-                conversation=conversation,
-                user=current_user,
-                user_message=model_message,
-                model_id=model_id,
-                tokenizer_model_id=tokenizer_model_id,
-                model_provider=model_provider,
-                model_context_limit=model_context_limit,
-                model_max_output_tokens=model_max_output_tokens,
-                model_used=model_used,
-                model_supports_vision=model_supports_vision,
-                tools=tools,
-                tool_display_names=tool_display_names,
-                tool_timeouts=tool_timeouts,
-                sandbox_session_id=sandbox_session_id,
-                file_content=file_content_str,
-                current_images=chat_in.images,
-                working_history_override=working_history_override,
-                image_pool=image_pool,
-                image_inventory=image_inventory,
-                append_generated_images=append_generated_images,
-                current_user_message_id=user_msg.id,
-                round_id=round_id,
-                protected_round_id=round_id,
-                user_locale=current_user.locale,
-                max_iterations=max_iterations,
-                enable_user_input_request=agent.enable_user_input_request,
-                streaming=False,
-                build_turn=build_turn,
-                execute_tool_call=execute_tool_call,
-                team_chat=model_manager.team_chat,
-                calculate_usage=_calculate_model_usage,
-                first_round_index=1,
-            )
-        )
-        async for _event in loop.run():
-            pass  # no SSE in the non-stream API
-        loop_result = loop.result
-        max_iterations_reached = loop_result.max_iterations_reached
-        total_prompt_tokens = loop_result.aggregate_input_tokens
-        total_completion_tokens = loop_result.aggregate_output_tokens
-        total_cache_read_tokens = loop_result.aggregate_cache_read_tokens
-        total_cache_creation_tokens = loop_result.aggregate_cache_creation_tokens
-        total_usage_input_tokens = loop_result.aggregate_total_input_tokens
-        duration_ms = loop_result.duration_ms
-        duration_ms = loop_result.duration_ms
-
-        clean_final_content = (
-            build_max_iterations_terminal_content(current_user.locale)
-            if max_iterations_reached
-            else (loop_result.full_content or "")
-        )
-        if (
-            not max_iterations_reached
-            and agent.enable_user_input_request
-            and clean_final_content
-        ):
-            _, clean_final_content = parse_user_input_request(clean_final_content)
-
-        final_tool_calls = None
-
-        prompt_tokens = total_prompt_tokens
-        completion_tokens = total_completion_tokens
-        round_status = get_round_terminal_status(
-            completed=not max_iterations_reached,
-            max_iterations_reached=max_iterations_reached,
-        )
-
-        # Save assistant message (final response)
-        assistant_msg = await Message.create(
-            conversation=conversation,
-            role=MessageRole.ASSISTANT,
-            content=clean_final_content,
-            reasoning_content=(
-                None if max_iterations_reached else (loop_result.full_reasoning or None)
-            ),
-            model_used=model_used,
-            token_usage={
-                "prompt": prompt_tokens,
-                "completion": completion_tokens,
-                "cache_read": total_cache_read_tokens,
-                "cache_creation": total_cache_creation_tokens,
-                "total_input": total_usage_input_tokens,
-            },
-            duration_ms=duration_ms,
-            tool_calls=final_tool_calls,
-            branch_parent_id=user_msg.id,
-            round_id=round_id,
-            round_index=loop_result.final_round_index,
-            round_role=MessageRoundRole.ASSISTANT_FINAL,
-            is_round_canonical=True,
-            round_status=round_status,
-        )
-
-        # Update message stats with token usage
-        await update_message_stats(
-            agent,
-            token_usage={
-                "prompt": prompt_tokens,
-                "completion": completion_tokens,
-                "cache_read": total_cache_read_tokens,
-                "cache_creation": total_cache_creation_tokens,
-            },
-        )
-
-        # Update conversation stats atomically
-        title_update = {}
-        if not conversation.title:
-            # Auto-generate title from first message
-            title_update["title"] = chat_in.message[:50] + (
-                "..." if len(chat_in.message) > 50 else ""
-            )
-
-        await Conversation.filter(id=conversation.id).update(
-            message_count=F("message_count") + 2,
-            token_usage=F("token_usage") + (prompt_tokens + completion_tokens),
-            updated_at=now_utc(),
-            **title_update,
-        )
-
-        branch_prefix = await get_prefix_path_before(user_msg)
-        await activate_conversation_branch(
-            conversation.id,
-            [*branch_prefix, user_msg, assistant_msg],
-        )
-
-        return success(
-            data=ChatResponse(
-                conversation_id=conversation.id,
-                message=MessageOut.model_validate(assistant_msg),
-                usage={
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                    "cache_read_tokens": total_cache_read_tokens,
-                    "cache_creation_tokens": total_cache_creation_tokens,
-                    "total_input_tokens": total_usage_input_tokens,
-                },
-            ),
-            msg_key="chat_success",
-        )
-
-    except (QuotaExceededError, InsufficientQuotaError) as e:
-        raise BusinessError(
-            code=ResponseCode.MODEL_QUOTA_EXCEEDED,
-            msg_key="model_quota_exceeded",
-            status_code=429,
-            data={"quota_type": e.quota_type},
-        )
-    except LLMError as e:
-        logger.exception(
-            "LLM error during chat: conversation=%s agent=%s error=%s",
-            conversation.id,
-            agent.id,
-            e,
-        )
-        raise BusinessError(
-            code=ResponseCode.UNKNOWN_ERROR,
-            msg_key="llm_processing_failed",
-            status_code=500,
-        )
+    start_data = RunStartOut.model_validate(started["data"])
+    run = await _wait_for_agent_run(start_data.run_id)
+    return await _build_non_stream_run_response(run)
 
 
 @router.post("/{agent_id}/chat/stream")
@@ -1583,728 +1352,14 @@ async def chat_stream(
         deps.get_current_user_or_api_key
     ),
 ) -> StreamingResponse:
-    """
-    Chat with an agent (streaming via SSE).
-    Supports both JWT Token and API Key authentication.
-
-    Returns Server-Sent Events with the following event types:
-    - message_start: {"conversation_id": "...", "message_id": "..."}
-    - rag_start: {}
-    - rag_context: {"contexts": [...]}
-    - reasoning_start: {}
-    - reasoning_delta: {"delta": "..."}
-    - reasoning_end: {}
-    - content_delta: {"delta": "..."}
-    - tool_call: {"tool_name": "...", "arguments": {...}}
-    - tool_result: {"tool_name": "...", "result": {...}}
-    - media_result: {"kind": "media.image"|"media.video", ...} (UI-only media payload for rendering in assistant body, not for LLM replay)
-    - compression_start: {"stage": "...", "trigger": "..."}
-    - compression_end: {"stage": "...", "trigger": "...", ...}
-    - output_truncated: {}
-    - iteration_cap_reached: {"content": "..."}
-    - message_end: {"usage": {...}}
-    - error: {"code": ..., "msg": "..."}
-    """
-    current_user, api_key = auth_result
-
-    # 检查用户是否激活
-    if not current_user.is_active:
-        raise BusinessError(
-            code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
-            status_code=401,
-        )
-
-    # 如果使用 API Key，检查是否有权访问该 Agent
-    await deps.check_api_key_agent_access(api_key, agent_id)
-
-    agent = await check_agent_chat_access(agent_id, current_user)
-    conversation = await get_or_create_conversation(
-        agent, current_user, chat_in.conversation_id, chat_in.variables
-    )
-
-    async def event_generator():
-        # Record start time and last event time
-        start_time = time.time()
-        first_token_time: float | None = None
-        last_event_time = start_time
-        full_content = ""
-        full_reasoning = ""
-        message_id = None
-        assistant_msg: Message | None = None
-        model_id: str | None = None
-        model_used: str | None = None
-        global_timeout: float = 1800.0  # Default 30 minutes
-        idle_timeout: float = 300.0  # Default 5 minutes
-
-        try:
-            # Import here to avoid circular import at module level
-            from app.llm import model_manager
-            from app.llm.errors import (
-                QuotaExceededError,
-                LLMError,
-                ModelNotFoundError,
-                AuthenticationError,
-                RateLimitError,
-            )
-            from app.llm.types import (
-                ToolDefinition,
-                FunctionDefinition,
-            )
-
-            # Get streaming configuration
-            streaming_config = get_streaming_config(agent)
-            global_timeout = streaming_config["global_timeout"]
-            heartbeat_interval = streaming_config["heartbeat_interval"]
-            tool_timeouts = streaming_config["tool_timeouts"]
-            idle_timeout = streaming_config["idle_timeout"]
-
-            # Create sandbox session for stateful execution
-            from app.services.sandbox.gateway import sandbox_gateway
-
-            sandbox_session_id = await sandbox_gateway.create_session(
-                agent_id=str(agent.id),
-                team_id=str(agent.team_id) if agent.team_id else None,
-                user_id=str(current_user.id),
-                ttl_hours=24,
-                conversation_id=str(conversation.id),
-            )
-
-            logger.info(
-                f"Starting stream for conversation {conversation.id}, "
-                f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
-            )
-
-            # Use asyncio.timeout to wrap entire streaming logic
-            import asyncio
-
-            async with asyncio.timeout(global_timeout):
-                try:
-                    from app.models.agent import RAGMode
-
-                    # Handle RAG based on mode
-                    rag_contexts: list[dict] = []
-                    final_message = chat_in.message
-
-                    if agent.rag_mode == RAGMode.AUTO:
-                        # Traditional RAG: automatically retrieve on every message
-                        has_knowledge_bases = await AgentKnowledgeBase.exists(
-                            agent_id=agent.id
-                        )
-                        if has_knowledge_bases:
-                            yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
-                            last_event_time = time.time()
-                            rag_contexts = await perform_rag_retrieval(
-                                agent,
-                                chat_in.message,
-                                await get_visible_conversation_messages(
-                                    conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
-                                ),
-                            )
-                            if rag_contexts:
-                                rag_contexts = aggregate_rag_contexts(rag_contexts)
-                                yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
-                                last_event_time = time.time()
-                            final_message = build_rag_prompt(
-                                rag_contexts, chat_in.message
-                            )
-
-                    message_assets = await _resolve_message_assets(
-                        attachments=[*chat_in.images, *chat_in.file_urls],
-                        agent=agent,
-                        user=current_user,
-                        conversation_id=conversation.id,
-                    )
-                    round_id = uuid4()
-                    user_branch_parent_id = await get_next_user_branch_parent_id(
-                        conversation
-                    )
-
-                    # Save user message with images and file_urls.
-                    async with _message_asset_transaction(bool(message_assets)):
-                        user_msg = await Message.create(
-                            conversation=conversation,
-                            role=MessageRole.USER,
-                            content=chat_in.message,
-                            images=[img.model_dump() for img in chat_in.images]
-                            if chat_in.images
-                            else None,
-                            file_urls=[f.model_dump() for f in chat_in.file_urls]
-                            if chat_in.file_urls
-                            else None,
-                            rag_context=rag_contexts if rag_contexts else None,
-                            branch_parent_id=user_branch_parent_id,
-                            round_id=round_id,
-                            round_index=0,
-                            round_role=MessageRoundRole.USER_INPUT,
-                            is_round_canonical=True,
-                        )
-                        await _attach_message_assets(
-                            message_id=user_msg.id,
-                            assets=message_assets,
-                        )
-                    final_message = await _append_asset_manifest(
-                        final_message,
-                        conversation_id=conversation.id,
-                        agent=agent,
-                        user=current_user,
-                    )
-
-                    # Create placeholder for assistant message
-                    assistant_msg = await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.ASSISTANT,
-                        content="",  # Will be updated
-                        branch_parent_id=user_msg.id,
-                        round_id=round_id,
-                        round_index=0,
-                        round_role=MessageRoundRole.ASSISTANT_FINAL,
-                        is_round_canonical=True,
-                    )
-                    message_id = str(assistant_msg.id)
-
-                    # Send message_start event
-                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id, 'user_message_id': str(user_msg.id)})}\n\n"
-                    last_event_time = time.time()
-
-                    (
-                        file_content_str,
-                        updated_file_urls,
-                    ) = await build_file_content_for_context(
-                        agent=agent,
-                        file_urls=chat_in.file_urls,
-                        legacy_files=chat_in.files,
-                        user_locale=current_user.locale,
-                        tool_timeouts=tool_timeouts,
-                        user=current_user,
-                    )
-                    if (
-                        updated_file_urls is not None
-                        and user_msg.file_urls != updated_file_urls
-                    ):
-                        user_msg.file_urls = updated_file_urls
-                        await user_msg.save(update_fields=["file_urls"])
-
-                    chat_model = await resolve_agent_chat_model(agent)
-                    model_id = chat_model.model_id
-                    model_context_limit = chat_model.context_length
-                    model_max_output_tokens = chat_model.max_output_tokens
-                    model_provider = chat_model.provider
-                    tokenizer_model_id = chat_model.tokenizer_model_id
-                    model_used = model_id
-                    model_supports_vision = bool(
-                        chat_in.images
-                        and agent.enable_attachments
-                        and chat_model.supports_vision
-                    )
-                    working_history_override = (
-                        [
-                            message.model_dump(exclude_none=True)
-                            for message in chat_in.history_override
-                        ]
-                        if chat_in.history_override
-                        else None
-                    )
-                    image_pool, image_inventory = collect_conversation_images(
-                        await get_visible_conversation_messages(
-                            conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
-                        ),
-                        current_message_id=user_msg.id,
-                        current_images=chat_in.images,
-                    )
-                    model_message = append_conversation_image_inventory(
-                        final_message, image_inventory
-                    )
-
-                    # Get model identifier
-
-                    # Get agent tools
-                    tools_openai = await get_agent_tools(agent)
-                    tool_display_names = await get_tool_display_names(
-                        agent, current_user.locale
-                    )
-                    tools: list[ToolDefinition] | None = None
-                    if tools_openai:
-                        tools = [
-                            ToolDefinition(
-                                type="function",
-                                function=FunctionDefinition(
-                                    name=t["function"]["name"],
-                                    description=t["function"]["description"],
-                                    parameters=t["function"]["parameters"],
-                                ),
-                            )
-                            for t in tools_openai
-                        ]
-
-                    from app.services.agent_loop import (
-                        AgentLoop,
-                        AgentLoopContext,
-                        ContextTurn,
-                    )
-
-                    max_iterations = agent.max_iterations or 5
-
-                    def sse_formatter(event_name: str, payload: dict) -> str | None:
-                        """Build SSE strings and mirror deltas into generator
-                        scope so error handlers keep seeing partial state."""
-                        nonlocal full_content, full_reasoning, first_token_time
-                        nonlocal last_event_time
-                        if event_name == "heartbeat":
-                            return ": heartbeat\n\n"
-                        if event_name == "content_delta":
-                            delta = payload.get("delta", "")
-                            full_content += delta
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            last_event_time = time.time()
-                            return (
-                                f"event: {SSEEventType.CONTENT_DELTA}\n"
-                                f"data: {json.dumps({'delta': delta})}\n\n"
-                            )
-                        if event_name == "reasoning_start":
-                            last_event_time = time.time()
-                            return f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "reasoning_delta":
-                            delta = payload.get("delta", "")
-                            full_reasoning += delta
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            last_event_time = time.time()
-                            return (
-                                f"event: {SSEEventType.REASONING_DELTA}\n"
-                                f"data: {json.dumps({'delta': delta})}\n\n"
-                            )
-                        if event_name == "reasoning_end":
-                            return f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "tool_call":
-                            return payload.get("sse")
-                        if event_name == "tool_result":
-                            return payload.get("sse")
-                        if event_name == "media_result":
-                            return payload.get("sse")
-                        if event_name == "compression_start":
-                            event_str = build_compression_start_event(
-                                agent=agent,
-                                stage=payload.get("stage", "macro"),
-                                trigger=payload.get("trigger"),
-                            )
-                            if event_str:
-                                last_event_time = time.time()
-                            return event_str
-                        if event_name == "compression_end":
-                            _, end_str = build_compression_events(
-                                agent=agent,
-                                compression=payload.get("compression"),
-                                trigger=payload.get("trigger"),
-                            )
-                            if end_str:
-                                last_event_time = time.time()
-                            return end_str
-                        if event_name == "output_truncated":
-                            return f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "iteration_cap_reached":
-                            return (
-                                f"event: {SSEEventType.ITERATION_CAP_REACHED}\n"
-                                f"data: {json.dumps({'content': payload.get('content', '')})}\n\n"
-                            )
-                        return None
-
-                    async def build_turn(**kwargs):
-                        plan = await build_context_plan(**kwargs)
-                        return ContextTurn(
-                            prepared=None,
-                            will_summarize=plan.will_summarize,
-                            compression=plan.compression,
-                            plan=plan,
-                        )
-
-                    loop = AgentLoop(
-                        AgentLoopContext(
-                            agent=agent,
-                            conversation=conversation,
-                            user=current_user,
-                            user_message=model_message,
-                            model_id=model_id,
-                            tokenizer_model_id=tokenizer_model_id,
-                            model_provider=model_provider,
-                            model_context_limit=model_context_limit,
-                            model_max_output_tokens=model_max_output_tokens,
-                            model_used=model_used,
-                            model_supports_vision=model_supports_vision,
-                            tools=tools,
-                            tool_display_names=tool_display_names,
-                            tool_timeouts=tool_timeouts,
-                            global_timeout=global_timeout,
-                            idle_timeout=idle_timeout,
-                            heartbeat_interval=heartbeat_interval,
-                            sandbox_session_id=sandbox_session_id,
-                            file_content=file_content_str,
-                            current_images=chat_in.images,
-                            working_history_override=working_history_override,
-                            image_pool=image_pool,
-                            image_inventory=image_inventory,
-                            append_generated_images=append_generated_images,
-                            current_user_message_id=user_msg.id,
-                            exclude_message_ids=[assistant_msg.id],
-                            include_current_user_message=True,
-                            round_id=round_id,
-                            protected_round_id=round_id,
-                            user_locale=current_user.locale,
-                            max_iterations=max_iterations,
-                            streaming=True,
-                            build_turn=build_turn,
-                            execute_tool_call=execute_tool_call,
-                            count_tool_definition_tokens=count_tool_definition_tokens,
-                            trigger_for_compression=get_compression_trigger,
-                            team_chat_stream=model_manager.team_chat_stream,
-                            team_chat=model_manager.team_chat,
-                            record_stream_usage=model_manager.record_stream_usage,
-                            calculate_usage=_calculate_model_usage,
-                            send_heartbeat_if_needed=send_heartbeat_if_needed,
-                            is_disconnected=request.is_disconnected,
-                            request=request,
-                            initial_last_event_time=last_event_time,
-                            formatter=sse_formatter,
-                            first_round_index=1,
-                            cap_content=lambda: build_max_iterations_terminal_content(
-                                current_user.locale
-                            ),
-                        )
-                    )
-                    async for sse_chunk in loop.run():
-                        if sse_chunk:
-                            yield sse_chunk
-                            last_event_time = time.time()
-                    loop_result = loop.result
-                    max_iterations_reached = loop_result.max_iterations_reached
-                    full_content = loop_result.full_content
-                    full_reasoning = loop_result.full_reasoning
-                    aggregate_input_tokens = loop_result.aggregate_input_tokens
-                    aggregate_output_tokens = loop_result.aggregate_output_tokens
-                    aggregate_cache_read_tokens = (
-                        loop_result.aggregate_cache_read_tokens
-                    )
-                    aggregate_cache_creation_tokens = (
-                        loop_result.aggregate_cache_creation_tokens
-                    )
-                    aggregate_total_input_tokens = (
-                        loop_result.aggregate_total_input_tokens
-                    )
-
-                    if loop_result.manually_stopped:
-                        # Client disconnected: persist the stopped assistant
-                        # (partial content/reasoning) and end the round without
-                        # finalizing the branch or emitting message_end.
-                        assistant_msg.content = full_content
-                        assistant_msg.reasoning_content = (
-                            full_reasoning if full_reasoning else None
-                        )
-                        assistant_msg.model_used = model_used
-                        assistant_msg.duration_ms = int(
-                            (time.time() - start_time) * 1000
-                        )
-                        assistant_msg.first_token_ms = _first_token_ms(
-                            start_time, first_token_time
-                        )
-                        assistant_msg.is_manually_stopped = True
-                        assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
-                        assistant_msg.created_at = now_utc()
-                        await assistant_msg.save()
-                        return
-
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    terminal_content = (
-                        build_max_iterations_terminal_content(current_user.locale)
-                        if max_iterations_reached
-                        else full_content
-                    )
-                    terminal_round_status = get_round_terminal_status(
-                        completed=not max_iterations_reached,
-                        max_iterations_reached=max_iterations_reached,
-                    )
-
-                    # Update assistant message (final response, no tool_calls)
-                    assistant_msg.content = terminal_content
-                    assistant_msg.reasoning_content = (
-                        None
-                        if max_iterations_reached
-                        else (full_reasoning if full_reasoning else None)
-                    )
-                    assistant_msg.model_used = model_used
-                    assistant_msg.duration_ms = duration_ms
-                    assistant_msg.first_token_ms = _first_token_ms(
-                        start_time, first_token_time
-                    )
-                    assistant_msg.is_manually_stopped = False
-                    assistant_msg.round_status = terminal_round_status
-                    # Ensure assistant message appears after tool calls/results in history
-                    assistant_msg.created_at = now_utc()
-                    input_tokens = aggregate_input_tokens
-                    output_tokens = aggregate_output_tokens
-                    assistant_msg.token_usage = {
-                        "prompt": input_tokens,
-                        "completion": output_tokens,
-                        "cache_read": aggregate_cache_read_tokens,
-                        "cache_creation": aggregate_cache_creation_tokens,
-                        "total_input": aggregate_total_input_tokens,
-                    }
-                    await assistant_msg.save()
-                    branch_prefix = await get_prefix_path_before(user_msg)
-                    await activate_conversation_branch(
-                        conversation.id,
-                        [*branch_prefix, user_msg, assistant_msg],
-                    )
-
-                    # Update conversation stats atomically
-                    title_update = {}
-                    if not conversation.title:
-                        title_update["title"] = chat_in.message[:50] + (
-                            "..." if len(chat_in.message) > 50 else ""
-                        )
-
-                    await Conversation.filter(id=conversation.id).update(
-                        message_count=F("message_count") + 2,
-                        token_usage=F("token_usage") + (input_tokens + output_tokens),
-                        updated_at=now_utc(),
-                        **title_update,
-                    )
-
-                    # Update agent stats atomically
-                    await Agent.filter(id=agent.id).update(
-                        message_count=F("message_count") + 2,
-                        total_tokens=F("total_tokens") + (input_tokens + output_tokens),
-                    )
-
-                    # Update team stats atomically
-                    await Team.filter(id=agent.team.id).update(
-                        total_messages=F("total_messages") + 2,
-                        total_tokens=F("total_tokens") + (input_tokens + output_tokens),
-                    )
-
-                    # Send message_end event with version info and timing
-                    first_token_ms = assistant_msg.first_token_ms
-                    tokens_per_second = (
-                        round(output_tokens / (duration_ms / 1000), 1)
-                        if duration_ms > 0 and output_tokens > 0
-                        else None
-                    )
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens, 'cache_read_tokens': aggregate_cache_read_tokens, 'cache_creation_tokens': aggregate_cache_creation_tokens, 'total_input_tokens': aggregate_total_input_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
-
-                except (QuotaExceededError, InsufficientQuotaError) as e:
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    logger.warning(
-                        "Quota exceeded during stream: conversation=%s agent=%s error=%s",
-                        conversation.id,
-                        agent.id,
-                        e,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
-                except ModelNotFoundError as e:
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    logger.error(
-                        "Model not found error during stream: conversation=%s agent=%s error=%s",
-                        conversation.id,
-                        agent.id,
-                        e,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('model_not_found')})}\n\n"
-                except AuthenticationError as e:
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    logger.error(
-                        "Authentication error during stream: conversation=%s agent=%s error=%s",
-                        conversation.id,
-                        agent.id,
-                        e,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': t('unauthorized')})}\n\n"
-                except RateLimitError as e:
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    logger.warning(
-                        "Rate limit error during stream: conversation=%s agent=%s error=%s",
-                        conversation.id,
-                        agent.id,
-                        e,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
-                except LLMError as e:
-                    logger.exception(
-                        "LLM error during stream: conversation=%s agent=%s",
-                        conversation.id,
-                        agent.id,
-                    )
-                    error_message = _format_llm_error_message(e)
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=error_message,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
-                except StreamIdleTimeoutError:
-                    logger.warning(
-                        "Stream idle timeout (%ss) for conversation %s",
-                        idle_timeout,
-                        conversation.id,
-                        extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
-                    )
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t("stream_timeout_exceeded"),
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
-                except BusinessError as e:
-                    error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
-                    logger.warning(
-                        "Business error during stream: conversation=%s agent=%s code=%s msg=%s",
-                        conversation.id,
-                        agent.id,
-                        e.code,
-                        error_message,
-                    )
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=error_message,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
-
-                except Exception:
-                    logger.exception(
-                        "Unexpected error during stream: conversation=%s agent=%s",
-                        conversation.id,
-                        agent.id,
-                    )
-                    await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
-
-        except TimeoutError:
-            # Global timeout
-            logger.warning(
-                "Stream global timeout (%ss) for conversation %s",
-                global_timeout,
-                conversation.id,
-                extra={"timeout_type": "global", "timeout_seconds": global_timeout},
-            )
-            await persist_partial_round_error(
-                assistant_msg,
-                content=full_content,
-                reasoning=full_reasoning,
-                model_used=model_used,
-                start_time=start_time,
-                first_token_time=first_token_time,
-                fallback_content=t("stream_timeout_exceeded"),
-            )
-            # Send timeout error event
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
-        except asyncio.CancelledError:
-            logger.info(
-                "Stream cancelled for conversation %s; persisting stopped assistant state",
-                conversation.id,
-            )
-            if assistant_msg:
-                assistant_msg.content = full_content
-                assistant_msg.reasoning_content = full_reasoning or None
-                assistant_msg.model_used = model_used
-                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
-                assistant_msg.first_token_ms = _first_token_ms(
-                    start_time, first_token_time
-                )
-                assistant_msg.is_manually_stopped = True
-                assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
-                assistant_msg.created_at = now_utc()
-                if (
-                    assistant_msg.content
-                    or assistant_msg.reasoning_content
-                    or assistant_msg.tool_calls
-                ):
-                    await assistant_msg.save()
-                else:
-                    await assistant_msg.delete()
-            return
-        except Exception as exc:
-            logger.error(
-                "Unhandled stream error: conversation=%s agent=%s exc=%s",
-                conversation.id,
-                agent.id,
-                type(exc).__name__,
-                exc_info=True,
-            )
-            if assistant_msg:
-                await persist_partial_round_error(
-                    assistant_msg,
-                    content=full_content,
-                    reasoning=full_reasoning,
-                    model_used=model_used,
-                    start_time=start_time,
-                    first_token_time=first_token_time,
-                    fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                )
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
-            return
-
-        finally:
-            # Resource cleanup and logging
-            duration = time.time() - start_time
-            logger.info(
-                f"Stream ended for conversation {conversation.id}, "
-                f"duration={duration:.2f}s"
-            )
+    """Queue a durable run and subscribe to its replayable SSE events."""
+    del request
+    started = await start_chat_run(agent_id, chat_in, auth_result)
+    start_data = RunStartOut.model_validate(started["data"])
+    from app.services.agent_run_stream import sse_events
 
     return StreamingResponse(
-        event_generator(),
+        sse_events(start_data.run_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -2520,7 +1575,8 @@ async def edit_user_message_stream(
     request: Request,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> StreamingResponse:
-    """Edit a user message by creating a new version and regenerating its reply."""
+    """Create an edited user version and queue its durable reply run."""
+    del request
     message = await Message.filter(id=message_id).first()
     if not message:
         raise BusinessError(
@@ -2528,14 +1584,12 @@ async def edit_user_message_stream(
             msg_key="message_not_found",
             status_code=404,
         )
-
     if message.role != MessageRole.USER:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="can_only_edit_user_message",
             status_code=400,
         )
-
     edited_content = edit_request.content.strip()
     if not edited_content:
         raise BusinessError(
@@ -2561,7 +1615,6 @@ async def edit_user_message_stream(
             msg_key="access_denied",
             status_code=403,
         )
-
     agent = await Agent.filter(id=agent_id).prefetch_related("team").first()
     if not agent:
         raise BusinessError(
@@ -2570,677 +1623,112 @@ async def edit_user_message_stream(
             status_code=404,
         )
 
+    from app.models.agent import RAGMode
+    from app.models.agent_run import AgentRunMode
+
     original_prefix = await get_prefix_path_before(message, trimmed=False)
-    original_descendant_branch = await find_descendant_branch_from(message)
-
-    async def event_generator():
-        start_time = time.time()
-        first_token_time: float | None = None
-        last_event_time = start_time
-        full_content = ""
-        full_reasoning = ""
-        edited_user_msg: Message | None = None
-        assistant_msg: Message | None = None
-        assistant_msg_id: str | None = None
-        model_id: str | None = None
-        model_used: str | None = None
-        global_timeout: float = 1800.0
-        idle_timeout: float = 300.0
-
-        async def _lock_conversation(conn) -> None:
-            await (
-                Conversation.filter(id=conversation.id)
-                .using_db(conn)
-                .select_for_update()
-                .first()
+    root_id = get_version_root_id(message)
+    branch_parent_id = message.branch_parent_id
+    if branch_parent_id is None:
+        branch_parent_id = original_prefix[-1].id if original_prefix else None
+    rag_contexts: list[dict[str, Any]] = []
+    if agent.rag_mode == RAGMode.AUTO and await AgentKnowledgeBase.exists(
+        agent_id=agent.id
+    ):
+        rag_contexts = aggregate_rag_contexts(
+            await perform_rag_retrieval(
+                agent,
+                edited_content,
+                original_prefix[-AUTO_RAG_HISTORY_LIMIT:],
             )
+        )
 
-        async def restore_original_path() -> None:
-            if not edited_user_msg:
-                return
-            async with in_transaction() as conn:
-                await _lock_conversation(conn)
-                edited_is_active = await (
-                    Message.filter(id=edited_user_msg.id, is_active=True)
-                    .using_db(conn)
-                    .exists()
-                )
-                if not edited_is_active:
-                    return
-                await activate_conversation_branch(
-                    conversation.id,
-                    [*original_prefix, *original_descendant_branch],
-                    using_db=conn,
-                )
+    current_version_count = await (
+        Message.filter(Q(id=root_id) | Q(parent_id=root_id))
+        .filter(Q(round_id__isnull=True) | Q(is_round_canonical=True))
+        .count()
+    )
+    new_version_number = current_version_count + 1
+    round_id = uuid4()
+    async with in_transaction() as conn:
+        await (
+            Conversation.filter(id=conversation.id)
+            .using_db(conn)
+            .select_for_update()
+            .first()
+        )
+        edited_user_msg = await Message.create(
+            conversation=conversation,
+            role=MessageRole.USER,
+            content=edited_content,
+            parent_id=root_id,
+            is_active=True,
+            version_number=new_version_number,
+            branch_parent_id=branch_parent_id,
+            images=message.images,
+            file_urls=message.file_urls,
+            rag_context=rag_contexts if rag_contexts else None,
+            round_id=round_id,
+            round_index=0,
+            round_role=MessageRoundRole.USER_INPUT,
+            is_round_canonical=True,
+            using_db=conn,
+        )
+        await activate_conversation_branch(
+            conversation.id,
+            [*original_prefix, edited_user_msg],
+            using_db=conn,
+        )
 
-        async def activate_edited_path() -> None:
-            if not edited_user_msg:
-                return
-            prefix = await get_prefix_path_before(edited_user_msg)
-            path = [*prefix, edited_user_msg]
-            if assistant_msg:
-                path.append(assistant_msg)
-            async with in_transaction() as conn:
-                await _lock_conversation(conn)
-                edited_is_active = await (
-                    Message.filter(id=edited_user_msg.id, is_active=True)
-                    .using_db(conn)
-                    .exists()
-                )
-                if not edited_is_active:
-                    return
-                await activate_conversation_branch(conversation.id, path, using_db=conn)
+    if MessageAsset._meta.default_connection is not None:
+        await asset_service.copy_message_attachments(
+            source_message_id=message.id,
+            target_message_id=edited_user_msg.id,
+        )
+    assistant_msg = await Message.create(
+        conversation=conversation,
+        role=MessageRole.ASSISTANT,
+        content="",
+        branch_parent_id=edited_user_msg.id,
+        round_id=round_id,
+        round_index=0,
+        round_role=MessageRoundRole.ASSISTANT_FINAL,
+        is_round_canonical=True,
+    )
+    started = await _enqueue_existing_message_run(
+        agent=agent,
+        conversation=conversation,
+        current_user=current_user,
+        mode=AgentRunMode.EDIT,
+        user_message=edited_user_msg,
+        message=edited_content,
+        round_id=round_id,
+        source_message_id=message.id,
+        canonical_message_id=assistant_msg.id,
+        branch_parent_id=edited_user_msg.id,
+        images=message.images,
+        file_urls=message.file_urls,
+        rag_contexts=rag_contexts,
+        exclude_message_ids=[assistant_msg.id],
+        created_message_count=2,
+        first_round_index=2,
+        message_start={
+            "edited_message_id": str(edited_user_msg.id),
+            "edited_version_number": new_version_number,
+            "edited_version_count": new_version_number,
+            "edited_parent_id": str(root_id),
+        },
+    )
+    return _stream_queued_run(started)
 
-        try:
-            from app.llm import model_manager
-            from app.llm.errors import QuotaExceededError, LLMError
-            from app.llm.types import ToolDefinition, FunctionDefinition
-            from app.models.agent import RAGMode
-            import asyncio
 
-            streaming_config = get_streaming_config(agent)
-            global_timeout = streaming_config["global_timeout"]
-            heartbeat_interval = streaming_config["heartbeat_interval"]
-            tool_timeouts = streaming_config["tool_timeouts"]
-            idle_timeout = streaming_config["idle_timeout"]
-
-            from app.services.sandbox.gateway import sandbox_gateway
-
-            sandbox_session_id = await sandbox_gateway.create_session(
-                agent_id=str(agent.id),
-                team_id=str(agent.team_id) if agent.team_id else None,
-                user_id=str(current_user.id),
-                conversation_id=str(conversation.id),
-            )
-
-            async with asyncio.timeout(global_timeout):
-                try:
-                    root_id = get_version_root_id(message)
-                    branch_parent_id = message.branch_parent_id
-                    if branch_parent_id is None:
-                        prefix = await get_prefix_path_before(message)
-                        branch_parent_id = prefix[-1].id if prefix else None
-
-                    rag_contexts: list[dict] = []
-                    final_message = edited_content
-                    if agent.rag_mode == RAGMode.AUTO:
-                        has_knowledge_bases = await AgentKnowledgeBase.exists(
-                            agent_id=agent.id
-                        )
-                        if has_knowledge_bases:
-                            yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
-                            last_event_time = time.time()
-                            rag_contexts = await perform_rag_retrieval(
-                                agent,
-                                edited_content,
-                                await get_prefix_path_before(
-                                    message,
-                                    limit=AUTO_RAG_HISTORY_LIMIT,
-                                    trimmed=False,
-                                ),
-                            )
-                            if rag_contexts:
-                                rag_contexts = aggregate_rag_contexts(rag_contexts)
-                                yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
-                                last_event_time = time.time()
-                            final_message = build_rag_prompt(
-                                rag_contexts, edited_content
-                            )
-
-                    final_message = await _append_asset_manifest(
-                        final_message,
-                        conversation_id=conversation.id,
-                        agent=agent,
-                        user=current_user,
-                    )
-
-                    round_id = uuid4()
-                    async with in_transaction() as conn:
-                        await _lock_conversation(conn)
-                        await (
-                            Message.filter(Q(id=root_id) | Q(parent_id=root_id))
-                            .using_db(conn)
-                            .select_for_update()
-                            .all()
-                        )
-                        current_version_count = await (
-                            Message.filter(Q(id=root_id) | Q(parent_id=root_id))
-                            .filter(
-                                Q(round_id__isnull=True) | Q(is_round_canonical=True)
-                            )
-                            .using_db(conn)
-                            .count()
-                        )
-                        new_user_version_number = current_version_count + 1
-                        edited_user_msg = await Message.create(
-                            conversation=conversation,
-                            role=MessageRole.USER,
-                            content=edited_content,
-                            parent_id=root_id,
-                            is_active=True,
-                            version_number=new_user_version_number,
-                            branch_parent_id=branch_parent_id,
-                            images=message.images,
-                            file_urls=message.file_urls,
-                            rag_context=rag_contexts if rag_contexts else None,
-                            round_id=round_id,
-                            round_index=0,
-                            round_role=MessageRoundRole.USER_INPUT,
-                            is_round_canonical=True,
-                            using_db=conn,
-                        )
-                        await activate_conversation_branch(
-                            conversation.id,
-                            [*original_prefix, edited_user_msg],
-                            using_db=conn,
-                        )
-
-                    if MessageAsset._meta.default_connection is not None:
-                        await asset_service.copy_message_attachments(
-                            source_message_id=message.id,
-                            target_message_id=edited_user_msg.id,
-                        )
-
-                    assistant_msg = await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.ASSISTANT,
-                        content="",
-                        branch_parent_id=edited_user_msg.id,
-                        round_id=round_id,
-                        round_index=1,
-                        round_role=MessageRoundRole.ASSISTANT_FINAL,
-                        is_round_canonical=True,
-                    )
-                    assistant_msg_id = str(assistant_msg.id)
-                    image_pool, image_inventory = collect_conversation_images(
-                        [*original_prefix, edited_user_msg],
-                    )
-                    model_message = append_conversation_image_inventory(
-                        final_message, image_inventory
-                    )
-
-                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': assistant_msg_id, 'edited_message_id': str(edited_user_msg.id), 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number, 'edited_parent_id': str(root_id)})}\n\n"
-                    last_event_time = time.time()
-
-                    chat_model = await resolve_agent_chat_model(agent)
-                    model_id = chat_model.model_id
-                    model_context_limit = chat_model.context_length
-                    model_max_output_tokens = chat_model.max_output_tokens
-                    model_provider = chat_model.provider
-                    tokenizer_model_id = chat_model.tokenizer_model_id
-                    model_used = model_id
-                    tools_openai = await get_agent_tools(agent)
-                    tool_display_names = await get_tool_display_names(
-                        agent, current_user.locale
-                    )
-                    tools: list[ToolDefinition] | None = None
-                    if tools_openai:
-                        tools = [
-                            ToolDefinition(
-                                type="function",
-                                function=FunctionDefinition(
-                                    name=t["function"]["name"],
-                                    description=t["function"]["description"],
-                                    parameters=t["function"]["parameters"],
-                                ),
-                            )
-                            for t in tools_openai
-                        ]
-
-                    from app.services.agent_loop import (
-                        AgentLoop,
-                        AgentLoopContext,
-                        ContextTurn,
-                    )
-
-                    max_iterations = agent.max_iterations or 5
-
-                    max_iterations_reached = False
-                    working_history_override: list[dict[str, Any]] | None = None
-                    aggregate_input_tokens = 0
-                    aggregate_output_tokens = 0
-                    aggregate_cache_read_tokens = 0
-                    aggregate_cache_creation_tokens = 0
-                    aggregate_total_input_tokens = 0
-                    created_message_count = 2
-
-                    def sse_formatter(event_name: str, payload: dict) -> str | None:
-                        """Build SSE strings and mirror deltas into generator
-                        scope so error handlers keep seeing partial state."""
-                        nonlocal full_content, full_reasoning, first_token_time
-                        nonlocal last_event_time
-                        if event_name == "heartbeat":
-                            return ": heartbeat\n\n"
-                        if event_name == "content_delta":
-                            delta = payload.get("delta", "")
-                            full_content += delta
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            last_event_time = time.time()
-                            return (
-                                f"event: {SSEEventType.CONTENT_DELTA}\n"
-                                f"data: {json.dumps({'delta': delta})}\n\n"
-                            )
-                        if event_name == "reasoning_start":
-                            last_event_time = time.time()
-                            return f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "reasoning_delta":
-                            delta = payload.get("delta", "")
-                            full_reasoning += delta
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            last_event_time = time.time()
-                            return (
-                                f"event: {SSEEventType.REASONING_DELTA}\n"
-                                f"data: {json.dumps({'delta': delta})}\n\n"
-                            )
-                        if event_name == "reasoning_end":
-                            return f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "tool_call":
-                            return payload.get("sse")
-                        if event_name == "tool_result":
-                            return payload.get("sse")
-                        if event_name == "media_result":
-                            return payload.get("sse")
-                        if event_name == "compression_start":
-                            event_str = build_compression_start_event(
-                                agent=agent,
-                                stage=payload.get("stage", "macro"),
-                                trigger=payload.get("trigger"),
-                            )
-                            if event_str:
-                                last_event_time = time.time()
-                            return event_str
-                        if event_name == "compression_end":
-                            _, end_str = build_compression_events(
-                                agent=agent,
-                                compression=payload.get("compression"),
-                                trigger=payload.get("trigger"),
-                            )
-                            if end_str:
-                                last_event_time = time.time()
-                            return end_str
-                        if event_name == "output_truncated":
-                            return f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "iteration_cap_reached":
-                            return (
-                                f"event: {SSEEventType.ITERATION_CAP_REACHED}\n"
-                                f"data: {json.dumps({'content': payload.get('content', '')})}\n\n"
-                            )
-                        return None
-
-                    async def build_turn(**kwargs):
-                        plan = await build_context_plan(**kwargs)
-                        return ContextTurn(
-                            prepared=None,
-                            will_summarize=plan.will_summarize,
-                            compression=plan.compression,
-                            plan=plan,
-                        )
-
-                    loop = AgentLoop(
-                        AgentLoopContext(
-                            agent=agent,
-                            conversation=conversation,
-                            user=current_user,
-                            user_message=model_message,
-                            model_id=model_id,
-                            tokenizer_model_id=tokenizer_model_id,
-                            model_provider=model_provider,
-                            model_context_limit=model_context_limit,
-                            model_max_output_tokens=model_max_output_tokens,
-                            model_used=model_used,
-                            model_supports_vision=False,
-                            tools=tools,
-                            tool_display_names=tool_display_names,
-                            tool_timeouts=tool_timeouts,
-                            global_timeout=global_timeout,
-                            idle_timeout=idle_timeout,
-                            heartbeat_interval=heartbeat_interval,
-                            sandbox_session_id=sandbox_session_id,
-                            file_content=None,
-                            current_images=None,
-                            working_history_override=working_history_override,
-                            image_pool=image_pool,
-                            image_inventory=image_inventory,
-                            append_generated_images=append_generated_images,
-                            current_user_message_id=edited_user_msg.id,
-                            exclude_message_ids=[assistant_msg.id],
-                            include_current_user_message=True,
-                            round_id=round_id,
-                            protected_round_id=round_id,
-                            user_locale=current_user.locale,
-                            max_iterations=max_iterations,
-                            streaming=True,
-                            build_turn=build_turn,
-                            execute_tool_call=execute_tool_call,
-                            count_tool_definition_tokens=count_tool_definition_tokens,
-                            trigger_for_compression=get_compression_trigger,
-                            team_chat_stream=model_manager.team_chat_stream,
-                            team_chat=model_manager.team_chat,
-                            record_stream_usage=model_manager.record_stream_usage,
-                            calculate_usage=_calculate_model_usage,
-                            send_heartbeat_if_needed=send_heartbeat_if_needed,
-                            is_disconnected=request.is_disconnected,
-                            request=request,
-                            initial_last_event_time=last_event_time,
-                            formatter=sse_formatter,
-                            persist_step_per_tool=True,
-                            step_branch_parent_id=assistant_msg.id,
-                            first_round_index=2,
-                            created_message_count=2,
-                            cap_content=lambda: build_max_iterations_terminal_content(
-                                current_user.locale
-                            ),
-                        )
-                    )
-                    async for sse_chunk in loop.run():
-                        if sse_chunk:
-                            yield sse_chunk
-                            last_event_time = time.time()
-                    loop_result = loop.result
-                    max_iterations_reached = loop_result.max_iterations_reached
-                    full_content = loop_result.full_content
-                    full_reasoning = loop_result.full_reasoning
-                    aggregate_input_tokens = loop_result.aggregate_input_tokens
-                    aggregate_output_tokens = loop_result.aggregate_output_tokens
-                    aggregate_cache_read_tokens = (
-                        loop_result.aggregate_cache_read_tokens
-                    )
-                    aggregate_cache_creation_tokens = (
-                        loop_result.aggregate_cache_creation_tokens
-                    )
-                    aggregate_total_input_tokens = (
-                        loop_result.aggregate_total_input_tokens
-                    )
-                    created_message_count = loop_result.created_message_count
-
-                    if loop_result.manually_stopped:
-                        assistant_msg.content = full_content
-                        assistant_msg.reasoning_content = full_reasoning or None
-                        assistant_msg.model_used = model_used
-                        assistant_msg.duration_ms = int(
-                            (time.time() - start_time) * 1000
-                        )
-                        assistant_msg.first_token_ms = _first_token_ms(
-                            start_time, first_token_time
-                        )
-                        assistant_msg.is_manually_stopped = True
-                        assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
-                        assistant_msg.created_at = now_utc()
-                        await assistant_msg.save()
-                        await activate_edited_path()
-                        return
-
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    terminal_content = (
-                        build_max_iterations_terminal_content(current_user.locale)
-                        if max_iterations_reached
-                        else full_content
-                    )
-                    terminal_round_status = get_round_terminal_status(
-                        completed=not max_iterations_reached,
-                        max_iterations_reached=max_iterations_reached,
-                    )
-                    assistant_msg.content = terminal_content
-                    assistant_msg.reasoning_content = (
-                        None
-                        if max_iterations_reached
-                        else (full_reasoning if full_reasoning else None)
-                    )
-                    assistant_msg.model_used = model_used
-                    assistant_msg.duration_ms = duration_ms
-                    assistant_msg.first_token_ms = _first_token_ms(
-                        start_time, first_token_time
-                    )
-                    assistant_msg.is_manually_stopped = False
-                    assistant_msg.round_status = terminal_round_status
-                    assistant_msg.created_at = now_utc()
-                    input_tokens = aggregate_input_tokens
-                    output_tokens = aggregate_output_tokens
-                    assistant_msg.token_usage = {
-                        "prompt": input_tokens,
-                        "completion": output_tokens,
-                        "cache_read": aggregate_cache_read_tokens,
-                        "cache_creation": aggregate_cache_creation_tokens,
-                        "total_input": aggregate_total_input_tokens,
-                    }
-                    await assistant_msg.save()
-                    await activate_edited_path()
-                    total_tokens = input_tokens + output_tokens
-                    await Agent.filter(id=agent.id).update(
-                        message_count=F("message_count") + created_message_count,
-                        total_tokens=F("total_tokens") + total_tokens,
-                    )
-                    if agent.team_id:
-                        await Team.filter(id=agent.team_id).update(
-                            total_messages=F("total_messages") + created_message_count,
-                            total_tokens=F("total_tokens") + total_tokens,
-                        )
-                    await Conversation.filter(id=conversation.id).update(
-                        message_count=F("message_count") + created_message_count,
-                        token_usage=F("token_usage") + total_tokens,
-                        updated_at=now_utc(),
-                    )
-                    tokens_per_second = (
-                        round(output_tokens / (duration_ms / 1000), 1)
-                        if duration_ms > 0 and output_tokens > 0
-                        else None
-                    )
-                    try:
-                        await AuditLogService.log(
-                            user=current_user,
-                            action="edit_message",
-                            resource_type="message",
-                            resource_id=edited_user_msg.id,
-                            resource_name=str(conversation.id),
-                            operation="update",
-                            status="success",
-                            request=request,
-                            changes={
-                                "before": _message_content_audit_preview(
-                                    message.content
-                                ),
-                                "after": _message_content_audit_preview(edited_content),
-                            },
-                            metadata={
-                                "agent_id": str(agent.id),
-                                "conversation_id": str(conversation.id),
-                                "original_message_id": str(message.id),
-                                "new_message_id": str(edited_user_msg.id),
-                                "version_number": new_user_version_number,
-                            },
-                        )
-                    except Exception:
-                        logger.exception("Failed to write message edit audit log")
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': total_tokens, 'cache_read_tokens': aggregate_cache_read_tokens, 'cache_creation_tokens': aggregate_cache_creation_tokens, 'total_input_tokens': aggregate_total_input_tokens}, 'timing': {'first_token_ms': assistant_msg.first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number})}\n\n"
-                except (QuotaExceededError, InsufficientQuotaError) as e:
-                    logger.warning(
-                        "Quota exceeded during message edit: conversation=%s agent=%s error=%s",
-                        conversation.id,
-                        agent.id,
-                        e,
-                    )
-                    preserved_partial = await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    if preserved_partial:
-                        await activate_edited_path()
-                    else:
-                        if assistant_msg_id:
-                            await Message.filter(id=assistant_msg_id).delete()
-                        if edited_user_msg:
-                            await Message.filter(id=edited_user_msg.id).update(
-                                is_active=False
-                            )
-                        await restore_original_path()
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
-                except LLMError as e:
-                    error_message = _format_llm_error_message(e)
-                    preserved_partial = await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=error_message,
-                    )
-                    if preserved_partial:
-                        await activate_edited_path()
-                    else:
-                        if assistant_msg_id:
-                            await Message.filter(id=assistant_msg_id).delete()
-                        if edited_user_msg:
-                            await Message.filter(id=edited_user_msg.id).update(
-                                is_active=False
-                            )
-                        await restore_original_path()
-                    logger.exception(
-                        "LLM error during message edit: conversation=%s agent=%s",
-                        conversation.id,
-                        agent.id,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
-                except StreamIdleTimeoutError:
-                    logger.warning(
-                        "Message edit stream idle timeout (%ss) for conversation %s agent=%s",
-                        idle_timeout,
-                        conversation.id,
-                        agent.id,
-                        extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
-                    )
-                    preserved_partial = await persist_partial_round_error(
-                        assistant_msg,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t("stream_timeout_exceeded"),
-                    )
-                    if preserved_partial:
-                        await activate_edited_path()
-                    else:
-                        if assistant_msg_id:
-                            await Message.filter(id=assistant_msg_id).delete()
-                        if edited_user_msg:
-                            await Message.filter(id=edited_user_msg.id).update(
-                                is_active=False
-                            )
-                        await restore_original_path()
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
-        except TimeoutError:
-            preserved_partial = await persist_partial_round_error(
-                assistant_msg,
-                content=full_content,
-                reasoning=full_reasoning,
-                model_used=model_used,
-                start_time=start_time,
-                first_token_time=first_token_time,
-                fallback_content=t("stream_timeout_exceeded"),
-            )
-            if preserved_partial:
-                await activate_edited_path()
-            else:
-                if assistant_msg_id:
-                    await Message.filter(id=assistant_msg_id).delete()
-                if edited_user_msg:
-                    await Message.filter(id=edited_user_msg.id).update(is_active=False)
-                await restore_original_path()
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
-        except asyncio.CancelledError:
-            if assistant_msg:
-                assistant_msg.content = full_content
-                assistant_msg.reasoning_content = full_reasoning or None
-                assistant_msg.model_used = model_used
-                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
-                assistant_msg.first_token_ms = _first_token_ms(
-                    start_time, first_token_time
-                )
-                assistant_msg.is_manually_stopped = True
-                assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
-                assistant_msg.created_at = now_utc()
-                if assistant_msg.content or assistant_msg.reasoning_content:
-                    await assistant_msg.save()
-                    await activate_edited_path()
-                else:
-                    await Message.filter(id=assistant_msg.id).delete()
-                    if edited_user_msg:
-                        await Message.filter(id=edited_user_msg.id).update(
-                            is_active=False
-                        )
-                    await restore_original_path()
-            return
-        except BusinessError as e:
-            error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
-            logger.warning(
-                "Business error during message edit: conversation=%s agent=%s code=%s msg=%s",
-                conversation.id,
-                agent.id,
-                e.code,
-                error_message,
-            )
-            preserved_partial = await persist_partial_round_error(
-                assistant_msg,
-                content=full_content,
-                reasoning=full_reasoning,
-                model_used=model_used,
-                start_time=start_time,
-                first_token_time=first_token_time,
-                fallback_content=error_message,
-            )
-            if preserved_partial:
-                await activate_edited_path()
-            else:
-                if assistant_msg_id:
-                    await Message.filter(id=assistant_msg_id).delete()
-                if edited_user_msg:
-                    await Message.filter(id=edited_user_msg.id).update(is_active=False)
-                await restore_original_path()
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
-
-        except Exception:
-            logger.exception(
-                "Unexpected error during message edit: conversation=%s agent=%s",
-                conversation.id,
-                agent.id,
-            )
-            preserved_partial = await persist_partial_round_error(
-                assistant_msg,
-                content=full_content,
-                reasoning=full_reasoning,
-                model_used=model_used,
-                start_time=start_time,
-                first_token_time=first_token_time,
-                fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-            )
-            if preserved_partial:
-                await activate_edited_path()
-            else:
-                if assistant_msg_id:
-                    await Message.filter(id=assistant_msg_id).delete()
-                if edited_user_msg:
-                    await Message.filter(id=edited_user_msg.id).update(is_active=False)
-                await restore_original_path()
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
-            return
-        finally:
-            duration = time.time() - start_time
-            logger.info(
-                "Message edit stream ended for conversation %s, duration=%.2fs",
-                conversation.id,
-                duration,
-            )
+def _stream_queued_run(started: dict) -> StreamingResponse:
+    """Subscribe to a queued run using the legacy streaming response shape."""
+    start_data = RunStartOut.model_validate(started["data"])
+    from app.services.agent_run_stream import sse_events
 
     return StreamingResponse(
-        event_generator(),
+        sse_events(start_data.run_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -3253,6 +1741,301 @@ async def edit_user_message_stream(
 # ============ AgentRun Endpoints ============
 
 
+async def _enqueue_existing_message_run(
+    *,
+    agent: Agent,
+    conversation: Conversation,
+    current_user: User,
+    mode: Any,
+    user_message: Message,
+    message: str,
+    round_id: UUID,
+    source_message_id: UUID,
+    canonical_message_id: UUID,
+    branch_parent_id: UUID | None,
+    images: list[dict[str, Any]] | None = None,
+    file_urls: list[dict[str, Any]] | None = None,
+    legacy_files: list[dict[str, Any]] | None = None,
+    variables: dict[str, Any] | None = None,
+    include_current_user_message: bool = True,
+    history_before_message_created_at: Any = None,
+    exclude_message_ids: list[UUID] | None = None,
+    created_message_count: int = 2,
+    first_round_index: int = 1,
+    rag_contexts: list[dict[str, Any]] | None = None,
+    in_place_retry: bool = False,
+    message_start: dict[str, Any] | None = None,
+) -> dict:
+    """Queue a run whose user and assistant rows already exist."""
+    from app.services.agent_run_store import create_run, transition_run
+    from app.services.agent_run_worker import build_payload
+
+    run = await create_run(
+        agent_id=agent.id,
+        conversation_id=conversation.id,
+        user_id=current_user.id,
+        mode=mode,
+        source_message_id=source_message_id,
+    )
+    run.active_round_id = round_id
+    run.canonical_message_id = canonical_message_id
+    await run.save(update_fields=["active_round_id", "canonical_message_id"])
+    payload = build_payload(
+        agent_id=agent.id,
+        conversation_id=conversation.id,
+        user_id=current_user.id,
+        mode=mode,
+        user_message_id=user_message.id,
+        round_id=round_id,
+        run_id=run.id,
+        message=message,
+        images=images,
+        file_urls=file_urls,
+        legacy_files=legacy_files,
+        variables=variables,
+        source_message_id=source_message_id,
+        edited_user_message_id=user_message.id if mode.value == "edit" else None,
+        canonical_message_id=canonical_message_id,
+        in_place_retry=in_place_retry,
+        branch_parent_id=branch_parent_id,
+        locale=current_user.locale,
+        include_current_user_message=include_current_user_message,
+        history_before_message_created_at=history_before_message_created_at,
+        exclude_message_ids=exclude_message_ids,
+        created_message_count=created_message_count,
+        first_round_index=first_round_index,
+        message_start=message_start,
+        rag_contexts=rag_contexts,
+    )
+    try:
+        from app.tasks.agent import run_agent_task
+
+        task_result = run_agent_task.apply_async(args=(payload,), queue="agent")
+        task_id = getattr(task_result, "id", None)
+        if task_id:
+            run.celery_task_id = task_id
+            await run.save(update_fields=["celery_task_id"])
+    except Exception as exc:
+        from app.models.agent_run import AgentRunStatus
+
+        await transition_run(
+            run,
+            AgentRunStatus.FAILED,
+            error_code="enqueue_failed",
+            error_message=str(exc),
+        )
+        raise
+    return success(
+        data=RunStartOut(
+            run_id=run.id,
+            conversation_id=conversation.id,
+            user_message_id=user_message.id,
+            status=run.status.value,
+            stream_url=f"/agents/{agent.id}/chat/runs/{run.id}/stream",
+        )
+    )
+
+
+async def _enqueue_durable_chat_run(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    auth_result: Any,
+    *,
+    mode: Any,
+) -> dict:
+    """Create the durable input row and enqueue one worker-owned run."""
+    current_user, api_key = _split_run_auth(auth_result)
+    if not current_user.is_active:
+        raise BusinessError(
+            code=ResponseCode.INACTIVE_USER,
+            msg_key="inactive_user",
+            status_code=401,
+        )
+    await deps.check_api_key_agent_access(api_key, agent_id)
+
+    agent = await check_agent_chat_access(agent_id, current_user)
+    conversation = await get_or_create_conversation(
+        agent, current_user, chat_in.conversation_id, chat_in.variables
+    )
+
+    from app.models.agent import RAGMode
+
+    rag_contexts: list[dict[str, Any]] = []
+    if agent.rag_mode == RAGMode.AUTO:
+        rag_contexts = await perform_rag_retrieval(
+            agent,
+            chat_in.message,
+            await get_visible_conversation_messages(
+                conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
+            ),
+        )
+        rag_contexts = aggregate_rag_contexts(rag_contexts)
+
+    message_assets = await _resolve_message_assets(
+        attachments=[*chat_in.images, *chat_in.file_urls],
+        agent=agent,
+        user=current_user,
+        conversation_id=conversation.id,
+    )
+    round_id = uuid4()
+    user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
+
+    async with _message_asset_transaction(bool(message_assets)):
+        user_msg = await Message.create(
+            conversation=conversation,
+            role=MessageRole.USER,
+            content=chat_in.message,
+            images=[img.model_dump() for img in chat_in.images]
+            if chat_in.images
+            else None,
+            file_urls=[f.model_dump() for f in chat_in.file_urls]
+            if chat_in.file_urls
+            else None,
+            rag_context=rag_contexts if rag_contexts else None,
+            branch_parent_id=user_branch_parent_id,
+            round_id=round_id,
+            round_index=0,
+            round_role=MessageRoundRole.USER_INPUT,
+            is_round_canonical=True,
+        )
+        await _attach_message_assets(
+            message_id=user_msg.id,
+            assets=message_assets,
+        )
+
+    await update_message_stats(agent, token_usage=None)
+    streaming_config = get_streaming_config(agent)
+    _, updated_file_urls = await build_file_content_for_context(
+        agent=agent,
+        file_urls=chat_in.file_urls,
+        legacy_files=chat_in.files,
+        user_locale=current_user.locale,
+        tool_timeouts=streaming_config["tool_timeouts"],
+        user=current_user,
+    )
+    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
+        user_msg.file_urls = updated_file_urls
+        await user_msg.save(update_fields=["file_urls"])
+
+    from app.services.agent_run_store import create_run, transition_run
+    from app.services.agent_run_worker import build_payload
+
+    run = await create_run(
+        agent_id=agent.id,
+        conversation_id=conversation.id,
+        user_id=current_user.id,
+        mode=mode,
+        source_message_id=user_msg.id,
+    )
+    run.active_round_id = round_id
+    await run.save(update_fields=["active_round_id"])
+    payload = build_payload(
+        agent_id=agent.id,
+        conversation_id=conversation.id,
+        user_id=current_user.id,
+        mode=mode,
+        user_message_id=user_msg.id,
+        round_id=round_id,
+        run_id=run.id,
+        message=chat_in.message,
+        images=[image.model_dump() for image in chat_in.images],
+        file_urls=updated_file_urls
+        if updated_file_urls is not None
+        else [file.model_dump() for file in chat_in.file_urls],
+        legacy_files=[file.model_dump() for file in chat_in.files],
+        history_override=(
+            [
+                message.model_dump(exclude_none=True)
+                for message in chat_in.history_override
+            ]
+            if chat_in.history_override
+            else None
+        ),
+        variables=chat_in.variables,
+        branch_parent_id=user_branch_parent_id,
+        locale=current_user.locale,
+    )
+
+    try:
+        from app.tasks.agent import run_agent_task
+
+        task_result = run_agent_task.apply_async(args=(payload,), queue="agent")
+        task_id = getattr(task_result, "id", None)
+        if task_id:
+            run.celery_task_id = task_id
+            await run.save(update_fields=["celery_task_id"])
+    except Exception as exc:
+        from app.models.agent_run import AgentRunStatus
+
+        await transition_run(
+            run,
+            AgentRunStatus.FAILED,
+            error_code="enqueue_failed",
+            error_message=str(exc),
+        )
+        raise
+
+    return success(
+        data=RunStartOut(
+            run_id=run.id,
+            conversation_id=conversation.id,
+            user_message_id=user_msg.id,
+            status=run.status.value,
+            stream_url=f"/agents/{agent_id}/chat/runs/{run.id}/stream",
+        )
+    )
+
+
+# ============ AgentRun Endpoints ==========
+@router.post(
+    "/{agent_id}/chat/runs",
+    response_model=Response[RunStartOut],
+    status_code=202,
+)
+async def start_chat_run(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    auth_result: tuple[User, "APIKey | None"] = Depends(
+        deps.get_current_user_or_api_key
+    ),
+) -> Any:
+    """Persist a chat request and enqueue its durable AgentRun worker."""
+    from app.models.agent_run import AgentRunMode
+
+    return await _enqueue_durable_chat_run(
+        agent_id,
+        chat_in,
+        auth_result,
+        mode=AgentRunMode.SEND,
+    )
+
+
+@router.get(
+    "/{agent_id}/chat/runs/{run_id}/stream",
+)
+async def stream_chat_run(
+    agent_id: UUID,
+    run_id: UUID,
+    after_sequence: int = 0,
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
+) -> StreamingResponse:
+    """Replay and follow one durable run until its terminal event."""
+    current_user, api_key = _split_run_auth(auth_result)
+    await deps.check_api_key_agent_access(api_key, agent_id)
+    await _load_owned_run(agent_id, run_id, current_user)
+    from app.services.agent_run_stream import sse_events
+
+    return StreamingResponse(
+        sse_events(run_id, from_sequence=max(after_sequence, 0)),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.get(
     "/{agent_id}/chat/runs/{run_id}",
     response_model=Response[RunOut],
@@ -3260,9 +2043,11 @@ async def edit_user_message_stream(
 async def get_run_status(
     agent_id: UUID,
     run_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ) -> Any:
     """Get durable run status; owner-scoped."""
+    current_user, api_key = _split_run_auth(auth_result)
+    await deps.check_api_key_agent_access(api_key, agent_id)
     run = await _load_owned_run(agent_id, run_id, current_user)
     return success(data=_run_to_out(run))
 
@@ -3275,9 +2060,11 @@ async def get_run_events(
     agent_id: UUID,
     run_id: UUID,
     after_sequence: int = 0,
-    current_user: User = Depends(deps.get_current_active_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ) -> Any:
     """Replay buffered run events after ``after_sequence`` (authorized scope)."""
+    current_user, api_key = _split_run_auth(auth_result)
+    await deps.check_api_key_agent_access(api_key, agent_id)
     await _load_owned_run(agent_id, run_id, current_user)
     from app.services.agent_run_stream import AgentRunStream
 
@@ -3295,9 +2082,11 @@ async def post_run_input(
     agent_id: UUID,
     run_id: UUID,
     body: RunInputCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ) -> Any:
     """Queue steering / follow-up / stop for a running agent."""
+    current_user, api_key = _split_run_auth(auth_result)
+    await deps.check_api_key_agent_access(api_key, agent_id)
     run = await _load_owned_run(agent_id, run_id, current_user)
     from app.models.agent_run import AgentRunInputKind
 
@@ -3325,9 +2114,11 @@ async def post_run_input(
 async def stop_run(
     agent_id: UUID,
     run_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ) -> Any:
     """Cooperative stop: persist ``stopping`` and wake the worker."""
+    current_user, api_key = _split_run_auth(auth_result)
+    await deps.check_api_key_agent_access(api_key, agent_id)
     run = await _load_owned_run(agent_id, run_id, current_user)
     from app.models.agent_run import (
         AgentRunInputKind,
@@ -3346,6 +2137,13 @@ async def stop_run(
         await transition_run(run, AgentRunStatus.STOPPING)
     await enqueue_input(run_id=run_id, kind=AgentRunInputKind.STOP)
     return success(data=_run_to_out(run))
+
+
+def _split_run_auth(auth_result: Any) -> tuple[User, "APIKey | None"]:
+    """Accept dependency tuples and direct-user calls used by unit tests."""
+    if isinstance(auth_result, tuple) and len(auth_result) == 2:
+        return auth_result
+    return auth_result, None
 
 
 async def _load_owned_run(
@@ -3398,14 +2196,9 @@ async def regenerate_message(
     regen_request: RegenerateRequest,
     request: Request,
     current_user: User = Depends(deps.get_current_active_user),
-) -> StreamingResponse:
-    """
-    Regenerate an assistant message (create a new version).
-
-    This creates a new version of the message and streams the response.
-    The new version becomes active, and the old version is deactivated.
-    """
-    # Get the message to regenerate
+) -> Any:
+    """Queue a new assistant version (or retry an errored one) durably."""
+    del request
     message = await Message.filter(id=message_id).first()
     if not message:
         raise BusinessError(
@@ -3413,17 +2206,16 @@ async def regenerate_message(
             msg_key="message_not_found",
             status_code=404,
         )
-
     if message.role != MessageRole.ASSISTANT:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="can_only_regenerate_assistant",
             status_code=400,
         )
-
-    # Get conversation and verify access
     conversation = await Conversation.filter(
-        id=message.conversation_id, user=current_user
+        id=message.conversation_id,
+        agent_id=agent_id,
+        user=current_user,
     ).first()
     if not conversation:
         raise BusinessError(
@@ -3431,11 +2223,7 @@ async def regenerate_message(
             msg_key="access_denied",
             status_code=403,
         )
-
-    # Get the agent
-    agent = (
-        await Agent.filter(id=conversation.agent_id).prefetch_related("team").first()
-    )
+    agent = await Agent.filter(id=agent_id).prefetch_related("team").first()
     if not agent:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -3452,7 +2240,6 @@ async def regenerate_message(
         ),
         None,
     )
-
     if not user_message:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
@@ -3460,665 +2247,86 @@ async def regenerate_message(
             status_code=400,
         )
 
-    async def event_generator():
-        start_time = time.time()
-        first_token_time: float | None = None
-        last_event_time = start_time
-        full_content = ""
-        full_reasoning = ""
-        new_message_id = None
-        new_message: Message | None = None
-        in_place_retry = False
-        model_id: str | None = None
-        model_used: str | None = None
-        global_timeout: float = 1800.0  # Default 30 minutes
-        idle_timeout: float = 300.0  # Default 5 minutes
+    from app.models.agent import RAGMode
+    from app.models.agent_run import AgentRunMode
 
-        try:
-            from app.llm import model_manager
-            from app.llm.errors import QuotaExceededError, LLMError
-            from app.llm.types import (
-                ToolDefinition,
-                FunctionDefinition,
+    in_place_retry = message.round_status == MessageRoundStatus.ERROR
+    root_id = get_version_root_id(message)
+    branch_parent_id = message.branch_parent_id
+    if branch_parent_id is None:
+        branch_parent_id = prefix_for_message[-1].id if prefix_for_message else None
+    current_version_count = await get_branch_version_count(message)
+    new_version_number = current_version_count + 1
+    round_id = uuid4()
+
+    if in_place_retry:
+        message.content = ""
+        message.reasoning_content = None
+        message.tool_calls = None
+        message.token_usage = None
+        message.duration_ms = None
+        message.first_token_ms = None
+        message.round_status = None
+        message.round_id = round_id
+        message.round_index = 0
+        message.created_at = now_utc()
+        await message.save()
+        assistant_msg = message
+        version_number = message.version_number
+        version_count = current_version_count
+    else:
+        assistant_msg = await Message.create(
+            conversation=conversation,
+            role=MessageRole.ASSISTANT,
+            content="",
+            parent_id=root_id,
+            is_active=True,
+            version_number=new_version_number,
+            branch_parent_id=branch_parent_id,
+            round_id=round_id,
+            round_index=0,
+            round_role=MessageRoundRole.ASSISTANT_FINAL,
+            is_round_canonical=True,
+        )
+        version_number = new_version_number
+        version_count = new_version_number
+
+    rag_contexts: list[dict[str, Any]] = []
+    if agent.rag_mode == RAGMode.AUTO and await AgentKnowledgeBase.exists(
+        agent_id=agent.id
+    ):
+        rag_contexts = aggregate_rag_contexts(
+            await perform_rag_retrieval(
+                agent,
+                user_message.content,
+                prefix_for_message[-AUTO_RAG_HISTORY_LIMIT:],
             )
-
-            async def activate_regenerated_path() -> None:
-                if not new_message:
-                    return
-                prefix = await get_prefix_path_before(new_message)
-                await activate_conversation_branch(
-                    conversation.id,
-                    [*prefix, new_message],
-                )
-
-            async def restore_original_path() -> None:
-                prefix = await get_prefix_path_before(message)
-                descendant_branch = await find_descendant_branch_from(message)
-                await activate_conversation_branch(
-                    conversation.id,
-                    [*prefix, *descendant_branch],
-                )
-
-            # Get streaming configuration
-            streaming_config = get_streaming_config(agent)
-            global_timeout = streaming_config["global_timeout"]
-            heartbeat_interval = streaming_config["heartbeat_interval"]
-            tool_timeouts = streaming_config["tool_timeouts"]
-            idle_timeout = streaming_config["idle_timeout"]
-
-            from app.services.sandbox.gateway import sandbox_gateway
-
-            sandbox_session_id = await sandbox_gateway.create_session(
-                agent_id=str(agent.id),
-                team_id=str(agent.team_id) if agent.team_id else None,
-                user_id=str(current_user.id),
-                conversation_id=str(conversation.id),
-            )
-
-            logger.info(
-                f"Starting regenerate stream for message {message_id}, "
-                f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
-            )
-
-            # Use asyncio.timeout to wrap entire streaming logic
-            import asyncio
-
-            async with asyncio.timeout(global_timeout):
-                try:
-                    from app.models.agent import RAGMode
-
-                    # Determine the root message ID for versioning
-                    root_id = get_version_root_id(message)
-
-                    # An errored message is retried IN PLACE: no new version or
-                    # branch is created, so failed attempts never pollute the
-                    # version history.
-                    in_place_retry = message.round_status == MessageRoundStatus.ERROR
-
-                    # Get current version count
-                    current_version_count = await get_branch_version_count(message)
-                    new_version_number = current_version_count + 1
-                    branch_parent_id = message.branch_parent_id
-                    if branch_parent_id is None:
-                        prefix = await get_prefix_path_before(message)
-                        branch_parent_id = prefix[-1].id if prefix else None
-
-                    round_id = uuid4()
-
-                    if in_place_retry:
-                        # Reuse the existing row: clear the failed attempt,
-                        # rotate to a fresh round (so stale tool steps of the
-                        # errored round cannot resurface), and keep the version
-                        # numbers unchanged.
-                        message.content = ""
-                        message.reasoning_content = None
-                        message.tool_calls = None
-                        message.token_usage = None
-                        message.duration_ms = None
-                        message.first_token_ms = None
-                        message.round_status = None
-                        message.round_id = round_id
-                        message.created_at = now_utc()
-                        await message.save()
-                        new_message = message
-                        new_message_id = str(message.id)
-                        effective_version_number = message.version_number
-                        effective_version_count = await get_branch_version_count(
-                            message
-                        )
-                        yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': effective_version_number, 'version_count': effective_version_count})}\n\n"
-                    else:
-                        # Create new version message
-                        new_message = await Message.create(
-                            conversation=conversation,
-                            role=MessageRole.ASSISTANT,
-                            content="",
-                            parent_id=root_id,
-                            is_active=True,
-                            version_number=new_version_number,
-                            branch_parent_id=branch_parent_id,
-                            round_id=round_id,
-                            round_index=0,
-                            round_role=MessageRoundRole.ASSISTANT_FINAL,
-                            is_round_canonical=True,
-                        )
-                        new_message_id = str(new_message.id)
-                        effective_version_number = new_version_number
-                        effective_version_count = new_version_number
-
-                        # Send message_start event with version info
-                        yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': effective_version_number, 'version_count': effective_version_count, 'parent_id': str(root_id)})}\n\n"
-                    last_event_time = time.time()
-
-                    # Handle RAG
-                    rag_contexts: list[dict] = []
-                    final_message = user_message.content
-
-                    if agent.rag_mode == RAGMode.AUTO:
-                        has_knowledge_bases = await AgentKnowledgeBase.exists(
-                            agent_id=agent.id
-                        )
-                        if has_knowledge_bases:
-                            yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
-                            last_event_time = time.time()
-                            rag_contexts = await perform_rag_retrieval(
-                                agent,
-                                user_message.content,
-                                await get_prefix_path_before(
-                                    user_message,
-                                    limit=AUTO_RAG_HISTORY_LIMIT,
-                                    trimmed=False,
-                                ),
-                            )
-                            if rag_contexts:
-                                rag_contexts = aggregate_rag_contexts(rag_contexts)
-                                yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
-                                last_event_time = time.time()
-                            final_message = build_rag_prompt(
-                                rag_contexts, user_message.content
-                            )
-
-                    final_message = await _append_asset_manifest(
-                        final_message,
-                        conversation_id=conversation.id,
-                        agent=agent,
-                        user=current_user,
-                    )
-
-                    image_pool, image_inventory = collect_conversation_images(
-                        prefix_for_message,
-                    )
-                    model_message = append_conversation_image_inventory(
-                        final_message, image_inventory
-                    )
-                    chat_model = await resolve_agent_chat_model(agent)
-                    model_id = chat_model.model_id
-                    model_context_limit = chat_model.context_length
-                    model_max_output_tokens = chat_model.max_output_tokens
-                    model_provider = chat_model.provider
-                    tokenizer_model_id = chat_model.tokenizer_model_id
-                    model_used = model_id
-                    working_history_override = None
-
-                    # Get model and tools
-                    tools_openai = await get_agent_tools(agent)
-                    tool_display_names = await get_tool_display_names(
-                        agent, current_user.locale
-                    )
-                    tools: list[ToolDefinition] | None = None
-                    if tools_openai:
-                        tools = [
-                            ToolDefinition(
-                                type="function",
-                                function=FunctionDefinition(
-                                    name=t["function"]["name"],
-                                    description=t["function"]["description"],
-                                    parameters=t["function"]["parameters"],
-                                ),
-                            )
-                            for t in tools_openai
-                        ]
-
-                    # Streaming generation (simplified - same as main chat)
-                    from app.services.agent_loop import (
-                        AgentLoop,
-                        AgentLoopContext,
-                        ContextTurn,
-                    )
-
-                    max_iterations = agent.max_iterations or 5
-                    max_iterations_reached = False
-                    aggregate_input_tokens = 0
-                    aggregate_output_tokens = 0
-                    aggregate_cache_read_tokens = 0
-                    aggregate_cache_creation_tokens = 0
-                    aggregate_total_input_tokens = 0
-
-                    def sse_formatter(event_name: str, payload: dict) -> str | None:
-                        """Build SSE strings and mirror deltas into generator
-                        scope so error handlers keep seeing partial state."""
-                        nonlocal full_content, full_reasoning, first_token_time
-                        nonlocal last_event_time
-                        if event_name == "heartbeat":
-                            return ": heartbeat\n\n"
-                        if event_name == "content_delta":
-                            delta = payload.get("delta", "")
-                            full_content += delta
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            last_event_time = time.time()
-                            return (
-                                f"event: {SSEEventType.CONTENT_DELTA}\n"
-                                f"data: {json.dumps({'delta': delta})}\n\n"
-                            )
-                        if event_name == "reasoning_start":
-                            last_event_time = time.time()
-                            return f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "reasoning_delta":
-                            delta = payload.get("delta", "")
-                            full_reasoning += delta
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            last_event_time = time.time()
-                            return (
-                                f"event: {SSEEventType.REASONING_DELTA}\n"
-                                f"data: {json.dumps({'delta': delta})}\n\n"
-                            )
-                        if event_name == "reasoning_end":
-                            return f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "tool_call":
-                            return payload.get("sse")
-                        if event_name == "tool_result":
-                            return payload.get("sse")
-                        if event_name == "media_result":
-                            return payload.get("sse")
-                        if event_name == "compression_start":
-                            event_str = build_compression_start_event(
-                                agent=agent,
-                                stage=payload.get("stage", "macro"),
-                                trigger=payload.get("trigger"),
-                            )
-                            if event_str:
-                                last_event_time = time.time()
-                            return event_str
-                        if event_name == "compression_end":
-                            _, end_str = build_compression_events(
-                                agent=agent,
-                                compression=payload.get("compression"),
-                                trigger=payload.get("trigger"),
-                            )
-                            if end_str:
-                                last_event_time = time.time()
-                            return end_str
-                        if event_name == "output_truncated":
-                            return f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                        if event_name == "iteration_cap_reached":
-                            return (
-                                f"event: {SSEEventType.ITERATION_CAP_REACHED}\n"
-                                f"data: {json.dumps({'content': payload.get('content', '')})}\n\n"
-                            )
-                        return None
-
-                    async def build_turn(**kwargs):
-                        plan = await build_context_plan(**kwargs)
-                        return ContextTurn(
-                            prepared=None,
-                            will_summarize=plan.will_summarize,
-                            compression=plan.compression,
-                            plan=plan,
-                        )
-
-                    loop = AgentLoop(
-                        AgentLoopContext(
-                            agent=agent,
-                            conversation=conversation,
-                            user=current_user,
-                            user_message=model_message,
-                            model_id=model_id,
-                            tokenizer_model_id=tokenizer_model_id,
-                            model_provider=model_provider,
-                            model_context_limit=model_context_limit,
-                            model_max_output_tokens=model_max_output_tokens,
-                            model_used=model_used,
-                            model_supports_vision=False,
-                            tools=tools,
-                            tool_display_names=tool_display_names,
-                            tool_timeouts=tool_timeouts,
-                            global_timeout=global_timeout,
-                            idle_timeout=idle_timeout,
-                            heartbeat_interval=heartbeat_interval,
-                            sandbox_session_id=sandbox_session_id,
-                            file_content=None,
-                            current_images=None,
-                            working_history_override=working_history_override,
-                            image_pool=image_pool,
-                            image_inventory=image_inventory,
-                            append_generated_images=append_generated_images,
-                            current_user_message_id=user_message.id,
-                            include_current_user_message=False,
-                            history_before_message_created_at=user_message.created_at,
-                            round_id=round_id,
-                            protected_round_id=round_id,
-                            user_locale=current_user.locale,
-                            max_iterations=max_iterations,
-                            streaming=True,
-                            build_turn=build_turn,
-                            execute_tool_call=execute_tool_call,
-                            count_tool_definition_tokens=count_tool_definition_tokens,
-                            trigger_for_compression=get_compression_trigger,
-                            team_chat_stream=model_manager.team_chat_stream,
-                            team_chat=model_manager.team_chat,
-                            record_stream_usage=model_manager.record_stream_usage,
-                            calculate_usage=_calculate_model_usage,
-                            send_heartbeat_if_needed=send_heartbeat_if_needed,
-                            is_disconnected=request.is_disconnected,
-                            request=request,
-                            initial_last_event_time=last_event_time,
-                            formatter=sse_formatter,
-                            persist_step_per_tool=True,
-                            step_branch_parent_id=new_message.id,
-                            first_round_index=1,
-                            created_message_count=1,
-                            cap_content=lambda: build_max_iterations_terminal_content(
-                                current_user.locale
-                            ),
-                        )
-                    )
-                    async for sse_chunk in loop.run():
-                        if sse_chunk:
-                            yield sse_chunk
-                            last_event_time = time.time()
-                    loop_result = loop.result
-                    max_iterations_reached = loop_result.max_iterations_reached
-                    full_content = loop_result.full_content
-                    full_reasoning = loop_result.full_reasoning
-                    aggregate_input_tokens = loop_result.aggregate_input_tokens
-                    aggregate_output_tokens = loop_result.aggregate_output_tokens
-                    aggregate_cache_read_tokens = (
-                        loop_result.aggregate_cache_read_tokens
-                    )
-                    aggregate_cache_creation_tokens = (
-                        loop_result.aggregate_cache_creation_tokens
-                    )
-                    aggregate_total_input_tokens = (
-                        loop_result.aggregate_total_input_tokens
-                    )
-
-                    if loop_result.manually_stopped:
-                        new_message.content = full_content
-                        new_message.reasoning_content = (
-                            full_reasoning if full_reasoning else None
-                        )
-                        new_message.model_used = model_used
-                        new_message.duration_ms = int((time.time() - start_time) * 1000)
-                        new_message.first_token_ms = _first_token_ms(
-                            start_time, first_token_time
-                        )
-                        new_message.is_manually_stopped = True
-                        new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
-                        new_message.created_at = now_utc()
-                        await new_message.save()
-                        await activate_regenerated_path()
-                        return
-
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    terminal_content = (
-                        build_max_iterations_terminal_content(current_user.locale)
-                        if max_iterations_reached
-                        else full_content
-                    )
-                    terminal_round_status = get_round_terminal_status(
-                        completed=not max_iterations_reached,
-                        max_iterations_reached=max_iterations_reached,
-                    )
-
-                    # Update new message
-                    new_message.content = terminal_content
-                    new_message.reasoning_content = (
-                        None
-                        if max_iterations_reached
-                        else (full_reasoning if full_reasoning else None)
-                    )
-                    new_message.model_used = model_used
-                    new_message.duration_ms = duration_ms
-                    new_message.first_token_ms = _first_token_ms(
-                        start_time, first_token_time
-                    )
-                    new_message.is_manually_stopped = False
-                    new_message.round_status = terminal_round_status
-                    # Ensure regenerated message appears after tool calls/results in history
-                    new_message.created_at = now_utc()
-                    input_tokens = aggregate_input_tokens
-                    output_tokens = aggregate_output_tokens
-                    new_message.token_usage = {
-                        "prompt": input_tokens,
-                        "completion": output_tokens,
-                        "cache_read": aggregate_cache_read_tokens,
-                        "cache_creation": aggregate_cache_creation_tokens,
-                        "total_input": aggregate_total_input_tokens,
-                    }
-                    await new_message.save()
-                    prefix = await get_prefix_path_before(new_message)
-                    await activate_conversation_branch(
-                        conversation.id,
-                        [*prefix, new_message],
-                    )
-
-                    # Update agent and team stats for regenerated message
-                    total_tokens = input_tokens + output_tokens
-                    await Agent.filter(id=agent.id).update(
-                        message_count=F("message_count") + 1,
-                        total_tokens=F("total_tokens") + total_tokens,
-                    )
-                    await Team.filter(id=agent.team.id).update(
-                        total_messages=F("total_messages") + 1,
-                        total_tokens=F("total_tokens") + total_tokens,
-                    )
-                    await Conversation.filter(id=conversation.id).update(
-                        message_count=F("message_count") + 1,
-                        token_usage=F("token_usage") + total_tokens,
-                        updated_at=now_utc(),
-                    )
-
-                    first_token_ms = new_message.first_token_ms
-                    tokens_per_second = (
-                        round(output_tokens / (duration_ms / 1000), 1)
-                        if duration_ms > 0 and output_tokens > 0
-                        else None
-                    )
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens, 'cache_read_tokens': aggregate_cache_read_tokens, 'cache_creation_tokens': aggregate_cache_creation_tokens, 'total_input_tokens': aggregate_total_input_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': effective_version_number, 'version_count': effective_version_count})}\n\n"
-
-                except (QuotaExceededError, InsufficientQuotaError) as e:
-                    logger.warning(
-                        "Quota exceeded during regenerate: conversation=%s agent=%s error=%s",
-                        conversation.id,
-                        agent.id,
-                        e,
-                    )
-                    preserved_partial = await persist_partial_round_error(
-                        new_message,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    if preserved_partial:
-                        await activate_regenerated_path()
-                    else:
-                        if new_message_id and not in_place_retry:
-                            await Message.filter(id=new_message_id).delete()
-                        await restore_original_path()
-                    logger.warning("Quota exceeded during regenerate: %s", e)
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
-                except LLMError as e:
-                    error_message = _format_llm_error_message(e)
-                    preserved_partial = await persist_partial_round_error(
-                        new_message,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=error_message,
-                    )
-                    if preserved_partial:
-                        await activate_regenerated_path()
-                    else:
-                        if new_message_id and not in_place_retry:
-                            await Message.filter(id=new_message_id).delete()
-                        await restore_original_path()
-                    logger.exception(
-                        "LLM error during regenerate: conversation=%s agent=%s",
-                        conversation.id,
-                        agent.id,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
-                except StreamIdleTimeoutError:
-                    preserved_partial = await persist_partial_round_error(
-                        new_message,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t("stream_timeout_exceeded"),
-                    )
-                    if preserved_partial:
-                        await activate_regenerated_path()
-                    else:
-                        if new_message_id and not in_place_retry:
-                            await Message.filter(id=new_message_id).delete()
-                        await restore_original_path()
-                    logger.warning(
-                        "Regenerate stream idle timeout (%ss) for conversation %s agent=%s",
-                        idle_timeout,
-                        conversation.id,
-                        agent.id,
-                        extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
-                except BusinessError as e:
-                    error_message = t(e.msg_key or GENERIC_STREAM_ERROR_KEY, **e.kwargs)
-                    logger.warning(
-                        "Business error during regenerate: conversation=%s agent=%s code=%s msg=%s",
-                        conversation.id,
-                        agent.id,
-                        e.code,
-                        error_message,
-                    )
-                    preserved_partial = await persist_partial_round_error(
-                        new_message,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=error_message,
-                    )
-                    if preserved_partial:
-                        await activate_regenerated_path()
-                    else:
-                        if new_message_id and not in_place_retry:
-                            await Message.filter(id=new_message_id).delete()
-                        await restore_original_path()
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': e.code, 'msg': error_message})}\n\n"
-
-                except Exception:
-                    preserved_partial = await persist_partial_round_error(
-                        new_message,
-                        content=full_content,
-                        reasoning=full_reasoning,
-                        model_used=model_used,
-                        start_time=start_time,
-                        first_token_time=first_token_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-                    )
-                    if preserved_partial:
-                        await activate_regenerated_path()
-                    else:
-                        if new_message_id and not in_place_retry:
-                            await Message.filter(id=new_message_id).delete()
-                        await restore_original_path()
-                    logger.exception(
-                        "Unexpected error during regenerate: conversation=%s agent=%s",
-                        conversation.id,
-                        agent.id,
-                    )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
-
-        except TimeoutError:
-            # Global timeout
-            logger.warning(
-                "Regenerate stream global timeout (%ss) for message %s",
-                global_timeout,
-                message_id,
-                extra={"timeout_type": "global", "timeout_seconds": global_timeout},
-            )
-            preserved_partial = await persist_partial_round_error(
-                new_message,
-                content=full_content,
-                reasoning=full_reasoning,
-                model_used=model_used,
-                start_time=start_time,
-                first_token_time=first_token_time,
-                fallback_content=t("stream_timeout_exceeded"),
-            )
-            if preserved_partial:
-                await activate_regenerated_path()
-            elif new_message_id and not in_place_retry:
-                await Message.filter(id=new_message_id).delete()
-                await restore_original_path()
-            # Send timeout error event
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
-        except asyncio.CancelledError:
-            logger.info(
-                "Regenerate stream cancelled for message %s; persisting stopped assistant state",
-                message_id,
-            )
-            if new_message:
-                new_message.content = full_content
-                new_message.reasoning_content = full_reasoning or None
-                new_message.model_used = model_used
-                new_message.duration_ms = int((time.time() - start_time) * 1000)
-                new_message.first_token_ms = _first_token_ms(
-                    start_time, first_token_time
-                )
-                new_message.is_manually_stopped = True
-                new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
-                new_message.created_at = now_utc()
-                if (
-                    new_message.content
-                    or new_message.reasoning_content
-                    or new_message.tool_calls
-                ):
-                    await new_message.save()
-                    await activate_regenerated_path()
-                else:
-                    await Message.filter(id=new_message.id).delete()
-                    await restore_original_path()
-            return
-
-        except Exception as exc:
-            logger.error(
-                "Unhandled regenerate stream error: conversation=%s agent=%s exc=%s",
-                conversation.id,
-                agent.id,
-                type(exc).__name__,
-                exc_info=True,
-            )
-            preserved_partial = await persist_partial_round_error(
-                new_message,
-                content=full_content,
-                reasoning=full_reasoning,
-                model_used=model_used,
-                start_time=start_time,
-                first_token_time=first_token_time,
-                fallback_content=t(GENERIC_STREAM_ERROR_KEY),
-            )
-            if preserved_partial:
-                await activate_regenerated_path()
-            elif new_message_id and not in_place_retry:
-                await Message.filter(id=new_message_id).delete()
-                await restore_original_path()
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
-            return
-
-        finally:
-            # Resource cleanup and logging
-            duration = time.time() - start_time
-            logger.info(
-                f"Regenerate stream ended for message {message_id}, "
-                f"duration={duration:.2f}s"
-            )
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
+        )
+    started = await _enqueue_existing_message_run(
+        agent=agent,
+        conversation=conversation,
+        current_user=current_user,
+        mode=AgentRunMode.REGENERATE,
+        user_message=user_message,
+        message=user_message.content,
+        round_id=round_id,
+        source_message_id=message.id,
+        canonical_message_id=assistant_msg.id,
+        branch_parent_id=branch_parent_id,
+        images=user_message.images,
+        file_urls=user_message.file_urls,
+        variables=regen_request.variables,
+        include_current_user_message=False,
+        history_before_message_created_at=user_message.created_at,
+        exclude_message_ids=[assistant_msg.id],
+        created_message_count=0 if in_place_retry else 1,
+        first_round_index=2,
+        in_place_retry=in_place_retry,
+        rag_contexts=rag_contexts,
+        message_start={
+            "version_number": version_number,
+            "version_count": version_count,
+            **({"parent_id": str(root_id)} if not in_place_retry else {}),
         },
     )
+    return _stream_queued_run(started)

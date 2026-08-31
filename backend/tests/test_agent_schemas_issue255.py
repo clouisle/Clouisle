@@ -55,7 +55,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
             "tools_config": [{"type": "builtin", "name": "search"}],
             "attachment_config": {"parser": {"type": "builtin"}},
             "memory_config": {"importance_threshold": "high"},
-            "context_compression_config": {"checkpoint_target_ratio": 0.6},
+            "context_compression_config": {"summary_max_tokens": 2000},
             "image_generation_config": {"allowed_providers": ["image-provider"]},
             "video_generation_config": {"default_duration": 8},
             "knowledge_base_configs": [{"knowledge_base_id": str(knowledge_base_id)}],
@@ -74,7 +74,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.tools_config == [ToolConfig(type="builtin", name="search")]
     assert agent.attachment_config.max_files == 5
     assert agent.memory_config.max_memories_per_retrieval == 10
-    assert agent.context_compression_config.checkpoint_target_ratio == 0.6
+    assert agent.context_compression_config.summary_max_tokens == 2000
     assert agent.image_generation_config.default_width == 1024
     assert agent.video_generation_config.default_duration == 8
     assert agent.knowledge_base_configs[0].knowledge_base_id == knowledge_base_id
@@ -95,20 +95,13 @@ def test_mutable_defaults_are_not_shared():
     assert RegenerateRequest().variables == {}
 
 
-def test_context_compression_clamps_legacy_checkpoint_ratio():
-    config = ContextCompressionConfig(auto_compact_trigger_ratio=0.5)
-
-    assert config.checkpoint_target_ratio == 0.375
-
-
 @pytest.mark.parametrize(
     ("schema", "payload"),
     [
         (MemoryConfig, {"max_memories_per_retrieval": 0}),
         (MemoryConfig, {"importance_threshold": "urgent"}),
-        (ContextCompressionConfig, {"recent_raw_turns": 0}),
-        (ContextCompressionConfig, {"warning_ratio": 1.1}),
-        (ContextCompressionConfig, {"retention_strategy": "oldest_first"}),
+        (ContextCompressionConfig, {"summary_max_tokens": 100}),
+        (ContextCompressionConfig, {"summary_max_tokens": 9000}),
         (ImageGenerationConfig, {"default_width": 255}),
         (ImageGenerationConfig, {"max_images": 11}),
         (VideoGenerationConfig, {"default_duration": 31}),

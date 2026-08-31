@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-19T13:12:45.580Z
+// GENERATED — 2026-08-31T02:51:53.464Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -94,6 +94,9 @@ export type ChatMessages = {
       fileTooLarge: string
       maxFilesReached: string
       dropFiles: string
+      steeringQueued: string
+      followUpQueued: string
+      attachmentsDisabledDuringRun: string
     }
     message: {
       copy: string
@@ -167,6 +170,20 @@ export type ChatMessages = {
       linkSafetyDescription: string
       linkSafetyCancel: string
       linkSafetyContinue: string
+      runStatusQueued: string
+      runStatusRunning: string
+      runStatusStopping: string
+      runStatusCompleting: string
+      runStatusCompleted: string
+      runStatusStopped: string
+      runStatusFailed: string
+      runStatusInterrupted: string
+      queuedInputLabel: string
+      queuedSteering: string
+      queuedFollowUp: string
+      committedSteering: string
+      committedFollowUp: string
+      attachmentsDisabledDuringRun: string
     }
     userInputRequest: {
       pending: string

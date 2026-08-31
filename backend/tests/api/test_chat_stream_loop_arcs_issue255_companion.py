@@ -1,486 +1,117 @@
-from datetime import UTC, datetime
-import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
 from app.api.v1.endpoints import chat
-from app.llm.errors import ContextLengthError
-from app.llm.types import (
-    ChatResponse,
-    ChatStreamChunk,
-    ChatStreamDelta,
-    FinishReason,
-    FunctionCall,
-    Message as LLMMessage,
-    ToolCall,
-    Usage,
-)
-from app.models.agent import MessageRoundStatus, RAGMode
-from app.schemas.agent import ChatRequest
+from app.schemas.agent import ChatRequest, RunStartOut
 
 
-def _fake_chat_resolution():
-    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
-    return SimpleNamespace(
-        model=SimpleNamespace(id=uuid4()),
-        team_model=SimpleNamespace(),
-        model_id=str(uuid4()),
-        tokenizer_model_id="stub-model",
-        provider="stub",
-        context_length=8192,
-        max_output_tokens=1024,
-        supports_vision=False,
-    )
+def _started() -> dict:
+    return {
+        "data": RunStartOut(
+            run_id=uuid4(),
+            conversation_id=uuid4(),
+            user_message_id=uuid4(),
+            status="queued",
+            stream_url="/agents/run/chat/runs/run/stream",
+        )
+    }
 
 
-class Query:
-    def __init__(self):
-        self.update = AsyncMock(return_value=1)
+async def _collect_stream(response) -> str:
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+    return "".join(chunks)
 
 
-class StoredMessage:
-    def __init__(self, **values):
-        self.id = uuid4()
-        self.conversation_id = values["conversation"].id
-        self.created_at = datetime.now(UTC)
-        self.save = AsyncMock()
-        for name, default in {
-            "content": "",
-            "role": None,
-            "images": None,
-            "file_urls": None,
-            "reasoning_content": None,
-            "tool_calls": None,
-            "tool_call_id": None,
-            "tool_name": None,
-            "model_used": None,
-            "token_usage": None,
-            "duration_ms": None,
-            "first_token_ms": None,
-            "is_manually_stopped": False,
-            "round_status": None,
-            "parent_id": None,
-            "branch_parent_id": None,
-            "version_number": 1,
-            "is_active": True,
-        }.items():
-            setattr(self, name, values.get(name, default))
+def _event_names(body: str) -> list[str]:
+    return [
+        line.split(": ", 1)[1]
+        for line in body.splitlines()
+        if line.startswith("event: ")
+    ]
 
 
-async def collect(response):
-    return "".join(
-        [
-            item.decode() if isinstance(item, bytes) else item
-            async for item in response.body_iterator
-        ]
-    )
+async def _stream_with_events(monkeypatch, event_lines):
+    from app.services import agent_run_stream
 
+    started = _started()
+    start_run = AsyncMock(return_value=started)
+    monkeypatch.setattr(chat, "start_chat_run", start_run)
 
-async def setup_stream(monkeypatch, *, max_iterations=1, disconnected=False):
-    team = SimpleNamespace(id=uuid4())
-    agent = SimpleNamespace(
-        id=uuid4(),
-        team_id=team.id,
-        team=team,
-        rag_mode=RAGMode.OFF,
-        enable_attachments=False,
-        enable_user_input_request=False,
-        max_iterations=max_iterations,
-    )
-    conversation = SimpleNamespace(id=uuid4(), title="existing")
-    user = SimpleNamespace(id=uuid4(), is_active=True, locale="en")
-    created = []
+    async def events(run_id, from_sequence=0):
+        assert run_id == started["data"].run_id
+        assert from_sequence == 0
+        for event in event_lines:
+            yield event
 
-    async def create_message(**values):
-        message = StoredMessage(**values)
-        created.append(message)
-        return message
-
-    prepared = SimpleNamespace(
-        messages=[LLMMessage(role="user", content="hello")], compression=None
-    )
-    monkeypatch.setattr(chat.deps, "check_api_key_agent_access", AsyncMock())
-    monkeypatch.setattr(chat, "check_agent_chat_access", AsyncMock(return_value=agent))
-    monkeypatch.setattr(
-        chat, "get_or_create_conversation", AsyncMock(return_value=conversation)
-    )
-    monkeypatch.setattr(
-        chat, "get_next_user_branch_parent_id", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(chat.Message, "create", AsyncMock(side_effect=create_message))
-    monkeypatch.setattr(
-        chat,
-        "get_streaming_config",
-        lambda _agent: {
-            "global_timeout": 10,
-            "heartbeat_interval": 1,
-            "tool_timeouts": {},
-            "idle_timeout": 3,
-        },
-    )
-    monkeypatch.setattr(
-        "app.services.sandbox.gateway.sandbox_gateway.create_session",
-        AsyncMock(return_value="session"),
-    )
-    monkeypatch.setattr(
-        chat, "build_file_content_for_context", AsyncMock(return_value=("", None))
-    )
-    monkeypatch.setattr(
-        chat, "get_visible_conversation_messages", AsyncMock(return_value=[])
-    )
-    monkeypatch.setattr(chat, "collect_conversation_images", lambda *_a, **_k: ([], []))
-    monkeypatch.setattr(
-        chat, "append_conversation_image_inventory", lambda text, _images: text
-    )
-    monkeypatch.setattr(
-        chat,
-        "resolve_agent_chat_model",
-        AsyncMock(return_value=_fake_chat_resolution()),
-    )
-    monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
-    monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
-    monkeypatch.setattr(chat, "prepare_model_context", AsyncMock(return_value=prepared))
-    monkeypatch.setattr(
-        chat, "build_compression_events", lambda **_kwargs: (None, None)
-    )
-    monkeypatch.setattr(
-        chat, "send_heartbeat_if_needed", AsyncMock(return_value=(True, 0))
-    )
-    monkeypatch.setattr("app.llm.model_manager.record_stream_usage", AsyncMock())
-    monkeypatch.setattr(chat, "get_prefix_path_before", AsyncMock(return_value=[]))
-    monkeypatch.setattr(chat, "activate_conversation_branch", AsyncMock())
-
-    monkeypatch.setattr(chat, "enqueue_session_memory_extraction", Mock())
-    monkeypatch.setattr(chat.Conversation, "filter", Mock(return_value=Query()))
-    monkeypatch.setattr(chat.Agent, "filter", Mock(return_value=Query()))
-    monkeypatch.setattr(chat.Team, "filter", Mock(return_value=Query()))
-    monkeypatch.setattr(chat, "now_utc", lambda: datetime.now(UTC))
-    request = SimpleNamespace(is_disconnected=AsyncMock(return_value=disconnected))
+    monkeypatch.setattr(agent_run_stream, "sse_events", events)
     response = await chat.chat_stream(
-        agent.id, ChatRequest(message="hello"), request, (user, None)
+        uuid4(),
+        ChatRequest(message="hello"),
+        SimpleNamespace(),
+        (SimpleNamespace(id=uuid4()), None),
     )
-    return SimpleNamespace(
-        response=response,
-        agent=agent,
-        conversation=conversation,
-        user=user,
-        request=request,
-        created=created,
-        prepared=prepared,
-    )
+    return await _collect_stream(response), start_run
 
 
-async def chunks(*items):
-    for item in items:
-        if isinstance(item, BaseException):
-            raise item
-        yield item
-
-
-@pytest.mark.anyio
-async def test_stream_loop_can_be_skipped(monkeypatch):
-    state = await setup_stream(monkeypatch, max_iterations=-1)
-
-    events = await collect(state.response)
-
-    assert "event: message_end" in events
-    assert state.created[1].round_status == MessageRoundStatus.COMPLETED
-
-
-@pytest.mark.anyio
-async def test_stream_emits_compression_reasoning_content_and_length(monkeypatch):
-    state = await setup_stream(monkeypatch)
-    state.prepared.compression = SimpleNamespace()
-    monkeypatch.setattr(
-        chat, "build_compression_events", lambda **_kwargs: ("start", "end")
-    )
-    monkeypatch.setattr(chat, "get_compression_trigger", lambda _value: "budget")
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream",
-        lambda **_kwargs: chunks(
-            ChatStreamChunk(
-                id="reason",
-                model="stub",
-                delta=ChatStreamDelta(reasoning_content="think"),
-            ),
-            ChatStreamChunk(
-                id="content",
-                model="stub",
-                delta=ChatStreamDelta(content="answer"),
-            ),
-            ChatStreamChunk(
-                id="done",
-                model="stub",
-                delta=ChatStreamDelta(),
-                finish_reason=FinishReason.LENGTH,
-            ),
-        ),
-    )
-
-    events = await collect(state.response)
-
-    assert "startend" in events
-    assert "event: reasoning_start" in events
-    assert "event: reasoning_end" in events
-    assert "event: content_delta" in events
-    assert "event: output_truncated" in events
-
-
-@pytest.mark.anyio
-async def test_stream_retries_context_error_from_prepare(monkeypatch):
-    state = await setup_stream(monkeypatch)
-    chat.prepare_model_context.side_effect = ContextLengthError()
-    retried = SimpleNamespace(
-        messages=[LLMMessage(role="user", content="retried")],
-        compression=SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        chat, "retry_prepare_model_context", AsyncMock(return_value=retried)
-    )
-    monkeypatch.setattr(chat, "should_retry_context_length", lambda _agent: True)
-    monkeypatch.setattr(
-        chat, "build_compression_events", lambda **_kwargs: ("retry-start", "retry-end")
-    )
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream",
-        lambda **_kwargs: chunks(
-            ChatStreamChunk(
-                id="done",
-                model="stub",
-                delta=ChatStreamDelta(content="ok"),
-                finish_reason=FinishReason.STOP,
-            )
-        ),
-    )
-
-    events = await collect(state.response)
-
-    assert "retry-startretry-end" in events
-    chat.retry_prepare_model_context.assert_awaited_once()
-
-
-@pytest.mark.anyio
-async def test_stream_retries_context_error_from_model(monkeypatch):
-    state = await setup_stream(monkeypatch)
-    retried = SimpleNamespace(
-        messages=[LLMMessage(role="user", content="retry")],
-        compression=SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        chat, "retry_prepare_model_context", AsyncMock(return_value=retried)
-    )
-    monkeypatch.setattr(chat, "should_retry_context_length", lambda _agent: True)
-    monkeypatch.setattr(
-        chat,
-        "build_compression_events",
-        lambda **_kwargs: ("reactive-start", "reactive-end"),
-    )
-    streams = iter(
+@pytest.mark.asyncio
+async def test_stream_passes_through_ordered_compression_reasoning_content_and_length(
+    monkeypatch,
+):
+    body, start_run = await _stream_with_events(
+        monkeypatch,
         [
-            chunks(ContextLengthError()),
-            chunks(
-                ChatStreamChunk(
-                    id="reason",
-                    model="stub",
-                    delta=ChatStreamDelta(reasoning_content="think"),
-                ),
-                ChatStreamChunk(
-                    id="tool",
-                    model="stub",
-                    delta=ChatStreamDelta(
-                        tool_calls=[
-                            ToolCall(
-                                id="empty",
-                                type="function",
-                                function=FunctionCall(name="", arguments="{}"),
-                            )
-                        ]
-                    ),
-                    finish_reason=FinishReason.LENGTH,
-                ),
-            ),
-        ]
-    )
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream", lambda **_kwargs: next(streams)
+            "event: run_start\ndata: {}\n\n",
+            'event: compression_start\ndata: {"stage": "proactive"}\n\n',
+            "event: reasoning_start\ndata: {}\n\n",
+            'event: reasoning_delta\ndata: {"delta": "think"}\n\n',
+            "event: reasoning_end\ndata: {}\n\n",
+            'event: content_delta\ndata: {"delta": "answer"}\n\n',
+            'event: output_truncated\ndata: {"reason": "length"}\n\n',
+            "event: compression_end\ndata: {}\n\n",
+            "event: message_end\ndata: {}\n\n",
+            "event: run_end\ndata: {}\n\n",
+        ],
     )
 
-    events = await collect(state.response)
-
-    assert "reactive-startreactive-end" in events
-    assert "event: reasoning_start" in events
-    assert "event: reasoning_end" in events
-    assert "event: output_truncated" in events
-
-
-@pytest.mark.anyio
-async def test_stream_falls_back_when_stream_is_empty(monkeypatch):
-    state = await setup_stream(monkeypatch)
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream", lambda **_kwargs: chunks()
-    )
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat",
-        AsyncMock(
-            return_value=ChatResponse(
-                id="fallback",
-                model="stub",
-                content="answer",
-                reasoning_content="think",
-                finish_reason=FinishReason.STOP,
-                usage=Usage(),
-            )
-        ),
-    )
-
-    events = await collect(state.response)
-
-    assert "event: reasoning_delta" in events
-    assert "event: content_delta" in events
-    assert state.created[1].round_status == MessageRoundStatus.COMPLETED
+    assert _event_names(body) == [
+        "run_start",
+        "compression_start",
+        "reasoning_start",
+        "reasoning_delta",
+        "reasoning_end",
+        "content_delta",
+        "output_truncated",
+        "compression_end",
+        "message_end",
+        "run_end",
+    ]
+    assert 'data: {"delta": "think"}' in body
+    assert 'data: {"delta": "answer"}' in body
+    assert 'data: {"reason": "length"}' in body
+    start_run.assert_awaited_once()
 
 
-@pytest.mark.anyio
-@pytest.mark.parametrize("disconnect_after_tool", [False, True])
-async def test_stream_tool_disconnect_boundaries(monkeypatch, disconnect_after_tool):
-    state = await setup_stream(monkeypatch)
-    state.request.is_disconnected.side_effect = (
-        [False, False, True] if disconnect_after_tool else [False, True]
-    )
-    tool_call = ToolCall(
-        id="tool-1",
-        type="function",
-        function=FunctionCall(name="lookup", arguments="not-json"),
-    )
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream",
-        lambda **_kwargs: chunks(
-            ChatStreamChunk(
-                id="tool",
-                model="stub",
-                delta=ChatStreamDelta(tool_calls=[tool_call]),
-                finish_reason=FinishReason.TOOL_CALLS,
-            )
-        ),
-    )
-    execute = AsyncMock(return_value={"ok": True})
-    monkeypatch.setattr(chat, "execute_tool_call", execute)
-    monkeypatch.setattr(
-        chat, "get_tool_execution_payloads", lambda result: (result, result)
-    )
-    monkeypatch.setattr(chat, "append_generated_images", Mock())
-
-    await collect(state.response)
-
-    if disconnect_after_tool:
-        execute.assert_awaited_once()
-    else:
-        execute.assert_not_awaited()
-    assert state.created[1].round_status == MessageRoundStatus.MANUALLY_STOPPED
-
-
-@pytest.mark.anyio
-async def test_stream_tool_emits_media_result(monkeypatch):
-    state = await setup_stream(monkeypatch)
-    tool_call = ToolCall(
-        id="tool-1",
-        type="function",
-        function=FunctionCall(name="lookup", arguments='{"query": "x"}'),
-    )
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream",
-        lambda **_kwargs: chunks(
-            ChatStreamChunk(
-                id="tool-start",
-                model="stub",
-                delta=ChatStreamDelta(tool_call_starts=[tool_call]),
-            ),
-            ChatStreamChunk(
-                id="tool",
-                model="stub",
-                delta=ChatStreamDelta(tool_calls=[tool_call]),
-                finish_reason=FinishReason.TOOL_CALLS,
-            ),
-        ),
-    )
-    monkeypatch.setattr(
-        chat, "execute_tool_call", AsyncMock(return_value={"image": "x"})
-    )
-    monkeypatch.setattr(
-        chat, "get_tool_execution_payloads", lambda result: (result, result)
-    )
-    monkeypatch.setattr(chat, "append_generated_images", Mock())
-    monkeypatch.setattr(chat, "build_media_result_sse_event", lambda _result: "media")
-
-    events = await collect(state.response)
-
-    assert "event: tool_call" in events
-    assert events.count("event: tool_call\n") == 2
-    assert events.index('"arguments": {}') < events.index('"arguments": {"query": "x"}')
-    assert "event: tool_result" in events
-    assert "media" in events
-    assert "event: iteration_cap_reached" in events
-
-
-@pytest.mark.anyio
-async def test_stream_uses_provider_usage_from_terminal_chunk(monkeypatch):
-    state = await setup_stream(monkeypatch)
-    # OpenAI/DeepSeek 风格：usage 在 finish 之后的独立 chunk（choices 为空）
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream",
-        lambda **_kwargs: chunks(
-            ChatStreamChunk(
-                id="content",
-                model="stub",
-                delta=ChatStreamDelta(content="answer"),
-            ),
-            ChatStreamChunk(
-                id="done",
-                model="stub",
-                delta=ChatStreamDelta(),
-                finish_reason=FinishReason.STOP,
-            ),
-            ChatStreamChunk(
-                id="usage",
-                model="stub",
-                delta=ChatStreamDelta(),
-                usage=Usage(
-                    prompt_tokens=10,
-                    completion_tokens=4,
-                    total_tokens=14,
-                    cache_read_tokens=6,
-                    cache_creation_tokens=2,
-                ),
-            ),
-        ),
+@pytest.mark.asyncio
+async def test_stream_passes_through_tool_and_media_events(monkeypatch):
+    body, _start_run = await _stream_with_events(
+        monkeypatch,
+        [
+            "event: run_start\ndata: {}\n\n",
+            'event: tool_call\ndata: {"tool_call_id": "call-1", "arguments": {}}\n\n',
+            'event: tool_call\ndata: {"tool_call_id": "call-1", "arguments": {"query": "x"}}\n\n',
+            'event: tool_result\ndata: {"tool_call_id": "call-1", "result": "ok"}\n\n',
+            'event: media_result\ndata: {"kind": "media.video", "task_id": "vid-1"}\n\n',
+            "event: message_end\ndata: {}\n\n",
+            "event: run_end\ndata: {}\n\n",
+        ],
     )
 
-    events = await collect(state.response)
-
-    assert "event: content_delta" in events
-    assert "event: message_end" in events
-    data_line = next(
-        line
-        for line in events.split("\n")
-        if line.startswith("data:") and '"usage"' in line
-    )
-    payload = json.loads(data_line[len("data:") :])
-    assert payload["usage"] == {
-        "prompt_tokens": 10,
-        "completion_tokens": 4,
-        "total_tokens": 14,
-        "cache_read_tokens": 6,
-        "cache_creation_tokens": 2,
-        "total_input_tokens": 10,
-    }
-    # 接口返回的 usage 优先于本地 tiktoken 估算被持久化
-    assert state.created[1].token_usage == {
-        "prompt": 10,
-        "completion": 4,
-        "cache_read": 6,
-        "cache_creation": 2,
-        "total_input": 10,
-    }
+    assert body.count("event: tool_call\n") == 2
+    assert body.index('"arguments": {}') < body.index('"arguments": {"query": "x"}')
+    assert "event: tool_result" in body
+    assert "event: media_result" in body

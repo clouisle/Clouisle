@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 CHANNEL_PREFIX = "agent:run:{run_id}:events"
 BUFFER_PREFIX = "agent:run:{run_id}:buffer"
 BUFFER_TTL_SECONDS = 3600 * 24
-TERMINAL_EVENT_TYPES = {"run_end", "error"}
+TERMINAL_EVENT_TYPES = {"run_end"}
 
 
 class AgentRunStream(EventSink):
@@ -43,6 +43,7 @@ class AgentRunStream(EventSink):
     def __init__(self, run_id: UUID) -> None:
         super().__init__()
         self.run_id = run_id
+        self.assign_run_id(run_id)
         self._channel = CHANNEL_PREFIX.format(run_id=run_id)
         self._buffer_key = BUFFER_PREFIX.format(run_id=run_id)
         self._lock = asyncio.Lock()
@@ -66,13 +67,10 @@ class AgentRunStream(EventSink):
         payload: dict[str, Any] | None = None,
         **envelope: Any,
     ) -> AgentLoopEvent:
-        """Stamp, persist, then broadcast one event."""
-        event = self.emit(event_type, payload, **envelope)
+        """Stamp, persist, then broadcast one event in sequence order."""
         redis = await get_redis()
         async with self._lock:
-            if event.sequence == 0:
-                self._sequence += 1
-                event.sequence = self._sequence
+            event = self.emit(event_type, payload, **envelope)
             envelope_payload = {
                 **event.envelope(),
                 "type": event.type,
@@ -101,39 +99,50 @@ class AgentRunStream(EventSink):
     ) -> AsyncIterator[dict[str, Any]]:
         """Yield buffered and live events newer than ``from_sequence``.
 
-        Sequence 0 replays the full buffered run (worker may have finished
-        before the subscriber connects). Live delivery stops after a terminal
-        event.
+        Subscribe before reading the buffer. Events published during the
+        replay read remain queued in Pub/Sub and are deduplicated by sequence,
+        so a reconnect cannot miss the gap between replay and live delivery.
         """
         redis = await get_redis()
-        buffered = await redis.lrange(self._buffer_key, 0, -1)
-        buffered_events: list[dict[str, Any]] = []
-        for event_json in buffered:
-            try:
-                buffered_events.append(json.loads(event_json))
-            except json.JSONDecodeError:
-                continue
-        for event in buffered_events:
-            if event.get("sequence", 0) > from_sequence:
-                yield event
-        if buffered_events and buffered_events[-1].get("type") in TERMINAL_EVENT_TYPES:
-            return
-
         pubsub = redis.pubsub()
+        if hasattr(pubsub, "__await__"):
+            pubsub = await pubsub
         await pubsub.subscribe(self._channel)
+        last_sequence = from_sequence
         try:
+            buffered = await redis.lrange(self._buffer_key, 0, -1)
+            for event_json in buffered:
+                try:
+                    event = json.loads(event_json)
+                except json.JSONDecodeError:
+                    continue
+                sequence = int(event.get("sequence", 0) or 0)
+                if sequence <= last_sequence:
+                    continue
+                last_sequence = sequence
+                yield event
+            if buffered:
+                try:
+                    last_event = json.loads(buffered[-1])
+                except json.JSONDecodeError:
+                    last_event = {}
+                if last_event.get("type") in TERMINAL_EVENT_TYPES:
+                    return
+
             async for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
                 try:
                     event = json.loads(message["data"])
-                    if event.get("sequence", 0) <= from_sequence:
-                        continue
-                    yield event
-                    if event.get("type") in TERMINAL_EVENT_TYPES:
-                        break
+                    sequence = int(event.get("sequence", 0) or 0)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     continue
+                if sequence <= last_sequence:
+                    continue
+                last_sequence = sequence
+                yield event
+                if event.get("type") in TERMINAL_EVENT_TYPES:
+                    break
         finally:
             await pubsub.unsubscribe(self._channel)
             await pubsub.close()

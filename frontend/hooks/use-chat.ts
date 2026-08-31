@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
 import {
   agentsApi,
+  publicAgentsApi,
   parseSSEStream,
   type ChatRequest,
   type ChatImageContent,
@@ -17,12 +18,12 @@ import {
   type SSERagContext,
   type SSEMessageEnd,
   type SSEIterationCapReached,
-  type SSEError,
   type SSEToolCall,
   type SSEToolResult,
   type SSEMediaResult,
   type SSECompression,
 } from '@/lib/api'
+import type { AgentRunEventOut, AgentRunStartOut, AgentRunStatus, AgentRunStatusOut } from '@/lib/api/agents'
 import type {
   ChatMessage,
   MessagePart,
@@ -82,10 +83,26 @@ export interface ChatStreamApi {
   regenerateStream(agentId: string, messageId: string, variables: Record<string, unknown>): { stream: Promise<Response>; abort: () => void }
   getMessageVersions(agentId: string, messageId: string): Promise<MessageVersion[]>
   switchMessageVersion(agentId: string, messageId: string, versionId: string): Promise<void>
+  startRun?(agentId: string, request: ChatRequest): Promise<AgentRunStartOut>
+  streamRun?(agentId: string, runId: string, afterSequence?: number): { stream: Promise<Response>; abort: () => void }
+  getRunStatus?(agentId: string, runId: string): Promise<AgentRunStatusOut>
+  getRunEvents?(agentId: string, runId: string, afterSequence?: number): Promise<AgentRunEventOut[]>
+  postRunInput?(
+    agentId: string,
+    runId: string,
+    body: { delivery: 'steer' | 'follow_up' | 'auto'; content?: string; request_id?: string }
+  ): Promise<AgentRunStatusOut>
+  stopRun?(agentId: string, runId: string): Promise<AgentRunStatusOut>
 }
 
 const defaultChatApi: ChatStreamApi = {
   chatStream: (agentId, request) => agentsApi.chatStream(agentId, request),
+  startRun: agentsApi.startRun
+    ? (agentId, request) => agentsApi.startRun!(agentId, request)
+    : undefined,
+  streamRun: agentsApi.streamRun
+    ? (agentId, runId, afterSequence) => agentsApi.streamRun!(agentId, runId, afterSequence)
+    : undefined,
   getConversation: async (conversationId) => {
     const data = await agentsApi.getConversation(conversationId)
     return { messages: convertBackendMessages(data.messages as BackendMessage[]) }
@@ -96,6 +113,10 @@ const defaultChatApi: ChatStreamApi = {
   switchMessageVersion: async (agentId, messageId, versionId) => {
     await agentsApi.switchMessageVersion(agentId, messageId, versionId)
   },
+  getRunStatus: (agentId, runId) => publicAgentsApi.getRunStatus(agentId, runId),
+  getRunEvents: (agentId, runId, afterSequence) => publicAgentsApi.getRunEvents(agentId, runId, afterSequence),
+  postRunInput: (agentId, runId, body) => publicAgentsApi.postRunInput(agentId, runId, body),
+  stopRun: (agentId, runId) => publicAgentsApi.stopRun(agentId, runId),
 }
 
 export interface UseChatReturn {
@@ -111,6 +132,10 @@ export interface UseChatReturn {
   isLoading: boolean
   /** Whether currently streaming */
   isStreaming: boolean
+  /** Durable run identity when the active stream is backed by AgentRun. */
+  runId: string | null
+  /** Latest server-authoritative run status. */
+  runStatus: AgentRunStatus | null
   /** Send a message with optional images (vision) and/or file URLs (file upload) */
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
   /** Regenerate (retry) a message by ID */
@@ -119,8 +144,10 @@ export interface UseChatReturn {
   editMessage: (messageId: string, content: string) => Promise<void>
   /** Switch to a different version of a message */
   switchVersion: (messageId: string, versionIndex: number) => Promise<void>
-  /** Stop current streaming */
-  stop: () => void
+  /** Stop current streaming run after the server emits its terminal event. */
+  stop: () => Promise<void>
+  /** Replay buffered events for the current conversation's active run. */
+  reconnect: () => void
   /** Reset chat (clear messages and conversation) */
   reset: () => void
   /** Set messages (for loading history) */
@@ -146,40 +173,49 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   } = options
 
   const api = useMemo(() => overrideApi ?? defaultChatApi, [overrideApi])
+  const runApi = useMemo(() => {
+    const useDefaultRunControls = api === defaultChatApi
+    return {
+      startRun: api.startRun,
+      streamRun: api.streamRun,
+      getRunStatus: api.getRunStatus ?? (useDefaultRunControls ? publicAgentsApi.getRunStatus : undefined),
+      getRunEvents: api.getRunEvents ?? (useDefaultRunControls ? publicAgentsApi.getRunEvents : undefined),
+      postRunInput: api.postRunInput ?? (useDefaultRunControls ? publicAgentsApi.postRunInput : undefined),
+      stopRun: api.stopRun ?? (useDefaultRunControls ? publicAgentsApi.stopRun : undefined),
+    }
+  }, [api])
 
   const tError = useTranslations('errors')
   const tAuth = useTranslations('auth')
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [error, setError] = useState<ChatError | null>(null)
-  const [conversationId, setConversationId] = useState<string | null>(
-    initialConversationId ?? null
-  )
+  const [conversationId, setConversationIdState] = useState<string | null>(initialConversationId ?? null)
+  const [runId, setRunId] = useState<string | null>(null)
+  const [runStatus, setRunStatus] = useState<AgentRunStatus | null>(null)
 
-  // Abort controller for cancelling requests
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const statusRef = useRef<ChatStatus>(status)
+  const conversationIdRef = useRef<string | null>(conversationId)
+  const runIdRef = useRef<string | null>(null)
+  const runStatusRef = useRef<AgentRunStatus | null>(null)
+  const lastSequenceRef = useRef(0)
+  const appliedSequenceKeysRef = useRef(new Set<string>())
+  const subscriptionAbortRef = useRef<(() => void) | null>(null)
   const abortRef = useRef<(() => void) | null>(null)
+  const connectionEpochRef = useRef(0)
+  const previousConversationRef = useRef<string | null>(conversationId)
+  const activeRunConversationRef = useRef<string | null>(conversationId)
+  const activeSessionRef = useRef<AssistantStreamSession | null>(null)
+  const sessionsByRunRef = useRef(new Map<string, AssistantStreamSession>())
+  const pendingRunInputsRef = useRef<PendingRunInput[]>([])
+  const flushPendingInputsRef = useRef<(runId: string) => void>(() => undefined)
+  const terminalRunsRef = useRef(new Set<string>())
+  const terminalWaitersRef = useRef(new Map<string, Set<() => void>>())
+  const runStartWaiterRef = useRef<RunStartWaiter | null>(null)
 
-  // Streaming state ref for stop function to access
-  const streamingStateRef = useRef<{
-    assistantMessageId: string | null
-    visibleMessageId: string | null
-    backendMessageId: string | null
-    segments: ContentSegment[]
-    reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
-    currentReasoningIndex: number
-    ragSources: SourceDocumentPart[]
-    taskState: TaskState
-  }>({
-    assistantMessageId: null,
-    visibleMessageId: null,
-    backendMessageId: null,
-    segments: [],
-    reasoningBlocks: [],
-    currentReasoningIndex: -1,
-    ragSources: [],
-    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
-  })
-
+  const streamingStateRef = useRef<StreamingState>(emptyStreamingState())
   const scheduledStreamingFlushRef = useRef<
     | { id: number; type: 'frame' }
     | { id: ReturnType<typeof setTimeout>; type: 'timeout' }
@@ -189,1972 +225,1134 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const isLoading = status === 'loading' || status === 'streaming'
   const isStreaming = status === 'streaming'
 
-  /**
-   * Send a message to the agent
-   */
-  const sendMessage = useCallback(
-    async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => {
-      if (!message.trim() || isLoading) return
-
-      // Clear previous error
-      setError(null)
-
-      // Create user message parts
-      const userParts: MessagePart[] = [{ type: 'text', text: message.trim() }]
-      
-      // Add image parts if provided
-      if (images && images.length > 0) {
-        for (const img of images) {
-          userParts.push({ type: 'image', url: img.url } as MessagePart)
-        }
-      }
-      
-      // Add file info for user message display (file content injected via {{fileContent}})
-      if (fileUrls && fileUrls.length > 0) {
-        for (const f of fileUrls) {
-          userParts.push({ type: 'file', filename: f.filename, size: f.size } as MessagePart)
-        }
-      }
-
-      // Create user message
-      const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        parts: userParts,
-        createdAt: new Date(),
-      }
-
-      // Add user message to state
-      setMessages((prev) => [...prev, userMessage])
-      setStatus('loading')
-
-      // Create placeholder assistant message for streaming
-      let assistantMessageId = `assistant-${Date.now()}`
-      const assistantMessage: ChatMessage = {
-        id: assistantMessageId,
-        role: 'assistant',
-        parts: [],
-        createdAt: new Date(),
-        metadata: { isLoading: true, isManuallyStopped: false },
-      }
-
-      // Add assistant message placeholder immediately (for loading state)
-      setMessages((prev) => [...prev, assistantMessage])
-
-      streamingStateRef.current = {
-        assistantMessageId,
-        visibleMessageId: assistantMessageId,
-        backendMessageId: null,
-        segments: [],
-        reasoningBlocks: [],
-        currentReasoningIndex: -1,
-        ragSources: [],
-        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
-      }
-
-      try {
-        // Prepare request
-        // Backend loads history from database (only active messages) so no history_override needed
-        const chatRequest: ChatRequest = {
-          message: message.trim(),
-          images: images,
-          file_urls: fileUrls,
-          conversation_id: conversationId,
-          variables,
-        }
-
-        // Start streaming
-        const { stream, abort } = api.chatStream(agentId, chatRequest)
-        abortRef.current = abort
-
-        const response = await stream
-
-        if (!response.ok) {
-          // Handle HTTP errors
-          await response.json().catch(() => ({}))
-          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
-        }
-
-        // Update status to streaming
-        setStatus('streaming')
-        onStreamStart?.()
-
-        // Content segments - tracks text and tool calls in order
-        let segments: ContentSegment[] = []
-        // Reasoning blocks - each tool call iteration creates a new block
-        const reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
-        let currentReasoningIndex = -1
-        // RAG sources
-        let ragSources: SourceDocumentPart[] = []
-        // Task state for showing progress
-        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
-
-        // Helper to get or create current text segment
-        const getCurrentTextSegment = (): ContentSegment => {
-          const lastSegment = segments[segments.length - 1]
-          if (lastSegment && lastSegment.type === 'text') {
-            return lastSegment
-          }
-          // Create new text segment
-          const newSegment: ContentSegment = { type: 'text', text: '' }
-          segments.push(newSegment)
-          return newSegment
-        }
-
-        // Helper to add a tool group segment
-        const addToolGroupSegment = (toolCall: ToolCallPart): ContentSegment => {
-          const existingGroup = segments.find(segment => (
-            segment.type === 'tool-group'
-            && segment.toolCalls?.some(existing => existing.toolCallId === toolCall.toolCallId)
-          ))
-          if (existingGroup) {
-            existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
-              existing.toolCallId === toolCall.toolCallId
-                ? mergeToolCall(existing, toolCall)
-                : existing
-            ))
-            return existingGroup
-          }
-
-          // Check if last segment is a tool-group, if so add to it
-          const lastSegment = segments[segments.length - 1]
-          if (lastSegment && lastSegment.type === 'tool-group') {
-            lastSegment.toolCalls = lastSegment.toolCalls || []
-            lastSegment.toolCalls.push(toolCall)
-            return lastSegment
-          }
-          // Create new tool group segment
-          const newSegment: ContentSegment = {
-            type: 'tool-group',
-            toolCalls: [toolCall],
-            toolResults: []
-          }
-          segments.push(newSegment)
-          return newSegment
-        }
-
-        // Helper to find tool group containing a tool call
-        const findToolGroup = (toolCallId: string): ContentSegment | undefined => {
-          return segments.find(s => 
-            s.type === 'tool-group' && 
-            s.toolCalls?.some(tc => tc.toolCallId === toolCallId)
-          )
-        }
-
-        // Store in ref for stop function to access
-        streamingStateRef.current = {
-          assistantMessageId,
-          visibleMessageId: assistantMessageId,
-          backendMessageId: null,
-          segments,
-          reasoningBlocks,
-          currentReasoningIndex,
-          ragSources,
-          taskState,
-        }
-
-        let receivedTerminalEvent = false
-        let userInputRequestCandidateSeen = false
-        let userInputRequestScanTail = ''
-
-        const cancelScheduledStreamingFlush = () => {
-          const scheduled = scheduledStreamingFlushRef.current
-          if (!scheduled) return
-          if (scheduled.type === 'frame') {
-            window.cancelAnimationFrame(scheduled.id)
-          } else {
-            globalThis.clearTimeout(scheduled.id)
-          }
-          scheduledStreamingFlushRef.current = null
-        }
-
-        const flushStreamingMessage = (streaming = true) => {
-          cancelScheduledStreamingFlush()
-          const state = streamingStateRef.current
-          if (!state.assistantMessageId) return
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === state.assistantMessageId
-                ? {
-                    ...msg,
-                    parts: buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, streaming, state.taskState),
-                  }
-                : msg
-            )
-          )
-        }
-
-        const scheduleStreamingMessageFlush = () => {
-          if (scheduledStreamingFlushRef.current) return
-          if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
-            const id = window.requestAnimationFrame(() => {
-              scheduledStreamingFlushRef.current = null
-              flushStreamingMessage(true)
-            })
-            scheduledStreamingFlushRef.current = { id, type: 'frame' }
-            return
-          }
-
-          const id = globalThis.setTimeout(() => {
-            scheduledStreamingFlushRef.current = null
-            flushStreamingMessage(true)
-          }, 16)
-          scheduledStreamingFlushRef.current = { id, type: 'timeout' }
-        }
-
-        // Parse SSE stream
-        for await (const event of parseSSEStream(response)) {
-          switch (event.event as SSEEventType) {
-            case 'message_start': {
-              const data = event.data as SSEMessageStart
-              if (data.conversation_id && data.conversation_id !== conversationId) {
-                setConversationId(data.conversation_id)
-                onConversationChange?.(data.conversation_id)
-              }
-              const persistedUserMessageId = data.user_message_id
-              if (persistedUserMessageId) {
-                const optimisticUserMessageId = userMessage.id
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === optimisticUserMessageId
-                      ? { ...msg, id: persistedUserMessageId }
-                      : msg
-                  )
-                )
-              }
-              // Update assistant message ID to the real database ID
-              if (data.message_id) {
-                const oldId = assistantMessageId
-                assistantMessageId = data.message_id
-                streamingStateRef.current.assistantMessageId = data.message_id
-                streamingStateRef.current.visibleMessageId = data.message_id
-                streamingStateRef.current.backendMessageId = data.message_id
-                // Update the message in state with the real ID
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === oldId ? { ...msg, id: data.message_id } : msg
-                  )
-                )
-              }
-              break
-            }
-
-            case 'rag_start': {
-              // Mark RAG as running
-              taskState.rag = 'running'
-              streamingStateRef.current.taskState = taskState
-
-              // Update message with RAG progress
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'reasoning_start': {
-              // Start a new reasoning block and add it as a segment
-              const newBlock = {
-                text: '',
-                startTime: Date.now(),
-                state: 'streaming' as const,
-              }
-              reasoningBlocks.push(newBlock)
-              currentReasoningIndex = reasoningBlocks.length - 1
-
-              // Add reasoning segment to maintain order
-              const reasoningSegment: ContentSegment = {
-                type: 'reasoning',
-                reasoningText: '',
-                reasoningState: 'streaming',
-                reasoningStartTime: Date.now(),
-              }
-              segments.push(reasoningSegment)
-
-              streamingStateRef.current.segments = segments
-              streamingStateRef.current.reasoningBlocks = reasoningBlocks
-              streamingStateRef.current.currentReasoningIndex = currentReasoningIndex
-              break
-            }
-
-            case 'reasoning_delta': {
-              const data = event.data as { delta: string }
-              // Add to current reasoning block
-              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
-                reasoningBlocks[currentReasoningIndex].text += data.delta
-                streamingStateRef.current.reasoningBlocks = reasoningBlocks
-
-                // Update the corresponding reasoning segment (find last reasoning segment)
-                let lastReasoningSegmentIndex = -1
-                for (let i = segments.length - 1; i >= 0; i--) {
-                  if (segments[i].type === 'reasoning') {
-                    lastReasoningSegmentIndex = i
-                    break
-                  }
-                }
-                if (lastReasoningSegmentIndex >= 0) {
-                  segments[lastReasoningSegmentIndex].reasoningText = reasoningBlocks[currentReasoningIndex].text
-                  streamingStateRef.current.segments = segments
-                }
-              }
-
-              // Batch reasoning deltas so each SSE chunk does not rerender the message tree.
-              scheduleStreamingMessageFlush()
-              break
-            }
-
-            case 'reasoning_end': {
-              // Mark current reasoning block as done
-              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
-                const block = reasoningBlocks[currentReasoningIndex]
-                block.duration = Date.now() - block.startTime
-                block.state = 'done'
-                streamingStateRef.current.reasoningBlocks = reasoningBlocks
-
-                // Update the corresponding reasoning segment (find last reasoning segment)
-                let lastReasoningSegmentIndex = -1
-                for (let i = segments.length - 1; i >= 0; i--) {
-                  if (segments[i].type === 'reasoning') {
-                    lastReasoningSegmentIndex = i
-                    break
-                  }
-                }
-                if (lastReasoningSegmentIndex >= 0) {
-                  segments[lastReasoningSegmentIndex].reasoningState = 'done'
-                  segments[lastReasoningSegmentIndex].reasoningDuration = block.duration
-                  streamingStateRef.current.segments = segments
-                }
-              }
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'content_delta': {
-              const data = event.data as SSEContentDelta
-              // Add to current text segment
-              const textSegment = getCurrentTextSegment()
-              textSegment.text = (textSegment.text || '') + data.delta
-
-              const startTag = '<user_input_request>'
-              const endTag = '</user_input_request>'
-              userInputRequestScanTail = `${userInputRequestScanTail}${data.delta}`.slice(-startTag.length)
-              if (!userInputRequestCandidateSeen) {
-                userInputRequestCandidateSeen = data.delta.includes(startTag) || userInputRequestScanTail.includes(startTag)
-              }
-
-              if (userInputRequestCandidateSeen) {
-                // Only collect all text after a possible user-input XML block has started.
-                const allText = segments
-                  .filter(s => s.type === 'text')
-                  .map(s => s.text || '')
-                  .join('')
-
-                if (allText.includes(startTag) && allText.includes(endTag)) {
-                  // Complete XML detected - parse it
-                  const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
-                  if (xmlMatch) {
-                    const xmlContent = xmlMatch[1]
-                    const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
-                    const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
-
-                    if (questionMatch && optionsMatch) {
-                      const question = questionMatch[1].trim()
-                      const options: string[] = []
-                      const optionMatches = optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g)
-                      for (const match of optionMatches) {
-                        options.push(match[1].trim())
-                      }
-
-                      if (question && options.length >= 2) {
-                        // Remove XML from all text segments
-                        const textBeforeXML = allText.substring(0, allText.indexOf(startTag))
-                        const textAfterXML = allText.substring(allText.indexOf(endTag) + endTag.length)
-                        const cleanedText = (textBeforeXML + textAfterXML).trim()
-
-                        // Replace all text segments with a single cleaned one
-                        segments = segments.filter(s => s.type !== 'text' && s.type !== 'user-input-request')
-                        if (cleanedText) {
-                          segments.push({
-                            type: 'text',
-                            text: cleanedText
-                          })
-                        }
-
-                        // Add user input request segment
-                        const userInputSegment: ContentSegment = {
-                          type: 'user-input-request',
-                          userInputRequest: {
-                            type: 'user-input-request',
-                            question,
-                            options,
-                            state: 'pending',
-                          }
-                        }
-                        segments.push(userInputSegment)
-                        userInputRequestCandidateSeen = false
-                        userInputRequestScanTail = ''
-                      }
-                    }
-                  }
-                }
-              }
-
-              streamingStateRef.current.segments = segments
-
-              // Mark generating as running when first content arrives
-              if (taskState.generating === 'pending') {
-                // Complete RAG if it was running
-                if (taskState.rag === 'running') {
-                  taskState.rag = 'completed'
-                }
-                taskState.generating = 'running'
-                streamingStateRef.current.taskState = taskState
-              }
-
-              // Batch text deltas so each token does not rerender the message tree.
-              scheduleStreamingMessageFlush()
-              break
-            }
-
-            case 'rag_context': {
-              const data = event.data as SSERagContext
-              ragSources = data.contexts.map((ctx) => ({
-                type: 'source-document' as const,
-                sourceId: ctx.document_id,
-                documentId: ctx.document_id,
-                documentName: ctx.document_name,
-                content: ctx.content,
-                metadata: {
-                  kb_id: ctx.kb_id,
-                  kb_name: ctx.kb_name,
-                  score: ctx.score,
-                },
-              }))
-              streamingStateRef.current.ragSources = ragSources
-
-              // Update RAG task state to completed
-              taskState.rag = 'completed'
-              taskState.ragSourceCount = ragSources.length
-              streamingStateRef.current.taskState = taskState
-
-              // Update message with RAG progress
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'compression_start': {
-              taskState.compression = 'running'
-              appendTimelineTask(segments, 'compression')
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'compression_end': {
-              const data = event.data as SSECompression
-              ensureTimelineTask(
-                segments,
-                'compression',
-                'completed',
-                data as unknown as Record<string, unknown>
-              )
-              taskState.compression = 'completed'
-              taskState.compressionInfo = data as unknown as Record<string, unknown>
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'tool_call': {
-              const data = event.data as SSEToolCall
-              const toolCallPart: ToolCallPart = {
-                type: 'tool-call',
-                toolCallId: data.tool_call_id,
-                toolName: data.tool_name,
-                toolDisplayName: data.tool_display_name,
-                input: data.arguments,
-                state: 'running',
-              }
-              // Add to tool group segment (creates new one or adds to existing)
-              addToolGroupSegment(toolCallPart)
-              streamingStateRef.current.segments = segments
-
-              // Mark tool calling as running
-              taskState.toolCalling = 'running'
-              // Count total tool calls across all segments
-              const totalToolCalls = segments
-                .filter(s => s.type === 'tool-group')
-                .reduce((sum, s) => sum + (s.toolCalls?.length || 0), 0)
-              taskState.toolCallCount = totalToolCalls
-              streamingStateRef.current.taskState = taskState
-
-              // Update message with tool call progress
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'tool_result': {
-              const data = event.data as SSEToolResult
-              const parsedOutput = parseToolResultOutput(data.result)
-              const toolResultPart: ToolResultPart = {
-                type: 'tool-result',
-                toolCallId: data.tool_call_id,
-                toolName: data.tool_name,
-                toolDisplayName: data.tool_display_name,
-                output: parsedOutput,
-                isError: data.is_error,
-              }
-
-              // Find the tool group containing this tool call
-              const toolGroup = findToolGroup(data.tool_call_id)
-              if (toolGroup) {
-                toolGroup.toolResults = toolGroup.toolResults || []
-                toolGroup.toolResults.push(toolResultPart)
-
-                // Update corresponding tool call state to done (create new object for React to detect change)
-                if (toolGroup.toolCalls) {
-                  toolGroup.toolCalls = toolGroup.toolCalls.map(tc =>
-                    tc.toolCallId === data.tool_call_id
-                      ? { ...tc, state: data.is_error ? 'error' as const : 'done' as const }
-                      : tc
-                  )
-                }
-              }
-              streamingStateRef.current.segments = segments
-
-              // Check if all tool calls have completed
-              const allToolCalls = segments
-                .filter(s => s.type === 'tool-group')
-                .flatMap(s => s.toolCalls || [])
-              const allToolsCompleted = allToolCalls.every(tc => tc.state === 'done' || tc.state === 'error')
-              if (allToolsCompleted && taskState.toolCalling === 'running') {
-                taskState.toolCalling = 'completed'
-                streamingStateRef.current.taskState = taskState
-              }
-
-              // Update message with tool result
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'media_result': {
-              const data = event.data as SSEMediaResult
-              if (!shouldDisplayMediaResultInBody(data)) {
-                break
-              }
-              segments.push({
-                type: 'media-result',
-                mediaResult: {
-                  type: 'media-result',
-                  output: data,
-                },
-              })
-              streamingStateRef.current.segments = segments
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'output_truncated': {
-              const truncatedSegment: ContentSegment = { type: 'truncated' }
-              segments.push(truncatedSegment)
-              streamingStateRef.current.segments = segments
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'iteration_cap_reached': {
-              const data = event.data as SSEIterationCapReached
-              const iterationCapSegment: ContentSegment = { type: 'iteration-cap-reached' }
-              segments.push(iterationCapSegment)
-              if (data.content) {
-                segments.push({ type: 'text', text: data.content })
-              }
-              streamingStateRef.current.segments = segments
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'message_end': {
-              receivedTerminalEvent = true
-              cancelScheduledStreamingFlush()
-              // Get version info from event data
-              const endData = event.data as SSEMessageEnd & { version_number?: number; version_count?: number }
-              // Finalize message - pass taskState to keep RAG steps visible
-              // Mark tool calling as completed if it was running
-              if (taskState.toolCalling === 'running') {
-                taskState.toolCalling = 'completed'
-              }
-              // Note: compression state is now managed by compression_start/compression_end events
-              // Safety: ensure all tool calls are marked as done on message end
-              for (const segment of segments) {
-                if (segment.type === 'tool-group' && segment.toolCalls) {
-                  segment.toolCalls = segment.toolCalls.map(tc =>
-                    tc.state === 'running' ? { ...tc, state: 'done' as const } : tc
-                  )
-                }
-              }
-              // Mark all reasoning blocks as done
-              reasoningBlocks.forEach(block => {
-                if (block.state === 'streaming') {
-                  block.duration = Date.now() - block.startTime
-                  block.state = 'done'
-                }
-              })
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState),
-                        versionNumber: endData.version_number ?? 1,
-                        versionCount: endData.version_count ?? 1,
-                        metadata: {
-                          ...msg.metadata,
-                          isLoading: false,
-                          isManuallyStopped: false,
-                          isError: false,
-                          errorMessage: undefined,
-                          preservedPartialProgress: undefined,
-                          usage: endData.usage,
-                          timing: endData.timing,
-                        },
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'error': {
-              receivedTerminalEvent = true
-              cancelScheduledStreamingFlush()
-              if (taskState.compression === 'running') {
-                taskState.compression = 'error'
-                updateLatestTimelineTask(segments, 'compression', 'error')
-                streamingStateRef.current.taskState = taskState
-              }
-              const data = event.data as SSEError
-              const chatError: ChatError = {
-                code: data.code,
-                message: data.msg,
-                quotaType: data.quota_type,
-              }
-              onError?.(chatError)
-        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
-              console.error("[chat] stream error", { code: chatError.code, message: chatError.message, conversationId })
-
-              const errorText = getErrorMessage(chatError, tError, tAuth)
-              const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
-                segments,
-                reasoningBlocks,
-                ragSources,
-                taskState,
-                errorText,
-              })
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: errorParts,
-                        metadata: {
-                          ...msg.metadata,
-                          isLoading: false,
-                          isError: true,
-                          errorMessage: errorText, errorCode: chatError.code,
-                          preservedPartialProgress: preservedProgress,
-                        },
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-          }
-        }
-
-        if (!receivedTerminalEvent) {
-          finalizeStreamingState({
-            segments,
-            reasoningBlocks,
-            currentReasoningIndex,
-            taskState,
-          })
-          const fallbackParts = buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState)
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? {
-                    ...msg,
-                    parts: fallbackParts,
-                    metadata: { ...msg.metadata, isLoading: false, isManuallyStopped: false },
-                  }
-                : msg
-            )
-          )
-        }
-
-        setStatus('idle')
-        onStreamEnd?.()
-      } catch (err) {
-        // Handle abort
-        if (err instanceof Error && err.name === 'AbortError') {
-          setStatus('idle')
-          return
-        }
-
-        const chatError: ChatError = {
-          message: err instanceof Error ? err.message : '',
-        }
-        onError?.(chatError)
-        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
-
-        const errorText = getErrorMessage(chatError, tError, tAuth)
-        const state = streamingStateRef.current
-        const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
-          segments: state.segments,
-          reasoningBlocks: state.reasoningBlocks,
-          ragSources: state.ragSources,
-          taskState: state.taskState,
-          errorText,
-        })
-
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? {
-                  ...msg,
-                  parts: errorParts,
-                  metadata: {
-                    ...msg.metadata,
+  const setCurrentStatus = useCallback((next: ChatStatus) => {
+    statusRef.current = next
+    setStatus(next)
+  }, [])
+
+  const setCurrentRunStatus = useCallback((next: AgentRunStatus | null) => {
+    runStatusRef.current = next
+    setRunStatus(next)
+  }, [])
+
+  const waitForRunEnd = useCallback((targetRunId: string) => {
+    if (terminalRunsRef.current.has(targetRunId)) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      const waiters = terminalWaitersRef.current.get(targetRunId) ?? new Set<() => void>()
+      waiters.add(resolve)
+      terminalWaitersRef.current.set(targetRunId, waiters)
+    })
+  }, [])
+
+  const resolveRunEnd = useCallback((targetRunId: string) => {
+    terminalRunsRef.current.add(targetRunId)
+    const waiters = terminalWaitersRef.current.get(targetRunId)
+    terminalWaitersRef.current.delete(targetRunId)
+    waiters?.forEach((resolve) => resolve())
+  }, [])
+  const resolveRunStart = useCallback((session: AssistantStreamSession, nextRunId: string) => {
+    const waiter = runStartWaiterRef.current
+    if (!waiter || waiter.session !== session) return
+    waiter.resolve(nextRunId)
+    runStartWaiterRef.current = null
+  }, [])
+
+  const setConversationId = useCallback((next: React.SetStateAction<string | null>) => {
+    setConversationIdState((current) => {
+      const resolved = typeof next === 'function'
+        ? (next as (value: string | null) => string | null)(current)
+        : next
+      conversationIdRef.current = resolved
+      return resolved
+    })
+  }, [])
+
+  const cancelScheduledStreamingFlush = useCallback(() => {
+    const scheduled = scheduledStreamingFlushRef.current
+    if (!scheduled) return
+    if (scheduled.type === 'frame') {
+      window.cancelAnimationFrame(scheduled.id)
+    } else {
+      globalThis.clearTimeout(scheduled.id)
+    }
+    scheduledStreamingFlushRef.current = null
+  }, [])
+
+  const resetStreamingState = useCallback(() => {
+    streamingStateRef.current = emptyStreamingState()
+  }, [])
+
+  const storeRunSnapshot = useCallback((conversation = activeRunConversationRef.current) => {
+    const activeRunId = runIdRef.current
+    if (!agentId || !conversation || !activeRunId) return
+    saveRunSnapshot(agentId, conversation, {
+      runId: activeRunId,
+      lastSequence: lastSequenceRef.current,
+    })
+  }, [agentId])
+
+  const clearStoredRunSnapshot = useCallback((conversation = activeRunConversationRef.current) => {
+    if (!agentId || !conversation) return
+    removeRunSnapshot(agentId, conversation)
+  }, [agentId])
+
+  const trackRun = useCallback((nextRunId: string, conversation?: string | null) => {
+    if (runIdRef.current !== nextRunId) {
+      runIdRef.current = nextRunId
+      lastSequenceRef.current = 0
+      appliedSequenceKeysRef.current.clear()
+      setRunId(nextRunId)
+    }
+    if (conversation) {
+      activeRunConversationRef.current = conversation
+    }
+    for (const pending of pendingRunInputsRef.current) {
+      if (!pending.runId) pending.runId = nextRunId
+    }
+    queueMicrotask(() => {
+      if (runIdRef.current === nextRunId) flushPendingInputsRef.current(nextRunId)
+    })
+  }, [])
+
+  const syncStreamingState = useCallback((session: AssistantStreamSession) => {
+    streamingStateRef.current = {
+      assistantMessageId: session.displayMessageId,
+      visibleMessageId: session.displayMessageId,
+      backendMessageId: session.backendMessageId,
+      segments: session.state.segments,
+      reasoningBlocks: session.state.reasoningBlocks,
+      currentReasoningIndex: session.state.currentReasoningIndex,
+      ragSources: session.state.ragSources,
+      taskState: session.state.taskState,
+    }
+  }, [])
+
+  const renderSession = useCallback((session: AssistantStreamSession, streaming: boolean, endData?: SSEMessageEnd) => {
+    const messageId = session.displayMessageId
+    if (!messageId) return
+    const parts = buildMessageParts(
+      session.state.segments,
+      session.state.reasoningBlocks,
+      session.state.ragSources,
+      streaming,
+      session.state.taskState
+    )
+    setMessages((previous) => previous.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            parts,
+            metadata: {
+              ...message.metadata,
+              ...(streaming
+                ? { isLoading: true }
+                : {
                     isLoading: false,
-                    isError: true,
-                    errorMessage: errorText, errorCode: chatError.code,
-                    preservedPartialProgress: preservedProgress,
-                  },
-                }
-              : msg
-          )
-        )
-
-        setStatus('idle')
-      } finally {
-        abortRef.current = null
-        const scheduled = scheduledStreamingFlushRef.current
-        if (scheduled) {
-          if (scheduled.type === 'frame') {
-            window.cancelAnimationFrame(scheduled.id)
-          } else {
-            globalThis.clearTimeout(scheduled.id)
+                    isManuallyStopped: false,
+                    isError: false,
+                    errorMessage: undefined,
+                    preservedPartialProgress: undefined,
+                    ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
+                  }),
+            },
           }
-          scheduledStreamingFlushRef.current = null
-        }
-        // Reset streaming state
-        streamingStateRef.current = {
-          assistantMessageId: null,
-          visibleMessageId: null,
-          backendMessageId: null,
-          segments: [],
-          reasoningBlocks: [],
-          currentReasoningIndex: -1,
-          ragSources: [],
-          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
-        }
-      }
-    },
-    [
-      api,
-      agentId,
-      conversationId,
-      variables,
-      isLoading,
-      onConversationChange,
-      onError,
-      onStreamStart,
-      onStreamEnd,
-      tAuth,
-      tError,
-    ]
-  )
+        : message
+    )))
+  }, [])
 
-  /**
-   * Stop current streaming
-   */
-  const stop = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current()
-      abortRef.current = null
+  const scheduleSessionRender = useCallback((session: AssistantStreamSession) => {
+    if (scheduledStreamingFlushRef.current) return
+    const flush = () => {
+      scheduledStreamingFlushRef.current = null
+      renderSession(session, true)
     }
+    if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+      const id = window.requestAnimationFrame(flush)
+      scheduledStreamingFlushRef.current = { id, type: 'frame' }
+      return
+    }
+    const id = globalThis.setTimeout(flush, 16)
+    scheduledStreamingFlushRef.current = { id, type: 'timeout' }
+  }, [renderSession])
 
-    const state = streamingStateRef.current
-    const targetMessageId = state.visibleMessageId || state.assistantMessageId || state.backendMessageId
-    if (targetMessageId) {
-      finalizeStreamingState(state)
-      const stoppedParts = appendStoppedPart(
-        buildMessageParts(
-          state.segments,
-          state.reasoningBlocks,
-          state.ragSources,
-          false,
-          state.taskState
-        )
-      )
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === targetMessageId
-            ? {
-                ...msg,
-                metadata: { ...msg.metadata, isLoading: false, isManuallyStopped: true },
-                parts: stoppedParts,
-              }
-            : msg
-        )
-      )
-      onStreamEnd?.()
-      streamingStateRef.current = {
-        assistantMessageId: null,
-        visibleMessageId: null,
-        backendMessageId: null,
-        segments: [],
-        reasoningBlocks: [],
-        currentReasoningIndex: -1,
-        ragSources: [],
-        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
+  const ensureSession = useCallback((messageId: string | null, runIdForSession?: string) => {
+    if (runIdForSession) {
+      const existing = sessionsByRunRef.current.get(runIdForSession)
+      if (existing) {
+        activeSessionRef.current = existing
+        return existing
       }
     }
 
-    setStatus('idle')
-  }, [onStreamEnd])
-
-  /**
-   * Reset chat state
-   */
-  const reset = useCallback(() => {
-    stop()
-    setMessages(initialMessages)
-    setConversationId(null)
-    setError(null)
-    setStatus('idle')
-  }, [stop, initialMessages])
-
-  /**
-   * Switch to a different version of a message using backend API
-   * This loads versions from backend and switches to the specified version
-   */
-  const reloadConversationMessages = useCallback(async () => {
-    if (!conversationId) return
-
-    const { messages: convertedMessages } = await api.getConversation(conversationId)
-    setMessages(convertedMessages)
-  }, [api, conversationId])
-
-  const switchVersion = useCallback(
-    async (messageId: string, versionIndex: number) => {
-      if (isLoading) return
-
-      // Find the message index
-      const messageIndex = messages.findIndex((m) => m.id === messageId)
-      if (messageIndex === -1) {
-        console.error('switchVersion: message not found', messageId)
-        return
-      }
-
-      try {
-        // Fetch all versions from backend
-        const versions = await api.getMessageVersions(agentId, messageId)
-
-        if (versionIndex < 0 || versionIndex >= versions.length) {
-          console.error('switchVersion: invalid versionIndex', versionIndex, 'versions.length', versions.length)
-          return
-        }
-
-        const targetVersion = versions[versionIndex]
-
-        // Call backend to switch version (this updates is_active in database)
-        // Backend will also deactivate messages that came after this message
-        await api.switchMessageVersion(agentId, messageId, targetVersion.id)
-
-        // Reload the entire conversation to get the correct message history.
-        await reloadConversationMessages()
-      } catch (err) {
-        console.error('Failed to switch version:', err)
-      }
-    },
-    [api, agentId, messages, isLoading, reloadConversationMessages]
-  )
-
-  const editMessage = useCallback(
-    async (messageId: string, content: string) => {
-      if (isLoading || !isValidUUID(messageId)) return
-
-      const targetIndex = messages.findIndex((message) => message.id === messageId)
-      if (targetIndex === -1 || messages[targetIndex].role !== 'user') return
-
-      const placeholderId = `editing-${Date.now()}`
-      setError(null)
-      setStatus('loading')
-      setMessages((prev) => {
-        const currentTargetIndex = prev.findIndex((message) => message.id === messageId)
-        if (currentTargetIndex === -1) return prev
-
-        const beforeAndEditedUser = prev.slice(0, currentTargetIndex + 1).map((message) => {
-          if (message.id !== messageId) return message
-          const hasTextPart = message.parts.some((part) => part.type === 'text')
-          const parts = hasTextPart
-            ? message.parts.map((part) => (
-                part.type === 'text' ? { ...part, text: content } : part
-              ))
-            : [{ type: 'text' as const, text: content }, ...message.parts]
-          return { ...message, parts }
-        })
-        const assistantPlaceholder: ChatMessage = {
-          id: placeholderId,
+    if (!messageId) return null
+    const existingMessage = messagesRef.current.find((message) => message.id === messageId)
+    const session: AssistantStreamSession = {
+      mode: 'reconnect',
+      displayMessageId: messageId,
+      backendMessageId: messageId,
+      state: existingMessage ? createAssistantStreamStateFromParts(existingMessage.parts) : createAssistantStreamState(),
+      versionNumber: existingMessage?.versionNumber ?? 1,
+      versionCount: existingMessage?.versionCount ?? 1,
+      receivedTerminalEvent: false,
+      receivedMessageEnd: false,
+      endNotified: false,
+      runId: runIdForSession,
+    }
+    setMessages((previous) => previous.some((message) => message.id === messageId)
+      ? previous
+      : [...previous, {
+          id: messageId,
           role: 'assistant',
           parts: [],
           createdAt: new Date(),
-          metadata: { isLoading: true },
-        }
-        return [...beforeAndEditedUser, assistantPlaceholder]
-      })
+          metadata: { isLoading: true, isManuallyStopped: false },
+        }])
+    activeSessionRef.current = session
+    if (runIdForSession) sessionsByRunRef.current.set(runIdForSession, session)
+    syncStreamingState(session)
+    return session
+  }, [syncStreamingState])
 
-      try {
-        const { stream, abort } = api.editMessageStream(agentId, messageId, content)
-        abortRef.current = abort
-        const response = await stream
-        if (!response.ok) {
-          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
-        }
+  const reloadConversationMessages = useCallback(async (targetConversationId = conversationIdRef.current) => {
+    if (!targetConversationId) return
+    const { messages: convertedMessages } = await api.getConversation(targetConversationId)
+    const currentById = new Map(messagesRef.current.map((message) => [message.id, message]))
+    setMessages(convertedMessages.map((message) => {
+      const previous = currentById.get(message.id)
+      if (!previous?.metadata) return message
+      const transientKeys = ['errorCode', 'errorMessage', 'preservedPartialProgress', 'isManuallyStopped', 'runInputState', 'runInputKind', 'runInputSequence']
+      const transientMetadata = Object.fromEntries(
+        transientKeys
+          .filter((key) => {
+            const value = previous.metadata?.[key]
+            return value !== undefined && value !== false && value !== null
+          })
+          .map((key) => [key, previous.metadata?.[key]])
+      )
+      if (previous.metadata.isError === true) transientMetadata.isError = true
+      return Object.keys(transientMetadata).length > 0
+        ? { ...message, metadata: { ...message.metadata, ...transientMetadata } }
+        : message
+    }))
+  }, [api])
 
-        setStatus('streaming')
-        onStreamStart?.()
-        let assistantMessageId = placeholderId
-        const streamState = createAssistantStreamState()
+  const notifyStreamEnd = useCallback((session: AssistantStreamSession) => {
+    if (session.endNotified) return
+    session.endNotified = true
+    onStreamEnd?.()
+  }, [onStreamEnd])
 
-        const syncStreamingState = () => {
-          streamingStateRef.current = {
-            assistantMessageId,
-            visibleMessageId: assistantMessageId,
-            backendMessageId: assistantMessageId === placeholderId ? null : assistantMessageId,
-            segments: streamState.segments,
-            reasoningBlocks: streamState.reasoningBlocks,
-            currentReasoningIndex: streamState.currentReasoningIndex,
-            ragSources: streamState.ragSources,
-            taskState: streamState.taskState,
+  const finishAssistantMessage = useCallback((session: AssistantStreamSession, data: SSEMessageEnd = {} as SSEMessageEnd) => {
+    cancelScheduledStreamingFlush()
+    finalizeStreamingState(session.state)
+    const endData = data as SSEMessageEnd & { version_number?: number; version_count?: number }
+    const previousMessageId = session.displayMessageId
+    const nextMessageId = session.keepDisplayIdOnStart && session.backendMessageId
+      ? session.backendMessageId
+      : session.displayMessageId
+    if (!previousMessageId || !nextMessageId) return
+
+    session.versionNumber = endData.version_number ?? session.versionNumber
+    session.versionCount = endData.version_count ?? session.versionCount
+    const parts = buildMessageParts(
+      session.state.segments,
+      session.state.reasoningBlocks,
+      session.state.ragSources,
+      false,
+      session.state.taskState
+    )
+    setMessages((previous) => previous.map((message) => (
+      message.id === previousMessageId
+        ? {
+            ...message,
+            id: nextMessageId,
+            parts,
+            versionNumber: session.versionNumber,
+            versionCount: session.versionCount,
+            metadata: {
+              ...message.metadata,
+              isLoading: false,
+              isManuallyStopped: false,
+              isError: false,
+              errorMessage: undefined,
+              preservedPartialProgress: undefined,
+              usage: endData.usage,
+              timing: endData.timing,
+            },
           }
-        }
+        : message
+    )))
+    session.displayMessageId = nextMessageId
+    session.receivedMessageEnd = true
+    session.receivedTerminalEvent = true
+    syncStreamingState(session)
+  }, [cancelScheduledStreamingFlush, syncStreamingState])
 
-        const renderAssistantProgress = (streaming: boolean, endData?: SSEMessageEnd) => {
-          const parts = buildMessageParts(
-            streamState.segments,
-            streamState.reasoningBlocks,
-            streamState.ragSources,
-            streaming,
-            streamState.taskState
-          )
-          setMessages((prev) => prev.map((message) => (
-            message.id === assistantMessageId
-              ? {
-                  ...message,
-                  parts,
-                  metadata: {
-                    ...message.metadata,
-                    isLoading: false,
-                    isError: false,
-                    ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
-                  },
-                }
-              : message
-          )))
-        }
-
-        syncStreamingState()
-        for await (const event of parseSSEStream(response)) {
-          if (event.event === 'error') {
-            const data = event.data as SSEError
-            const chatError: ChatError = {
-              code: data.code,
-              message: data.msg,
-              quotaType: data.quota_type,
-            }
-            onError?.(chatError)
-        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
-            console.error("[chat] stream error", { code: chatError.code, message: chatError.message, conversationId })
-
-            const errorText = getErrorMessage(chatError, tError, tAuth)
-            const { parts, preservedProgress } = buildErroredMessageParts({
-              ...streamState,
-              errorText,
-            })
-            const failedMessageId = assistantMessageId
-            setMessages((prev) => prev.map((message) => (
-              message.id === failedMessageId
-                ? {
-                    ...message,
-                    parts,
-                    metadata: {
-                      ...message.metadata,
-                      isLoading: false,
-                      isError: true,
-                      errorMessage: errorText, errorCode: chatError.code,
-                      preservedPartialProgress: preservedProgress,
-                    },
-                  }
-                : message
-            )))
-            // BackendMessage conversion does not persist the SSE error code, so
-            // re-apply the local diagnostic to the reloaded message with the
-            // same id after the history reload.
-            await reloadConversationMessages().catch(() => undefined)
-            setMessages((prev) => prev.map((message) => (
-              message.id === failedMessageId && message.role === 'assistant'
-                ? {
-                    ...message,
-                    metadata: {
-                      ...message.metadata,
-                      isError: true,
-                      errorMessage: errorText,
-                      errorCode: chatError.code,
-                      preservedPartialProgress: preservedProgress,
-                    },
-                  }
-                : message
-            )))
-            setStatus('idle')
-            return
+  const markAssistantStopped = useCallback((session: AssistantStreamSession) => {
+    cancelScheduledStreamingFlush()
+    finalizeStreamingState(session.state)
+    const messageId = session.displayMessageId || session.backendMessageId
+    if (!messageId) return
+    const stoppedParts = appendStoppedPart(buildMessageParts(
+      session.state.segments,
+      session.state.reasoningBlocks,
+      session.state.ragSources,
+      false,
+      session.state.taskState
+    ))
+    setMessages((previous) => previous.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            parts: stoppedParts,
+            metadata: { ...message.metadata, isLoading: false, isManuallyStopped: true },
           }
-
-          if (event.event === 'message_start') {
-            const data = event.data as SSEMessageStart & {
-              edited_message_id?: string
-              edited_version_number?: number
-              edited_version_count?: number
-            }
-            const previousAssistantMessageId = assistantMessageId
-            if (data.message_id) assistantMessageId = data.message_id
-            syncStreamingState()
-            setMessages((prev) => prev.map((message) => {
-              if (message.id === messageId) {
-                return {
-                  ...message,
-                  id: data.edited_message_id ?? message.id,
-                  versionNumber: data.edited_version_number ?? message.versionNumber,
-                  versionCount: data.edited_version_count ?? message.versionCount,
-                }
-              }
-              if (message.id === previousAssistantMessageId) {
-                return { ...message, id: assistantMessageId }
-              }
-              return message
-            }))
-            continue
-          }
-
-          if (event.event === 'message_end') {
-            finalizeStreamingState(streamState)
-            syncStreamingState()
-            renderAssistantProgress(false, event.data as SSEMessageEnd)
-            continue
-          }
-
-          if (applyAssistantStreamEvent(streamState, event)) {
-            syncStreamingState()
-            renderAssistantProgress(true)
-          } else {
-            syncStreamingState()
-          }
-        }
-        await reloadConversationMessages()
-        setStatus('idle')
-        onStreamEnd?.()
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          setStatus('idle')
-          return
-        }
-        const chatError: ChatError = {
-          message: err instanceof Error ? err.message : '',
-        }
-        onError?.(chatError)
-        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
-        await reloadConversationMessages().catch(() => undefined)
-        setStatus('idle')
-      } finally {
-        abortRef.current = null
-      }
-    },
-    [api, agentId, isLoading, messages, onError, onStreamEnd, onStreamStart, reloadConversationMessages, tAuth, tError, conversationId]
-  )
-
-  /**
-   * Check if a message ID is a valid UUID (from backend) vs temporary ID (from frontend)
-   */
-  function isValidUUID(id: string): boolean {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    return uuidRegex.test(id)
-  }
-
-  /**
-   * Regenerate (retry) an assistant message using backend version management
-   */
-  const regenerate = useCallback(
-    async (messageId: string) => {
-      if (isLoading) return
-
-      // Find the message
-      const messageIndex = messages.findIndex((m) => m.id === messageId)
-      if (messageIndex === -1) return
-
-      const targetMessage = messages[messageIndex]
-      if (targetMessage.role !== 'assistant') return
-
-      // Check if this is a temporary ID (not saved to backend yet)
-      // In this case, we need to resend the user message instead of regenerating
-      if (!isValidUUID(messageId)) {
-        // Find the user message before this assistant message
-        const userMessageIndex = messageIndex - 1
-        if (userMessageIndex >= 0 && messages[userMessageIndex]?.role === 'user') {
-          const userMessage = messages[userMessageIndex]
-          // Get text content from user message
-          const textPart = userMessage.parts.find(p => p.type === 'text')
-          const text = textPart && 'text' in textPart ? textPart.text : ''
-          
-          // Remove the failed assistant message and user message
-          setMessages((prev) => prev.slice(0, userMessageIndex))
-          
-          // Resend the message
-          if (text) {
-            // Extract images if any
-            const imageParts = userMessage.parts.filter(p => p.type === 'image')
-            const images: ChatImageContent[] = imageParts.map(p => ({
-              type: 'image_url' as const,
-              url: 'url' in p ? p.url : '',
-            })).filter(img => img.url)
-            
-            await sendMessage(text, images.length > 0 ? images : undefined)
-          }
-        }
-        return
-      }
-
-      // Clear previous error
-      setError(null)
-      setStatus('loading')
-
-      // Update message to loading state and remove descendants from the stale branch
-      setMessages((prev) => {
-        const targetIndex = prev.findIndex((msg) => msg.id === messageId)
-        if (targetIndex === -1) return prev
-
-        return prev.slice(0, targetIndex + 1).map((msg) => {
-          if (msg.id !== messageId) return msg
-
-          const nextMetadata = { ...msg.metadata }
-          delete nextMetadata.isError
-          delete nextMetadata.errorMessage
-          delete nextMetadata.preservedPartialProgress
-
-          return {
-            ...msg,
-            parts: [],
-            metadata: { ...nextMetadata, isLoading: true, isManuallyStopped: false },
-          }
-        })
-      })
-
-      streamingStateRef.current = {
-        assistantMessageId: messageId,
-        visibleMessageId: messageId,
-        backendMessageId: null,
-        segments: [],
-        reasoningBlocks: [],
-        currentReasoningIndex: -1,
-        ragSources: [],
-        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
-      }
-
-      try {
-        // Use backend regenerate API which handles versioning
-        const { stream, abort } = api.regenerateStream(agentId, messageId, variables)
-        abortRef.current = abort
-
-        const response = await stream
-
-        if (!response.ok) {
-          await response.json().catch(() => ({}))
-          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
-        }
-
-        setStatus('streaming')
-        onStreamStart?.()
-
-        // Content segments
-        let segments: ContentSegment[] = []
-        const reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
-        let currentReasoningIndex = -1
-        let ragSources: SourceDocumentPart[] = []
-        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
-        let newMessageId = messageId  // May be updated by message_start
-
-        // Helper functions
-        const getCurrentTextSegment = (): ContentSegment => {
-          const lastSegment = segments[segments.length - 1]
-          if (lastSegment && lastSegment.type === 'text') {
-            return lastSegment
-          }
-          const newSegment: ContentSegment = { type: 'text', text: '' }
-          segments.push(newSegment)
-          return newSegment
-        }
-
-        const addToolGroupSegment = (toolCall: ToolCallPart): ContentSegment => {
-          const existingGroup = segments.find(segment => (
-            segment.type === 'tool-group'
-            && segment.toolCalls?.some(existing => existing.toolCallId === toolCall.toolCallId)
-          ))
-          if (existingGroup) {
-            existingGroup.toolCalls = existingGroup.toolCalls?.map(existing => (
-              existing.toolCallId === toolCall.toolCallId
-                ? mergeToolCall(existing, toolCall)
-                : existing
-            ))
-            return existingGroup
-          }
-
-          const lastSegment = segments[segments.length - 1]
-          if (lastSegment && lastSegment.type === 'tool-group') {
-            lastSegment.toolCalls = lastSegment.toolCalls || []
-            lastSegment.toolCalls.push(toolCall)
-            return lastSegment
-          }
-          const newSegment: ContentSegment = {
-            type: 'tool-group',
-            toolCalls: [toolCall],
-            toolResults: []
-          }
-          segments.push(newSegment)
-          return newSegment
-        }
-
-        const findToolGroup = (toolCallId: string): ContentSegment | undefined => {
-          return segments.find(s => 
-            s.type === 'tool-group' && 
-            s.toolCalls?.some(tc => tc.toolCallId === toolCallId)
-          )
-        }
-
-        streamingStateRef.current = {
-          assistantMessageId: messageId,
-          visibleMessageId: messageId,
-          backendMessageId: null,
-          segments,
-          reasoningBlocks,
-          currentReasoningIndex,
-          ragSources,
-          taskState,
-        }
-
-        // Track version info from message_start
-        let newVersionNumber = 1
-        let newVersionCount = 1
-
-        // Parse SSE stream
-        for await (const event of parseSSEStream(response)) {
-          switch (event.event as SSEEventType) {
-            case 'message_start': {
-              const data = event.data as SSEMessageStart & { version_number?: number; version_count?: number }
-              // Backend creates a new message version with a new ID
-              if (data.message_id) {
-                newMessageId = data.message_id
-                streamingStateRef.current.assistantMessageId = messageId
-                streamingStateRef.current.visibleMessageId = messageId
-                streamingStateRef.current.backendMessageId = newMessageId
-              }
-              // Track version info for later use
-              if (data.version_number) newVersionNumber = data.version_number
-              if (data.version_count) newVersionCount = data.version_count
-              break
-            }
-
-            case 'rag_start': {
-              taskState.rag = 'running'
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'reasoning_start': {
-              // Start a new reasoning block and add it as a segment
-              const newBlock = {
-                text: '',
-                startTime: Date.now(),
-                state: 'streaming' as const,
-              }
-              reasoningBlocks.push(newBlock)
-              currentReasoningIndex = reasoningBlocks.length - 1
-
-              // Add reasoning segment to maintain order
-              const reasoningSegment: ContentSegment = {
-                type: 'reasoning',
-                reasoningText: '',
-                reasoningState: 'streaming',
-                reasoningStartTime: Date.now(),
-              }
-              segments.push(reasoningSegment)
-
-              // Update streamingStateRef for stop() to work correctly
-              streamingStateRef.current.segments = segments
-              streamingStateRef.current.reasoningBlocks = reasoningBlocks
-              streamingStateRef.current.currentReasoningIndex = currentReasoningIndex
-              break
-            }
-
-            case 'reasoning_delta': {
-              const data = event.data as { delta: string }
-              // Add to current reasoning block
-              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
-                reasoningBlocks[currentReasoningIndex].text += data.delta
-
-                // Update the corresponding reasoning segment (find last reasoning segment)
-                let lastReasoningSegmentIndex = -1
-                for (let i = segments.length - 1; i >= 0; i--) {
-                  if (segments[i].type === 'reasoning') {
-                    lastReasoningSegmentIndex = i
-                    break
-                  }
-                }
-                if (lastReasoningSegmentIndex >= 0) {
-                  segments[lastReasoningSegmentIndex].reasoningText = reasoningBlocks[currentReasoningIndex].text
-                }
-
-                // Update streamingStateRef for stop() to work correctly
-                streamingStateRef.current.segments = segments
-                streamingStateRef.current.reasoningBlocks = reasoningBlocks
-              }
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'reasoning_end': {
-              // Mark current reasoning block as done
-              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
-                const block = reasoningBlocks[currentReasoningIndex]
-                block.duration = Date.now() - block.startTime
-                block.state = 'done'
-
-                // Update the corresponding reasoning segment (find last reasoning segment)
-                let lastReasoningSegmentIndex = -1
-                for (let i = segments.length - 1; i >= 0; i--) {
-                  if (segments[i].type === 'reasoning') {
-                    lastReasoningSegmentIndex = i
-                    break
-                  }
-                }
-                if (lastReasoningSegmentIndex >= 0) {
-                  segments[lastReasoningSegmentIndex].reasoningState = 'done'
-                  segments[lastReasoningSegmentIndex].reasoningDuration = block.duration
-                }
-
-                // Update streamingStateRef for stop() to work correctly
-                streamingStateRef.current.segments = segments
-                streamingStateRef.current.reasoningBlocks = reasoningBlocks
-              }
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'content_delta': {
-              const data = event.data as SSEContentDelta
-              const textSegment = getCurrentTextSegment()
-              textSegment.text = (textSegment.text || '') + data.delta
-
-              // Collect all text from all text segments to check for complete XML
-              const allText = segments
-                .filter(s => s.type === 'text')
-                .map(s => s.text || '')
-                .join('')
-
-              const hasStartTag = allText.includes('<user_input_request>')
-              const hasEndTag = allText.includes('</user_input_request>')
-
-              if (hasStartTag && hasEndTag) {
-                // Complete XML detected - parse it
-                const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
-                if (xmlMatch) {
-                  const xmlContent = xmlMatch[1]
-                  const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
-                  const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
-
-                  if (questionMatch && optionsMatch) {
-                    const question = questionMatch[1].trim()
-                    const options: string[] = []
-                    const optionMatches = optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g)
-                    for (const match of optionMatches) {
-                      options.push(match[1].trim())
-                    }
-
-                    if (question && options.length >= 2) {
-                      // Remove XML from all text segments
-                      const textBeforeXML = allText.substring(0, allText.indexOf('<user_input_request>'))
-                      const textAfterXML = allText.substring(allText.indexOf('</user_input_request>') + '</user_input_request>'.length)
-                      const cleanedText = (textBeforeXML + textAfterXML).trim()
-
-                      // Replace all text segments with a single cleaned one
-                      segments = segments.filter(s => s.type !== 'text' && s.type !== 'user-input-request')
-                      if (cleanedText) {
-                        segments.push({
-                          type: 'text',
-                          text: cleanedText
-                        })
-                      }
-
-                      // Add user input request segment
-                      const userInputSegment: ContentSegment = {
-                        type: 'user-input-request',
-                        userInputRequest: {
-                          type: 'user-input-request',
-                          question,
-                          options,
-                          state: 'pending',
-                        }
-                      }
-                      segments.push(userInputSegment)
-                    }
-                  }
-                }
-              }
-
-              streamingStateRef.current.segments = segments
-
-              if (taskState.generating === 'pending') {
-                if (taskState.rag === 'running') {
-                  taskState.rag = 'completed'
-                }
-                taskState.generating = 'running'
-                streamingStateRef.current.taskState = taskState
-              }
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'rag_context': {
-              const data = event.data as SSERagContext
-              ragSources = data.contexts.map((ctx) => ({
-                type: 'source-document' as const,
-                sourceId: ctx.document_id,
-                documentId: ctx.document_id,
-                documentName: ctx.document_name,
-                content: ctx.content,
-                metadata: {
-                  kb_id: ctx.kb_id,
-                  kb_name: ctx.kb_name,
-                  score: ctx.score,
-                },
-              }))
-              streamingStateRef.current.ragSources = ragSources
-              taskState.rag = 'completed'
-              taskState.ragSourceCount = ragSources.length
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'compression_start': {
-              taskState.compression = 'running'
-              appendTimelineTask(segments, 'compression')
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'compression_end': {
-              const data = event.data as SSECompression
-              ensureTimelineTask(
-                segments,
-                'compression',
-                'completed',
-                data as unknown as Record<string, unknown>
-              )
-              taskState.compression = 'completed'
-              taskState.compressionInfo = data as unknown as Record<string, unknown>
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'tool_call': {
-              const data = event.data as SSEToolCall
-              const toolCallPart: ToolCallPart = {
-                type: 'tool-call',
-                toolCallId: data.tool_call_id,
-                toolName: data.tool_name,
-                toolDisplayName: data.tool_display_name,
-                input: data.arguments,
-                state: 'running',
-              }
-              addToolGroupSegment(toolCallPart)
-              streamingStateRef.current.segments = segments
-              taskState.toolCalling = 'running'
-              const totalToolCalls = segments
-                .filter(s => s.type === 'tool-group')
-                .reduce((sum, s) => sum + (s.toolCalls?.length || 0), 0)
-              taskState.toolCallCount = totalToolCalls
-              streamingStateRef.current.taskState = taskState
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'tool_result': {
-              const data = event.data as SSEToolResult
-              const parsedOutput = parseToolResultOutput(data.result)
-              const toolResultPart: ToolResultPart = {
-                type: 'tool-result',
-                toolCallId: data.tool_call_id,
-                toolName: data.tool_name,
-                toolDisplayName: data.tool_display_name,
-                output: parsedOutput,
-                isError: data.is_error,
-              }
-              const toolGroup = findToolGroup(data.tool_call_id)
-              if (toolGroup) {
-                toolGroup.toolResults = toolGroup.toolResults || []
-                toolGroup.toolResults.push(toolResultPart)
-                // Update corresponding tool call state (create new object for React to detect change)
-                if (toolGroup.toolCalls) {
-                  toolGroup.toolCalls = toolGroup.toolCalls.map(tc =>
-                    tc.toolCallId === data.tool_call_id
-                      ? { ...tc, state: data.is_error ? 'error' as const : 'done' as const }
-                      : tc
-                  )
-                }
-              }
-              streamingStateRef.current.segments = segments
-              const allToolCalls = segments
-                .filter(s => s.type === 'tool-group')
-                .flatMap(s => s.toolCalls || [])
-              const allToolsCompleted = allToolCalls.every(tc => tc.state === 'done' || tc.state === 'error')
-              if (allToolsCompleted && taskState.toolCalling === 'running') {
-                taskState.toolCalling = 'completed'
-                streamingStateRef.current.taskState = taskState
-              }
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'media_result': {
-              const data = event.data as SSEMediaResult
-              if (!shouldDisplayMediaResultInBody(data)) {
-                break
-              }
-              segments.push({
-                type: 'media-result',
-                mediaResult: {
-                  type: 'media-result',
-                  output: data,
-                },
-              })
-              streamingStateRef.current.segments = segments
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'output_truncated': {
-              const truncatedSegment: ContentSegment = { type: 'truncated' }
-              segments.push(truncatedSegment)
-              streamingStateRef.current.segments = segments
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'iteration_cap_reached': {
-              const data = event.data as SSEIterationCapReached
-              const iterationCapSegment: ContentSegment = { type: 'iteration-cap-reached' }
-              segments.push(iterationCapSegment)
-              if (data.content) {
-                segments.push({ type: 'text', text: data.content })
-              }
-              streamingStateRef.current.segments = segments
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
-              break
-            }
-
-            case 'message_end': {
-              if (taskState.toolCalling === 'running') {
-                taskState.toolCalling = 'completed'
-              }
-              // Note: compression state is now managed by compression_start/compression_end events
-              // Safety: ensure all tool calls are marked as done on message end
-              for (const segment of segments) {
-                if (segment.type === 'tool-group' && segment.toolCalls) {
-                  segment.toolCalls = segment.toolCalls.map(tc =>
-                    tc.state === 'running' ? { ...tc, state: 'done' as const } : tc
-                  )
-                }
-              }
-              // Mark all reasoning blocks as done
-              reasoningBlocks.forEach(block => {
-                if (block.state === 'streaming') {
-                  block.duration = Date.now() - block.startTime
-                  block.state = 'done'
-                }
-              })
-              finalizeStreamingState({
-                segments,
-                reasoningBlocks,
-                taskState,
-              })
-              const newParts = buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState)
-
-              // Get version info from event data if available (for regenerate)
-              // Priority: message_end > message_start > existing values
-              const endData = event.data as SSEMessageEnd & { version_number?: number; version_count?: number }
-              const finalVersionNumber = endData.version_number ?? newVersionNumber
-              const finalVersionCount = endData.version_count ?? newVersionCount
-
-              // Update message with new content and new ID from backend
-              // Backend handles version management, frontend just updates display
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== messageId) return msg
-                  return {
-                    ...msg,
-                    id: newMessageId,  // Use new ID from backend
-                    parts: newParts,
-                    versionNumber: finalVersionNumber,
-                    versionCount: finalVersionCount,
-                    metadata: {
-                      ...msg.metadata,
-                      isLoading: false,
-                      isManuallyStopped: false,
-                      isError: false,
-                      errorMessage: undefined,
-                      preservedPartialProgress: undefined,
-                      usage: endData.usage,
-                      timing: endData.timing,
-                    },
-                  }
-                })
-              )
-              break
-            }
-
-            case 'error': {
-              if (taskState.compression === 'running') {
-                taskState.compression = 'error'
-                updateLatestTimelineTask(segments, 'compression', 'error')
-                streamingStateRef.current.taskState = taskState
-              }
-              const data = event.data as SSEError
-              const chatError: ChatError = {
-                code: data.code,
-                message: data.msg,
-                quotaType: data.quota_type,
-              }
-              onError?.(chatError)
-        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
-              console.error("[chat] stream error", { code: chatError.code, message: chatError.message, conversationId })
-
-              const errorText = getErrorMessage(chatError, tError, tAuth)
-              const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
-                segments,
-                reasoningBlocks,
-                ragSources,
-                taskState,
-                errorText,
-              })
-
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== messageId) return msg
-                  return {
-                    ...msg,
-                    parts: errorParts,
-                    metadata: {
-                      ...msg.metadata,
-                      isLoading: false,
-                      isError: true,
-                      errorMessage: errorText, errorCode: chatError.code,
-                      preservedPartialProgress: preservedProgress,
-                    },
-                  }
-                })
-              )
-              break
-            }
-          }
-        }
-
-        setStatus('idle')
-        onStreamEnd?.()
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          setStatus('idle')
-          return
-        }
-
-        const chatError: ChatError = {
-          message: err instanceof Error ? err.message : '',
-        }
-        onError?.(chatError)
-        console.error('[chat] error', { code: chatError.code, message: chatError.message, conversationId })
-
-        const errorText = getErrorMessage(chatError, tError, tAuth)
-        const state = streamingStateRef.current
-        const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
-          segments: state.segments,
-          reasoningBlocks: state.reasoningBlocks,
-          ragSources: state.ragSources,
-          taskState: state.taskState,
-          errorText,
-        })
-
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== messageId) return msg
-            return {
-              ...msg,
-              parts: errorParts,
+        : message
+    )))
+    session.receivedTerminalEvent = true
+    syncStreamingState(session)
+  }, [cancelScheduledStreamingFlush, syncStreamingState])
+
+  const markAssistantError = useCallback((session: AssistantStreamSession, chatError: ChatError) => {
+    cancelScheduledStreamingFlush()
+    if (session.state.taskState.compression === 'running') {
+      session.state.taskState.compression = 'error'
+      updateLatestTimelineTask(session.state.segments, 'compression', 'error')
+    }
+    const errorText = getErrorMessage(chatError, tError, tAuth)
+    const { parts, preservedProgress } = buildErroredMessageParts({
+      ...session.state,
+      errorText,
+    })
+    const messageId = session.displayMessageId || session.backendMessageId
+    if (messageId) {
+      setMessages((previous) => previous.map((message) => (
+        message.id === messageId
+          ? {
+              ...message,
+              parts,
               metadata: {
-                ...msg.metadata,
+                ...message.metadata,
                 isLoading: false,
                 isError: true,
-                errorMessage: errorText, errorCode: chatError.code,
+                errorMessage: errorText,
+                errorCode: chatError.code,
                 preservedPartialProgress: preservedProgress,
               },
             }
-          })
-        )
+          : message
+      )))
+    }
+    session.receivedTerminalEvent = true
+    syncStreamingState(session)
+  }, [cancelScheduledStreamingFlush, syncStreamingState, tAuth, tError])
 
-        setStatus('idle')
-      } finally {
-        abortRef.current = null
-        streamingStateRef.current = {
-          assistantMessageId: null,
-          visibleMessageId: null,
-          backendMessageId: null,
-          segments: [],
-          reasoningBlocks: [],
-          currentReasoningIndex: -1,
-          ragSources: [],
-          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
+  const markRunInputAccepted = useCallback((data: Record<string, unknown>, event: NormalizedStreamEvent) => {
+    const kind = data.kind === 'follow_up' ? 'follow_up' : 'steer'
+    const content = typeof data.content === 'string' ? data.content : ''
+    const inputSequence = typeof data.sequence === 'number' ? data.sequence : undefined
+    const pendingIndex = pendingRunInputsRef.current.findIndex((input) => (
+      input.kind === kind && input.content === content
+    ))
+    const pending = pendingIndex >= 0 ? pendingRunInputsRef.current.splice(pendingIndex, 1)[0] : undefined
+    const runIdentity = event.envelope?.run_id ?? runIdRef.current ?? 'unknown'
+    const messageId = pending?.messageId ?? `run-input-${runIdentity}-${inputSequence ?? event.envelope?.sequence ?? Date.now()}`
+    setMessages((previous) => {
+      let committed = false
+      const next = previous.map((message) => {
+        const matchesInput = message.id === messageId || (
+          inputSequence !== undefined && message.metadata?.runInputSequence === inputSequence
+        )
+        if (!matchesInput) return message
+        committed = true
+        return {
+          ...message,
+          metadata: {
+            ...message.metadata,
+            runInputState: 'committed',
+            runInputKind: kind,
+            runInputSequence: inputSequence,
+          },
+        }
+      })
+      if (committed || pending) return next
+      return [...next, {
+        id: messageId,
+        role: 'user',
+        parts: [{ type: 'text', text: content }],
+        createdAt: new Date(),
+        metadata: {
+          runInputState: 'committed',
+          runInputKind: kind,
+          runInputSequence: inputSequence,
+        },
+      }]
+    })
+  }, [])
+
+  const applyIncomingEvent = useCallback((rawEvent: { event: string; data: unknown }, providedSession?: AssistantStreamSession) => {
+    const event = normalizeStreamEvent(rawEvent)
+    let session = providedSession ?? activeSessionRef.current
+    const envelope = event.envelope
+
+    if (envelope) {
+      const currentRunId = runIdRef.current
+      if (currentRunId && currentRunId !== envelope.run_id) {
+        lastSequenceRef.current = 0
+        appliedSequenceKeysRef.current.clear()
+      }
+      trackRun(envelope.run_id)
+      const sequenceKey = `${envelope.run_id}:${envelope.sequence}`
+      if (appliedSequenceKeysRef.current.has(sequenceKey)) return
+      if (lastSequenceRef.current !== 0 && envelope.sequence <= lastSequenceRef.current) return
+      appliedSequenceKeysRef.current.add(sequenceKey)
+      lastSequenceRef.current = Math.max(lastSequenceRef.current, envelope.sequence)
+      if (session) {
+        session.runId = envelope.run_id
+        sessionsByRunRef.current.set(envelope.run_id, session)
+        activeSessionRef.current = session
+        resolveRunStart(session, envelope.run_id)
+      }
+    } else if (event.event === 'run_start') {
+      const eventRunId = typeof event.data === 'object' && event.data && typeof (event.data as Record<string, unknown>).run_id === 'string'
+        ? (event.data as Record<string, unknown>).run_id as string
+        : null
+      if (eventRunId) {
+        trackRun(eventRunId)
+        if (session) {
+          session.runId = eventRunId
+          sessionsByRunRef.current.set(eventRunId, session)
+          resolveRunStart(session, eventRunId)
         }
       }
-    },
-    [
-      api,
-      agentId,
+    }
+
+    if (session?.runId) resolveRunStart(session, session.runId)
+
+    const data = (event.data && typeof event.data === 'object' ? event.data : {}) as Record<string, unknown>
+    if (event.event === 'run_start' || event.event === 'run_status') {
+      const nextStatus = data.status as AgentRunStatus | undefined
+      if (nextStatus) {
+        setCurrentRunStatus(nextStatus)
+        if (isActiveRunStatus(nextStatus)) setCurrentStatus('streaming')
+      }
+      storeRunSnapshot()
+      return
+    }
+
+    if (event.event === 'input_accepted') {
+      markRunInputAccepted(data, event)
+      storeRunSnapshot()
+      return
+    }
+
+    const eventMessageId = envelope?.message_id ?? getEventMessageId(event)
+    if (!session && eventMessageId) {
+      session = ensureSession(eventMessageId, envelope?.run_id)
+    }
+
+    if (event.event === 'message_start') {
+      const startData = {
+        ...data,
+        ...(eventMessageId ? { message_id: eventMessageId } : {}),
+      } as SSEMessageStart & {
+        edited_message_id?: string
+        edited_version_number?: number
+        edited_version_count?: number
+      }
+      if (!session) return
+      const nextConversationId = startData.conversation_id
+      if (nextConversationId) {
+        activeRunConversationRef.current = nextConversationId
+        if (conversationIdRef.current !== nextConversationId) {
+          setConversationId(nextConversationId)
+          onConversationChange?.(nextConversationId)
+        }
+      }
+      if (startData.user_message_id && session.optimisticUserMessageId) {
+        setMessages((previous) => previous.map((message) => (
+          message.id === session.optimisticUserMessageId
+            ? { ...message, id: startData.user_message_id as string }
+            : message
+        )))
+      }
+      if (session.sourceMessageId && startData.edited_message_id) {
+        setMessages((previous) => previous.map((message) => (
+          message.id === session.sourceMessageId
+            ? {
+                ...message,
+                id: startData.edited_message_id ?? message.id,
+                versionNumber: startData.edited_version_number ?? message.versionNumber,
+                versionCount: startData.edited_version_count ?? message.versionCount,
+              }
+            : message
+        )))
+        session.sourceMessageId = startData.edited_message_id
+      }
+      if (startData.message_id) {
+        const nextMessageId = startData.message_id
+        session.backendMessageId = nextMessageId
+        if (!session.keepDisplayIdOnStart) {
+          const previousMessageId = session.displayMessageId
+          session.displayMessageId = nextMessageId
+          setMessages((previous) => {
+            if (!previousMessageId) {
+              return previous.some((message) => message.id === nextMessageId)
+                ? previous
+                : [...previous, {
+                    id: nextMessageId,
+                    role: 'assistant',
+                    parts: [],
+                    createdAt: new Date(),
+                    metadata: { isLoading: true, isManuallyStopped: false },
+                  }]
+            }
+            return previous.map((message) => (
+              message.id === previousMessageId ? { ...message, id: nextMessageId } : message
+            ))
+          })
+        }
+      }
+      syncStreamingState(session)
+      storeRunSnapshot()
+      return
+    }
+
+    if (event.event === 'message_end') {
+      if (session) finishAssistantMessage(session, data as unknown as SSEMessageEnd)
+      storeRunSnapshot()
+      return
+    }
+
+    if (event.event === 'error') {
+      if (session) {
+        const chatError: ChatError = {
+          code: typeof data.code === 'number' ? data.code : undefined,
+          message: typeof data.msg === 'string' ? data.msg : '',
+          quotaType: typeof data.quota_type === 'string' ? data.quota_type : undefined,
+        }
+        onError?.(chatError)
+        markAssistantError(session, chatError)
+      }
+      storeRunSnapshot()
+      return
+    }
+
+    if (event.event === 'run_end') {
+      const terminalStatus = data.status as AgentRunStatus | undefined
+      const terminalSession = session ?? (eventMessageId ? ensureSession(eventMessageId, envelope?.run_id) : null)
+      if (terminalSession) {
+        if (terminalStatus === 'stopped') {
+          markAssistantStopped(terminalSession)
+        } else if (terminalStatus === 'failed') {
+          if (!terminalSession.receivedTerminalEvent) {
+            markAssistantError(terminalSession, {
+              message: typeof data.msg === 'string' ? data.msg : 'Run failed',
+            })
+          }
+        } else if (!terminalSession.receivedMessageEnd) {
+          finishAssistantMessage(terminalSession)
+        }
+        if (terminalSession.reloadAfterTerminal) {
+          void reloadConversationMessages().catch(() => undefined)
+        }
+        notifyStreamEnd(terminalSession)
+      }
+      if (terminalStatus) setCurrentRunStatus(terminalStatus)
+      const terminalRunId = envelope?.run_id ?? runIdRef.current
+      if (terminalRunId) {
+        resolveRunEnd(terminalRunId)
+        clearStoredRunSnapshot()
+        sessionsByRunRef.current.delete(terminalRunId)
+      }
+      setCurrentStatus('idle')
+      if (!envelope || envelope.run_id === runIdRef.current) {
+        runIdRef.current = null
+        setRunId(null)
+      }
+      resetStreamingState()
+      return
+    }
+
+    if (!session) return
+    const changed = applyAssistantStreamEvent(session.state, { event: event.event, data: event.data })
+    syncStreamingState(session)
+    if (changed) {
+      if (event.event === 'content_delta' || event.event === 'reasoning_delta') {
+        scheduleSessionRender(session)
+      } else {
+        renderSession(session, true)
+      }
+    }
+    storeRunSnapshot()
+  }, [
+    ensureSession,
+    finishAssistantMessage,
+    markAssistantError,
+    markAssistantStopped,
+    markRunInputAccepted,
+    notifyStreamEnd,
+    onConversationChange,
+    onError,
+    reloadConversationMessages,
+    renderSession,
+    resetStreamingState,
+    scheduleSessionRender,
+    setConversationId,
+    setCurrentRunStatus,
+    setCurrentStatus,
+    storeRunSnapshot,
+    syncStreamingState,
+    trackRun,
+    resolveRunEnd,
+    resolveRunStart,
+    clearStoredRunSnapshot,
+  ])
+
+  const startSubscription = useCallback((targetRunId: string) => {
+    subscriptionAbortRef.current?.()
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let streamAbort: (() => void) | null = null
+    const scheduleRetry = () => {
+      if (cancelled || runIdRef.current !== targetRunId || !isActiveRunStatus(runStatusRef.current)) return
+      timer = globalThis.setTimeout(() => {
+        timer = null
+        startSubscription(targetRunId)
+      }, 1000)
+    }
+    subscriptionAbortRef.current = () => {
+      cancelled = true
+      if (timer) globalThis.clearTimeout(timer)
+      timer = null
+      streamAbort?.()
+      streamAbort = null
+    }
+
+    if (runApi.streamRun) {
+      try {
+        const source = runApi.streamRun(agentId, targetRunId, lastSequenceRef.current)
+        streamAbort = source.abort
+        const consumeSubscription = async () => {
+          try {
+            const response = await source.stream
+            if (!response.ok) throw new Error(`Run stream failed (${response.status})`)
+            for await (const event of parseSSEStream(response)) {
+              if (cancelled || runIdRef.current !== targetRunId) return
+              applyIncomingEvent(event)
+            }
+            scheduleRetry()
+          } catch {
+            scheduleRetry()
+          }
+        }
+        void consumeSubscription()
+        return
+      } catch {
+        // Fall through to replay polling when a custom stream adapter cannot subscribe.
+      }
+    }
+
+    const poll = async () => {
+      if (cancelled || runIdRef.current !== targetRunId || !runApi.getRunEvents) return
+      try {
+        const events = await runApi.getRunEvents(agentId, targetRunId, lastSequenceRef.current)
+        if (cancelled || runIdRef.current !== targetRunId) return
+        for (const event of events) {
+          applyIncomingEvent({ event: event.type, data: event })
+        }
+      } catch {
+        // Keep the durable run alive. The next focus or polling turn retries the replay endpoint.
+      }
+      if (cancelled || runIdRef.current !== targetRunId || !isActiveRunStatus(runStatusRef.current)) return
+      timer = globalThis.setTimeout(() => { void poll() }, 1000)
+    }
+
+    void poll()
+  }, [agentId, applyIncomingEvent, runApi])
+
+  const reconnectToRun = useCallback(async (targetConversationId = conversationIdRef.current) => {
+    if (!agentId || !targetConversationId || !runApi.getRunStatus) return
+    const currentRunId = activeRunConversationRef.current === targetConversationId
+      ? runIdRef.current
+      : null
+    const stored = currentRunId
+      ? { runId: currentRunId, lastSequence: lastSequenceRef.current }
+      : loadRunSnapshot(agentId, targetConversationId)
+    if (!stored) return
+
+    trackRun(stored.runId, targetConversationId)
+    lastSequenceRef.current = stored.lastSequence
+    try {
+      const current = await runApi.getRunStatus(agentId, stored.runId)
+      setCurrentRunStatus(current.status)
+      if (!isActiveRunStatus(current.status)) {
+        clearStoredRunSnapshot(targetConversationId)
+        if (runIdRef.current === stored.runId) {
+          runIdRef.current = null
+          setRunId(null)
+        }
+        setCurrentStatus('idle')
+        return
+      }
+      setCurrentStatus('streaming')
+      startSubscription(stored.runId)
+    } catch {
+      // A transient status failure must not stop a server-owned run.
+    }
+  }, [agentId, clearStoredRunSnapshot, runApi, setCurrentRunStatus, setCurrentStatus, startSubscription, trackRun])
+
+  const reconnect = useCallback(() => {
+    void reconnectToRun()
+  }, [reconnectToRun])
+
+  const disconnectLocalSubscription = useCallback(() => {
+    connectionEpochRef.current += 1
+    subscriptionAbortRef.current?.()
+    subscriptionAbortRef.current = null
+    abortRef.current?.()
+    abortRef.current = null
+    cancelScheduledStreamingFlush()
+  }, [cancelScheduledStreamingFlush])
+
+  useEffect(() => {
+    const previousConversationId = previousConversationRef.current
+    if (previousConversationId !== conversationId) {
+      if (activeRunConversationRef.current && activeRunConversationRef.current !== conversationId) {
+        disconnectLocalSubscription()
+        activeSessionRef.current = null
+        resetStreamingState()
+        if (runStartWaiterRef.current) {
+          runStartWaiterRef.current.reject(new Error('Conversation changed before the run started'))
+          runStartWaiterRef.current = null
+        }
+        runIdRef.current = null
+        lastSequenceRef.current = 0
+        appliedSequenceKeysRef.current.clear()
+        setRunId(null)
+        setCurrentRunStatus(null)
+        setCurrentStatus('idle')
+      }
+      previousConversationRef.current = conversationId
+    }
+    if (conversationId) void reconnectToRun(conversationId)
+  }, [conversationId, disconnectLocalSubscription, reconnectToRun, resetStreamingState, setCurrentRunStatus, setCurrentStatus])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return
+    const handleFocus = () => reconnect()
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [reconnect])
+
+  useEffect(() => () => {
+    disconnectLocalSubscription()
+    if (runStartWaiterRef.current) {
+      runStartWaiterRef.current.reject(new Error('Chat unmounted before the run started'))
+      runStartWaiterRef.current = null
+    }
+  }, [disconnectLocalSubscription])
+  const dispatchRunInput = useCallback(async (pending: PendingRunInput, targetRunId: string) => {
+    if (pending.submitted || pending.runId && pending.runId !== targetRunId || !runApi.postRunInput) return
+    pending.submitted = true
+    try {
+      const result = await runApi.postRunInput(agentId, targetRunId, {
+        delivery: pending.kind,
+        content: pending.content,
+        request_id: pending.requestId,
+      })
+      if (runIdRef.current === targetRunId && result?.status) {
+        setCurrentRunStatus(result.status)
+      }
+    } catch (reason) {
+      pendingRunInputsRef.current = pendingRunInputsRef.current.filter((input) => input !== pending)
+      const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
+      setError(chatError)
+      onError?.(chatError)
+      setMessages((previous) => previous.map((message) => (
+        message.id === pending.messageId
+          ? { ...message, metadata: { ...message.metadata, runInputState: 'failed' } }
+          : message
+      )))
+    }
+  }, [agentId, onError, runApi, setCurrentRunStatus])
+
+  const flushPendingRunInputs = useCallback(async (targetRunId: string) => {
+    const pending = pendingRunInputsRef.current.filter((input) => !input.submitted && (
+      !input.runId || input.runId === targetRunId
+    ))
+    await Promise.all(pending.map((input) => dispatchRunInput(input, targetRunId)))
+  }, [dispatchRunInput])
+
+  flushPendingInputsRef.current = (targetRunId) => {
+    void flushPendingRunInputs(targetRunId)
+  }
+
+  const submitRunInput = useCallback(async (content: string) => {
+    if (!runApi.postRunInput) return
+    const delivery = runStatusRef.current === 'completing' ? 'follow_up' : 'steer'
+    const requestId = createRunInputRequestId()
+    const pending: PendingRunInput = {
+      messageId: `run-input-${requestId}`,
+      requestId,
+      content,
+      kind: delivery,
+      submitted: false,
+      runId: runIdRef.current ?? undefined,
+    }
+    pendingRunInputsRef.current.push(pending)
+    setMessages((previous) => [...previous, {
+      id: pending.messageId,
+      role: 'user',
+      parts: [{ type: 'text', text: content }],
+      createdAt: new Date(),
+      metadata: { runInputState: 'queued', runInputKind: delivery },
+    }])
+    const activeRunId = runIdRef.current
+    if (activeRunId) await flushPendingRunInputs(activeRunId)
+  }, [flushPendingRunInputs, runApi, setMessages])
+
+  const consumeStream = useCallback(async (
+    session: AssistantStreamSession,
+    start: () => { stream: Promise<Response>; abort: () => void } | Promise<{ stream: Promise<Response>; abort: () => void }>,
+    options: { reloadAfterTerminal?: boolean; reloadOnError?: boolean } = {}
+  ) => {
+    const epoch = ++connectionEpochRef.current
+    try {
+      const { stream, abort } = await start()
+      abortRef.current = abort
+      if (connectionEpochRef.current !== epoch) {
+        abort()
+        return
+      }
+      const response = await stream
+      if (!response.ok) {
+        throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
+      }
+      if (connectionEpochRef.current !== epoch) return
+      setCurrentStatus('streaming')
+      onStreamStart?.()
+      for await (const event of parseSSEStream(response)) {
+        if (connectionEpochRef.current !== epoch) return
+        applyIncomingEvent(event, session)
+      }
+      if (connectionEpochRef.current !== epoch) return
+      if (session.runId && isActiveRunStatus(runStatusRef.current)) {
+        startSubscription(session.runId)
+        return
+      }
+      if (!session.receivedTerminalEvent) finishAssistantMessage(session)
+      if (options.reloadAfterTerminal) await reloadConversationMessages().catch(() => undefined)
+      setCurrentStatus('idle')
+      notifyStreamEnd(session)
+      resetStreamingState()
+    } catch (reason) {
+      if (connectionEpochRef.current !== epoch || (reason instanceof Error && reason.name === 'AbortError')) return
+      if (session.runId && runIdRef.current === session.runId && !terminalRunsRef.current.has(session.runId)) {
+        setCurrentStatus('streaming')
+        startSubscription(session.runId)
+        return
+      }
+      const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
+      onError?.(chatError)
+      markAssistantError(session, chatError)
+      if (options.reloadOnError) await reloadConversationMessages().catch(() => undefined)
+      setCurrentStatus('idle')
+      notifyStreamEnd(session)
+      resetStreamingState()
+    } finally {
+      if (connectionEpochRef.current === epoch) abortRef.current = null
+    }
+  }, [
+    applyIncomingEvent,
+    finishAssistantMessage,
+    markAssistantError,
+    notifyStreamEnd,
+    onError,
+    onStreamStart,
+    reloadConversationMessages,
+    resetStreamingState,
+    setCurrentStatus,
+    startSubscription,
+    tAuth,
+    tError,
+  ])
+
+  const sendMessage = useCallback(async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => {
+    const content = message.trim()
+    if (!content && !images?.length && !fileUrls?.length) return
+    if (statusRef.current === 'loading' || statusRef.current === 'streaming') {
+      if (images?.length || fileUrls?.length) return
+      await submitRunInput(content)
+      return
+    }
+
+    setError(null)
+    runIdRef.current = null
+    lastSequenceRef.current = 0
+    appliedSequenceKeysRef.current.clear()
+    setRunId(null)
+    setCurrentRunStatus(null)
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      parts: buildUserMessageParts(content, images, fileUrls),
+      createdAt: new Date(),
+    }
+    const assistantMessageId = `assistant-${Date.now()}`
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      parts: [],
+      createdAt: new Date(),
+      metadata: { isLoading: true, isManuallyStopped: false },
+    }
+    const session: AssistantStreamSession = {
+      mode: 'send',
+      displayMessageId: assistantMessageId,
+      backendMessageId: null,
+      optimisticUserMessageId: userMessage.id,
+      state: createAssistantStreamState(),
+      versionNumber: 1,
+      versionCount: 1,
+      receivedTerminalEvent: false,
+      receivedMessageEnd: false,
+      endNotified: false,
+    }
+    activeSessionRef.current = session
+    syncStreamingState(session)
+    setMessages((previous) => [...previous, userMessage, assistantMessage])
+    setCurrentStatus('loading')
+
+    const request: ChatRequest = {
+      message: content,
+      images,
+      file_urls: fileUrls,
+      conversation_id: conversationIdRef.current,
       variables,
-      messages,
-      isLoading,
-      onError,
-      onStreamStart,
-      onStreamEnd,
-      sendMessage,
-      tAuth,
-      tError,
-      conversationId,
-    ]
-  )
+    }
+    if (api.startRun && api.streamRun) {
+      const startWaiter = createRunStartWaiter(session)
+      runStartWaiterRef.current = startWaiter
+      try {
+        await consumeStream(session, async () => {
+          const started = await api.startRun!(agentId, request)
+          session.runId = started.run_id
+          trackRun(started.run_id, started.conversation_id)
+          setCurrentRunStatus(started.status)
+          if (started.conversation_id && conversationIdRef.current !== started.conversation_id) {
+            setConversationId(started.conversation_id)
+            onConversationChange?.(started.conversation_id)
+          }
+          if (runStartWaiterRef.current?.session === session) {
+            runStartWaiterRef.current.resolve(started.run_id)
+            runStartWaiterRef.current = null
+          }
+          return api.streamRun!(agentId, started.run_id, lastSequenceRef.current)
+        })
+      } finally {
+        if (runStartWaiterRef.current?.session === session) {
+          runStartWaiterRef.current.reject(new Error('Agent run did not start'))
+          runStartWaiterRef.current = null
+        }
+      }
+    } else {
+      await consumeStream(session, () => api.chatStream(agentId, request))
+    }
+  }, [agentId, api, consumeStream, onConversationChange, setConversationId, setCurrentRunStatus, setCurrentStatus, submitRunInput, syncStreamingState, trackRun, variables])
+
+  const stop = useCallback(async () => {
+    let activeRunId = runIdRef.current ?? activeSessionRef.current?.runId ?? null
+    const session = activeSessionRef.current
+    if (
+      !activeRunId
+      && session
+      && (statusRef.current === 'loading' || statusRef.current === 'streaming')
+      && runApi.stopRun
+      && runStartWaiterRef.current?.session === session
+    ) {
+      try {
+        activeRunId = await runStartWaiterRef.current.promise
+      } catch {
+        activeRunId = null
+      }
+    } else if (!activeRunId && session && (statusRef.current === 'loading' || statusRef.current === 'streaming')) {
+      for (let attempt = 0; attempt < 8 && !activeRunId; attempt += 1) {
+        await Promise.resolve()
+        activeRunId = runIdRef.current ?? session.runId ?? null
+      }
+      if (!activeRunId) {
+        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0))
+        activeRunId = runIdRef.current ?? session.runId ?? null
+      }
+    }
+
+    if (activeRunId && runApi.stopRun && (
+      isActiveRunStatus(runStatusRef.current) || statusRef.current === 'loading' || statusRef.current === 'streaming'
+    )) {
+      setCurrentRunStatus('stopping')
+      const terminal = waitForRunEnd(activeRunId)
+      try {
+        const result = await runApi.stopRun(agentId, activeRunId)
+        if (runIdRef.current === activeRunId && result?.status) {
+          setCurrentRunStatus(result.status)
+        }
+        startSubscription(activeRunId)
+        await terminal
+      } catch (reason) {
+        const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
+        setError(chatError)
+        onError?.(chatError)
+      }
+      return
+    }
+
+    connectionEpochRef.current += 1
+    abortRef.current?.()
+    abortRef.current = null
+    if (runStartWaiterRef.current) {
+      runStartWaiterRef.current.reject(new Error('Run stopped before it started'))
+      runStartWaiterRef.current = null
+    }
+    if (session) {
+      markAssistantStopped(session)
+      notifyStreamEnd(session)
+    }
+    setCurrentStatus('idle')
+    resetStreamingState()
+  }, [agentId, markAssistantStopped, notifyStreamEnd, onError, resetStreamingState, runApi, setCurrentRunStatus, setCurrentStatus, startSubscription, waitForRunEnd])
+
+  const reset = useCallback(() => {
+    disconnectLocalSubscription()
+    if (runStartWaiterRef.current) {
+      runStartWaiterRef.current.reject(new Error('Chat reset before the run started'))
+      runStartWaiterRef.current = null
+    }
+    activeSessionRef.current = null
+    runIdRef.current = null
+    lastSequenceRef.current = 0
+    appliedSequenceKeysRef.current.clear()
+    pendingRunInputsRef.current = []
+    setRunId(null)
+    setCurrentRunStatus(null)
+    resetStreamingState()
+    setMessages(initialMessages)
+    setConversationId(null)
+    setError(null)
+    setCurrentStatus('idle')
+  }, [disconnectLocalSubscription, initialMessages, resetStreamingState, setConversationId, setCurrentRunStatus, setCurrentStatus])
+
+  const switchVersion = useCallback(async (messageId: string, versionIndex: number) => {
+    if (statusRef.current !== 'idle') return
+    const message = messagesRef.current.find((item) => item.id === messageId)
+    if (!message) return
+    try {
+      const versions = await api.getMessageVersions(agentId, messageId)
+      if (versionIndex < 0 || versionIndex >= versions.length) return
+      await api.switchMessageVersion(agentId, messageId, versions[versionIndex].id)
+      await reloadConversationMessages()
+    } catch (reason) {
+      console.error('Failed to switch version:', reason)
+    }
+  }, [agentId, api, reloadConversationMessages])
+
+  const editMessage = useCallback(async (messageId: string, content: string) => {
+    const targetIndex = messagesRef.current.findIndex((message) => message.id === messageId)
+    if (targetIndex < 0 || messagesRef.current[targetIndex].role !== 'user') return
+
+    const placeholderId = `editing-${Date.now()}`
+    setError(null)
+    setCurrentStatus('loading')
+    setMessages((previous) => {
+      const currentTargetIndex = previous.findIndex((message) => message.id === messageId)
+      if (currentTargetIndex < 0) return previous
+      const beforeAndEditedUser = previous.slice(0, currentTargetIndex + 1).map((message) => {
+        if (message.id !== messageId) return message
+        const hasTextPart = message.parts.some((part) => part.type === 'text')
+        const parts = hasTextPart
+          ? message.parts.map((part) => part.type === 'text' ? { ...part, text: content } : part)
+          : [{ type: 'text' as const, text: content }, ...message.parts]
+        return { ...message, parts }
+      })
+      return [...beforeAndEditedUser, {
+        id: placeholderId,
+        role: 'assistant',
+        parts: [],
+        createdAt: new Date(),
+        metadata: { isLoading: true },
+      }]
+    })
+    const session: AssistantStreamSession = {
+      mode: 'edit',
+      displayMessageId: placeholderId,
+      backendMessageId: null,
+      sourceMessageId: messageId,
+      state: createAssistantStreamState(),
+      versionNumber: 1,
+      versionCount: 1,
+      receivedTerminalEvent: false,
+      receivedMessageEnd: false,
+      endNotified: false,
+      reloadAfterTerminal: true,
+    }
+    activeSessionRef.current = session
+    syncStreamingState(session)
+    await consumeStream(
+      session,
+      () => api.editMessageStream(agentId, messageId, content),
+      { reloadAfterTerminal: true, reloadOnError: true }
+    )
+  }, [agentId, api, consumeStream, setCurrentStatus, syncStreamingState])
+
+  const regenerate = useCallback(async (messageId: string) => {
+    if (statusRef.current !== 'idle') return
+    const messageIndex = messagesRef.current.findIndex((message) => message.id === messageId)
+    if (messageIndex < 0 || messagesRef.current[messageIndex].role !== 'assistant') return
+
+    if (!isValidUUID(messageId)) {
+      const userMessage = messagesRef.current[messageIndex - 1]
+      const textPart = userMessage?.role === 'user' ? userMessage.parts.find((part) => part.type === 'text') : undefined
+      const text = textPart && 'text' in textPart ? textPart.text : ''
+      if (!text) return
+      const images = userMessage.parts.filter((part) => part.type === 'image').map((part) => ({
+        type: 'image_url' as const,
+        url: 'url' in part ? part.url : '',
+      })).filter((image) => image.url)
+      setMessages((previous) => previous.slice(0, Math.max(0, messageIndex - 1)))
+      await sendMessage(text, images.length > 0 ? images : undefined)
+      return
+    }
+
+    setError(null)
+    setCurrentStatus('loading')
+    setMessages((previous) => previous.slice(0, messageIndex + 1).map((message) => {
+      if (message.id !== messageId) return message
+      const metadata = { ...message.metadata }
+      delete metadata.isError
+      delete metadata.errorMessage
+      delete metadata.preservedPartialProgress
+      return {
+        ...message,
+        parts: [],
+        metadata: { ...metadata, isLoading: true, isManuallyStopped: false },
+      }
+    }))
+    const session: AssistantStreamSession = {
+      mode: 'regenerate',
+      displayMessageId: messageId,
+      backendMessageId: null,
+      state: createAssistantStreamState(),
+      versionNumber: 1,
+      versionCount: 1,
+      receivedTerminalEvent: false,
+      receivedMessageEnd: false,
+      endNotified: false,
+      keepDisplayIdOnStart: true,
+    }
+    activeSessionRef.current = session
+    await consumeStream(session, () => api.regenerateStream(agentId, messageId, variables))
+  }, [agentId, api, consumeStream, sendMessage, setCurrentStatus, variables])
 
   return {
     messages,
@@ -2163,11 +1361,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     conversationId,
     isLoading,
     isStreaming,
+    runId,
+    runStatus,
     sendMessage,
     regenerate,
     editMessage,
     switchVersion,
     stop,
+    reconnect,
     reset,
     setMessages,
     setConversationId,
@@ -2210,6 +1411,256 @@ interface ContentSegment {
   userInputRequest?: UserInputRequestPart
   // For media-result type
   mediaResult?: MediaResultPart
+}
+
+interface StreamingState {
+  assistantMessageId: string | null
+  visibleMessageId: string | null
+  backendMessageId: string | null
+  segments: ContentSegment[]
+  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
+  currentReasoningIndex: number
+  ragSources: SourceDocumentPart[]
+  taskState: TaskState
+}
+
+interface AssistantStreamSession {
+  mode: 'send' | 'edit' | 'regenerate' | 'reconnect'
+  displayMessageId: string | null
+  backendMessageId: string | null
+  optimisticUserMessageId?: string
+  sourceMessageId?: string
+  state: AssistantStreamState
+  versionNumber: number
+  versionCount: number
+  receivedTerminalEvent: boolean
+  receivedMessageEnd: boolean
+  endNotified: boolean
+  keepDisplayIdOnStart?: boolean
+  reloadAfterTerminal?: boolean
+  runId?: string
+}
+
+interface PendingRunInput {
+  messageId: string
+  requestId: string
+  content: string
+  kind: 'steer' | 'follow_up'
+  submitted: boolean
+  runId?: string
+}
+interface RunStartWaiter {
+  session: AssistantStreamSession
+  promise: Promise<string>
+  resolve: (runId: string) => void
+  reject: (reason?: unknown) => void
+}
+interface NormalizedStreamEvent {
+  event: string
+  data: unknown
+  envelope?: AgentRunEventOut
+}
+
+interface StoredRunSnapshot {
+  runId: string
+  lastSequence: number
+}
+
+const RUN_STORAGE_PREFIX = 'clouisle:agent-run:'
+
+function createRunStartWaiter(session: AssistantStreamSession): RunStartWaiter {
+  let resolve!: (runId: string) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<string>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  promise.catch(() => undefined)
+  return { session, promise, resolve, reject }
+}
+function emptyStreamingState(): StreamingState {
+  return {
+    assistantMessageId: null,
+    visibleMessageId: null,
+    backendMessageId: null,
+    segments: [],
+    reasoningBlocks: [],
+    currentReasoningIndex: -1,
+    ragSources: [],
+    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
+  }
+}
+
+function normalizeStreamEvent(event: { event: string; data: unknown }): NormalizedStreamEvent {
+  if (isAgentRunEvent(event.data)) {
+    return {
+      event: event.data.type,
+      data: event.data.payload,
+      envelope: event.data,
+    }
+  }
+  return event
+}
+
+function isAgentRunEvent(value: unknown): value is AgentRunEventOut {
+  if (!value || typeof value !== 'object') return false
+  const event = value as Record<string, unknown>
+  return typeof event.run_id === 'string'
+    && typeof event.sequence === 'number'
+    && typeof event.type === 'string'
+    && Boolean(event.payload && typeof event.payload === 'object')
+}
+
+function getEventMessageId(event: NormalizedStreamEvent): string | null {
+  if (!event.data || typeof event.data !== 'object') return null
+  const messageId = (event.data as Record<string, unknown>).message_id
+  return typeof messageId === 'string' ? messageId : null
+}
+
+function isActiveRunStatus(status: AgentRunStatus | null): boolean {
+  return status === 'queued' || status === 'running' || status === 'stopping' || status === 'completing'
+}
+
+function runStorageKey(agentId: string, conversationId: string): string {
+  return `${RUN_STORAGE_PREFIX}${encodeURIComponent(agentId)}:${encodeURIComponent(conversationId)}`
+}
+
+function loadRunSnapshot(agentId: string, conversationId: string): StoredRunSnapshot | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(runStorageKey(agentId, conversationId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<StoredRunSnapshot>
+    if (typeof parsed.runId !== 'string' || typeof parsed.lastSequence !== 'number') return null
+    return { runId: parsed.runId, lastSequence: parsed.lastSequence }
+  } catch {
+    return null
+  }
+}
+
+function saveRunSnapshot(agentId: string, conversationId: string, snapshot: StoredRunSnapshot) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(runStorageKey(agentId, conversationId), JSON.stringify(snapshot))
+  } catch {
+    // Session storage is optional (for example in private browser contexts).
+  }
+}
+
+function removeRunSnapshot(agentId: string, conversationId: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(runStorageKey(agentId, conversationId))
+  } catch {
+    // The run still remains recoverable while this hook instance is mounted.
+  }
+}
+
+function createRunInputRequestId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `run-input-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function buildUserMessageParts(
+  content: string,
+  images?: ChatImageContent[],
+  fileUrls?: ChatFileUrl[]
+): MessagePart[] {
+  const parts: MessagePart[] = [{ type: 'text', text: content }]
+  for (const image of images ?? []) {
+    parts.push({ type: 'image', url: image.url } as MessagePart)
+  }
+  for (const file of fileUrls ?? []) {
+    parts.push({ type: 'file', filename: file.filename, size: file.size } as MessagePart)
+  }
+  return parts
+}
+
+function isValidUUID(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
+
+function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStreamState {
+  const state = createAssistantStreamState()
+  for (const part of parts) {
+    switch (part.type) {
+      case 'text':
+        state.segments.push({ type: 'text', text: part.text })
+        break
+      case 'reasoning': {
+        const block = {
+          text: part.text,
+          startTime: Date.now(),
+          duration: part.duration,
+          state: part.state === 'streaming' ? 'streaming' as const : 'done' as const,
+        }
+        state.reasoningBlocks.push(block)
+        state.currentReasoningIndex = state.reasoningBlocks.length - 1
+        state.segments.push({
+          type: 'reasoning',
+          reasoningText: part.text,
+          reasoningState: block.state,
+          reasoningStartTime: block.startTime,
+          reasoningDuration: block.duration,
+        })
+        break
+      }
+      case 'task':
+        if (part.taskType === 'rag') {
+          state.taskState.rag = part.state
+          state.taskState.ragSourceCount = typeof part.info === 'number' ? part.info : undefined
+        } else if (part.taskType === 'generating') {
+          state.taskState.generating = part.state
+        } else if (part.taskType === 'compression') {
+          state.taskState.compression = part.state
+          state.segments.push({ type: 'task', task: { ...part } })
+        }
+        break
+      case 'tool-call': {
+        const last = state.segments.at(-1)
+        if (last?.type === 'tool-group') {
+          last.toolCalls = [...(last.toolCalls ?? []), { ...part }]
+        } else {
+          state.segments.push({ type: 'tool-group', toolCalls: [{ ...part }], toolResults: [] })
+        }
+        state.taskState.toolCalling = part.state === 'running' ? 'running' : 'completed'
+        break
+      }
+      case 'tool-result': {
+        const group = state.segments.find((segment) => (
+          segment.type === 'tool-group' && segment.toolCalls?.some((call) => call.toolCallId === part.toolCallId)
+        ))
+        if (group) {
+          group.toolResults = [...(group.toolResults ?? []), { ...part }]
+          group.toolCalls = group.toolCalls?.map((call) => (
+            call.toolCallId === part.toolCallId
+              ? { ...call, state: part.isError ? 'error' as const : 'done' as const }
+              : call
+          ))
+        }
+        break
+      }
+      case 'source-document':
+        state.ragSources.push(part)
+        break
+      case 'user-input-request':
+        state.segments.push({ type: 'user-input-request', userInputRequest: { ...part } })
+        break
+      case 'media-result':
+        state.segments.push({ type: 'media-result', mediaResult: { ...part } })
+        break
+      case 'truncated':
+        state.segments.push({ type: 'truncated' })
+        break
+      case 'iteration-cap-reached':
+        state.segments.push({ type: 'iteration-cap-reached' })
+        break
+    }
+  }
+  const toolCalls = state.segments.flatMap((segment) => segment.toolCalls ?? [])
+  if (toolCalls.length > 0 && toolCalls.every((call) => call.state === 'done' || call.state === 'error')) {
+    state.taskState.toolCalling = 'completed'
+  }
+  return state
 }
 
 function appendTimelineTask(segments: ContentSegment[], taskType: TaskPart['taskType']) {

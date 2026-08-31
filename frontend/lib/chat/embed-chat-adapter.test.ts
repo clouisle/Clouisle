@@ -1,16 +1,30 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createEmbedChatAdapter } from '@/lib/chat/embed-chat-adapter'
+const startRun = mock(async () => ({ run_id: 'run-1', conversation_id: 'conv-1', user_message_id: 'user-1', status: 'queued', stream_url: '/stream' }))
+const streamRun = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
+const getRunStatus = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'running' }))
+const getRunEvents = mock(async () => [])
+const postRunInput = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'running' }))
+const stopRun = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'stopping' }))
+
 
 mock.module('@/lib/api/embed', () => ({
   embedApi: {
     getAgentInfo: mock(async () => ({
       id: 'agent-1', name: 'Embed Agent', description: '', icon: null, variables: [],
- enable_attachments: false, attachment_config: null,
+      enable_attachments: false, attachment_config: null,
     })),
     uploadFile: mock(async () => ({ url: '/file.png' })),
     chatStream: mock(() => () => {}),
+    startRun,
+    streamRun,
+    getRunStatus,
+    getRunEvents,
+    postRunInput,
+    stopRun,
   },
 }))
+
 
 const store = new Map<string, string>()
 ;(globalThis as unknown as { localStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } }).localStorage = {
@@ -82,6 +96,18 @@ describe('createEmbedChatAdapter', () => {
     expect(page1.items).toHaveLength(2)
     expect(page2.items).toHaveLength(2)
     expect(page1.items[0].id).not.toBe(page2.items[0].id)
+  })
+
+  test('exposes durable run controls with the embed API key', async () => {
+    await expect(adapter.startRun?.('agent-1', { message: 'hello' })).resolves.toMatchObject({ run_id: 'run-1' })
+    expect(startRun).toHaveBeenCalledWith('agent-1', { message: 'hello' }, 'key-123')
+
+    adapter.streamRun?.('agent-1', 'run-1', 4)
+    expect(streamRun).toHaveBeenCalledWith('agent-1', 'run-1', 'key-123', 4)
+    await expect(adapter.getRunStatus?.('agent-1', 'run-1')).resolves.toMatchObject({ status: 'running' })
+    await expect(adapter.getRunEvents?.('agent-1', 'run-1', 4)).resolves.toEqual([])
+    await expect(adapter.postRunInput?.('agent-1', 'run-1', { delivery: 'steer', content: 'focus' })).resolves.toMatchObject({ status: 'running' })
+    await expect(adapter.stopRun?.('agent-1', 'run-1')).resolves.toMatchObject({ status: 'stopping' })
   })
 
   test('normalizes agent variables into variable definitions', async () => {

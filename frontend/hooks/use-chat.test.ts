@@ -33,17 +33,28 @@ const regenerateStream = mock(() => ({ stream: Promise.resolve(new Response()), 
 const getConversation = mock(() => Promise.resolve({ messages: [] }))
 const getMessageVersions = mock(() => Promise.resolve<Array<{ id: string }>>([]))
 const switchMessageVersion = mock(() => Promise.resolve())
+const getRunStatus = mock(() => Promise.resolve())
+const getRunEvents = mock(() => Promise.resolve([]))
+const postRunInput = mock(() => Promise.resolve())
+const stopRun = mock(() => Promise.resolve())
 const agentsApi = {
   chatStream,
+  startRun: undefined,
+  streamRun: undefined,
   editMessageStream,
   regenerateStream,
   getConversation,
   getMessageVersions,
   switchMessageVersion,
+  getRunStatus,
+  getRunEvents,
+  postRunInput,
+  stopRun,
 }
 
 mock.module('@/lib/api', () => ({
   agentsApi,
+  publicAgentsApi: agentsApi,
   async *parseSSEStream() {
     for (const event of streamEvents) {
       yield await (typeof event === 'function' ? event() : event)
@@ -81,8 +92,11 @@ function scheduleRender() {
   })
 }
 
+const reactInternals = { H: null, A: null, T: null, S: null, V: null, recentlyCreatedOwnerStacks: 0 }
 const reactHelpers = {
+  __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE: reactInternals,
   createElement: () => null,
+  act: (callback: () => unknown) => callback(),
   createContext: () => ({ Provider: () => null, Consumer: () => null }),
   forwardRef: (component: unknown) => component,
   memo: (component: unknown) => component,
@@ -138,10 +152,17 @@ beforeEach(() => {
     getConversation,
     getMessageVersions,
     switchMessageVersion,
+    getRunStatus,
+    getRunEvents,
+    postRunInput,
+    stopRun,
   ]) apiMock.mockReset()
   getConversation.mockResolvedValue({ messages: [] })
   getMessageVersions.mockResolvedValue([])
   switchMessageVersion.mockResolvedValue()
+  getRunEvents.mockResolvedValue([])
+  postRunInput.mockResolvedValue({ status: 'running' })
+  stopRun.mockResolvedValue({ status: 'stopping' })
   streamEvents = []
   options = { agentId: 'agent-1' }
   renderHookHarness()
@@ -786,5 +807,141 @@ describe('useChat', () => {
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'new answer', state: 'done' })
     expect(result.messages[1].parts).toContainEqual(expect.objectContaining({ type: 'tool-call', state: 'done' }))
     expect(result.messages[1].parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
+  })
+
+  it('submits steering to the active run and commits the queued user message', async () => {
+    const release = deferred<StreamEvent>()
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
+    })
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'message_start', { conversation_id: 'conversation-1', message_id: 'assistant-1' }),
+      release.promise,
+      runEvent(4, 'run_end', { status: 'completed', message_id: 'assistant-1' }),
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    const sending = result.sendMessage('initial')
+    await flush()
+    await result.sendMessage('steer this run')
+
+    expect(postRunInput).not.toHaveBeenCalled()
+    expect(result.messages.find((message) => message.metadata?.runInputState === 'queued')).toMatchObject({
+      role: 'user',
+      parts: [{ type: 'text', text: 'steer this run' }],
+    })
+
+    release.resolve(runEvent(3, 'input_accepted', {
+      kind: 'steer',
+      content: 'steer this run',
+      sequence: 1,
+    }))
+    await sending
+
+    expect(postRunInput).toHaveBeenCalledWith('agent-1', 'run-1', expect.objectContaining({
+      delivery: 'steer',
+      content: 'steer this run',
+    }))
+
+    expect(result.messages.find((message) => message.metadata?.runInputSequence === 1)?.metadata).toMatchObject({
+      runInputState: 'committed',
+      runInputKind: 'steer',
+    })
+  })
+  it('creates a user message when a replayed input acceptance has no local pending row', async () => {
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: {
+        run_id: 'run-1',
+        sequence,
+        timestamp: '2026-08-31T00:00:00Z',
+        message_id: type === 'input_accepted' ? 'assistant-1' : undefined,
+        type,
+        payload,
+      },
+    })
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'message_start', { conversation_id: 'conversation-1', message_id: 'assistant-1' }),
+      runEvent(3, 'input_accepted', { kind: 'steer', content: 'replayed instruction', sequence: 1 }),
+      runEvent(4, 'run_end', { status: 'completed', message_id: 'assistant-1' }),
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    expect(result.messages).toContainEqual(expect.objectContaining({
+      id: 'run-input-run-1-1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'replayed instruction' }],
+      metadata: expect.objectContaining({ runInputState: 'committed', runInputKind: 'steer', runInputSequence: 1 }),
+    }))
+    expect(result.messages.find((message) => message.id === 'assistant-1')?.metadata).not.toHaveProperty('runInputState')
+  })
+
+
+  it('deduplicates replayed run envelopes before assistant parts and message end effects', async () => {
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
+    })
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'message_start', { conversation_id: 'conversation-1', message_id: 'assistant-1' }),
+      runEvent(3, 'content_delta', { delta: 'once' }),
+      runEvent(3, 'content_delta', { delta: 'once' }),
+      runEvent(4, 'tool_call', { tool_call_id: 'tool-1', tool_name: 'lookup', arguments: {} }),
+      runEvent(4, 'tool_call', { tool_call_id: 'tool-1', tool_name: 'lookup', arguments: {} }),
+      runEvent(5, 'tool_result', { tool_call_id: 'tool-1', tool_name: 'lookup', result: 'done', is_error: false }),
+      runEvent(5, 'tool_result', { tool_call_id: 'tool-1', tool_name: 'lookup', result: 'done', is_error: false }),
+      runEvent(6, 'message_end', {}),
+      runEvent(6, 'message_end', {}),
+      runEvent(7, 'run_end', { status: 'completed', message_id: 'assistant-1' }),
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    const assistant = result.messages.find((message) => message.id === 'assistant-1')!
+    expect(assistant.parts.filter((part) => part.type === 'text' && part.text === 'once')).toHaveLength(1)
+    expect(assistant.parts.filter((part) => part.type === 'tool-call' && part.toolCallId === 'tool-1')).toHaveLength(1)
+    expect(assistant.parts.filter((part) => part.type === 'tool-result' && part.toolCallId === 'tool-1')).toHaveLength(1)
+    expect(assistant.metadata).toMatchObject({ isLoading: false, isError: false })
+  })
+
+  it('waits for server run_end before completing a durable stop', async () => {
+    const release = deferred<StreamEvent>()
+    const abort = mock()
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
+    })
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'message_start', { conversation_id: 'conversation-1', message_id: 'assistant-1' }),
+      runEvent(3, 'content_delta', { delta: 'partial' }),
+      release.promise,
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort })
+
+    const sending = result.sendMessage('question')
+    await flush()
+    const stopping = result.stop()
+    await flush()
+
+    expect(stopRun).toHaveBeenCalledWith('agent-1', 'run-1')
+    expect(result.runStatus).toBe('stopping')
+    expect(result.status).toBe('streaming')
+    expect(abort).not.toHaveBeenCalled()
+
+    release.resolve(runEvent(4, 'run_end', { status: 'stopped', message_id: 'assistant-1' }))
+    await stopping
+    await sending
+
+    expect(result.runStatus).toBe('stopped')
+    expect(result.status).toBe('idle')
+    expect(result.messages.find((message) => message.id === 'assistant-1')?.parts).toContainEqual({ type: 'stopped' })
   })
 })

@@ -190,7 +190,7 @@ async def test_switch_message_version_rejects_version_from_another_group():
 
 
 @pytest.mark.anyio
-async def test_switch_message_version_activates_target_branch_and_stales_memory():
+async def test_switch_message_version_activates_target_branch():
     user = SimpleNamespace(id=uuid4())
     root = _message()
     target = _message(parent_id=root.id, version_number=2)
@@ -217,11 +217,6 @@ async def test_switch_message_version_activates_target_branch_and_stales_memory(
         patch.object(chat, "activate_conversation_branch", AsyncMock()) as activate,
         patch.object(
             chat,
-            "stale_session_memory_if_source_outside_active_branch",
-            AsyncMock(),
-        ) as stale_memory,
-        patch.object(
-            chat,
             "build_message_out_with_versions",
             AsyncMock(return_value=output),
         ) as build_output,
@@ -236,6 +231,5 @@ async def test_switch_message_version_activates_target_branch_and_stales_memory(
     prefix.assert_awaited_once_with(root)
     descendants.assert_awaited_once_with(target)
     activate.assert_awaited_once_with(root.conversation_id, [root, later])
-    stale_memory.assert_awaited_once_with(root.conversation_id)
     build_output.assert_awaited_once_with(target, include_versions=True)
     assert response["data"] is output
