@@ -117,7 +117,6 @@ class AgentLoopContext:
     # context building (route-supplied): builds + finalizes provider context
     build_turn: Callable[..., Any] | None = None
     count_tool_definition_tokens: Callable[..., int] | None = None
-    trigger_for_compression: Callable[..., str | None] | None = None
     # tool execution (route-bound so tests can mock the endpoint binding)
     execute_tool_call: Callable[..., Any] | None = None
     # (name) -> "shared" | "exclusive"; absent means exclusive (conservative)
@@ -663,7 +662,6 @@ class AgentLoop:
                         {
                             "compression": turn.plan.compression,
                             "stage": "macro",
-                            "trigger": self._trigger(turn.plan.compression),
                         },
                     )
                     if start_event:
@@ -673,7 +671,6 @@ class AgentLoop:
                     COMPRESSION_END,
                     {
                         "compression": prepared.compression,
-                        "trigger": self._trigger(prepared.compression),
                     },
                 )
                 if end_event:
@@ -1199,8 +1196,3 @@ class AgentLoop:
         )
         self.result.created_message_count = ctx.created_message_count
         self.result.final_round_index = self._round_index
-
-    def _trigger(self, compression: Any) -> str | None:
-        if self.context.trigger_for_compression is not None:
-            return self.context.trigger_for_compression(compression)
-        return None

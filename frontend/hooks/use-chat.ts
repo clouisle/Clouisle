@@ -21,7 +21,6 @@ import {
   type SSEToolCall,
   type SSEToolResult,
   type SSEMediaResult,
-  type SSECompression,
 } from '@/lib/api'
 import type { AgentRunEventOut, AgentRunStartOut, AgentRunStatus, AgentRunStatusOut } from '@/lib/api/agents'
 import type {
@@ -1402,7 +1401,6 @@ interface TaskState {
   compression: 'pending' | 'running' | 'completed' | 'error'
   ragSourceCount?: number
   toolCallCount?: number
-  compressionInfo?: Record<string, unknown>
 }
 
 /** A single tool invocation and its optional result at one timeline position. */
@@ -1636,9 +1634,6 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
           state.taskState.generating = part.state
         } else if (part.taskType === 'compression') {
           state.taskState.compression = part.state
-          state.taskState.compressionInfo = typeof part.info === 'object' && part.info !== null
-            ? part.info as Record<string, unknown>
-            : undefined
         }
         break
       case 'tool-call': {
@@ -1956,9 +1951,8 @@ function applyAssistantStreamEvent(
         state.segments,
         'compression',
         'completed',
-        event.data as SSECompression as unknown as Record<string, unknown>
+        event.data as unknown as Record<string, unknown>
       )
-      state.taskState.compressionInfo = event.data as SSECompression as unknown as Record<string, unknown>
       return true
 
     case 'tool_call': {

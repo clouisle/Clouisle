@@ -119,9 +119,7 @@ class CompressionMeta:
     after_tokens: int
     input_budget: int
     summary_turns: int = 0
-    pressure_level: Literal[
-        "normal", "warning", "auto_compact", "blocking", "over_budget"
-    ] = "normal"
+    pressure_level: Literal["normal", "auto_compact", "over_budget"] = "normal"
     trigger_ratio: float = DEFAULT_SUMMARY_TRIGGER_RATIO
     utilization_before: float = 0.0
     utilization_after: float = 0.0

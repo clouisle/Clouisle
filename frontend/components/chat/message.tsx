@@ -1087,9 +1087,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           ? info.summary_saved_tokens
           : null
         const summaryTurns = typeof info?.summary_turns === 'number' ? info.summary_turns : null
-        const trigger = typeof info?.trigger === 'string' ? info.trigger : null
-        const pressureLevel = typeof info?.pressure_level === 'string' ? info.pressure_level : null
-        const compactedBlocks = typeof info?.compacted_blocks === 'number' ? info.compacted_blocks : null
         const hasSummaryTokenStats = summarySourceTokens !== null && summaryResultTokens !== null
         const displayBeforeTokens = summarySourceTokens ?? beforeTokens
         const displayAfterTokens = summaryResultTokens ?? afterTokens
@@ -1100,37 +1097,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )
 
         if (taskPart.state === 'completed' && displayBeforeTokens !== null && displayAfterTokens !== null) {
-          if (trigger === 'context_length_error') {
-            return tTask('compressionCompletedReactive', { before: displayBeforeTokens, after: displayAfterTokens })
-          }
-          if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
-            if (hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)) {
-              return tTask('compressionCompletedBlockingSummary', {
-                before: displayBeforeTokens,
-                after: displayAfterTokens,
-                saved: displaySavedTokens,
-                count: summaryTurns ?? 0,
-              })
-            }
-            return tTask('compressionCompletedBlocking', { before: displayBeforeTokens, after: displayAfterTokens })
-          }
           if (hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)) {
-            return tTask('compressionCompletedProactiveSummary', {
+            return tTask('compressionCompletedSummary', {
               before: displayBeforeTokens,
               after: displayAfterTokens,
               saved: displaySavedTokens,
-              count: summaryTurns ?? compactedBlocks ?? 0,
+              count: summaryTurns ?? 0,
             })
           }
-          return tTask('compressionCompletedProactive', { before: displayBeforeTokens, after: displayAfterTokens })
+          return tTask('compressionCompleted', { before: displayBeforeTokens, after: displayAfterTokens })
         }
-        if (trigger === 'context_length_error') {
-          return tTask('compressingContextReactive')
-        }
-        if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
-          return tTask('compressingContextBlocking')
-        }
-        return tTask('compressingContextProactive')
+        return tTask('compressingContext')
       }
       // Thinking and response generation are not rendered as thought steps.
       return ''

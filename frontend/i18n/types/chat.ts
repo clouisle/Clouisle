@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-31T19:29:06.612Z
+// GENERATED — 2026-08-31T21:38:28.563Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -8,16 +8,8 @@ export type ChatMessages = {
       thinking: string
       generating: string
       compressingContext: string
-      compressingContextProactive: string
-      compressingContextBlocking: string
-      compressingContextReactive: string
       compressionCompleted: string
       compressionCompletedSummary: string
-      compressionCompletedProactive: string
-      compressionCompletedProactiveSummary: string
-      compressionCompletedBlocking: string
-      compressionCompletedBlockingSummary: string
-      compressionCompletedReactive: string
       executingTools: string
       toolsExecuted: string
     }

@@ -362,7 +362,6 @@ async def _rebuild_context(
             payload.get("locale") or "en"
         ),
     )
-    loop_context.trigger_for_compression = lambda _c: None
 
     async def build_turn(**kwargs):
         from app.services.chat_context import build_context_plan

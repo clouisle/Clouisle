@@ -567,29 +567,6 @@ export interface SSEUserInputRequest {
   options: string[]
 }
 
-export interface SSECompression {
-  stage: 'none' | 'macro'
-  trigger: 'proactive_threshold' | 'blocking_threshold' | 'context_length_error' | string
-  pressure_level?: 'normal' | 'warning' | 'auto_compact' | 'blocking' | 'over_budget'
-  before_tokens: number
-  after_tokens: number
-  input_budget: number
-  trigger_ratio?: number
-  utilization_before?: number
-  utilization_after?: number
-  policy_used?: string
-  actions?: string[]
-  summary_turns?: number
-  /** Token counts for the exact historical segment replaced by this summary. */
-  summary_source_tokens?: number
-  summary_result_tokens?: number
-  summary_saved_tokens?: number
-  context_limit?: number
-  output_reserve?: number
-  safety_margin?: number
-  note?: string
-}
-
 export interface SSERagContext {
   contexts: Array<{
     kb_id: string

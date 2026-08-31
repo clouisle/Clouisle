@@ -108,7 +108,6 @@ export {
   type SSERagContext,
   type SSEMessageEnd,
   type SSEIterationCapReached,
-  type SSECompression,
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,

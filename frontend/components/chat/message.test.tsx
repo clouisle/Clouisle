@@ -479,7 +479,7 @@ describe('message behavior', () => {
         role: 'assistant',
         parts: [
           { type: 'task', taskType: 'rag', state: 'completed', info: 3 },
-          { type: 'task', taskType: 'compression', state: 'running', info: { trigger: 'context_length_error' } },
+          { type: 'task', taskType: 'compression', state: 'running' },
           { type: 'reasoning', text: 'Inspecting evidence', state: 'streaming' },
           { type: 'tool-call', toolCallId: 'running', toolName: 'search', toolDisplayName: 'Web search', input: { q: 'docs' }, state: 'running' },
           { type: 'tool-result', toolCallId: 'running', toolName: 'search', output: { hits: 2 } },
@@ -495,7 +495,7 @@ describe('message behavior', () => {
 
     const thought = container.querySelector('[data-chat-thought-process="true"]')
     expect(container.textContent).toContain('chat.task.foundSources')
-    expect(container.textContent).toContain('chat.task.compressingContextReactive')
+    expect(container.textContent).toContain('chat.task.compressingContext')
     expect(container.textContent).not.toContain('chat.task.generating')
     expect(thought).not.toBeNull()
     expect(thought?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
@@ -597,11 +597,11 @@ describe('message behavior', () => {
 
     expect([...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent)).toEqual([
       expect.stringContaining('before compression'),
-      expect.stringContaining('chat.task.compressionCompletedProactiveSummary before=90000 after=1000 saved=89000 count=1'),
+      expect.stringContaining('chat.task.compressionCompletedSummary before=90000 after=1000 saved=89000 count=1'),
       expect.stringContaining('after compression'),
     ])
     expect(container.querySelectorAll('[data-chat-thought-process="true"]')).toHaveLength(2)
-    expect(container.querySelectorAll('[data-chat-thought-process="true"]')[0]?.textContent).toContain('chat.task.compressionCompletedProactiveSummary')
+    expect(container.querySelectorAll('[data-chat-thought-process="true"]')[0]?.textContent).toContain('chat.task.compressionCompletedSummary')
   })
 
   test('renders repeated reasoning blocks at their original timeline positions', () => {
@@ -688,10 +688,10 @@ describe('message behavior', () => {
       id: 'completed-steps',
       role: 'assistant',
       parts: [
-        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 100, after_tokens: 50, trigger: 'context_length_error' } },
-        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 90, after_tokens: 40, trigger: 'blocking_threshold', summary_turns: 2 } },
-        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 80, after_tokens: 30, pressure_level: 'blocking' } },
-        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 70, after_tokens: 20, summary_turns: 2, compacted_blocks: 4 } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 100, after_tokens: 50 } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 90, after_tokens: 40, summary_turns: 2 } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 80, after_tokens: 30 } },
+        { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 70, after_tokens: 20, summary_turns: 2 } },
         { type: 'task', taskType: 'compression', state: 'completed', info: { before_tokens: 60, after_tokens: 10 } },
         { type: 'reasoning', text: 'Done thinking', state: 'done', duration: 1200 },
         { type: 'tool-call', toolCallId: 'done', toolName: 'lookup', input: {}, state: 'done' },
@@ -699,11 +699,11 @@ describe('message behavior', () => {
       ],
     }} />)
 
-    expect(html).toContain('chat.task.compressionCompletedReactive')
-    expect(html).toContain('chat.task.compressionCompletedBlockingSummary')
-    expect(html).toContain('chat.task.compressionCompletedBlocking')
-    expect(html).toContain('chat.task.compressionCompletedProactiveSummary')
-    expect(html).toContain('chat.task.compressionCompletedProactive')
+    expect(html).toContain('chat.task.compressionCompleted before=100 after=50')
+    expect(html).toContain('chat.task.compressionCompletedSummary before=90 after=40 saved=50 count=2')
+    expect(html).toContain('chat.task.compressionCompleted before=80 after=30')
+    expect(html).toContain('chat.task.compressionCompletedSummary before=70 after=20 saved=50 count=2')
+    expect(html).toContain('chat.task.compressionCompleted before=60 after=10')
     expect(html).toContain('lookup')
     expect(html).toContain('data-tool-state="output-available"')
     expect(html).toContain('Done thinking')
@@ -1045,7 +1045,7 @@ describe('message behavior', () => {
       role: 'assistant',
       parts: [
         { type: 'task', taskType: 'rag', state: 'running' },
-        { type: 'task', taskType: 'compression', state: 'running', info: { pressure_level: 'over_budget' } },
+        { type: 'task', taskType: 'compression', state: 'running' },
         { type: 'task', taskType: 'compression', state: 'running' },
         { type: 'task', taskType: 'generating', state: 'running' },
         { type: 'media-result', output: { kind: 'media.image', success: false, prompt: 'bad', images: [], error: 'image failed' } },
@@ -1054,8 +1054,8 @@ describe('message behavior', () => {
       ],
     }} />)
     expect(html).toContain('chat.task.searchingKnowledge')
-    expect(html).toContain('chat.task.compressingContextBlocking')
-    expect(html).toContain('chat.task.compressingContextProactive')
+    expect(html).toContain('chat.task.compressingContext')
+    expect(html).toContain('chat.task.compressingContext')
     expect(html).not.toContain('chat.task.generating')
     expect(html).toContain('image failed')
     expect(html).toContain('video failed')
