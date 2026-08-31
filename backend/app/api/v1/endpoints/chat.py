@@ -1810,7 +1810,7 @@ async def _enqueue_existing_message_run(
     try:
         from app.tasks.agent import run_agent_task
 
-        task_result = run_agent_task.apply_async(args=(payload,), queue="agent")
+        task_result = run_agent_task.apply_async(args=(payload,))
         task_id = getattr(task_result, "id", None)
         if task_id:
             run.celery_task_id = task_id
@@ -1959,7 +1959,7 @@ async def _enqueue_durable_chat_run(
     try:
         from app.tasks.agent import run_agent_task
 
-        task_result = run_agent_task.apply_async(args=(payload,), queue="agent")
+        task_result = run_agent_task.apply_async(args=(payload,))
         task_id = getattr(task_result, "id", None)
         if task_id:
             run.celery_task_id = task_id

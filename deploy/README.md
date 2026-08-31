@@ -92,7 +92,7 @@ Compose pulls the published `latest` images listed above by default.
 |---------|------|-------------|
 | `frontend` | 3000 | Next.js standalone server |
 | `api` | 8000 | FastAPI API server |
-| `worker` | — | Celery worker for `default,knowledge,workflow,agent` queues |
+| `worker` | — | Celery worker for `default,knowledge,workflow` queues |
 | `sandbox-worker` | — | Celery worker for sandbox queue and artifact upload |
 | `beat` | — | Celery beat scheduler; keep exactly one replica |
 | `db` | 5432 | ParadeDB PostgreSQL 17 with pg_search 0.24.3 |

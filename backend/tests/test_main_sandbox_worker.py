@@ -13,7 +13,7 @@ from main import (
 )
 
 
-def test_start_worker_consumes_all_task_queues_by_default():
+def test_start_worker_consumes_default_knowledge_and_workflow_queues_by_default():
     with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
         start_worker()
 
@@ -28,7 +28,7 @@ def test_start_worker_consumes_all_task_queues_by_default():
             "worker",
             "--loglevel=info",
             "--concurrency=4",
-            "--queues=default,knowledge,workflow,agent",
+            "--queues=default,knowledge,workflow",
         ]
     )
 

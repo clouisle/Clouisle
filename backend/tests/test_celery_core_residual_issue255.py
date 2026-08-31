@@ -69,6 +69,7 @@ def test_configures_celery_with_and_without_redis_password(monkeypatch):
     assert app.conf.task_routes["app.tasks.workflow.*"] == {"queue": "workflow"}
     assert app.conf.task_routes["app.tasks.knowledge_base.*"] == {"queue": "knowledge"}
     assert app.conf.task_default_queue == "default"
+    assert app.conf.task_routes["app.tasks.agent.*"] == {"queue": "default"}
     for task_name in (
         "send_notification_wechat",
         "send_notification_feishu",

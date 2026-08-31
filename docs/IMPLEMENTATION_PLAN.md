@@ -505,7 +505,7 @@
   - [x] 5. Targeted regression tests and validation
 
 -
-- **oh-my-pi-agent-loop-parity** — Complete. All four chat entry paths run through a single `AgentLoop` state machine; agent runs execute on a durable Celery `agent` queue with Redis event buffers, replayable SSE and cooperative stop; mid-run steering/follow-up is queued and consumed at safe boundaries; context compaction is reserve-aware, turn-aware and keeps recent verbatim turns; provider stop details drive `pause_turn` continuation; tool batches schedule shared/exclusive calls; the frontend composer enables ongoing input, run status and reconnect UX. See `docs/plan/oh-my-pi-agent-loop-parity.md`
+- **oh-my-pi-agent-loop-parity** — Complete. All four chat entry paths run through a single `AgentLoop` state machine; agent runs execute on the durable Celery `default` queue with Redis event buffers, replayable SSE and cooperative stop; mid-run steering/follow-up is queued and consumed at safe boundaries; context compaction is reserve-aware, turn-aware and keeps recent verbatim turns; provider stop details drive `pause_turn` continuation; tool batches schedule shared/exclusive calls; the frontend composer enables ongoing input, run status and reconnect UX. See `docs/plan/oh-my-pi-agent-loop-parity.md`
   - [x] 1. Freeze behavioral contracts and register work
   - [x] 2. Extract one event-driven Agent Loop without changing transport
   - [x] 3. Implement turn-aware iterative compaction

@@ -120,7 +120,7 @@ def start_server(
 
 def start_worker(
     concurrency: int = 4,
-    queues: str = "default,knowledge,workflow,agent",
+    queues: str = "default,knowledge,workflow",
     *,
     pool: str | None = None,
 ):

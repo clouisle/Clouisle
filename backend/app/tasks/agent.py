@@ -1,8 +1,8 @@
 """
 Celery tasks for durable AgentRun execution.
 
-Runs on the dedicated ``agent`` queue (no retries: model/tool side effects are
-not idempotent). The task reloads the ORM context from the serialized payload
+Runs on the default queue (no retries: model/tool side effects are not
+idempotent). The task reloads the ORM context from the serialized payload
 and drives the shared AgentLoop, publishing to the per-run event stream.
 """
 

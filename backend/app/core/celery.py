@@ -75,7 +75,7 @@ celery_app.conf.task_routes = {
     "app.tasks.api_key.*": {"queue": "default"},
     "app.tasks.password_expiration.*": {"queue": "default"},
     "app.tasks.sandbox.*": {"queue": "sandbox"},
-    "app.tasks.agent.*": {"queue": "agent"},
+    "app.tasks.agent.*": {"queue": "default"},
     "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
     "tasks.archive_old_audit_logs": {"queue": "default"},
     "tasks.check_api_key_expiration": {"queue": "default"},

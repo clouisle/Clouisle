@@ -114,7 +114,7 @@ api:
 worker:
   enabled: true
   replicas: 2
-  command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow,agent"]
+  command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
   resources:
     requests:
       cpu: 250m

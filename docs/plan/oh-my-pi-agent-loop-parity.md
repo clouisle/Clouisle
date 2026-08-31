@@ -82,7 +82,7 @@ flowchart LR
     UI[useChat / ChatInput] -->|start/edit/regenerate| API[Chat run API]
     UI -->|steer/follow-up/stop| Control[Run control API]
     API --> DB[(PostgreSQL\nAgentRun + Message)]
-    API -->|enqueue| Celery[agent queue]
+    API -->|enqueue| Celery[default queue]
     Celery --> Loop[AgentLoop]
     Loop --> Context[ContextCompactor]
     Loop --> Model[LLM adapters]
@@ -295,7 +295,7 @@ Runtime metadata (not sent to the model) declares `concurrency: shared | exclusi
 
 - Add `AgentRun` and `AgentRunInput` models/status enums.
 - Add Redis lease/active-conversation lock, sequence counter, bounded event list and Pub/Sub channel. Follow the existing workflow `StreamManager` replay-before-live pattern; factor only the small generic buffer primitive if it can be shared without changing workflow semantics.
-- Start loop execution through a no-retry Celery task on an `agent` queue; add the module to Celery includes/routes and make deployed workers consume that queue.
+- Start loop execution through a no-retry Celery task on the `default` queue; add the module to Celery includes/routes and make deployed workers consume that queue.
 - SSE endpoints subscribe to buffered/live events and no longer own loop execution. Disconnect closes only the subscription.
 - Add run status and replay endpoints with strict owner/team/API-key checks.
 - Detect expired leases and mark runs `interrupted`; never replay side-effecting work automatically.
@@ -307,7 +307,7 @@ Runtime metadata (not sent to the model) declares `concurrency: shared | exclusi
 - Two starts for one conversation: only one acquires active mutation lock.
 - Wrong user/agent cannot inspect or control a run.
 - Worker loss/lease expiry creates one interrupted terminal state and releases lock.
-- Deployment commands include the agent queue.
+- Deployment commands consume the default queue.
 
 ### Stage 5: Add steering, follow-up and explicit cooperative stop
 
@@ -485,7 +485,7 @@ Runtime metadata (not sent to the model) declares `concurrency: shared | exclusi
 
 ### Long-lived Celery tasks consume worker slots
 
-- Route to explicit `agent` queue and expose worker concurrency independently if production load requires it.
+- Route Agent tasks through the default queue; provision enough shared worker concurrency, or split a dedicated worker later if workload isolation becomes necessary.
 - Keep deadline/lease; never allow an unbounded orphan task.
 - Rollback: route starts back to inline execution while retaining shared AgentLoop; run-control/replay temporarily disabled.
 
