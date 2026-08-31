@@ -178,6 +178,16 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return {}
 
 
+def _tool_call_changed(previous: Any, current: Any) -> bool:
+    """Return whether a streamed call update changes visible metadata."""
+    previous_name = getattr(previous.function, "name", None) or ""
+    current_name = getattr(current.function, "name", None) or ""
+    return previous_name != current_name or (
+        _safe_arguments(getattr(previous.function, "arguments", None))
+        != _safe_arguments(getattr(current.function, "arguments", None))
+    )
+
+
 @dataclass(slots=True)
 class ContextTurn:
     """Prepared provider context plus the summary decision for one turn.
@@ -311,6 +321,18 @@ class AgentLoop:
             groups.append(current)
         return groups
 
+    def _build_tool_call_sse(self, tc: Any) -> str:
+        """Build the call event before the tool starts executing."""
+        tool_name = getattr(tc.function, "name", None) or ""
+        if not tool_name:
+            return ""
+        return build_tool_call_sse_event(
+            tool_call_id=tc.id,
+            tool_name=tool_name,
+            tool_display_name=self.context.tool_display_names.get(tool_name, tool_name),
+            arguments=_safe_arguments(getattr(tc.function, "arguments", None)),
+        )
+
     async def _execute_one_tool(
         self,
         *,
@@ -320,7 +342,9 @@ class AgentLoop:
     ) -> tuple[str, str, str | None, dict[str, Any]]:
         """Execute one tool and return its protocol record.
 
-        Execution may overlap for shared tools, but persistence and event
+        The call event is built before execution and emitted by the caller so
+        the client can render the tool and its arguments while it is running.
+        Execution may overlap for shared tools, but persistence and result
         emission happen in the caller's original tool-call order. A tool
         failure is represented as an error result so sibling calls and the
         provider protocol remain intact.
@@ -347,12 +371,6 @@ class AgentLoop:
             )
 
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
-        tool_call_event = build_tool_call_sse_event(
-            tool_call_id=tc.id,
-            tool_name=tool_name,
-            tool_display_name=display_name,
-            arguments=arguments,
-        )
         tool_runner = ctx.execute_tool_call or execute_tool_call
         try:
             tool_result = await tool_runner(
@@ -380,16 +398,8 @@ class AgentLoop:
             )
             llm_result = display_result
 
-        record = {
-            "id": tc.id,
-            "name": tool_name,
-            "arguments": arguments,
-            "display_result": display_result,
-            "llm_result": llm_result,
-            "display_name": display_name,
-        }
         return (
-            tool_call_event,
+            self._build_tool_call_sse(tc),
             build_tool_result_sse_event(
                 tool_call_id=tc.id,
                 tool_name=tool_name,
@@ -397,7 +407,14 @@ class AgentLoop:
                 display_result=display_result,
             ),
             build_media_result_sse_event(display_result),
-            record,
+            {
+                "id": tc.id,
+                "name": tool_name,
+                "arguments": arguments,
+                "display_result": display_result,
+                "llm_result": llm_result,
+                "display_name": display_name,
+            },
         )
 
     def _skipped_tool(
@@ -677,6 +694,7 @@ class AgentLoop:
             full_reasoning = ""
             collected_tool_calls: list[Any] = []
             started_tool_call_ids: set[str] = set()
+            streamed_tool_calls: dict[str, Any] = {}
             emitted_any = False
             stream_usage = None
             used_fallback = False
@@ -739,9 +757,22 @@ class AgentLoop:
                         collected_tool_calls = chunk.delta.tool_calls
                     if chunk.delta.tool_call_starts:
                         emitted_any = True
-                        started_tool_call_ids.update(
-                            tc.id for tc in chunk.delta.tool_call_starts if tc.id
-                        )
+                        for tool_call in chunk.delta.tool_call_starts:
+                            call_id = getattr(tool_call, "id", None)
+                            if not call_id:
+                                continue
+                            previous_call = streamed_tool_calls.get(call_id)
+                            if previous_call is not None and not _tool_call_changed(
+                                previous_call, tool_call
+                            ):
+                                continue
+                            streamed_tool_calls[call_id] = tool_call
+                            started_tool_call_ids.add(call_id)
+                            call_sse = self._build_tool_call_sse(tool_call)
+                            if call_sse:
+                                event = self._emit(TOOL_CALL, {"sse": call_sse})
+                                if event:
+                                    yield event
                     if (
                         chunk.stop_details
                         and chunk.stop_details.reason == StopReason.PAUSE_TURN
@@ -947,6 +978,23 @@ class AgentLoop:
                     ):
                         import asyncio as _asyncio
 
+                        # The initial status was emitted while the provider
+                        # generated the call. Send a complete-input update only
+                        # when the final call adds visible metadata.
+                        for tc in group:
+                            previous_call = streamed_tool_calls.get(
+                                getattr(tc, "id", None)
+                            )
+                            if previous_call is not None and not _tool_call_changed(
+                                previous_call, tc
+                            ):
+                                continue
+                            call_sse = self._build_tool_call_sse(tc)
+                            if call_sse:
+                                event = self._emit(TOOL_CALL, {"sse": call_sse})
+                                if event:
+                                    yield event
+
                         async def _run_shared(tc):
                             return await self._execute_one_tool(
                                 tc=tc,
@@ -969,10 +1017,7 @@ class AgentLoop:
                                         f"{type(result).__name__}"
                                     ),
                                 )
-                            call_sse, result_sse, media_sse, record = result
-                            event = self._emit(TOOL_CALL, {"sse": call_sse})
-                            if event:
-                                yield event
+                            _call_sse, result_sse, media_sse, record = result
                             event = self._emit(TOOL_RESULT, {"sse": result_sse})
                             if event:
                                 yield event
@@ -992,8 +1037,19 @@ class AgentLoop:
                             called_now.append(tc)
                     else:
                         for tc in group:
+                            previous_call = streamed_tool_calls.get(
+                                getattr(tc, "id", None)
+                            )
+                            if previous_call is None or _tool_call_changed(
+                                previous_call, tc
+                            ):
+                                call_sse = self._build_tool_call_sse(tc)
+                                if call_sse:
+                                    event = self._emit(TOOL_CALL, {"sse": call_sse})
+                                    if event:
+                                        yield event
                             (
-                                call_sse,
+                                _call_sse,
                                 result_sse,
                                 media_sse,
                                 record,
@@ -1002,9 +1058,6 @@ class AgentLoop:
                                 image_pool=ctx.image_pool,
                                 image_inventory=ctx.image_inventory,
                             )
-                            event = self._emit(TOOL_CALL, {"sse": call_sse})
-                            if event:
-                                yield event
                             event = self._emit(TOOL_RESULT, {"sse": result_sse})
                             if event:
                                 yield event

@@ -15,6 +15,8 @@ Exercise order matches Oh My Pi parity success criteria:
 3. stop produces a stopped terminal with partial content.
 """
 
+import json
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -23,6 +25,8 @@ import pytest
 
 from app.llm.types import (
     ChatResponse,
+    ChatStreamChunk,
+    ChatStreamDelta,
     FinishReason,
     FunctionCall,
     Message as LLMMessage,
@@ -325,3 +329,127 @@ async def test_behavioral_smoke_cooperative_stop_partial(monkeypatch):
     async for _ in loop.run():
         pass
     assert loop.result.manually_stopped is True
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
+    """A streamed call is visible with complete inputs before its result."""
+    from app.services import agent_round
+
+    monkeypatch.setattr(
+        agent_round, "persist_assistant_step", AsyncMock(return_value=1)
+    )
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=2))
+
+    call_id = "call-write"
+    provider_calls = 0
+    events: list[tuple[str, dict]] = []
+
+    async def provider_stream(**_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        if provider_calls == 1:
+            yield ChatStreamChunk(
+                id="response-1",
+                model="m",
+                delta=ChatStreamDelta(
+                    tool_call_starts=[
+                        ToolCall(
+                            id=call_id,
+                            function=FunctionCall(name="write", arguments="{}"),
+                        )
+                    ]
+                ),
+            )
+            yield ChatStreamChunk(
+                id="response-1",
+                model="m",
+                delta=ChatStreamDelta(
+                    tool_calls=[
+                        ToolCall(
+                            id=call_id,
+                            function=FunctionCall(
+                                name="write",
+                                arguments='{"path":"notes.txt","content":"hello"}',
+                            ),
+                        )
+                    ]
+                ),
+                finish_reason=FinishReason.TOOL_CALLS,
+                usage=Usage(prompt_tokens=10, completion_tokens=4, total_tokens=14),
+            )
+            return
+
+        yield ChatStreamChunk(
+            id="response-2",
+            model="m",
+            delta=ChatStreamDelta(content="done"),
+            finish_reason=FinishReason.STOP,
+            usage=Usage(prompt_tokens=12, completion_tokens=1, total_tokens=13),
+        )
+
+    def formatter(name: str, payload: dict) -> str:
+        raw = payload.get("sse")
+        if isinstance(raw, str):
+            data = next(
+                line[5:].strip()
+                for line in raw.splitlines()
+                if line.startswith("data:")
+            )
+            event_payload = json.loads(data)
+        else:
+            event_payload = payload
+        events.append((name, event_payload))
+        return f"event: {name}\n"
+
+    async def tool_runner(tool_name, arguments, **_kwargs):
+        assert tool_name == "write"
+        assert arguments == {"path": "notes.txt", "content": "hello"}
+        assert events[0][0] == "tool_call"
+        assert events[0][1]["arguments"] == {}
+        assert events[1][0] == "tool_call"
+        assert events[1][1]["arguments"] == arguments
+        events.append(("tool_execution_started", {}))
+        return {"result": "written"}
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="write it")]
+            )
+        )
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="write it",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=True,
+        round_id=uuid4(),
+        team_chat_stream=provider_stream,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        tool_display_names={"write": "Write"},
+        formatter=formatter,
+    )
+
+    loop = AgentLoop(context)
+    async for _ in loop.run():
+        pass
+
+    assert [name for name, _payload in events] == [
+        "tool_call",
+        "tool_call",
+        "tool_execution_started",
+        "tool_result",
+        "content_delta",
+    ]
+    assert events[3][1]["is_error"] is False
+    assert loop.result.full_content == "done"

@@ -24,6 +24,7 @@ let options: HookOptions
 let result: HookResult
 let useChat: typeof import('./use-chat').useChat
 let renderScheduled = false
+let renderWaiters: Array<() => void> = []
 type StreamEvent = { event: string; data: unknown }
 type StreamEventSource = StreamEvent | Promise<StreamEvent> | (() => Promise<StreamEvent>)
 let streamEvents: StreamEventSource[] = []
@@ -90,6 +91,9 @@ function scheduleRender() {
   queueMicrotask(() => {
     renderScheduled = false
     renderHookHarness()
+    const waiters = renderWaiters
+    renderWaiters = []
+    for (const resolve of waiters) resolve()
   })
 }
 
@@ -145,7 +149,7 @@ beforeAll(async () => {
 beforeEach(() => {
   stateSlots = []
   refSlots = []
-  renderScheduled = false
+  renderWaiters = []
   for (const apiMock of [
     chatStream,
     editMessageStream,
@@ -176,6 +180,18 @@ function deferred<T>() {
 async function flush() {
   await Promise.resolve()
   await Promise.resolve()
+}
+
+function waitForRender(): Promise<void> {
+  const waiter = Promise.withResolvers<void>()
+  renderWaiters.push(waiter.resolve)
+  return waiter.promise
+}
+
+async function waitForParts(predicate: (parts: ChatMessage['parts']) => boolean) {
+  while (!predicate(result.messages[1]?.parts ?? [])) {
+    await waitForRender()
+  }
 }
 
 describe('useChat', () => {
@@ -399,6 +415,101 @@ describe('useChat', () => {
       options: ['A', 'B'],
       state: 'pending',
     })
+  })
+
+  it('renders tool status before slow arguments and result arrive', async () => {
+    const releaseArguments = deferred<StreamEvent>()
+    const releaseResult = deferred<StreamEvent>()
+    streamEvents = [
+      {
+        event: 'tool_call',
+        data: {
+          tool_call_id: 'tool-1',
+          tool_name: 'write',
+          tool_display_name: 'Write',
+          arguments: {},
+        },
+      },
+      releaseArguments.promise,
+      {
+        event: 'tool_call',
+        data: {
+          tool_call_id: 'tool-1',
+          tool_name: 'write',
+          tool_display_name: 'Write',
+          arguments: { path: 'notes.txt', content: 'hello' },
+        },
+      },
+      releaseResult.promise,
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    const sending = result.sendMessage('write the file')
+    await waitForParts((parts) => parts.some((part) => (
+      part.type === 'tool-call'
+      && part.toolCallId === 'tool-1'
+      && part.state === 'running'
+      && Object.keys(part.input).length === 0
+    )))
+
+    expect(result.messages[1].parts).toContainEqual({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      toolName: 'write',
+      toolDisplayName: 'Write',
+      input: {},
+      state: 'running',
+    })
+
+    releaseArguments.resolve({
+      event: 'tool_call',
+      data: {
+        tool_call_id: 'tool-1',
+        tool_name: 'write',
+        tool_display_name: 'Write',
+        arguments: { path: 'notes.txt', content: 'hello' },
+      },
+    })
+    await waitForParts((parts) => parts.some((part) => (
+      part.type === 'tool-call'
+      && part.toolCallId === 'tool-1'
+      && part.state === 'running'
+      && part.input.path === 'notes.txt'
+    )))
+
+    expect(result.messages[1].parts).toContainEqual({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      toolName: 'write',
+      toolDisplayName: 'Write',
+      input: { path: 'notes.txt', content: 'hello' },
+      state: 'running',
+    })
+
+    releaseResult.resolve({
+      event: 'tool_result',
+      data: {
+        tool_call_id: 'tool-1',
+        tool_name: 'write',
+        tool_display_name: 'Write',
+        result: 'written',
+        is_error: false,
+      },
+    })
+    await sending
+
+    expect(result.messages[1].parts).toContainEqual(expect.objectContaining({
+      type: 'tool-call',
+      toolCallId: 'tool-1',
+      input: { path: 'notes.txt', content: 'hello' },
+      state: 'done',
+    }))
+    expect(result.messages[1].parts).toContainEqual(expect.objectContaining({
+      type: 'tool-result',
+      toolCallId: 'tool-1',
+      output: 'written',
+    }))
   })
 
   it('renders reasoning, RAG, compression, tools, media, truncation, and iteration markers', async () => {
