@@ -127,7 +127,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
 - **Specific logic**:
   1. Keep RAG/compression task status rows and normal/MCP tool execution cards inside the surrounding collapsible `ChainOfThought`; response-generation markers do not count as thought steps or affect the container header.
   2. Preserve one thought container per reasoning iteration and the existing chronological grouping, tool/result pairing, rich output handling, hide flags, and controlled open-state behavior.
-  3. Derive the `ChainOfThought` header from the last rendered thought entry: tool calls use operation-specific executing/completed/failed labels, tasks use localized task text, and reasoning uses thinking/duration labels. Response-generation entries are ignored for this decision.
+  3. Derive the `ChainOfThought` header from the last rendered thought entry: tool calls use inner operation-specific executing/completed/failed labels, tasks use the localized task text, and reasoning uses inner thinking/duration labels. The header itself supplies only the outer operation context; response-generation entries are ignored for this decision.
 - **Validation**: Message tests assert task/tool descendants, independent tool disclosure, chronological grouping, operation-specific active/completed/failed headers, final-step precedence, and that response generation is absent from thought steps.
 - **Observed**: The revised message renderer passed 42 focused tests; the full frontend suite passed (2278 tests across 515 files), frontend coverage and LCOV completeness passed for 489 eligible files, TypeScript, ESLint, translation lint, and diff checks passed. No application service or browser was started.
 
