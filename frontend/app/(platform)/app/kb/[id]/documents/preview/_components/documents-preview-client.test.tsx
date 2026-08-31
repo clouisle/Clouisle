@@ -18,6 +18,11 @@ mock.module('react/jsx-dev-runtime', () => ({
   Fragment: 'fragment',
   jsxDEV: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
 }))
+mock.module('react/jsx-runtime', () => ({
+  jsx: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
+  jsxs: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
+  Fragment: 'fragment',
+}))
 mock.module('react', () => ({
   useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | (() => void)) => effects.push(effect),

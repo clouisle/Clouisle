@@ -549,11 +549,11 @@ Each commit must pass its focused validation and contain no dormant alternate im
 - Production gaps found and fixed during migration: `main.py start_worker` default queues now include `agent`; `admin_observability.WORKER_QUEUES` includes `agent` (catalog + queue-length observability); `SANDBOX_WORKER_ENV_KEYS` includes `INTERNAL_API_TOKEN` (sandbox container needs it); sandbox env test made hermetic against `app.main` import-time `dotenv` pollution.
 
 ### Frontend
-- Focused suites (use-chat ×3, use-run ×2, chat-input, message, agent-run-page, chat-behavior) pass with `--isolate`: 100/100 + chat-behavior 5/5.
-- Run-status chip + reconnect button covered by new `agent-run-page` test; `use-run` delegates `runId`/`runStatus`/`reconnect` to `useChat`.
+- Focused parity suites (use-chat ×3, use-run ×2, chat-input, message, agent-run-page, chat-behavior) pass with `--isolate`: 54/54 across 7 files.
+- Run-status chip + reconnect button covered by the `agent-run-page` test; `use-run` delegates `runId`/`runStatus`/`reconnect` to `useChat`.
 - ChatInput streaming contract test updated: submit stays enabled while streaming (steering), disabled while uploading/disabled; loading keeps submit enabled.
 - `bun run tsc --noEmit`, changed-file ESLint (0 errors), `i18n:lint`, `git diff --check` all clean.
-- Full frontend suite: 2212 pass / 38 fail. The 38 failures (DocumentsPreviewClient 20, ChangePasswordPage 7, CapabilitiesPage 6, PromptVariableEditor 5) reproduce with all parity changes stashed — pre-existing on the origin base (React 19.2.8 mock-gap class) and out of this plan's scope.
+- Full frontend suite: 2254 passed / 0 failed across 513 files. Added the missing React 19 `jsx-runtime` exports to five manual test mocks and `packagesApi` to the admin-workflow package mock; no unhandled module errors remain.
 
 ### Commit state
-- Stages 1–7 were committed incrementally on `fix/simple-context-summary` (7 commits). Stage 8 frontend work and this verification remain in the worktree as one pending commit.
+- Stages 1–7 were committed incrementally on `fix/simple-context-summary`; the Stage 8/9 implementation and backend migration are in `3e3084f9`, with the final frontend test-harness fixes and this verification record in the follow-up commit.

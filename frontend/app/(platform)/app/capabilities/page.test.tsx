@@ -29,6 +29,11 @@ mock.module('react/jsx-dev-runtime', () => ({
   Fragment: Symbol.for('fragment'),
   jsxDEV: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
 }))
+mock.module('react/jsx-runtime', () => ({
+  jsx: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
+  jsxs: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
+  Fragment: Symbol.for('fragment'),
+}))
 mock.module('react', () => ({
   useState: <T,>(initial: T) => {
     const index = hookIndex++

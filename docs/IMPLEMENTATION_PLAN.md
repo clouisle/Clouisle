@@ -505,7 +505,7 @@
   - [x] 5. Targeted regression tests and validation
 
 -
-- **oh-my-pi-agent-loop-parity** — Complete (worktree, pending review). All four chat entry paths run through a single `AgentLoop` state machine; agent runs execute on a durable Celery `agent` queue with Redis event buffers, replayable SSE and cooperative stop; mid-run steering/follow-up is queued and consumed at safe boundaries; context compaction is reserve-aware, turn-aware and keeps recent verbatim turns; provider stop details drive `pause_turn` continuation; tool batches schedule shared/exclusive calls; the frontend composer enables ongoing input, run status and reconnect UX. See `docs/plan/oh-my-pi-agent-loop-parity.md`
+- **oh-my-pi-agent-loop-parity** — Complete. All four chat entry paths run through a single `AgentLoop` state machine; agent runs execute on a durable Celery `agent` queue with Redis event buffers, replayable SSE and cooperative stop; mid-run steering/follow-up is queued and consumed at safe boundaries; context compaction is reserve-aware, turn-aware and keeps recent verbatim turns; provider stop details drive `pause_turn` continuation; tool batches schedule shared/exclusive calls; the frontend composer enables ongoing input, run status and reconnect UX. See `docs/plan/oh-my-pi-agent-loop-parity.md`
   - [x] 1. Freeze behavioral contracts and register work
   - [x] 2. Extract one event-driven Agent Loop without changing transport
   - [x] 3. Implement turn-aware iterative compaction
@@ -515,7 +515,7 @@
   - [x] 7. Add safe shared/exclusive tool batch scheduling
   - [x] 8. Frontend run state machine and ongoing-input UX
   - [x] 9. End-to-end verification, cleanup and documentation finalization
-  - Note: 38 frontend test failures in `DocumentsPreviewClient`, `ChangePasswordPage`, `CapabilitiesPage` and `PromptVariableEditor` suiten are pre-existing on the origin base (reproduced with the parity changes stashed); they fail on React 19.2.8 manual-mock `ReactSharedInternals.recentlyCreatedOwnerStacks` gaps and are outside this plan's scope.
+- 2254 frontend tests and 6673 backend tests pass; React 19 manual test mocks now provide the `jsx-runtime` exports required by the isolated full suite.
 
 - **agent-simple-context-summary** — Complete. Before every provider call, the full request payload is estimated. At more than 90% of the model context limit, one model-generated summary replaces the old history; the new context is system prompt + structured summary + current user request, with a persisted conversation watermark.
   - [x] 1. Replace staged compression with 90% preflight summary
