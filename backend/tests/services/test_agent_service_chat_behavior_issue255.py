@@ -32,6 +32,7 @@ def _agent(**overrides):
     values.update(overrides)
     return SimpleNamespace(**values)
 
+
 @pytest.mark.anyio
 async def test_resolve_model_id_raises_translated_business_error_when_missing():
     query = SimpleNamespace(first=AsyncMock(return_value=None))
