@@ -162,6 +162,49 @@ class TestAgentNodeExecutorBehavior:
         )
 
     @pytest.mark.anyio
+    async def test_reserved_output_alias_preserves_structured_outputs(
+        self, context, run, agent_service
+    ):
+        agent = MagicMock()
+        agent_service.chat = AsyncMock(
+            return_value={
+                "response": "Done",
+                "tool_calls": [{"id": "call-1"}],
+                "usage": {"total_tokens": 4},
+                "dialogue": [{"role": "assistant", "content": "Done"}],
+                "artifacts": [{"url": "https://example.test/output.csv"}],
+            }
+        )
+        node = {
+            "data": {
+                "config": {
+                    "agentId": "agent-1",
+                    "outputVariable": "toolCalls",
+                    "stream": False,
+                }
+            }
+        }
+
+        with patch("app.models.agent.Agent.filter") as agent_filter:
+            agent_filter.return_value.first = AsyncMock(return_value=agent)
+            result = await AgentNodeExecutor().execute(node, context, run)
+
+        assert result.outputs == {
+            "response": "Done",
+            "toolCalls": [{"id": "call-1"}],
+            "usage": {"total_tokens": 4},
+            "dialogue": [{"role": "assistant", "content": "Done"}],
+            "artifacts": [{"url": "https://example.test/output.csv"}],
+        }
+        for output_var in ("response", "toolCalls", "usage", "dialogue", "artifacts"):
+            assert [
+                item["name"]
+                for item in AgentNodeExecutor().get_output_variables(
+                    {"outputVariable": output_var}
+                )
+            ] == ["response", "toolCalls", "usage", "dialogue", "artifacts"]
+
+    @pytest.mark.anyio
     async def test_service_failure_is_translated(self, context, run, agent_service):
         agent_service.chat = AsyncMock(side_effect=RuntimeError("private detail"))
         with (

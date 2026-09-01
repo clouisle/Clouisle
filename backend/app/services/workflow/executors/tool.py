@@ -327,7 +327,7 @@ class AgentNodeExecutor(NodeExecutor):
                     "dialogue": result.get("dialogue", []),
                     "artifacts": result.get("artifacts", []),
                 }
-            if output_var != "response":
+            if output_var not in outputs:
                 outputs[output_var] = outputs["response"]
             return ExecutionResult(outputs=outputs)
         except Exception as e:
@@ -375,7 +375,7 @@ class AgentNodeExecutor(NodeExecutor):
             {"name": "dialogue", "type": "array"},
             {"name": "artifacts", "type": "array"},
         ]
-        if output_var and output_var != "response":
+        if output_var and all(variable["name"] != output_var for variable in variables):
             variables.insert(0, {"name": output_var, "type": "string"})
         return variables
 
