@@ -9,6 +9,7 @@ import pytest
 from app.llm.types import MessageRole, ToolDefinition
 from app.llm.types.chat import ToolCall
 from app.models.agent import RAGMode
+from app.schemas.response import BusinessError
 
 builtins.ToolCall = ToolCall
 try:
@@ -30,6 +31,17 @@ def _agent(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+@pytest.mark.anyio
+async def test_resolve_model_id_raises_translated_business_error_when_missing():
+    query = SimpleNamespace(first=AsyncMock(return_value=None))
+    agent = _agent()
+
+    with patch("app.models.model.TeamModel.filter", return_value=query):
+        with pytest.raises(BusinessError) as exc_info:
+            await AgentService._resolve_model_id(agent)
+
+    assert exc_info.value.msg_key == "agent_model_unavailable"
 
 
 @pytest.mark.anyio

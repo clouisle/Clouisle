@@ -23,6 +23,7 @@ from app.llm.types import (
     FunctionDefinition,
 )
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
+from app.schemas.response import BusinessError
 from app.services.system_prompt import WORKFLOW_MODE, build_system_prompt
 
 if TYPE_CHECKING:
@@ -390,7 +391,7 @@ class AgentService:
             team_id=agent.team_id,
         ).first()
         if not team_model:
-            raise ValueError("Configured agent model is unavailable")
+            raise BusinessError(msg_key="agent_model_unavailable")
         return str(team_model.model_id)
 
     @staticmethod

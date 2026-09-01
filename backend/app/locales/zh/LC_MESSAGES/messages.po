@@ -36,6 +36,9 @@ msgstr "智能体复制成功"
 msgid "agent_name_exists"
 msgstr "该智能体名称已存在"
 
+msgid "agent_model_unavailable"
+msgstr "配置的智能体模型不可用"
+
 msgid "agent_not_found"
 msgstr "智能体未找到"
 
