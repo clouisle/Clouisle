@@ -13,8 +13,17 @@ from typing import Any, TYPE_CHECKING, cast
 from app.core.i18n import t
 from app.llm import model_manager
 from app.services.error_messages import resolve_user_visible_error
-from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
+from app.llm.types import (
+    ContentPart,
+    ContentType,
+    ImageContent,
+    Message,
+    MessageRole,
+    ToolDefinition,
+    FunctionDefinition,
+)
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
+from app.schemas.response import BusinessError
 from app.services.system_prompt import WORKFLOW_MODE, build_system_prompt
 
 if TYPE_CHECKING:
@@ -42,99 +51,108 @@ class AgentService:
         max_turns: int = 10,
         conversation_history: list[dict] | None = None,
         user_locale: str | None = None,
+        images: list[Any] | None = None,
+        files: list[Any] | None = None,
     ) -> dict[str, Any]:
-        """
-        Execute a non-streaming chat with the agent.
-
-        Args:
-            agent: Agent instance
-            message: User message
-            context: Additional context variables
-            user_id: User ID for tracking
-            max_turns: Maximum tool call iterations
-            conversation_history: Previous messages in the conversation
-
-        Returns:
-            dict with response, tool_calls, and usage
-        """
+        """Execute a non-streaming chat and return normalized trace data."""
         messages = await self._build_messages(
             agent=agent,
             message=message,
             context=context,
             conversation_history=conversation_history,
             user_locale=user_locale,
+            images=images,
+            files=files,
         )
-
-        tools = await self._get_agent_tools(agent)
-
-        # Get team model or default
         team_id = str(agent.team_id) if agent.team_id else None
-        model_id = str(agent.model_id) if agent.model_id else None
-
+        model_id = await self._resolve_model_id(agent)
+        tools = await self._get_agent_tools(agent)
         response_text = ""
-        tool_calls = []
+        tool_calls: list[dict[str, Any]] = []
+        dialogue: list[dict[str, Any]] = []
+        artifacts: list[Any] = []
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-        current_turn = 0
-        while current_turn < max_turns:
-            current_turn += 1
-
-            response = await model_manager.chat(
-                messages=cast(list[Any], messages),
-                tools=tools if tools else None,
-                team_id=team_id,
-                model=model_id,
-                user_id=user_id,
-            )
-
-            # Accumulate usage
-            if response.usage:
-                total_usage["prompt_tokens"] += response.usage.prompt_tokens or 0
-                total_usage["completion_tokens"] += (
-                    response.usage.completion_tokens or 0
+        for current_turn in range(1, max_turns + 1):
+            if team_id:
+                response = await model_manager.team_chat(
+                    team_id=team_id,
+                    messages=cast(list[Any], messages),
+                    tools=tools or None,
+                    model_id=model_id,
+                    user_id=user_id,
                 )
-                total_usage["total_tokens"] += response.usage.total_tokens or 0
-
-            # Check for tool calls
-            if response.tool_calls:
-                tool_calls.extend([tc.model_dump() for tc in response.tool_calls])
-
-                # Add assistant message with tool calls
+            else:
+                response = await model_manager.chat(
+                    messages=cast(list[Any], messages),
+                    tools=tools or None,
+                    model_id=model_id,
+                    user_id=user_id,
+                )
+            usage = getattr(response, "usage", None)
+            if usage:
+                total_usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+                total_usage["completion_tokens"] += (
+                    getattr(usage, "completion_tokens", 0) or 0
+                )
+                total_usage["total_tokens"] += getattr(usage, "total_tokens", 0) or 0
+            response_tool_calls = getattr(response, "tool_calls", None) or []
+            content = getattr(response, "content", None) or ""
+            reasoning_content = getattr(response, "reasoning_content", None)
+            if not response_tool_calls:
+                response_text = content
+                dialogue.append(
+                    {
+                        "role": "assistant",
+                        "content": response_text,
+                        "reasoning_content": reasoning_content,
+                        "iteration": current_turn,
+                    }
+                )
+                break
+            normalized_calls = [tc.model_dump() for tc in response_tool_calls]
+            tool_calls.extend(normalized_calls)
+            dialogue.append(
+                {
+                    "role": "assistant",
+                    "content": content,
+                    "reasoning_content": reasoning_content,
+                    "tool_calls": normalized_calls,
+                    "iteration": current_turn,
+                }
+            )
+            messages.append(
+                Message(
+                    role=MessageRole.ASSISTANT,
+                    content=content,
+                    reasoning_content=reasoning_content,
+                    tool_calls=response_tool_calls,
+                )
+            )
+            for tool_call in response_tool_calls:
+                tool_result = await self._execute_tool(agent=agent, tool_call=tool_call)
+                artifacts.extend(self._extract_artifacts(tool_result))
+                dialogue.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "tool_name": tool_call.function.name,
+                        "content": str(tool_result),
+                        "iteration": current_turn,
+                    }
+                )
                 messages.append(
                     Message(
-                        role=MessageRole.ASSISTANT,
-                        content=response.content or "",
-                        tool_calls=response.tool_calls,
+                        role=MessageRole.TOOL,
+                        content=str(tool_result),
+                        tool_call_id=tool_call.id,
                     )
                 )
-
-                # Execute tools and add tool results
-                for tool_call in response.tool_calls:
-                    tool_result = await self._execute_tool(
-                        agent=agent,
-                        tool_call=tool_call,
-                    )
-
-                    # Add tool result message
-                    messages.append(
-                        Message(
-                            role=MessageRole.TOOL,
-                            content=str(tool_result),
-                            tool_call_id=tool_call.id,
-                        )
-                    )
-
-                # Continue to next turn to get final response
-                continue
-            else:
-                # No tool calls, we have the final response
-                response_text = response.content or ""
-                break
-
         return {
             "response": response_text,
             "tool_calls": tool_calls,
             "usage": total_usage,
+            "dialogue": dialogue,
+            "artifacts": artifacts,
         }
 
     async def chat_stream(
@@ -146,78 +164,97 @@ class AgentService:
         max_turns: int = 10,
         conversation_history: list[dict] | None = None,
         user_locale: str | None = None,
+        images: list[Any] | None = None,
+        files: list[Any] | None = None,
     ) -> AsyncIterator[str | dict]:
-        """
-        Execute a streaming chat with the agent.
-
-        Yields:
-            str for content tokens
-            dict for tool calls and metadata ({"tool_call": ...} or {"usage": ...})
-        """
+        """Execute a streaming chat and yield normalized trace events."""
         messages = await self._build_messages(
             agent=agent,
             message=message,
             context=context,
             conversation_history=conversation_history,
             user_locale=user_locale,
+            images=images,
+            files=files,
         )
-
-        tools = await self._get_agent_tools(agent)
-
-        # Get team model or default
         team_id = str(agent.team_id) if agent.team_id else None
-        model_id = str(agent.model_id) if agent.model_id else None
-
-        current_turn = 0
-        while current_turn < max_turns:
-            current_turn += 1
-
+        model_id = await self._resolve_model_id(agent)
+        tools = await self._get_agent_tools(agent)
+        dialogue: list[dict[str, Any]] = []
+        artifacts: list[Any] = []
+        for current_turn in range(1, max_turns + 1):
             accumulated_content = ""
+            accumulated_reasoning = ""
             accumulated_tool_calls = []
             final_usage = None
-
-            async for chunk in model_manager.chat_stream(
-                messages=cast(list[Any], messages),
-                tools=tools if tools else None,
-                team_id=team_id,
-                model=model_id,
-                user_id=user_id,
-            ):
-                if chunk.delta.content:
-                    accumulated_content += chunk.delta.content
-                    yield chunk.delta.content
-
-                if chunk.delta.tool_calls:
-                    for tc in chunk.delta.tool_calls:
-                        accumulated_tool_calls.append(tc)
-                        yield {"tool_call": tc.model_dump()}
-
-                if chunk.usage:
-                    final_usage = chunk.usage
-
-            # Yield usage at the end
+            stream = (
+                model_manager.team_chat_stream(
+                    team_id=team_id,
+                    messages=cast(list[Any], messages),
+                    tools=tools or None,
+                    model_id=model_id,
+                    user_id=user_id,
+                )
+                if team_id
+                else model_manager.chat_stream(
+                    messages=cast(list[Any], messages),
+                    tools=tools or None,
+                    model_id=model_id,
+                    user_id=user_id,
+                )
+            )
+            async for chunk in stream:
+                delta = getattr(chunk, "delta", None)
+                content_delta = getattr(delta, "content", None) or ""
+                reasoning_delta = getattr(delta, "reasoning_content", None) or ""
+                tool_call_deltas = getattr(delta, "tool_calls", None) or []
+                if content_delta:
+                    accumulated_content += content_delta
+                    yield content_delta
+                if reasoning_delta:
+                    accumulated_reasoning += reasoning_delta
+                    yield {"reasoning": reasoning_delta}
+                for tool_call in tool_call_deltas:
+                    accumulated_tool_calls.append(tool_call)
+                    yield {"tool_call": tool_call.model_dump()}
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage:
+                    final_usage = chunk_usage
             if final_usage:
                 yield {"usage": final_usage.model_dump()}
-
-            # If there were tool calls, execute them
             if accumulated_tool_calls:
-                # Add assistant message with tool calls
+                normalized_calls = [tc.model_dump() for tc in accumulated_tool_calls]
+                dialogue.append(
+                    {
+                        "role": "assistant",
+                        "content": accumulated_content,
+                        "reasoning_content": accumulated_reasoning or None,
+                        "tool_calls": normalized_calls,
+                        "iteration": current_turn,
+                    }
+                )
                 messages.append(
                     Message(
                         role=MessageRole.ASSISTANT,
                         content=accumulated_content,
+                        reasoning_content=accumulated_reasoning or None,
                         tool_calls=accumulated_tool_calls,
                     )
                 )
-
-                # Execute tools and add results
                 for tool_call in accumulated_tool_calls:
                     tool_result = await self._execute_tool(
-                        agent=agent,
-                        tool_call=tool_call,
+                        agent=agent, tool_call=tool_call
                     )
-
-                    # Add tool result message
+                    artifacts.extend(self._extract_artifacts(tool_result))
+                    dialogue.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "tool_name": tool_call.function.name,
+                            "content": str(tool_result),
+                            "iteration": current_turn,
+                        }
+                    )
                     messages.append(
                         Message(
                             role=MessageRole.TOOL,
@@ -225,12 +262,27 @@ class AgentService:
                             tool_call_id=tool_call.id,
                         )
                     )
-
-                # Continue to next turn to get final response
+                    yield {
+                        "tool_result": {
+                            "tool_call_id": tool_call.id,
+                            "tool_name": tool_call.function.name,
+                            "result": tool_result,
+                        }
+                    }
                 continue
-            else:
-                # No tool calls, we're done
-                break
+            dialogue.append(
+                {
+                    "role": "assistant",
+                    "content": accumulated_content,
+                    "reasoning_content": accumulated_reasoning or None,
+                    "iteration": current_turn,
+                }
+            )
+            yield {"dialogue": dialogue, "artifacts": artifacts}
+            break
+
+        else:
+            yield {"dialogue": dialogue, "artifacts": artifacts}
 
     async def _build_messages(
         self,
@@ -239,20 +291,16 @@ class AgentService:
         context: dict[str, Any] | None = None,
         conversation_history: list[dict] | None = None,
         user_locale: str | None = None,
+        images: list[Any] | None = None,
+        files: list[Any] | None = None,
     ) -> list[Message]:
-        """Build message list for the chat."""
-        messages = []
-
-        # System prompt assembled by the unified injection manager. Workflow
-        # mode injects sandbox/markdown/language guidance but skips chat-only
-        # sections (memory tools, user-input-request) that this path does not
-        # wire up.
+        """Build system, history, and current multimodal user messages."""
+        messages: list[Message] = []
         base_prompt = agent.system_prompt or ""
         if context:
             base_prompt += "\n\nContext:\n" + "\n".join(
                 f"- {k}: {v}" for k, v in context.items()
             )
-
         system_prompt = build_system_prompt(
             agent,
             base_prompt=base_prompt,
@@ -261,48 +309,104 @@ class AgentService:
             invocation_mode=WORKFLOW_MODE,
         )
         if system_prompt:
-            messages.append(
-                Message(
-                    role=MessageRole.SYSTEM,
-                    content=system_prompt,
+            messages.append(Message(role=MessageRole.SYSTEM, content=system_prompt))
+        for msg in conversation_history or []:
+            role = msg.get("role", "user")
+            if role in {"user", "assistant", "system"}:
+                messages.append(
+                    Message(role=MessageRole(role), content=msg.get("content", ""))
                 )
-            )
-
-        # Add conversation history
-        if conversation_history:
-            for msg in conversation_history:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-
-                if role == "user":
-                    messages.append(Message(role=MessageRole.USER, content=content))
-                elif role == "assistant":
-                    messages.append(
-                        Message(role=MessageRole.ASSISTANT, content=content)
+        image_parts = []
+        for item in images or []:
+            url = item.get("url") if isinstance(item, dict) else item
+            if url:
+                image_parts.append(
+                    ContentPart(
+                        type=ContentType.IMAGE,
+                        image=ImageContent(
+                            url=str(url),
+                            asset_ref=item.get("asset_ref")
+                            if isinstance(item, dict)
+                            else None,
+                        ),
                     )
-                elif role == "system":
-                    messages.append(Message(role=MessageRole.SYSTEM, content=content))
-
-        # Add current user message
-        messages.append(
-            Message(
-                role=MessageRole.USER,
-                content=message,
-            )
-        )
-
-        # RAG context (if enabled)
+                )
+        file_content = await self._parse_workflow_files(agent, files)
+        if image_parts or file_content:
+            parts = [ContentPart(type=ContentType.TEXT, text=message), *image_parts]
+            if file_content:
+                parts.append(
+                    ContentPart(
+                        type=ContentType.TEXT,
+                        text=f"<uploaded_files>\n{file_content}\n</uploaded_files>",
+                    )
+                )
+            user_content: str | list[ContentPart] = parts
+        else:
+            user_content = message
+        messages.append(Message(role=MessageRole.USER, content=user_content))
         if agent.rag_mode != RAGMode.OFF:
             rag_context = await self._retrieve_rag_context(agent, message)
             if rag_context:
-                # Insert RAG context before the user message
-                context_message = Message(
-                    role=MessageRole.SYSTEM,
-                    content=f"Relevant context:\n{rag_context}",
+                messages.insert(
+                    -1,
+                    Message(
+                        role=MessageRole.SYSTEM,
+                        content=f"Relevant context:\n{rag_context}",
+                    ),
                 )
-                messages.insert(-1, context_message)
-
         return messages
+
+    @staticmethod
+    async def _parse_workflow_files(agent: Agent, files: list[Any] | None) -> str:
+        if not files or not agent.enable_attachments:
+            return ""
+        from app.llm.tools.builtin.file_parser import parse_files
+
+        urls = []
+        for item in files:
+            if isinstance(item, dict) and item.get("url"):
+                urls.append(str(item["url"]))
+            elif item:
+                urls.append(str(item))
+        if not urls:
+            return ""
+        config = agent.attachment_config or {}
+        return await parse_files(
+            urls,
+            max_content_length=int(config.get("max_content_length", 100000)),
+            truncate_strategy=str(config.get("truncate_strategy", "end")),
+        )
+
+    @staticmethod
+    async def _resolve_model_id(agent: Agent) -> str | None:
+        """Resolve the Agent's TeamModel selection to its global model UUID."""
+        configured_team_model_id = getattr(agent, "model_id", None)
+        if not configured_team_model_id:
+            return None
+        from app.models.model import TeamModel
+
+        team_model = await TeamModel.filter(
+            id=configured_team_model_id,
+            team_id=agent.team_id,
+        ).first()
+        if not team_model:
+            raise BusinessError(msg_key="agent_model_unavailable")
+        return str(team_model.model_id)
+
+    @staticmethod
+    def _extract_artifacts(value: Any) -> list[Any]:
+        if not isinstance(value, dict):
+            return []
+        artifacts: list[Any] = []
+        for key in ("artifacts", "files"):
+            items = value.get(key)
+            if isinstance(items, list):
+                artifacts.extend(item for item in items if isinstance(item, dict))
+        nested = value.get("display_result")
+        if isinstance(nested, dict):
+            artifacts.extend(AgentService._extract_artifacts(nested))
+        return artifacts
 
     async def _get_agent_tools(self, agent: Agent) -> list[ToolDefinition]:
         """Get tools configured for the agent."""

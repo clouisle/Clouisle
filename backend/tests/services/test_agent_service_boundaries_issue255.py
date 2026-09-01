@@ -43,6 +43,8 @@ async def test_chat_zero_turns_returns_empty_result_without_calling_model():
         "response": "",
         "tool_calls": [],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "dialogue": [],
+        "artifacts": [],
     }
     chat.assert_not_awaited()
 

@@ -461,7 +461,6 @@ export type AgentsMessages = {
         toolCall: string
         toolResult: string
         mediaResult: string
-        userInputRequest: string
         compressionStart: string
         compressionEnd: string
         outputTruncated: string

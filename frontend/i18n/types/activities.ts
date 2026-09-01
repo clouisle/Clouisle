@@ -27,6 +27,7 @@ export type ActivitiesMessages = {
       failed: string
       running: string
       pending: string
+      waiting: string
       cancelled: string
       timeout: string
     }

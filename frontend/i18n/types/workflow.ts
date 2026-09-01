@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-31T02:51:53.474Z
+// GENERATED — 2026-09-01T12:23:09.090Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -566,6 +566,8 @@ export type WorkflowMessages = {
       nodeType: string
       nodeStatus: string
       nodeTime: string
+      model: string
+      configuration: string
       pauseLoading: string
       pauseLoadError: string
       pauseSubmitError: string
@@ -883,6 +885,8 @@ export type WorkflowMessages = {
       messageInputDesc: string
       enterMessageContent: string
       variableConfig: string
+      attachmentInputs: string
+      attachmentInputsDesc: string
       agentResponseContent: string
     }
     configAnswer: {

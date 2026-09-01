@@ -564,6 +564,8 @@
       "nodeType": "Type:",
       "nodeStatus": "Status:",
       "nodeTime": "Time:",
+      "model": "Model:",
+      "configuration": "Configuration",
       "pauseLoading": "Loading the pause request...",
       "pauseLoadError": "Failed to load the pause request.",
       "pauseSubmitError": "Failed to submit. Please try again.",
@@ -881,6 +883,8 @@
       "messageInputDesc": "Message content to send to the agent",
       "enterMessageContent": "Enter message content...",
       "variableConfig": "Variable configuration",
+      "attachmentInputs": "Attachment",
+      "attachmentInputsDesc": "Map one workflow attachment variable. Images are recognized automatically.",
       "agentResponseContent": "Agent response content"
     },
     "configAnswer": {

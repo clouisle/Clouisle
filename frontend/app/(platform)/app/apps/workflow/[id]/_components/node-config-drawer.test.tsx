@@ -92,6 +92,18 @@ mock.module('./node-config', () => ({
   defaultLLMNodeConfig: { outputVariables: { response: 'response', reasoning: 'reasoning', usage: 'usage' } },
   defaultSubWorkflowNodeConfig: { outputVariable: 'result' },
   defaultAgentNodeConfig: { outputVariable: 'response' },
+  getAgentNodeOutputVariables: (config: { outputVariable?: string }) => {
+    const outputs = [
+      { name: 'response', type: 'String', isArray: false, isIterable: false },
+      { name: 'toolCalls', type: 'Array', isArray: true, isIterable: true },
+      { name: 'usage', type: 'Object', isArray: false, isIterable: true },
+      { name: 'dialogue', type: 'Array', isArray: true, isIterable: true },
+      { name: 'artifacts', type: 'Array', isArray: true, isIterable: true },
+    ]
+    return config.outputVariable && config.outputVariable !== 'response'
+      ? [{ name: config.outputVariable, type: 'String', isArray: false, isIterable: false }, ...outputs]
+      : outputs
+  },
   defaultKnowledgeRetrievalNodeConfig: { outputVariable: 'results' },
   defaultPauseNodeConfig: { mode: 'variables', inputVariables: [] },
 }))
@@ -234,16 +246,21 @@ describe('NodeConfigDrawer', () => {
       'iteration.items', 'loop.rows', 'loop.step', 'loop.record', 'loop.note',
       'media.result', 'media.images', 'code.payload', 'template.text', 'files.urls',
       'aggregator.merged', 'extractor.entities', 'tool.toolResult',
-      'sub-workflow.workflowResult', 'agent.reply', 'retrieval.documents',
+      'sub-workflow.workflowResult', 'agent.reply', 'agent.response', 'agent.toolCalls', 'agent.usage',
+      'agent.dialogue', 'agent.artifacts', 'retrieval.documents',
       'retrieval.context', 'retrieval.totalFound', 'sys.query',
     ]))
     const iterableIds = getAvailableVariables('iterable').map(variable => variable.id)
     expect(iterableIds).toEqual(expect.arrayContaining([
       'iteration.items', 'loop.rows', 'loop.record', 'media.images', 'code.payload',
       'files.urls', 'aggregator.merged', 'extractor.entities', 'tool.toolResult',
-      'sub-workflow.workflowResult', 'retrieval.documents',
+      'sub-workflow.workflowResult', 'agent.toolCalls', 'agent.usage', 'agent.dialogue',
+      'agent.artifacts', 'retrieval.documents',
     ]))
-    expect(iterableIds).not.toEqual(expect.arrayContaining(['loop.step', 'loop.note', 'agent.reply', 'retrieval.context', 'sys.query']))
+    expect(iterableIds).not.toEqual(expect.arrayContaining([
+      'loop.step', 'loop.note', 'agent.reply', 'agent.response', 'retrieval.context', 'sys.query',
+    ]))
+    expect(ids.filter(id => id === 'agent.response')).toHaveLength(1)
   })
 
   test('exposes loop-local and writable conversation variables inside a subgraph', () => {

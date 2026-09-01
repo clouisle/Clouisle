@@ -564,6 +564,8 @@
       "nodeType": "类型：",
       "nodeStatus": "状态：",
       "nodeTime": "耗时：",
+      "model": "模型：",
+      "configuration": "配置",
       "pauseLoading": "正在加载暂停请求...",
       "pauseLoadError": "加载暂停请求失败",
       "pauseSubmitError": "提交失败，请重试",
@@ -881,6 +883,8 @@
       "messageInputDesc": "发送给智能体的消息内容",
       "enterMessageContent": "输入消息内容...",
       "variableConfig": "变量配置",
+      "attachmentInputs": "附件",
+      "attachmentInputsDesc": "映射一个工作流附件变量，图片会自动识别。",
       "agentResponseContent": "智能体回复内容"
     },
     "configAnswer": {

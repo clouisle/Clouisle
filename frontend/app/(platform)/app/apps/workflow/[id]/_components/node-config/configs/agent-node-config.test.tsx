@@ -39,7 +39,12 @@ mock.module('@/lib/api/agents', () => ({ agentsApi: { getAgents, getAgent } }))
 mock.module('../utils', () => ({ isValidVariableName: (name: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) }))
 mock.module('../types', () => ({ extractVariableDisplayName: (value: string) => value.replace(/[{}]/g, '') }))
 
-const { AgentNodeConfig, defaultAgentNodeConfig } = await import('./agent-node-config')
+const {
+  AgentNodeConfig,
+  defaultAgentNodeConfig,
+  getAgentAttachmentMappings,
+  getAgentNodeOutputVariables,
+} = await import('./agent-node-config')
 
 function descendants(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(descendants)
@@ -87,6 +92,37 @@ beforeEach(() => {
   getAgent.mockImplementation(async () => ({ variables: [] }))
 })
 
+test('declares the fixed Agent runtime outputs and one distinct response alias', () => {
+  expect(getAgentNodeOutputVariables({ outputVariable: 'response' }).map((output) => output.name)).toEqual([
+    'response', 'toolCalls', 'usage', 'dialogue', 'artifacts',
+  ])
+  expect(getAgentNodeOutputVariables({ outputVariable: 'answer' }).map((output) => output.name)).toEqual([
+    'answer', 'response', 'toolCalls', 'usage', 'dialogue', 'artifacts',
+  ])
+})
+
+test('preserves the selected attachment source type', () => {
+  expect(getAgentAttachmentMappings(true, [{
+    name: 'attachments', type: 'files', required: false, source: 'variable',
+    variableRef: '{{start.images}}', attachmentType: 'images',
+  }])).toEqual([{
+    name: 'attachments', type: 'files', required: false, source: 'variable',
+    variableRef: '{{start.images}}', attachmentType: 'images',
+  }])
+})
+
+test('declares one workflow attachment mapping only for Agents with uploads enabled', () => {
+  const existing = [
+    { name: 'attachments', type: 'files', required: true, source: 'variable' as const, variableRef: '{{start.uploads}}', variableRefNodeLabel: 'Start' },
+    { name: 'stale', type: 'string', required: false, source: 'constant' as const, constantValue: 'remove' },
+  ]
+
+  expect(getAgentAttachmentMappings(false, existing)).toEqual([])
+  expect(getAgentAttachmentMappings(true, existing)).toEqual([
+    { name: 'attachments', type: 'files', required: false, source: 'variable', variableRef: '{{start.uploads}}', variableRefNodeLabel: 'Start' },
+  ])
+})
+
 test('selects a published agent and clears stale mappings before detail loading', () => {
   const agent = { id: 'agent-2', name: 'Published Agent', description: 'Ready to use', icon: 'agent-icon' }
   states = [true, true, true, [agent], false, true, '']
@@ -107,7 +143,7 @@ test('validates output names and preserves default configuration on input change
   expect(text(tree)).toContain('configCommon.invalidVariableName')
   expect(inputs).toHaveLength(1)
   ;(inputs[0].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'reply' } })
-  expect(onConfigChange).toHaveBeenCalledWith({ ...defaultAgentNodeConfig, inputMappings: [], outputVariable: 'reply' })
+  expect(onConfigChange).toHaveBeenCalledWith({ ...defaultAgentNodeConfig, inputMappings: [], attachmentMappings: [], outputVariable: 'reply' })
 })
 
 test('changes selected agent message and parameter mappings without retaining stale variable references', () => {
@@ -141,4 +177,58 @@ test('loads mappings after an earlier agent-list failure and ignores the recover
   expect(getAgent).toHaveBeenCalledWith('agent-1')
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ inputMappings: [{ name: 'query', type: 'string', label: 'Query', required: true, description: 'Question', source: 'constant', constantValue: 'hello' }] }))
   expect(setState).toHaveBeenCalledWith(false)
+})
+
+test('reconciles selected Agent inputs without losing compatible mappings or retaining stale fields', async () => {
+  const onConfigChange = mock(() => {})
+  getAgent.mockImplementation(async () => ({ variables: [
+    { name: 'topic', type: 'string', label: 'Topic', required: true, description: 'Current topic', default: '' },
+    { name: 'limit', type: 'number', label: 'Limit', required: false, description: '', default: 5 },
+  ] }))
+  render({
+    agentId: 'agent-1',
+    inputMappings: [
+      { name: 'topic', type: 'string', required: false, source: 'variable', variableRef: '{{start.topic}}', variableRefNodeLabel: 'Start' },
+      { name: 'removed', type: 'string', required: false, source: 'constant', constantValue: 'stale' },
+    ],
+    outputVariable: 'response',
+  }, { onConfigChange })
+
+  await Promise.all(effects.map(effect => effect()))
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    inputMappings: [
+      { name: 'topic', type: 'string', label: 'Topic', required: true, description: 'Current topic', source: 'variable', variableRef: '{{start.topic}}', variableRefNodeLabel: 'Start' },
+      { name: 'limit', type: 'number', label: 'Limit', required: false, description: undefined, source: 'constant', constantValue: 5 },
+    ],
+  }))
+})
+
+test('clears mappings when the selected Agent no longer declares inputs', async () => {
+  const onConfigChange = mock(() => {})
+  getAgent.mockImplementation(async () => ({ variables: [] }))
+  render({
+    agentId: 'agent-1',
+    inputMappings: [{ name: 'removed', type: 'string', required: false, source: 'constant', constantValue: 'stale' }],
+    outputVariable: 'response',
+  }, { onConfigChange })
+
+  await Promise.all(effects.map(effect => effect()))
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ inputMappings: [] }))
+})
+
+test('loads one upload mapping for an Agent with attachments enabled', async () => {
+  const onConfigChange = mock(() => {})
+  getAgent.mockImplementation(async () => ({ variables: [], enable_attachments: true }))
+  render({ agentId: 'agent-1', inputMappings: [], attachmentMappings: [], outputVariable: 'response' }, { onConfigChange })
+
+  await Promise.all(effects.map(effect => effect()))
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    attachmentMappings: [
+      { name: 'attachments', type: 'files', required: false, source: 'variable' },
+    ],
+  }))
+  expect(setState).toHaveBeenCalledWith(true)
 })

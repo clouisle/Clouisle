@@ -107,6 +107,34 @@ export function renderNodeOutput(
       )
     }
   }
+  if (nodeType === 'agent') {
+    const response = typeof outputs.response === 'string' ? outputs.response : ''
+    const detailEntries = [
+      ['dialogue', outputs.dialogue],
+      ['artifacts', outputs.artifacts],
+      ['toolCalls', outputs.toolCalls],
+      ['usage', outputs.usage],
+    ] as Array<[string, unknown]>
+    const visibleDetailEntries = detailEntries.filter(([, value]) => value !== undefined && value !== null)
+    return (
+      <div className="space-y-2">
+        {response && (
+          <div className="max-h-40 min-w-0 overflow-y-auto break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-sm">
+            {renderText ? renderText(response) : response}
+          </div>
+        )}
+        {visibleDetailEntries.map(([key, value]) => (
+          <div key={key} className="space-y-1">
+            <span className="text-[10px] font-mono text-muted-foreground">{key}</span>
+            <pre className="max-h-40 min-w-0 max-w-full overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded bg-background p-2 text-[10px] font-mono">
+              {JSON.stringify(value, null, 2)}
+            </pre>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
 
   if (nodeType === 'media_generation') {
     const result = outputs.result || outputs.output

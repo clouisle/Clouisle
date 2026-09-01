@@ -36,6 +36,9 @@ msgstr "Agent duplicated successfully"
 msgid "agent_name_exists"
 msgstr "Agent with this name already exists"
 
+msgid "agent_model_unavailable"
+msgstr "Configured agent model is unavailable"
+
 msgid "agent_not_found"
 msgstr "Agent not found"
 
