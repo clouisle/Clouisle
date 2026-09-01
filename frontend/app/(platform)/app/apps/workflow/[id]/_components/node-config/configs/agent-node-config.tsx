@@ -24,8 +24,10 @@ export interface AgentNodeConfig {
   agentName?: string            // Agent 名称（显示用）
   agentDescription?: string     // Agent 描述
   agentIcon?: string            // Agent 图标
-  // 输入参数映射 - 基于 Agent 的 variables
+  // Prompt-variable mappings declared by the Agent
   inputMappings: AgentInputMapping[]
+  // File/image upload mappings available when the Agent enables attachments
+  attachmentMappings?: AgentInputMapping[]
   // 消息输入来源
   messageSource: 'variable' | 'constant'
   messageVariableRef?: string   // 消息变量引用
@@ -104,6 +106,26 @@ function getAgentInputMappings(
   })
 }
 
+const AGENT_ATTACHMENT_MAPPINGS = [
+  { name: 'files', type: 'files' },
+  { name: 'images', type: 'images' },
+] as const
+
+export function getAgentAttachmentMappings(
+  enabled: boolean,
+  existingMappings: AgentInputMapping[],
+): AgentInputMapping[] {
+  if (!enabled) return []
+  const existingByName = new Map(existingMappings.map((mapping) => [mapping.name, mapping]))
+  return AGENT_ATTACHMENT_MAPPINGS.map((attachment) => {
+    const existing = existingByName.get(attachment.name)
+    const definition = { ...attachment, required: false }
+    return existing?.type === attachment.type
+      ? { ...existing, ...definition }
+      : { ...definition, source: 'variable' }
+  })
+}
+
 interface AgentNodeConfigProps {
   config: AgentNodeConfig
   variables: AvailableVariable[]
@@ -136,12 +158,15 @@ export function AgentNodeConfig({
   // Agent 选择弹窗
   const [agentSelectorOpen, setAgentSelectorOpen] = React.useState(false)
   const [agentSearch, setAgentSearch] = React.useState('')
+  const [attachmentInputsOpen, setAttachmentInputsOpen] = React.useState(true)
+  const [attachmentsEnabled, setAttachmentsEnabled] = React.useState(false)
 
   // 确保 config 有默认值
   const safeConfig: AgentNodeConfig = {
     ...defaultAgentNodeConfig,
     ...config,
     inputMappings: config.inputMappings || [],
+    attachmentMappings: config.attachmentMappings || [],
   }
 
   // 加载 Agent 列表
@@ -170,19 +195,24 @@ export function AgentNodeConfig({
   React.useEffect(() => {
     const loadAgentDetail = async () => {
       if (!safeConfig.agentId) {
+        setAttachmentsEnabled(false)
         return
       }
 
       try {
         const detail = await agentsApi.getAgent(safeConfig.agentId)
-        
-        const mappings = getAgentInputMappings(
-          detail.variables || [],
-          safeConfig.inputMappings,
-        )
+        const attachmentsEnabled = detail.enable_attachments === true
+        setAttachmentsEnabled(attachmentsEnabled)
         onConfigChange({
           ...safeConfig,
-          inputMappings: mappings,
+          inputMappings: getAgentInputMappings(
+            detail.variables || [],
+            safeConfig.inputMappings,
+          ),
+          attachmentMappings: getAgentAttachmentMappings(
+            attachmentsEnabled,
+            safeConfig.attachmentMappings || [],
+          ),
         })
       } catch {
         // ignore error
@@ -209,13 +239,15 @@ export function AgentNodeConfig({
 
   // 选择 Agent
   const handleSelectAgent = (agent: AgentListItem) => {
+    setAttachmentsEnabled(false)
     onConfigChange({
       ...safeConfig,
       agentId: agent.id,
       agentName: agent.name,
       agentDescription: agent.description || undefined,
       agentIcon: agent.icon || agent.avatar_url || undefined,
-      inputMappings: [], // 清空之前的映射，等待加载详情后自动填充
+      inputMappings: [],
+      attachmentMappings: [],
     })
     setAgentSelectorOpen(false)
     setAgentSearch('')
@@ -235,6 +267,15 @@ export function AgentNodeConfig({
       ...safeConfig,
       inputMappings: safeConfig.inputMappings.map(m =>
         m.name === name ? { ...m, ...updates } : m
+      ),
+    })
+  }
+
+  const handleUpdateAttachmentMapping = (name: string, updates: Partial<AgentInputMapping>) => {
+    onConfigChange({
+      ...safeConfig,
+      attachmentMappings: (safeConfig.attachmentMappings || []).map((mapping) =>
+        mapping.name === name ? { ...mapping, ...updates } : mapping,
       ),
     })
   }
@@ -647,6 +688,49 @@ export function AgentNodeConfig({
                 )}
               </div>
             ))}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {/* 上传附件映射 */}
+      {selectedAgent && attachmentsEnabled && safeConfig.attachmentMappings?.length && (
+        <Collapsible open={attachmentInputsOpen} onOpenChange={setAttachmentInputsOpen}>
+          <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium w-full py-1">
+            <ChevronDown className={cn(
+              'h-3.5 w-3.5 transition-transform',
+              !attachmentInputsOpen && '-rotate-90',
+            )} />
+            <span>{t('configAgent.attachmentInputs')}</span>
+            <span className="text-muted-foreground ml-1">({safeConfig.attachmentMappings.length})</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2 space-y-2">
+            <p className="text-[10px] text-muted-foreground">{t('configAgent.attachmentInputsDesc')}</p>
+            {safeConfig.attachmentMappings.map((mapping) => {
+              const label = mapping.name === 'files'
+                ? t('configAgent.attachmentFiles')
+                : t('configAgent.attachmentImages')
+              return (
+                <div key={mapping.name} className="bg-muted/30 rounded-lg p-2.5 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium">{label}</span>
+                    <span className="text-[10px] text-muted-foreground">{mapping.type}</span>
+                  </div>
+                  {renderVariableSelector(
+                    `attachment-${mapping.name}`,
+                    mapping.variableRef,
+                    mapping.variableRefNodeLabel,
+                    (variableRef, label) => {
+                      handleUpdateAttachmentMapping(mapping.name, {
+                        source: 'variable',
+                        variableRef,
+                        variableRefNodeLabel: label,
+                        constantValue: undefined,
+                      })
+                    },
+                  )}
+                </div>
+              )
+            })}
           </CollapsibleContent>
         </Collapsible>
       )}

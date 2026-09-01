@@ -18,6 +18,7 @@
   - [x] 3. Workflow output contracts and presentation
   - [x] 4. Regression coverage and cleanup
   - [x] 5. Agent-selected variable contract correction
+  - [x] 6. Agent attachment input mappings
 - **workflow-log-tracing** — Complete. Persisted workflow logs now present ordered, expandable node traces with the same typed output renderer as test runs. See `docs/plan/workflow-log-tracing.md`
   - [x] 1. Persisted trace contract review
   - [x] 2. Historical trace presentation

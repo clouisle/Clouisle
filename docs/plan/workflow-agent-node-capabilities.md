@@ -54,6 +54,12 @@ The existing workflow run node output surface already renders arbitrary node out
 - **Specific logic**: Treat the selected Agent's declared variables as the node's dynamic input contract; preserve compatible user mappings while removing stale fields. Keep the selected Agent's output contract fixed to `response`, `toolCalls`, `usage`, `dialogue`, and `artifacts`, and add the configured response alias only when distinct. Reuse one declaration helper in the node configuration and downstream variable picker.
 - **Validation**: Focused tests cover input replacement/preservation, empty Agent variables, fixed output declarations, aliases, and duplicate prevention; run TypeScript, ESLint, i18n lint, and diff checks.
 
+### Stage 6: Agent attachment input mappings
+- **Status**: Complete
+- **Files modified**: `frontend/app/(platform)/app/apps/workflow/[id]/_components/node-config/configs/agent-node-config.tsx`, `backend/app/services/workflow/executors/tool.py`, their focused tests, and workflow translations.
+- **Specific logic**: When a selected Agent enables attachments, declare fixed `files` and `images` attachment mappings separate from its declared prompt variables. Preserve compatible mappings across refreshes, resolve them separately from normal context inputs, and pass them to the shared AgentService as files and images.
+- **Validation**: Focused frontend configuration tests and workflow executor tests cover enabled/disabled attachment contracts and mapped file/image delivery; run TypeScript, lint, i18n lint, and diff checks.
+
 ## Testing Strategy
 
 - Happy path: text-only Agent, image input, file input, multiple attachments, configured Agent model, tool call plus artifact result, stream and non-stream execution.

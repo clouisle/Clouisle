@@ -226,16 +226,16 @@ class TestAgentNodeExecutorBehavior:
                     "agentId": "agent-1",
                     "messageSource": "variable",
                     "messageVariableRef": "{{start.message}}",
-                    "inputMappings": [
+                    "attachmentMappings": [
                         {
-                            "name": "image",
-                            "type": "image",
+                            "name": "images",
+                            "type": "images",
                             "source": "variable",
                             "variableRef": "{{start.image}}",
                         },
                         {
-                            "name": "file",
-                            "type": "file",
+                            "name": "files",
+                            "type": "files",
                             "source": "variable",
                             "variableRef": "{{start.file}}",
                         },
@@ -280,11 +280,10 @@ class TestAgentNodeExecutorBehavior:
             "data": {
                 "agentConfig": {
                     "agentId": "agent-1",
-                    "message": "Describe this",
-                    "inputMappings": [
+                    "attachmentMappings": [
                         {
-                            "name": "image",
-                            "type": "image",
+                            "name": "images",
+                            "type": "images",
                             "source": "variable",
                             "variableRef": "{{start.image}}",
                         }

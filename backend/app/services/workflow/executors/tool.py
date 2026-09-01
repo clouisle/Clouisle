@@ -202,7 +202,9 @@ class AgentNodeExecutor(NodeExecutor):
             or config.get("parameterMappings")
             or config.get("context", [])
         )
+        attachment_mappings = config.get("attachmentMappings") or []
         resolved = await self.resolve_inputs(context, mappings)
+        resolved_attachments = await self.resolve_inputs(context, attachment_mappings)
 
         images: list[Any] = []
         files: list[Any] = []
@@ -224,6 +226,21 @@ class AgentNodeExecutor(NodeExecutor):
                 files.extend(item for item in values if item is not None)
             else:
                 agent_context[name] = value
+        for mapping in attachment_mappings:
+            name = mapping.get("name") if isinstance(mapping, dict) else None
+            if not name or name not in resolved_attachments:
+                continue
+            value = resolved_attachments[name]
+            value_type = (
+                str(mapping.get("type", "")).lower()
+                if isinstance(mapping, dict)
+                else ""
+            )
+            values = value if isinstance(value, list) else [value]
+            if value_type in {"image", "images"}:
+                images.extend(item for item in values if item is not None)
+            elif value_type in {"file", "files"}:
+                files.extend(item for item in values if item is not None)
 
         try:
             agent_service = AgentService()
