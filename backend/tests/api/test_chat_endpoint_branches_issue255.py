@@ -1,5 +1,4 @@
-import sys
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -186,43 +185,6 @@ async def test_build_message_round_payloads_skips_steps_and_attaches_them(monkey
         {"role": "user"},
         {"role": "assistant", "steps": [{"content": "tool result"}]},
     ]
-
-
-def test_enqueue_session_memory_honors_config_and_logs_enqueue_failure(
-    monkeypatch,
-):
-    conversation = SimpleNamespace(id=uuid4())
-    message = SimpleNamespace(id=uuid4())
-    task = SimpleNamespace(delay=MagicMock(side_effect=RuntimeError("broker down")))
-    task_module = ModuleType("app.tasks.session_memory")
-    task_module.extract_session_memory_task = task
-    monkeypatch.setitem(sys.modules, "app.tasks.session_memory", task_module)
-    monkeypatch.setattr(
-        chat,
-        "get_context_compression_config",
-        MagicMock(return_value={"session_memory_enabled": False}),
-    )
-
-    chat.enqueue_session_memory_extraction(SimpleNamespace(), conversation, message)
-    task.delay.assert_not_called()
-
-    monkeypatch.setattr(
-        chat,
-        "get_context_compression_config",
-        MagicMock(
-            return_value={
-                "session_memory_enabled": True,
-                "session_memory_async_extract": True,
-            }
-        ),
-    )
-    warning = MagicMock()
-    monkeypatch.setattr(chat.logger, "warning", warning)
-
-    chat.enqueue_session_memory_extraction(SimpleNamespace(), conversation, message)
-
-    task.delay.assert_called_once_with(str(conversation.id), str(message.id))
-    warning.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -125,9 +125,12 @@ def test_message_count_covers_text_media_names_and_tool_structures() -> None:
 
     assert (
         token_counter.count_message_tokens(messages, include_tool_calls=True)
-        == expected
+        == expected + token_counter.IMAGE_TOKEN_ESTIMATE
     )
-    assert token_counter.count_message_tokens(messages) == expected - tool_call_tokens
+    assert (
+        token_counter.count_message_tokens(messages)
+        == expected + token_counter.IMAGE_TOKEN_ESTIMATE - tool_call_tokens
+    )
 
 
 def test_tool_definition_count_serializes_pydantic_schema() -> None:
@@ -151,9 +154,12 @@ def test_message_count_handles_empty_and_sparse_messages() -> None:
 
     assert token_counter.count_message_tokens([]) == 3
     assert token_counter.count_message_tokens([{}]) == 6
-    assert token_counter.count_message_tokens(
-        [{"role": "user", "content": [None, 7, {}, {"type": "image_url"}]}]
-    ) == 6 + len(encoding.encode("user"))
+    assert (
+        token_counter.count_message_tokens(
+            [{"role": "user", "content": [None, 7, {}, {"type": "image_url"}]}]
+        )
+        == 6 + len(encoding.encode("user")) + token_counter.IMAGE_TOKEN_ESTIMATE
+    )
 
 
 def test_count_tokens_logs_and_estimates_when_tokenizer_fails(caplog) -> None:
@@ -208,7 +214,11 @@ def test_message_fallback_extracts_only_text_content(caplog) -> None:
     with patch.object(
         token_counter, "get_encoding_for_model", side_effect=RuntimeError("offline")
     ):
-        assert token_counter.count_message_tokens(messages) == 3
+        # Image placeholders count toward the model budget at IMAGE_TOKEN_ESTIMATE.
+        assert (
+            token_counter.count_message_tokens(messages)
+            == (8 + 4 + token_counter.IMAGE_TOKEN_ESTIMATE * 4) // 4
+        )
 
     assert caplog.messages == ["Message token counting failed, using fallback: offline"]
 

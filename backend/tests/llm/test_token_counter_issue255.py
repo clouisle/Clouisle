@@ -57,7 +57,10 @@ def test_counts_message_fields_text_parts_and_name_overhead(encoding: Mock) -> N
         },
     ]
 
-    assert token_counter.count_message_tokens(messages) == 36
+    assert (
+        token_counter.count_message_tokens(messages)
+        == 36 + token_counter.IMAGE_TOKEN_ESTIMATE
+    )
 
 
 def test_message_fallback_counts_only_text_content(
@@ -81,7 +84,10 @@ def test_message_fallback_counts_only_text_content(
         {},
     ]
 
-    assert token_counter.count_message_tokens(messages) == 2
+    assert (
+        token_counter.count_message_tokens(messages)
+        == 2 + token_counter.IMAGE_TOKEN_ESTIMATE
+    )
 
 
 @pytest.mark.parametrize(("char_count", "expected"), [(0, 1), (3, 1), (8, 2)])

@@ -8,7 +8,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -17,17 +17,8 @@ from PIL import Image, UnidentifiedImageError
 
 from app.llm.errors import ContextLengthError
 from app.llm.adapters.media_utils import parse_image_data_url
-from app.llm.token_counter import count_message_tokens
-from app.services.context_compaction import (
-    DEFAULT_ACTIVE_TOOL_RESULT_MAX_TOKENS,
-    DEFAULT_ACTIVE_TOOL_SUMMARY_MAX_TOKENS,
-    DEFAULT_ACTIVE_TOOL_TARGET_RATIO,
-    DEFAULT_REASONING_MAX_TOKENS,
-    compact_active_tool_messages,
-    fit_tool_results_to_budget,
-    normalize_message_content,
-    truncate_text_to_tokens,
-)
+from app.llm.token_counter import count_message_tokens, count_tokens
+from app.schemas.response import BusinessError
 from app.llm.types import (
     ContentPart,
     ContentType,
@@ -40,7 +31,6 @@ from app.llm.types import (
 from app.models.agent import (
     Agent,
     Conversation,
-    ConversationContextCheckpoint,
     Message as ConversationMessage,
     MessageRole as ConversationMessageRole,
 )
@@ -87,72 +77,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONTEXT_LIMIT = 32000
 DEFAULT_OUTPUT_TOKEN_RESERVE = 4000
 DEFAULT_SAFETY_MARGIN_TOKENS = 1000
-DEFAULT_RECENT_REASONING_MESSAGES = 2
-DEFAULT_RECENT_RAW_TURNS = 3
-DEFAULT_RECENT_TOOL_TURNS = 2
 DEFAULT_SUMMARY_MAX_TOKENS = 1000
-DEFAULT_SUMMARY_MAX_CHARS = DEFAULT_SUMMARY_MAX_TOKENS * 4
-DEFAULT_BLOCK_SUMMARY_CHARS = 320
-DEFAULT_CHECKPOINT_TARGET_RATIO = 0.6
-DEFAULT_CHECKPOINT_KEEP_RECENT_RATIO = 0.35
-DEFAULT_CHECKPOINT_MIN_NEW_TURNS = 2
-DEFAULT_AUTO_COMPACT_TRIGGER_RATIO = 0.8
-DEFAULT_BLOCKING_RATIO = 0.92
-DEFAULT_WARNING_RATIO = 0.7
-DEFAULT_COMPACTION_POLICY = "staged"
-DEFAULT_RETENTION_STRATEGY = "recent_raw_and_tool_first"
-DEFAULT_KEEP_RECENT_TOOL_RESULTS = 2
-DEFAULT_KEEP_RECENT_TOOL_RESULT_MINUTES = 20
-DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS = 256
-DEFAULT_SESSION_MEMORY_MAX_TOKENS = 400
-DEFAULT_SESSION_MEMORY_MIN_TURNS = 4
-DEFAULT_SESSION_MEMORY_FAILURE_THRESHOLD = 3
-DEFAULT_SESSION_MEMORY_COOLDOWN_SECONDS = 600
-AGGRESSIVE_RECENT_REASONING_MESSAGES = 0
-AGGRESSIVE_RECENT_RAW_TURNS = 2
-AGGRESSIVE_RECENT_TOOL_TURNS = 1
-AGGRESSIVE_SUMMARY_MAX_CHARS = 2400
-DEFAULT_FILE_CONTENT_MAX_TOKENS = 6_000
-AGGRESSIVE_BLOCK_SUMMARY_CHARS = 220
-DEFAULT_FILE_CONTENT_HEAD_CHARS = 12000
-DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
+DEFAULT_SUMMARY_TRIGGER_RATIO = 0.9
+DEFAULT_SUMMARY_RESERVE_RATIO = 0.15
+DEFAULT_RECENT_TAIL_TOKENS = 20000
+# Minimum tokens kept verbatim after the summary when the window is small.
+MIN_RECENT_TAIL_TOKENS = 0
+CONTEXT_SUMMARY_TIMEOUT_SECONDS = 180.0
+CONTEXT_SUMMARY_MAX_ATTEMPTS = 3
+CONTEXT_SUMMARY_RETRY_DELAY_SECONDS = 2.0
+CONTEXT_SUMMARY_PREFIX = (
+    "Earlier conversation summary (older history was replaced by this summary):"
+)
 DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "enabled": True,
-    "micro_compaction_enabled": True,
-    "macro_compaction_enabled": True,
-    "preflight_guard_enabled": True,
-    "reactive_retry_enabled": True,
-    "recent_raw_turns": DEFAULT_RECENT_RAW_TURNS,
-    "recent_tool_turns": DEFAULT_RECENT_TOOL_TURNS,
-    "output_token_reserve": DEFAULT_OUTPUT_TOKEN_RESERVE,
-    "safety_margin_tokens": DEFAULT_SAFETY_MARGIN_TOKENS,
     "summary_max_tokens": DEFAULT_SUMMARY_MAX_TOKENS,
-    "drop_historical_reasoning_first": True,
     "emit_sse_events": True,
-    "warning_ratio": DEFAULT_WARNING_RATIO,
-    "auto_compact_trigger_ratio": DEFAULT_AUTO_COMPACT_TRIGGER_RATIO,
-    "blocking_ratio": DEFAULT_BLOCKING_RATIO,
-    "macro_on_trigger": False,
-    "retention_strategy": DEFAULT_RETENTION_STRATEGY,
-    "keep_recent_tool_results": DEFAULT_KEEP_RECENT_TOOL_RESULTS,
-    "keep_recent_tool_result_minutes": DEFAULT_KEEP_RECENT_TOOL_RESULT_MINUTES,
-    "tool_result_compact_min_tokens": DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
-    "active_tool_compaction_enabled": True,
-    "file_content_max_tokens": DEFAULT_FILE_CONTENT_MAX_TOKENS,
-    "checkpoint_keep_recent_ratio": DEFAULT_CHECKPOINT_KEEP_RECENT_RATIO,
-    "reasoning_max_tokens": DEFAULT_REASONING_MAX_TOKENS,
-    "active_tool_target_ratio": DEFAULT_ACTIVE_TOOL_TARGET_RATIO,
-    "active_tool_result_max_tokens": DEFAULT_ACTIVE_TOOL_RESULT_MAX_TOKENS,
-    "active_tool_summary_max_tokens": DEFAULT_ACTIVE_TOOL_SUMMARY_MAX_TOKENS,
-    "checkpoint_summary_enabled": True,
-    "checkpoint_target_ratio": DEFAULT_CHECKPOINT_TARGET_RATIO,
-    "checkpoint_min_new_turns": DEFAULT_CHECKPOINT_MIN_NEW_TURNS,
-    "session_memory_enabled": True,
-    "session_memory_async_extract": True,
-    "session_memory_max_tokens": DEFAULT_SESSION_MEMORY_MAX_TOKENS,
-    "session_memory_min_turns": DEFAULT_SESSION_MEMORY_MIN_TURNS,
-    "session_memory_failure_threshold": DEFAULT_SESSION_MEMORY_FAILURE_THRESHOLD,
-    "session_memory_cooldown_seconds": DEFAULT_SESSION_MEMORY_COOLDOWN_SECONDS,
 }
 
 
@@ -165,78 +105,32 @@ class TokenBudget:
 
 
 @dataclass(slots=True)
-class CompressionThresholds:
-    warning_input_budget: int
-    trigger_input_budget: int
-    blocking_input_budget: int
+class PreparedModelContext:
+    messages: list[Message]
+    token_budget: TokenBudget
+    compression: CompressionMeta
+    protected_indexes: set[int] = field(default_factory=set)
 
 
 @dataclass(slots=True)
 class CompressionMeta:
-    stage: Literal["none", "micro", "macro", "reactive_retry"]
+    stage: Literal["none", "macro"]
     before_tokens: int
     after_tokens: int
     input_budget: int
-    reasoning_trimmed: bool = False
-    tool_results_trimmed: bool = False
-    file_content_trimmed: bool = False
     summary_turns: int = 0
-    pressure_level: Literal[
-        "normal", "warning", "auto_compact", "blocking", "over_budget"
-    ] = "normal"
-    trigger_ratio: float = 1.0
-    warning_ratio: float = DEFAULT_WARNING_RATIO
-    blocking_ratio: float = DEFAULT_BLOCKING_RATIO
-    trigger_budget: int = 0
-    hard_budget: int = 0
+    pressure_level: Literal["normal", "auto_compact", "over_budget"] = "normal"
+    trigger_ratio: float = DEFAULT_SUMMARY_TRIGGER_RATIO
     utilization_before: float = 0.0
     utilization_after: float = 0.0
-    policy_used: str = DEFAULT_COMPACTION_POLICY
+    policy_used: str = "preflight_summary"
     actions: list[str] | None = None
-    retained_recent_turns: int = 0
-    retained_tool_turns: int = 0
-    compacted_blocks: int = 0
-    session_memory_compacted: bool = False
     context_limit: int = 0
     output_reserve: int = 0
     safety_margin: int = 0
-    active_tool_tokens: int = 0
-    target_budget: int = 0
-    keep_recent_budget: int = 0
-    segment_tokens: dict[str, int] = field(default_factory=dict)
-
-
-def _merge_compression_meta(
-    baseline: CompressionMeta,
-    current: CompressionMeta,
-) -> CompressionMeta:
-    actions = list(dict.fromkeys([*(baseline.actions or []), *(current.actions or [])]))
-    return replace(
-        current,
-        stage=(baseline.stage if current.stage == "none" else current.stage),
-        before_tokens=max(baseline.before_tokens, current.before_tokens),
-        reasoning_trimmed=baseline.reasoning_trimmed or current.reasoning_trimmed,
-        tool_results_trimmed=(
-            baseline.tool_results_trimmed or current.tool_results_trimmed
-        ),
-        file_content_trimmed=(
-            baseline.file_content_trimmed or current.file_content_trimmed
-        ),
-        summary_turns=baseline.summary_turns + current.summary_turns,
-        utilization_before=baseline.utilization_before,
-        policy_used=current.policy_used or baseline.policy_used,
-        actions=actions,
-        context_limit=current.context_limit or baseline.context_limit,
-        output_reserve=current.output_reserve or baseline.output_reserve,
-        safety_margin=current.safety_margin or baseline.safety_margin,
-        active_tool_tokens=max(baseline.active_tool_tokens, current.active_tool_tokens),
-        target_budget=current.target_budget or baseline.target_budget,
-        keep_recent_budget=current.keep_recent_budget or baseline.keep_recent_budget,
-        segment_tokens=current.segment_tokens or baseline.segment_tokens,
-        session_memory_compacted=(
-            baseline.session_memory_compacted or current.session_memory_compacted
-        ),
-    )
+    summary_source_tokens: int = 0
+    summary_result_tokens: int = 0
+    summary_saved_tokens: int = 0
 
 
 def _history_override_is_active_delta(
@@ -259,23 +153,6 @@ def _history_override_is_active_delta(
     )
 
 
-@dataclass(slots=True)
-class PreparedModelContext:
-    messages: list[Message]
-    token_budget: TokenBudget
-    compression: CompressionMeta
-    protected_indexes: set[int] = field(default_factory=set)
-
-
-def _clone_messages(
-    messages: Sequence[Message],
-    protected_indexes: set[int] | None = None,
-) -> tuple[list[Message], set[int]]:
-    return [message.model_copy(deep=True) for message in messages], {
-        index for index in (protected_indexes or set()) if 0 <= index < len(messages)
-    }
-
-
 def _matches_protected_round(
     round_id: Any,
     protected_round_id: UUID | str | None,
@@ -293,27 +170,41 @@ def _append_message(
     message: Message,
     *,
     protect: bool = False,
+    meta: list[dict[str, Any]] | None = None,
+    round_id: UUID | str | None = None,
+    round_role: str | None = None,
+    is_round_canonical: bool | None = None,
+    tool_call_id: str | None = None,
+    tool_calls: Any = None,
+    source_role: str | None = None,
+    source_message_id: Any = None,
+    **extra: Any,
 ) -> None:
+    """Append a flattened message.
+
+    When ``meta`` is provided it records round/protocol metadata (parallel to
+    ``messages``) that turn-aware compaction uses to select safe cut points.
+    """
     messages.append(message)
+    index = len(messages) - 1
     if protect:
-        protected_indexes.add(len(messages) - 1)
-
-
-def _extend_with_original_indexes(
-    target_messages: list[Message],
-    target_protected_indexes: set[int],
-    source_messages: Sequence[Message],
-    original_indexes: Sequence[int],
-    protected_indexes: set[int] | None = None,
-) -> None:
-    protected_indexes = protected_indexes or set()
-    for message, original_index in zip(source_messages, original_indexes, strict=False):
-        _append_message(
-            target_messages,
-            target_protected_indexes,
-            message.model_copy(deep=True),
-            protect=original_index in protected_indexes,
-        )
+        protected_indexes.add(index)
+    if meta is not None:
+        entry: dict[str, Any] = {
+            "index": index,
+            "role": message.role.value
+            if hasattr(message.role, "value")
+            else str(message.role),
+            "round_id": round_id,
+            "round_role": round_role,
+            "is_round_canonical": is_round_canonical,
+            "tool_call_id": tool_call_id,
+            "tool_calls": tool_calls,
+            "source_role": source_role,
+            "source_message_id": source_message_id,
+        }
+        entry.update(extra)
+        meta.append(entry)
 
 
 def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, str]:
@@ -446,48 +337,6 @@ def summarize_tool_result_for_llm(
         or _build_skill_llm_summary(payload)
         or stored_content
     )
-
-
-def _trim_file_content(
-    file_content: str | None,
-    aggressive: bool = False,
-) -> tuple[str | None, bool]:
-    head_chars = (
-        DEFAULT_FILE_CONTENT_HEAD_CHARS
-        if not aggressive
-        else max(DEFAULT_FILE_CONTENT_HEAD_CHARS // 2, 1)
-    )
-    tail_chars = (
-        DEFAULT_FILE_CONTENT_TAIL_CHARS
-        if not aggressive
-        else max(DEFAULT_FILE_CONTENT_TAIL_CHARS // 2, 1)
-    )
-    if not file_content or len(file_content) <= (head_chars + tail_chars):
-        return file_content, False
-
-    head = file_content[:head_chars].rstrip()
-    tail = file_content[-tail_chars:].lstrip()
-    trimmed = f"{head}\n\n[... file content trimmed for context budget ...]\n\n{tail}"
-    return trimmed, True
-
-
-def _normalize_file_content_for_budget(
-    file_content: str | None,
-    *,
-    max_tokens: int,
-    model_id: str | None,
-    provider: str | None,
-) -> tuple[str | None, bool]:
-    if not file_content:
-        return file_content, False
-    normalized, changed = truncate_text_to_tokens(
-        file_content,
-        max_tokens=max_tokens,
-        model_id=model_id or "",
-        provider=provider,
-        marker="\n\n[... file content truncated for context budget ...]\n\n",
-    )
-    return normalized, changed
 
 
 def _normalize_text(value: str | None) -> str:
@@ -656,68 +505,21 @@ def _message_to_token_payload(message: Message) -> dict[str, Any]:
 
 
 def _estimate_message_tokens(
-    messages: Sequence[Message], model_id: str, provider: str | None
+    messages: Sequence[Message], model_id: str | None, provider: str | None
 ) -> int:
     payload = [_message_to_token_payload(message) for message in messages]
-    return count_message_tokens(payload, model_id=model_id, provider=provider)
-
-
-def _context_segment_tokens(
-    messages: Sequence[Message],
-    *,
-    model_id: str,
-    provider: str | None,
-) -> dict[str, int]:
-    """Return non-overlapping message token totals for budget diagnostics."""
-    segments = {
-        "system": 0,
-        "checkpoint": 0,
-        "historical": 0,
-        "current_user": 0,
-        "active_tool": 0,
-        "other": 0,
-        "total": _estimate_message_tokens(
-            messages, model_id=model_id, provider=provider
-        ),
-    }
-    last_user_index = max(
-        (
-            index
-            for index, message in enumerate(messages)
-            if message.role == MessageRole.USER
-        ),
-        default=-1,
+    return count_message_tokens(
+        payload,
+        model_id=model_id,
+        provider=provider,
+        include_tool_calls=True,
     )
-    for index, message in enumerate(messages):
-        message_tokens = _estimate_message_tokens(
-            [message], model_id=model_id, provider=provider
-        )
-        content = message.content if isinstance(message.content, str) else ""
-        if message.role == MessageRole.SYSTEM:
-            segment = "system"
-        elif index == last_user_index and message.role == MessageRole.USER:
-            segment = "current_user"
-        elif index > last_user_index and message.role in {
-            MessageRole.ASSISTANT,
-            MessageRole.TOOL,
-        }:
-            segment = "active_tool"
-        elif content.startswith(
-            ("Context checkpoint summary:", "Compressed earlier conversation summary:")
-        ):
-            segment = "checkpoint"
-        elif index < last_user_index:
-            segment = "historical"
-        else:
-            segment = "other"
-        segments[segment] += message_tokens
-    return segments
 
 
 def get_context_compression_config(agent: Agent) -> dict[str, Any]:
     """Get agent context compression config merged with defaults."""
     config = dict(DEFAULT_CONTEXT_COMPRESSION_CONFIG)
-    raw_config = agent.context_compression_config or {}
+    raw_config = getattr(agent, "context_compression_config", None) or {}
     if isinstance(raw_config, dict):
         config.update(raw_config)
     return config
@@ -748,367 +550,6 @@ def _build_token_budget(
     )
 
 
-def _build_compression_thresholds(
-    *,
-    token_budget: TokenBudget,
-    warning_ratio: float,
-    trigger_ratio: float,
-    blocking_ratio: float,
-) -> CompressionThresholds:
-    input_budget = token_budget.input_budget
-    return CompressionThresholds(
-        warning_input_budget=max(
-            1, min(int(input_budget * warning_ratio), input_budget)
-        ),
-        trigger_input_budget=max(
-            1, min(int(input_budget * trigger_ratio), input_budget)
-        ),
-        blocking_input_budget=max(
-            1, min(int(input_budget * blocking_ratio), input_budget)
-        ),
-    )
-
-
-def _assess_context_pressure(
-    *,
-    before_tokens: int,
-    token_budget: TokenBudget,
-    thresholds: CompressionThresholds,
-) -> Literal["normal", "warning", "auto_compact", "blocking", "over_budget"]:
-    if before_tokens > token_budget.input_budget:
-        return "over_budget"
-    if before_tokens >= thresholds.blocking_input_budget:
-        return "blocking"
-    if before_tokens >= thresholds.trigger_input_budget:
-        return "auto_compact"
-    if before_tokens >= thresholds.warning_input_budget:
-        return "warning"
-    return "normal"
-
-
-def _compact_message_reasoning(
-    messages: Sequence[Message],
-    keep_recent_reasoning_messages: int = DEFAULT_RECENT_REASONING_MESSAGES,
-    protected_indexes: set[int] | None = None,
-) -> tuple[list[Message], bool, set[int]]:
-    kept_reasoning = 0
-    compacted: list[Message] = []
-    reasoning_trimmed = False
-    protected_indexes = protected_indexes or set()
-    compacted_protected_indexes: set[int] = set()
-
-    for original_index in range(len(messages) - 1, -1, -1):
-        message_copy = messages[original_index].model_copy(deep=True)
-        is_protected = original_index in protected_indexes
-        if (
-            message_copy.role == MessageRole.ASSISTANT
-            and message_copy.reasoning_content
-        ):
-            if is_protected or kept_reasoning < keep_recent_reasoning_messages:
-                if not is_protected:
-                    kept_reasoning += 1
-            else:
-                message_copy.reasoning_content = None
-                reasoning_trimmed = True
-        compacted.append(message_copy)
-        if is_protected:
-            compacted_protected_indexes.add(len(messages) - 1 - original_index)
-
-    compacted.reverse()
-    remapped_protected_indexes = {
-        len(messages) - 1 - reverse_index
-        for reverse_index in compacted_protected_indexes
-    }
-    return compacted, reasoning_trimmed, remapped_protected_indexes
-
-
-def _has_rich_media_context(message: Message) -> bool:
-    if isinstance(message.content, list):
-        return any(part.type == ContentType.IMAGE for part in message.content)
-    text = _stringify_content(message.content)
-    return FILE_CONTENT_PLACEHOLDER in text or "[image]" in text
-
-
-def _estimate_single_message_tokens(
-    message: Message,
-    *,
-    model_id: str,
-    provider: str | None,
-) -> int:
-    return _estimate_message_tokens([message], model_id=model_id, provider=provider)
-
-
-def _analyze_turn_block(
-    block: Sequence[Message],
-    *,
-    model_id: str,
-    provider: str | None,
-) -> dict[str, Any]:
-    contains_tool = _is_tool_turn(block)
-    contains_media = any(_has_rich_media_context(message) for message in block)
-    tool_token_total = 0
-    tool_messages = 0
-    for message in block:
-        if message.role == MessageRole.TOOL:
-            tool_messages += 1
-            tool_token_total += _estimate_single_message_tokens(
-                message,
-                model_id=model_id,
-                provider=provider,
-            )
-    return {
-        "contains_tool": contains_tool,
-        "contains_media": contains_media,
-        "tool_messages": tool_messages,
-        "tool_token_total": tool_token_total,
-    }
-
-
-def _should_keep_tool_result_raw(
-    *,
-    tool_result_index_from_end: int,
-    keep_recent_tool_results: int,
-) -> bool:
-    return tool_result_index_from_end < keep_recent_tool_results
-
-
-def _apply_selective_tool_result_compaction(
-    messages: Sequence[Message],
-    *,
-    model_id: str,
-    provider: str | None,
-    keep_recent_tool_results: int,
-    tool_result_compact_min_tokens: int,
-    recent_raw_turns: int,
-    recent_tool_turns: int,
-    protected_indexes: set[int] | None = None,
-) -> tuple[list[Message], bool, set[int]]:
-    prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
-    analyses = [
-        _analyze_turn_block(block, model_id=model_id, provider=provider)
-        for block in blocks
-    ]
-    protected_indexes = protected_indexes or set()
-
-    keep_block_indexes: set[int] = set(
-        range(max(len(blocks) - recent_raw_turns, 0), len(blocks))
-    )
-    for index, analysis in enumerate(analyses):
-        if analysis["contains_media"]:
-            keep_block_indexes.add(index)
-        if any(
-            message_index in protected_indexes for message_index in block_indexes[index]
-        ):
-            keep_block_indexes.add(index)
-
-    tool_turns_kept = 0
-    for index in range(len(blocks) - 1, -1, -1):
-        if analyses[index]["contains_tool"] and index not in keep_block_indexes:
-            keep_block_indexes.add(index)
-            tool_turns_kept += 1
-            if tool_turns_kept >= recent_tool_turns:
-                break
-
-    tool_positions_from_end: dict[tuple[int, int], int] = {}
-    tool_result_index_from_end = 0
-    for block_index in range(len(blocks) - 1, -1, -1):
-        block = blocks[block_index]
-        for message_index in range(len(block) - 1, -1, -1):
-            message = block[message_index]
-            if message.role == MessageRole.TOOL and isinstance(message.content, str):
-                tool_positions_from_end[(block_index, message_index)] = (
-                    tool_result_index_from_end
-                )
-                tool_result_index_from_end += 1
-
-    compacted: list[Message] = []
-    compacted_protected_indexes: set[int] = set()
-    _extend_with_original_indexes(
-        compacted,
-        compacted_protected_indexes,
-        prefix,
-        prefix_indexes,
-        protected_indexes,
-    )
-    tool_results_trimmed = False
-    for block_index, block in enumerate(blocks):
-        keep_block_raw = block_index in keep_block_indexes
-        for message_index, message in enumerate(block):
-            original_index = block_indexes[block_index][message_index]
-            message_copy = message.model_copy(deep=True)
-            if (
-                original_index not in protected_indexes
-                and not keep_block_raw
-                and message_copy.role == MessageRole.TOOL
-                and isinstance(message_copy.content, str)
-            ):
-                tool_result_index = tool_positions_from_end.get(
-                    (block_index, message_index), 999999
-                )
-                should_keep_raw = _should_keep_tool_result_raw(
-                    tool_result_index_from_end=tool_result_index,
-                    keep_recent_tool_results=keep_recent_tool_results,
-                )
-                estimated_tokens = _estimate_single_message_tokens(
-                    message_copy,
-                    model_id=model_id,
-                    provider=provider,
-                )
-                if (
-                    not should_keep_raw
-                    and estimated_tokens >= tool_result_compact_min_tokens
-                ):
-                    summarized = summarize_tool_result_for_llm(
-                        None, message_copy.content
-                    )
-                    if summarized != message_copy.content:
-                        message_copy.content = summarized
-                        tool_results_trimmed = True
-                    elif len(message_copy.content) > 1200:
-                        message_copy.content = _truncate_text(
-                            message_copy.content, 1200
-                        )
-                        tool_results_trimmed = True
-            _append_message(
-                compacted,
-                compacted_protected_indexes,
-                message_copy,
-                protect=original_index in protected_indexes,
-            )
-
-    return compacted, tool_results_trimmed, compacted_protected_indexes
-
-
-async def _apply_session_memory_compaction(
-    messages: Sequence[Message],
-    *,
-    conversation: Conversation,
-    model_id: str,
-    provider: str | None,
-    recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
-    recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
-    protected_indexes: set[int] | None = None,
-    before_created_at=None,
-) -> tuple[list[Message], bool, set[int]]:
-    """
-    Apply conversation-scoped session memory compaction.
-
-    Replaces older compactable turn blocks with a single assistant summary
-    derived from the stored session-memory snapshot, while preserving:
-    - System prompt
-    - Current user turn
-    - Recent raw turns
-    - Recent tool turns
-    - Media-rich blocks
-    """
-    from app.services.session_memory import get_ready_session_memory
-
-    protected_indexes = protected_indexes or set()
-    try:
-        snapshot = await get_ready_session_memory(conversation.id)
-        if not snapshot or not snapshot.summary_text or not snapshot.source_message_id:
-            cloned_messages, cloned_protected_indexes = _clone_messages(
-                messages, protected_indexes
-            )
-            return cloned_messages, False, cloned_protected_indexes
-        if not await is_message_on_active_branch(
-            conversation.id,
-            snapshot.source_message_id,
-            before_created_at=before_created_at,
-        ):
-            cloned_messages, cloned_protected_indexes = _clone_messages(
-                messages, protected_indexes
-            )
-            return cloned_messages, False, cloned_protected_indexes
-    except Exception as e:
-        logger.warning(
-            "Failed to retrieve session memory for conversation %s: %s",
-            conversation.id,
-            str(e),
-        )
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, False, cloned_protected_indexes
-
-    prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
-    if len(blocks) <= recent_raw_turns:
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, False, cloned_protected_indexes
-
-    analyses = [
-        _analyze_turn_block(block, model_id=model_id, provider=provider)
-        for block in blocks
-    ]
-
-    keep_indexes: set[int] = set(
-        range(max(len(blocks) - recent_raw_turns, 0), len(blocks))
-    )
-
-    for index in range(len(blocks) - 1, -1, -1):
-        if analyses[index]["contains_media"]:
-            keep_indexes.add(index)
-        if any(
-            message_index in protected_indexes for message_index in block_indexes[index]
-        ):
-            keep_indexes.add(index)
-
-    tool_kept = 0
-    for index in range(len(blocks) - 1, -1, -1):
-        if analyses[index]["contains_tool"] and index not in keep_indexes:
-            keep_indexes.add(index)
-            tool_kept += 1
-            if tool_kept >= recent_tool_turns:
-                break
-
-    summary_blocks = [
-        blocks[index] for index in range(len(blocks)) if index not in keep_indexes
-    ]
-    if not summary_blocks:
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, False, cloned_protected_indexes
-
-    compacted: list[Message] = []
-    compacted_protected_indexes: set[int] = set()
-    _extend_with_original_indexes(
-        compacted,
-        compacted_protected_indexes,
-        prefix,
-        prefix_indexes,
-        protected_indexes,
-    )
-    _append_message(
-        compacted,
-        compacted_protected_indexes,
-        Message(role=MessageRole.ASSISTANT, content=snapshot.summary_text),
-        protect=True,
-    )
-
-    for index, block in enumerate(blocks):
-        if index in keep_indexes:
-            _extend_with_original_indexes(
-                compacted,
-                compacted_protected_indexes,
-                block,
-                block_indexes[index],
-                protected_indexes,
-            )
-
-    if _estimate_message_tokens(
-        compacted, model_id=model_id, provider=provider
-    ) >= _estimate_message_tokens(messages, model_id=model_id, provider=provider):
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, False, cloned_protected_indexes
-
-    return compacted, True, compacted_protected_indexes
-
-
 async def _build_messages_with_file_content(
     *,
     agent: Agent,
@@ -1126,13 +567,22 @@ async def _build_messages_with_file_content(
     tool_timeouts: dict[str, Any] | None = None,
     user: Any = None,
     protected_round_id: UUID | str | None = None,
-    context_checkpoint: ConversationContextCheckpoint | None = None,
-) -> tuple[list[Message], set[int]]:
+    context_summary_text: str | None = None,
+    history_after_message_id: UUID | None = None,
+) -> tuple[list[Message], set[int], list[dict[str, Any]]]:
+    """Build the model-ready message list plus parallel round metadata.
+
+    The third return value is a ``meta`` list aligned with ``messages``; each
+    entry records the source round/protocol fields (round_id, round_role,
+    canonical flag, tool_call_id, source message id) needed by turn-aware
+    compaction to select cut points at complete round boundaries.
+    """
     active_round_delta = _history_override_is_active_delta(
         history_override, protected_round_id
     )
     messages: list[Message] = []
     protected_indexes: set[int] = set()
+    meta: list[dict[str, Any]] = []
     valid_tool_call_ids: set[str] = set()
     _append_message(
         messages,
@@ -1146,20 +596,18 @@ async def _build_messages_with_file_content(
                 user_locale=user_locale,
             ),
         ),
+        meta=meta,
     )
-    if (
-        (history_override is None or active_round_delta)
-        and context_checkpoint
-        and context_checkpoint.summary_text
-    ):
+    if context_summary_text:
         _append_message(
             messages,
             protected_indexes,
             Message(
-                role=MessageRole.ASSISTANT,
-                content=context_checkpoint.summary_text,
+                role=MessageRole.USER,
+                content=f"{CONTEXT_SUMMARY_PREFIX}\n\n{context_summary_text}",
             ),
-            protect=True,
+            meta=meta,
+            source_role="summary",
         )
 
     current_content = _append_file_content_to_user_content(
@@ -1199,6 +647,14 @@ async def _build_messages_with_file_content(
                     protected_indexes,
                     Message(role=MessageRole.USER, content=current_content),
                     protect=True,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": "user_input",
+                        "is_round_canonical": True,
+                        "source_role": "user",
+                        "source_message_id": None,
+                    },
                 )
                 current_user_inserted = True
             if role == "user":
@@ -1221,6 +677,16 @@ async def _build_messages_with_file_content(
                         ),
                     ),
                     protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": _get_override_value(hist_msg, "round_role"),
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "source_role": "user",
+                        "source_message_id": None,
+                    },
                 )
             elif role == "assistant":
                 tool_calls, new_tool_call_ids = _build_assistant_tool_calls(
@@ -1240,6 +706,17 @@ async def _build_messages_with_file_content(
                         tool_calls=tool_calls,
                     ),
                     protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": _get_override_value(hist_msg, "round_role"),
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "tool_calls": tool_calls,
+                        "source_role": "assistant",
+                        "source_message_id": None,
+                    },
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
@@ -1249,6 +726,7 @@ async def _build_messages_with_file_content(
                         protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
+                            name=_get_override_value(hist_msg, "tool_name"),
                             content=summarize_tool_result_for_llm(
                                 _get_override_value(hist_msg, "tool_name"),
                                 content or "",
@@ -1256,6 +734,17 @@ async def _build_messages_with_file_content(
                             tool_call_id=tool_call_id,
                         ),
                         protect=protect,
+                        meta=meta,
+                        **{
+                            "round_id": _get_override_value(hist_msg, "round_id"),
+                            "round_role": _get_override_value(hist_msg, "round_role"),
+                            "is_round_canonical": _get_override_value(
+                                hist_msg, "is_round_canonical"
+                            ),
+                            "tool_call_id": tool_call_id,
+                            "source_role": "tool",
+                            "source_message_id": None,
+                        },
                     )
         if not current_user_inserted and not has_current_round_user_in_override:
             _append_message(
@@ -1263,19 +752,23 @@ async def _build_messages_with_file_content(
                 protected_indexes,
                 Message(role=MessageRole.USER, content=current_content),
                 protect=protected_round_id is not None,
+                meta=meta,
+                round_role="user_input",
+                is_round_canonical=True,
+                source_role="user",
             )
-        return messages, protected_indexes
+        return messages, protected_indexes, meta
 
-    if context_checkpoint and context_checkpoint.covered_through_message_id:
-        checkpoint_history = await get_visible_conversation_messages_after(
+    if history_after_message_id:
+        after_history = await get_visible_conversation_messages_after(
             conversation.id,
-            after_message_id=context_checkpoint.covered_through_message_id,
+            after_message_id=history_after_message_id,
             before_created_at=history_before_message_created_at,
             exclude_message_ids=exclude_message_ids,
         )
         history = (
-            checkpoint_history
-            if checkpoint_history is not None
+            after_history
+            if after_history is not None
             else await get_visible_conversation_messages(
                 conversation.id,
                 before_created_at=history_before_message_created_at,
@@ -1321,6 +814,14 @@ async def _build_messages_with_file_content(
                         protected_indexes,
                         Message(role=MessageRole.USER, content=current_content),
                         protect=protect or protected_round_id is not None,
+                        meta=meta,
+                        round_id=msg.round_id,
+                        round_role=(
+                            msg.round_role.value if msg.round_role else "user_input"
+                        ),
+                        is_round_canonical=True,
+                        source_role="user",
+                        source_message_id=msg.id,
                     )
                     current_user_inserted = True
                 continue
@@ -1336,6 +837,12 @@ async def _build_messages_with_file_content(
                     ),
                 ),
                 protect=protect,
+                meta=meta,
+                round_id=msg.round_id,
+                round_role=(msg.round_role.value if msg.round_role else "user_input"),
+                is_round_canonical=True,
+                source_role="user",
+                source_message_id=msg.id,
             )
             continue
 
@@ -1352,6 +859,13 @@ async def _build_messages_with_file_content(
                     tool_calls=tool_calls,
                 ),
                 protect=protect,
+                meta=meta,
+                round_id=msg.round_id,
+                round_role=(msg.round_role.value if msg.round_role else None),
+                is_round_canonical=msg.is_round_canonical,
+                tool_calls=tool_calls,
+                source_role="assistant",
+                source_message_id=msg.id,
             )
             continue
 
@@ -1365,10 +879,18 @@ async def _build_messages_with_file_content(
                 protected_indexes,
                 Message(
                     role=MessageRole.TOOL,
+                    name=msg.tool_name,
                     content=summarize_tool_result_for_llm(msg.tool_name, msg.content),
                     tool_call_id=msg.tool_call_id,
                 ),
                 protect=protect,
+                meta=meta,
+                round_id=msg.round_id,
+                round_role=(msg.round_role.value if msg.round_role else "tool_result"),
+                is_round_canonical=msg.is_round_canonical,
+                tool_call_id=msg.tool_call_id,
+                source_role="tool",
+                source_message_id=msg.id,
             )
     if (
         active_round_delta
@@ -1380,6 +902,10 @@ async def _build_messages_with_file_content(
             protected_indexes,
             Message(role=MessageRole.USER, content=current_content),
             protect=True,
+            meta=meta,
+            round_role="user_input",
+            is_round_canonical=True,
+            source_role="user",
         )
 
     if not include_current_user_message:
@@ -1388,6 +914,10 @@ async def _build_messages_with_file_content(
             protected_indexes,
             Message(role=MessageRole.USER, content=current_content),
             protect=protected_round_id is not None,
+            meta=meta,
+            round_role="user_input",
+            is_round_canonical=True,
+            source_role="user",
         )
     if active_round_delta:
         for hist_msg in history_override or ():
@@ -1415,6 +945,17 @@ async def _build_messages_with_file_content(
                         tool_calls=tool_calls,
                     ),
                     protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": _get_override_value(hist_msg, "round_role"),
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "tool_calls": tool_calls,
+                        "source_role": "assistant",
+                        "source_message_id": None,
+                    },
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
@@ -1424,6 +965,7 @@ async def _build_messages_with_file_content(
                         protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
+                            name=_get_override_value(hist_msg, "tool_name"),
                             content=summarize_tool_result_for_llm(
                                 _get_override_value(hist_msg, "tool_name"),
                                 content,
@@ -1431,493 +973,20 @@ async def _build_messages_with_file_content(
                             tool_call_id=tool_call_id,
                         ),
                         protect=protect,
+                        meta=meta,
+                        **{
+                            "round_id": _get_override_value(hist_msg, "round_id"),
+                            "round_role": _get_override_value(hist_msg, "round_role"),
+                            "is_round_canonical": _get_override_value(
+                                hist_msg, "is_round_canonical"
+                            ),
+                            "tool_call_id": tool_call_id,
+                            "source_role": "tool",
+                            "source_message_id": None,
+                        },
                     )
 
-    return messages, protected_indexes
-
-
-def _is_tool_turn(messages: Sequence[Message]) -> bool:
-    return any(
-        message.role in {MessageRole.ASSISTANT, MessageRole.TOOL}
-        and (message.tool_calls or message.tool_call_id)
-        for message in messages
-    )
-
-
-def _split_turn_blocks(
-    messages: Sequence[Message],
-) -> tuple[list[Message], list[int], list[list[Message]], list[list[int]]]:
-    if not messages:
-        return [], [], [], []
-
-    start_index = 0
-    prefix: list[Message] = []
-    prefix_indexes: list[int] = []
-    if messages[0].role == MessageRole.SYSTEM:
-        prefix = [messages[0].model_copy(deep=True)]
-        prefix_indexes = [0]
-        start_index = 1
-
-    blocks: list[list[Message]] = []
-    block_indexes: list[list[int]] = []
-    current_block: list[Message] = []
-    current_block_indexes: list[int] = []
-
-    for message_index, message in enumerate(messages[start_index:], start=start_index):
-        message_copy = message.model_copy(deep=True)
-        if message_copy.role == MessageRole.USER:
-            if current_block:
-                blocks.append(current_block)
-                block_indexes.append(current_block_indexes)
-            current_block = [message_copy]
-            current_block_indexes = [message_index]
-        else:
-            if not current_block:
-                current_block = [message_copy]
-                current_block_indexes = [message_index]
-            else:
-                current_block.append(message_copy)
-                current_block_indexes.append(message_index)
-
-    if current_block:
-        blocks.append(current_block)
-        block_indexes.append(current_block_indexes)
-
-    return prefix, prefix_indexes, blocks, block_indexes
-
-
-def _summarize_block(
-    messages: Sequence[Message],
-    *,
-    block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
-) -> str:
-    items: list[str] = []
-    user_parts: list[str] = []
-    assistant_parts: list[str] = []
-    tool_names: list[str] = []
-    tool_results: list[str] = []
-
-    for message in messages:
-        text = _truncate_text(_stringify_content(message.content), block_summary_chars)
-        if message.role == MessageRole.USER and text:
-            user_parts.append(text)
-        elif message.role == MessageRole.ASSISTANT:
-            if text:
-                assistant_parts.append(text)
-            if message.tool_calls:
-                tool_names.extend(
-                    tool_call.function.name
-                    for tool_call in message.tool_calls
-                    if tool_call.function and tool_call.function.name
-                )
-        elif message.role == MessageRole.TOOL:
-            if message.tool_call_id:
-                tool_names.append(message.tool_call_id)
-            if text:
-                tool_results.append(text)
-
-    if user_parts:
-        items.append(f"User asked: {_truncate_text(' | '.join(user_parts), 500)}")
-    if assistant_parts:
-        items.append(
-            f"Assistant responded: {_truncate_text(' | '.join(assistant_parts), 500)}"
-        )
-    if tool_names:
-        deduped_tool_names = list(dict.fromkeys(tool_names))
-        items.append(
-            f"Tools involved: {_truncate_text(', '.join(deduped_tool_names), 300)}"
-        )
-    if tool_results:
-        items.append(f"Tool outcomes: {_truncate_text(' | '.join(tool_results), 500)}")
-
-    if not items:
-        return "Conversation turn preserved in compact summary."
-    return " ; ".join(items)
-
-
-MACRO_SUMMARY_PREFIX = "Compressed earlier conversation summary:"
-
-
-def _build_macro_summary_message(
-    blocks: Sequence[Sequence[Message]],
-    *,
-    summary_max_chars: int = DEFAULT_SUMMARY_MAX_CHARS,
-    block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
-) -> Message | None:
-    if not blocks:
-        return None
-
-    lines = [MACRO_SUMMARY_PREFIX]
-    for index, block in enumerate(blocks, start=1):
-        lines.append(
-            f"- Turn {index}: {_summarize_block(block, block_summary_chars=block_summary_chars)}"
-        )
-
-    summary = _limit_summary_text("\n".join(lines), summary_max_chars)
-    return Message(role=MessageRole.ASSISTANT, content=summary)
-
-
-def _apply_macro_compaction(
-    messages: Sequence[Message],
-    *,
-    model_id: str,
-    provider: str | None,
-    recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
-    recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
-    summary_max_chars: int = DEFAULT_SUMMARY_MAX_CHARS,
-    block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
-    protected_indexes: set[int] | None = None,
-) -> tuple[list[Message], int, int, int, int, set[int]]:
-    prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
-    protected_indexes = protected_indexes or set()
-    if len(blocks) <= recent_raw_turns:
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, 0, len(blocks), 0, 0, cloned_protected_indexes
-
-    analyses = [
-        _analyze_turn_block(block, model_id=model_id, provider=provider)
-        for block in blocks
-    ]
-
-    keep_indexes: set[int] = set(
-        range(max(len(blocks) - recent_raw_turns, 0), len(blocks))
-    )
-
-    for index in range(len(blocks) - 1, -1, -1):
-        if analyses[index]["contains_media"]:
-            keep_indexes.add(index)
-        if any(
-            message_index in protected_indexes for message_index in block_indexes[index]
-        ):
-            keep_indexes.add(index)
-
-    tool_kept = 0
-    for index in range(len(blocks) - 1, -1, -1):
-        if analyses[index]["contains_tool"] and index not in keep_indexes:
-            keep_indexes.add(index)
-            tool_kept += 1
-            if tool_kept >= recent_tool_turns:
-                break
-
-    summary_blocks = [
-        blocks[index] for index in range(len(blocks)) if index not in keep_indexes
-    ]
-    if not summary_blocks:
-        retained_tool_turns = sum(
-            1 for index in keep_indexes if analyses[index]["contains_tool"]
-        )
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return (
-            cloned_messages,
-            0,
-            len(keep_indexes),
-            retained_tool_turns,
-            0,
-            cloned_protected_indexes,
-        )
-
-    compacted: list[Message] = []
-    compacted_protected_indexes: set[int] = set()
-    _extend_with_original_indexes(
-        compacted,
-        compacted_protected_indexes,
-        prefix,
-        prefix_indexes,
-        protected_indexes,
-    )
-    summary_message = _build_macro_summary_message(
-        summary_blocks,
-        summary_max_chars=summary_max_chars,
-        block_summary_chars=block_summary_chars,
-    )
-    if summary_message is not None:
-        _append_message(compacted, compacted_protected_indexes, summary_message)
-
-    for index, block in enumerate(blocks):
-        if index in keep_indexes:
-            _extend_with_original_indexes(
-                compacted,
-                compacted_protected_indexes,
-                block,
-                block_indexes[index],
-                protected_indexes,
-            )
-
-    summary_turns = len(summary_blocks)
-    retained_recent_turns = sum(
-        1 for index in keep_indexes if index >= len(blocks) - recent_raw_turns
-    )
-    retained_tool_turns = sum(
-        1 for index in keep_indexes if analyses[index]["contains_tool"]
-    )
-    compacted_blocks = len(summary_blocks)
-    return (
-        compacted,
-        summary_turns,
-        retained_recent_turns,
-        retained_tool_turns,
-        compacted_blocks,
-        compacted_protected_indexes,
-    )
-
-
-async def _apply_micro_compaction(
-    *,
-    messages: Sequence[Message],
-    conversation: Conversation,
-    model_id: str,
-    provider: str | None,
-    token_budget: TokenBudget,
-    keep_recent_reasoning_messages: int = DEFAULT_RECENT_REASONING_MESSAGES,
-    keep_recent_tool_results: int = DEFAULT_KEEP_RECENT_TOOL_RESULTS,
-    tool_result_compact_min_tokens: int = DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
-    recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
-    recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
-    pressure_level: Literal[
-        "normal", "warning", "auto_compact", "blocking", "over_budget"
-    ] = "normal",
-    trigger_ratio: float = DEFAULT_AUTO_COMPACT_TRIGGER_RATIO,
-    warning_ratio: float = DEFAULT_WARNING_RATIO,
-    blocking_ratio: float = DEFAULT_BLOCKING_RATIO,
-    policy_used: str = DEFAULT_COMPACTION_POLICY,
-    trigger_budget: int | None = None,
-    protected_indexes: set[int] | None = None,
-    before_created_at=None,
-    skip_session_memory: bool = False,
-) -> tuple[list[Message], CompressionMeta, set[int]]:
-    protected_indexes = protected_indexes or set()
-    before_tokens = _estimate_message_tokens(
-        messages, model_id=model_id, provider=provider
-    )
-    if before_tokens < (trigger_budget or token_budget.input_budget):
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return (
-            cloned_messages,
-            CompressionMeta(
-                stage="none",
-                before_tokens=before_tokens,
-                after_tokens=before_tokens,
-                input_budget=token_budget.input_budget,
-                pressure_level=pressure_level,
-                trigger_ratio=trigger_ratio,
-                warning_ratio=warning_ratio,
-                blocking_ratio=blocking_ratio,
-                trigger_budget=trigger_budget or token_budget.input_budget,
-                hard_budget=token_budget.input_budget,
-                utilization_before=(before_tokens / token_budget.input_budget)
-                if token_budget.input_budget
-                else 0.0,
-                utilization_after=(before_tokens / token_budget.input_budget)
-                if token_budget.input_budget
-                else 0.0,
-                policy_used=policy_used,
-                actions=[],
-            ),
-            cloned_protected_indexes,
-        )
-
-    reasoning_compacted, reasoning_trimmed, reasoning_protected_indexes = (
-        _compact_message_reasoning(
-            messages,
-            keep_recent_reasoning_messages=keep_recent_reasoning_messages,
-            protected_indexes=protected_indexes,
-        )
-    )
-    tool_compacted, tool_results_trimmed, tool_protected_indexes = (
-        _apply_selective_tool_result_compaction(
-            reasoning_compacted,
-            model_id=model_id,
-            provider=provider,
-            keep_recent_tool_results=keep_recent_tool_results,
-            tool_result_compact_min_tokens=tool_result_compact_min_tokens,
-            recent_raw_turns=recent_raw_turns,
-            recent_tool_turns=recent_tool_turns,
-            protected_indexes=reasoning_protected_indexes,
-        )
-    )
-    if skip_session_memory:
-        session_memory_messages = tool_compacted
-        session_memory_compacted = False
-        session_memory_protected_indexes = tool_protected_indexes
-    else:
-        (
-            session_memory_messages,
-            session_memory_compacted,
-            session_memory_protected_indexes,
-        ) = await _apply_session_memory_compaction(
-            tool_compacted,
-            conversation=conversation,
-            model_id=model_id,
-            provider=provider,
-            recent_raw_turns=recent_raw_turns,
-            recent_tool_turns=recent_tool_turns,
-            protected_indexes=tool_protected_indexes,
-            before_created_at=before_created_at,
-        )
-    after_tokens = _estimate_message_tokens(
-        session_memory_messages,
-        model_id=model_id,
-        provider=provider,
-    )
-
-    actions: list[str] = []
-    if reasoning_trimmed:
-        actions.append("trim_reasoning")
-    if tool_results_trimmed:
-        actions.append("compact_old_tool_results")
-    if session_memory_compacted:
-        actions.append("session_memory_compact")
-
-    stage: Literal["none", "micro"] = "micro" if actions else "none"
-    utilization_before = (
-        (before_tokens / token_budget.input_budget)
-        if token_budget.input_budget
-        else 0.0
-    )
-    utilization_after = (
-        (after_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0
-    )
-    return (
-        session_memory_messages,
-        CompressionMeta(
-            stage=stage,
-            before_tokens=before_tokens,
-            after_tokens=after_tokens,
-            input_budget=token_budget.input_budget,
-            reasoning_trimmed=reasoning_trimmed,
-            tool_results_trimmed=tool_results_trimmed,
-            pressure_level=pressure_level,
-            trigger_ratio=trigger_ratio,
-            warning_ratio=warning_ratio,
-            blocking_ratio=blocking_ratio,
-            trigger_budget=trigger_budget or token_budget.input_budget,
-            hard_budget=token_budget.input_budget,
-            utilization_before=utilization_before,
-            utilization_after=utilization_after,
-            policy_used=policy_used,
-            actions=actions,
-            session_memory_compacted=session_memory_compacted,
-        ),
-        session_memory_protected_indexes,
-    )
-
-
-def _apply_budget_compaction(
-    *,
-    messages: Sequence[Message],
-    model_id: str,
-    provider: str | None,
-    token_budget: TokenBudget,
-    compression: CompressionMeta,
-    file_content_trimmed: bool,
-    aggressive: bool = False,
-    pressure_level: Literal[
-        "normal", "warning", "auto_compact", "blocking", "over_budget"
-    ] = "normal",
-    trigger_ratio: float = DEFAULT_AUTO_COMPACT_TRIGGER_RATIO,
-    warning_ratio: float = DEFAULT_WARNING_RATIO,
-    blocking_ratio: float = DEFAULT_BLOCKING_RATIO,
-    policy_used: str = DEFAULT_COMPACTION_POLICY,
-    trigger_budget: int | None = None,
-    recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
-    recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
-    summary_max_chars: int = DEFAULT_SUMMARY_MAX_CHARS,
-    block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
-    protected_indexes: set[int] | None = None,
-    target_budget: int | None = None,
-) -> tuple[list[Message], CompressionMeta, set[int]]:
-    protected_indexes = protected_indexes or set()
-    required_budget = target_budget or token_budget.input_budget
-    if compression.after_tokens <= required_budget and pressure_level != "blocking":
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, compression, cloned_protected_indexes
-
-    (
-        macro_messages,
-        summary_turns,
-        retained_recent_turns,
-        retained_tool_turns,
-        compacted_blocks,
-        macro_protected_indexes,
-    ) = _apply_macro_compaction(
-        messages,
-        model_id=model_id,
-        provider=provider,
-        recent_raw_turns=(
-            recent_raw_turns
-            if not aggressive
-            else min(recent_raw_turns, AGGRESSIVE_RECENT_RAW_TURNS)
-        ),
-        recent_tool_turns=(
-            recent_tool_turns
-            if not aggressive
-            else min(recent_tool_turns, AGGRESSIVE_RECENT_TOOL_TURNS)
-        ),
-        summary_max_chars=(
-            summary_max_chars
-            if not aggressive
-            else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)
-        ),
-        block_summary_chars=(
-            block_summary_chars if not aggressive else AGGRESSIVE_BLOCK_SUMMARY_CHARS
-        ),
-        protected_indexes=protected_indexes,
-    )
-    macro_after_tokens = _estimate_message_tokens(
-        macro_messages,
-        model_id=model_id,
-        provider=provider,
-    )
-    if summary_turns <= 0:
-        cloned_messages, cloned_protected_indexes = _clone_messages(
-            messages, protected_indexes
-        )
-        return cloned_messages, compression, cloned_protected_indexes
-
-    actions = list(compression.actions or [])
-    if "macro_summary" not in actions:
-        actions.append("macro_summary")
-    utilization_after = (
-        (macro_after_tokens / token_budget.input_budget)
-        if token_budget.input_budget
-        else 0.0
-    )
-    return (
-        macro_messages,
-        CompressionMeta(
-            stage="macro",
-            before_tokens=compression.before_tokens,
-            after_tokens=macro_after_tokens,
-            input_budget=token_budget.input_budget,
-            reasoning_trimmed=compression.reasoning_trimmed,
-            tool_results_trimmed=compression.tool_results_trimmed,
-            file_content_trimmed=file_content_trimmed,
-            summary_turns=summary_turns,
-            pressure_level=pressure_level,
-            trigger_ratio=trigger_ratio,
-            warning_ratio=warning_ratio,
-            blocking_ratio=blocking_ratio,
-            trigger_budget=trigger_budget or token_budget.input_budget,
-            hard_budget=token_budget.input_budget,
-            utilization_before=compression.utilization_before,
-            utilization_after=utilization_after,
-            policy_used=policy_used,
-            actions=actions,
-            retained_recent_turns=retained_recent_turns,
-            retained_tool_turns=retained_tool_turns,
-            compacted_blocks=compacted_blocks,
-            session_memory_compacted=compression.session_memory_compacted,
-        ),
-        macro_protected_indexes,
-    )
+    return messages, protected_indexes, meta
 
 
 async def build_model_messages(
@@ -1939,19 +1008,7 @@ async def build_model_messages(
     protected_round_id: UUID | str | None = None,
 ) -> list[Message]:
     """Build model-ready messages for agent chat flows."""
-    context_checkpoint = None
-    if (
-        history_override is None
-        or _history_override_is_active_delta(history_override, protected_round_id)
-    ) and get_context_compression_config(agent).get("checkpoint_summary_enabled", True):
-        from app.services.context_checkpoint import get_valid_context_checkpoint
-
-        context_checkpoint = await get_valid_context_checkpoint(
-            conversation.id,
-            before_created_at=history_before_message_created_at,
-        )
-
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _meta = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -1967,9 +1024,790 @@ async def build_model_messages(
         tool_timeouts=tool_timeouts,
         user=user,
         protected_round_id=protected_round_id,
-        context_checkpoint=context_checkpoint,
     )
     return messages
+
+
+def truncate_text_to_tokens(
+    text: str,
+    *,
+    max_tokens: int,
+    model_id: str | None = None,
+    provider: str | None = None,
+    marker: str = "\n...[truncated]...\n",
+) -> tuple[str, bool]:
+    """Keep the head and tail of text within a model-token limit."""
+    if not text:
+        return "", False
+    token_count = count_tokens(text, model_id=model_id, provider=provider)
+    if token_count <= max_tokens:
+        return text, False
+    chars_per_token = max(len(text) / token_count, 1)
+    budget_chars = max(int(max_tokens * chars_per_token), 1)
+    head_chars = max(int(budget_chars * 0.7), 1)
+    tail_chars = max(budget_chars - head_chars, 0)
+    marker = "\n...[truncated]...\n"
+    return f"{text[:head_chars]}{marker}{text[len(text) - tail_chars :]}", True
+
+
+def _assess_pressure(
+    tokens: int,
+    *,
+    trigger_budget: int,
+    input_budget: int,
+) -> Literal["normal", "warning", "auto_compact", "blocking", "over_budget"]:
+    if tokens > input_budget:
+        return "over_budget"
+    if tokens > trigger_budget:
+        return "auto_compact"
+    return "normal"
+
+
+def _render_summary_transcript(messages: Sequence[Message]) -> str:
+    lines: list[str] = []
+    for message in messages:
+        role = (
+            message.role.value if hasattr(message.role, "value") else str(message.role)
+        )
+        text = _stringify_content(message.content)
+        if role == "tool":
+            header = "TOOL result"
+            tool_name = getattr(message, "tool_name", None) or getattr(
+                message, "name", None
+            )
+            if tool_name:
+                header += f" for {tool_name}"
+            lines.append(f"{header}:\n{text or '(empty)'}")
+            continue
+        if message.tool_calls:
+            calls = "; ".join(
+                f"{tool_call.function.name}({tool_call.function.arguments})"
+                for tool_call in message.tool_calls
+                if tool_call.function
+            )
+            rendered = f"ASSISTANT tool calls: {calls}"
+            if text:
+                rendered += f"\n{text}"
+            lines.append(rendered)
+            continue
+        lines.append(f"{role.upper()}:\n{text or '(empty)'}")
+    return "\n\n".join(lines)
+
+
+def _is_context_summary_message(message: Message) -> bool:
+    return isinstance(message.content, str) and message.content.startswith(
+        CONTEXT_SUMMARY_PREFIX
+    )
+
+
+SUMMARY_SYSTEM_INSTRUCTION = (
+    "You compress an agent conversation history into a durable summary so the "
+    "conversation can continue seamlessly with the summary replacing the older "
+    "history. Always write the summary in concise English, regardless of the "
+    "transcript language or the user's locale. Return ONLY the summary text. "
+    "Include, in this order:\n"
+    "1. Task: the user's overall goal and the latest request.\n"
+    "2. Completed actions and results: what was already done, key outcomes, and "
+    "exact identifiers, file paths, names, and numbers.\n"
+    "3. Pending work: what remains, including the immediate next step.\n"
+    "4. Constraints and decisions: rules, preferences, and choices that bind "
+    "later work.\n"
+    "Be concise and factual. Never invent information. Omit small talk and filler."
+)
+
+
+def _select_summary_cut_index(
+    messages: Sequence[Message],
+    meta: Sequence[dict[str, Any]] | None,
+    current_user_index: int,
+    tail_tokens: int,
+    *,
+    tokenizer_model_id: str | None,
+    provider: str | None,
+) -> int:
+    """Pick the first index of the recent verbatim tail.
+
+    History (indices ``[1, current_user_index)``) is grouped into consecutive
+    round blocks via the parallel ``meta`` sidecar. Blocks are kept verbatim
+    from the newest backward while they fit the tail budget; the first block
+    that does not fit (and everything older) is eligible for summarization.
+    Incomplete rounds (assistant tool calls without matching tool results) are
+    never cut; the newest block is always retained even when oversized so a
+    recent single turn is preserved intact. Returns the index where the
+    retained tail starts; ``current_user_index`` means nothing old is kept raw
+    (and nothing old is summarized by the caller).
+    """
+    if current_user_index <= 1:
+        return current_user_index
+    metas = list(meta or [])
+    # consecutive round blocks over history only: [1, current_user_index)
+    blocks: list[tuple[int, int]] = []
+    block_start = 1
+    for idx in range(2, current_user_index + 1):
+        prev_rid = metas[idx - 1].get("round_id") if idx - 1 < len(metas) else None
+        cur_rid = metas[idx].get("round_id") if idx < len(metas) else None
+        if prev_rid is not None and cur_rid != prev_rid:
+            blocks.append((block_start, idx))
+            block_start = idx
+    if block_start < current_user_index:
+        blocks.append((block_start, current_user_index))
+    if not blocks:
+        return current_user_index
+
+    retained_start = current_user_index
+    budget = tail_tokens
+    for start, end in reversed(blocks):
+        block_tokens = _estimate_message_tokens(
+            messages[start:end],
+            model_id=tokenizer_model_id,
+            provider=provider,
+        )
+        if not _round_is_complete(metas[start:end]):
+            # active/incomplete protocol: never cut into it
+            retained_start = start
+            break
+        if budget >= block_tokens:
+            retained_start = start
+            budget -= block_tokens
+            continue
+        # The newest block that does not fit is summarized (with everything
+        # older); an oversized single completed turn is prefix-compacted by
+        # the summarizer transcript bound rather than preserved whole.
+        break
+    return retained_start
+
+
+def _round_is_complete(block_meta: Sequence[dict[str, Any]]) -> bool:
+    """A retained round block is complete when every assistant tool call has a
+    matching tool result inside the block, or the assistant made no calls."""
+    assistant_call_ids: set[str] = set()
+    tool_result_ids: set[str] = set()
+    for entry in block_meta:
+        role = entry.get("role") or entry.get("source_role")
+        if role == "assistant":
+            calls = entry.get("tool_calls") or ()
+            for call in calls:
+                call_id = (
+                    call.get("id")
+                    if isinstance(call, dict)
+                    else getattr(call, "id", None)
+                )
+                if call_id:
+                    assistant_call_ids.add(str(call_id))
+        elif role == "tool":
+            call_id = entry.get("tool_call_id")
+            if call_id:
+                tool_result_ids.add(str(call_id))
+    if not assistant_call_ids:
+        return True
+    return bool(tool_result_ids) and assistant_call_ids.issubset(tool_result_ids)
+
+
+async def _summarize_context(
+    *,
+    agent: Agent,
+    conversation: Conversation,
+    messages_to_summarize: Sequence[Message],
+    model_id: str,
+    tokenizer_model_id: str | None,
+    provider: str | None,
+    max_tokens: int,
+    max_transcript_tokens: int,
+    previous_summary: str | None = None,
+) -> str | None:
+    transcript = _render_summary_transcript(messages_to_summarize)
+    transcript, _ = truncate_text_to_tokens(
+        transcript,
+        max_tokens=max(max_transcript_tokens, 1),
+        model_id=tokenizer_model_id or model_id,
+        provider=provider,
+    )
+    if not transcript.strip() and not previous_summary:
+        return None
+    if previous_summary:
+        transcript = (
+            "Previous summary:\n"
+            f"{previous_summary}\n\n"
+            "New conversation transcript:\n"
+            f"{transcript}"
+        )
+    response = None
+    last_error: Exception | None = None
+    for attempt in range(1, CONTEXT_SUMMARY_MAX_ATTEMPTS + 1):
+        try:
+            from app.llm import model_manager
+
+            response = await asyncio.wait_for(
+                model_manager.team_chat(
+                    team_id=str(agent.team_id),
+                    model_id=model_id,
+                    messages=[
+                        Message(
+                            role=MessageRole.SYSTEM,
+                            content=SUMMARY_SYSTEM_INSTRUCTION,
+                        ),
+                        Message(
+                            role=MessageRole.USER,
+                            content=(
+                                "Conversation transcript:\n\n"
+                                f"{transcript}\n\nWrite the summary now."
+                            ),
+                        ),
+                    ],
+                ),
+                timeout=CONTEXT_SUMMARY_TIMEOUT_SECONDS,
+            )
+            if (response.content or "").strip():
+                break
+            response = None
+            last_error = ValueError("summarizer returned an empty response")
+            logger.warning(
+                "Context summarization attempt %d/%d returned empty content "
+                "for conversation %s",
+                attempt,
+                CONTEXT_SUMMARY_MAX_ATTEMPTS,
+                conversation.id,
+            )
+        except Exception as exc:
+            response = None
+            last_error = exc
+            logger.warning(
+                "Context summarization attempt %d/%d failed for conversation %s "
+                "(%s: %r)",
+                attempt,
+                CONTEXT_SUMMARY_MAX_ATTEMPTS,
+                conversation.id,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+        if attempt < CONTEXT_SUMMARY_MAX_ATTEMPTS:
+            await asyncio.sleep(CONTEXT_SUMMARY_RETRY_DELAY_SECONDS)
+    if response is None:
+        logger.error(
+            "Context summarization failed after %d attempts for conversation %s "
+            "(%s: %r)",
+            CONTEXT_SUMMARY_MAX_ATTEMPTS,
+            conversation.id,
+            type(last_error).__name__ if last_error else "unknown",
+            last_error,
+            exc_info=(
+                type(last_error),
+                last_error,
+                last_error.__traceback__,
+            )
+            if last_error
+            else None,
+        )
+        raise BusinessError(msg_key="context_summarization_failed")
+    fitted, _ = truncate_text_to_tokens(
+        (response.content or "").strip(),
+        max_tokens=max_tokens,
+        model_id=tokenizer_model_id or "",
+        provider=provider,
+    )
+    return fitted or None
+
+
+async def _persist_context_summary(
+    *,
+    conversation: Conversation,
+    summary_text: str,
+    current_user_message_id: UUID | None,
+    exclude_message_ids: Sequence[UUID] | None,
+    history_before_message_created_at: datetime | None,
+    watermark_message_id: UUID | None = None,
+) -> None:
+    """Persist a summary and advance the watermark to the last message it
+    covers.
+
+    With turn-aware compaction the summary covers only the newly summarized
+    old turns; the recent verbatim tail stays raw, so the watermark must point
+    at the last summarized message (not the last visible history message).
+    """
+    try:
+        if watermark_message_id is not None:
+            await Conversation.filter(id=conversation.id).update(
+                context_summary_text=summary_text,
+                context_summary_watermark_id=watermark_message_id,
+            )
+            conversation.context_summary_text = summary_text
+            conversation.context_summary_watermark_id = watermark_message_id
+            return
+        excludes = [*(exclude_message_ids or [])]
+        if current_user_message_id:
+            excludes.append(current_user_message_id)
+        history = await get_visible_conversation_messages(
+            conversation.id,
+            before_created_at=history_before_message_created_at,
+            exclude_message_ids=excludes,
+        )
+        if not history:
+            return
+        await Conversation.filter(id=conversation.id).update(
+            context_summary_text=summary_text,
+            context_summary_watermark_id=history[-1].id,
+        )
+        # The next tool iteration reuses this loaded Conversation instance.
+        # Keep it in sync with the persisted watermark so that the same
+        # request does not rebuild and summarize the covered history again.
+        conversation.context_summary_text = summary_text
+        conversation.context_summary_watermark_id = history[-1].id
+    except Exception:
+        logger.warning(
+            "Failed to persist context summary for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+@dataclass(slots=True)
+class ContextPlan:
+    """Built context plus the single preflight summary decision."""
+
+    agent: Agent
+    conversation: Conversation
+    messages: list[Message]
+    protected_indexes: set[int]
+    token_budget: TokenBudget
+    compression: CompressionMeta
+    compression_config: dict[str, Any]
+    compression_enabled: bool
+    trigger_budget: int
+    current_user_index: int
+    tail_start_index: int
+    summarized: list[Message]
+    previous_summary_text: str | None
+    meta: list[dict[str, Any]]
+    will_summarize: bool
+    model_id: str
+    tokenizer_model_id: str | None
+    provider: str | None
+    tool_definition_tokens: int
+    history_override_is_none: bool
+    current_user_message_id: UUID | None
+    exclude_message_ids: Sequence[UUID] | None
+    history_before_message_created_at: datetime | None
+
+    @property
+    def _new_watermark_id(self) -> UUID | None:
+        """Last newly covered source message id (advances the watermark past
+        only the summarized old turns; the retained tail stays raw)."""
+        if not self.summarized:
+            return None
+        for entry in reversed(self.meta[: self.tail_start_index]):
+            source_id = entry.get("source_message_id")
+            if source_id is not None:
+                return source_id
+        return None
+
+    async def finalize(self) -> PreparedModelContext:
+        """Summarize old history when needed and return the provider context."""
+        messages = self.messages
+        protected_indexes = self.protected_indexes
+        compression = self.compression
+        token_budget = self.token_budget
+        preserved_suffix = (
+            self.messages[self.tail_start_index :]
+            if self.tail_start_index > 0
+            else self.messages[self.current_user_index :]
+        )
+        protected_payload_tokens = _estimate_message_tokens(
+            [self.messages[0], *preserved_suffix],
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        ) + max(self.tool_definition_tokens, 0)
+        if protected_payload_tokens > token_budget.input_budget:
+            # The protected content alone (system + retained tail + current
+            # turn + tool definitions) cannot fit; no summary can help.
+            raise ContextLengthError(
+                message="Context length exceeded: protected payload over budget",
+                max_tokens=token_budget.input_budget,
+                actual_tokens=protected_payload_tokens,
+                provider=self.provider,
+                model=self.model_id,
+                details={
+                    "retryable": False,
+                    "reason": "protected_payload_over_budget",
+                    "context_limit": token_budget.context_limit,
+                },
+            )
+        fixed_messages = [self.messages[0], *preserved_suffix]
+        fixed_context_tokens = _estimate_message_tokens(
+            fixed_messages,
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        )
+        configured_summary_tokens = max(
+            int(
+                self.compression_config.get(
+                    "summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS
+                )
+            ),
+            1,
+        )
+        summary_message_overhead = _estimate_message_tokens(
+            [
+                Message(
+                    role=MessageRole.USER,
+                    content=f"{CONTEXT_SUMMARY_PREFIX}\n\n",
+                )
+            ],
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        )
+        summary_max_tokens = min(
+            configured_summary_tokens,
+            max(
+                token_budget.input_budget
+                - self.tool_definition_tokens
+                - fixed_context_tokens
+                - summary_message_overhead,
+                1,
+            ),
+        )
+
+        summary_prompt_overhead = _estimate_message_tokens(
+            [
+                Message(
+                    role=MessageRole.SYSTEM,
+                    content=SUMMARY_SYSTEM_INSTRUCTION,
+                ),
+                Message(
+                    role=MessageRole.USER,
+                    content="Conversation transcript:\n\n\n\nWrite the summary now.",
+                ),
+            ],
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        )
+        max_transcript_tokens = max(
+            token_budget.input_budget - summary_prompt_overhead - summary_max_tokens,
+            1,
+        )
+
+        if self.will_summarize:
+            summary_text = await _summarize_context(
+                agent=self.agent,
+                conversation=self.conversation,
+                messages_to_summarize=self.summarized,
+                model_id=self.model_id,
+                tokenizer_model_id=self.tokenizer_model_id,
+                provider=self.provider,
+                max_tokens=summary_max_tokens,
+                max_transcript_tokens=max_transcript_tokens,
+                previous_summary=self.previous_summary_text,
+            )
+            if summary_text:
+                summary_message = Message(
+                    role=MessageRole.USER,
+                    content=f"{CONTEXT_SUMMARY_PREFIX}\n\n{summary_text}",
+                )
+                source_tokens = _estimate_message_tokens(
+                    self.summarized,
+                    model_id=self.tokenizer_model_id,
+                    provider=self.provider,
+                )
+                result_tokens = _estimate_message_tokens(
+                    [summary_message],
+                    model_id=self.tokenizer_model_id,
+                    provider=self.provider,
+                )
+                compression.summary_source_tokens = source_tokens
+                compression.summary_result_tokens = result_tokens
+                compression.summary_saved_tokens = max(source_tokens - result_tokens, 0)
+                messages = [self.messages[0], summary_message, *preserved_suffix]
+                protected_indexes = set(range(len(messages)))
+                compression.stage = "macro"
+                compression.summary_turns = sum(
+                    1
+                    for message in self.summarized
+                    if message.role == MessageRole.USER
+                    and not _is_context_summary_message(message)
+                )
+                compression.actions = list(
+                    dict.fromkeys([*(compression.actions or []), "context_summary"])
+                )
+                if self.history_override_is_none:
+                    await _persist_context_summary(
+                        conversation=self.conversation,
+                        summary_text=summary_text,
+                        current_user_message_id=self.current_user_message_id,
+                        exclude_message_ids=self.exclude_message_ids,
+                        history_before_message_created_at=(
+                            self.history_before_message_created_at
+                        ),
+                        watermark_message_id=self._new_watermark_id,
+                    )
+
+        compression.after_tokens = _estimate_message_tokens(
+            messages,
+            model_id=self.tokenizer_model_id,
+            provider=self.provider,
+        ) + max(self.tool_definition_tokens, 0)
+        compression.pressure_level = _assess_pressure(
+            compression.after_tokens,
+            trigger_budget=self.trigger_budget,
+            input_budget=token_budget.input_budget,
+        )
+        compression.utilization_after = (
+            compression.after_tokens / token_budget.context_limit
+            if token_budget.context_limit
+            else 0.0
+        )
+
+        if compression.after_tokens > token_budget.input_budget:
+            raise ContextLengthError(
+                message="Context length exceeded after context summary",
+                max_tokens=token_budget.input_budget,
+                actual_tokens=compression.after_tokens,
+                provider=self.provider,
+                model=self.model_id,
+                details={
+                    "retryable": False,
+                    "reason": "context_summary_did_not_fit",
+                    "context_limit": token_budget.context_limit,
+                },
+            )
+
+        return PreparedModelContext(
+            messages=messages,
+            token_budget=token_budget,
+            compression=compression,
+            protected_indexes=protected_indexes,
+        )
+
+
+async def build_context_plan(
+    *,
+    agent: Agent,
+    conversation: Conversation,
+    user_message: str,
+    model_id: str,
+    tokenizer_model_id: str | None = None,
+    model_context_limit: int | None,
+    model_max_output_tokens: int | None,
+    provider: str | None = None,
+    file_content: str | None = None,
+    user_locale: str | None = None,
+    history_override: Sequence[Any] | None = None,
+    current_images: Sequence[Any] | None = None,
+    model_supports_vision: bool = False,
+    current_user_message_id: UUID | None = None,
+    include_current_user_message: bool = False,
+    exclude_message_ids: Sequence[UUID] | None = None,
+    history_before_message_created_at: datetime | None = None,
+    tool_timeouts: dict[str, Any] | None = None,
+    user: Any = None,
+    protected_round_id: UUID | str | None = None,
+    tool_definition_tokens: int = 0,
+) -> ContextPlan:
+    """Build the request and decide whether the full history needs a summary."""
+    compression_config = get_context_compression_config(agent)
+    compression_enabled = bool(compression_config.get("enabled", True))
+    token_budget = _build_token_budget(
+        context_limit=model_context_limit,
+        model_max_output_tokens=model_max_output_tokens,
+        output_token_reserve=DEFAULT_OUTPUT_TOKEN_RESERVE,
+        safety_margin_tokens=DEFAULT_SAFETY_MARGIN_TOKENS,
+    )
+    trigger_ratio = DEFAULT_SUMMARY_TRIGGER_RATIO
+    # Reserve-aware trigger: compress before the payload reaches
+    # context - max(15% of context, model output reserve) so a summary + recent
+    # tail + current turn can always fit above the false-90% boundary.
+    effective_reserve = max(
+        int(token_budget.context_limit * DEFAULT_SUMMARY_RESERVE_RATIO),
+        token_budget.output_reserve,
+    )
+    trigger_budget = min(
+        max(token_budget.context_limit - effective_reserve, 1),
+        token_budget.input_budget,
+    )
+
+    context_summary_text: str | None = None
+    history_after_message_id: UUID | None = None
+    if compression_enabled and (
+        history_override is None
+        or _history_override_is_active_delta(history_override, protected_round_id)
+    ):
+        stored_summary = getattr(conversation, "context_summary_text", None)
+        watermark_id = getattr(conversation, "context_summary_watermark_id", None)
+        if stored_summary and watermark_id:
+            try:
+                watermark_active = await is_message_on_active_branch(
+                    conversation.id,
+                    watermark_id,
+                    before_created_at=history_before_message_created_at,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to validate context summary watermark for %s",
+                    conversation.id,
+                    exc_info=True,
+                )
+                watermark_active = False
+            if watermark_active:
+                context_summary_text = stored_summary
+                history_after_message_id = watermark_id
+
+    messages, protected_indexes, _meta = await _build_messages_with_file_content(
+        agent=agent,
+        conversation=conversation,
+        user_message=user_message,
+        file_content=file_content,
+        user_locale=user_locale,
+        history_override=history_override,
+        current_images=current_images,
+        model_supports_vision=model_supports_vision,
+        current_user_message_id=current_user_message_id,
+        include_current_user_message=include_current_user_message,
+        exclude_message_ids=exclude_message_ids,
+        history_before_message_created_at=history_before_message_created_at,
+        tool_timeouts=tool_timeouts,
+        user=user,
+        protected_round_id=protected_round_id,
+        context_summary_text=context_summary_text,
+        history_after_message_id=history_after_message_id,
+    )
+    before_tokens = _estimate_message_tokens(
+        messages, model_id=tokenizer_model_id, provider=provider
+    ) + max(tool_definition_tokens, 0)
+    compression = CompressionMeta(
+        stage="none",
+        before_tokens=before_tokens,
+        after_tokens=before_tokens,
+        input_budget=token_budget.input_budget,
+        pressure_level=_assess_pressure(
+            before_tokens,
+            trigger_budget=trigger_budget,
+            input_budget=token_budget.input_budget,
+        ),
+        trigger_ratio=trigger_ratio,
+        utilization_before=(
+            before_tokens / token_budget.context_limit
+            if token_budget.context_limit
+            else 0.0
+        ),
+        actions=[],
+        context_limit=token_budget.context_limit,
+        output_reserve=token_budget.output_reserve,
+        safety_margin=token_budget.safety_margin,
+    )
+
+    current_user_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if messages[index].role == MessageRole.USER
+            and not _is_context_summary_message(messages[index])
+        ),
+        -1,
+    )
+
+    # Recent verbatim tail: retain a bounded raw-history target,
+    # clamped so system + summary + current/active turn + output reserve fit.
+    system_tokens = _estimate_message_tokens(
+        messages[:1], model_id=tokenizer_model_id, provider=provider
+    )
+    current_tokens = _estimate_message_tokens(
+        messages[current_user_index:],
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
+    configured_summary_tokens = max(
+        int(compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)),
+        1,
+    )
+    summary_overhead = _estimate_message_tokens(
+        [
+            Message(
+                role=MessageRole.USER,
+                content=f"{CONTEXT_SUMMARY_PREFIX}\n\n",
+            )
+        ],
+        model_id=tokenizer_model_id,
+        provider=provider,
+    )
+    tail_tokens = min(
+        DEFAULT_RECENT_TAIL_TOKENS,
+        max(
+            token_budget.input_budget
+            - system_tokens
+            - current_tokens
+            - max(tool_definition_tokens, 0)
+            - configured_summary_tokens
+            - summary_overhead,
+            MIN_RECENT_TAIL_TOKENS,
+        ),
+    )
+
+    previous_summary_text: str | None = context_summary_text
+    _meta = list(_meta or [])
+    # Summarizable range starts right after the previous summary (index 1).
+    summarize_from = 2 if previous_summary_text else 1
+    if not _meta:
+        # No round metadata (e.g. mocked builds): fall back to summarizing all
+        # old turns between the previous summary and the current user.
+        tail_start_index = current_user_index
+        summarized = (
+            [
+                message
+                for index, message in enumerate(messages)
+                if summarize_from <= index < current_user_index
+                and not _is_context_summary_message(message)
+            ]
+            if compression_enabled
+            and before_tokens > trigger_budget
+            and current_user_index > summarize_from
+            else []
+        )
+    else:
+        tail_start_index = _select_summary_cut_index(
+            messages,
+            _meta,
+            current_user_index,
+            tail_tokens,
+            tokenizer_model_id=tokenizer_model_id,
+            provider=provider,
+        )
+        summarized = (
+            [
+                message
+                for index, message in enumerate(messages)
+                if summarize_from <= index < tail_start_index
+                and not _is_context_summary_message(message)
+            ]
+            if compression_enabled
+            and before_tokens > trigger_budget
+            and tail_start_index > summarize_from
+            else []
+        )
+
+    return ContextPlan(
+        agent=agent,
+        conversation=conversation,
+        messages=messages,
+        protected_indexes=protected_indexes,
+        meta=_meta,
+        token_budget=token_budget,
+        compression=compression,
+        compression_config=compression_config,
+        compression_enabled=compression_enabled,
+        trigger_budget=trigger_budget,
+        current_user_index=current_user_index,
+        tail_start_index=tail_start_index,
+        summarized=summarized,
+        previous_summary_text=previous_summary_text,
+        will_summarize=bool(summarized),
+        model_id=model_id,
+        tokenizer_model_id=tokenizer_model_id,
+        provider=provider,
+        tool_definition_tokens=tool_definition_tokens,
+        history_override_is_none=history_override is None,
+        current_user_message_id=current_user_message_id,
+        exclude_message_ids=exclude_message_ids,
+        history_before_message_created_at=history_before_message_created_at,
+    )
 
 
 async def prepare_model_context(
@@ -1993,955 +1831,11 @@ async def prepare_model_context(
     history_before_message_created_at: datetime | None = None,
     tool_timeouts: dict[str, Any] | None = None,
     user: Any = None,
-    aggressive: bool = False,
     protected_round_id: UUID | str | None = None,
+    tool_definition_tokens: int = 0,
 ) -> PreparedModelContext:
-    compression_config = get_context_compression_config(agent)
-    compression_enabled = bool(compression_config.get("enabled", True))
-    checkpoint_summary_enabled = bool(
-        compression_config.get("checkpoint_summary_enabled", True)
-    )
-    active_round_delta = _history_override_is_active_delta(
-        history_override, protected_round_id
-    )
-    token_budget = _build_token_budget(
-        context_limit=model_context_limit,
-        model_max_output_tokens=model_max_output_tokens,
-        output_token_reserve=int(
-            compression_config.get("output_token_reserve", DEFAULT_OUTPUT_TOKEN_RESERVE)
-        ),
-        safety_margin_tokens=int(
-            compression_config.get("safety_margin_tokens", DEFAULT_SAFETY_MARGIN_TOKENS)
-        ),
-    )
-
-    warning_ratio = float(
-        compression_config.get("warning_ratio", DEFAULT_WARNING_RATIO)
-    )
-    trigger_ratio = float(
-        compression_config.get(
-            "auto_compact_trigger_ratio", DEFAULT_AUTO_COMPACT_TRIGGER_RATIO
-        )
-    )
-    blocking_ratio = float(
-        compression_config.get("blocking_ratio", DEFAULT_BLOCKING_RATIO)
-    )
-    checkpoint_target_ratio = float(
-        compression_config.get(
-            "checkpoint_target_ratio", DEFAULT_CHECKPOINT_TARGET_RATIO
-        )
-    )
-    checkpoint_keep_recent_ratio = float(
-        compression_config.get(
-            "checkpoint_keep_recent_ratio", DEFAULT_CHECKPOINT_KEEP_RECENT_RATIO
-        )
-    )
-    if checkpoint_target_ratio >= trigger_ratio:
-        checkpoint_target_ratio = max(trigger_ratio * 0.75, 0.01)
-    checkpoint_min_new_turns = int(
-        compression_config.get(
-            "checkpoint_min_new_turns", DEFAULT_CHECKPOINT_MIN_NEW_TURNS
-        )
-    )
-    policy_used = DEFAULT_COMPACTION_POLICY
-    macro_on_trigger = bool(compression_config.get("macro_on_trigger", False))
-    keep_recent_tool_results = int(
-        compression_config.get(
-            "keep_recent_tool_results", DEFAULT_KEEP_RECENT_TOOL_RESULTS
-        )
-    )
-    configured_recent_raw_turns = int(
-        compression_config.get(
-            "recent_raw_turns",
-            DEFAULT_RECENT_RAW_TURNS if not aggressive else AGGRESSIVE_RECENT_RAW_TURNS,
-        )
-    )
-    configured_recent_tool_turns = int(
-        compression_config.get(
-            "recent_tool_turns",
-            DEFAULT_RECENT_TOOL_TURNS
-            if not aggressive
-            else AGGRESSIVE_RECENT_TOOL_TURNS,
-        )
-    )
-    tool_result_compact_min_tokens = int(
-        compression_config.get(
-            "tool_result_compact_min_tokens",
-            DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
-        )
-    )
-    active_tool_compaction_enabled = bool(
-        compression_config.get("active_tool_compaction_enabled", True)
-    )
-    active_tool_target_ratio = float(
-        compression_config.get(
-            "active_tool_target_ratio", DEFAULT_ACTIVE_TOOL_TARGET_RATIO
-        )
-    )
-    active_tool_result_max_tokens = int(
-        compression_config.get(
-            "active_tool_result_max_tokens", DEFAULT_ACTIVE_TOOL_RESULT_MAX_TOKENS
-        )
-    )
-    active_tool_summary_max_tokens = int(
-        compression_config.get(
-            "active_tool_summary_max_tokens", DEFAULT_ACTIVE_TOOL_SUMMARY_MAX_TOKENS
-        )
-    )
-    normalized_file_max_tokens = min(
-        int(
-            compression_config.get(
-                "file_content_max_tokens", DEFAULT_FILE_CONTENT_MAX_TOKENS
-            )
-        ),
-        max(token_budget.input_budget // 3, 128),
-    )
-    reasoning_max_tokens = int(
-        compression_config.get("reasoning_max_tokens", DEFAULT_REASONING_MAX_TOKENS)
-    )
-    thresholds = _build_compression_thresholds(
-        token_budget=token_budget,
-        warning_ratio=warning_ratio,
-        trigger_ratio=trigger_ratio,
-        blocking_ratio=blocking_ratio,
-    )
-    file_content, file_content_bounded = _normalize_file_content_for_budget(
-        file_content,
-        max_tokens=normalized_file_max_tokens,
-        model_id=tokenizer_model_id or model_id,
-        provider=provider,
-    )
-    context_checkpoint = None
-    if (
-        compression_enabled
-        and checkpoint_summary_enabled
-        and (history_override is None or active_round_delta)
-    ):
-        from app.services.context_checkpoint import get_valid_context_checkpoint
-
-        context_checkpoint = await get_valid_context_checkpoint(
-            conversation.id,
-            before_created_at=history_before_message_created_at,
-        )
-
-    (
-        untrimmed_messages,
-        untrimmed_protected_indexes,
-    ) = await _build_messages_with_file_content(
-        agent=agent,
-        conversation=conversation,
-        user_message=user_message,
-        file_content=file_content,
-        user_locale=user_locale,
-        history_override=history_override,
-        current_images=current_images,
-        model_supports_vision=model_supports_vision,
-        current_user_message_id=current_user_message_id,
-        include_current_user_message=include_current_user_message,
-        exclude_message_ids=exclude_message_ids,
-        history_before_message_created_at=history_before_message_created_at,
-        tool_timeouts=tool_timeouts,
-        user=user,
-        protected_round_id=protected_round_id,
-        context_checkpoint=context_checkpoint,
-    )
-    source_tokens = _estimate_message_tokens(
-        untrimmed_messages,
-        model_id=tokenizer_model_id,
-        provider=provider,
-    )
-    if not compression_enabled:
-        source_pressure = _assess_context_pressure(
-            before_tokens=source_tokens,
-            token_budget=token_budget,
-            thresholds=thresholds,
-        )
-        disabled_segments = {
-            "system": 0,
-            "checkpoint": 0,
-            "historical": 0,
-            "current_user": 0,
-            "active_tool": 0,
-            "other": 0,
-            "total": source_tokens,
-        }
-        return PreparedModelContext(
-            messages=untrimmed_messages,
-            token_budget=token_budget,
-            compression=CompressionMeta(
-                stage="none",
-                before_tokens=source_tokens,
-                after_tokens=source_tokens,
-                input_budget=token_budget.input_budget,
-                file_content_trimmed=file_content_bounded,
-                pressure_level=source_pressure,
-                trigger_ratio=trigger_ratio,
-                warning_ratio=warning_ratio,
-                blocking_ratio=blocking_ratio,
-                trigger_budget=thresholds.trigger_input_budget,
-                hard_budget=token_budget.input_budget,
-                utilization_before=(
-                    source_tokens / token_budget.input_budget
-                    if token_budget.input_budget
-                    else 0.0
-                ),
-                utilization_after=(
-                    source_tokens / token_budget.input_budget
-                    if token_budget.input_budget
-                    else 0.0
-                ),
-                policy_used=policy_used,
-                actions=["bound_file_content"] if file_content_bounded else [],
-                context_limit=token_budget.context_limit,
-                output_reserve=token_budget.output_reserve,
-                safety_margin=token_budget.safety_margin,
-                target_budget=thresholds.trigger_input_budget,
-                keep_recent_budget=max(
-                    int(token_budget.input_budget * checkpoint_target_ratio), 1
-                ),
-                segment_tokens=disabled_segments,
-            ),
-            protected_indexes=untrimmed_protected_indexes,
-        )
-    normalized_content = normalize_message_content(
-        untrimmed_messages,
-        protected_indexes=untrimmed_protected_indexes,
-        model_id=tokenizer_model_id or model_id,
-        provider=provider,
-        max_tool_result_tokens=active_tool_result_max_tokens,
-        max_reasoning_tokens=reasoning_max_tokens,
-    )
-    untrimmed_messages = normalized_content.messages
-    untrimmed_protected_indexes = normalized_content.protected_indexes
-    normalized_source_tokens = _estimate_message_tokens(
-        untrimmed_messages,
-        model_id=tokenizer_model_id,
-        provider=provider,
-    )
-    source_pressure = _assess_context_pressure(
-        before_tokens=normalized_source_tokens,
-        token_budget=token_budget,
-        thresholds=thresholds,
-    )
-    normalization_actions = list(normalized_content.actions or [])
-    normalization_tool_results_trimmed = normalized_content.tool_results_trimmed
-    normalization_reasoning_trimmed = normalized_content.reasoning_trimmed
-    if file_content_bounded:
-        normalization_actions.append("bound_file_content")
-
-    preflight_guard_enabled = bool(
-        compression_config.get("preflight_guard_enabled", True)
-    )
-    if not compression_enabled or not preflight_guard_enabled:
-        utilization_before = (
-            source_tokens / token_budget.input_budget
-            if token_budget.input_budget
-            else 0.0
-        )
-        disabled_segments = _context_segment_tokens(
-            untrimmed_messages,
-            model_id=tokenizer_model_id,
-            provider=provider,
-        )
-        return PreparedModelContext(
-            messages=untrimmed_messages,
-            token_budget=token_budget,
-            compression=CompressionMeta(
-                stage="none",
-                before_tokens=source_tokens,
-                after_tokens=normalized_source_tokens,
-                input_budget=token_budget.input_budget,
-                reasoning_trimmed=normalization_reasoning_trimmed,
-                tool_results_trimmed=normalization_tool_results_trimmed,
-                file_content_trimmed=file_content_bounded,
-                pressure_level=source_pressure,
-                trigger_ratio=trigger_ratio,
-                warning_ratio=warning_ratio,
-                blocking_ratio=blocking_ratio,
-                trigger_budget=thresholds.trigger_input_budget,
-                hard_budget=token_budget.input_budget,
-                utilization_before=utilization_before,
-                utilization_after=(
-                    normalized_source_tokens / token_budget.input_budget
-                    if token_budget.input_budget
-                    else 0.0
-                ),
-                policy_used=policy_used,
-                actions=list(dict.fromkeys(normalization_actions)),
-                context_limit=token_budget.context_limit,
-                output_reserve=token_budget.output_reserve,
-                safety_margin=token_budget.safety_margin,
-                active_tool_tokens=disabled_segments["active_tool"],
-                target_budget=thresholds.trigger_input_budget,
-                keep_recent_budget=max(
-                    int(token_budget.input_budget * checkpoint_target_ratio), 1
-                ),
-                segment_tokens=disabled_segments,
-            ),
-            protected_indexes=untrimmed_protected_indexes,
-        )
-    if compression_enabled and preflight_guard_enabled:
-        (
-            baseline_messages,
-            baseline_session_memory_compacted,
-            baseline_protected_indexes,
-        ) = await _apply_session_memory_compaction(
-            untrimmed_messages,
-            conversation=conversation,
-            model_id=tokenizer_model_id,
-            provider=provider,
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
-            protected_indexes=untrimmed_protected_indexes,
-            before_created_at=history_before_message_created_at,
-        )
-        if baseline_session_memory_compacted:
-            untrimmed_messages = baseline_messages
-            untrimmed_protected_indexes = baseline_protected_indexes
-
-    untrimmed_tokens = _estimate_message_tokens(
-        untrimmed_messages,
-        model_id=tokenizer_model_id,
-        provider=provider,
-    )
-    utilization_before = (
-        untrimmed_tokens / token_budget.input_budget
-        if token_budget.input_budget
-        else 0.0
-    )
-    needs_file_trim = (
-        bool(file_content) and untrimmed_tokens > thresholds.trigger_input_budget
-    )
-    effective_file_content = file_content
-    additional_file_trimmed = False
-    if needs_file_trim:
-        effective_file_content, additional_file_trimmed = _trim_file_content(
-            file_content,
-            aggressive=aggressive,
-        )
-    file_content_trimmed = file_content_bounded or additional_file_trimmed
-
-    if not additional_file_trimmed:
-        base_messages = untrimmed_messages
-        base_protected_indexes = set(untrimmed_protected_indexes)
-    else:
-        base_messages, base_protected_indexes = await _build_messages_with_file_content(
-            agent=agent,
-            conversation=conversation,
-            user_message=user_message,
-            file_content=effective_file_content,
-            user_locale=user_locale,
-            history_override=history_override,
-            current_images=current_images,
-            model_supports_vision=model_supports_vision,
-            current_user_message_id=current_user_message_id,
-            include_current_user_message=include_current_user_message,
-            exclude_message_ids=exclude_message_ids,
-            history_before_message_created_at=history_before_message_created_at,
-            tool_timeouts=tool_timeouts,
-            user=user,
-            protected_round_id=protected_round_id,
-            context_checkpoint=context_checkpoint,
-        )
-        (
-            base_messages,
-            _,
-            base_protected_indexes,
-        ) = await _apply_session_memory_compaction(
-            base_messages,
-            conversation=conversation,
-            model_id=tokenizer_model_id,
-            provider=provider,
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
-            protected_indexes=base_protected_indexes,
-            before_created_at=history_before_message_created_at,
-        )
-        rebuilt_normalization = normalize_message_content(
-            base_messages,
-            protected_indexes=base_protected_indexes,
-            model_id=tokenizer_model_id or model_id,
-            provider=provider,
-            max_tool_result_tokens=active_tool_result_max_tokens,
-            max_reasoning_tokens=reasoning_max_tokens,
-        )
-        base_messages = rebuilt_normalization.messages
-        base_protected_indexes = rebuilt_normalization.protected_indexes
-        normalization_actions.extend(rebuilt_normalization.actions or [])
-        normalization_tool_results_trimmed = (
-            normalization_tool_results_trimmed
-            or rebuilt_normalization.tool_results_trimmed
-        )
-        normalization_reasoning_trimmed = (
-            normalization_reasoning_trimmed or rebuilt_normalization.reasoning_trimmed
-        )
-
-    base_tokens = _estimate_message_tokens(
-        base_messages,
-        model_id=tokenizer_model_id,
-        provider=provider,
-    )
-    pressure_level = _assess_context_pressure(
-        before_tokens=base_tokens,
-        token_budget=token_budget,
-        thresholds=thresholds,
-    )
-
-    compacted_messages = base_messages
-    compacted_protected_indexes = set(base_protected_indexes)
-    base_segments = _context_segment_tokens(
-        base_messages,
-        model_id=tokenizer_model_id,
-        provider=provider,
-    )
-    compression = CompressionMeta(
-        stage="none",
-        before_tokens=untrimmed_tokens,
-        after_tokens=base_tokens,
-        input_budget=token_budget.input_budget,
-        reasoning_trimmed=normalization_reasoning_trimmed,
-        tool_results_trimmed=normalization_tool_results_trimmed,
-        file_content_trimmed=file_content_trimmed,
-        pressure_level=pressure_level,
-        trigger_ratio=trigger_ratio,
-        warning_ratio=warning_ratio,
-        blocking_ratio=blocking_ratio,
-        trigger_budget=thresholds.trigger_input_budget,
-        hard_budget=token_budget.input_budget,
-        utilization_before=utilization_before,
-        utilization_after=(base_tokens / token_budget.input_budget)
-        if token_budget.input_budget
-        else 0.0,
-        policy_used=policy_used,
-        actions=list(
-            dict.fromkeys(
-                [*normalization_actions]
-                + (["trim_file_content"] if file_content_trimmed else [])
-            )
-        ),
-        context_limit=token_budget.context_limit,
-        output_reserve=token_budget.output_reserve,
-        safety_margin=token_budget.safety_margin,
-        active_tool_tokens=base_segments["active_tool"],
-        target_budget=thresholds.trigger_input_budget,
-        keep_recent_budget=max(
-            int(token_budget.input_budget * checkpoint_target_ratio), 1
-        ),
-        segment_tokens=base_segments,
-    )
-    compression_baseline = compression
-
-    checkpoint_created = False
-    checkpoint_fallback_required = False
-    checkpoint_target_budget = max(
-        int(token_budget.input_budget * checkpoint_target_ratio), 1
-    )
-    if (
-        checkpoint_summary_enabled
-        and history_override is None
-        and source_pressure in {"auto_compact", "blocking", "over_budget"}
-    ):
-        from app.services.context_checkpoint import create_context_checkpoint
-
-        checkpoint_exclude_ids = set(exclude_message_ids or ())
-        if current_user_message_id:
-            checkpoint_exclude_ids.add(current_user_message_id)
-        checkpoint_source_messages = None
-        try:
-            if context_checkpoint and context_checkpoint.covered_through_message_id:
-                checkpoint_source_messages = (
-                    await get_visible_conversation_messages_after(
-                        conversation.id,
-                        after_message_id=context_checkpoint.covered_through_message_id,
-                        before_created_at=history_before_message_created_at,
-                        exclude_message_ids=checkpoint_exclude_ids,
-                    )
-                )
-            if checkpoint_source_messages is None:
-                checkpoint_source_messages = await get_visible_conversation_messages(
-                    conversation.id,
-                    before_created_at=history_before_message_created_at,
-                    exclude_message_ids=checkpoint_exclude_ids,
-                )
-        except Exception:
-            logger.warning(
-                "Skipping context checkpoint because history could not be loaded for %s",
-                conversation.id,
-                exc_info=True,
-            )
-            checkpoint_source_messages = []
-        checkpoint_result = await create_context_checkpoint(
-            agent=agent,
-            conversation=conversation,
-            messages=checkpoint_source_messages,
-            previous_checkpoint=context_checkpoint,
-            model_id=model_id,
-            tokenizer_model_id=tokenizer_model_id,
-            provider=provider,
-            summary_max_tokens=int(
-                compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)
-            ),
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
-            min_new_turns=checkpoint_min_new_turns,
-            input_budget=token_budget.input_budget,
-            keep_recent_tokens=max(
-                int(token_budget.input_budget * checkpoint_keep_recent_ratio), 1
-            ),
-        )
-        if checkpoint_result.created and checkpoint_result.checkpoint:
-            context_checkpoint = checkpoint_result.checkpoint
-            (
-                base_messages,
-                base_protected_indexes,
-            ) = await _build_messages_with_file_content(
-                agent=agent,
-                conversation=conversation,
-                user_message=user_message,
-                file_content=effective_file_content,
-                user_locale=user_locale,
-                history_override=history_override,
-                current_images=current_images,
-                model_supports_vision=model_supports_vision,
-                current_user_message_id=current_user_message_id,
-                include_current_user_message=include_current_user_message,
-                exclude_message_ids=exclude_message_ids,
-                history_before_message_created_at=history_before_message_created_at,
-                tool_timeouts=tool_timeouts,
-                user=user,
-                protected_round_id=protected_round_id,
-                context_checkpoint=context_checkpoint,
-            )
-            checkpoint_normalization = normalize_message_content(
-                base_messages,
-                protected_indexes=base_protected_indexes,
-                model_id=tokenizer_model_id or model_id,
-                provider=provider,
-                max_tool_result_tokens=active_tool_result_max_tokens,
-                max_reasoning_tokens=reasoning_max_tokens,
-            )
-            base_messages = checkpoint_normalization.messages
-            base_protected_indexes = checkpoint_normalization.protected_indexes
-            normalization_actions.extend(checkpoint_normalization.actions or [])
-            normalization_tool_results_trimmed = (
-                normalization_tool_results_trimmed
-                or checkpoint_normalization.tool_results_trimmed
-            )
-            normalization_reasoning_trimmed = (
-                normalization_reasoning_trimmed
-                or checkpoint_normalization.reasoning_trimmed
-            )
-            base_tokens = _estimate_message_tokens(
-                base_messages,
-                model_id=tokenizer_model_id,
-                provider=provider,
-            )
-            pressure_level = _assess_context_pressure(
-                before_tokens=base_tokens,
-                token_budget=token_budget,
-                thresholds=thresholds,
-            )
-            compacted_messages = base_messages
-            compacted_protected_indexes = set(base_protected_indexes)
-            checkpoint_created = True
-            checkpoint_actions = ["checkpoint_summary"]
-            if file_content_trimmed:
-                checkpoint_actions.insert(0, "trim_file_content")
-            checkpoint_segments = _context_segment_tokens(
-                base_messages,
-                model_id=tokenizer_model_id,
-                provider=provider,
-            )
-            compression = CompressionMeta(
-                stage="macro",
-                before_tokens=untrimmed_tokens,
-                after_tokens=base_tokens,
-                input_budget=token_budget.input_budget,
-                reasoning_trimmed=normalization_reasoning_trimmed,
-                tool_results_trimmed=normalization_tool_results_trimmed,
-                file_content_trimmed=file_content_trimmed,
-                summary_turns=checkpoint_result.covered_turns,
-                pressure_level=pressure_level,
-                trigger_ratio=trigger_ratio,
-                warning_ratio=warning_ratio,
-                blocking_ratio=blocking_ratio,
-                trigger_budget=thresholds.trigger_input_budget,
-                hard_budget=token_budget.input_budget,
-                utilization_before=(
-                    source_tokens / token_budget.input_budget
-                    if token_budget.input_budget
-                    else 0.0
-                ),
-                utilization_after=(
-                    base_tokens / token_budget.input_budget
-                    if token_budget.input_budget
-                    else 0.0
-                ),
-                policy_used=policy_used,
-                actions=list(
-                    dict.fromkeys([*normalization_actions, *checkpoint_actions])
-                ),
-                retained_recent_turns=checkpoint_result.retained_turns,
-                compacted_blocks=checkpoint_result.covered_turns,
-                context_limit=token_budget.context_limit,
-                output_reserve=token_budget.output_reserve,
-                safety_margin=token_budget.safety_margin,
-                active_tool_tokens=checkpoint_segments["active_tool"],
-                target_budget=thresholds.trigger_input_budget,
-                keep_recent_budget=checkpoint_target_budget,
-                segment_tokens=checkpoint_segments,
-            )
-            compression_baseline = compression
-        else:
-            checkpoint_fallback_required = True
-    should_run_micro = not checkpoint_created and pressure_level in {
-        "auto_compact",
-        "blocking",
-        "over_budget",
-    }
-    if compression_config.get("micro_compaction_enabled", True) and should_run_micro:
-        keep_recent_reasoning_messages = (
-            DEFAULT_RECENT_REASONING_MESSAGES
-            if not aggressive
-            else AGGRESSIVE_RECENT_REASONING_MESSAGES
-        )
-        if not compression_config.get("drop_historical_reasoning_first", True):
-            keep_recent_reasoning_messages = max(keep_recent_reasoning_messages, 9999)
-        (
-            compacted_messages,
-            compression,
-            compacted_protected_indexes,
-        ) = await _apply_micro_compaction(
-            messages=base_messages,
-            conversation=conversation,
-            model_id=tokenizer_model_id,
-            provider=provider,
-            token_budget=token_budget,
-            keep_recent_reasoning_messages=keep_recent_reasoning_messages,
-            keep_recent_tool_results=keep_recent_tool_results,
-            tool_result_compact_min_tokens=tool_result_compact_min_tokens,
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
-            pressure_level=pressure_level,
-            trigger_ratio=trigger_ratio,
-            warning_ratio=warning_ratio,
-            blocking_ratio=blocking_ratio,
-            policy_used=policy_used,
-            trigger_budget=thresholds.trigger_input_budget,
-            protected_indexes=base_protected_indexes,
-            before_created_at=history_before_message_created_at,
-            # Preflight has already checked the same base context for a ready snapshot.
-            skip_session_memory=True,
-        )
-        compression.file_content_trimmed = file_content_trimmed
-        if file_content_trimmed and "trim_file_content" not in (
-            compression.actions or []
-        ):
-            compression.actions = [*(compression.actions or []), "trim_file_content"]
-        compression = _merge_compression_meta(compression_baseline, compression)
-        compression_baseline = compression
-
-    should_run_macro = False
-    if compression_config.get("macro_compaction_enabled", True):
-        should_run_macro = pressure_level in {"blocking", "over_budget"}
-        if (
-            not should_run_macro
-            and pressure_level == "auto_compact"
-            and (macro_on_trigger or checkpoint_fallback_required)
-        ):
-            should_run_macro = True
-        if compression.after_tokens > token_budget.input_budget:
-            should_run_macro = True
-        if checkpoint_created and compression.after_tokens > checkpoint_target_budget:
-            should_run_macro = True
-
-    if should_run_macro:
-        summary_max_chars = (
-            int(
-                compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)
-            )
-            * 4
-        )
-        compacted_messages, compression, compacted_protected_indexes = (
-            _apply_budget_compaction(
-                messages=compacted_messages,
-                model_id=tokenizer_model_id,
-                provider=provider,
-                token_budget=token_budget,
-                compression=compression,
-                file_content_trimmed=file_content_trimmed,
-                aggressive=aggressive,
-                pressure_level=pressure_level,
-                trigger_ratio=trigger_ratio,
-                warning_ratio=warning_ratio,
-                blocking_ratio=blocking_ratio,
-                policy_used=policy_used,
-                trigger_budget=(
-                    thresholds.blocking_input_budget
-                    if pressure_level in {"blocking", "over_budget"}
-                    else thresholds.trigger_input_budget
-                ),
-                recent_raw_turns=configured_recent_raw_turns,
-                recent_tool_turns=configured_recent_tool_turns,
-                summary_max_chars=(
-                    summary_max_chars
-                    if not aggressive
-                    else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)
-                ),
-                block_summary_chars=(
-                    DEFAULT_BLOCK_SUMMARY_CHARS
-                    if not aggressive
-                    else AGGRESSIVE_BLOCK_SUMMARY_CHARS
-                ),
-                protected_indexes=compacted_protected_indexes,
-                target_budget=(
-                    checkpoint_target_budget if checkpoint_created else None
-                ),
-            )
-        )
-    if should_run_macro:
-        compression = _merge_compression_meta(compression_baseline, compression)
-        compression_baseline = compression
-    if compression_enabled and active_tool_compaction_enabled:
-        active_compaction = compact_active_tool_messages(
-            compacted_messages,
-            protected_indexes=compacted_protected_indexes,
-            model_id=tokenizer_model_id,
-            provider=provider,
-            input_budget=token_budget.input_budget,
-            target_ratio=active_tool_target_ratio,
-            max_tool_result_tokens=active_tool_result_max_tokens,
-            summary_max_tokens=active_tool_summary_max_tokens,
-        )
-        if active_compaction.changed:
-            compacted_messages = active_compaction.messages
-            compacted_protected_indexes = active_compaction.protected_indexes
-            base_messages = compacted_messages
-            base_protected_indexes = set(compacted_protected_indexes)
-            base_tokens = _estimate_message_tokens(
-                base_messages,
-                model_id=tokenizer_model_id,
-                provider=provider,
-            )
-            pressure_level = _assess_context_pressure(
-                before_tokens=base_tokens,
-                token_budget=token_budget,
-                thresholds=thresholds,
-            )
-            compression.after_tokens = base_tokens
-            compression.pressure_level = pressure_level
-            if compression.stage == "none":
-                compression.stage = "micro"
-            compression.tool_results_trimmed = (
-                compression.tool_results_trimmed
-                or active_compaction.tool_results_trimmed
-            )
-            compression.actions = [
-                *(compression.actions or []),
-                *(active_compaction.actions or []),
-            ]
-            compression.active_tool_tokens = sum(
-                _estimate_message_tokens(
-                    [message], model_id=tokenizer_model_id, provider=provider
-                )
-                for message in compacted_messages
-                if message.role == MessageRole.TOOL
-            )
-
-    if compression_enabled and compression.after_tokens > token_budget.input_budget:
-        fit_result = fit_tool_results_to_budget(
-            compacted_messages,
-            protected_indexes=compacted_protected_indexes,
-            model_id=tokenizer_model_id,
-            provider=provider,
-            input_budget=token_budget.input_budget,
-        )
-        if fit_result.changed:
-            compacted_messages = fit_result.messages
-            compacted_protected_indexes = fit_result.protected_indexes
-            compression.tool_results_trimmed = True
-            compression.actions = [
-                *(compression.actions or []),
-                *(fit_result.actions or []),
-            ]
-            compression.after_tokens = _estimate_message_tokens(
-                compacted_messages,
-                model_id=tokenizer_model_id,
-                provider=provider,
-            )
-            compression.stage = "reactive_retry"
-            compression.pressure_level = (
-                "over_budget"
-                if compression.after_tokens > token_budget.input_budget
-                else compression.pressure_level
-            )
-    final_segments = _context_segment_tokens(
-        compacted_messages,
-        model_id=tokenizer_model_id,
-        provider=provider,
-    )
-    compression.segment_tokens = final_segments
-    compression.active_tool_tokens = final_segments["active_tool"]
-    compression.context_limit = token_budget.context_limit
-    compression.output_reserve = token_budget.output_reserve
-    compression.safety_margin = token_budget.safety_margin
-    compression.target_budget = thresholds.trigger_input_budget
-    compression.keep_recent_budget = checkpoint_target_budget
-    compression.actions = list(dict.fromkeys(compression.actions or []))
-    if file_content_trimmed:
-        compression.before_tokens = max(compression.before_tokens, untrimmed_tokens)
-        if compression.stage == "none":
-            compression.stage = "micro"
-
-    compression.utilization_after = (
-        compression.after_tokens / token_budget.input_budget
-        if token_budget.input_budget
-        else 0.0
-    )
-
-    if compression.after_tokens > token_budget.input_budget:
-        # Emergency fallback: keep only system prompt and current user message
-        logger.warning(
-            "Context still exceeds budget after all compression (%d > %d tokens). "
-            "Applying emergency fallback: keeping only system prompt and current user message.",
-            compression.after_tokens,
-            token_budget.input_budget,
-        )
-        emergency_messages: list[Message] = []
-        emergency_protected_indexes: set[int] = set()
-        current_user_message = next(
-            (
-                compacted_messages[index].model_copy(deep=True)
-                for index in range(len(compacted_messages) - 1, -1, -1)
-                if index in compacted_protected_indexes
-                and compacted_messages[index].role == MessageRole.USER
-            ),
-            None,
-        ) or next(
-            (
-                compacted_messages[index].model_copy(deep=True)
-                for index in range(len(compacted_messages) - 1, -1, -1)
-                if compacted_messages[index].role == MessageRole.USER
-            ),
-            None,
-        )
-        if compacted_messages and compacted_messages[0].role == MessageRole.SYSTEM:
-            _append_message(
-                emergency_messages,
-                emergency_protected_indexes,
-                compacted_messages[0].model_copy(deep=True),
-            )
-        if current_user_message is not None:
-            _append_message(
-                emergency_messages,
-                emergency_protected_indexes,
-                current_user_message,
-                protect=True,
-            )
-
-        emergency_tokens = _estimate_message_tokens(
-            emergency_messages,
-            model_id=tokenizer_model_id,
-            provider=provider,
-        )
-        emergency_segments = _context_segment_tokens(
-            emergency_messages,
-            model_id=tokenizer_model_id,
-            provider=provider,
-        )
-        if emergency_tokens > token_budget.input_budget:
-            raise ContextLengthError(
-                message="Context length exceeded even with emergency fallback (system + user only)",
-                max_tokens=token_budget.input_budget,
-                actual_tokens=emergency_tokens,
-                provider=provider,
-                model=model_id,
-                details={
-                    "retryable": False,
-                    "reason": "system_and_user_exceed_input_budget",
-                    "context_limit": token_budget.context_limit,
-                    "output_reserve": token_budget.output_reserve,
-                    "safety_margin": token_budget.safety_margin,
-                    "segment_tokens": emergency_segments,
-                    "reduction_actions": list(compression.actions or []),
-                },
-            )
-
-        emergency_actions = list(compression.actions or [])
-        if "emergency_fallback" not in emergency_actions:
-            emergency_actions.append("emergency_fallback")
-
-        return PreparedModelContext(
-            messages=emergency_messages,
-            token_budget=token_budget,
-            compression=CompressionMeta(
-                stage="macro",
-                before_tokens=compression.before_tokens,
-                input_budget=token_budget.input_budget,
-                after_tokens=emergency_tokens,
-                reasoning_trimmed=compression.reasoning_trimmed,
-                tool_results_trimmed=compression.tool_results_trimmed,
-                file_content_trimmed=compression.file_content_trimmed,
-                summary_turns=max(len(compacted_messages) - len(emergency_messages), 0),
-                pressure_level="over_budget",
-                trigger_ratio=compression.trigger_ratio,
-                warning_ratio=compression.warning_ratio,
-                blocking_ratio=compression.blocking_ratio,
-                trigger_budget=compression.trigger_budget,
-                hard_budget=token_budget.input_budget,
-                utilization_before=compression.utilization_before,
-                utilization_after=(emergency_tokens / token_budget.input_budget)
-                if token_budget.input_budget
-                else 0.0,
-                policy_used=compression.policy_used,
-                actions=emergency_actions,
-                retained_recent_turns=0,
-                retained_tool_turns=0,
-                compacted_blocks=compression.compacted_blocks,
-                session_memory_compacted=compression.session_memory_compacted,
-                context_limit=token_budget.context_limit,
-                output_reserve=token_budget.output_reserve,
-                safety_margin=token_budget.safety_margin,
-                active_tool_tokens=emergency_segments["active_tool"],
-                target_budget=thresholds.trigger_input_budget,
-                keep_recent_budget=checkpoint_target_budget,
-                segment_tokens=emergency_segments,
-            ),
-            protected_indexes=emergency_protected_indexes,
-        )
-
-    return PreparedModelContext(
-        messages=compacted_messages,
-        token_budget=token_budget,
-        compression=compression,
-        protected_indexes=compacted_protected_indexes,
-    )
-
-
-async def retry_prepare_model_context(
-    *,
-    agent: Agent,
-    conversation: Conversation,
-    user_message: str,
-    model_id: str,
-    tokenizer_model_id: str | None = None,
-    model_context_limit: int | None,
-    model_max_output_tokens: int | None,
-    provider: str | None = None,
-    file_content: str | None = None,
-    user_locale: str | None = None,
-    history_override: Sequence[Any] | None = None,
-    current_images: Sequence[Any] | None = None,
-    model_supports_vision: bool = False,
-    current_user_message_id: UUID | None = None,
-    include_current_user_message: bool = False,
-    exclude_message_ids: Sequence[UUID] | None = None,
-    history_before_message_created_at: datetime | None = None,
-    tool_timeouts: dict[str, Any] | None = None,
-    user: Any = None,
-    protected_round_id: UUID | str | None = None,
-) -> PreparedModelContext:
-    return await prepare_model_context(
+    """Build, summarize, and bound the model request context."""
+    plan = await build_context_plan(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -2961,6 +1855,7 @@ async def retry_prepare_model_context(
         history_before_message_created_at=history_before_message_created_at,
         tool_timeouts=tool_timeouts,
         user=user,
-        aggressive=True,
         protected_round_id=protected_round_id,
+        tool_definition_tokens=tool_definition_tokens,
     )
+    return await plan.finalize()

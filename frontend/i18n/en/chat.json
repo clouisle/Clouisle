@@ -6,16 +6,8 @@
       "thinking": "Thinking",
       "generating": "Generating response",
       "compressingContext": "Compressing context",
-      "compressingContextProactive": "Optimizing conversation context",
-      "compressingContextBlocking": "Organizing conversation history",
-      "compressingContextReactive": "Deep organizing conversation history",
       "compressionCompleted": "Context compressed ({before} → {after} tokens)",
-      "compressionCompletedSummary": "Context compressed ({before} → {after} tokens, summarized {count} turns)",
-      "compressionCompletedProactive": "Conversation context optimized ({before} → {after} tokens)",
-      "compressionCompletedProactiveSummary": "Conversation context optimized ({before} → {after} tokens, organized {count} turns)",
-      "compressionCompletedBlocking": "Conversation history organized ({before} → {after} tokens)",
-      "compressionCompletedBlockingSummary": "Conversation history organized ({before} → {after} tokens, summarized {count} turns)",
-      "compressionCompletedReactive": "Conversation history deeply organized ({before} → {after} tokens)",
+      "compressionCompletedSummary": "Context compressed ({before} → {after} tokens, {saved} tokens saved, summarized {count} turns)",
       "executingTools": "Executing tools",
       "toolsExecuted": "Executed {count} tools"
     },
@@ -25,7 +17,13 @@
       "thought": "Thought process",
       "processing": "Reasoning...",
       "thinkingDefault": "Thinking...",
-      "thoughtDefault": "Thought process"
+      "thoughtDefault": "Thought process",
+      "thinkingActive": "In progress",
+      "thinkingCompleted": "Thought for {seconds}s",
+      "toolCallExecuting": "Executing {tool}",
+      "toolCallCompleted": "Executed {tool}",
+      "toolCallFailed": "Failed: {tool}",
+      "taskAction": "{task}"
     },
     "tool": {
       "running": "Running...",
@@ -61,6 +59,8 @@
       "download": "Download",
       "preview": "Preview",
       "files": "Files",
+      "showMore": "Show {count} more",
+      "showLess": "Show less",
       "images": "Images"
     },
     "variables": {
@@ -91,7 +91,10 @@
       "attachFile": "Attach file",
       "fileTooLarge": "File size exceeds the limit of {maxSize}MB",
       "maxFilesReached": "Maximum {max} files allowed",
-      "dropFiles": "Drop files here"
+      "dropFiles": "Drop files here",
+      "steeringQueued": "Steering sent to the active run",
+      "followUpQueued": "Follow-up queued",
+      "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running"
     },
     "message": {
       "copy": "Copy",
@@ -164,7 +167,21 @@
       "linkSafetyTitle": "Open link?",
       "linkSafetyDescription": "This link was generated in the chat. Please confirm before opening it.",
       "linkSafetyCancel": "Cancel",
-      "linkSafetyContinue": "Continue"
+      "linkSafetyContinue": "Continue",
+      "runStatusQueued": "Queued",
+      "runStatusRunning": "Running",
+      "runStatusStopping": "Stopping",
+      "runStatusCompleting": "Completing",
+      "runStatusCompleted": "Completed",
+      "runStatusStopped": "Stopped",
+      "runStatusFailed": "Failed",
+      "runStatusInterrupted": "Interrupted",
+      "queuedInputLabel": "Queued input",
+      "queuedSteering": "Queued steering",
+      "queuedFollowUp": "Queued follow-up",
+      "committedSteering": "Steering added",
+      "committedFollowUp": "Follow-up added",
+      "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running"
     },
     "userInputRequest": {
       "pending": "Please select an option:",

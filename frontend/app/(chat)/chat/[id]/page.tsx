@@ -101,6 +101,7 @@ export default function PublicChatPage({
   const searchParams = useSearchParams()
   const t = useTranslations('publicChat')
   const tCommon = useTranslations('common')
+  const tChatMessage = useTranslations('chat.message')
 
   const [agent, setAgent] = React.useState<PublicAgent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -201,6 +202,7 @@ export default function PublicChatPage({
     isLoading: chatLoading,
     isStreaming,
     conversationId,
+    runStatus,
     sendMessage,
     regenerate,
     editMessage,
@@ -482,14 +484,18 @@ export default function PublicChatPage({
   }
 
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
-    if (!message.trim() || chatLoading) return
+    const filesToProcess = submittedFiles || files
+    if (!message.trim() && filesToProcess.length === 0 && selectedImageRefs.length === 0) return
 
     if (!validateVariables()) {
       setVariablesOpen(true)
       return
     }
 
-    const filesToProcess = submittedFiles || files
+    if (chatLoading && (filesToProcess.length > 0 || selectedImageRefs.length > 0)) {
+      toast.error(tChatMessage('attachmentsDisabledDuringRun'))
+      return
+    }
 
     // Process images and files
     let images: ChatImageContent[] | undefined = agent?.enable_attachments && selectedImageRefs.length > 0
@@ -702,22 +708,24 @@ export default function PublicChatPage({
   )
 
   const composer = (
-    <ChatInput
-      value={input}
-      onChange={setInput}
-      onSubmit={handleSubmit}
-      onStop={stop}
-      placeholder={t('typePlaceholder')}
-      disabled={chatLoading && !isStreaming}
-      isLoading={chatLoading}
-      isStreaming={isStreaming}
-      allowAttachments={agent.enable_attachments}
-      enableFileUpload={agent.enable_attachments}
-      fileUploadConfig={agent.attachment_config}
-      files={files}
-      onFilesChange={setFiles}
-      isUploading={isUploading}
-    />
+    <>
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={handleSubmit}
+        onStop={stop}
+        placeholder={t('typePlaceholder')}
+        disabled={false}
+        isLoading={chatLoading}
+        isStreaming={isStreaming}
+        allowAttachments={agent.enable_attachments}
+        enableFileUpload={agent.enable_attachments}
+        fileUploadConfig={agent.attachment_config}
+        files={files}
+        onFilesChange={setFiles}
+        isUploading={isUploading}
+      />
+    </>
   )
 
   const inputArea = (
@@ -941,7 +949,12 @@ export default function PublicChatPage({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Loading Skeleton */}
           {loadingConversation ? (
-            <div className={cn('flex-1 min-h-0 overflow-y-auto space-y-4', showHeader ? 'px-4 pb-4 pt-[76px]' : 'p-4')}>
+            <div
+              data-testid="chat-history-loading-skeleton"
+              className={cn('flex-1 min-h-0 overflow-y-auto', showHeader ? 'pt-[76px]' : 'pt-4')}
+            >
+              <div data-testid="chat-history-loading-content" className="mx-auto max-w-3xl px-4 pb-4">
+                <div className="space-y-4">
               {/* Skeleton for user message */}
               <div className="flex justify-end">
                 <div className="max-w-[80%] space-y-2">
@@ -987,6 +1000,8 @@ export default function PublicChatPage({
                   </div>
                 </div>
               </div>
+                </div>
+              </div>
             </div>
           ) : (
             /* Messages using ChatContainer */
@@ -995,6 +1010,7 @@ export default function PublicChatPage({
               messages={messages}
               isStreaming={isStreaming}
               isLoading={chatLoading}
+              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : undefined}
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
@@ -1008,7 +1024,7 @@ export default function PublicChatPage({
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
-              onSelectImageReference={agent.enable_attachments ? ({ asset_ref, url }) => {
+              onSelectImageReference={agent.enable_attachments && !chatLoading ? ({ asset_ref, url }) => {
                 setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
                   ? current
                   : [...current, { asset_ref, type: 'image_url', url }])

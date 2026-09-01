@@ -23,6 +23,7 @@
     "result": "结果",
     "noResult": "运行工作流后将在此显示结果。",
     "runFailed": "运行失败",
+    "reconnect": "重新连接",
     "cancel": "取消运行",
     "cancelling": "正在取消...",
     "cancelFailed": "取消失败，请重试",
@@ -42,10 +43,14 @@
     "status": {
       "idle": "可以运行",
       "pending": "正在启动",
+      "queued": "排队中",
       "running": "运行中",
+      "stopping": "正在停止",
+      "completing": "正在收尾",
       "success": "已完成",
       "failed": "失败",
       "cancelled": "已取消",
+      "interrupted": "已中断",
       "timeout": "已超时",
       "waiting": "等待输入"
     },

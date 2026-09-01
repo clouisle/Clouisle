@@ -6,16 +6,8 @@
       "thinking": "思考中",
       "generating": "生成回复",
       "compressingContext": "压缩上下文",
-      "compressingContextProactive": "优化对话上下文",
-      "compressingContextBlocking": "整理对话历史",
-      "compressingContextReactive": "深度整理对话历史",
       "compressionCompleted": "上下文已压缩（{before} → {after} tokens）",
-      "compressionCompletedSummary": "上下文已压缩（{before} → {after} tokens，摘要 {count} 轮）",
-      "compressionCompletedProactive": "已优化对话上下文（{before} → {after} tokens）",
-      "compressionCompletedProactiveSummary": "已优化对话上下文（{before} → {after} tokens，整理 {count} 轮对话）",
-      "compressionCompletedBlocking": "已整理对话历史（{before} → {after} tokens）",
-      "compressionCompletedBlockingSummary": "已整理对话历史（{before} → {after} tokens，摘要 {count} 轮对话）",
-      "compressionCompletedReactive": "已深度整理对话历史（{before} → {after} tokens）",
+      "compressionCompletedSummary": "上下文已压缩（本次压缩 {before} → {after} tokens，释放 {saved} tokens，摘要 {count} 轮）",
       "executingTools": "执行工具",
       "toolsExecuted": "已执行 {count} 个工具"
     },
@@ -25,7 +17,13 @@
       "thought": "思考过程",
       "processing": "推理中...",
       "thinkingDefault": "思考中...",
-      "thoughtDefault": "思考过程"
+      "thoughtDefault": "思考过程",
+      "thinkingActive": "思考中",
+      "thinkingCompleted": "思考了 {seconds} 秒",
+      "toolCallExecuting": "执行 {tool}",
+      "toolCallCompleted": "已执行 {tool}",
+      "toolCallFailed": "执行失败：{tool}",
+      "taskAction": "{task}"
     },
     "tool": {
       "running": "执行中...",
@@ -61,6 +59,8 @@
       "download": "下载",
       "preview": "预览",
       "files": "文件",
+      "showMore": "展开其余 {count} 个",
+      "showLess": "收起",
       "images": "图片"
     },
     "variables": {
@@ -91,7 +91,10 @@
       "attachFile": "附加文件",
       "fileTooLarge": "文件大小超过限制 {maxSize}MB",
       "maxFilesReached": "最多只能上传 {max} 个文件",
-      "dropFiles": "拖放文件到此处"
+      "dropFiles": "拖放文件到此处",
+      "steeringQueued": "已发送指令到进行中的任务",
+      "followUpQueued": "追问已排队",
+      "attachmentsDisabledDuringRun": "Agent 运行期间无法上传附件"
     },
     "message": {
       "copy": "复制",
@@ -164,7 +167,21 @@
       "linkSafetyTitle": "要打开链接吗？",
       "linkSafetyDescription": "该链接由聊天内容生成，打开前请先确认。",
       "linkSafetyCancel": "取消",
-      "linkSafetyContinue": "继续"
+      "linkSafetyContinue": "继续",
+      "runStatusQueued": "排队中",
+      "runStatusRunning": "运行中",
+      "runStatusStopping": "正在停止",
+      "runStatusCompleting": "即将完成",
+      "runStatusCompleted": "已完成",
+      "runStatusStopped": "已停止",
+      "runStatusFailed": "失败",
+      "runStatusInterrupted": "已中断",
+      "queuedInputLabel": "已排队的输入",
+      "queuedSteering": "已排队的指令",
+      "queuedFollowUp": "已排队的追问",
+      "committedSteering": "已加入指令",
+      "committedFollowUp": "已加入追问",
+      "attachmentsDisabledDuringRun": "Agent 运行期间无法上传附件"
     },
     "userInputRequest": {
       "pending": "请选择一个选项：",

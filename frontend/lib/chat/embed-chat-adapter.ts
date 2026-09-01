@@ -129,6 +129,12 @@ export function createEmbedChatAdapter(agentId: string, apiKey: string): ChatPag
       embedApi.uploadFile(agentId, file, apiKey, (percent) => onProgress({ percent })),
 
     chatStream: (id, request) => embedApi.chatStream(id, request, apiKey),
+    startRun: (id, request) => embedApi.startRun(id, request, apiKey),
+    streamRun: (id, runId, afterSequence) => embedApi.streamRun(id, runId, apiKey, afterSequence),
+    getRunStatus: (id, runId) => embedApi.getRunStatus(id, runId, apiKey),
+    getRunEvents: (id, runId, afterSequence) => embedApi.getRunEvents(id, runId, apiKey, afterSequence),
+    postRunInput: (id, runId, body) => embedApi.postRunInput(id, runId, body, apiKey),
+    stopRun: (id, runId) => embedApi.stopRun(id, runId, apiKey),
 
     // Versioning/edit endpoints are not available in embed mode; the UI hides them.
     editMessageStream: () => { throw new Error('Not supported in embed mode') },

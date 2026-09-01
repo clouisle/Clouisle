@@ -135,6 +135,7 @@ export function ChatInput({
   const files = controlledFiles ?? internalFiles;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setFiles = onFilesChange ?? setInternalFiles;
+  const attachmentsDisabledDuringRun = isLoading || isStreaming;
 
   const documentMaxFileSize = fileUploadConfig?.max_file_size || GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES;
   const validateFileSize = useCallback((file: File) => {
@@ -151,25 +152,25 @@ export function ChatInput({
   const handleSubmit = useCallback(() => {
     const trimmedValue = value.trim();
     if (!trimmedValue && files.length === 0) return;
-    if (disabled || isLoading || isUploading) return;
+    if (disabled || isUploading) return;
+    if (attachmentsDisabledDuringRun && files.length > 0) {
+      setFileError(t('attachmentsDisabledDuringRun'));
+      return;
+    }
 
     onSubmit?.(trimmedValue, files.length > 0 ? files : undefined);
     onChange('');
-    
-    // Clear files
+
     if (onFilesChange) {
       onFilesChange([]);
     } else {
       setInternalFiles([]);
     }
 
-    // Clean up file preview URLs
-    files.forEach((f) => {
-      if (f.previewUrl) {
-        URL.revokeObjectURL(f.previewUrl);
-      }
+    files.forEach((file) => {
+      if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
     });
-  }, [value, files, disabled, isLoading, isUploading, onSubmit, onChange, onFilesChange]);
+  }, [attachmentsDisabledDuringRun, value, files, disabled, isUploading, onSubmit, onChange, onFilesChange, t]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Ignore Enter during IME composition (e.g., Chinese input)
@@ -185,6 +186,10 @@ export function ChatInput({
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (attachmentsDisabledDuringRun) {
+        setFileError(t('attachmentsDisabledDuringRun'));
+        return;
+      }
       const selectedFiles = Array.from(e.target.files || []);
       if (selectedFiles.length === 0) return;
 
@@ -216,7 +221,7 @@ export function ChatInput({
         fileInputRef.current.value = '';
       }
     },
-    [files, maxFiles, onFilesChange, validateFileSize]
+    [attachmentsDisabledDuringRun, files, maxFiles, onFilesChange, t, validateFileSize]
   );
 
   const removeFile = useCallback((fileId: string) => {
@@ -235,6 +240,12 @@ export function ChatInput({
   // Handle paste event for images and files
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (attachmentsDisabledDuringRun) {
+        if (Array.from(e.clipboardData?.items ?? []).some((item) => item.kind === 'file')) {
+          setFileError(t('attachmentsDisabledDuringRun'));
+        }
+        return;
+      }
       // Check if any attachment feature is enabled
       if (!allowAttachments && !enableFileUpload) return;
 
@@ -288,16 +299,15 @@ export function ChatInput({
         setInternalFiles((prev) => [...prev, ...newFiles]);
       }
     },
-    [allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, validateFileSize]
+    [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, t, validateFileSize]
   );
 
-  // Handle drag and drop
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!allowAttachments && !enableFileUpload) return;
+    if (attachmentsDisabledDuringRun || (!allowAttachments && !enableFileUpload)) return;
     setIsDragging(true);
-  }, [allowAttachments, enableFileUpload]);
+  }, [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -318,6 +328,10 @@ export function ChatInput({
     e.stopPropagation();
     setIsDragging(false);
 
+    if (attachmentsDisabledDuringRun) {
+      if (e.dataTransfer.files.length > 0) setFileError(t('attachmentsDisabledDuringRun'));
+      return;
+    }
     if (!allowAttachments && !enableFileUpload) return;
 
     const droppedFiles = Array.from(e.dataTransfer.files);
@@ -360,10 +374,12 @@ export function ChatInput({
     } else {
       setInternalFiles((prev) => [...prev, ...newFiles]);
     }
-  }, [allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, validateFileSize]);
+  }, [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, t, validateFileSize]);
 
-  const canSubmit = (value.trim().length > 0 || files.length > 0) && !disabled && !isLoading && !isUploading;
-  const showStop = isStreaming && onStop;
+  const canSubmit = (value.trim().length > 0 || files.length > 0)
+    && !disabled
+    && !isUploading
+  const showStop = (isLoading || isStreaming) && onStop
   
   // Show attachment button if either vision or file upload is enabled
   const showAttachments = allowAttachments || enableFileUpload;
@@ -447,7 +463,7 @@ export function ChatInput({
               multiple
               className="hidden"
               onChange={handleFileSelect}
-              disabled={disabled || files.length >= maxFiles}
+              disabled={disabled || attachmentsDisabledDuringRun || files.length >= maxFiles}
             />
             <Tooltip>
               <TooltipTrigger
@@ -456,19 +472,21 @@ export function ChatInput({
                     type="button"
                     className={cn(
                       'flex h-9 w-9 items-center justify-center rounded-full hover:bg-accent transition-colors',
-                      (disabled || files.length >= maxFiles) && 'opacity-50 cursor-not-allowed'
+                      (disabled || attachmentsDisabledDuringRun || files.length >= maxFiles) && 'opacity-50 cursor-not-allowed'
                     )}
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={disabled || files.length >= maxFiles}
+                    disabled={disabled || attachmentsDisabledDuringRun || files.length >= maxFiles}
                   >
                     <Plus className="h-5 w-5" />
                   </button>
                 }
               />
               <TooltipContent>
-                {files.length >= maxFiles
-                  ? t('maxFilesReached', { max: maxFiles })
-                  : t('attachFile')}
+                {attachmentsDisabledDuringRun
+                  ? t('attachmentsDisabledDuringRun')
+                  : files.length >= maxFiles
+                    ? t('maxFilesReached', { max: maxFiles })
+                    : t('attachFile')}
               </TooltipContent>
             </Tooltip>
           </>
@@ -494,28 +512,31 @@ export function ChatInput({
           />
         </div>
 
-        {/* Submit/Stop Button */}
-        {showStop ? (
+        {/* Submit and Stop Controls */}
+        <div className="flex items-center gap-1">
+          {showStop && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={t('stop')}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 transition-colors"
+                    onClick={onStop}
+                  >
+                    <StopCircle className="h-5 w-5" />
+                  </button>
+                }
+              />
+              <TooltipContent>{t('stop')}</TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger
               render={
                 <button
                   type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 transition-colors"
-                  onClick={onStop}
-                >
-                  <StopCircle className="h-5 w-5" />
-                </button>
-              }
-            />
-            <TooltipContent>{t('stop')}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
+                  aria-label={t('send')}
                   className={cn(
                     'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
                     canSubmit
@@ -525,7 +546,7 @@ export function ChatInput({
                   onClick={handleSubmit}
                   disabled={!canSubmit}
                 >
-                  {isLoading ? (
+                  {isLoading && !isStreaming ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <ArrowUp className="h-5 w-5" />
@@ -535,7 +556,7 @@ export function ChatInput({
             />
             <TooltipContent>{t('send')}</TooltipContent>
           </Tooltip>
-        )}
+        </div>
       </div>
     </div>
   );

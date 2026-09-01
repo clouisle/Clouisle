@@ -6,6 +6,7 @@
 """
 
 import asyncio
+from app.llm.tools.registry import ToolConcurrency
 import logging
 
 import httpx
@@ -157,6 +158,7 @@ def register_web_search_tools() -> None:
 
     tool_registry.register(
         name="web_search",
+        concurrency=ToolConcurrency.SHARED,
         description="搜索网页。使用搜索引擎查找相关信息。当需要获取最新信息、查找事实或研究某个话题时使用此工具。",
         parameters=[
             ToolParameter(
@@ -177,6 +179,7 @@ def register_web_search_tools() -> None:
 
     tool_registry.register(
         name="fetch_webpage",
+        concurrency=ToolConcurrency.SHARED,
         description="获取网页内容。读取指定 URL 的网页文本内容。用于深入阅读搜索结果中感兴趣的页面。",
         parameters=[
             ToolParameter(

@@ -1,4 +1,10 @@
-import asyncio
+"""Durable chat-stream transport failure contracts.
+
+Provider execution failures are persisted by the AgentRun worker. The HTTP
+endpoint only subscribes to the run event stream and passes terminal events
+through unchanged.
+"""
+
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -7,252 +13,83 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import chat
-from app.llm.errors import (
-    AuthenticationError,
-    LLMError,
-    ModelNotFoundError,
-    RateLimitError,
-)
-from app.models.agent import MessageRole, MessageRoundStatus, RAGMode
-from app.schemas.agent import ChatRequest
-from app.schemas.response import BusinessError, ResponseCode
+from app.schemas.agent import ChatRequest, RunStartOut
 
 
-def _fake_chat_resolution():
-    """Return a SimpleNamespace mimicking ChatModelResolution for tests."""
-    return SimpleNamespace(
-        model=SimpleNamespace(id=uuid4()),
-        team_model=SimpleNamespace(),
-        model_id=str(uuid4()),
-        tokenizer_model_id="stub-model",
-        provider="stub",
-        context_length=8192,
-        max_output_tokens=1024,
-        supports_vision=False,
-    )
+def _started() -> dict:
+    return {
+        "data": RunStartOut(
+            run_id=uuid4(),
+            conversation_id=uuid4(),
+            user_message_id=uuid4(),
+            status="queued",
+            stream_url="/agents/run/chat/runs/run/stream",
+        )
+    }
 
 
-def _user():
-    return SimpleNamespace(id=uuid4(), is_active=True, locale="en")
+async def _collect(response) -> str:
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+    return "".join(chunks)
 
 
-def _agent():
-    team_id = uuid4()
-    return SimpleNamespace(
-        id=uuid4(),
-        team_id=team_id,
-        team=SimpleNamespace(id=team_id),
-        rag_mode=RAGMode.OFF,
-        max_iterations=1,
-        enable_attachments=False,
-    )
+@pytest.mark.asyncio
+async def test_stream_passes_through_worker_failure_event(monkeypatch):
+    from app.services import agent_run_stream
 
+    started = _started()
+    start_run = AsyncMock(return_value=started)
+    monkeypatch.setattr(chat, "start_chat_run", start_run)
+    subscribe_calls = []
 
-def _message(role, content=""):
-    return SimpleNamespace(
-        id=uuid4(),
-        role=role,
-        content=content,
-        file_urls=None,
-        reasoning_content=None,
-        tool_calls=None,
-        save=AsyncMock(),
-        delete=AsyncMock(),
-    )
+    async def events(run_id, from_sequence=0):
+        subscribe_calls.append((run_id, from_sequence))
+        assert run_id == started["data"].run_id
+        assert from_sequence == 0
+        yield "event: run_start\ndata: {}\n\n"
+        yield 'event: error\ndata: {"code": "run_failed", "msg": "provider failed"}\n\n'
+        yield 'event: run_end\ndata: {"status": "failed"}\n\n'
 
-
-async def _start_stream(monkeypatch):
-    current_agent = _agent()
-    conversation = SimpleNamespace(id=uuid4(), title=None)
-    user_message = _message(MessageRole.USER, "hello")
-    assistant_message = _message(MessageRole.ASSISTANT)
-    created = iter([user_message, assistant_message])
-
-    monkeypatch.setattr(chat.deps, "check_api_key_agent_access", AsyncMock())
-    monkeypatch.setattr(
-        chat, "check_agent_chat_access", AsyncMock(return_value=current_agent)
-    )
-    monkeypatch.setattr(
-        chat, "get_or_create_conversation", AsyncMock(return_value=conversation)
-    )
-    monkeypatch.setattr(
-        chat.Message, "create", AsyncMock(side_effect=lambda **_kwargs: next(created))
-    )
-    monkeypatch.setattr(
-        chat, "get_next_user_branch_parent_id", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        chat,
-        "get_streaming_config",
-        lambda _agent: {
-            "global_timeout": 10,
-            "heartbeat_interval": 1,
-            "tool_timeouts": {},
-            "idle_timeout": 3,
-        },
-    )
-    monkeypatch.setattr(
-        "app.services.sandbox.gateway.sandbox_gateway.create_session",
-        AsyncMock(return_value="session"),
-    )
-    monkeypatch.setattr(
-        chat, "build_file_content_for_context", AsyncMock(return_value=(None, None))
-    )
-    monkeypatch.setattr(
-        chat,
-        "resolve_agent_chat_model",
-        AsyncMock(return_value=_fake_chat_resolution()),
-    )
-    monkeypatch.setattr(
-        chat, "get_visible_conversation_messages", AsyncMock(return_value=[])
-    )
-    monkeypatch.setattr(chat, "collect_conversation_images", lambda *_a, **_k: ([], []))
-    monkeypatch.setattr(
-        chat, "append_conversation_image_inventory", lambda text, _inventory: text
-    )
-    monkeypatch.setattr(chat, "get_agent_tools", AsyncMock(return_value=[]))
-    monkeypatch.setattr(chat, "get_tool_display_names", AsyncMock(return_value={}))
-    monkeypatch.setattr(
-        chat, "send_heartbeat_if_needed", AsyncMock(return_value=(True, 0))
-    )
+    monkeypatch.setattr(agent_run_stream, "sse_events", events)
 
     response = await chat.chat_stream(
-        current_agent.id,
+        uuid4(),
         ChatRequest(message="hello"),
-        SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
-        (_user(), None),
+        SimpleNamespace(),
+        (SimpleNamespace(id=uuid4()), None),
     )
-    return response, assistant_message
+    body = await _collect(response)
 
-
-def _error_event(events):
-    event = next(item for item in events if "event: error" in item)
-    return json.loads(event.split("data: ", 1)[1])
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("error", "expected_code", "expected_message"),
-    [
-        (ModelNotFoundError(), ResponseCode.MODEL_NOT_FOUND, "model_not_found"),
-        (AuthenticationError(), ResponseCode.UNAUTHORIZED, "unauthorized"),
-        (RateLimitError(), ResponseCode.UNKNOWN_ERROR, "rate_limit_exceeded"),
-        (LLMError("provider failed"), ResponseCode.UNKNOWN_ERROR, "formatted failure"),
-        (
-            chat.StreamIdleTimeoutError(),
-            ResponseCode.UNKNOWN_ERROR,
-            "stream_timeout_exceeded",
-        ),
-    ],
-)
-async def test_stream_maps_provider_and_idle_failures(
-    monkeypatch, error, expected_code, expected_message
-):
-    response, assistant_message = await _start_stream(monkeypatch)
-    persist = AsyncMock(return_value=True)
-    monkeypatch.setattr(chat, "persist_partial_round_error", persist)
-    monkeypatch.setattr(chat, "prepare_model_context", AsyncMock(side_effect=error))
-    monkeypatch.setattr(chat, "t", lambda key, **_kwargs: key)
-    monkeypatch.setattr(
-        chat, "_format_llm_error_message", lambda _error: "formatted failure"
+    assert [line for line in body.splitlines() if line.startswith("event: ")] == [
+        "event: run_start",
+        "event: error",
+        "event: run_end",
+    ]
+    error_payload = json.loads(
+        body.split("event: error\n", 1)[1].split("data: ", 1)[1].split("\n", 1)[0]
     )
-
-    events = [event async for event in response.body_iterator]
-    payload = _error_event(events)
-
-    assert payload["code"] == expected_code
-    assert payload["msg"] == expected_message
-    if isinstance(error, chat.StreamIdleTimeoutError):
-        assert payload["timeout"] == 3
-    persist.assert_awaited_once()
-    assert persist.await_args.args[0] is assistant_message
+    assert error_payload == {"code": "run_failed", "msg": "provider failed"}
+    start_run.assert_awaited_once()
+    assert subscribe_calls == [(started["data"].run_id, 0)]
 
 
-@pytest.mark.anyio
-async def test_stream_preserves_model_resolution_business_error(monkeypatch):
-    response, assistant_message = await _start_stream(monkeypatch)
-    persist = AsyncMock(return_value=True)
-    monkeypatch.setattr(chat, "persist_partial_round_error", persist)
-    monkeypatch.setattr(
-        chat,
-        "resolve_agent_chat_model",
-        AsyncMock(
-            side_effect=BusinessError(
-                code=ResponseCode.MODEL_NOT_FOUND,
-                msg_key="model_not_found",
-            )
-        ),
-    )
-    monkeypatch.setattr(chat, "t", lambda key, **_kwargs: key)
+@pytest.mark.asyncio
+async def test_stream_does_not_subscribe_when_run_start_fails(monkeypatch):
+    from app.services import agent_run_stream
 
-    events = [event async for event in response.body_iterator]
+    start_run = AsyncMock(side_effect=RuntimeError("enqueue failed"))
+    subscribe = AsyncMock()
+    monkeypatch.setattr(chat, "start_chat_run", start_run)
+    monkeypatch.setattr(agent_run_stream, "sse_events", subscribe)
 
-    assert _error_event(events) == {
-        "code": ResponseCode.MODEL_NOT_FOUND,
-        "msg": "model_not_found",
-    }
-    persist.assert_awaited_once()
-    assert persist.await_args.args[0] is assistant_message
+    with pytest.raises(RuntimeError, match="enqueue failed"):
+        await chat.chat_stream(
+            uuid4(),
+            ChatRequest(message="hello"),
+            SimpleNamespace(),
+            (SimpleNamespace(id=uuid4()), None),
+        )
 
-
-@pytest.mark.anyio
-async def test_empty_stream_falls_back_to_non_stream_provider_call(monkeypatch):
-    response, _assistant_message = await _start_stream(monkeypatch)
-    prepared = SimpleNamespace(
-        messages=[SimpleNamespace(model_dump=lambda **_kwargs: {"content": "hello"})],
-        compression=None,
-    )
-    monkeypatch.setattr(chat, "prepare_model_context", AsyncMock(return_value=prepared))
-    monkeypatch.setattr(
-        chat, "build_compression_events", lambda **_kwargs: (None, None)
-    )
-
-    async def empty_stream(_stream, **_kwargs):
-        if False:
-            yield None
-
-    monkeypatch.setattr(chat, "iter_with_idle_timeout", empty_stream)
-    fallback = AsyncMock(side_effect=RateLimitError())
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream", lambda **_kwargs: object()
-    )
-    monkeypatch.setattr("app.llm.model_manager.team_chat", fallback)
-    monkeypatch.setattr(
-        chat, "persist_partial_round_error", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(chat, "t", lambda key, **_kwargs: key)
-
-    events = [event async for event in response.body_iterator]
-
-    assert _error_event(events)["msg"] == "rate_limit_exceeded"
-    fallback.assert_awaited_once()
-
-
-@pytest.mark.anyio
-async def test_cancelled_empty_stream_deletes_placeholder(monkeypatch):
-    response, assistant_message = await _start_stream(monkeypatch)
-    prepared = SimpleNamespace(
-        messages=[SimpleNamespace(model_dump=lambda **_kwargs: {"content": "hello"})],
-        compression=None,
-    )
-    monkeypatch.setattr(chat, "prepare_model_context", AsyncMock(return_value=prepared))
-    monkeypatch.setattr(
-        chat, "build_compression_events", lambda **_kwargs: (None, None)
-    )
-
-    async def cancelled_stream(_stream, **_kwargs):
-        raise asyncio.CancelledError
-        yield
-
-    monkeypatch.setattr(chat, "iter_with_idle_timeout", cancelled_stream)
-    monkeypatch.setattr(
-        "app.llm.model_manager.team_chat_stream", lambda **_kwargs: object()
-    )
-
-    events = [event async for event in response.body_iterator]
-
-    assert len(events) == 1
-    assert "event: message_start" in events[0]
-    assistant_message.delete.assert_awaited_once()
-    assistant_message.save.assert_not_awaited()
-    assert assistant_message.round_status == MessageRoundStatus.MANUALLY_STOPPED
+    subscribe.assert_not_called()

@@ -5,6 +5,7 @@
 """
 
 import ast
+from app.llm.tools.registry import ToolConcurrency
 import math
 import operator
 from typing import Any, Callable
@@ -324,6 +325,7 @@ def register_calculator_tools() -> None:
 
     tool_registry.register(
         name="calculate",
+        concurrency=ToolConcurrency.SHARED,
         description="计算数学表达式。支持基本运算（+, -, *, /, //, %, **）和数学函数（sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil）以及常量（pi, e）。",
         parameters=[
             ToolParameter(
@@ -337,6 +339,7 @@ def register_calculator_tools() -> None:
 
     tool_registry.register(
         name="unit_convert",
+        concurrency=ToolConcurrency.SHARED,
         description="单位转换。支持长度（m, km, cm, mm, mi, yd, ft, in）、重量（kg, g, mg, lb, oz, t）、温度（c, f, k）、面积（m2, km2, ha, acre）、体积（l, ml, m3, gal）、时间（s, ms, min, h, d, wk）、数据（b, kb, mb, gb, tb）。",
         parameters=[
             ToolParameter(

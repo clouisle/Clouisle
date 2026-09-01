@@ -282,3 +282,105 @@ async def test_embed_workflow_run_stream_yields_events(monkeypatch):
     assert response.media_type == "text/event-stream"
     assert response.headers["x-accel-buffering"] == "no"
     assert [chunk async for chunk in response.body_iterator] == ["data: done\n\n"]
+
+
+@pytest.mark.anyio
+async def test_embed_durable_run_routes_validate_embed_access_and_delegate(monkeypatch):
+    from app.api.v1.endpoints import chat
+    from app.schemas.agent import ChatRequest, RunInputCreate
+
+    agent_id, run_id = uuid4(), uuid4()
+    user, api_key = SimpleNamespace(id=uuid4()), object()
+    embed_agent = SimpleNamespace(id=agent_id)
+    embed_access = AsyncMock(return_value=embed_agent)
+    monkeypatch.setattr(embed, "_get_embed_agent", embed_access)
+
+    start = AsyncMock(
+        return_value={
+            "data": {
+                "run_id": run_id,
+                "conversation_id": uuid4(),
+                "user_message_id": uuid4(),
+                "status": "queued",
+                "stream_url": "/chat/runs/ignored/stream",
+            }
+        }
+    )
+    stream_result = object()
+    stream = AsyncMock(return_value=stream_result)
+    status_result = {"data": {"status": "running"}}
+    status = AsyncMock(return_value=status_result)
+    events_result = {"data": [{"sequence": 4}]}
+    events = AsyncMock(return_value=events_result)
+    input_result = {"data": {"status": "running"}}
+    post_input = AsyncMock(return_value=input_result)
+    stop_result = {"data": {"status": "stopping"}}
+    stop = AsyncMock(return_value=stop_result)
+    monkeypatch.setattr(chat, "start_chat_run", start)
+    monkeypatch.setattr(chat, "stream_chat_run", stream)
+    monkeypatch.setattr(chat, "get_run_status", status)
+    monkeypatch.setattr(chat, "get_run_events", events)
+    monkeypatch.setattr(chat, "post_run_input", post_input)
+    monkeypatch.setattr(chat, "stop_run", stop)
+
+    chat_request = ChatRequest(message="hello")
+    request_value = request()
+    started = await embed.embed_start_chat_run(
+        agent_id, chat_request, request_value, (user, api_key)
+    )
+    assert started["data"].run_id == run_id
+    assert (
+        started["data"].stream_url
+        == f"/embed/agents/{agent_id}/chat/runs/{run_id}/stream"
+    )
+    start.assert_awaited_once_with(agent_id, chat_request, (user, api_key))
+
+    assert (
+        await embed.embed_stream_chat_run(
+            agent_id,
+            run_id,
+            request_value,
+            after_sequence=-3,
+            auth_result=(user, api_key),
+        )
+        is stream_result
+    )
+    stream.assert_awaited_once_with(
+        agent_id=agent_id, run_id=run_id, after_sequence=0, auth_result=(user, api_key)
+    )
+
+    assert (
+        await embed.embed_get_run_status(
+            agent_id, run_id, request_value, (user, api_key)
+        )
+        is status_result
+    )
+    status.assert_awaited_once_with(agent_id, run_id, (user, api_key))
+
+    assert (
+        await embed.embed_get_run_events(
+            agent_id,
+            run_id,
+            request_value,
+            after_sequence=-2,
+            auth_result=(user, api_key),
+        )
+        is events_result
+    )
+    events.assert_awaited_once_with(agent_id, run_id, 0, (user, api_key))
+
+    input_body = RunInputCreate(delivery="steer", content="focus")
+    assert (
+        await embed.embed_post_run_input(
+            agent_id, run_id, input_body, request_value, (user, api_key)
+        )
+        is input_result
+    )
+    post_input.assert_awaited_once_with(agent_id, run_id, input_body, (user, api_key))
+
+    assert (
+        await embed.embed_stop_run(agent_id, run_id, request_value, (user, api_key))
+        is stop_result
+    )
+    stop.assert_awaited_once_with(agent_id, run_id, (user, api_key))
+    assert embed_access.await_count == 6

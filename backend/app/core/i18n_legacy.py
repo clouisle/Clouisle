@@ -618,41 +618,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Human verification is required",
         "zh": "请完成人机验证",
     },
-    "chat_context_compaction_blocking": {
-        "en": "Applied blocking-level compaction before the next model call",
-        "zh": "已在下一次模型调用前执行阻断级上下文压缩",
+    "chat_context_summary_applied": {
+        "en": "Applied a context summary before the next model call",
+        "zh": "已在下一次模型调用前应用上下文摘要",
     },
-    "chat_context_compaction_checkpoint_summary": {
-        "en": "generated a model context checkpoint",
-        "zh": "已生成模型上下文检查点",
-    },
-    "chat_context_compaction_file_content_trimmed": {
-        "en": "trimmed file content",
-        "zh": "已裁剪文件内容",
-    },
-    "chat_context_compaction_macro_summary": {
-        "en": "applied deterministic macro-summary fallback",
-        "zh": "已应用确定性宏摘要回退",
-    },
-    "chat_context_compaction_proactive": {
-        "en": "Applied proactive context compaction before the next model call",
-        "zh": "已在下一次模型调用前执行主动上下文压缩",
-    },
-    "chat_context_compaction_reasoning_trimmed": {
-        "en": "trimmed historical reasoning",
-        "zh": "已裁剪历史推理内容",
-    },
-    "chat_context_compaction_retried": {
-        "en": "Retried with more aggressive context compaction",
-        "zh": "已使用更激进的上下文压缩重试",
-    },
-    "chat_context_compaction_summarized_turns": {
-        "en": "summarized {count} older turns",
-        "zh": "已摘要 {count} 个较早轮次",
-    },
-    "chat_context_compaction_tool_results_trimmed": {
-        "en": "compacted older tool results",
-        "zh": "已压缩较早的工具结果",
+    "context_summarization_failed": {
+        "en": "Please clear or shorten the conversation history, then try again.",
+        "zh": "请清理或缩短会话历史后重试。",
     },
     "chat_file_upload_instruction": {
         "en": "[The user uploaded the following files, please use the markitdown tool to parse the file content:]",

@@ -912,32 +912,11 @@ msgstr "Reached the maximum tool-call iterations for this round."
 msgid "chat_success"
 msgstr "Chat completed successfully"
 
-msgid "chat_context_compaction_blocking"
-msgstr "Applied blocking-level compaction before the next model call"
+msgid "chat_context_summary_applied"
+msgstr "Applied a context summary before the next model call"
 
-msgid "chat_context_compaction_checkpoint_summary"
-msgstr "generated a model context checkpoint"
-
-msgid "chat_context_compaction_file_content_trimmed"
-msgstr "trimmed file content"
-
-msgid "chat_context_compaction_macro_summary"
-msgstr "applied deterministic macro-summary fallback"
-
-msgid "chat_context_compaction_proactive"
-msgstr "Applied proactive context compaction before the next model call"
-
-msgid "chat_context_compaction_reasoning_trimmed"
-msgstr "trimmed historical reasoning"
-
-msgid "chat_context_compaction_retried"
-msgstr "Retried with more aggressive context compaction"
-
-msgid "chat_context_compaction_summarized_turns"
-msgstr "summarized {count} older turns"
-
-msgid "chat_context_compaction_tool_results_trimmed"
-msgstr "compacted older tool results"
+msgid "context_summarization_failed"
+msgstr "Please clear or shorten the conversation history, then try again."
 
 msgid "chunk_created"
 msgstr "Chunk created successfully"

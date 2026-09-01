@@ -69,7 +69,7 @@ mock.module('@/lib/api/admin', () => ({
   teamsApi: { getTeams },
   adminAgentsApi: { create: createAgent },
 }))
-mock.module('@/lib/api/packages', () => ({ adminPackagesApi: { export: exportPackage }, downloadBlob }))
+mock.module('@/lib/api/packages', () => ({ packagesApi: { export: exportPackage }, adminPackagesApi: { export: exportPackage }, downloadBlob }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: ({ open, onImported }: { open: boolean; onImported: () => void }) => open ? <button onClick={onImported}>imported</button> : null }))
 mock.module('@/app/(platform)/app/apps/_components/app-create-dialog', () => ({ AppCreateDialog: ({ open, onSuccess }: { open: boolean; onSuccess: () => void }) => open ? <button onClick={onSuccess}>created</button> : null }))
 

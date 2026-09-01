@@ -160,6 +160,24 @@ event: message_end
 data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 175}, "timing": {"first_token_ms": 320, "duration_ms": 2300, "tokens_per_second": 10.9}}
 ```
 
+Agent chat runs are durable (`AgentRun`): events carry an envelope with
+`run_id`, `sequence`, `timestamp`, `round_id`, `message_id` and `type` so
+reconnects resume via `after_sequence` without duplicates. Run-scoped events:
+
+```
+event: run_start
+data: {"status": "running", "run_id": "run-123"}
+
+event: input_accepted
+data: {"kind": "steer", "content": "..."}
+
+event: run_end
+data: {"status": "completed", "message_id": "msg-456"}
+```
+
+`run_end` is exactly one terminal event per run (`completed | stopped |
+failed | interrupted`). Streams stop after a terminal event.
+
 ### Event Details
 
 **message_start event:**

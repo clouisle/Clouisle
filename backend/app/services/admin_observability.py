@@ -31,7 +31,7 @@ CACHE_PREFIX = "admin:observability:v1"
 HEALTH_SNAPSHOT_KEY = f"{CACHE_PREFIX}:system:health:snapshots"
 VALID_TIME_RANGES = {"7d", "30d", "90d", "all"}
 VALID_GRANULARITIES = {"hour", "day"}
-WORKER_QUEUES = ("default", "knowledge", "workflow", "sandbox")
+WORKER_QUEUES = ("default", "knowledge", "workflow", "agent", "sandbox")
 WORKER_QUEUE_SCAN_BATCH_SIZE = 500
 WORKER_QUEUE_SCAN_LIMIT = 5_000
 

@@ -189,7 +189,7 @@ async def test_workers_report_tasks_and_queue_depths(monkeypatch):
 @pytest.mark.asyncio
 async def test_queue_lengths_and_snapshot_use_redis_boundary(monkeypatch):
     redis = SimpleNamespace(
-        llen=AsyncMock(side_effect=[2, 5, 0, None]),
+        llen=AsyncMock(side_effect=[2, 5, 0, 3, None]),
         lpush=AsyncMock(),
         ltrim=AsyncMock(),
         expire=AsyncMock(),
@@ -201,6 +201,7 @@ async def test_queue_lengths_and_snapshot_use_redis_boundary(monkeypatch):
         {"queue": "default", "pending": 2},
         {"queue": "knowledge", "pending": 5},
         {"queue": "workflow", "pending": 0},
+        {"queue": "agent", "pending": 3},
         {"queue": "sandbox", "pending": 0},
     ]
     await service._store_health_snapshot(

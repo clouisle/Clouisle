@@ -1,7 +1,7 @@
 # 聊天接口 API
 
 **文件**: `backend/app/api/v1/endpoints/chat.py`
-**路径前缀**: `/api/v1/chat`
+**路径前缀**: `/api/v1/agents`（chat 路由以该前缀挂载）
 
 ## 概述
 
@@ -27,11 +27,11 @@
 {
   "conversation_id": "uuid (可选，新对话不传)",
   "message": "string",
-  "files": [
-    {
-      "type": "image",
-      "url": "string"
-    }
+  "images": [
+    "data:image/png;base64,..."
+  ],
+  "file_urls": [
+    "/api/v1/upload/files/general/2026/09/xxx.pdf"
   ],
   "variables": {
     "key": "value"
@@ -58,7 +58,7 @@
 }
 ```
 
-**响应（流式）**: Server-Sent Events
+**响应（流式）**: Server-Sent Events（`POST /{agent_id}/chat/stream`）
 
 ```
 event: message_start
@@ -67,17 +67,17 @@ data: {"conversation_id": "uuid", "message_id": "uuid"}
 event: content_delta
 data: {"delta": "Hello"}
 
-event: content_delta
-data: {"delta": " world"}
+event: reasoning_delta
+data: {"delta": "..."}
 
-event: tool_call_start
-data: {"tool_call_id": "uuid", "name": "search"}
+event: tool_call
+data: {"tool_call_id": "uuid", "tool_name": "search", "arguments": "..."}
 
-event: tool_call_delta
-data: {"delta": "{\"query\":"}
+event: tool_result
+data: {"tool_call_id": "uuid", "tool_name": "search", "result": "..."}
 
-event: tool_call_end
-data: {"tool_call_id": "uuid"}
+event: compression_end
+data: {"actions": ["context_summary"], "summary_saved_tokens": 89200}
 
 event: message_end
 data: {"usage": {...}}
@@ -85,18 +85,15 @@ data: {"usage": {...}}
 
 ---
 
-### POST /{agent_id}/chat/upload
+### POST /upload/file、POST /upload/parse
 
-上传文件
+上传与解析文件（共享上传接口，前缀 `/api/v1/upload`）
 
 | 属性 | 值 |
 |------|-----|
 | 认证 | Bearer Token 或 API Key |
-| 权限 | 根据 Agent 可见性检查 |
-| 说明 | 上传文件用于对话 |
-
-**路径参数**:
-- `agent_id`: Agent UUID
+| 权限 | 登录用户 |
+| 说明 | `POST /api/v1/upload/file` 上传并保存文件（默认最大 10MB）；`POST /api/v1/upload/parse` 解析文档内容（默认最大 100000 字符）。聊天中的附件使用这两个接口：先上传拿到 URL，再以 `file_urls` 传入聊天请求 |
 
 **请求体**: `multipart/form-data`
 - `file`: 文件
@@ -106,41 +103,35 @@ data: {"usage": {...}}
 {
   "code": 0,
   "data": {
-    "file_id": "uuid",
+    "url": "/api/v1/upload/files/general/2026/09/xxx.pdf",
     "filename": "string",
-    "content_type": "string",
     "size": 1024,
-    "url": "string"
+    "content_type": "string"
   }
 }
 ```
 
 ---
 
-### POST /{agent_id}/chat/stop
+### POST /{agent_id}/chat/runs/{run_id}/stop
 
-停止生成
+停止持久化运行
 
 | 属性 | 值 |
 |------|-----|
 | 认证 | Bearer Token 或 API Key |
 | 权限 | 对话所有者 |
-| 说明 | 停止正在进行的流式生成 |
+| 说明 | 向运行发送协作停止信号，运行在安全工具边界停止（状态变为 stopped） |
 
 **路径参数**:
 - `agent_id`: Agent UUID
+- `run_id`: 运行 UUID
 
-**请求体**:
-```json
-{
-  "conversation_id": "uuid",
-  "message_id": "uuid"
-}
-```
+不需要请求体。
 
 ---
 
-### POST /{agent_id}/chat/regenerate
+### POST /{agent_id}/messages/{message_id}/regenerate
 
 重新生成
 
@@ -148,19 +139,11 @@ data: {"usage": {...}}
 |------|-----|
 | 认证 | Bearer Token 或 API Key |
 | 权限 | 对话所有者 |
-| 说明 | 重新生成最后一条回复 |
+| 说明 | 重新生成指定助手消息，生成新版本；历史版本通过 `GET /{agent_id}/messages/{message_id}/versions` 与 `POST /{agent_id}/messages/{message_id}/switch-version` 访问 |
 
 **路径参数**:
 - `agent_id`: Agent UUID
-
-**请求体**:
-```json
-{
-  "conversation_id": "uuid",
-  "message_id": "uuid",
-  "stream": true
-}
-```
+- `message_id`: 消息 UUID
 
 ---
 
@@ -231,14 +214,15 @@ Agent 可以调用配置的工具：
 ### 图片
 
 当 Agent 启用 Vision 时，支持图片输入：
-- 支持格式: PNG, JPG, GIF, WebP
-- 最大尺寸: 20MB
+- 支持格式: JPEG, PNG, GIF, WebP, SVG, ICO
+- 最大尺寸: 10MB
 
 ### 文档
 
-当 Agent 启用文件上传时，支持文档输入：
-- 支持格式: PDF, DOCX, TXT, MD
-- 文档内容会被解析并作为上下文
+当 Agent 启用附件（`enable_attachments`）时，支持文档输入：
+- 支持格式: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, MD, CSV, JSON, HTML
+- 文档先经 `POST /api/v1/upload/file` 保存，再以 `file_urls` 传入聊天请求
+- 文档内容解析为文本后注入上下文，受 `attachment_config` 约束（`max_content_length` 默认 100000 字符，`truncate_strategy` 可选 end/start/middle）
 
 ---
 

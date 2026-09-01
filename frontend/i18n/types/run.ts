@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-17T05:37:33.240Z
+// GENERATED — 2026-08-31T02:51:53.471Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
@@ -25,6 +25,7 @@ export type RunMessages = {
     result: string
     noResult: string
     runFailed: string
+    reconnect: string
     cancel: string
     cancelling: string
     cancelFailed: string
@@ -44,10 +45,14 @@ export type RunMessages = {
     status: {
       idle: string
       pending: string
+      queued: string
       running: string
+      stopping: string
+      completing: string
       success: string
       failed: string
       cancelled: string
+      interrupted: string
       timeout: string
       waiting: string
     }

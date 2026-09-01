@@ -114,6 +114,8 @@ export interface FilePart {
   url?: string
   mimeType?: string
   size?: number
+  /** Original workspace path when the file came from the artifact tool. */
+  path?: string
 }
 
 /**

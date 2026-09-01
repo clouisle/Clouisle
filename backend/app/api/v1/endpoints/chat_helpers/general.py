@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from app.models.agent import Agent, Message
+    from app.models.agent import Message
 
 logger = logging.getLogger(__name__)
 
@@ -192,27 +192,6 @@ def append_conversation_image_inventory(
     return f"{user_message}\n\n{image_inventory}" if user_message else image_inventory
 
 
-def should_retry_context_length(agent: "Agent") -> bool:
-    """Whether reactive context-length retry is enabled for the agent."""
-    from app.services.chat_context import get_context_compression_config
-
-    return bool(
-        get_context_compression_config(agent).get("reactive_retry_enabled", True)
-    )
-
-
 def get_compression_trigger(compression: Any) -> str:
-    """Determine compression trigger type based on compression state."""
-    pressure_level = getattr(compression, "pressure_level", None)
-    actions = getattr(compression, "actions", None) or []
-    if "checkpoint_summary" in actions and pressure_level not in {
-        "blocking",
-        "over_budget",
-    }:
-        return "proactive_threshold"
-    if (
-        pressure_level in {"blocking", "over_budget"}
-        or getattr(compression, "stage", None) == "macro"
-    ):
-        return "blocking_threshold"
+    """Return the stable SSE trigger for model-generated context summaries."""
     return "proactive_threshold"

@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-19T13:12:45.580Z
+// GENERATED — 2026-08-31T21:38:28.563Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -8,16 +8,8 @@ export type ChatMessages = {
       thinking: string
       generating: string
       compressingContext: string
-      compressingContextProactive: string
-      compressingContextBlocking: string
-      compressingContextReactive: string
       compressionCompleted: string
       compressionCompletedSummary: string
-      compressionCompletedProactive: string
-      compressionCompletedProactiveSummary: string
-      compressionCompletedBlocking: string
-      compressionCompletedBlockingSummary: string
-      compressionCompletedReactive: string
       executingTools: string
       toolsExecuted: string
     }
@@ -28,6 +20,12 @@ export type ChatMessages = {
       processing: string
       thinkingDefault: string
       thoughtDefault: string
+      thinkingActive: string
+      thinkingCompleted: string
+      toolCallExecuting: string
+      toolCallCompleted: string
+      toolCallFailed: string
+      taskAction: string
     }
     tool: {
       running: string
@@ -63,6 +61,8 @@ export type ChatMessages = {
       download: string
       preview: string
       files: string
+      showMore: string
+      showLess: string
       images: string
     }
     variables: {
@@ -94,6 +94,9 @@ export type ChatMessages = {
       fileTooLarge: string
       maxFilesReached: string
       dropFiles: string
+      steeringQueued: string
+      followUpQueued: string
+      attachmentsDisabledDuringRun: string
     }
     message: {
       copy: string
@@ -167,6 +170,20 @@ export type ChatMessages = {
       linkSafetyDescription: string
       linkSafetyCancel: string
       linkSafetyContinue: string
+      runStatusQueued: string
+      runStatusRunning: string
+      runStatusStopping: string
+      runStatusCompleting: string
+      runStatusCompleted: string
+      runStatusStopped: string
+      runStatusFailed: string
+      runStatusInterrupted: string
+      queuedInputLabel: string
+      queuedSteering: string
+      queuedFollowUp: string
+      committedSteering: string
+      committedFollowUp: string
+      attachmentsDisabledDuringRun: string
     }
     userInputRequest: {
       pending: string

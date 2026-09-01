@@ -1,0 +1,14 @@
+{
+    "services": {
+        "frontend": {
+            "command": "bun dev",
+            "cwd": "frontend"
+        },
+        "backend": {
+            "command": "uv run --project backend main.py server"
+        },
+        "worker": {
+            "command": "uv run --project backend main.py worker"
+        }
+    }
+}

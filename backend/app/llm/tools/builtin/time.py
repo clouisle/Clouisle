@@ -7,7 +7,7 @@
 from datetime import datetime, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
-from ..registry import tool_registry, ToolParameter
+from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
 
 async def get_current_time(timezone_name: str = "UTC") -> dict:
@@ -79,6 +79,7 @@ def register_time_tools() -> None:
 
     tool_registry.register(
         name="get_current_time",
+        concurrency=ToolConcurrency.SHARED,
         description="获取当前时间。返回指定时区的当前日期、时间、星期和时间戳。",
         parameters=[
             ToolParameter(
@@ -93,6 +94,7 @@ def register_time_tools() -> None:
 
     tool_registry.register(
         name="format_datetime",
+        concurrency=ToolConcurrency.SHARED,
         description="格式化日期时间。将时间戳转换为指定格式的字符串。",
         parameters=[
             ToolParameter(

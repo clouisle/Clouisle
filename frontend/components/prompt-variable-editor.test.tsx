@@ -73,6 +73,11 @@ mock.module('react/jsx-dev-runtime', () => ({
   jsxDEV: makeElement,
   Fragment: 'Fragment',
 }))
+mock.module('react/jsx-runtime', () => ({
+  jsx: makeElement,
+  jsxs: makeElement,
+  Fragment: 'Fragment',
+}))
 
 mock.module('@/components/ui/button', () => ({
   Button: (props: Record<string, unknown>) => makeElement('button', props),

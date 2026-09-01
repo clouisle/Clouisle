@@ -30,10 +30,6 @@ from .agent import (
     AgentStatus,
     AgentVisibility,
     Conversation,
-    ConversationContextCheckpoint,
-    ConversationContextCheckpointStatus,
-    ConversationSessionMemory,
-    ConversationSessionMemoryStatus,
     Message,
     MessageRole,
     MessageRoundRole,
@@ -89,6 +85,14 @@ from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
+from .agent_run import (
+    AgentRun,
+    AgentRunInput,
+    AgentRunStatus,
+    AgentRunMode,
+    AgentRunInputKind,
+    AgentRunInputStatus,
+)
 
 __all__ = [
     "Asset",
@@ -125,10 +129,6 @@ __all__ = [
     "AgentStatus",
     "AgentVisibility",
     "Conversation",
-    "ConversationContextCheckpoint",
-    "ConversationContextCheckpointStatus",
-    "ConversationSessionMemory",
-    "ConversationSessionMemoryStatus",
     "Message",
     "MessageRole",
     "MessageRoundRole",
@@ -179,4 +179,10 @@ __all__ = [
     "EntityType",
     "RelationType",
     "PasswordHistory",
+    "AgentRun",
+    "AgentRunInput",
+    "AgentRunStatus",
+    "AgentRunMode",
+    "AgentRunInputKind",
+    "AgentRunInputStatus",
 ]

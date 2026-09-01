@@ -211,6 +211,32 @@ describe('streaming agent API requests', () => {
 
     await Promise.all([regenerate.stream, edit.stream, chat.stream])
   })
+  it('starts durable runs and opens replayable event streams', async () => {
+    const post = spyOnApi('post').mockResolvedValue({
+      run_id: 'run-1',
+      conversation_id: 'conversation-1',
+      user_message_id: 'message-1',
+      status: 'queued',
+      stream_url: '/agents/agent-1/chat/runs/run-1/stream',
+    })
+    const fetch = spyOnFetch().mockResolvedValue(new Response())
+
+    const request = { message: 'Hello', conversation_id: 'conversation-1' }
+    await agentsApi.startRun('agent-1', request)
+    const stream = agentsApi.streamRun('agent-1', 'run-1', 7)
+    stream.abort()
+
+    expect(post).toHaveBeenCalledWith('/agents/agent-1/chat/runs', request)
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/api/v1/agents/agent-1/chat/runs/run-1/stream?after_sequence=7',
+      {
+        headers: { Accept: 'text/event-stream' },
+        signal: expect.any(AbortSignal),
+      },
+    )
+    expect((fetch.mock.calls[0][1]?.signal as AbortSignal).aborted).toBe(true)
+    await stream.stream
+  })
 
   it('propagates streaming fetch failures unchanged', async () => {
     const failure = new Error('stream unavailable')

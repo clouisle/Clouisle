@@ -60,7 +60,7 @@ def test_count_message_tokens_handles_text_names_and_vision_content(monkeypatch)
         ]
     )
 
-    assert result == 32
+    assert result == 32 + token_counter.IMAGE_TOKEN_ESTIMATE
 
 
 def test_count_message_tokens_falls_back_to_text_content(monkeypatch):

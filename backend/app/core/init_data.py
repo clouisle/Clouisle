@@ -1309,84 +1309,21 @@ async def init_message_history_index():
     logger.info("Created messages history index")
 
 
-async def init_conversation_session_memory_table():
-    """Create the conversation_session_memories table if it does not exist."""
-    logger.info("Initializing conversation session memory table...")
+async def init_conversation_context_summary_columns() -> None:
+    """Add persistent context summary columns to conversations."""
+    logger.info("Initializing conversation context summary columns...")
 
     conn = Tortoise.get_connection("default")
-
-    _, tables = await conn.execute_query("""
-        SELECT table_name FROM information_schema.tables
-        WHERE table_name = 'conversation_session_memories' AND table_schema = 'public'
-    """)
-
-    if tables:
-        logger.info("conversation_session_memories table already exists")
-        return
-
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS conversation_session_memories (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
-            source_message_id UUID,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            summary_text TEXT NOT NULL DEFAULT '',
-            snapshot_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            token_estimate INT NOT NULL DEFAULT 0,
-            extractor_model VARCHAR(255),
-            failure_count INT NOT NULL DEFAULT 0,
-            last_error TEXT,
-            last_extracted_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_conversation_session_memories_status_updated
-        ON conversation_session_memories(status, updated_at DESC)
-    """)
-
-    logger.info("Conversation session memory table initialization complete")
-
-
-async def init_conversation_context_checkpoint_table():
-    """Create the conversation_context_checkpoints table if it does not exist."""
-    logger.info("Initializing conversation context checkpoint table...")
-
-    conn = Tortoise.get_connection("default")
-
-    _, tables = await conn.execute_query("""
-        SELECT table_name FROM information_schema.tables
-        WHERE table_name = 'conversation_context_checkpoints' AND table_schema = 'public'
-    """)
-
-    if tables:
-        logger.info("conversation_context_checkpoints table already exists")
-        return
-
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS conversation_context_checkpoints (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
-            covered_through_message_id UUID,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            summary_text TEXT NOT NULL DEFAULT '',
-            summary_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            token_estimate INT NOT NULL DEFAULT 0,
-            summarizer_model VARCHAR(255),
-            failure_count INT NOT NULL DEFAULT 0,
-            last_error TEXT,
-            last_summarized_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_conversation_context_checkpoints_status_updated
-        ON conversation_context_checkpoints(status, updated_at DESC)
-    """)
-
-    logger.info("Conversation context checkpoint table initialization complete")
+    await execute_startup_migration_query(
+        conn,
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS context_summary_text TEXT",
+    )
+    await execute_startup_migration_query(
+        conn,
+        "ALTER TABLE conversations "
+        "ADD COLUMN IF NOT EXISTS context_summary_watermark_id UUID",
+    )
+    logger.info("Conversation context summary columns initialized")
 
 
 async def init_assets_tables() -> None:

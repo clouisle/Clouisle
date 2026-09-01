@@ -11,8 +11,9 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CodeBlock } from '@/components/ai-elements/code-block'
-import type { ArtifactPreviewPayload, ChatPreviewPayload, CodePreviewPayload, SourceDocumentPreviewPayload } from './types'
 import { SegmentItem } from './message-parts'
+import type { ArtifactPreviewPayload, ChatPreviewPayload, CodePreviewPayload, SourceDocumentPreviewPayload } from './types'
+import { getArtifactPreviewMode } from './artifact-utils'
 import type { BundledLanguage } from 'shiki'
 
 type MermaidTheme = NonNullable<MermaidConfig['theme']>
@@ -633,28 +634,6 @@ function MermaidPreview({ code }: { code: string }) {
       </div>
     </div>
   )
-}
-type ArtifactPreviewMode = 'image' | 'video' | 'audio' | 'pdf' | 'html' | 'markdown' | 'mermaid' | 'text' | 'unsupported'
-
-function getArtifactPreviewMode(file: ArtifactPreviewPayload['file']): ArtifactPreviewMode {
-  const mimeType = file.mimeType?.toLowerCase() ?? ''
-  const filename = file.filename.toLowerCase()
-  if (mimeType.startsWith('image/') || /\.(?:png|jpe?g|gif|webp|svg)$/.test(filename)) return 'image'
-  if (mimeType.startsWith('video/') || /\.(?:mp4|webm|mov)$/.test(filename)) return 'video'
-  if (mimeType.startsWith('audio/') || /\.(?:mp3|wav|ogg|m4a)$/.test(filename)) return 'audio'
-  if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) return 'pdf'
-  if (mimeType === 'text/html' || /\.x?html?$/.test(filename)) return 'html'
-  if (mimeType === 'text/markdown' || /\.(?:md|markdown)$/.test(filename)) return 'markdown'
-  if (/\.(?:mmd|mermaid)$/.test(filename)) return 'mermaid'
-  if (
-    mimeType.startsWith('text/')
-    || mimeType.includes('json')
-    || mimeType.includes('javascript')
-    || mimeType === 'application/xml'
-    || mimeType.endsWith('+xml')
-    || /\.(?:txt|csv|json|ya?ml|xml|js|jsx|ts|tsx|py|sql|sh)$/.test(filename)
-  ) return 'text'
-  return 'unsupported'
 }
 
 function ArtifactPreviewCanvas({

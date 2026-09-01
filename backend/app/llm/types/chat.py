@@ -75,6 +75,35 @@ class FinishReason(str, Enum):
     ERROR = "error"
 
 
+class StopReason(str, Enum):
+    """Provider-native stop detail (mapped where the provider exposes it).
+
+    Only values the provider actually reports are populated; adapters never
+    invent unsupported details. ``PAUSE_TURN`` marks a non-terminal pause a
+    provider can emit (e.g. prompt caching / turn-pause APIs) so the loop can
+    resample instead of terminating.
+    """
+
+    STOP = "stop"
+    LENGTH = "length"
+    TOOL_CALLS = "tool_calls"
+    CONTENT_FILTER = "content_filter"
+    PAUSE_TURN = "pause_turn"
+    OTHER = "other"
+
+
+class StopDetails(BaseModel):
+    """Rich stop metadata carried alongside ``finish_reason``.
+
+    ``reason`` is the normalized provider stop detail; the original finish
+    reason stays on ``FinishReason`` (mapped for protocol decisions). Extra
+    provider-native fields may ride in ``raw`` when present.
+    """
+
+    reason: StopReason | None = Field(default=None, description="Provider stop detail")
+    raw: str | None = Field(default=None, description="Provider-native stop string")
+
+
 # ==================== Request / Response ====================
 
 
@@ -101,6 +130,10 @@ class ChatResponse(BaseModel):
     )
     tool_calls: list[ToolCall] | None = Field(default=None, description="工具调用列表")
     finish_reason: FinishReason = Field(..., description="完成原因")
+    stop_details: StopDetails | None = Field(
+        default=None,
+        description="Provider-native stop detail (pause_turn etc.)",
+    )
     usage: Usage = Field(..., description="使用统计")
 
 
@@ -124,6 +157,10 @@ class ChatStreamChunk(BaseModel):
     model: str = Field(..., description="模型名称")
     delta: ChatStreamDelta = Field(..., description="增量数据")
     finish_reason: FinishReason | None = Field(default=None, description="完成原因")
+    stop_details: StopDetails | None = Field(
+        default=None,
+        description="Provider-native stop detail (pause_turn etc.)",
+    )
     usage: Usage | None = Field(default=None, description="使用统计 (最后一个块)")
 
 

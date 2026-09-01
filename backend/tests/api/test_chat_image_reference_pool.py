@@ -1,6 +1,5 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
 from uuid import uuid4
 
 from app.api.v1.endpoints.chat_helpers.general import (
@@ -12,7 +11,6 @@ from app.api.v1.endpoints.chat_helpers.general import (
     get_item_value,
     get_tool_execution_payloads,
     parse_user_input_request,
-    should_retry_context_length,
 )
 from app.llm.tools.builtin.media import ToolExecutionResult
 from app.models.agent import MessageRole
@@ -158,30 +156,9 @@ def test_builds_tool_payloads_for_structured_dict_and_empty_results():
 
 
 def test_helper_boundary_behaviors_use_mocked_compression_config():
-    agent = SimpleNamespace()
-    with patch(
-        "app.services.chat_context.get_context_compression_config",
-        return_value={"reactive_retry_enabled": False},
-    ):
-        assert not should_retry_context_length(agent)
-
     assert get_item_value({"value": 1}, "missing", "fallback") == "fallback"
     assert get_item_value(SimpleNamespace(value=1), "value") == 1
     assert build_conversation_image_inventory([]) is None
-    assert get_compression_trigger(SimpleNamespace(pressure_level="blocking")) == (
-        "blocking_threshold"
-    )
-    assert (
-        get_compression_trigger(SimpleNamespace(stage="normal"))
-        == "proactive_threshold"
-    )
-    assert (
-        get_compression_trigger(
-            SimpleNamespace(
-                stage="macro",
-                pressure_level="normal",
-                actions=["checkpoint_summary"],
-            )
-        )
-        == "proactive_threshold"
+    assert get_compression_trigger(SimpleNamespace(stage="macro")) == (
+        "proactive_threshold"
     )

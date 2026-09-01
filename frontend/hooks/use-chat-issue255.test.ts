@@ -16,6 +16,8 @@ const regenerateStream = mock()
 const editMessageStream = mock()
 const getConversation = mock()
 const agentsApi = {
+  startRun: undefined,
+  streamRun: undefined,
   chatStream,
   regenerateStream,
   editMessageStream,
@@ -24,9 +26,14 @@ const agentsApi = {
   switchMessageVersion: mock(),
 }
 
+const reactInternals = { H: null, A: null, T: null, S: null, V: null, recentlyCreatedOwnerStacks: 0 }
 mock.module('react', () => ({
+  default: { __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE: reactInternals },
+  __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE: reactInternals,
+  act: (callback: () => unknown) => callback(),
   useCallback: <T>(callback: T) => callback,
   useMemo: <T>(factory: () => T) => factory(),
+  useEffect: () => undefined,
   useRef: <T>(initial: T) => refs[refIndex++] ??= { current: initial },
   useState: <T>(initial: T) => {
     const index = stateIndex++
@@ -46,6 +53,7 @@ mock.module('next-intl', () => ({
 
 mock.module('@/lib/api', () => ({
   agentsApi,
+  publicAgentsApi: agentsApi,
   async *parseSSEStream() {
     for (const event of streamEvents) yield event
   },
@@ -85,7 +93,9 @@ beforeEach(() => {
   stateIndex = 0
   refIndex = 0
   streamEvents = []
-  for (const fn of Object.values(agentsApi)) fn.mockReset()
+  for (const fn of Object.values(agentsApi)) {
+    if (typeof fn === 'function') fn.mockReset()
+  }
   getConversation.mockResolvedValue({ messages: [] })
 })
 

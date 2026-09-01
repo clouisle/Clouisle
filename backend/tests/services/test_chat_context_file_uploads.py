@@ -48,7 +48,7 @@ def test_file_content_placeholder_is_not_injected_into_system_prompt():
 
 @pytest.mark.anyio
 async def test_current_upload_content_is_appended_to_current_user_message():
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _ = await _build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
         user_message="Please summarize this.",
@@ -71,7 +71,7 @@ async def test_current_upload_content_is_appended_to_current_user_message():
 
 @pytest.mark.anyio
 async def test_non_vision_upload_content_uses_reference_labels_without_image_parts():
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _ = await _build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
         user_message="Use the last image as a drawing reference.",
@@ -99,7 +99,7 @@ async def test_non_vision_upload_content_uses_reference_labels_without_image_par
 
 @pytest.mark.anyio
 async def test_vision_upload_content_preserves_image_parts():
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _ = await _build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
         user_message="Describe this.",
@@ -164,7 +164,7 @@ async def test_history_override_file_urls_append_parsed_content(monkeypatch):
         fake_build_file_content_for_context,
     )
 
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _ = await _build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
         user_message="Follow up",
@@ -264,6 +264,7 @@ async def test_historical_db_message_file_urls_append_parsed_content(monkeypatch
                     content="Historical question",
                     file_urls=[{"url": "/api/v1/upload/files/docs/a.txt"}],
                     round_id=None,
+                    round_role=None,
                     save=_noop_save,
                 )
             ]
@@ -272,7 +273,7 @@ async def test_historical_db_message_file_urls_append_parsed_content(monkeypatch
         chat_context.ConversationMessage, "filter", lambda **kwargs: FakeQuery()
     )
 
-    messages, _ = await _build_messages_with_file_content(
+    messages, _, _ = await _build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
         user_message="Follow up",

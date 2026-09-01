@@ -81,7 +81,7 @@ export const ChainOfThought = memo(
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
         <div
-          className={cn("not-prose mb-4 w-full", className)}
+          className={cn("not-prose w-full", className)}
           data-state={isOpen ? "open" : "closed"}
           {...props}
         >

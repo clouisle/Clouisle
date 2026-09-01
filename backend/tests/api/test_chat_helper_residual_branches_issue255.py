@@ -101,21 +101,9 @@ async def test_build_messages_forwards_to_context_builder(monkeypatch):
     )
 
 
-def test_error_extraction_and_memory_enqueue_disabled_branches(monkeypatch):
+def test_error_extraction_empty_provider_message():
     error = Exception("failed - {'error': {'message': ''}}")
     assert chat._extract_llm_error_message(error) == str(error)
-
-    monkeypatch.setattr(
-        chat,
-        "get_context_compression_config",
-        lambda _agent: {
-            "session_memory_enabled": True,
-            "session_memory_async_extract": False,
-        },
-    )
-    chat.enqueue_session_memory_extraction(
-        object(), SimpleNamespace(id=uuid4()), SimpleNamespace(id=uuid4())
-    )
 
 
 @pytest.mark.anyio

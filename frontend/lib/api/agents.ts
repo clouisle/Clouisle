@@ -134,34 +134,7 @@ export interface MemoryConfig {
 
 export interface ContextCompressionConfig {
   enabled: boolean
-  micro_compaction_enabled: boolean
-  macro_compaction_enabled: boolean
-  preflight_guard_enabled: boolean
-  reactive_retry_enabled: boolean
-  recent_raw_turns: number
-  recent_tool_turns: number
-  warning_ratio: number
-  auto_compact_trigger_ratio: number
-  blocking_ratio: number
-  compaction_policy: 'staged' | 'hard_budget_only'
-  macro_on_trigger: boolean
-  retention_strategy: 'recent_raw_and_tool_first'
-  keep_recent_tool_results: number
-  keep_recent_tool_result_minutes: number
-  tool_result_compact_min_tokens: number
-  session_memory_enabled: boolean
-  session_memory_async_extract: boolean
-  session_memory_max_tokens: number
-  session_memory_min_turns: number
-  session_memory_failure_threshold: number
-  session_memory_cooldown_seconds: number
-  legacy_compact_enabled: boolean
-  legacy_compact_failure_threshold: number
-  legacy_compact_cooldown_seconds: number
-  output_token_reserve: number
-  safety_margin_tokens: number
   summary_max_tokens: number
-  drop_historical_reasoning_first: boolean
   emit_sse_events: boolean
 }
 
@@ -359,6 +332,52 @@ export interface ConversationUpdateInput {
 
 // ============ Message Types ============
 
+// ============ AgentRun Types ============
+
+export type AgentRunStatus =
+  | 'queued'
+  | 'running'
+  | 'stopping'
+  | 'completing'
+  | 'completed'
+  | 'stopped'
+  | 'failed'
+  | 'interrupted'
+
+export type AgentRunMode = 'send' | 'edit' | 'regenerate' | 'non_stream'
+
+export interface AgentRunStatusOut {
+  id: string
+  agent_id: string
+  conversation_id: string
+  mode: AgentRunMode
+  status: AgentRunStatus
+  source_message_id?: string | null
+  canonical_message_id?: string | null
+  active_round_id?: string | null
+  error_code?: string | null
+  error_message?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+}
+export interface AgentRunStartOut {
+  run_id: string
+  conversation_id: string
+  user_message_id: string
+  status: AgentRunStatus
+  stream_url: string
+}
+
+export interface AgentRunEventOut {
+  run_id: string
+  sequence: number
+  timestamp: string
+  round_id?: string | null
+  message_id?: string | null
+  type: string
+  payload: Record<string, unknown>
+}
+
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 export type MessageRoundRole = 'user_input' | 'assistant_final' | 'assistant_step' | 'tool_result'
 export type MessageRoundStatus = 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error'
@@ -546,33 +565,6 @@ export interface SSEContentDelta {
 export interface SSEUserInputRequest {
   question: string
   options: string[]
-}
-
-export interface SSECompression {
-  stage: 'micro' | 'macro' | 'reactive_retry'
-  trigger: 'proactive_threshold' | 'blocking_threshold' | 'context_length_error' | string
-  pressure_level?: 'normal' | 'warning' | 'auto_compact' | 'blocking' | 'over_budget'
-  before_tokens: number
-  after_tokens: number
-  input_budget: number
-  trigger_ratio?: number
-  warning_ratio?: number
-  blocking_ratio?: number
-  trigger_budget?: number
-  hard_budget?: number
-  utilization_before?: number
-  utilization_after?: number
-  policy_used?: string
-  actions?: string[]
-  retained_recent_turns?: number
-  retained_tool_turns?: number
-  compacted_blocks?: number
-  summary_turns?: number
-  reasoning_dropped?: boolean
-  tool_results_trimmed?: boolean
-  file_content_trimmed?: boolean
-  retry_index?: number
-  note?: string
 }
 
 export interface SSERagContext {
@@ -912,6 +904,36 @@ export const agentsApi = {
       body: JSON.stringify(data),
       signal: controller.signal,
     })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
+  },
+  /** Queue a durable AgentRun and return its reconnectable identity. */
+  startRun: async (agentId: string, data: ChatRequest): Promise<AgentRunStartOut> => {
+    return api.post<AgentRunStartOut>(`/agents/${agentId}/chat/runs`, data)
+  },
+
+  /** Subscribe to replayed and live events for a durable AgentRun. */
+  streamRun: (
+    agentId: string,
+    runId: string,
+    afterSequence = 0,
+  ): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+    const stream = fetch(
+      `${baseUrl}/agents/${agentId}/chat/runs/${runId}/stream?after_sequence=${afterSequence}`,
+      {
+        headers: {
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: controller.signal,
+      },
+    )
 
     return {
       stream,
@@ -1409,5 +1431,49 @@ export const publicAgentsApi = {
       stream,
       abort: () => controller.abort(),
     }
+  },
+
+
+  // ============ AgentRun API ============
+
+  /**
+   * Get durable run status.
+   */
+  getRunStatus: async (agentId: string, runId: string): Promise<AgentRunStatusOut> => {
+    return api.get<AgentRunStatusOut>(`/agents/${agentId}/chat/runs/${runId}`)
+  },
+
+  /**
+   * Replay buffered run events after a sequence.
+   */
+  getRunEvents: async (
+    agentId: string,
+    runId: string,
+    afterSequence = 0
+  ): Promise<AgentRunEventOut[]> => {
+    return api.get<AgentRunEventOut[]>(
+      `/agents/${agentId}/chat/runs/${runId}/events?after_sequence=${afterSequence}`
+    )
+  },
+
+  /**
+   * Queue steering / follow-up for a running agent.
+   */
+  postRunInput: async (
+    agentId: string,
+    runId: string,
+    body: { delivery: 'steer' | 'follow_up' | 'auto'; content?: string; request_id?: string }
+  ): Promise<AgentRunStatusOut> => {
+    return api.post<AgentRunStatusOut>(
+      `/agents/${agentId}/chat/runs/${runId}/inputs`,
+      body
+    )
+  },
+
+  /**
+   * Cooperative stop: server marks the run stopping and the worker cancels.
+   */
+  stopRun: async (agentId: string, runId: string): Promise<AgentRunStatusOut> => {
+    return api.post<AgentRunStatusOut>(`/agents/${agentId}/chat/runs/${runId}/stop`)
   },
 }

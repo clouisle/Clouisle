@@ -1,18 +1,23 @@
 # Implementation Plan
 
 ## Active
+- **agent-chat-ordered-reasoning** — Complete. Stream and history data retain occurrence order, while Agent messages restore one aggregated collapsible ChainOfThought at the top with reasoning, tasks, and reasoning-associated tool executions. See `docs/plan/agent-chat-ordered-reasoning.md`
+  - [x] 1. Register approved feature plan
+  - [x] 2. Make live/reconnect stream state occurrence-ordered
+  - [x] 3. Align persisted-history reconstruction with the supported order
+  - [x] 4. Replace the global thought panel with an ordered assistant renderer (superseded by Stage 10)
+  - [x] 5. Update focused regression coverage
+  - [x] 6. Full verification and cleanup
+  - [x] 7. Nest tool-call nodes inside collapsible thought process (superseded)
+  - [x] 8. Separate reasoning, task, tool, and answer surfaces (superseded)
+  - [x] 9. Keep activity nested and label the current operation (superseded by Stage 10)
+  - [x] 10. Restore one aggregated thought panel at the top of each assistant message
 - **model-prompt-caching-visibility** — Complete. Provider-reported cache hit/write token details flow through `Usage`, all chat adapters, message persistence, message_end SSE, and the token-stats popover. Cache hit rate is intentionally not displayed. Verified: 3316 backend + 2242 frontend tests, tsc and Ruff clean. See `docs/plan/model-prompt-caching-visibility.md`
   - [x] 1. Usage 类型扩展 + 全部 adapter 解析
   - [x] 2. chat.py 记账与 SSE 透传
   - [x] 3. 前端透传与展示
   - [x] 4. 全量验证
-- **context-compression-three-level-redesign** — Planned. Replace the current overlapping compaction paths with bounded content normalization, active tool-loop rolling compaction, and Pi-style between-turn historical checkpoints while preserving branch-aware context assembly. See `docs/plan/context-compression-three-level-redesign.md`
-  - [ ] 1. Establish the budget contract and compression observability
-  - [ ] 2. Implement always-on bounded content normalization
-  - [ ] 3. Implement active tool-loop rolling compaction
-  - [ ] 4. Implement valid-cutpoint historical checkpoint compaction
-  - [ ] 5. Rebuild context assembly and retire overlapping fallback paths
-  - [ ] 6. Validate rollout across all Chat execution paths
+- **context-compression-three-level-redesign** — Superseded by `agent-simple-context-summary`. Its planned bounded-normalization, active-tool rolling compaction, and historical-checkpoint layers were not adopted. See `docs/plan/context-compression-three-level-redesign.md`
 - **yun-135-extend-knowledge-base-tour-to-document-ingestion-flow** — Complete. Extend the platform knowledge-base onboarding tour through detail-page ingestion, document processing states, and Retrieval Lab validation while preserving the existing tour state and route semantics. See `docs/plan/yun-135-extend-knowledge-base-tour-to-document-ingestion-flow.md`
   - [x] 1. Preserve create navigation and nested-tour continuity
   - [x] 2. Add ingestion and Retrieval Lab anchors
@@ -96,7 +101,7 @@
   - [x] 4. Remove dead message_builder and divergent config helpers
   - [x] 5. Tests and coverage gate
 
-- **yun-126-optimize-context-compaction** — Complete. Replace repeated request-local history compaction with model-generated, active-branch-aware Context Checkpoints and a low-watermark budget target. See `docs/plan/yun-126-optimize-context-compaction.md`
+- **yun-126-optimize-context-compaction** — Complete (checkpoint design superseded by `agent-simple-context-summary`). Replace repeated request-local history compaction with model-generated, active-branch-aware Context Checkpoints and a low-watermark budget target. See `docs/plan/yun-126-optimize-context-compaction.md`
   - [x] 1. Repair repeated session-memory compaction semantics and SSE no-op behavior
   - [x] 2. Context Checkpoint model, migration, and service
   - [x] 3. Checkpoint-aware context assembly and target-ratio policy
@@ -510,11 +515,27 @@
   - [x] 4. Frontend provider-specific image controls and i18n
   - [x] 5. Targeted regression tests and validation
 
-- **agent-context-compression-ratio-thresholds** — In progress. Upgrade agent context compression from hard-budget-only behavior to staged context governance with ~80% proactive compaction, selective micro compaction, richer compression observability, and a Phase 2 Session Memory / SM Compact roadmap. See `docs/plan/agent-context-compression.md`
-  - [x] 1. Ratio-based thresholds and pressure states
-  - [x] 2. Selective micro compaction
-  - [x] 3. Compression observability and frontend messaging
-  - [x] 4. Phase 2 Session Memory / SM Compact design hooks
+-
+- **agent-loop-runtime** — Complete. All four chat entry paths run through a single `AgentLoop` state machine; agent runs execute on the durable Celery `default` queue with Redis event buffers, replayable SSE and cooperative stop; mid-run steering/follow-up is queued and consumed at safe boundaries; context compaction is reserve-aware, turn-aware and keeps recent verbatim turns; provider stop details drive `pause_turn` continuation; tool batches schedule shared/exclusive calls; the frontend composer enables ongoing input, run status and reconnect UX. See `docs/plan/agent-loop-runtime.md`
+  - [x] 1. Freeze behavioral contracts and register work
+  - [x] 2. Extract one event-driven Agent Loop without changing transport
+  - [x] 3. Implement turn-aware iterative compaction
+  - [x] 4. Add durable AgentRun execution and replayable events
+  - [x] 5. Add steering, follow-up and cooperative stop
+  - [x] 6. Preserve provider stop semantics and termination guards
+  - [x] 7. Add safe shared/exclusive tool batch scheduling
+  - [x] 8. Frontend run state machine and ongoing-input UX
+  - [x] 9. End-to-end verification, cleanup and documentation finalization
+- 2254 frontend tests and 6673 backend tests pass; React 19 manual test mocks now provide the `jsx-runtime` exports required by the isolated full suite.
+
+- **agent-simple-context-summary** — Complete. Before every provider call, the full request payload is estimated. At more than 90% of the model context limit, one model-generated summary replaces the old history; the new context is system prompt + structured summary + current user request; active tool-round assistant/tool protocol messages after the current user request are also retained, with a persisted conversation watermark.
+  - [x] 1. Replace staged compression with 90% preflight summary
+  - [x] 2. Cut over non-streaming, streaming, edit, and regenerate paths
+  - [x] 3. Remove checkpoint, session-memory, and tool-step compaction paths
+  - [x] 4. Keep summary persistence and align configuration surface
+  - [x] 5. Verify the real summary replacement smoke path
+
+- **agent-context-compression-ratio-thresholds** — Superseded by `agent-simple-context-summary`; the staged warning/auto-compact/blocking governance and its config fields were removed. See `docs/plan/agent-context-compression.md`
 
 - **workflow-duplicate-input-params** — Complete. Prevented duplicate input parameter names in workflow code nodes via runtime executor validation, config-time validation, and frontend dialog guards. Tracked as GitHub issue #99. See `docs/plan/fix-duplicate-input-params.md`
   - [x] 1. Add runtime validation in base executor
@@ -529,7 +550,7 @@
 
 ## History
 
-- **agent-context-compression** — Complete. Added shared agent context compression for non-stream, stream, and regenerate flows, with agent-level compression config and frontend-visible compression SSE events.
+- **agent-context-compression** — Complete (superseded by `agent-simple-context-summary`). The original shared compression pipeline and SSE integration were replaced by the 90% preflight summary flow.
 
 - **agent-chat-parity** — Aligned non-streaming agent chat request semantics with the streaming path for file parsing, vision inputs, history overrides, user-input-request prompting, and tool metadata/timeouts.
 

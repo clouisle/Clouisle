@@ -12,6 +12,11 @@ let stateIndex = 0
 mock.module('react/jsx-dev-runtime', () => ({
   jsxDEV: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
 }))
+mock.module('react/jsx-runtime', () => ({
+  jsx: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
+  jsxs: (type: unknown, props: Record<string, unknown>) => ({ type, props }),
+  Fragment: 'fragment',
+}))
 mock.module('react', () => ({
   useMemo: <T,>(factory: () => T) => factory(),
   useState: <T,>(initial: T) => {

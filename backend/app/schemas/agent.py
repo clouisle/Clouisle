@@ -2,6 +2,7 @@
 Agent schemas for API request/response.
 """
 
+from enum import Enum
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -90,200 +91,16 @@ class ContextCompressionConfig(BaseModel):
         default=True,
         description="Enable request-time context compression before model calls",
     )
-    micro_compaction_enabled: bool = Field(
-        default=True,
-        description="Enable lightweight reasoning/tool result compaction first",
-    )
-    macro_compaction_enabled: bool = Field(
-        default=True,
-        description="Enable synthetic summary compaction for older turn blocks",
-    )
-    preflight_guard_enabled: bool = Field(
-        default=True,
-        description="Enable preflight token budget guard before model calls",
-    )
-    reactive_retry_enabled: bool = Field(
-        default=True,
-        description="Enable one-shot aggressive retry on context length errors",
-    )
-    recent_raw_turns: int = Field(
-        default=3,
-        ge=1,
-        le=12,
-        description="Number of recent raw turn blocks to preserve during macro compaction",
-    )
-    recent_tool_turns: int = Field(
-        default=2,
-        ge=0,
-        le=8,
-        description="Number of recent tool turn blocks to preserve during macro compaction",
-    )
-    warning_ratio: float = Field(
-        default=0.7,
-        ge=0.1,
-        le=1.0,
-        description="Utilization ratio for warning-level context pressure",
-    )
-    auto_compact_trigger_ratio: float = Field(
-        default=0.8,
-        ge=0.1,
-        le=1.0,
-        description="Utilization ratio that proactively triggers selective compaction",
-    )
-    blocking_ratio: float = Field(
-        default=0.92,
-        ge=0.1,
-        le=1.0,
-        description="Utilization ratio that escalates to blocking-level macro compaction",
-    )
-    macro_on_trigger: bool = Field(
-        default=False,
-        description="Allow macro compaction immediately when proactive trigger ratio is reached",
-    )
-    retention_strategy: Literal["recent_raw_and_tool_first"] = Field(
-        default="recent_raw_and_tool_first",
-        description="Retention strategy used during selective and macro compaction",
-    )
-    keep_recent_tool_results: int = Field(
-        default=2,
-        ge=0,
-        le=8,
-        description="Number of most recent tool results to keep raw during selective micro compaction",
-    )
-    keep_recent_tool_result_minutes: int = Field(
-        default=20,
-        ge=0,
-        le=1440,
-        description="Reserved window for keeping recent tool results raw; currently informational",
-    )
-    tool_result_compact_min_tokens: int = Field(
-        default=256,
-        ge=32,
-        le=16000,
-        description="Only compact older tool results at or above this estimated token size",
-    )
-    active_tool_compaction_enabled: bool = Field(
-        default=True,
-        description="Compact completed active tool iterations before the next model call",
-    )
-    active_tool_target_ratio: float = Field(
-        default=0.8,
-        ge=0.5,
-        le=0.95,
-        description="Target utilization ratio for the request-local active tool window",
-    )
-    active_tool_result_max_tokens: int = Field(
-        default=1500,
-        ge=64,
-        le=32000,
-        description="Per-result token cap applied before active tool compaction",
-    )
-    active_tool_summary_max_tokens: int = Field(
-        default=512,
-        ge=64,
-        le=8000,
-        description="Maximum token budget for deterministic active-tool progress summaries",
-    )
-    file_content_max_tokens: int = Field(
-        default=6000,
-        ge=128,
-        le=32000,
-        description="Per-request token cap for uploaded file text",
-    )
-    reasoning_max_tokens: int = Field(
-        default=1500,
-        ge=64,
-        le=16000,
-        description="Token cap for replayed assistant reasoning content",
-    )
-    checkpoint_keep_recent_ratio: float = Field(
-        default=0.35,
-        ge=0.05,
-        le=0.8,
-        description="Raw active-branch suffix ratio retained after checkpoint compaction",
-    )
-    checkpoint_summary_enabled: bool = Field(
-        default=True,
-        description="Enable model-generated active-branch context checkpoints",
-    )
-    checkpoint_target_ratio: float = Field(
-        default=0.6,
-        ge=0.1,
-        le=0.9,
-        description="Target input-budget utilization after checkpoint compaction",
-    )
-    checkpoint_min_new_turns: int = Field(
-        default=2,
-        ge=1,
-        le=50,
-        description="Minimum newly covered turn blocks before generating a checkpoint",
-    )
-    session_memory_enabled: bool = Field(
-        default=True,
-        description="Enable conversation-scoped session memory compaction when snapshots are available",
-    )
-    session_memory_async_extract: bool = Field(
-        default=True,
-        description="Enqueue async session memory extraction after final assistant replies",
-    )
-    session_memory_max_tokens: int = Field(
-        default=400,
-        ge=64,
-        le=4000,
-        description="Maximum token budget for injected session memory summary",
-    )
-    session_memory_min_turns: int = Field(
-        default=4,
-        ge=1,
-        le=50,
-        description="Minimum conversation turn blocks before async session memory extraction runs",
-    )
-    session_memory_failure_threshold: int = Field(
-        default=3,
-        ge=1,
-        le=20,
-        description="Failures before opening the session memory extractor breaker",
-    )
-    session_memory_cooldown_seconds: int = Field(
-        default=600,
-        ge=60,
-        le=86400,
-        description="Cooldown window for session memory extractor failures",
-    )
-    output_token_reserve: int = Field(
-        default=4000,
-        ge=256,
-        le=32000,
-        description="Reserved output tokens when computing prompt budget",
-    )
-    safety_margin_tokens: int = Field(
-        default=1000,
-        ge=0,
-        le=16000,
-        description="Extra input safety margin kept below the model context window",
-    )
     summary_max_tokens: int = Field(
         default=1000,
         ge=128,
         le=8000,
-        description="Target token budget for synthetic summary content",
-    )
-    drop_historical_reasoning_first: bool = Field(
-        default=True,
-        description="Prefer dropping older reasoning content before heavier compaction",
+        description="Target token budget for the generated context summary",
     )
     emit_sse_events: bool = Field(
         default=True,
-        description="Emit streaming compression SSE events when compaction is applied",
+        description="Emit streaming compression SSE events when summarization is applied",
     )
-
-    @model_validator(mode="after")
-    def validate_checkpoint_target_ratio(self) -> "ContextCompressionConfig":
-        if self.checkpoint_target_ratio >= self.auto_compact_trigger_ratio:
-            self.checkpoint_target_ratio = max(
-                self.auto_compact_trigger_ratio * 0.75, 0.1
-            )
-        return self
 
 
 class ImageGenerationConfig(BaseModel):
@@ -1010,8 +827,18 @@ class ChatRequest(BaseModel):
     """Chat request"""
 
     message: str = Field(
-        ..., min_length=1, max_length=32000, description="User message"
+        ...,
+        min_length=0,
+        max_length=32000,
+        description="User message; attachments may be sent without text",
     )
+
+    @model_validator(mode="after")
+    def validate_message_or_attachment(self) -> "ChatRequest":
+        if self.message.strip() or self.images or self.files or self.file_urls:
+            return self
+        raise ValueError("message must not be empty unless an attachment is provided")
+
     images: list[ImageContent] = Field(
         default_factory=list, description="Images for vision"
     )
@@ -1064,3 +891,80 @@ class SSEEventType:
     ITERATION_CAP_REACHED = "iteration_cap_reached"
     MESSAGE_END = "message_end"
     ERROR = "error"
+
+
+# ==================== AgentRun Schemas ====================
+
+
+class AgentRunStatusEnum(str, Enum):
+    """Run lifecycle status (mirrors the backend model)."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    COMPLETING = "completing"
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+
+
+class AgentRunInputKindEnum(str, Enum):
+    """Queued control input kinds."""
+
+    STEER = "steer"
+    FOLLOW_UP = "follow_up"
+    STOP = "stop"
+
+
+class RunOut(BaseModel):
+    """Run status summary for the UI."""
+
+    id: UUID
+    agent_id: UUID
+    conversation_id: UUID
+    mode: str
+    status: str
+    source_message_id: UUID | None = None
+    canonical_message_id: UUID | None = None
+    active_round_id: UUID | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class RunStartOut(BaseModel):
+    """Identifiers and stream location returned when a run is queued."""
+
+    run_id: UUID
+    conversation_id: UUID
+    user_message_id: UUID
+    status: AgentRunStatusEnum
+    stream_url: str
+
+
+class RunEventOut(BaseModel):
+    """One replayable run event envelope."""
+
+    run_id: str
+    sequence: int
+    timestamp: str
+    round_id: str | None = None
+    message_id: str | None = None
+    type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunInputCreate(BaseModel):
+    """Queued steering / follow-up / stop command."""
+
+    delivery: str = Field(
+        default="auto",
+        description="steer | follow_up | auto; auto is resolved by the worker",
+    )
+    content: str | None = Field(default=None, description="Steer/follow-up text")
+    attachments: list[dict[str, Any]] = Field(
+        default_factory=list, description="Supported attachment metadata"
+    )
+    request_id: str | None = Field(default=None, description="Idempotency key")

@@ -98,13 +98,30 @@ def extract_media_display_payload(display_result: str) -> dict[str, Any] | None:
     return payload
 
 
+def build_compression_start_event(
+    *,
+    agent: "Agent",
+    stage: str,
+    trigger: str,
+) -> str | None:
+    """Build the compression-start SSE event when emission is enabled."""
+    from app.schemas.agent import SSEEventType
+    from app.services.chat_context import get_context_compression_config
+
+    if not get_context_compression_config(agent).get("emit_sse_events", True):
+        return None
+
+    return (
+        f"event: {SSEEventType.COMPRESSION_START}\n"
+        f"data: {json.dumps({'stage': stage, 'trigger': trigger}, ensure_ascii=False)}\n\n"
+    )
+
+
 def build_compression_events(
     *,
     agent: "Agent",
     compression: Any,
     trigger: str,
-    retry_index: int = 0,
-    stage_override: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Build SSE compression start and end event payloads when compression should be surfaced.
 
@@ -118,35 +135,11 @@ def build_compression_events(
     if not config.get("emit_sse_events", True):
         return None, None
 
-    stage = stage_override or compression.stage
+    stage = compression.stage
     if stage == "none":
         return None, None
 
-    note_parts: list[str] = []
-    if trigger == "context_length_error" or stage == "reactive_retry":
-        note_parts.append(t("chat_context_compaction_retried"))
-    elif trigger == "blocking_threshold":
-        note_parts.append(t("chat_context_compaction_blocking"))
-    else:
-        note_parts.append(t("chat_context_compaction_proactive"))
-    actions = getattr(compression, "actions", None) or []
-    if "checkpoint_summary" in actions:
-        note_parts.append(t("chat_context_compaction_checkpoint_summary"))
-    elif "macro_summary" in actions:
-        note_parts.append(t("chat_context_compaction_macro_summary"))
-    if compression.summary_turns:
-        note_parts.append(
-            t(
-                "chat_context_compaction_summarized_turns",
-                count=compression.summary_turns,
-            )
-        )
-    if compression.reasoning_trimmed:
-        note_parts.append(t("chat_context_compaction_reasoning_trimmed"))
-    if compression.tool_results_trimmed:
-        note_parts.append(t("chat_context_compaction_tool_results_trimmed"))
-    if compression.file_content_trimmed:
-        note_parts.append(t("chat_context_compaction_file_content_trimmed"))
+    note_parts = [t("chat_context_summary_applied")]
 
     # Start event - minimal info
     start_payload = {
@@ -162,34 +155,22 @@ def build_compression_events(
     end_payload = {
         "stage": stage,
         "trigger": trigger,
-        "pressure_level": getattr(compression, "pressure_level", None),
+        "pressure_level": compression.pressure_level,
         "before_tokens": compression.before_tokens,
         "after_tokens": compression.after_tokens,
         "input_budget": compression.input_budget,
-        "trigger_ratio": getattr(compression, "trigger_ratio", None),
-        "warning_ratio": getattr(compression, "warning_ratio", None),
-        "blocking_ratio": getattr(compression, "blocking_ratio", None),
-        "trigger_budget": getattr(compression, "trigger_budget", None),
-        "hard_budget": getattr(compression, "hard_budget", compression.input_budget),
-        "utilization_before": getattr(compression, "utilization_before", None),
-        "utilization_after": getattr(compression, "utilization_after", None),
-        "policy_used": getattr(compression, "policy_used", None),
-        "actions": getattr(compression, "actions", None),
-        "retained_recent_turns": getattr(compression, "retained_recent_turns", None),
-        "retained_tool_turns": getattr(compression, "retained_tool_turns", None),
-        "compacted_blocks": getattr(compression, "compacted_blocks", None),
+        "trigger_ratio": compression.trigger_ratio,
+        "utilization_before": compression.utilization_before,
+        "utilization_after": compression.utilization_after,
+        "policy_used": compression.policy_used,
+        "actions": compression.actions,
         "summary_turns": compression.summary_turns,
-        "reasoning_dropped": compression.reasoning_trimmed,
-        "tool_results_trimmed": compression.tool_results_trimmed,
-        "file_content_trimmed": compression.file_content_trimmed,
-        "context_limit": getattr(compression, "context_limit", None),
-        "output_reserve": getattr(compression, "output_reserve", None),
-        "safety_margin": getattr(compression, "safety_margin", None),
-        "target_budget": getattr(compression, "target_budget", None),
-        "keep_recent_budget": getattr(compression, "keep_recent_budget", None),
-        "active_tool_tokens": getattr(compression, "active_tool_tokens", None),
-        "segment_tokens": getattr(compression, "segment_tokens", None),
-        "retry_index": retry_index,
+        "summary_source_tokens": getattr(compression, "summary_source_tokens", 0),
+        "summary_result_tokens": getattr(compression, "summary_result_tokens", 0),
+        "summary_saved_tokens": getattr(compression, "summary_saved_tokens", 0),
+        "context_limit": compression.context_limit,
+        "output_reserve": compression.output_reserve,
+        "safety_margin": compression.safety_margin,
         "note": "; ".join(note_parts),
     }
     end_event = (

@@ -7,13 +7,17 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Message } from './message';
-import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types';
+import { ArtifactFileList } from './artifact-file-list';
+import { getMessageArtifacts } from './artifact-utils';
+import type { ChatMessage, ChatPreviewPayload, FilePart, MessagePart } from './types';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
   className?: string;
   isStreaming?: boolean;
   isLoading?: boolean;
+  /** Text shown in an assistant loading placeholder. */
+  loadingLabel?: string;
   autoScroll?: boolean;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
   emptyState?: React.ReactNode;
@@ -130,7 +134,9 @@ function hasOpenCodeFence(content: string) {
 interface ChatMessageRowProps {
   message: ChatMessage;
   isCurrentStreaming: boolean;
+  loadingLabel?: string;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
+  afterContent?: React.ReactNode;
   onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
@@ -141,8 +147,6 @@ interface ChatMessageRowProps {
   hideMessageActions: boolean;
   hideReasoning: boolean;
   conversationId?: string | null;
-  chainOfThoughtOpen?: boolean;
-  onChainOfThoughtOpenChange: (messageId: string, open: boolean) => void;
   onRequestScrollIntoView: (messageId: string) => void;
   setMessageElement: (messageId: string, element: HTMLDivElement | null) => void;
 }
@@ -150,7 +154,9 @@ interface ChatMessageRowProps {
 const ChatMessageRow = memo(function ChatMessageRow({
   message,
   isCurrentStreaming,
+  loadingLabel,
   renderPart,
+  afterContent,
   onRegenerate,
   onEditMessage,
   onSwitchVersion,
@@ -161,8 +167,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   hideMessageActions,
   hideReasoning,
   conversationId,
-  chainOfThoughtOpen,
-  onChainOfThoughtOpenChange,
   onRequestScrollIntoView,
   setMessageElement,
 }: ChatMessageRowProps) {
@@ -178,10 +182,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
     onSwitchVersion?.(message.id, versionIndex);
   }, [message.id, onSwitchVersion]);
 
-  const handleChainOfThoughtOpenChange = useCallback((open: boolean) => {
-    onChainOfThoughtOpenChange(message.id, open);
-  }, [message.id, onChainOfThoughtOpenChange]);
-
   const handleRequestScrollIntoView = useCallback(() => {
     onRequestScrollIntoView(message.id);
   }, [message.id, onRequestScrollIntoView]);
@@ -195,12 +195,12 @@ const ChatMessageRow = memo(function ChatMessageRow({
       <Message
         message={message}
         isStreaming={isCurrentStreaming}
+        loadingLabel={loadingLabel}
         renderPart={renderPart}
+        afterContent={afterContent}
         onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
-        onEditMessage={message.role === 'user' && onEditMessage ? handleEditMessage : undefined}
+        onEditMessage={message.role === 'user' && onEditMessage && message.metadata?.pendingPersistence !== true ? handleEditMessage : undefined}
         onSwitchVersion={onSwitchVersion ? handleSwitchVersion : undefined}
-        chainOfThoughtOpen={chainOfThoughtOpen}
-        onChainOfThoughtOpenChange={handleChainOfThoughtOpenChange}
         onSelectOption={onSelectOption}
         onSelectImageReference={onSelectImageReference}
         onOpenCodePreview={onOpenCodePreview}
@@ -216,6 +216,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   prev.message === next.message
   && prev.isCurrentStreaming === next.isCurrentStreaming
   && prev.renderPart === next.renderPart
+  && prev.afterContent === next.afterContent
   && prev.onRegenerate === next.onRegenerate
   && prev.onEditMessage === next.onEditMessage
   && prev.onSwitchVersion === next.onSwitchVersion
@@ -226,8 +227,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.hideMessageActions === next.hideMessageActions
   && prev.hideReasoning === next.hideReasoning
   && prev.conversationId === next.conversationId
-  && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
-  && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
   && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
   && prev.setMessageElement === next.setMessageElement
 ));
@@ -237,6 +236,7 @@ export function ChatContainer({
   className,
   isStreaming = false,
   isLoading = false,
+  loadingLabel,
   autoScroll = true,
   renderPart,
   emptyState,
@@ -268,27 +268,27 @@ export function ChatContainer({
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
   const previousConversationIdRef = useRef(conversationId);
-  const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
   const [userMessageTicks, setUserMessageTicks] = useState<UserMessageTick[]>([]);
   const t = useTranslations('chat');
 
-  const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
-    setChainOfThoughtOpenByMessageId((current) => ({
-      ...current,
-      [messageId]: open,
-    }));
-  }, []);
-
   const lastMessage = messages[messages.length - 1];
   const lastMessageId = lastMessage?.id;
-  const lastMessageRole = lastMessage?.role;
   const visibleMessages = useMemo(
     () => messages.slice(Math.max(0, messages.length - renderedMessageCount)),
     [messages, renderedMessageCount]
   );
 
   const hiddenMessageCount = messages.length - visibleMessages.length;
+
+  const handleOpenArtifactPreview = useCallback((file: FilePart) => {
+    if (!onOpenCodePreview) return;
+    onOpenCodePreview({
+      id: `artifact:${file.path ?? file.url ?? file.filename}`,
+      kind: 'artifact',
+      file,
+    });
+  }, [onOpenCodePreview]);
 
   // 1-based user-message ordinal for every message, used to label scale ticks.
   const userMessageOrdinals = useMemo(() => {
@@ -308,15 +308,6 @@ export function ChatContainer({
   useEffect(() => {
     setRenderedMessageCount((count) => Math.max(Math.min(count, messages.length), INITIAL_RENDERED_MESSAGE_COUNT));
   }, [messages.length]);
-  useEffect(() => {
-    if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
-      return;
-    }
-
-    setChainOfThoughtOpenByMessageId((current) => (
-      lastMessageId in current ? current : { ...current, [lastMessageId]: true }
-    ));
-  }, [isStreaming, lastMessageId, lastMessageRole]);
 
   // Last text content for "do not snap during open code fence" rule
   const lastMessageText = useMemo(() => {
@@ -602,14 +593,24 @@ export function ChatContainer({
           {visibleMessages.map((message, index) => {
             const messageIndex = hiddenMessageCount + index;
             const isCurrentStreaming = isStreaming && messageIndex === messages.length - 1;
+            const messageArtifacts = getMessageArtifacts(message);
             return (
               <ChatMessageRow
                 key={message.id}
                 message={message}
+                loadingLabel={loadingLabel}
                 isCurrentStreaming={isCurrentStreaming}
                 renderPart={renderPart}
+                afterContent={messageArtifacts.length > 0 ? (
+                  <ArtifactFileList
+                    key={`artifacts-${message.id}`}
+                    files={messageArtifacts}
+                    className="mt-3 w-full"
+                    onOpenPreview={onOpenCodePreview ? handleOpenArtifactPreview : undefined}
+                  />
+                ) : undefined}
                 onRegenerate={onRegenerate}
-                onEditMessage={onEditMessage}
+                onEditMessage={isLoading || isStreaming ? undefined : onEditMessage}
                 onSwitchVersion={onSwitchVersion}
                 onSelectOption={onSelectOption}
                 onSelectImageReference={onSelectImageReference}
@@ -618,8 +619,6 @@ export function ChatContainer({
                 hideMessageActions={hideMessageActions}
                 hideReasoning={hideReasoning}
                 conversationId={conversationId}
-                chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
-                onChainOfThoughtOpenChange={setChainOfThoughtOpen}
                 onRequestScrollIntoView={requestMessageScrollIntoView}
                 setMessageElement={setMessageElement}
               />

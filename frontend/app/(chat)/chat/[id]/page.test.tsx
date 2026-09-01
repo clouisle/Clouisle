@@ -31,6 +31,7 @@ let chatState = {
   isLoading: false,
   isStreaming: false,
   conversationId: null as string | null,
+  runStatus: null as string | null,
 }
 let chatOptions: {
   onConversationChange?: () => void
@@ -167,7 +168,7 @@ async function click(text: string, index = 0) {
 beforeEach(() => {
   token = 'token'
   query = new URLSearchParams()
-  chatState = { messages: [], isLoading: false, isStreaming: false, conversationId: null }
+  chatState = { messages: [], isLoading: false, isStreaming: false, conversationId: null, runStatus: null }
   variableValues = {}
   chatContainerProps = {}
   chatInputProps = {}
@@ -260,6 +261,37 @@ describe('PublicChatPage', () => {
     expect(chatContainerProps.showUserMessageScale).toBe(true)
     expect(chatInputProps.onStop).toBe(stop)
   })
+  test('aligns the conversation loading skeleton with message content', async () => {
+    query = new URLSearchParams('conversation=conv-1')
+    let resolveConversation!: (value: { messages: unknown[] }) => void
+    getConversation.mockImplementationOnce(() => new Promise((resolve) => { resolveConversation = resolve }))
+
+    render()
+    await flush()
+
+    const skeleton = renderer!.root.findByProps({ 'data-testid': 'chat-history-loading-skeleton' })
+    const content = renderer!.root.findByProps({ 'data-testid': 'chat-history-loading-content' })
+    expect(skeleton.props.className).toContain('pt-[76px]')
+    expect(skeleton.props.className).not.toContain('px-4')
+    expect(content.props.className).toContain('mx-auto max-w-3xl px-4')
+
+    await act(async () => {
+      resolveConversation({ messages: [] })
+      await Promise.resolve()
+    })
+  })
+
+  test('places the queued label in the conversation instead of below the composer', async () => {
+    chatState.messages = [{ id: 'assistant-loading', role: 'assistant', parts: [], metadata: { isLoading: true } }]
+    chatState.isLoading = true
+    chatState.runStatus = 'queued'
+    render()
+    await flush()
+
+    expect(chatContainerProps.loadingLabel).toBe('runStatusQueued')
+    expect(output()).not.toContain('runStatusQueued')
+  })
+
 
   test('renders the agent-powered footer text and hides it when unset', async () => {
     getPublicAgent.mockResolvedValueOnce({ ...agent, powered_by_text: 'Acme Inc' })

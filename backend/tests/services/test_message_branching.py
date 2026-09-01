@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.agent import ConversationSessionMemoryStatus
 from app.services import message_branching as branching
 
 
@@ -632,47 +631,6 @@ async def test_is_message_on_active_branch_applies_cutoff():
 
     orm.filter.assert_called_once_with(created_at__lt=cutoff)
     orm.exists.assert_awaited_once()
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("snapshot", [None, SimpleNamespace(source_message_id=None)])
-async def test_stale_session_memory_ignores_missing_sources(snapshot):
-    orm = query(first=snapshot)
-    with (
-        patch.object(branching.ConversationSessionMemory, "filter", return_value=orm),
-        patch.object(
-            branching, "is_message_on_active_branch", new=AsyncMock()
-        ) as is_active,
-    ):
-        await branching.stale_session_memory_if_source_outside_active_branch(uuid4())
-
-    is_active.assert_not_awaited()
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("is_active", [True, False])
-async def test_stale_session_memory_transitions_only_outside_active_branch(is_active):
-    conversation_id = uuid4()
-    snapshot = SimpleNamespace(source_message_id=uuid4(), save=AsyncMock())
-    orm = query(first=snapshot)
-    with (
-        patch.object(branching.ConversationSessionMemory, "filter", return_value=orm),
-        patch.object(
-            branching,
-            "is_message_on_active_branch",
-            new=AsyncMock(return_value=is_active),
-        ),
-    ):
-        await branching.stale_session_memory_if_source_outside_active_branch(
-            conversation_id
-        )
-
-    if is_active:
-        assert not hasattr(snapshot, "status")
-        snapshot.save.assert_not_awaited()
-    else:
-        assert snapshot.status == ConversationSessionMemoryStatus.STALE
-        snapshot.save.assert_awaited_once_with(update_fields=["status", "updated_at"])
 
 
 @pytest.mark.anyio
