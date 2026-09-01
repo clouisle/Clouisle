@@ -180,7 +180,7 @@ function NodeExecutionTraceCard({
 
           {node.inputs && (
             <div className="space-y-1">
-              <span className="text-xs text-muted-foreground">{tWorkflow('runDetail.inputs')}</span>
+              <span className="text-xs text-muted-foreground">{tWorkflow('runDrawer.input')}</span>
               <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background p-2 text-[10px] font-mono">{JSON.stringify(node.inputs, null, 2)}</pre>
             </div>
           )}

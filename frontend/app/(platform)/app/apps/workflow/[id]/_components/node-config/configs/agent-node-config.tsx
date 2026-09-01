@@ -191,6 +191,7 @@ export function AgentNodeConfig({
 
   // 当选择 Agent 后，加载其详细信息获取变量定义
   React.useEffect(() => {
+    let cancelled = false
     const loadAgentDetail = async () => {
       if (!safeConfig.agentId) {
         setAttachmentsEnabled(false)
@@ -199,6 +200,7 @@ export function AgentNodeConfig({
 
       try {
         const detail = await agentsApi.getAgent(safeConfig.agentId)
+        if (cancelled) return
         const attachmentsEnabled = detail.enable_attachments === true
         setAttachmentsEnabled(attachmentsEnabled)
         onConfigChange({
@@ -217,6 +219,9 @@ export function AgentNodeConfig({
       }
     }
     loadAgentDetail()
+    return () => {
+      cancelled = true
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [safeConfig.agentId])
 
