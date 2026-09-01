@@ -7,7 +7,7 @@
 本次将其替换为最简单的方式：
 
 1. 每次模型调用前预检完整请求的 token 规模（消息 + 工具定义）。
-2. 超过模型上下文长度的 90%（固定 `DEFAULT_SUMMARY_TRIGGER_RATIO = 0.9`）时，调用同一模型对上下文做一次摘要。
+2. 完整请求规模超过 `min(context_limit × 0.9, input_budget)` 时，调用同一模型对上下文做一次摘要；其中 90% 使用固定的 `DEFAULT_SUMMARY_TRIGGER_RATIO = 0.9`。
 3. 新上下文 = 系统提示词 + 摘要消息（包含任务目标、已完成动作与结果、待完成事项、约束与决定）+ 最新用户消息。
 
 ### Success criteria

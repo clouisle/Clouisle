@@ -527,7 +527,7 @@
   - [x] 9. End-to-end verification, cleanup and documentation finalization
 - 2254 frontend tests and 6673 backend tests pass; React 19 manual test mocks now provide the `jsx-runtime` exports required by the isolated full suite.
 
-- **agent-simple-context-summary** — Complete. Before every provider call, the full request payload is estimated. At more than 90% of the model context limit, one model-generated summary replaces the old history; the new context is system prompt + structured summary + current user request, with a persisted conversation watermark.
+- **agent-simple-context-summary** — Complete. Before every provider call, the full request payload is estimated. At more than 90% of the model context limit, one model-generated summary replaces the old history; the new context is system prompt + structured summary + current user request; active tool-round assistant/tool protocol messages after the current user request are also retained, with a persisted conversation watermark.
   - [x] 1. Replace staged compression with 90% preflight summary
   - [x] 2. Cut over non-streaming, streaming, edit, and regenerate paths
   - [x] 3. Remove checkpoint, session-memory, and tool-step compaction paths

@@ -934,6 +934,40 @@ describe('useChat', () => {
     expect(result.status).toBe('idle')
   })
 
+  it('marks edit-stream compression as errored when the stream fails', async () => {
+    const userId = '11111111-1111-1111-1111-111111111111'
+    const reloadStarted = deferred<void>()
+    const reload = deferred<{ messages: ChatMessage[] }>()
+    const reloaded = [{ id: userId, role: 'user', parts: [{ type: 'text', text: 'edited' }] }] as ChatMessage[]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+    ] as ChatMessage[])
+    await flush()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: 'assistant-failed', edited_message_id: userId } },
+      { event: 'compression_start', data: {} },
+      { event: 'error', data: { code: 429, msg: 'try later', quota_type: 'usage' } },
+    ]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockImplementation(() => {
+      reloadStarted.resolve()
+      return reload.promise
+    })
+
+    const editing = result.editMessage(userId, 'edited')
+    await reloadStarted.promise
+    await flush()
+
+    const failed = result.messages.find((message) => message.id === 'assistant-failed')
+    expect(failed?.parts).toContainEqual({ type: 'task', taskType: 'compression', state: 'error' })
+
+    reload.resolve({ messages: reloaded })
+    await editing
+  })
+
   it('preserves the edit-stream error code across the history reload', async () => {
     const userId = '11111111-1111-1111-1111-111111111111'
     const onError = mock()
