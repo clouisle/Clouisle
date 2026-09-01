@@ -25,6 +25,7 @@
       "failed": "Failed",
       "running": "Running",
       "pending": "Pending",
+      "waiting": "Awaiting input",
       "cancelled": "Cancelled",
       "timeout": "Timeout"
     },

@@ -12,11 +12,11 @@ const messages: Record<string, string> = {
   'agents.apiAccess.description': 'Use this agent from your own code.',
   'agents.apiAccess.manageApiKeys': 'Manage API keys',
   'agents.apiAccess.draftWarningTitle': 'Draft agent',
-  'agents.apiAccess.draftWarningDescription': 'Publish this agent before API traffic can use it.',
+  'agents.apiAccess.draftWarningDescription': 'Draft status only affects publishing and discovery.',
   'agents.apiAccess.endpoint': 'Endpoint',
   'agents.apiAccess.endpointDescription': 'Send streaming chat requests to this endpoint.',
   'agents.apiAccess.authentication': 'Authentication',
-  'agents.apiAccess.authDescription': 'Use an API key bearer token.',
+  'agents.apiAccess.authDescription': 'Use a Bearer JWT or API key.',
   'agents.apiAccess.requestBody': 'Request body',
   'agents.apiAccess.parameter': 'Parameter',
   'agents.apiAccess.type': 'Type',
@@ -60,7 +60,6 @@ const messages: Record<string, string> = {
   'agents.apiAccess.events.toolCall': 'Tool call',
   'agents.apiAccess.events.toolResult': 'Tool result',
   'agents.apiAccess.events.mediaResult': 'Media result',
-  'agents.apiAccess.events.userInputRequest': 'User input request',
   'agents.apiAccess.events.compressionStart': 'Compression started',
   'agents.apiAccess.events.compressionEnd': 'Compression ended',
   'agents.apiAccess.events.outputTruncated': 'Output truncated',
@@ -149,7 +148,7 @@ afterEach(async () => {
 })
 
 describe('ApiAccessContent', () => {
-  test('shows endpoint, token guidance, events, and variables for a published agent', async () => {
+  test('shows endpoint, protocol events, and variables for a published agent', async () => {
     const { container } = await renderApiContent({
       variables: [
         { name: 'customer_id', type: 'text', required: true, label: 'Customer ID' },
@@ -164,9 +163,9 @@ describe('ApiAccessContent', () => {
     expect(container.textContent).toContain('message_end')
     expect(container.textContent).toContain('customer_id')
     expect(container.textContent).toContain('Customer ID')
-    expect(container.textContent).toContain('user_input_request')
-    expect(container.textContent).toContain('User input request')
     expect(container.textContent).toContain('user_message_id')
+    expect(container.textContent).toContain('version_number')
+    expect(container.textContent).not.toContain('user_input_request')
     expect(container.textContent).not.toContain('Draft agent')
   })
 
@@ -180,11 +179,11 @@ describe('ApiAccessContent', () => {
     delete process.env.NEXT_PUBLIC_API_URL
   })
 
-  test('warns draft agents instead of hiding API documentation', async () => {
+  test('explains draft access without claiming that publication gates the API', async () => {
     const { container } = await renderApiContent({ status: 'draft' })
 
     expect(container.textContent).toContain('Draft agent')
-    expect(container.textContent).toContain('Publish this agent before API traffic can use it.')
+    expect(container.textContent).toContain('Draft status only affects publishing and discovery.')
     expect(container.textContent).toContain('Authorization: Bearer YOUR_API_KEY')
   })
 
