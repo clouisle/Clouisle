@@ -234,16 +234,20 @@ describe('NodeConfigDrawer', () => {
       'iteration.items', 'loop.rows', 'loop.step', 'loop.record', 'loop.note',
       'media.result', 'media.images', 'code.payload', 'template.text', 'files.urls',
       'aggregator.merged', 'extractor.entities', 'tool.toolResult',
-      'sub-workflow.workflowResult', 'agent.reply', 'retrieval.documents',
+      'sub-workflow.workflowResult', 'agent.reply', 'agent.toolCalls', 'agent.usage',
+      'agent.dialogue', 'agent.artifacts', 'retrieval.documents',
       'retrieval.context', 'retrieval.totalFound', 'sys.query',
     ]))
     const iterableIds = getAvailableVariables('iterable').map(variable => variable.id)
     expect(iterableIds).toEqual(expect.arrayContaining([
       'iteration.items', 'loop.rows', 'loop.record', 'media.images', 'code.payload',
       'files.urls', 'aggregator.merged', 'extractor.entities', 'tool.toolResult',
-      'sub-workflow.workflowResult', 'retrieval.documents',
+      'sub-workflow.workflowResult', 'agent.toolCalls', 'agent.usage', 'agent.dialogue',
+      'agent.artifacts', 'retrieval.documents',
     ]))
-    expect(iterableIds).not.toEqual(expect.arrayContaining(['loop.step', 'loop.note', 'agent.reply', 'retrieval.context', 'sys.query']))
+    expect(iterableIds).not.toEqual(expect.arrayContaining([
+      'loop.step', 'loop.note', 'agent.reply', 'retrieval.context', 'sys.query',
+    ]))
   })
 
   test('exposes loop-local and writable conversation variables inside a subgraph', () => {

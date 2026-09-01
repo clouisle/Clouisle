@@ -12,6 +12,11 @@
   - [x] 8. Separate reasoning, task, tool, and answer surfaces (superseded)
   - [x] 9. Keep activity nested and label the current operation (superseded by Stage 10)
   - [x] 10. Restore one aggregated thought panel at the top of each assistant message
+- **workflow-agent-node-capabilities** — Complete. Workflow Agent nodes now forward mapped files/images, invoke the configured Agent TeamModel, expose response/tool calls/usage/dialogue/artifacts, and render those outputs in run details. See `docs/plan/workflow-agent-node-capabilities.md`
+  - [x] 1. Backend AgentService contract
+  - [x] 2. Workflow Agent executor integration
+  - [x] 3. Workflow output contracts and presentation
+  - [x] 4. Regression coverage and cleanup
 - **model-prompt-caching-visibility** — Complete. Provider-reported cache hit/write token details flow through `Usage`, all chat adapters, message persistence, message_end SSE, and the token-stats popover. Cache hit rate is intentionally not displayed. Verified: 3316 backend + 2242 frontend tests, tsc and Ruff clean. See `docs/plan/model-prompt-caching-visibility.md`
   - [x] 1. Usage 类型扩展 + 全部 adapter 解析
   - [x] 2. chat.py 记账与 SSE 透传

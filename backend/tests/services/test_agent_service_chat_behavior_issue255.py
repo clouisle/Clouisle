@@ -252,7 +252,7 @@ async def test_retrieve_rag_context_sorts_results_and_tolerates_failures():
 @pytest.mark.anyio
 async def test_chat_executes_tool_then_returns_final_response_and_usage():
     service = AgentService()
-    agent = _agent()
+    agent = _agent(team_id=None, model_id=None)
     tool_call = ToolCall(
         id="call-1",
         function={"name": "demo", "arguments": "{}"},
@@ -284,4 +284,33 @@ async def test_chat_executes_tool_then_returns_final_response_and_usage():
             }
         ],
         "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+        "dialogue": [
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": None,
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {"name": "demo", "arguments": "{}"},
+                    }
+                ],
+                "iteration": 1,
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "tool_name": "demo",
+                "content": "{'ok': True}",
+                "iteration": 1,
+            },
+            {
+                "role": "assistant",
+                "content": "Final answer",
+                "reasoning_content": None,
+                "iteration": 2,
+            },
+        ],
+        "artifacts": [],
     }

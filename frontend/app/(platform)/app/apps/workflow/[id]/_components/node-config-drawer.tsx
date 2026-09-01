@@ -917,24 +917,30 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         })
       }
       
-      // Agent 节点输出变量
+      // Agent 节点输出变量：回复别名及可供下游节点使用的执行详情
       if (nodeType === 'agent') {
         const aConfig = (n.data as { agentConfig?: AgentNodeConfigType })?.agentConfig || defaultAgentNodeConfig
         const outputVar = aConfig.outputVariable || 'response'
-
-        // String 类型，因为 Agent 输出是回复字符串
-        if (filterType !== 'iterable') {
+        const outputDefinitions = [
+          { name: outputVar, type: 'String', isArray: false, isIterable: false },
+          { name: 'toolCalls', type: 'Array', isArray: true, isIterable: true },
+          { name: 'usage', type: 'Object', isArray: false, isIterable: true },
+          { name: 'dialogue', type: 'Array', isArray: true, isIterable: true },
+          { name: 'artifacts', type: 'Array', isArray: true, isIterable: true },
+        ]
+        outputDefinitions.forEach(output => {
+          if (filterType === 'iterable' && !output.isIterable) return
           variables.push({
-            id: `${n.id}.${outputVar}`,
-            name: outputVar,
-            type: 'String',
+            id: `${n.id}.${output.name}`,
+            name: output.name,
+            type: output.type,
             group: n.id,
             groupLabel: nodeLabel,
             isSystem: false,
-            isArray: false,
-            isIterable: false,
+            isArray: output.isArray,
+            isIterable: output.isIterable,
           })
-        }
+        })
       }
 
       // 知识库检索节点输出变量

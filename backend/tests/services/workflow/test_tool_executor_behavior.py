@@ -2,7 +2,7 @@
 
 import json
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
@@ -114,6 +114,8 @@ class TestAgentNodeExecutorBehavior:
             "response": "first second",
             "toolCalls": [{"name": "search"}],
             "usage": {"tokens": 7},
+            "dialogue": [{"role": "assistant", "tool_calls": [{"name": "search"}]}],
+            "artifacts": [],
         }
         assert publish_token.await_args_list == [
             call("agent-node", "first "),
@@ -141,11 +143,19 @@ class TestAgentNodeExecutorBehavior:
             agent_filter.return_value.first = AsyncMock(return_value=agent)
             result = await AgentNodeExecutor().execute(node, context, run)
 
-        assert result.outputs == {"response": "", "toolCalls": [], "usage": {}}
+        assert result.outputs == {
+            "response": "",
+            "toolCalls": [],
+            "usage": {},
+            "dialogue": [],
+            "artifacts": [],
+        }
         agent_service.chat.assert_awaited_once_with(
             agent=agent,
             message="plain",
             context={},
+            images=None,
+            files=None,
             user_id=None,
             max_turns=10,
             user_locale="en",
@@ -178,12 +188,120 @@ class TestAgentNodeExecutorBehavior:
             "response",
             "toolCalls",
             "usage",
+            "dialogue",
+            "artifacts",
         ]
         assert [item.type.kind for item in executor.get_output_specs({})] == [
             "string",
             "array",
             "object",
+            "array",
+            "array",
         ]
+
+    @pytest.mark.anyio
+    async def test_non_streaming_forwards_frontend_message_and_attachment_mappings(
+        self, context, run, agent_service
+    ):
+        context.resolve_variable_ref = AsyncMock(
+            side_effect={
+                "{{start.message}}": "Describe these assets",
+                "{{start.image}}": {"url": "https://example.test/image.png"},
+                "{{start.file}}": {"url": "https://example.test/report.pdf"},
+            }.get
+        )
+        agent = SimpleNamespace(enable_attachments=True, max_iterations=5)
+        agent_service.chat = AsyncMock(
+            return_value={
+                "response": "Done",
+                "tool_calls": [],
+                "usage": {"total_tokens": 4},
+                "dialogue": [{"role": "assistant", "content": "Done"}],
+                "artifacts": [{"url": "https://example.test/output.csv"}],
+            }
+        )
+        node = {
+            "data": {
+                "agentConfig": {
+                    "agentId": "agent-1",
+                    "messageSource": "variable",
+                    "messageVariableRef": "{{start.message}}",
+                    "inputMappings": [
+                        {
+                            "name": "image",
+                            "type": "image",
+                            "source": "variable",
+                            "variableRef": "{{start.image}}",
+                        },
+                        {
+                            "name": "file",
+                            "type": "file",
+                            "source": "variable",
+                            "variableRef": "{{start.file}}",
+                        },
+                    ],
+                    "stream": False,
+                }
+            }
+        }
+
+        with patch("app.models.agent.Agent.filter") as agent_filter:
+            agent_filter.return_value.first = AsyncMock(return_value=agent)
+            result = await AgentNodeExecutor().execute(node, context, run)
+
+        assert result.outputs == {
+            "response": "Done",
+            "toolCalls": [],
+            "usage": {"total_tokens": 4},
+            "dialogue": [{"role": "assistant", "content": "Done"}],
+            "artifacts": [{"url": "https://example.test/output.csv"}],
+        }
+        agent_service.chat.assert_awaited_once_with(
+            agent=agent,
+            message="Describe these assets",
+            context={},
+            images=[{"url": "https://example.test/image.png"}],
+            files=[{"url": "https://example.test/report.pdf"}],
+            user_id="user-1",
+            max_turns=5,
+            user_locale="en",
+        )
+
+    @pytest.mark.anyio
+    async def test_rejects_attachments_when_agent_disables_them(
+        self, context, run, agent_service
+    ):
+        context.resolve_variable_ref = AsyncMock(
+            side_effect={
+                "{{start.image}}": {"url": "https://example.test/image.png"}
+            }.get
+        )
+        node = {
+            "data": {
+                "agentConfig": {
+                    "agentId": "agent-1",
+                    "message": "Describe this",
+                    "inputMappings": [
+                        {
+                            "name": "image",
+                            "type": "image",
+                            "source": "variable",
+                            "variableRef": "{{start.image}}",
+                        }
+                    ],
+                    "stream": False,
+                }
+            }
+        }
+
+        with patch("app.models.agent.Agent.filter") as agent_filter:
+            agent_filter.return_value.first = AsyncMock(
+                return_value=SimpleNamespace(enable_attachments=False, max_iterations=5)
+            )
+            result = await AgentNodeExecutor().execute(node, context, run)
+
+        assert result.error == "attachments_not_enabled"
+        agent_service.chat.assert_not_called()
 
 
 class TestHTTPRequestNodeExecutorBehavior:

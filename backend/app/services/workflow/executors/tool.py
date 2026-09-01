@@ -167,29 +167,7 @@ class ToolNodeExecutor(NodeExecutor):
 
 @NodeExecutorRegistry.register("agent")
 class AgentNodeExecutor(NodeExecutor):
-    """
-    Agent node executor.
-
-    Invokes an AI agent with a message and optional context.
-
-    Node Config:
-        {
-            "agentId": "uuid",
-            "message": "{{start.query}}",
-            "context": [
-                {"name": "history", "variableRef": "{{chat.history}}"}
-            ],
-            "stream": true,
-            "maxTurns": 10
-        }
-
-    Outputs:
-        {
-            "response": "Agent's response",
-            "toolCalls": [...],
-            "usage": {...}
-        }
-    """
+    """Invoke a configured Agent using the shared AgentService contract."""
 
     async def execute(
         self,
@@ -197,136 +175,187 @@ class AgentNodeExecutor(NodeExecutor):
         context: "ExecutionContext",
         run: "WorkflowRun",
     ) -> ExecutionResult:
-        """Execute agent node."""
         from app.models.agent import Agent
         from app.services.agent import AgentService
 
         node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
-        # Try agentConfig first (frontend structure), then fall back to config
         config = node_data.get("agentConfig") or node_data.get("config", {})
-
-        agent_id = config.get("agentId")
-        message_template = config.get("message", "")
-        context_mappings = config.get("context", [])
-        should_stream = config.get("stream", True)
-        max_turns = config.get("maxTurns", 10)
-
+        agent_id = config.get("agentId") or config.get("agent_id")
         if not agent_id:
             return ExecutionResult(error="validation_error")
-
-        # Load agent
         agent = await Agent.filter(id=agent_id).first()
         if not agent:
             return ExecutionResult(error="agent_not_found")
 
-        # Resolve message
-        message = await self._resolve_template(message_template, context)
+        message_source = config.get("messageSource")
+        if message_source == "constant":
+            message_template = config.get("messageConstantValue", "")
+        elif message_source == "variable":
+            message_template = config.get("messageVariableRef", "")
+        else:
+            message_template = config.get("message", "")
+        message = await self._resolve_template(str(message_template or ""), context)
 
-        # Resolve context
-        agent_context = await self.resolve_inputs(context, context_mappings)
+        mappings = (
+            config.get("inputMappings")
+            or config.get("parameterMappings")
+            or config.get("context", [])
+        )
+        resolved = await self.resolve_inputs(context, mappings)
+
+        images: list[Any] = []
+        files: list[Any] = []
+        agent_context: dict[str, Any] = {}
+        for mapping in mappings:
+            name = mapping.get("name") if isinstance(mapping, dict) else None
+            if not name or name not in resolved:
+                continue
+            value = resolved[name]
+            value_type = (
+                str(mapping.get("type", "string")).lower()
+                if isinstance(mapping, dict)
+                else "string"
+            )
+            values = value if isinstance(value, list) else [value]
+            if value_type in {"image", "images"}:
+                images.extend(item for item in values if item is not None)
+            elif value_type in {"file", "files"}:
+                files.extend(item for item in values if item is not None)
+            else:
+                agent_context[name] = value
 
         try:
             agent_service = AgentService()
-
-            # Locale of the triggering user drives the system prompt language
-            # instruction (mirrors the orchestrator's notification locale).
-            # Kept inside the try block so database failures here pass through
-            # translate_public_workflow_error like every other failure.
             user_locale = "en"
             if run.triggered_by_id:
                 await run.fetch_related("triggered_by")
                 if run.triggered_by:
                     user_locale = getattr(run.triggered_by, "locale", None) or "en"
-
-            if should_stream:
-                # Streaming mode
+            if (images or files) and not getattr(agent, "enable_attachments", False):
+                return ExecutionResult(error="attachments_not_enabled")
+            configured_turns = config.get("maxTurns")
+            agent_turns = getattr(agent, "max_iterations", None)
+            max_turns = (
+                int(configured_turns or agent_turns or 10)
+                if isinstance(configured_turns or agent_turns, int)
+                else 10
+            )
+            output_var = str(config.get("outputVariable") or "response")
+            outputs: dict[str, Any]
+            if config.get("stream", True):
                 response_text = ""
-                tool_calls = []
-                usage = {}
+                tool_calls: list[Any] = []
+                usage: dict[str, Any] = {}
+                dialogue: list[dict[str, Any]] = []
+                artifacts: list[Any] = []
                 stream_manager = StreamManager(context.run_id)
-
                 async for chunk in agent_service.chat_stream(
                     agent=agent,
                     message=message,
                     context=agent_context,
+                    images=images or None,
+                    files=files or None,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     max_turns=max_turns,
                     user_locale=user_locale,
                 ):
-                    if isinstance(chunk, dict):
-                        if "tool_call" in chunk:
-                            tool_calls.append(chunk["tool_call"])
-                        if "usage" in chunk:
-                            usage = chunk["usage"]
-                    else:
+                    if isinstance(chunk, str):
                         response_text += chunk
                         await stream_manager.publish_token(node_id, chunk)
-
-                return ExecutionResult(
-                    outputs={
-                        "response": response_text,
-                        "toolCalls": tool_calls,
-                        "usage": usage,
-                    }
-                )
+                    elif "tool_call" in chunk:
+                        call_data = chunk["tool_call"]
+                        tool_calls.append(call_data)
+                        dialogue.append(
+                            {"role": "assistant", "tool_calls": [call_data]}
+                        )
+                    elif "tool_result" in chunk:
+                        tool_result = chunk["tool_result"]
+                        dialogue.append({"role": "tool", **tool_result})
+                        artifacts.extend(
+                            self._extract_artifacts(tool_result.get("result"))
+                        )
+                    elif "usage" in chunk:
+                        usage = chunk["usage"]
+                    elif "dialogue" in chunk:
+                        dialogue = chunk["dialogue"]
+                        artifacts = chunk.get("artifacts") or []
+                outputs = {
+                    "response": response_text,
+                    "toolCalls": tool_calls,
+                    "usage": usage,
+                    "dialogue": dialogue,
+                    "artifacts": artifacts,
+                }
             else:
-                # Non-streaming mode
                 result = await agent_service.chat(
                     agent=agent,
                     message=message,
                     context=agent_context,
+                    images=images or None,
+                    files=files or None,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     max_turns=max_turns,
                     user_locale=user_locale,
                 )
-
-                return ExecutionResult(
-                    outputs={
-                        "response": result.get("response", ""),
-                        "toolCalls": result.get("tool_calls", []),
-                        "usage": result.get("usage", {}),
-                    }
-                )
-
+                outputs = {
+                    "response": result.get("response", ""),
+                    "toolCalls": result.get("tool_calls", []),
+                    "usage": result.get("usage", {}),
+                    "dialogue": result.get("dialogue", []),
+                    "artifacts": result.get("artifacts", []),
+                }
+            if output_var != "response":
+                outputs[output_var] = outputs["response"]
+            return ExecutionResult(outputs=outputs)
         except Exception as e:
-            logger.exception(f"Agent execution error: {e}")
+            logger.exception("Agent execution error: %s", e)
             return ExecutionResult(error=translate_public_workflow_error(e))
 
     async def _resolve_template(
-        self,
-        template: str,
-        context: "ExecutionContext",
+        self, template: str, context: "ExecutionContext"
     ) -> str:
-        """Resolve variable references in template."""
         import re
 
-        pattern = r"\{\{([^}]+)\}\}"
-        matches = re.findall(pattern, template)
-
         result = template
-        for match in matches:
+        for match in re.findall(r"\{\{([^}]+)\}\}", template):
             ref = f"{{{{{match}}}}}"
             value = await context.resolve_variable_ref(ref)
             if value is not None:
                 result = result.replace(ref, str(value))
-
         return result
 
+    @staticmethod
+    def _extract_artifacts(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return []
+        artifacts: list[dict[str, Any]] = []
+        for key in ("artifacts", "files"):
+            items = value.get(key)
+            if isinstance(items, list):
+                artifacts.extend(item for item in items if isinstance(item, dict))
+        nested = value.get("display_result")
+        if isinstance(nested, dict):
+            artifacts.extend(AgentNodeExecutor._extract_artifacts(nested))
+        return artifacts
+
     def get_output_variables(self, config: dict) -> list[dict]:
-        """Get output variables."""
-        return [
+        output_var = config.get("outputVariable", "response")
+        variables = [
             {"name": "response", "type": "string"},
             {"name": "toolCalls", "type": "array"},
             {"name": "usage", "type": "object"},
+            {"name": "dialogue", "type": "array"},
+            {"name": "artifacts", "type": "array"},
         ]
+        if output_var and output_var != "response":
+            variables.insert(0, {"name": output_var, "type": "string"})
+        return variables
 
     def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
-        """Get output specs with TypeSpec for type inference."""
         return [
-            NodeOutputDecl(name="response", type=TypeSpec(kind="string")),
-            NodeOutputDecl(name="toolCalls", type=TypeSpec(kind="array")),
-            NodeOutputDecl(name="usage", type=TypeSpec(kind="object")),
+            NodeOutputDecl(name=item["name"], type=TypeSpec(kind=item["type"]))
+            for item in self.get_output_variables(config)
         ]
 
 

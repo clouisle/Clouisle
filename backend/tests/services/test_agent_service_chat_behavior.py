@@ -46,6 +46,29 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
         "response": "The answer.",
         "tool_calls": [tool_call.model_dump()],
         "usage": {"prompt_tokens": 10, "completion_tokens": 6, "total_tokens": 16},
+        "dialogue": [
+            {
+                "role": "assistant",
+                "content": "I will search.",
+                "reasoning_content": None,
+                "tool_calls": [tool_call.model_dump()],
+                "iteration": 1,
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "tool_name": "search",
+                "content": "{'results': ['match']}",
+                "iteration": 1,
+            },
+            {
+                "role": "assistant",
+                "content": "The answer.",
+                "reasoning_content": None,
+                "iteration": 2,
+            },
+        ],
+        "artifacts": [],
     }
     assert chat.await_count == 2
     second_messages = chat.await_args_list[1].kwargs["messages"]
@@ -54,6 +77,64 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
         ("tool", "{'results': ['match']}"),
     ]
     service._execute_tool.assert_awaited_once_with(agent=agent, tool_call=tool_call)
+
+
+@pytest.mark.anyio
+async def test_chat_resolves_configured_team_model_before_invocation():
+    agent = SimpleNamespace(team_id="team-1", model_id="team-model")
+    response = SimpleNamespace(content="Done", tool_calls=[], usage=None)
+    service = AgentService()
+    service._build_messages = AsyncMock(return_value=[])
+    service._get_agent_tools = AsyncMock(return_value=[])
+
+    with (
+        patch(
+            "app.models.model.TeamModel.filter",
+            return_value=SimpleNamespace(
+                first=AsyncMock(return_value=SimpleNamespace(model_id="model-1"))
+            ),
+        ),
+        patch(
+            "app.services.agent.model_manager.team_chat",
+            new=AsyncMock(return_value=response),
+        ) as team_chat,
+    ):
+        result = await service.chat(agent, "Find it", user_id="user-1")
+
+    assert result["response"] == "Done"
+    team_chat.assert_awaited_once_with(
+        team_id="team-1", messages=[], tools=None, model_id="model-1", user_id="user-1"
+    )
+
+
+@pytest.mark.anyio
+async def test_build_messages_uses_images_and_parsed_files_for_enabled_agent():
+    agent = SimpleNamespace(
+        system_prompt="",
+        rag_mode=RAGMode.OFF,
+        enable_attachments=True,
+        attachment_config={},
+        model_id=None,
+    )
+    service = AgentService()
+    service._parse_workflow_files = AsyncMock(return_value="file contents")
+
+    messages = await service._build_messages(
+        agent,
+        "Summarize",
+        images=[{"url": "https://example.test/image.png", "asset_ref": "image-ref"}],
+        files=[{"url": "https://example.test/report.pdf"}],
+    )
+
+    content = messages[-1].content
+    assert isinstance(content, list)
+    assert content[0].text == "Summarize"
+    assert content[1].image.url == "https://example.test/image.png"
+    assert content[1].image.asset_ref == "image-ref"
+    assert content[2].text == "<uploaded_files>\nfile contents\n</uploaded_files>"
+    service._parse_workflow_files.assert_awaited_once_with(
+        agent, [{"url": "https://example.test/report.pdf"}]
+    )
 
 
 @pytest.mark.anyio
@@ -94,9 +175,85 @@ async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
         "Searching",
         {"tool_call": tool_call.model_dump()},
         {"usage": {"total_tokens": 5}},
+        {
+            "tool_result": {
+                "tool_call_id": "call-1",
+                "tool_name": "search",
+                "result": {"results": ["match"]},
+            }
+        },
         "Done",
+        {
+            "dialogue": [
+                {
+                    "role": "assistant",
+                    "content": "Searching",
+                    "reasoning_content": None,
+                    "tool_calls": [tool_call.model_dump()],
+                    "iteration": 1,
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call-1",
+                    "tool_name": "search",
+                    "content": "{'results': ['match']}",
+                    "iteration": 1,
+                },
+                {
+                    "role": "assistant",
+                    "content": "Done",
+                    "reasoning_content": None,
+                    "iteration": 2,
+                },
+            ],
+            "artifacts": [],
+        },
     ]
     service._execute_tool.assert_awaited_once_with(agent=agent, tool_call=tool_call)
+
+
+@pytest.mark.anyio
+async def test_chat_stream_emits_dialogue_when_tool_limit_is_reached():
+    agent = SimpleNamespace(team_id=None, model_id=None)
+    tool_call = ToolCall(
+        id="call-1",
+        function=FunctionCall(name="search", arguments="{}"),
+    )
+
+    async def chat_stream(**_kwargs):
+        yield SimpleNamespace(
+            delta=SimpleNamespace(content="", tool_calls=[tool_call]), usage=None
+        )
+
+    service = AgentService()
+    service._build_messages = AsyncMock(return_value=[])
+    service._get_agent_tools = AsyncMock(return_value=[])
+    service._execute_tool = AsyncMock(return_value={"files": [{"url": "output.csv"}]})
+
+    with patch("app.services.agent.model_manager.chat_stream", new=chat_stream):
+        events = [
+            event async for event in service.chat_stream(agent, "Find it", max_turns=1)
+        ]
+
+    assert events[-1] == {
+        "dialogue": [
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": None,
+                "tool_calls": [tool_call.model_dump()],
+                "iteration": 1,
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "tool_name": "search",
+                "content": "{'files': [{'url': 'output.csv'}]}",
+                "iteration": 1,
+            },
+        ],
+        "artifacts": [{"url": "output.csv"}],
+    }
 
 
 @pytest.mark.anyio

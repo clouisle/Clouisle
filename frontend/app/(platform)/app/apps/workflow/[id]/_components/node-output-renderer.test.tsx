@@ -71,6 +71,23 @@ test('renders text, branch, request, tool, code, and fallback outputs', () => {
   expect(Object.keys(nodeStatusConfig)).toEqual(['pending', 'running', 'success', 'failed', 'skipped'])
 })
 
+test('renders Agent response, artifacts, and dialogue details', () => {
+  const output = render('agent', {
+    response: 'Generated answer',
+    artifacts: [{ url: 'https://example.test/report.csv' }],
+    dialogue: [{ role: 'assistant', content: 'Generated answer' }],
+    toolCalls: [{ name: 'export_report' }],
+    usage: { total_tokens: 12 },
+  })
+
+  expect(text(output)).toContain('Generated answer')
+  expect(text(output)).toContain('artifacts')
+  expect(text(output)).toContain('dialogue')
+  expect(text(output)).toContain('toolCalls')
+  expect(text(output)).toContain('usage')
+  expect(text(output)).toContain('report.csv')
+})
+
 test('renders image and video media previews with lightbox actions', () => {
   const images = render('media_generation', { result: ['one.png', 'two.png'] })
   const imageButtons = findAll(images, (node) => node.type === 'button')
