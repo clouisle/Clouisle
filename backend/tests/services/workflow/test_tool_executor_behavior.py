@@ -206,8 +206,13 @@ class TestAgentNodeExecutorBehavior:
         context.resolve_variable_ref = AsyncMock(
             side_effect={
                 "{{start.message}}": "Describe these assets",
-                "{{start.image}}": {"url": "https://example.test/image.png"},
-                "{{start.file}}": {"url": "https://example.test/report.pdf"},
+                "{{start.attachments}}": [
+                    {"url": "https://example.test/image.png", "mime_type": "image/png"},
+                    {
+                        "url": "https://example.test/report.pdf",
+                        "mime_type": "application/pdf",
+                    },
+                ],
             }.get
         )
         agent = SimpleNamespace(enable_attachments=True, max_iterations=5)
@@ -228,16 +233,10 @@ class TestAgentNodeExecutorBehavior:
                     "messageVariableRef": "{{start.message}}",
                     "attachmentMappings": [
                         {
-                            "name": "images",
-                            "type": "images",
-                            "source": "variable",
-                            "variableRef": "{{start.image}}",
-                        },
-                        {
-                            "name": "files",
+                            "name": "attachments",
                             "type": "files",
                             "source": "variable",
-                            "variableRef": "{{start.file}}",
+                            "variableRef": "{{start.attachments}}",
                         },
                     ],
                     "stream": False,
@@ -260,8 +259,15 @@ class TestAgentNodeExecutorBehavior:
             agent=agent,
             message="Describe these assets",
             context={},
-            images=[{"url": "https://example.test/image.png"}],
-            files=[{"url": "https://example.test/report.pdf"}],
+            images=[
+                {"url": "https://example.test/image.png", "mime_type": "image/png"}
+            ],
+            files=[
+                {
+                    "url": "https://example.test/report.pdf",
+                    "mime_type": "application/pdf",
+                }
+            ],
             user_id="user-1",
             max_turns=5,
             user_locale="en",
@@ -272,9 +278,7 @@ class TestAgentNodeExecutorBehavior:
         self, context, run, agent_service
     ):
         context.resolve_variable_ref = AsyncMock(
-            side_effect={
-                "{{start.image}}": {"url": "https://example.test/image.png"}
-            }.get
+            side_effect={"{{start.attachments}}": "data:image/png;base64,abc"}.get
         )
         node = {
             "data": {
@@ -282,10 +286,10 @@ class TestAgentNodeExecutorBehavior:
                     "agentId": "agent-1",
                     "attachmentMappings": [
                         {
-                            "name": "images",
-                            "type": "images",
+                            "name": "attachments",
+                            "type": "files",
                             "source": "variable",
-                            "variableRef": "{{start.image}}",
+                            "variableRef": "{{start.attachments}}",
                         }
                     ],
                     "stream": False,

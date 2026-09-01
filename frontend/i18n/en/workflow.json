@@ -883,10 +883,8 @@
       "messageInputDesc": "Message content to send to the agent",
       "enterMessageContent": "Enter message content...",
       "variableConfig": "Variable configuration",
-      "attachmentInputs": "Attachments",
-      "attachmentInputsDesc": "Map workflow file and image variables to the Agent's uploads.",
-      "attachmentFiles": "Files",
-      "attachmentImages": "Images",
+      "attachmentInputs": "Attachment",
+      "attachmentInputsDesc": "Map one workflow attachment variable. Images are recognized automatically.",
       "agentResponseContent": "Agent response content"
     },
     "configAnswer": {

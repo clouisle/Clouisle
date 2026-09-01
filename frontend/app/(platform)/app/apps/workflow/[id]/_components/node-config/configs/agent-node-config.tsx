@@ -106,24 +106,20 @@ function getAgentInputMappings(
   })
 }
 
-const AGENT_ATTACHMENT_MAPPINGS = [
-  { name: 'files', type: 'files' },
-  { name: 'images', type: 'images' },
-] as const
+const AGENT_ATTACHMENT_MAPPINGS = [{ name: 'attachments', type: 'files' }] as const
 
 export function getAgentAttachmentMappings(
   enabled: boolean,
   existingMappings: AgentInputMapping[],
 ): AgentInputMapping[] {
   if (!enabled) return []
-  const existingByName = new Map(existingMappings.map((mapping) => [mapping.name, mapping]))
-  return AGENT_ATTACHMENT_MAPPINGS.map((attachment) => {
-    const existing = existingByName.get(attachment.name)
-    const definition = { ...attachment, required: false }
-    return existing?.type === attachment.type
+  const existing = existingMappings.find((mapping) => mapping.name === 'attachments')
+  const definition = { ...AGENT_ATTACHMENT_MAPPINGS[0], required: false }
+  return [
+    existing?.type === definition.type
       ? { ...existing, ...definition }
-      : { ...definition, source: 'variable' }
-  })
+      : { ...definition, source: 'variable' },
+  ]
 }
 
 interface AgentNodeConfigProps {
@@ -701,36 +697,26 @@ export function AgentNodeConfig({
               !attachmentInputsOpen && '-rotate-90',
             )} />
             <span>{t('configAgent.attachmentInputs')}</span>
-            <span className="text-muted-foreground ml-1">({safeConfig.attachmentMappings.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
             <p className="text-[10px] text-muted-foreground">{t('configAgent.attachmentInputsDesc')}</p>
-            {safeConfig.attachmentMappings.map((mapping) => {
-              const label = mapping.name === 'files'
-                ? t('configAgent.attachmentFiles')
-                : t('configAgent.attachmentImages')
-              return (
-                <div key={mapping.name} className="bg-muted/30 rounded-lg p-2.5 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium">{label}</span>
-                    <span className="text-[10px] text-muted-foreground">{mapping.type}</span>
-                  </div>
-                  {renderVariableSelector(
-                    `attachment-${mapping.name}`,
-                    mapping.variableRef,
-                    mapping.variableRefNodeLabel,
-                    (variableRef, label) => {
-                      handleUpdateAttachmentMapping(mapping.name, {
-                        source: 'variable',
-                        variableRef,
-                        variableRefNodeLabel: label,
-                        constantValue: undefined,
-                      })
-                    },
-                  )}
-                </div>
-              )
-            })}
+            {safeConfig.attachmentMappings.map((mapping) => (
+              <div key={mapping.name} className="bg-muted/30 rounded-lg p-2.5">
+                {renderVariableSelector(
+                  'attachment-input',
+                  mapping.variableRef,
+                  mapping.variableRefNodeLabel,
+                  (variableRef, label) => {
+                    handleUpdateAttachmentMapping(mapping.name, {
+                      source: 'variable',
+                      variableRef,
+                      variableRefNodeLabel: label,
+                      constantValue: undefined,
+                    })
+                  },
+                )}
+              </div>
+            ))}
           </CollapsibleContent>
         </Collapsible>
       )}

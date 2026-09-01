@@ -884,9 +884,7 @@
       "enterMessageContent": "输入消息内容...",
       "variableConfig": "变量配置",
       "attachmentInputs": "附件",
-      "attachmentInputsDesc": "将工作流中的文件和图片变量映射为智能体附件。",
-      "attachmentFiles": "文件",
-      "attachmentImages": "图片",
+      "attachmentInputsDesc": "映射一个工作流附件变量，图片会自动识别。",
       "agentResponseContent": "智能体回复内容"
     },
     "configAnswer": {

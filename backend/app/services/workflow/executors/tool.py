@@ -231,16 +231,14 @@ class AgentNodeExecutor(NodeExecutor):
             if not name or name not in resolved_attachments:
                 continue
             value = resolved_attachments[name]
-            value_type = (
-                str(mapping.get("type", "")).lower()
-                if isinstance(mapping, dict)
-                else ""
-            )
             values = value if isinstance(value, list) else [value]
-            if value_type in {"image", "images"}:
-                images.extend(item for item in values if item is not None)
-            elif value_type in {"file", "files"}:
-                files.extend(item for item in values if item is not None)
+            for item in values:
+                if item is None:
+                    continue
+                if self._is_image_attachment(item):
+                    images.append(item)
+                else:
+                    files.append(item)
 
         try:
             agent_service = AgentService()
@@ -341,6 +339,18 @@ class AgentNodeExecutor(NodeExecutor):
             if value is not None:
                 result = result.replace(ref, str(value))
         return result
+
+    @staticmethod
+    def _is_image_attachment(value: Any) -> bool:
+        if isinstance(value, dict):
+            media_type = str(value.get("mime_type") or value.get("type") or "")
+            if media_type.startswith("image/") or media_type in {"image", "image_url"}:
+                return True
+            value = value.get("url") or ""
+        url = str(value).split("?", maxsplit=1)[0].lower()
+        return url.startswith("data:image/") or url.endswith(
+            (".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp")
+        )
 
     @staticmethod
     def _extract_artifacts(value: Any) -> list[dict[str, Any]]:

@@ -101,16 +101,15 @@ test('declares the fixed Agent runtime outputs and one distinct response alias',
   ])
 })
 
-test('declares workflow upload mappings only for Agents with attachments enabled', () => {
+test('declares one workflow attachment mapping only for Agents with uploads enabled', () => {
   const existing = [
-    { name: 'files', type: 'files', required: true, source: 'variable' as const, variableRef: '{{start.documents}}', variableRefNodeLabel: 'Start' },
+    { name: 'attachments', type: 'files', required: true, source: 'variable' as const, variableRef: '{{start.uploads}}', variableRefNodeLabel: 'Start' },
     { name: 'stale', type: 'string', required: false, source: 'constant' as const, constantValue: 'remove' },
   ]
 
   expect(getAgentAttachmentMappings(false, existing)).toEqual([])
   expect(getAgentAttachmentMappings(true, existing)).toEqual([
-    { name: 'files', type: 'files', required: false, source: 'variable', variableRef: '{{start.documents}}', variableRefNodeLabel: 'Start' },
-    { name: 'images', type: 'images', required: false, source: 'variable' },
+    { name: 'attachments', type: 'files', required: false, source: 'variable', variableRef: '{{start.uploads}}', variableRefNodeLabel: 'Start' },
   ])
 })
 
@@ -209,7 +208,7 @@ test('clears mappings when the selected Agent no longer declares inputs', async 
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ inputMappings: [] }))
 })
 
-test('loads file and image upload mappings for an Agent with attachments enabled', async () => {
+test('loads one upload mapping for an Agent with attachments enabled', async () => {
   const onConfigChange = mock(() => {})
   getAgent.mockImplementation(async () => ({ variables: [], enable_attachments: true }))
   render({ agentId: 'agent-1', inputMappings: [], attachmentMappings: [], outputVariable: 'response' }, { onConfigChange })
@@ -218,8 +217,7 @@ test('loads file and image upload mappings for an Agent with attachments enabled
 
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
     attachmentMappings: [
-      { name: 'files', type: 'files', required: false, source: 'variable' },
-      { name: 'images', type: 'images', required: false, source: 'variable' },
+      { name: 'attachments', type: 'files', required: false, source: 'variable' },
     ],
   }))
   expect(setState).toHaveBeenCalledWith(true)
