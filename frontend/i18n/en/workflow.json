@@ -564,6 +564,8 @@
       "nodeType": "Type:",
       "nodeStatus": "Status:",
       "nodeTime": "Time:",
+      "model": "Model:",
+      "configuration": "Configuration",
       "pauseLoading": "Loading the pause request...",
       "pauseLoadError": "Failed to load the pause request.",
       "pauseSubmitError": "Failed to submit. Please try again.",

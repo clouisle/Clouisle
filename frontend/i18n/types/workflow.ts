@@ -566,6 +566,8 @@ export type WorkflowMessages = {
       nodeType: string
       nodeStatus: string
       nodeTime: string
+      model: string
+      configuration: string
       pauseLoading: string
       pauseLoadError: string
       pauseSubmitError: string

@@ -28,6 +28,7 @@ const hooks = {
 
 const getWorkflowRun = mock(async () => ({}))
 const getRunNodeExecutions = mock(async () => [])
+const renderNodeOutput = mock(() => 'rendered node output')
 const deleteWorkflowRun = mock(async () => {})
 const toast = { success: mock(() => {}) }
 let allowed = true
@@ -37,9 +38,10 @@ mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: component('F
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: component('Fragment') }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('sonner', () => ({ toast }))
-mock.module('lucide-react', () => Object.fromEntries(['CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle', 'Trash2'].map((name) => [name, component(name)])))
+mock.module('lucide-react', () => Object.fromEntries(['CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle', 'ChevronDown', 'ChevronRight', 'SkipForward', 'Trash2'].map((name) => [name, component(name)])))
 mock.module('@/lib/api', () => ({ workflowsApi: { getWorkflowRun, getRunNodeExecutions, deleteWorkflowRun } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => allowed }) }))
+mock.module('@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer', () => ({ renderNodeOutput }))
 for (const [path, names] of [
   ['@/components/ui/sheet', ['Sheet', 'SheetContent', 'SheetDescription', 'SheetHeader', 'SheetTitle']],
   ['@/components/ui/button', ['Button']],
@@ -60,7 +62,12 @@ const run = {
   total_nodes: 2, executed_nodes: 2, failed_nodes: 1, skipped_nodes: 0, total_duration_ms: 65_000,
   total_token_usage: { input: 1200, output: 34 }, error_message: 'node failed', error_node_id: 'node-2',
 }
-const node = { id: 'node-1', node_name: 'Fetch', node_type: 'http', status: 'success', execution_duration_ms: 500, total_tokens: 12, error_message: 'warning' }
+const node = {
+  id: 'node-1', run_id: run.id, node_id: 'fetch', node_name: 'Fetch', node_type: 'agent', execution_order: 0,
+  status: 'success', execution_duration_ms: 500, total_tokens: 12, prompt_tokens: 9, completion_tokens: 3,
+  model_used: 'team-model', inputs: { query: 'hello' }, config_snapshot: { message: 'Research {{query}}' },
+  outputs: { response: 'Complete' }, error_message: null,
+}
 
 function render(overrides: Props = {}) {
   stateIndex = effectIndex = 0
@@ -86,7 +93,7 @@ beforeEach(() => {
   states = []
   effects = []
   allowed = true
-  for (const fn of [getWorkflowRun, getRunNodeExecutions, deleteWorkflowRun, toast.success, onOpenChange, onDelete]) fn.mockClear()
+  for (const fn of [getWorkflowRun, getRunNodeExecutions, renderNodeOutput, deleteWorkflowRun, toast.success, onOpenChange, onDelete]) fn.mockClear()
   getWorkflowRun.mockResolvedValue(run as never)
   getRunNodeExecutions.mockResolvedValue([node] as never)
   deleteWorkflowRun.mockResolvedValue(undefined)
@@ -104,12 +111,27 @@ describe('dashboard workflow run drawer issue #255 coverage', () => {
     expect(text(tree)).toContain('1m 5s')
     expect(text(tree)).toContain('1,234')
     expect(text(tree)).toContain('node failed')
-    expect(text(tree)).toContain('Fetch')
-    expect(text(tree)).toContain('Duration0s')
-    expect(text(tree)).toContain('noOutputs')
+    expect(text(tree)).toContain('runDrawer.trace')
+
+    const traceToggle = descendants(tree).find((item) => item.type === 'button' && item.props['aria-expanded'] === false)!
+    traceToggle.props.onClick()
+    const trace = descendants(render())
+    expect(trace.some((item) => item.type === 'pre' && text(item).includes('"query": "hello"'))).toBe(true)
+    expect(trace.some((item) => item.type === 'pre' && text(item).includes('Research {{query}}'))).toBe(true)
+    expect(renderNodeOutput).toHaveBeenCalledWith('agent', { response: 'Complete' }, expect.any(Function))
 
     descendants(tree).find((item) => item.type === 'Button' && text(item).includes('close'))!.props.onClick()
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('keeps the trace tab informative when the run has no persisted node executions', async () => {
+    getRunNodeExecutions.mockResolvedValue([])
+    render()
+    await flush()
+
+    const tree = render()
+    expect(text(tree)).toContain('noNodeExecutions')
+    expect(descendants(tree).some((item) => item.type === 'button' && item.props['aria-expanded'] !== undefined)).toBe(false)
   })
 
   test('confirms deletion and reports success through every parent callback', async () => {

@@ -17,6 +17,10 @@
   - [x] 2. Workflow Agent executor integration
   - [x] 3. Workflow output contracts and presentation
   - [x] 4. Regression coverage and cleanup
+- **workflow-log-tracing** — Complete. Persisted workflow logs now present ordered, expandable node traces with the same typed output renderer as test runs. See `docs/plan/workflow-log-tracing.md`
+  - [x] 1. Persisted trace contract review
+  - [x] 2. Historical trace presentation
+  - [x] 3. Regression coverage and documentation
 - **model-prompt-caching-visibility** — Complete. Provider-reported cache hit/write token details flow through `Usage`, all chat adapters, message persistence, message_end SSE, and the token-stats popover. Cache hit rate is intentionally not displayed. Verified: 3316 backend + 2242 frontend tests, tsc and Ruff clean. See `docs/plan/model-prompt-caching-visibility.md`
   - [x] 1. Usage 类型扩展 + 全部 adapter 解析
   - [x] 2. chat.py 记账与 SSE 透传

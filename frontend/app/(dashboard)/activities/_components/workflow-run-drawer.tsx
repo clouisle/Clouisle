@@ -9,6 +9,9 @@ import {
   Loader,
   Ban,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  SkipForward,
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -37,6 +40,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { formatDateTime } from '@/lib/utils'
 import { useCanPerform } from '@/components/permission-guard'
+import { renderNodeOutput } from '@/app/(platform)/app/apps/workflow/[id]/_components/node-output-renderer'
 
 interface WorkflowRunDrawerProps {
   runId: string
@@ -44,6 +48,8 @@ interface WorkflowRunDrawerProps {
   onOpenChange: (open: boolean) => void
   onDelete?: () => void
 }
+
+type WorkflowTranslation = (key: string) => string
 
 // Helper to format duration
 function formatDuration(ms: number | null | undefined): string {
@@ -56,7 +62,7 @@ function formatDuration(ms: number | null | undefined): string {
 }
 
 // Status badge component
-function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: ReturnType<typeof useTranslations> }) {
+function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: WorkflowTranslation }) {
   const statusConfig: Record<string, { icon: React.ReactNode; className: string; label: string }> = {
     success: {
       icon: <CheckCircle className="h-3 w-3" />,
@@ -83,6 +89,11 @@ function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: ReturnT
       className: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20',
       label: tWorkflow('cancelled'),
     },
+    skipped: {
+      icon: <SkipForward className="h-3 w-3" />,
+      className: 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20',
+      label: tWorkflow('runDrawer.statusSkipped'),
+    },
     timeout: {
       icon: <AlertTriangle className="h-3 w-3" />,
       className: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
@@ -99,6 +110,88 @@ function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: ReturnT
         {config.label}
       </span>
     </Badge>
+  )
+}
+
+function NodeExecutionTraceCard({
+  node,
+  tWorkflow,
+}: {
+  node: NodeExecution
+  tWorkflow: WorkflowTranslation
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(false)
+  const hasDetails = Boolean(
+    node.inputs || node.config_snapshot || node.outputs || node.error_message || node.model_used || node.total_tokens
+  )
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 p-3 text-left hover:bg-muted/50 transition-colors"
+        onClick={() => hasDetails && setIsExpanded((expanded) => !expanded)}
+        aria-expanded={hasDetails ? isExpanded : undefined}
+      >
+        {hasDetails ? (
+          isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <span className="w-4" />
+        )}
+        <span className="text-xs font-mono text-muted-foreground">{node.execution_order + 1}</span>
+        <span className="flex-1 text-sm font-medium truncate">{node.node_name}</span>
+        <span className="text-xs text-muted-foreground">{formatDuration(node.execution_duration_ms)}</span>
+        <StatusBadge status={node.status} tWorkflow={tWorkflow} />
+      </button>
+
+      {isExpanded && (
+        <div className="border-t bg-muted/30 p-3 space-y-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <span><span className="text-muted-foreground">{tWorkflow('runDrawer.nodeType')}</span> {node.node_type}</span>
+            {node.model_used && <span><span className="text-muted-foreground">{tWorkflow('runDrawer.model')}</span> {node.model_used}</span>}
+            {node.total_tokens !== null && node.total_tokens !== undefined && (
+              <span><span className="text-muted-foreground">{tWorkflow('runDrawer.tokenTotal')}</span> {node.total_tokens.toLocaleString()}</span>
+            )}
+          </div>
+
+          {(node.prompt_tokens !== null || node.completion_tokens !== null) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              {node.prompt_tokens !== null && node.prompt_tokens !== undefined && (
+                <span><span className="text-muted-foreground">{tWorkflow('runDrawer.tokenPrompt')}</span> {node.prompt_tokens.toLocaleString()}</span>
+              )}
+              {node.completion_tokens !== null && node.completion_tokens !== undefined && (
+                <span><span className="text-muted-foreground">{tWorkflow('runDrawer.tokenCompletion')}</span> {node.completion_tokens.toLocaleString()}</span>
+              )}
+            </div>
+          )}
+
+          {node.inputs && (
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">{tWorkflow('runDetail.inputs')}</span>
+              <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background p-2 text-[10px] font-mono">{JSON.stringify(node.inputs, null, 2)}</pre>
+            </div>
+          )}
+          {node.config_snapshot && (
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">{tWorkflow('runDrawer.configuration')}</span>
+              <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background p-2 text-[10px] font-mono">{JSON.stringify(node.config_snapshot, null, 2)}</pre>
+            </div>
+          )}
+          {node.outputs && (
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">{tWorkflow('runDrawer.outputLabel')}</span>
+              {renderNodeOutput(node.node_type, node.outputs, tWorkflow)}
+            </div>
+          )}
+          {node.error_message && (
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-red-500">{tWorkflow('runDrawer.errorLabel')}</span>
+              <div className="rounded bg-red-50 p-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">{node.error_message}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -273,10 +366,11 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
 
             {/* Inputs/Outputs */}
             <div>
-              <Tabs defaultValue="inputs">
-                <TabsList className="grid w-full grid-cols-2">
+              <Tabs defaultValue="trace">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="inputs">{t('runDetail.inputs')}</TabsTrigger>
                   <TabsTrigger value="outputs">{t('runDetail.outputs')}</TabsTrigger>
+                  <TabsTrigger value="trace">{tWorkflow('runDrawer.trace')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="inputs" className="mt-4">
                   <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto">
@@ -294,56 +388,26 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                     </p>
                   )}
                 </TabsContent>
+                <TabsContent value="trace" className="mt-4">
+                  {nodeExecutions.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      {t('runDetail.noNodeExecutions')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {nodeExecutions.map((node) => (
+                        <NodeExecutionTraceCard
+                          key={node.id}
+                          node={node}
+                          tWorkflow={tWorkflow}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
               </Tabs>
             </div>
 
-            <Separator />
-
-            {/* Node Executions */}
-            <div>
-              <h3 className="text-sm font-semibold mb-3">{t('runDetail.nodeExecutions')}</h3>
-              {nodeExecutions.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  {t('runDetail.noNodeExecutions')}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {nodeExecutions.map((node) => (
-                    <div
-                      key={node.id}
-                      className="border rounded-lg p-3 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{node.node_name}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {node.node_type}
-                          </Badge>
-                        </div>
-                        <StatusBadge status={node.status} tWorkflow={tWorkflow} />
-                      </div>
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <div className="flex justify-between">
-                          <span>Duration</span>
-                          <span>{formatDuration(node.execution_duration_ms)}</span>
-                        </div>
-                        {node.total_tokens && (
-                          <div className="flex justify-between">
-                            <span>Tokens</span>
-                            <span>{node.total_tokens.toLocaleString()}</span>
-                          </div>
-                        )}
-                        {node.error_message && (
-                          <div className="text-destructive mt-2">
-                            {t('runDetail.errorInfo')}: {node.error_message}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
             {/* Actions */}
             <div className="flex justify-end gap-2 pt-4">

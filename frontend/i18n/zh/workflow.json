@@ -564,6 +564,8 @@
       "nodeType": "类型：",
       "nodeStatus": "状态：",
       "nodeTime": "耗时：",
+      "model": "模型：",
+      "configuration": "配置",
       "pauseLoading": "正在加载暂停请求...",
       "pauseLoadError": "加载暂停请求失败",
       "pauseSubmitError": "提交失败，请重试",
